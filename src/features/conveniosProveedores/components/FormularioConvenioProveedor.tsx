@@ -118,7 +118,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
         const monSnapshot = await getDocs(collection(db, 'catalogo_moneda'));
         setMonedas(monSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-        // ✅ Carga de Tarifas de Referencia
+        // Cargamos todas las tarifas de referencia (El Maestro de Tipos de Convenio)
         const tarifarioSnapshot = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
         setTarifarios(tarifarioSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) { console.error("Error catálogos:", error); }
@@ -126,7 +126,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     cargarCatalogos();
   }, []);
 
-  // 2. CARGA DE DATOS Y JOIN DE NOMBRES (HIDRATACIÓN BLINDADA)
+  // 2. CARGA DE DATOS Y JOIN DE NOMBRES (HIDRATACIÓN BLINDADA CONTRA DATOS VIEJOS)
   useEffect(() => {
     if (initialData && initialData.id && tarifarios.length > 0) {
       setFormData(initialData);
@@ -139,19 +139,25 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
           const detallesBD = snap.docs.map(docSnap => {
             const data = docSnap.data();
             
-            const refMaster = tarifarios.find(t => String(t.id).trim() === String(data.tipoConvenioId).trim());
+            // ✅ Rescate de ID: Los datos viejos pueden usar nombres de campo diferentes
+            const idReal = data.tipoConvenioId || data.tarifaId || data.tipo_convenio || '';
+            
+            // Cruzamos con el maestro de tarifas
+            const refMaster = tarifarios.find(t => String(t.id).trim() === String(idReal).trim());
             
             let nombreAsignado = data.tipoConvenioNombre;
-            if (!nombreAsignado || nombreAsignado.trim() === '') {
-              // ✅ AHORA BUSCAMOS ESPECÍFICAMENTE "tipo_operacionNombre"
+            
+            // ✅ FORZAMOS LA SOBREESCRITURA si el campo viene vacío O si dice "Concepto no identificado"
+            if (!nombreAsignado || String(nombreAsignado).trim() === '' || String(nombreAsignado).includes('no identificado')) {
+              // Priorizamos tipo_operacionNombre (solicitud exacta del usuario)
               nombreAsignado = refMaster ? (refMaster.tipo_operacionNombre || refMaster.tipo_operacion || refMaster.descripcion || 'Sin nombre en catálogo') : 'Concepto no identificado';
             }
 
             return {
               id: docSnap.id,
               convenioId: data.convenioId,
-              tipoConvenioId: data.tipoConvenioId,
-              tipoConvenioNombre: nombreAsignado, 
+              tipoConvenioId: idReal, // Guardamos el ID rescatado
+              tipoConvenioNombre: nombreAsignado, // Inyectamos el nombre validado
               tarifa: data.tarifa || 0
             } as ConvenioProveedorDetalleRecord;
           });
@@ -164,7 +170,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
       setFormData(prev => ({ ...prev, numeroConvenio: generarSiguienteConvenio() }));
       setDetalles([]);
     }
-  }, [initialData, registrosExistentes, tarifarios]);
+  }, [initialData, registrosExistentes, tarifarios]); // Se recarga si los tarifarios cambian
 
   const generarSiguienteConvenio = () => {
     if (registrosExistentes.length === 0) return 'CPRV-001';
@@ -176,7 +182,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     const id = e.target.value;
     const tarifario = tarifarios.find(t => t.id === id);
     
-    // ✅ AHORA BUSCAMOS ESPECÍFICAMENTE "tipo_operacionNombre" al seleccionar en el dropdown
+    // ✅ Al seleccionar un nuevo elemento, buscamos estrictamente tipo_operacionNombre
     const nombreTarifario = tarifario ? (tarifario.tipo_operacionNombre || tarifario.tipo_operacion || tarifario.descripcion || 'Desconocido') : '';
 
     let sugerencias: number[] = [];
@@ -243,7 +249,12 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
           });
         } else {
           const detRef = doc(db, 'convenios_proveedores_detalles', det.id!);
-          batch.update(detRef, { tarifa: det.tarifa, tipoConvenioNombre: det.tipoConvenioNombre });
+          // Al actualizar, inyectamos el nombre reparado de vuelta a Firebase
+          batch.update(detRef, { 
+            tarifa: det.tarifa, 
+            tipoConvenioId: det.tipoConvenioId, 
+            tipoConvenioNombre: det.tipoConvenioNombre 
+          });
         }
       });
 
@@ -312,7 +323,6 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                       <label className="form-label">Concepto (Tipo de Operación)</label>
                       <select className="form-control" value={detalleDraft.tipoConvenioId} onChange={handleTipoConvenioChange}>
                         <option value="">Seleccione un concepto...</option>
-                        {/* ✅ AHORA MUESTRA EL tipo_operacionNombre EN EL DROPDOWN */}
                         {tarifarios.map(t => <option key={t.id} value={t.id}>{t.tipo_operacionNombre || t.tipo_operacion || t.descripcion}</option>)}
                       </select>
                     </div>
