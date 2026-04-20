@@ -118,7 +118,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
         const monSnapshot = await getDocs(collection(db, 'catalogo_moneda'));
         setMonedas(monSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-        // Cargamos todas las tarifas de referencia (El Maestro de Tipos de Convenio)
+        // ✅ Carga de Tarifas de Referencia
         const tarifarioSnapshot = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
         setTarifarios(tarifarioSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) { console.error("Error catálogos:", error); }
@@ -128,7 +128,6 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
 
   // 2. CARGA DE DATOS Y JOIN DE NOMBRES (HIDRATACIÓN BLINDADA)
   useEffect(() => {
-    // Solo cargamos los detalles cuando ya tenemos los tarifarios descargados para poder hacer el cruce
     if (initialData && initialData.id && tarifarios.length > 0) {
       setFormData(initialData);
       
@@ -140,22 +139,19 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
           const detallesBD = snap.docs.map(docSnap => {
             const data = docSnap.data();
             
-            // ✅ BLINDAJE: Buscamos el tarifario maestro asociado a este detalle.
-            // Ignoramos espacios en blanco con trim() para evitar errores de tipeo en base de datos.
             const refMaster = tarifarios.find(t => String(t.id).trim() === String(data.tipoConvenioId).trim());
             
-            // Evaluamos el nombre. 
-            // Si data.tipoConvenioNombre está vacío o es null, extraemos la descripcion del refMaster.
             let nombreAsignado = data.tipoConvenioNombre;
             if (!nombreAsignado || nombreAsignado.trim() === '') {
-              nombreAsignado = refMaster ? (refMaster.descripcion || refMaster.nombre || 'Sin descripción en catálogo') : 'Concepto no identificado';
+              // ✅ AHORA BUSCAMOS ESPECÍFICAMENTE "tipo_operacionNombre"
+              nombreAsignado = refMaster ? (refMaster.tipo_operacionNombre || refMaster.tipo_operacion || refMaster.descripcion || 'Sin nombre en catálogo') : 'Concepto no identificado';
             }
 
             return {
               id: docSnap.id,
               convenioId: data.convenioId,
               tipoConvenioId: data.tipoConvenioId,
-              tipoConvenioNombre: nombreAsignado, // Inyectamos el nombre validado
+              tipoConvenioNombre: nombreAsignado, 
               tarifa: data.tarifa || 0
             } as ConvenioProveedorDetalleRecord;
           });
@@ -168,7 +164,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
       setFormData(prev => ({ ...prev, numeroConvenio: generarSiguienteConvenio() }));
       setDetalles([]);
     }
-  }, [initialData, registrosExistentes, tarifarios]); // Se recarga si los tarifarios cambian
+  }, [initialData, registrosExistentes, tarifarios]);
 
   const generarSiguienteConvenio = () => {
     if (registrosExistentes.length === 0) return 'CPRV-001';
@@ -179,7 +175,9 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
   const handleTipoConvenioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
     const tarifario = tarifarios.find(t => t.id === id);
-    const nombreTarifario = tarifario ? (tarifario.descripcion || tarifario.nombre || 'Desconocido') : '';
+    
+    // ✅ AHORA BUSCAMOS ESPECÍFICAMENTE "tipo_operacionNombre" al seleccionar en el dropdown
+    const nombreTarifario = tarifario ? (tarifario.tipo_operacionNombre || tarifario.tipo_operacion || tarifario.descripcion || 'Desconocido') : '';
 
     let sugerencias: number[] = [];
     if (tarifario) {
@@ -191,7 +189,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     setTarifasSugeridasActuales(sugerencias);
     setDetalleDraft({
       tipoConvenioId: id,
-      tipoConvenioNombre: nombreTarifario, // ✅ Inyectamos el nombre real inmediatamente
+      tipoConvenioNombre: nombreTarifario, 
       tarifaSugeridaSeleccionada: sugerencias.length > 0 ? String(sugerencias[0]) : '', 
       tarifa: sugerencias.length > 0 ? sugerencias[0] : 0
     });
@@ -203,7 +201,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     const nuevoDetalle = {
       id: `local_${Date.now()}`, 
       tipoConvenioId: detalleDraft.tipoConvenioId,
-      tipoConvenioNombre: detalleDraft.tipoConvenioNombre, // ✅ Inyectado en el estado visual
+      tipoConvenioNombre: detalleDraft.tipoConvenioNombre, 
       tarifa: detalleDraft.tarifa,
       _isNew: true 
     };
@@ -218,7 +216,6 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     if (!isNew) setDetallesEliminados(prev => [...prev, id]);
   };
 
-  // ✅ TRANSACCIÓN BATCH PARA COLECCIONES SEPARADAS
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.proveedorId) return alert("Seleccione un proveedor.");
@@ -241,12 +238,11 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
           batch.set(detRef, { 
             convenioId: masterId, 
             tipoConvenioId: det.tipoConvenioId, 
-            tipoConvenioNombre: det.tipoConvenioNombre, // ✅ Guardamos el string forzosamente en Firebase
+            tipoConvenioNombre: det.tipoConvenioNombre, 
             tarifa: det.tarifa 
           });
         } else {
           const detRef = doc(db, 'convenios_proveedores_detalles', det.id!);
-          // ✅ Aseguramos que si no tenía el nombre antes en la BD, lo actualice ahora
           batch.update(detRef, { tarifa: det.tarifa, tipoConvenioNombre: det.tipoConvenioNombre });
         }
       });
@@ -313,10 +309,11 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                 <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #30363d' }}>
                   <div className="form-grid" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', gap: '16px', alignItems: 'end' }}>
                     <div className="form-group">
-                      <label className="form-label">Concepto (Tipo de Convenio)</label>
+                      <label className="form-label">Concepto (Tipo de Operación)</label>
                       <select className="form-control" value={detalleDraft.tipoConvenioId} onChange={handleTipoConvenioChange}>
                         <option value="">Seleccione un concepto...</option>
-                        {tarifarios.map(t => <option key={t.id} value={t.id}>{t.descripcion || t.nombre}</option>)}
+                        {/* ✅ AHORA MUESTRA EL tipo_operacionNombre EN EL DROPDOWN */}
+                        {tarifarios.map(t => <option key={t.id} value={t.id}>{t.tipo_operacionNombre || t.tipo_operacion || t.descripcion}</option>)}
                       </select>
                     </div>
                     <div className="form-group">
