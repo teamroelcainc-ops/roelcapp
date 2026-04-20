@@ -118,6 +118,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
         const monSnapshot = await getDocs(collection(db, 'catalogo_moneda'));
         setMonedas(monSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
+        // ✅ Se cargan TODAS las tarifas de referencia para poder cruzar los IDs
         const tarifarioSnapshot = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
         setTarifarios(tarifarioSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) { console.error("Error catálogos:", error); }
@@ -134,19 +135,32 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
           const q = query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', '==', initialData.id));
           const snap = await getDocs(q);
           
-          // ✅ CORRECCIÓN: Cruzamos el ID contra el catálogo para mostrar el nombre real
           const detallesBD = snap.docs.map(docSnap => {
             const data = docSnap.data();
-            const refMaster = tarifarios.find(t => t.id === data.tipoConvenioId);
+            
+            // ✅ SOLUCIÓN AL BUG "Concepto no identificado"
+            // Buscamos ignorando espacios en blanco para evitar falsos negativos
+            const refMaster = tarifarios.find(t => String(t.id).trim() === String(data.tipoConvenioId).trim());
+            
+            // Extraemos el nombre de múltiples posibles campos del catálogo maestro
+            let nombreReal = data.tipoConvenioNombre; 
+            if (!nombreReal || nombreReal.trim() === '') {
+                if (refMaster) {
+                    nombreReal = refMaster.descripcion || refMaster.nombre || refMaster.concepto || 'Sin nombre definido';
+                } else {
+                    nombreReal = 'Concepto no identificado'; 
+                }
+            }
+
             return {
               id: docSnap.id,
               convenioId: data.convenioId,
               tipoConvenioId: data.tipoConvenioId,
-              // Prioridad: 1. Nombre en el registro | 2. Nombre del catálogo | 3. Fallback
-              tipoConvenioNombre: data.tipoConvenioNombre || (refMaster ? refMaster.descripcion : 'Concepto no identificado'),
+              tipoConvenioNombre: nombreReal,
               tarifa: data.tarifa || 0
             } as ConvenioProveedorDetalleRecord;
           });
+          
           setDetalles(detallesBD);
         } catch (error) { console.error("Error detalles:", error); }
       };
@@ -175,7 +189,8 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     setTarifasSugeridasActuales(sugerencias);
     setDetalleDraft({
       tipoConvenioId: id,
-      tipoConvenioNombre: tarifario ? tarifario.descripcion : '',
+      // Usamos el mismo mapeo seguro para inyectarlo en vivo
+      tipoConvenioNombre: tarifario ? (tarifario.descripcion || tarifario.nombre || tarifario.concepto) : '',
       tarifaSugeridaSeleccionada: sugerencias.length > 0 ? String(sugerencias[0]) : '', 
       tarifa: sugerencias.length > 0 ? sugerencias[0] : 0
     });
@@ -186,7 +201,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     const nuevoDetalle = {
       id: `local_${Date.now()}`, 
       tipoConvenioId: detalleDraft.tipoConvenioId,
-      tipoConvenioNombre: detalleDraft.tipoConvenioNombre, // ✅ Se inyecta para visualización inmediata
+      tipoConvenioNombre: detalleDraft.tipoConvenioNombre, // ✅ Inyectado para visualización y guardado
       tarifa: detalleDraft.tarifa,
       _isNew: true 
     };
@@ -223,12 +238,13 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
           batch.set(detRef, { 
             convenioId: masterId, 
             tipoConvenioId: det.tipoConvenioId, 
-            tipoConvenioNombre: det.tipoConvenioNombre, // ✅ Guardamos el nombre para evitar vacíos
+            tipoConvenioNombre: det.tipoConvenioNombre, // Se fuerza el guardado del string
             tarifa: det.tarifa 
           });
         } else {
           const detRef = doc(db, 'convenios_proveedores_detalles', det.id!);
-          batch.update(detRef, { tarifa: det.tarifa });
+          // Aseguramos que si no tenía nombre antes, ahora se actualice en la BD
+          batch.update(detRef, { tarifa: det.tarifa, tipoConvenioNombre: det.tipoConvenioNombre });
         }
       });
 
@@ -297,7 +313,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                       <label className="form-label">Concepto</label>
                       <select className="form-control" value={detalleDraft.tipoConvenioId} onChange={handleTipoConvenioChange}>
                         <option value="">Seleccione...</option>
-                        {tarifarios.map(t => <option key={t.id} value={t.id}>{t.descripcion}</option>)}
+                        {tarifarios.map(t => <option key={t.id} value={t.id}>{t.descripcion || t.nombre}</option>)}
                       </select>
                     </div>
                     <div className="form-group">
@@ -315,7 +331,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
 
               <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead style={{ backgroundColor: '#161b22', color: '#8b949e' }}>
-                  <tr><th style={{ padding: '12px' }}>#</th><th>CONCEPTO</th><th>TARIFA</th><th style={{ textAlign: 'center' }}>ACCIÓN</th></tr>
+                  <tr><th style={{ padding: '12px', textAlign: 'left' }}>#</th><th style={{ textAlign: 'left' }}>CONCEPTO</th><th style={{ textAlign: 'left' }}>TARIFA</th><th style={{ textAlign: 'center' }}>ACCIÓN</th></tr>
                 </thead>
                 <tbody>
                   {detalles.length === 0 ? (
@@ -326,7 +342,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                         <td style={{ padding: '12px' }}>{index + 1}</td>
                         <td style={{ padding: '12px', color: '#c9d1d9' }}>{det.tipoConvenioNombre}</td>
                         <td style={{ padding: '12px', color: '#f0f6fc', fontWeight: 'bold' }}>${Number(det.tarifa).toFixed(2)}</td>
-                        <td style={{ textAlign: 'center' }}><button type="button" onClick={() => handleEliminarDetalle(det.id!, det._isNew)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>✕</button></td>
+                        <td style={{ textAlign: 'center' }}><button type="button" onClick={() => handleEliminarDetalle(det.id!, det._isNew)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '8px' }}>✕</button></td>
                       </tr>
                     ))
                   )}

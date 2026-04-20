@@ -80,15 +80,13 @@ const MttoDashboard = () => {
   const handleNuevo = () => { setMttoEditando(null); setEstadoFormulario('abierto'); };
   const editarMtto = (mtto: any) => { setMttoEditando(mtto); setEstadoFormulario('abierto'); };
   
-  // ✅ ELIMINACIÓN CON OPTIMISTIC UI: Evita el "Race Condition" actualizando localmente
   const eliminarMtto = async (id: string) => {
     if (!id) return;
     if (window.confirm('¿Estás seguro de eliminar este registro permanentemente?')) {
       try {
-        await eliminarRegistro('gastos_mtto', id); // 1. Se elimina en base de datos
-        // 2. Se elimina instantáneamente de la vista local sin descargar todo de nuevo
-        setMttoGlobales(prev => prev.filter(m => m.id !== id));
-        setGastosSeleccionados(prev => prev.filter(selId => selId !== id));
+        await eliminarRegistro('gastos_mtto', id);
+        await cargarDatos(); 
+        setGastosSeleccionados(prev => prev.filter(selId => String(selId) !== String(id)));
       } catch (error) {
         console.error("Error al eliminar:", error);
         alert("Hubo un error al intentar eliminar el registro.");
@@ -118,8 +116,9 @@ const MttoDashboard = () => {
     return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   
+  // ✅ CORRECCIÓN: Se eliminó el parámetro "nuevoMtto" para limpiar la alerta ts(6133)
   const handleGuardado = () => {
-    cargarDatos(); // Aquí sí refrescamos porque necesitamos los IDs frescos de Firebase
+    cargarDatos(); 
     setEstadoFormulario('cerrado');
     setMttoEditando(null);
   };
@@ -158,14 +157,7 @@ const MttoDashboard = () => {
       });
 
       await batch.commit();
-      
-      // Actualizamos localmente para más velocidad
-      setMttoGlobales(prev => prev.map(m => {
-        if (idsValidos.includes(m.id)) {
-          return { ...m, invoice: nuevoInvoiceTexto.trim(), estatus: estatusFacturado };
-        }
-        return m;
-      }));
+      await cargarDatos(); 
 
       alert(`Se aplicó el Invoice a ${idsValidos.length} registro(s) exitosamente.`);
       setModalInvoiceMasivo(false);
