@@ -1,8 +1,8 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FormularioOperacion } from './FormularioOperacion';
 import { collection, doc, writeBatch, query, where, getDocs, orderBy, limit } from 'firebase/firestore'; 
-import { db } from '../../../config/firebase';
+import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { obtenerBotonesHorarioDinamicos } from '../config/statusRules';
 
 const ID_USD = '7dca62b3';
@@ -27,77 +27,78 @@ const OperacionesDashboard = () => {
 
   const [busqueda, setBusqueda] = useState('');
 
-  // ✅ ESTADOS DE PAGINACIÓN Y PESTAÑAS
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 50;
 
-  // Estado para el hover de las filas
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
-  // ✅ DESCARGA BLINDADA (Ahora incluye Unidades y Operadores)
-  useEffect(() => {
-    const descargarTodo = async () => {
-      setCargandoOperaciones(true);
-      try {
-        let catGuardados = null;
-        const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v1');
+  const descargarTodo = async () => {
+    setCargandoOperaciones(true);
+    try {
+      let catGuardados = null;
+      const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v1');
 
-        if (cacheCatStr) {
-          catGuardados = JSON.parse(cacheCatStr);
-          setCatalogosGlobales(catGuardados);
-        } else {
-          const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap] = await Promise.all([
-            getDocs(collection(db, 'empresas')),
-            getDocs(collection(db, 'catalogo_tipo_operacion')),
-            getDocs(collection(db, 'catalogo_embalaje')),
-            getDocs(collection(db, 'remolques')),
-            getDocs(collection(db, 'catalogo_tarifas_referencia')), 
-            getDocs(collection(db, 'convenios_proveedores')),
-            getDocs(collection(db, 'tipo_cambio')),
-            getDocs(collection(db, 'convenios_clientes')),
-            getDocs(collection(db, 'convenios_clientes_detalles')),
-            getDocs(collection(db, 'unidades')),    // ✅ Nuevo
-            getDocs(collection(db, 'operadores'))   // ✅ Nuevo
-          ]);
+      if (cacheCatStr) {
+        catGuardados = JSON.parse(cacheCatStr);
+        setCatalogosGlobales(catGuardados);
+      } else {
+        // ✅ AÑADIDO: convenios_proveedores_detalles en la posición correcta del Promise.all
+        const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap] = await Promise.all([
+          getDocs(collection(db, 'empresas')),
+          getDocs(collection(db, 'catalogo_tipo_operacion')),
+          getDocs(collection(db, 'catalogo_embalaje')),
+          getDocs(collection(db, 'remolques')),
+          getDocs(collection(db, 'catalogo_tarifas_referencia')), 
+          getDocs(collection(db, 'convenios_proveedores')),
+          getDocs(collection(db, 'convenios_proveedores_detalles')), // <--- NUEVO
+          getDocs(collection(db, 'tipo_cambio')),
+          getDocs(collection(db, 'convenios_clientes')),
+          getDocs(collection(db, 'convenios_clientes_detalles')),
+          getDocs(collection(db, 'unidades')),
+          getDocs(collection(db, 'operadores'))
+        ]);
 
-          catGuardados = {
-            empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-            operadores: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
-          };
-          
-          sessionStorage.setItem('roelca_catalogos_v1', JSON.stringify(catGuardados));
-          setCatalogosGlobales(catGuardados);
-        }
-
-        const operacionesSnap = await getDocs(query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(100)));
-
-        const opData = operacionesSnap.docs.map((d: any) => {
-          const data = d.data() as any;
-          const clienteObj = catGuardados.empresas.find((e: any) => e.id === data.clientePaga);
-          return {
-            id: d.id,
-            ...data,
-            nombreCliente: clienteObj ? clienteObj.nombre : (data.clientePaga || 'Desconocido')
-          };
-        });
-
-        setOperacionesGlobales(opData);
-
-      } catch (e) {
-        console.error("Error al pre-cargar datos:", e);
+        catGuardados = {
+          empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })), // <--- NUEVO
+          catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+          operadores: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
+        };
+        
+        sessionStorage.setItem('roelca_catalogos_v1', JSON.stringify(catGuardados));
+        setCatalogosGlobales(catGuardados);
       }
-      setCargandoOperaciones(false);
-    };
+
+      const operacionesSnap = await getDocs(query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(100)));
+
+      const opData = operacionesSnap.docs.map((d: any) => {
+        const data = d.data() as any;
+        const clienteObj = catGuardados.empresas.find((e: any) => e.id === data.clientePaga);
+        return {
+          id: d.id,
+          ...data,
+          nombreCliente: clienteObj ? clienteObj.nombre : (data.clientePaga || 'Desconocido')
+        };
+      });
+
+      setOperacionesGlobales(opData);
+
+    } catch (e) {
+      console.error("Error al pre-cargar datos:", e);
+    }
+    setCargandoOperaciones(false);
+  };
+
+  useEffect(() => {
     descargarTodo();
   }, []);
 
@@ -118,23 +119,28 @@ const OperacionesDashboard = () => {
   const handleNuevo = () => { setOperacionEditando(null); setEstadoFormulario('abierto'); };
   const editarOperacion = (operacion: any) => { setOperacionEditando(operacion); setOperacionViendo(null); setEstadoFormulario('abierto'); };
   
-  const eliminarOperacion = (id: string) => {
-    if (window.confirm('¿Eliminar registro permanentemente?')) {
-      setOperacionesGlobales(prev => prev.filter((op: any) => op.id !== id));
-      setOperacionViendo(null);
+  const eliminarOperacion = async (id: string) => {
+    if (!id) return;
+    if (window.confirm('¿Estás seguro de eliminar este registro permanentemente?')) {
+      try {
+        await eliminarRegistro('operaciones', id); 
+        setOperacionesGlobales(prev => prev.filter((op: any) => String(op.id) !== String(id)));
+        setOperacionViendo(null);
+      } catch (error) {
+        console.error("Error al eliminar:", error);
+        alert("Hubo un error al intentar eliminar el registro.");
+      }
     }
   };
   
   const mostrarDato = (dato: any) => (dato && dato !== '' ? dato : '-');
   
-  // ✅ Función para mapear Monedas
   const mostrarMoneda = (val: string | null | undefined) => {
     if (val === ID_USD) return 'USD';
     if (val === ID_MXN) return 'MXN';
     return val || '-';
   };
 
-  // ✅ Función para mapear IDs simples a Nombres 
   const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre') => {
     if (!id) return '-';
     if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
@@ -145,7 +151,6 @@ const OperacionesDashboard = () => {
     return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || elementoEncontrado.descripcion || elementoEncontrado.placa || id;
   };
 
-  // ✅ Funciones especializadas para mapear Convenios
   const obtenerNombreConvenioCliente = (id: string) => {
     if (operacionViendo?.convenioNombre) return operacionViendo.convenioNombre;
     if (!id) return '-';
@@ -164,7 +169,7 @@ const OperacionesDashboard = () => {
     if (detalle) {
         const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio || detalle.tarifaId || detalle['TIPO DE CONVENIO'];
         const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || detalle.descripcion || id;
+        return tObj?.descripcion || tObj?.nombre || detalle.tipoConvenioNombre || id;
     }
     return id;
   };
@@ -225,16 +230,8 @@ const OperacionesDashboard = () => {
     setCargandoHorarios(false);
   };
 
-  const handleOperacionGuardada = (opNueva: any) => {
-    const clienteObj = catalogosGlobales.empresas?.find((e:any) => e.id === opNueva.clientePaga);
-    const opConNombre = { ...opNueva, nombreCliente: clienteObj ? clienteObj.nombre : 'Desconocido' };
-
-    if (operacionEditando) {
-      setOperacionesGlobales(prev => prev.map((op: any) => op.id === opConNombre.id ? opConNombre : op));
-    } else {
-      setOperacionesGlobales(prev => [opConNombre, ...prev]);
-    }
-    
+  const handleOperacionGuardada = () => {
+    descargarTodo();
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
   };
@@ -244,20 +241,18 @@ const OperacionesDashboard = () => {
     window.location.reload();
   };
 
-  // ✅ Filtrado GLOBAL por buscador
-  const operacionesFiltradas = operacionesGlobales.filter(op => {
+  const operacionesFiltradas = useMemo(() => {
     const b = busqueda.toLowerCase();
-    return (
+    return operacionesGlobales.filter(op => (
       String(op.ref || op.id || '').toLowerCase().includes(b) ||
       String(op.fechaServicio || '').toLowerCase().includes(b) ||
       String(op.nombreCliente || '').toLowerCase().includes(b) ||
       String(op.tipoServicio || '').toLowerCase().includes(b) ||
       String(op.trafico || '').toLowerCase().includes(b) ||
       String(op.status || '').toLowerCase().includes(b)
-    );
-  });
+    ));
+  }, [busqueda, operacionesGlobales]);
 
-  // ✅ LOGICA DE PAGINACIÓN
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
@@ -266,7 +261,6 @@ const OperacionesDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
-  // ✅ Función para Exportar a CSV
   const exportarCSV = () => {
     if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
     const encabezados = [
@@ -322,15 +316,11 @@ const OperacionesDashboard = () => {
         />
       )}
 
-      {/* CONTENEDOR MAESTRO */}
      <div style={{ width: '100%', margin: '0 auto' }}>
-        
-        {/* TÍTULO LIMPIO */}
         <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
           Operaciones
         </h1>
 
-        {/* BARRA DE CONTROLES */}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
           
           <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
@@ -364,7 +354,6 @@ const OperacionesDashboard = () => {
           </div>
         </div>
 
-        {/* TABLA RESPONSIVE */}
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
             {cargandoOperaciones ? (
@@ -409,6 +398,7 @@ const OperacionesDashboard = () => {
                         <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
                           <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                             <button 
+                              type="button"
                               className="btn-small btn-edit" 
                               onClick={(e) => { e.stopPropagation(); editarOperacion(op); }}
                               style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '4px 8px', fontSize: '0.8rem', transition: 'all 0.2s' }}
@@ -419,6 +409,7 @@ const OperacionesDashboard = () => {
                               Editar
                             </button>
                             <button 
+                              type="button"
                               className="btn-small btn-danger-outline" 
                               onClick={(e) => { e.stopPropagation(); eliminarOperacion(op.id); }}
                               style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '4px 8px', fontSize: '0.8rem', transition: 'all 0.2s' }}
@@ -482,7 +473,7 @@ const OperacionesDashboard = () => {
 
       {/* MODAL DETALLE DE OPERACIÓN */}
       {operacionViendo && (
-        <div className="modal-overlay">
+        <div className="modal-overlay" style={{ zIndex: 1500 }}>
           <div className="form-card detail-card" style={{ maxWidth: '900px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', display: 'flex', flexDirection: 'column' }}>
             
             <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: 'none' }}>
@@ -499,7 +490,6 @@ const OperacionesDashboard = () => {
               </div>
             </div>
             
-            {/* PESTAÑAS */}
             <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px', overflowX: 'auto', flexShrink: 0 }}>
               {tabsDetalle.map(tab => (
                 <button
@@ -523,10 +513,8 @@ const OperacionesDashboard = () => {
               ))}
             </div>
 
-            {/* CONTENIDO SCROLLABLE */}
             <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
               
-              {/* 1. Información General */}
               {pestañaDetalleActiva === 'general' && (
                 <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                   <div>
@@ -577,7 +565,6 @@ const OperacionesDashboard = () => {
                 </div>
               )}
 
-              {/* 2. Pedimento y CT */}
               {pestañaDetalleActiva === 'pedimento' && (
                 <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                   <div style={{ gridColumn: '1 / -1' }}>
@@ -611,7 +598,6 @@ const OperacionesDashboard = () => {
                 </div>
               )}
 
-              {/* 3. Entry's y Manifiestos */}
               {pestañaDetalleActiva === 'manifiestos' && (
                 <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                   <div>
@@ -629,7 +615,6 @@ const OperacionesDashboard = () => {
                 </div>
               )}
 
-              {/* 4. Unidad y Operador (✅ MODIFICADO: Agrega Sueldos) */}
               {pestañaDetalleActiva === 'unidad' && (
                 <div style={{ animation: 'fadeIn 0.2s ease' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
@@ -674,7 +659,6 @@ const OperacionesDashboard = () => {
                     </div>
                   </div>
 
-                  {/* ✅ NUEVA SECCIÓN DE DATOS DE UNIDAD Y SUELDOS (Layout Exigido) */}
                   <div style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d', margin: '16px 0' }} /></div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                     <div>
@@ -701,7 +685,6 @@ const OperacionesDashboard = () => {
                 </div>
               )}
 
-              {/* 5. Por Cobrar */}
               {pestañaDetalleActiva === 'cobrar' && (
                 <div style={{ animation: 'fadeIn 0.2s ease' }}>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>

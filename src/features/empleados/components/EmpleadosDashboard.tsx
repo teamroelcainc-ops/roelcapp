@@ -1,102 +1,72 @@
 // src/features/empleados/components/EmpleadosDashboard.tsx
-import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db, eliminarRegistro } from '../../../config/firebase'; 
+import { useState, useEffect } from 'react';
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db, eliminarRegistro } from '../../../config/firebase';
 import { EmployeeForm } from './EmployeeForm';
 import type { Employee } from '../../../types/empleado';
 
-export const EmpleadosDashboard: React.FC = () => {
-  const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
-  const [registroEditando, setRegistroEditando] = useState<Employee | null>(null);
-  
-  // Lista de TODOS los registros bajados de la BD
-  const [registrosGlobales, setRegistrosGlobales] = useState<Employee[]>([]);
+export const EmpleadosDashboard = () => {
+  const [empleados, setEmpleados] = useState<Employee[]>([]);
+  const [cargando, setCargando] = useState(true);
   const [busqueda, setBusqueda] = useState('');
-  const [filtroActivo, setFiltroActivo] = useState('Todo');
+  
+  const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
+  const [empleadoEditando, setEmpleadoEditando] = useState<Employee | null>(null);
 
-  // ✅ ESTADOS DE PAGINACIÓN (Frontend - 0 Costos de Lectura)
+  // ✅ Estados para Hover y Paginación idénticos a Operaciones
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
-  // Estado para el hover de las filas (solución para fondo sólido en móvil)
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
-
-  // --- OBTENER DATOS EN TIEMPO REAL ---
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'empleados'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Employee[];
-      
-      // Ordenar por ID de empleado de forma descendente (Ej: Emp-005, Emp-004...)
-      data.sort((a, b) => {
-        const numA = parseInt((a.employeeId || '').replace('Emp-', ''), 10) || 0;
-        const numB = parseInt((b.employeeId || '').replace('Emp-', ''), 10) || 0;
-        return numB - numA;
-      });
-      
-      setRegistrosGlobales(data);
+    const q = query(collection(db, 'empleados'), orderBy('employeeId', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
+      setEmpleados(data);
+      setCargando(false);
     });
-
-    return () => unsubscribe();
+    return () => unsub();
   }, []);
 
-  // Si el usuario busca o filtra algo, reseteamos a la página 1
   useEffect(() => {
     setPaginaActual(1);
-  }, [busqueda, filtroActivo]);
+  }, [busqueda]);
 
-  // --- MANEJADORES DE ESTADO ---
-  const handleNuevo = () => { 
-    setRegistroEditando(null); 
-    setEstadoFormulario('abierto'); 
-  };
+  const handleNuevo = () => { setEmpleadoEditando(null); setEstadoFormulario('abierto'); };
+  const editarEmpleado = (emp: Employee) => { setEmpleadoEditando(emp); setEstadoFormulario('abierto'); };
   
-  const editarRegistro = (registro: Employee) => { 
-    setRegistroEditando(registro); 
-    setEstadoFormulario('abierto'); 
-  };
-
-  const handleEliminar = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente este registro?')) {
-      try {
-        await eliminarRegistro('empleados', id);
-      } catch (error) {
-        console.error("Error al eliminar:", error);
-        alert('Hubo un error al eliminar. Revisa tu conexión.');
-      }
+  const eliminarEmpleado = async (id: string) => {
+    if (window.confirm('¿Eliminar empleado permanentemente?')) {
+      try { await eliminarRegistro('empleados', id); } 
+      catch (error) { alert("Error al eliminar."); }
     }
   };
 
-  const mostrarDato = (dato: any) => (dato && dato !== '' ? String(dato) : '-');
+  const formatearFecha = (isoString: string) => {
+    if (!isoString) return '-';
+    return new Date(isoString + 'T00:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
 
-  // ✅ Filtrado GLOBAL por buscador inteligente (A prueba de números y tipos estrictos)
-  const registrosFiltrados = registrosGlobales.filter(reg => {
-    let pasaFiltro = true;
-    
-    // Filtro simulado usando (any) para evitar errores de TS si 'status' no existe en type 'Employee'
-    if (filtroActivo === 'Activos') pasaFiltro = (reg as any).status === 'Activo';
-    if (filtroActivo === 'Inactivos') pasaFiltro = (reg as any).status === 'Inactivo' || (reg as any).status === 'Baja';
+  const forzarRecarga = () => {
+    window.location.reload();
+  };
 
-    if (!pasaFiltro) return false;
-
+  // ✅ Filtrado GLOBAL por buscador
+  const registrosFiltrados = empleados.filter(e => {
     const b = busqueda.toLowerCase();
     return (
-      String(reg.employeeId || '').toLowerCase().includes(b) ||
-      String(reg.firstName || '').toLowerCase().includes(b) ||
-      String(reg.lastNamePaternal || '').toLowerCase().includes(b) ||
-      String(reg.lastNameMaternal || '').toLowerCase().includes(b) ||
-      String(reg.alias || '').toLowerCase().includes(b) ||
-      String(reg.rfc || '').toLowerCase().includes(b) ||
-      String(reg.personalPhone || '').toLowerCase().includes(b) ||
-      String(reg.personalEmail || '').toLowerCase().includes(b)
+      (e.employeeId || '').toLowerCase().includes(b) ||
+      (e.firstName || '').toLowerCase().includes(b) ||
+      (e.lastNamePaternal || '').toLowerCase().includes(b) ||
+      (e.cargoNombre || '').toLowerCase().includes(b)
     );
   });
 
-  // ✅ LÓGICA DE PAGINACIÓN
+  // ✅ LOGICA DE PAGINACIÓN
   const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const registrosEnPantalla = registrosFiltrados.slice(indicePrimerRegistro, indiceUltimoRegistro);
+  const empleadosEnPantalla = registrosFiltrados.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -104,11 +74,24 @@ export const EmpleadosDashboard: React.FC = () => {
   // ✅ Función para Exportar a CSV
   const exportarCSV = () => {
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
-    const encabezados = ['# Emp', 'Nombres', 'Apellido Paterno', 'Apellido Materno', 'Alias', 'RFC', 'Teléfono', 'Email'];
-    const lineas = registrosFiltrados.map(r => [
-      `"${r.employeeId || ''}"`, `"${r.firstName || ''}"`, `"${r.lastNamePaternal || ''}"`, `"${r.lastNameMaternal || ''}"`,
-      `"${r.alias || ''}"`, `"${r.rfc || ''}"`, `"${r.personalPhone || ''}"`, `"${r.personalEmail || ''}"`
+    const encabezados = [
+      '# Empleado', 'Activo', 'Nombres', 'Ap. Paterno', 'Ap. Materno', 'Cargo', 
+      'Operaciones', 'Teléfono Asig.', 'F. Nacimiento', 'F. Ingreso'
+    ];
+    
+    const lineas = registrosFiltrados.map(emp => [
+      `"${emp.employeeId || ''}"`,
+      `"${emp.activo ? 'Sí' : 'No'}"`, 
+      `"${emp.firstName || ''}"`,
+      `"${emp.lastNamePaternal || ''}"`,
+      `"${emp.lastNameMaternal || ''}"`,
+      `"${emp.cargoNombre || ''}"`,
+      `"${emp.operacionesIds?.length || 0} Asignadas"`,
+      `"${emp.telefonoAsignado || ''}"`,
+      `"${formatearFecha(emp.birthDate)}"`,
+      `"${formatearFecha(emp.fechaIngreso)}"`
     ].join(','));
+
     const csvContent = [encabezados.join(','), ...lineas].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -123,18 +106,27 @@ export const EmpleadosDashboard: React.FC = () => {
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
       
-      {/* RENDERIZADO DEL FORMULARIO MODAL */}
+      {/* ✅ ESTILOS RESPONSIVOS PARA TABLA EN MÓVIL (Cero scroll horizontal) */}
+      <style>{`
+        @media (max-width: 768px) {
+          .responsive-table thead { display: none; }
+          .responsive-table tr { display: flex; flex-direction: column; border: 1px solid #30363d; margin-bottom: 16px; border-radius: 8px; background-color: #0d1117; padding: 12px; }
+          .responsive-table td { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #21262d; padding: 8px 0; text-align: right; font-size: 0.9rem; }
+          .responsive-table td:last-child { border-bottom: none; }
+          .responsive-table td::before { content: attr(data-label); font-weight: bold; color: #8b949e; text-transform: uppercase; font-size: 0.75rem; text-align: left; }
+          .actions-cell { width: 100%; justify-content: flex-end; }
+        }
+      `}</style>
+
       {estadoFormulario !== 'cerrado' && (
         <EmployeeForm 
-          estado={estadoFormulario} 
-          initialData={registroEditando}
-          onClose={() => { setEstadoFormulario('cerrado'); setRegistroEditando(null); }}
-          onMinimize={() => setEstadoFormulario('minimizado')} 
+          estado={estadoFormulario} initialData={empleadoEditando}
+          onClose={() => setEstadoFormulario('cerrado')}
+          onMinimize={() => setEstadoFormulario('minimizado')}
           onRestore={() => setEstadoFormulario('abierto')}
         />
       )}
 
-      {/* CONTENEDOR MAESTRO */}
       <div style={{ width: '100%', margin: '0 auto' }}>
         
         {/* TÍTULO LIMPIO */}
@@ -142,127 +134,137 @@ export const EmpleadosDashboard: React.FC = () => {
           Directorio de Empleados
         </h1>
 
-        {/* BARRA DE CONTROLES: Responsive y Alineada */}
+        {/* BARRA DE CONTROLES: ESTILO OPERACIONES */}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
           
-          {/* Izquierda: Filtro Estático */}
-          <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '150px' }}>
-            <select 
-              className="form-control" 
-              value={filtroActivo} 
-              onChange={(e) => setFiltroActivo(e.target.value)}
-              style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer' }}
-            >
-              <option value="Todo">Filtro: Todos</option>
-              <option value="Activos">Activos</option>
-              <option value="Inactivos">Inactivos / Bajas</option>
+          {/* Izquierda: Filtro */}
+          <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
+            <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }}>
+              <option>Filtro: Todos</option>
+              <option>Solo Activos</option>
+              <option>Solo Bajas</option>
             </select>
           </div>
 
-          {/* Centro: Buscador Inteligente */}
+          {/* Centro: Buscador */}
           <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'center' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
               <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input 
                 type="text" 
-                placeholder="Buscar por Nombre, Alias, RFC o # Emp..." 
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }}
+                placeholder="Buscar empleado..." 
+                value={busqueda} 
+                onChange={(e) => setBusqueda(e.target.value)} 
+                style={{ width: '100%', padding: '8px 12px 8px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }}
               />
             </div>
           </div>
 
-          {/* Derecha: Botones */}
+          {/* Derecha: Botonera */}
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
-            <button className="btn btn-outline" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
+            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'transparent', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer' }} title="Actualizar Datos">
+              ↻ Actualizar
+            </button>
+            <button className="btn btn-outline" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap', backgroundColor: '#21262d', border: '1px solid #30363d', padding: '8px 16px', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               Exportar CSV
             </button>
-            <button className="btn btn-primary" onClick={handleNuevo} style={{ whiteSpace: 'nowrap' }}>+ Agregar Empleado</button>
+            <button className="btn btn-primary" onClick={handleNuevo} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500', whiteSpace: 'nowrap' }}>
+              + Alta de Empleado
+            </button>
           </div>
         </div>
 
         {/* TABLA RESPONSIVE */}
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
-                <tr>
-                  <th style={{ padding: '16px', width: '160px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
-                    Acciones
-                  </th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Emp</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Nombre Completo</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Alias</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>RFC</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Contacto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {registrosEnPantalla.length === 0 ? (
+          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', backgroundColor: '#010409' }}>
+            {cargando ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Descargando base de datos de Empleados...</div>
+            ) : (
+              <table className="data-table responsive-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
-                      {busqueda || filtroActivo !== 'Todo' ? 'No se encontraron empleados con estos filtros.' : 'No hay empleados registrados. Haz clic en "+ Agregar Empleado" para comenzar.'}
-                    </td>
+                    <th style={{ padding: '16px', width: '140px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                      Acciones
+                    </th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Empleado</th>
+                    <th style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Activo</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Nombres</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Ap. Paterno</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Ap. Materno</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Cargo</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Operaciones</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Teléfono Asig.</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>F. Nacimiento</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>F. Ingreso</th>
                   </tr>
-                ) : (
-                  registrosEnPantalla.map((reg) => (
-                    <tr 
-                      key={reg.id} 
-                      style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === reg.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }}
-                      onMouseEnter={() => setHoveredRowId(reg.id!)} 
-                      onMouseLeave={() => setHoveredRowId(null)}
-                      onClick={() => editarRegistro(reg)}
-                    >
-                      {/* CELDA ACCIONES FIJA Y SÓLIDA */}
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                          <button 
-                            className="btn-small btn-edit" 
-                            onClick={(e) => { e.stopPropagation(); editarRegistro(reg); }}
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px 12px', fontSize: '0.85rem', transition: 'all 0.2s' }}
-                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
-                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            Editar
-                          </button>
-                          <button 
-                            className="btn-small btn-danger" 
-                            onClick={(e) => handleEliminar(e, reg.id!)}
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px 12px', fontSize: '0.85rem', transition: 'all 0.2s' }}
-                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-                      </td>
-
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{reg.employeeId}</td>
-                      <td style={{ padding: '16px', fontWeight: '500', color: '#f0f6fc', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{`${reg.firstName} ${reg.lastNamePaternal} ${reg.lastNameMaternal}`}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontStyle: reg.alias ? 'normal' : 'italic', color: reg.alias ? 'inherit' : '#8b949e' }}>{mostrarDato(reg.alias)}</span>
-                      </td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarDato(reg.rfc)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                          <span style={{ color: '#c9d1d9' }}>{mostrarDato(reg.personalPhone)}</span>
-                          <span style={{ color: '#8b949e' }}>{mostrarDato(reg.personalEmail)}</span>
-                        </div>
+                </thead>
+                <tbody>
+                  {empleadosEnPantalla.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                        {busqueda ? 'No se encontraron empleados para tu búsqueda.' : 'No hay empleados registrados.'}
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    empleadosEnPantalla.map(emp => (
+                      <tr 
+                        key={emp.id} 
+                        style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === emp.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'default' }}
+                        onMouseEnter={() => setHoveredRowId(emp.id!)} 
+                        onMouseLeave={() => setHoveredRowId(null)}
+                      >
+                        <td data-label="Acciones" style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: hoveredRowId === emp.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', zIndex: 5, borderRight: '1px solid #30363d' }}>
+                          <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            <button 
+                              type="button"
+                              className="btn-small btn-edit" 
+                              onClick={(e) => { e.stopPropagation(); editarEmpleado(emp); }}
+                              style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '4px 8px', fontSize: '0.8rem', transition: 'all 0.2s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              Editar
+                            </button>
+                            <button 
+                              type="button"
+                              className="btn-small btn-danger-outline" 
+                              onClick={(e) => { e.stopPropagation(); eliminarEmpleado(emp.id!); }}
+                              style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '4px 8px', fontSize: '0.8rem', transition: 'all 0.2s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                        <td data-label="# Empleado" className="font-mono" style={{ padding: '16px', color: '#58a6ff', fontSize: '0.95rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{emp.employeeId}</td>
+                        <td data-label="Activo" style={{ padding: '16px', textAlign: 'center' }}>
+                          <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: emp.activo ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: emp.activo ? '#10b981' : '#ef4444', fontWeight: 'bold', border: emp.activo ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)' }}>
+                            {emp.activo ? 'Activo' : 'Baja'}
+                          </span>
+                        </td>
+                        <td data-label="Nombres" style={{ padding: '16px', color: '#f0f6fc', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{emp.firstName}</td>
+                        <td data-label="Ap. Paterno" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{emp.lastNamePaternal}</td>
+                        <td data-label="Ap. Materno" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{emp.lastNameMaternal || '-'}</td>
+                        <td data-label="Cargo" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{emp.cargoNombre || '-'}</td>
+                        <td data-label="Operaciones" style={{ padding: '16px', color: '#8b949e', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{emp.operacionesIds?.length > 0 ? `${emp.operacionesIds.length} Asignadas` : '-'}</td>
+                        <td data-label="Teléfono Asig." style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{emp.telefonoAsignado || '-'}</td>
+                        <td data-label="F. Nacimiento" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatearFecha(emp.birthDate)}</td>
+                        <td data-label="F. Ingreso" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatearFecha(emp.fechaIngreso)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
 
           {/* CONTROLES DE PAGINACIÓN */}
-          {registrosFiltrados.length > 0 && (
+          {registrosFiltrados.length > 0 && !cargando && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
-                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
+                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} empleados
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button 
@@ -289,5 +291,3 @@ export const EmpleadosDashboard: React.FC = () => {
     </div>
   );
 };
-
-export default EmpleadosDashboard;

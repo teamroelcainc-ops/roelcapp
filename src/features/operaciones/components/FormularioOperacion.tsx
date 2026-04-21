@@ -1,6 +1,6 @@
 // src/features/operaciones/components/FormularioOperacion.tsx
 import { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
 import { calcularStatusDinamico } from '../config/statusRules';
@@ -67,27 +67,24 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [showDropdownOperador, setShowDropdownOperador] = useState(false);
 
   const [formData, setFormData] = useState({
-    // Configuración Flujo
     tipoServicio: '', trafico: '', carga: '',
     
-    // Tab 1: General
     tipoOperacionId: '',
     fechaServicio: new Date().toISOString().split('T')[0],
     clientePaga: '', convenio: '', convenioNombre: '', numeroRemolque: '', refCliente: '',
     origen: '', destino: '', observacionesEjecutivo: '',
     
-    // Tab 2: Pedimento
     clienteMercancia: '', descripcionMercancia: '', cantidad: '', embalaje: '',
     pesoKg: '', numDoda: '', fechaEmisionDoda: '',
     pdfCartaPorte: null as File | null, pdfDoda: null as File | null,
     
-    // Tab 3: Manifiestos
     cantEntrys: 0, numManifiesto: '', provServicios: '',
     pdfManifiesto: null as File | null, pdfsEntrys: [] as (File | null)[],
     
-    // Tab 4: Unidad y Proveedor 
+    // ✅ Proveedor: Agregamos Costos Adicionales y Subtotal
     proveedorUnidad: '', facturadoEnUnidad: '', convenioProveedor: '', monedaConvenioProv: '',
-    totalAPagarProv: 0, dolaresProv: 0, pesosProv: 0, conversionProv: 0,
+    totalAPagarProv: 0, cargosAdicionalesProv: 0, subtotalProv: 0, 
+    dolaresProv: 0, pesosProv: 0, conversionProv: 0,
     unidad: '', operador: '', 
     sueldoOperador: 0, sueldoExtra: 0, sueldoTotal: 0, 
 
@@ -108,12 +105,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // BLINDAJE 1: CARGA SEGURA DE DATOS PARA EDICIÓN
   useEffect(() => {
     if (initialData && empresas && remolques) {
-      
       const safeInitialData = {
         ...initialData,
         pdfsEntrys: initialData.pdfsEntrys || [],
         cantEntrys: Number(initialData.cantEntrys) || 0,
         totalAPagarProv: Number(initialData.totalAPagarProv) || 0,
+        cargosAdicionalesProv: Number(initialData.cargosAdicionalesProv) || 0, // Hidratación
         cargosAdicionales: Number(initialData.cargosAdicionales) || 0,
         sueldoOperador: Number(initialData.sueldoOperador) || 0, 
         sueldoExtra: Number(initialData.sueldoExtra) || 0,       
@@ -173,6 +170,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setBuscandoTC(false);
   }, [formData.fechaServicio, catalogoTC, initialData]);
 
+  // ✅ FILTRADO DE CONVENIOS (CLIENTES)
   useEffect(() => {
     let clientId = formData.clientePaga;
     if (!clientId && searchClientePaga && empresas) {
@@ -203,7 +201,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         return {
           id: d.id, 
           tarifaBaseId: tarifaId,
-          descripcion: tObj?.descripcion || tObj?.nombre || (tarifaId ? `Desconocido (${tarifaId})` : 'Sin Asignar'),
+          descripcion: tObj?.tipo_operacionNombre || tObj?.descripcion || tObj?.nombre || (tarifaId ? `Desconocido (${tarifaId})` : 'Sin Asignar'),
           monedaMaestro: d.moneda || maestroAsociado?.moneda || ID_USD,
           tarifaMonto: Number(d.tarifa || d.monto || d.precio || 0),
           ...d
@@ -213,35 +211,67 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     } else setListaConveniosCliente([]);
   }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas]);
 
+  // ✅ FILTRADO DE CONVENIOS (PROVEEDOR)
   useEffect(() => {
-    let provId = formData.proveedorUnidad;
-    if (!provId && searchProvTransporte && empresas) {
-       const prov = empresas.find((e:any) => e.nombre?.toLowerCase().trim() === searchProvTransporte.toLowerCase().trim());
-       if (prov) provId = prov.id;
-    }
-    if (!provId || !conveniosProv || !Array.isArray(conveniosProv)) return setListaConveniosProveedor([]);
+    const procesarConveniosProveedor = async () => {
+      let provId = formData.proveedorUnidad;
+      
+      if (!provId && searchProvTransporte && empresas) {
+         const prov = empresas.find((e:any) => e.nombre?.toLowerCase().trim() === searchProvTransporte.toLowerCase().trim());
+         if (prov) provId = prov.id;
+      }
 
-    const maestros = conveniosProv.filter((c:any) => String(c.proveedorId || c.proveedor || c.id_proveedor || c.empresa || '').trim() === provId);
-    if (maestros.length > 0) {
-      const mIds = maestros.map((m:any) => String(m.id).trim());
-      const mNames = maestros.map((m:any) => String(m['# de Convenio'] || m.numeroConvenio || m.nombre || m.id).trim());
-      const detalles = catalogoConvProvDetalles?.filter((d:any) => {
-        const convRef = String(d.convenioId || d.convenio || d.id_convenio || '').trim();
-        return mIds.includes(convRef) || mNames.includes(convRef);
-      }) || [];
+      if (!provId || !conveniosProv || !Array.isArray(conveniosProv)) {
+        return setListaConveniosProveedor([]);
+      }
 
-      const mapped = detalles.map((d:any) => {
+      const maestrosAsociados = conveniosProv.filter((c:any) => String(c.proveedorId || c.proveedor || c.id_proveedor || '').trim() === String(provId).trim());
+      
+      if (maestrosAsociados.length === 0) {
+        return setListaConveniosProveedor([]); 
+      }
+
+      const maestroIds = maestrosAsociados.map((m:any) => String(m.id).trim());
+      let detallesAsociados = [];
+
+      if (catalogoConvProvDetalles && catalogoConvProvDetalles.length > 0) {
+        detallesAsociados = catalogoConvProvDetalles.filter((d:any) => {
+          const convRef = String(d.convenioId || d.convenio || d.id_convenio || '').trim();
+          return maestroIds.includes(convRef);
+        });
+      } else {
+        try {
+          const detallesSnap = await getDocs(collection(db, 'convenios_proveedores_detalles'));
+          const todosLosDetalles = detallesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          detallesAsociados = todosLosDetalles.filter((d:any) => maestroIds.includes(String(d.convenioId).trim()));
+        } catch (error) {
+          console.error("Error consultando convenios de proveedores:", error);
+        }
+      }
+
+      const mapped = detallesAsociados.map((d:any) => {
         const tarifaId = d.tipoConvenioId || d.tipo_convenio || d.tarifaId || d['TIPO DE CONVENIO'];
         const tObj = tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
+        const maestroParent = maestrosAsociados.find((m:any) => String(m.id).trim() === String(d.convenioId).trim());
+
+        let nombreFinal = d.tipoConvenioNombre;
+        if (!nombreFinal || String(nombreFinal).trim() === '' || String(nombreFinal).includes('no identificado')) {
+          nombreFinal = tObj?.tipo_operacionNombre || tObj?.tipo_operacion || tObj?.descripcion || tObj?.nombre || 'Concepto sin nombre';
+        }
+
         return {
-          id: d.id, tarifaBaseId: tarifaId,
-          descripcion: tObj?.descripcion || tObj?.nombre || d.descripcion || (tarifaId ? `Detalle (${tarifaId})` : 'Sin Asignar'),
-          monedaBase: d.moneda || maestros[0]?.moneda || ID_USD,
-          ...d
+          id: d.id, 
+          tarifaBaseId: tarifaId,
+          tipoConvenioNombre: nombreFinal, 
+          monedaBase: maestroParent?.monedaId || maestroParent?.moneda || d.moneda || ID_USD,
+          tarifaMonto: Number(d.tarifa || d.monto || d.precio || 0)
         };
       });
+      
       setListaConveniosProveedor(mapped);
-    } else setListaConveniosProveedor([]);
+    };
+
+    procesarConveniosProveedor();
   }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas]);
 
   useEffect(() => {
@@ -275,38 +305,60 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if(!initialData) resolverFlujo();
   }, [formData.convenio, listaConveniosCliente, tarifas, initialData]);
 
+  // ========================================================
+  // ✅ REGLA DE NEGOCIO: CÁLCULO PROVEEDOR CON COSTOS ADICIONALES
+  // ========================================================
   useEffect(() => {
     const fact = formData.facturadoEnUnidad; 
-    const mon = formData.monedaConvenioProv; 
-    const tot = Number(formData.totalAPagarProv) || 0; 
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
     
+    // El subtotal es el monto base + los costos adicionales
+    const subtotal = Number(formData.totalAPagarProv || 0) + Number(formData.cargosAdicionalesProv || 0);
+    
     let dol = 0; let pes = 0; let conv = 0;
-    if (tc > 0) {
-      if (fact === ID_USD && mon === ID_USD) dol = tot;
-      if (fact === ID_MXN && mon === ID_MXN) pes = tot; else if (fact === ID_MXN && mon === ID_USD) pes = tot * tc;
-      if (fact === ID_MXN && mon === ID_MXN) conv = tot; else if (fact === ID_MXN && mon === ID_USD) conv = tot * tc; else if (fact === ID_USD && mon === ID_USD) conv = tot * tc;
+    
+    // Regla Maestra: Manda la moneda de Facturación
+    if (fact === ID_USD) {
+      dol = subtotal;
+      pes = 0;
+      conv = subtotal * tc;
+    } else if (fact === ID_MXN) {
+      dol = 0;
+      pes = subtotal;
+      conv = subtotal;
     }
-    setFormData(prev => ({ ...prev, dolaresProv: dol, pesosProv: pes, conversionProv: conv }));
-  }, [formData.facturadoEnUnidad, formData.monedaConvenioProv, formData.totalAPagarProv, tipoCambioDia, formData.tipoCambioAprobado]);
 
+    setFormData(prev => ({ ...prev, subtotalProv: subtotal, dolaresProv: dol, pesosProv: pes, conversionProv: conv }));
+  }, [formData.facturadoEnUnidad, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado]);
+
+  // ========================================================
+  // ✅ REGLA DE NEGOCIO: CÁLCULO CLIENTE
+  // ========================================================
   useEffect(() => {
     const fact = formData.facturadoEnCobrar; 
-    const mon = formData.monedaConvenioCliente; 
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
+    
     const subtotal = Number(formData.montoConvenioCliente || 0) + Number(formData.cargosAdicionales || 0);
     
     let dol = 0; let pes = 0; let conv = 0;
-    if (tc > 0) {
-      if (fact === ID_USD && mon === ID_USD) dol = subtotal;
-      if (fact === ID_MXN && mon === ID_MXN) pes = subtotal; else if (fact === ID_MXN && mon === ID_USD) pes = subtotal * tc;
-      if (fact === ID_MXN && mon === ID_MXN) conv = subtotal; else if (fact === ID_MXN && mon === ID_USD) conv = subtotal * tc; else if (fact === ID_USD && mon === ID_USD) conv = subtotal * tc;
+
+    // Regla Maestra: Manda la moneda de Facturación
+    if (fact === ID_USD) {
+      dol = subtotal;
+      pes = 0;
+      conv = subtotal * tc;
+    } else if (fact === ID_MXN) {
+      dol = 0;
+      pes = subtotal;
+      conv = subtotal;
     }
+
     const utilidad = conv - Number(formData.conversionProv || 0); 
     setFormData(prev => ({ 
       ...prev, subtotalCliente: subtotal, dolaresCliente: dol, pesosCliente: pes, conversionCliente: conv, utilidadEstimada: utilidad 
     }));
-  }, [formData.facturadoEnCobrar, formData.monedaConvenioCliente, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado]);
+  }, [formData.facturadoEnCobrar, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado]);
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -324,7 +376,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  // ✅ BLINDAJE 2: BUSCADORES DE TEXTO
   const filClientesPaga = empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb')) || [];
   const filClientesMercancia = empresas?.filter((e:any) => e.tiposEmpresa?.includes('51246232')) || [];
   const filProveedoresServicios = empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd')) || [];
@@ -339,7 +390,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const sProvServicios = (searchProvServicios || '').toLowerCase();
   const sProvTransp = (searchProvTransporte || '').toLowerCase();
   
-  // Nuevos filtros
   const sUnidad = (searchUnidad || '').toLowerCase();
   const sOperador = (searchOperador || '').toLowerCase();
 
@@ -351,7 +401,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const resultadosProvServicios = filProveedoresServicios.filter((e:any) => (e.nombre || '').toLowerCase().includes(sProvServicios));
   const resultadosProvTransporte = filProveedoresTransporte.filter((e:any) => (e.nombre || '').toLowerCase().includes(sProvTransp));
   
-  // ✅ Resultados de búsqueda corregidos para que TS deje de marcar alerta
   const resultadosUnidad = unidades?.filter((u:any) => (u.numeroEconomico || u.nombre || '').toLowerCase().includes(sUnidad)) || [];
   const resultadosOperador = operadores?.filter((o:any) => (o.nombre || o.descripcion || '').toLowerCase().includes(sOperador)) || [];
 
@@ -414,7 +463,29 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                  <div className="form-grid">
                  <div className="form-group"><label className="form-label orange">Tipo de Operación</label><select name="tipoOperacionId" className="form-control" value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
                  <div className="form-group"><label className="form-label orange">Fecha de Servicio</label><input type="date" name="fechaServicio" className="form-control" value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
-                 <div className="form-group" style={{ position: 'relative' }}><label className="form-label">Cliente (Paga)</label><input type="text" className="form-control" placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga} onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }} onFocus={() => setShowDropdownClientePaga(true)} />{showDropdownClientePaga && searchClientePaga && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClientePaga.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '' })); setSearchClientePaga(c.nombre); setShowDropdownClientePaga(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}</div>
+                 
+                 <div className="form-group" style={{ position: 'relative' }}>
+                  <label className="form-label">Cliente (Paga)</label>
+                  <input type="text" className="form-control" placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga} 
+                  onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }} 
+                  onFocus={() => setShowDropdownClientePaga(true)} />
+                  {showDropdownClientePaga && searchClientePaga && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                      {resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClientePaga.map((c:any) => (
+                        <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} 
+                        onClick={() => { 
+                          // ✅ Auto-asignar Moneda al seleccionar Cliente
+                          const monedaDefault = c.monedaId || c.moneda || '';
+                          setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); 
+                          setSearchClientePaga(c.nombre); setShowDropdownClientePaga(false); 
+                        }}>
+                          <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                 </div>
+
                  <div className="form-group"><label className="form-label">Convenio (Tarifa)</label><select name="convenio" className="form-control" value={formData.convenio || ''} onChange={handleChange} required disabled={listaConveniosCliente.length === 0}><option value="">-- Seleccione un Convenio --</option>{listaConveniosCliente.map((c:any) => (<option key={c.id} value={c.id}>{c.descripcion}</option>))}</select>{listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}</div>
                  <div className="form-group" style={{ position: 'relative' }}><label className="form-label"># de Remolque</label><input type="text" className="form-control" placeholder="Buscar remolque..." value={searchRemolque} onChange={e => { setSearchRemolque(e.target.value); setShowDropdownRemolque(true); if (formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: '' })); }} onFocus={() => setShowDropdownRemolque(true)} />{showDropdownRemolque && searchRemolque && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosRemolque.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosRemolque.map((r:any) => (<div key={r.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(r.placa || r.nombre); setShowDropdownRemolque(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{r.placa || r.nombre}</div></div>))}</div>)}</div>
                  <div className="form-group"><label className="form-label">Ref Cliente</label><input type="text" name="refCliente" className="form-control" value={formData.refCliente || ''} onChange={handleChange} /></div>
@@ -451,17 +522,81 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
               {pestañaActiva === 'unidad' && (
                 <div className="form-grid">
-                  <div className="form-group" style={{ position: 'relative', gridColumn: 'span 3' }}><label className="form-label">Proveedor de Transporte</label><input type="text" className="form-control" placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} />{showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, proveedorUnidad: p.id })); setSearchProvTransporte(p.nombre); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}</div>
-                  <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnUnidad" className="form-control" value={formData.facturadoEnUnidad || ''} onChange={handleChange}><option value="">-- Seleccionar --</option><option value={ID_USD}>USD ($)</option><option value={ID_MXN}>MXN ($)</option></select></div>
-                  <div className="form-group"><label className="form-label">Convenio Proveedor</label><select name="convenioProveedor" className="form-control" value={formData.convenioProveedor || ''} onChange={e => { const val = e.target.value; const conv = listaConveniosProveedor.find(c => String(c.id) === val); setFormData(prev => ({ ...prev, convenioProveedor: val, monedaConvenioProv: conv ? conv.monedaBase : '' })); }}><option value="">-- Seleccionar --</option>{listaConveniosProveedor.map((c:any) => <option key={c.id} value={c.id}>{c.descripcion}</option>)}</select></div>
-                  <div className="form-group"><label className="form-label">Moneda del Convenio (Base)</label><input type="text" className="form-control" readOnly value={formData.monedaConvenioProv === ID_USD ? 'USD' : (formData.monedaConvenioProv === ID_MXN ? 'MXN' : 'Sin Asignar')} /></div>
-                  <div className="form-group"><label className="form-label">Monto a Pagar (Base)</label><input type="number" name="totalAPagarProv" className="form-control" value={formData.totalAPagarProv || ''} onChange={handleChange} /></div>
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}></div>
-                  <div className="form-group"><label className="form-label">Dólares</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresProv) || 0).toFixed(2)}</div></div>
-                  <div className="form-group"><label className="form-label">Pesos</label><div style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.pesosProv) || 0).toFixed(2)}</div></div>
-                  <div className="form-group"><label className="form-label orange">Conversión Final (Contabilidad)</label><div style={{ color: '#f85149', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.conversionProv) || 0).toFixed(2)}</div></div>
+                  <div className="form-group" style={{ position: 'relative', gridColumn: 'span 3' }}>
+                    <label className="form-label">Proveedor de Transporte</label>
+                    <input type="text" className="form-control" placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} 
+                    onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} 
+                    onFocus={() => setShowDropdownProvTransporte(true)} />
+                    {showDropdownProvTransporte && searchProvTransporte && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                        {resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (
+                          <div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} 
+                          onClick={() => { 
+                            // ✅ Auto-asignar Moneda al seleccionar Proveedor
+                            const monedaDefault = p.monedaId || p.moneda || '';
+                            setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); 
+                            setSearchProvTransporte(p.nombre); setShowDropdownProvTransporte(false); 
+                          }}>
+                            <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   
-                  {/* ✅ NUEVA SECCIÓN: UNIDAD, OPERADOR Y SUELDOS */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', gridColumn: '1 / -1', marginBottom: '16px' }}>
+                    <div className="form-group">
+                      <label className="form-label">Facturado En:</label>
+                      <select name="facturadoEnUnidad" className="form-control" value={formData.facturadoEnUnidad || ''} onChange={handleChange}>
+                        <option value="">-- Seleccionar --</option>
+                        <option value={ID_USD}>USD ($)</option>
+                        <option value={ID_MXN}>MXN ($)</option>
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Convenio Proveedor</label>
+                      <select 
+                        name="convenioProveedor" 
+                        className="form-control" 
+                        value={formData.convenioProveedor || ''} 
+                        onChange={e => { 
+                          const val = e.target.value; 
+                          const conv = listaConveniosProveedor.find(c => String(c.id) === val); 
+                          setFormData(prev => ({ 
+                            ...prev, 
+                            convenioProveedor: val, 
+                            monedaConvenioProv: conv ? conv.monedaBase : '',
+                            totalAPagarProv: conv ? conv.tarifaMonto : 0 
+                          })); 
+                        }}
+                        disabled={listaConveniosProveedor.length === 0}
+                      >
+                        <option value="">-- Seleccionar --</option>
+                        {listaConveniosProveedor.map((c:any) => <option key={c.id} value={c.id}>{c.tipoConvenioNombre}</option>)}
+                      </select>
+                      {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
+                    </div>
+                    <div className="form-group"><label className="form-label">Moneda del Convenio (Base)</label><input type="text" className="form-control" readOnly value={formData.monedaConvenioProv === ID_USD ? 'USD' : (formData.monedaConvenioProv === ID_MXN ? 'MXN' : 'Sin Asignar')} /></div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', gridColumn: '1 / -1', marginBottom: '16px' }}>
+                    <div className="form-group"><label className="form-label">Monto a Pagar (Base)</label><input type="number" name="totalAPagarProv" className="form-control" value={formData.totalAPagarProv || ''} onChange={handleChange} /></div>
+                    {/* ✅ NUEVOS CAMPOS: COSTOS ADICIONALES Y SUBTOTAL PROVEEDOR */}
+                    <div className="form-group"><label className="form-label">Costos Adicionales</label><input type="number" name="cargosAdicionalesProv" className="form-control" value={formData.cargosAdicionalesProv || ''} onChange={handleChange} /></div>
+                    <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Costos)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalProv) || 0).toFixed(2)}</div></div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', gridColumn: '1 / -1', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
+                    {/* ✅ TIPO DE CAMBIO INFORMATIVO */}
+                    <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className="form-control" readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
+                    <div className="form-group"><label className="form-label">Dólares</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresProv) || 0).toFixed(2)}</div></div>
+                    <div className="form-group"><label className="form-label">Pesos</label><div style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.pesosProv) || 0).toFixed(2)}</div></div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', gridColumn: '1 / -1', paddingTop: '16px' }}>
+                    <div className="form-group" style={{ gridColumn: '3' }}><label className="form-label orange">Conversión Final (Contabilidad)</label><div style={{ color: '#f85149', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.conversionProv) || 0).toFixed(2)}</div></div>
+                  </div>
+                  
                   <div className="form-group" style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d' }} /></div>
                   
                   <div className="form-group" style={{ position: 'relative' }}>
@@ -469,7 +604,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <input type="text" className="form-control" placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} />
                     {showDropdownUnidad && searchUnidad && (
                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                        {/* ✅ CORRECCIÓN TS6133: USO DE ARRAY PRE-FILTRADO */}
                         {resultadosUnidad.map((u:any) => (
                           <div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(u.numeroEconomico || u.nombre); setShowDropdownUnidad(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{u.numeroEconomico || u.nombre}</div></div>
                         ))}
@@ -482,7 +616,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <input type="text" className="form-control" placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} />
                     {showDropdownOperador && searchOperador && (
                       <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                        {/* ✅ CORRECCIÓN TS6133: USO DE ARRAY PRE-FILTRADO */}
                         {resultadosOperador.map((o:any) => (
                           <div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, operador: o.id })); setSearchOperador(o.nombre); setShowDropdownOperador(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{o.nombre}</div></div>
                         ))}
