@@ -9,33 +9,45 @@ export const guardarOperacionSegura = async (operacionData: any) => {
 
   try {
     await runTransaction(db, async (transaction) => {
+      // ==========================================
+      // FASE 1: TODAS LAS LECTURAS PRIMERO (READS)
+      // ==========================================
       const counterDoc = await transaction.get(counterRef);
-      let nuevoCorrelativo = 1;
-
-      if (!counterDoc.exists()) {
-        transaction.set(counterRef, { count: 1 });
-      } else {
-        nuevoCorrelativo = counterDoc.data().count + 1;
-        transaction.update(counterRef, { count: nuevoCorrelativo });
-      }
-
-      // ✅ CORRECCIÓN DEL "UNDEFINED" EN LA REFERENCIA:
-      let prefijoOperacion = "OP"; // Fallback por defecto
+      
+      let tipoSnap = null;
       if (operacionData.tipoOperacionId) {
         const tipoRef = doc(db, 'catalogo_tipo_operacion', operacionData.tipoOperacionId);
-        const tipoSnap = await transaction.get(tipoRef);
-        
-        if (tipoSnap.exists()) {
-          const dataTipo = tipoSnap.data();
-          // Intentamos extraer una sigla clave, o en su defecto el nombre (ej. "Logistica")
-          prefijoOperacion = dataTipo.clave || dataTipo.acronimo || dataTipo.tipo_operacion || "OP";
-        }
+        tipoSnap = await transaction.get(tipoRef);
+      }
+
+      // ==========================================
+      // FASE 2: PROCESAMIENTO EN MEMORIA
+      // ==========================================
+      let nuevoCorrelativo = 1;
+      if (counterDoc.exists()) {
+        nuevoCorrelativo = counterDoc.data().count + 1;
+      }
+
+      let prefijoOperacion = "OP"; // Fallback por defecto
+      
+      if (tipoSnap && tipoSnap.exists()) {
+        const dataTipo = tipoSnap.data();
+        prefijoOperacion = dataTipo.clave || dataTipo.acronimo || dataTipo.tipo_operacion || "OP";
       } else if (operacionData.tipoOperacion) {
         prefijoOperacion = operacionData.tipoOperacion;
       }
 
-      // Generamos el ID único (usamos 'as any' para saltar la restricción estricta de TypeScript)
+      // Generamos el ID único
       const referenciaFinal = generarReferencia(prefijoOperacion as any, nuevoCorrelativo);
+
+      // ==========================================
+      // FASE 3: TODAS LAS ESCRITURAS AL FINAL (WRITES)
+      // ==========================================
+      if (!counterDoc.exists()) {
+        transaction.set(counterRef, { count: 1 });
+      } else {
+        transaction.update(counterRef, { count: nuevoCorrelativo });
+      }
 
       transaction.set(nuevaOperacionRef, {
         ...operacionData,
@@ -47,7 +59,6 @@ export const guardarOperacionSegura = async (operacionData: any) => {
     return true;
   } catch (error) {
     console.error("Transacción fallida: ", error);
-    // Propagamos el error exacto (para que salga la alerta de Bloqueo o de Firebase)
     throw error; 
   }
 };

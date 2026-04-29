@@ -1,5 +1,4 @@
 import React from 'react';
-// Corrección: Se agregó 'type' para respetar verbatimModuleSyntax
 import type { CatalogSchema, CatalogDetailSchema } from '../config/catalogSchemas';
 
 interface DataRow {
@@ -15,22 +14,56 @@ interface Props {
 export const CatalogDetailView: React.FC<Props> = ({ schema, parentData, detailsData = {} }) => {
   if (!parentData) return <div className="p-4 text-gray-500">Seleccione un registro para ver los detalles.</div>;
 
+  // Función para formatear fechas en español (para el banner de baja)
+  const formatearFechaEsp = (fechaString: string) => {
+    if (!fechaString) return 'No definida';
+    return new Date(fechaString + 'T00:00:00').toLocaleDateString('es-ES', { 
+      day: '2-digit', 
+      month: '2-digit', 
+      year: 'numeric' 
+    });
+  };
+
   return (
     <div className="w-full bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      {/* SECCIÓN PRINCIPAL: Grid 3 Columnas */}
+      {/* SECCIÓN PRINCIPAL */}
       <div className="p-6 border-b border-gray-200 bg-gray-50">
+        
         <div className="flex items-center gap-2 mb-6">
           {schema.icono}
-          <h2 className="text-xl font-bold text-gray-800">{schema.titulo} - Detalles</h2>
+          <h2 className="text-xl font-bold text-gray-800">
+            {schema.titulo} - Detalles
+            {/* Etiqueta Visual de Estado */}
+            {parentData.activo !== undefined && (
+              <span className={`ml-4 px-3 py-1 text-xs font-bold rounded-full ${parentData.activo ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
+                {parentData.activo ? 'Activo' : 'Baja'}
+              </span>
+            )}
+          </h2>
         </div>
+
+        {/* ✅ BANNER DE BAJA (Renderizado Condicional) */}
+        {parentData.activo === false && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-4">
+            <div className="text-2xl">⚠️</div>
+            <div>
+              <h3 className="text-red-700 font-bold mb-2">Registro Dado de Baja</h3>
+              <div className="flex flex-wrap gap-6 text-sm text-gray-700">
+                <p><strong>Fecha de Baja:</strong> {formatearFechaEsp(parentData.fechaBaja)}</p>
+                <p><strong>Motivo:</strong> {parentData.observacionBaja || 'No especificado'}</p>
+              </div>
+            </div>
+          </div>
+        )}
         
+        {/* ✅ GRID ESTRICTO DE 3 COLUMNAS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {schema.fields.map((field) => (
             <div key={field.name} className="flex flex-col">
               <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
                 {field.label}
               </span>
-              <span className="text-sm text-gray-900 font-medium bg-white p-2 rounded border border-gray-200">
+              <span className="text-sm text-gray-900 font-medium bg-white p-2 rounded border border-gray-200 min-h-[38px] flex items-center">
                 {parentData[field.name] || 'N/A'}
               </span>
             </div>

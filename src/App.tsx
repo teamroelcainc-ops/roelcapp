@@ -7,6 +7,10 @@ import { registrarLog } from './utils/logger';
 
 import { Login } from './features/auth/components/Login';
 import OperacionesDashboard from './features/operaciones/components/OperacionesDashboard';
+// ✅ IMPORTACIONES CORREGIDAS
+import ServiciosCompletados from './features/operaciones/components/ServiciosCompletados';
+import ServiciosCancelados from './features/operaciones/components/ServiciosCancelados';
+
 import EmpresasDashboard from './features/empresas/components/EmpresasDashboard';
 import { TipoCambioDashboard } from './features/tipoCambio/components/TipoCambioDashboard';
 import CatalogosDashboard from './features/catalogos/components/CatalogosDashboard';
@@ -25,8 +29,6 @@ import { LogsDashboard } from './features/configuracion/components/LogsDashboard
 import { ConfiguradorStatus } from './features/configuracion/components/ConfiguradorStatus';
 import { RelojChecadorModal } from './features/relojChecador/components/RelojChecadorModal';
 import { HistorialChequeosDashboard } from './features/relojChecador/components/HistorialChequeosDashboard';
-
-// ✅ IMPORTAMOS EL NUEVO MÓDULO MTTO
 import MttoDashboard from './features/gastos/components/mtto/MttoDashboard';
 
 import './App.css';
@@ -36,8 +38,7 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  // ✅ AMPLIAMOS EL TIPADO CON 'mtto'
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'empresas' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -47,8 +48,6 @@ function App() {
   const [menuProveedoresAbierto, setMenuProveedoresAbierto] = useState(false);
   const [menuEmpleadosAbierto, setMenuEmpleadosAbierto] = useState(false);
   const [menuConfiguracionAbierto, setMenuConfiguracionAbierto] = useState(false);
-  
-  // ✅ NUEVO ESTADO PARA MENÚ GASTOS
   const [menuGastosAbierto, setMenuGastosAbierto] = useState(false);
 
   const [modalChecadorAbierto, setModalChecadorAbierto] = useState(false);
@@ -134,8 +133,6 @@ function App() {
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion';
-  
-  // ✅ EVALUADOR PARA EL NUEVO MENÚ
   const esGastosActivo = moduloActivo === 'mtto';
 
   return (
@@ -149,10 +146,17 @@ function App() {
         </div>
 
         <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} onClick={() => setModuloActivo('operaciones')}>
-          Operaciones
+          Operaciones Activas
+        </div>
+        
+        <div className={`sidebar-item ${moduloActivo === 'serviciosCompletados' ? 'active' : ''}`} onClick={() => setModuloActivo('serviciosCompletados')}>
+          Servicios Completados
         </div>
 
-        {/* ✅ NUEVO MENÚ DESPLEGABLE: GASTOS */}
+        <div className={`sidebar-item ${moduloActivo === 'serviciosCancelados' ? 'active' : ''}`} onClick={() => setModuloActivo('serviciosCancelados')}>
+          Servicios Cancelados
+        </div>
+
         <div className={`sidebar-item sidebar-item-with-icon ${esGastosActivo && !menuGastosAbierto ? 'active' : ''}`} onClick={() => setMenuGastosAbierto(!menuGastosAbierto)}>
           <span>Gastos</span>
           <span style={{ fontSize: '0.7rem' }}>{menuGastosAbierto ? '▼' : '▶'}</span>
@@ -163,7 +167,6 @@ function App() {
           </div>
         )}
 
-        {/* --- RESTO DE TU MENÚ ORIGINAL --- */}
         <div className={`sidebar-item sidebar-item-with-icon ${esClientesActivo && !menuClientesAbierto ? 'active' : ''}`} onClick={() => setMenuClientesAbierto(!menuClientesAbierto)}>
           <span>Clientes</span>
           <span style={{ fontSize: '0.7rem' }}>{menuClientesAbierto ? '▼' : '▶'}</span>
@@ -288,9 +291,11 @@ function App() {
           </div>
         </div>
 
-        {/* ✅ RENDERIZADO CONDICIONAL DE TODOS LOS MÓDULOS */}
+        {/* ✅ RENDERIZADO CONDICIONAL DE TODOS LOS MÓDULOS INCLUYENDO EL NUEVO */}
         {moduloActivo === 'operaciones' && <OperacionesDashboard />}
-        {moduloActivo === 'mtto' && <MttoDashboard />}   {/* ✅ RENDER DEL NUEVO MÓDULO */}
+        {moduloActivo === 'serviciosCompletados' && <ServiciosCompletados />}
+        {moduloActivo === 'serviciosCancelados' && <ServiciosCancelados />}
+        {moduloActivo === 'mtto' && <MttoDashboard />} 
         {moduloActivo === 'empresas' && <EmpresasDashboard />}
         {moduloActivo === 'direcciones' && <DireccionesDashboard />}
         {moduloActivo === 'tipoCambio' && <TipoCambioDashboard />}
