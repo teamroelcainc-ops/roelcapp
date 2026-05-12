@@ -30,6 +30,7 @@ import { ConfiguradorStatus } from './features/configuracion/components/Configur
 import { RelojChecadorModal } from './features/relojChecador/components/RelojChecadorModal';
 import { HistorialChequeosDashboard } from './features/relojChecador/components/HistorialChequeosDashboard';
 import MttoDashboard from './features/gastos/components/mtto/MttoDashboard';
+import { ReferenciasDieselDashboard } from './features/diesel/components/ReferenciasDieselDashboard'; // ✅ NUEVO MÓDULO IMPORTADO
 import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
 
 import './App.css';
@@ -39,8 +40,8 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  // ✅ CORRECCIÓN TS(2367): Añadido 'facturacionClientes' a la lista de tipos permitidos
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes'>('operaciones');
+  // ✅ Añadido 'referenciasDiesel' a la lista de tipos permitidos
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'referenciasDiesel'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -132,13 +133,14 @@ function App() {
 
   const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
   
-  // ✅ MODIFICACIÓN: Agregado facturacionClientes para que el menú Clientes se mantenga encendido
   const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes';
   
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion';
-  const esGastosActivo = moduloActivo === 'mtto';
+  
+  // ✅ Actualizado para que el menú de Gastos se quede encendido
+  const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel';
 
   return (
     <div className="app-wrapper">
@@ -169,6 +171,8 @@ function App() {
         {menuGastosAbierto && (
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => setModuloActivo('mtto')}>MTTO</div>
+            {/* ✅ AGREGADO EL ENLACE A REFERENCIAS DEL DIESEL */}
+            <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasDiesel')}>Referencias del Diesel</div>
           </div>
         )}
 
@@ -179,7 +183,6 @@ function App() {
         {menuClientesAbierto && (
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosClientes')}>Convenio de Clientes</div>
-            {/* ✅ AGREGADO EL ENLACE A FACTURACIÓN DENTRO DE CLIENTES */}
             <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionClientes')}>Facturación</div>
           </div>
         )}
@@ -303,6 +306,7 @@ function App() {
         {moduloActivo === 'serviciosCompletados' && <ServiciosCompletados />}
         {moduloActivo === 'serviciosCancelados' && <ServiciosCancelados />}
         {moduloActivo === 'mtto' && <MttoDashboard />} 
+        {moduloActivo === 'referenciasDiesel' && <ReferenciasDieselDashboard />} 
         {moduloActivo === 'empresas' && <EmpresasDashboard />}
         {moduloActivo === 'contactos' && <ContactosDashboard />}
         {moduloActivo === 'direcciones' && <DireccionesDashboard />}
