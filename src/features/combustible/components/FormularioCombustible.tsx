@@ -1,10 +1,10 @@
 // src/features/combustible/components/FormularioCombustible.tsx
 
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where, limit } from 'firebase/firestore'; // ✅ Importamos utilidades de consulta
 import { db, actualizarRegistro } from '../../../config/firebase'; 
 import type { Moneda, CombustibleRecord } from '../../../types/combustible';
-import { getMonedasCatalogo, getTipoCambioPorFecha, saveCombustible } from '../services/combustibleService';
+import { getMonedasCatalogo, saveCombustible } from '../services/combustibleService';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -90,7 +90,7 @@ const SearchableSelect: React.FC<{
 
 interface FormProps {
   estado?: 'abierto' | 'minimizado';
-  initialData?: CombustibleRecord | null; // ✅ PROPIEDAD AGREGADA PARA LA EDICIÓN
+  initialData?: CombustibleRecord | null;
   onClose: () => void;
   onSuccess: () => void;
   onMinimize?: () => void; 
@@ -99,7 +99,7 @@ interface FormProps {
 
 export const FormularioCombustible: React.FC<FormProps> = ({ 
   estado = 'abierto', 
-  initialData, // ✅ RECIBIMOS LOS DATOS
+  initialData, 
   onClose, 
   onSuccess,
   onMinimize = () => {},
@@ -119,7 +119,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
 
   const [costo, setCosto] = useState<number>(0);
   const [tipoCambio, setTipoCambio] = useState<number>(0);
-  const [cargandoApi, setCargandoApi] = useState<boolean>(false);
+  const [cargandoTC, setCargandoTC] = useState<boolean>(false); // ✅ Renombrado para claridad
 
   useEffect(() => {
     const fetchMonedas = async () => {
@@ -133,7 +133,6 @@ export const FormularioCombustible: React.FC<FormProps> = ({
     fetchMonedas();
   }, [initialData]);
 
-  // ✅ EFECTO PARA LLENAR EL FORMULARIO SI ESTAMOS EDITANDO
   useEffect(() => {
     if (initialData) {
       setFecha(initialData.fecha || todayISO);
@@ -143,7 +142,6 @@ export const FormularioCombustible: React.FC<FormProps> = ({
       setProveedorNombre(initialData.proveedor || '');
       setCosto(initialData.costo || 0);
 
-      // Si las monedas ya cargaron, buscamos la que corresponde al registro
       if (initialData.monedaId && monedas.length > 0) {
         const monedaMatch = monedas.find(m => m.id === initialData.monedaId);
         if (monedaMatch) setMonedaSeleccionada(monedaMatch);
@@ -156,9 +154,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
       try {
         const empSnapshot = await getDocs(collection(db, 'empresas'));
         const todasEmpresas = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
         const ID_PROVEEDOR = '11894dfd';
-        
         const proveedoresFiltrados = todasEmpresas.filter((emp: any) => {
           if (Array.isArray(emp.tiposEmpresa)) {
             return emp.tiposEmpresa.some((tipo: string) => 
@@ -168,7 +164,6 @@ export const FormularioCombustible: React.FC<FormProps> = ({
           const stringData = JSON.stringify(emp).toLowerCase();
           return stringData.includes(ID_PROVEEDOR.toLowerCase()) || stringData.includes('proveedor');
         });
-        
         setProveedoresDB(proveedoresFiltrados);
       } catch (error) {
         console.error("Error al obtener proveedores:", error);
@@ -177,20 +172,40 @@ export const FormularioCombustible: React.FC<FormProps> = ({
     cargarProveedores();
   }, []);
 
+  // ✅ LOGICA ACTUALIZADA: Buscar T.C. en la colección 'tipo_cambio' de Firestore
   useEffect(() => {
-    const fetchTipoCambio = async () => {
+    const fetchTipoCambioLocal = async () => {
       if (monedaSeleccionada?.esDolar && fecha) {
-        setCargandoApi(true);
-        const tc = await getTipoCambioPorFecha();
-        // Si estamos editando y es el mismo día, respetamos el tc guardado temporalmente, 
-        // pero preferimos siempre usar el oficial de la API para mantener integridad.
-        setTipoCambio(tc);
-        setCargandoApi(false);
+        setCargandoTC(true);
+        try {
+          // Buscamos en la colección 'tipo_cambio' donde el campo 'fecha' coincida
+          const q = query(
+            collection(db, 'tipo_cambio'), 
+            where('fecha', '==', fecha),
+            limit(1)
+          );
+          
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const data = querySnapshot.docs[0].data();
+            setTipoCambio(Number(data.tcDof) || 0);
+          } else {
+            console.warn("No se encontró tipo de cambio para la fecha:", fecha);
+            setTipoCambio(0);
+          }
+        } catch (error) {
+          console.error("Error consultando tipo de cambio en BD:", error);
+          setTipoCambio(0);
+        } finally {
+          setCargandoTC(false);
+        }
       } else {
         setTipoCambio(0);
       }
     };
-    fetchTipoCambio();
+
+    fetchTipoCambioLocal();
   }, [fecha, monedaSeleccionada]);
 
   const esDolar = monedaSeleccionada?.esDolar ?? false;
@@ -204,7 +219,6 @@ export const FormularioCombustible: React.FC<FormProps> = ({
         return;
     }
 
-    // Usamos 'any' internamente para que no nos de conflicto si el ID va o no incluido
     const record: any = {
       fecha,
       tipoCombustible,
@@ -218,7 +232,6 @@ export const FormularioCombustible: React.FC<FormProps> = ({
     };
 
     try {
-      // ✅ SI HAY INITIAL DATA, ACTUALIZAMOS. SI NO, CREAMOS UNO NUEVO
       if (initialData && (initialData as any).id) {
         await actualizarRegistro('combustibles', (initialData as any).id, record);
       } else {
@@ -311,8 +324,19 @@ export const FormularioCombustible: React.FC<FormProps> = ({
               {esDolar && (
                 <>
                   <div className="form-group">
-                    <label className="form-label orange">T.C. DOF (al {fecha})</label>
-                    <input type="text" className="form-control" value={cargandoApi ? 'Consultando...' : tipoCambio.toFixed(4)} disabled style={{ backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed' }} />
+                    <label className="form-label orange">T.C. de Base de Datos (al {fecha})</label>
+                    <input 
+                      type="text" 
+                      className="form-control" 
+                      value={cargandoTC ? 'Consultando...' : (tipoCambio > 0 ? tipoCambio.toFixed(4) : 'No encontrado')} 
+                      disabled 
+                      style={{ 
+                        backgroundColor: '#21262d', 
+                        color: tipoCambio > 0 ? '#c9d1d9' : '#f85149', 
+                        cursor: 'not-allowed',
+                        fontWeight: 'bold'
+                      }} 
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label orange">Total en Pesos MXN</label>
@@ -324,8 +348,13 @@ export const FormularioCombustible: React.FC<FormProps> = ({
 
             <div className="form-actions" style={{ marginTop: '24px' }}>
               <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
-              <button type="submit" className="btn btn-primary" disabled={cargandoApi}>Guardar</button>
+              <button type="submit" className="btn btn-primary" disabled={cargandoTC || (esDolar && tipoCambio === 0)}>Guardar</button>
             </div>
+            {esDolar && tipoCambio === 0 && !cargandoTC && (
+              <p style={{ color: '#f85149', fontSize: '0.8rem', marginTop: '10px', textAlign: 'center' }}>
+                ⚠️ Debes registrar primero el Tipo de Cambio para el día {fecha} en su respectivo módulo.
+              </p>
+            )}
           </form>
         </div>
       </div>

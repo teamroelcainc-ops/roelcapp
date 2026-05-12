@@ -28,42 +28,58 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const obtenerTipoCambioBanxico = async () => {
+  // ✅ FUNCIÓN ACTUALIZADA: Ahora recibe una fecha y consulta ese día específico
+  const obtenerTipoCambioBanxico = async (fechaConsulta?: string) => {
     const token = import.meta.env.VITE_BANXICO_TOKEN;
     if (!token) {
       alert('⚠️ No se encontró el token de Banxico. Revisa tu archivo .env');
       return;
     }
 
+    // Si no se le pasa una fecha por parámetro, usa la del formulario actual
+    const fechaABuscar = fechaConsulta || formData.fecha;
+
+    if (!fechaABuscar) return;
+
     setCargandoApi(true);
     try {
-      const url = `https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/oportuno?token=${token}`;
+      // Usamos el endpoint con rango de fechas: /datos/{fechaInicial}/{fechaFinal}
+      const url = `https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/${fechaABuscar}/${fechaABuscar}?token=${token}`;
       const response = await fetch(url);
       
       if (!response.ok) throw new Error('Error en la respuesta de Banxico');
 
       const data = await response.json();
       
-      if (data.bmx && data.bmx.series && data.bmx.series[0].datos) {
+      if (data.bmx && data.bmx.series && data.bmx.series[0].datos && data.bmx.series[0].datos.length > 0) {
         const valorActual = data.bmx.series[0].datos[0].dato;
-        setFormData(prev => ({ ...prev, tcDof: valorActual }));
+        setFormData(prev => ({ ...prev, tcDof: valorActual, fecha: fechaABuscar }));
       } else {
-        alert('Banxico no devolvió un tipo de cambio válido para hoy.');
+        alert(`Banxico no tiene un tipo de cambio registrado para la fecha ${fechaABuscar}. Es probable que sea fin de semana o día festivo.`);
+        setFormData(prev => ({ ...prev, tcDof: '', fecha: fechaABuscar }));
       }
     } catch (error) {
       console.error("Error obteniendo datos de Banxico:", error);
-      alert('Error de conexión con Banxico. Puede que el servicio esté temporalmente caído.');
+      alert('Error de conexión con Banxico. Puede que el servicio esté temporalmente caído o la fecha sea inválida.');
     } finally {
       setCargandoApi(false);
     }
+  };
+
+  // ✅ AL CAMBIAR LA FECHA MANUALMENTE DISPARAMOS LA BÚSQUEDA AUTOMÁTICA
+  const handleFechaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nuevaFecha = e.target.value;
+    setFormData(prev => ({ ...prev, fecha: nuevaFecha }));
+    obtenerTipoCambioBanxico(nuevaFecha);
   };
 
   useEffect(() => {
     if (initialData) {
       setFormData(prev => ({ ...prev, ...initialData }));
     } else {
-      obtenerTipoCambioBanxico();
+      obtenerTipoCambioBanxico(formData.fecha);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData]);
 
   useEffect(() => {
@@ -145,17 +161,38 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
               <div className="form-group">
                 <label className="form-label">Fecha *</label>
-                <input type="date" name="fecha" className="form-control" value={formData.fecha} onChange={handleChange} required />
+                <input 
+                  type="date" 
+                  name="fecha" 
+                  className="form-control" 
+                  value={formData.fecha} 
+                  onChange={handleFechaChange} // ✅ ASIGNADO EL NUEVO EVENTO AQUÍ
+                  required 
+                />
               </div>
 
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                   <label className="form-label" style={{ marginBottom: 0 }}>T.C. DOF *</label>
-                  <button type="button" onClick={obtenerTipoCambioBanxico} disabled={cargandoApi} style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}>
+                  <button 
+                    type="button" 
+                    onClick={() => obtenerTipoCambioBanxico()} // Llama a la función usando la fecha del form
+                    disabled={cargandoApi} 
+                    style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
+                  >
                     {cargandoApi ? 'Consultando...' : '🔄 Obtener de Banxico'}
                   </button>
                 </div>
-                <input type="number" step="0.0001" name="tcDof" className="form-control" placeholder={cargandoApi ? "Obteniendo datos..." : "Ej: 17.7962"} value={formData.tcDof} onChange={handleChange} required />
+                <input 
+                  type="number" 
+                  step="0.0001" 
+                  name="tcDof" 
+                  className="form-control" 
+                  placeholder={cargandoApi ? "Obteniendo datos..." : "Ej: 17.7962"} 
+                  value={formData.tcDof} 
+                  onChange={handleChange} 
+                  required 
+                />
               </div>
 
               <div className="form-group">
