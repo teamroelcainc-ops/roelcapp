@@ -70,9 +70,14 @@ export const HistorialChequeosDashboard: React.FC<Props> = ({ usuarioActual }) =
         <h1 className="module-title" style={{ fontSize: '1.25rem', color: '#8b949e', margin: 0, fontWeight: '400' }}>
           Empleados {'>'} <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Historial de Chequeo</span>
         </h1>
-        <button className="btn btn-outline" onClick={exportarExcel} disabled={registrosFiltrados.length === 0} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <button 
+          className="btn btn-outline" 
+          title="Exportar a Excel"
+          onClick={exportarExcel} 
+          disabled={registrosFiltrados.length === 0} 
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', cursor: registrosFiltrados.length === 0 ? 'not-allowed' : 'pointer' }}
+        >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          Exportar Reporte
         </button>
       </div>
 

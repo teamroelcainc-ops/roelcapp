@@ -1,8 +1,8 @@
 // src/features/gastos/components/mtto/MttoDashboard.tsx
 import { useState, useEffect, useMemo } from 'react';
 import { FormularioMtto } from './FormularioMtto';
-import { collection, query, getDocs, orderBy, limit, doc, writeBatch } from 'firebase/firestore'; 
-import { db, eliminarRegistro } from '../../../../config/firebase'; 
+import { collection, query, getDocs, limit, doc, deleteDoc, writeBatch } from 'firebase/firestore'; 
+import { db } from '../../../../config/firebase'; 
 import MttoAgrupadosInvoice from './MttoAgrupadosInvoice';
 
 type VistaMaestra = 'tabla' | 'agrupado';
@@ -19,7 +19,8 @@ const MttoDashboard = () => {
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+
+  // Estados visuales y de acciones masivas
   const [gastosSeleccionados, setGastosSeleccionados] = useState<string[]>([]);
   const [modalInvoiceMasivo, setModalInvoiceMasivo] = useState(false);
   const [nuevoInvoiceTexto, setNuevoInvoiceTexto] = useState('');
@@ -35,13 +36,14 @@ const MttoDashboard = () => {
         catGuardados = JSON.parse(cacheCatStr);
         setCatalogosCacheados(catGuardados);
       } else {
-        const [empSnap, unidSnap, servSnap, monSnap, fpSnap, opSnap] = await Promise.all([
+        const [empSnap, unidSnap, servSnap, monSnap, fpSnap, opSnap, empColSnap] = await Promise.all([
           getDocs(collection(db, 'empresas')),
           getDocs(collection(db, 'unidades')),
           getDocs(collection(db, 'catalogo_tipo_servicio')),
           getDocs(collection(db, 'catalogo_moneda')),
           getDocs(collection(db, 'catalogo_formas_pago')),
-          getDocs(query(collection(db, 'operaciones'), limit(200)))
+          getDocs(query(collection(db, 'operaciones'), limit(200))),
+          getDocs(collection(db, 'empleados')) 
         ]);
 
         catGuardados = {
@@ -50,16 +52,57 @@ const MttoDashboard = () => {
           servicios: servSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
           monedas: monSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
           formasPago: fpSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
-          operaciones: opSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
+          operaciones: opSnap.docs.map((d: any) => ({ id: d.id, ...d.data() })),
+          empleados: empColSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
         };
         
         sessionStorage.setItem('roelca_catalogos_v1', JSON.stringify(catGuardados));
         setCatalogosCacheados(catGuardados);
       }
 
-      const q = query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(100));
+      const q = query(collection(db, 'gastos_mtto'), limit(300));
       const snap = await getDocs(q);
-      const mttoData = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      
+      let mttoData = snap.docs.map((d: any) => {
+        const data = d.data();
+        const tieneInvoice = data.invoice && String(data.invoice).trim() !== '';
+        data.estatus = tieneInvoice ? 'Facturado' : 'No facturado';
+        
+        return { id: d.id, ...data };
+      });
+
+      // ✅ ORDEN: No facturados arriba, luego ordenado del más nuevo al más viejo
+      mttoData.sort((a, b) => {
+        // Prioridad 1: "No facturado" siempre arriba
+        const aNoFacturado = a.estatus === 'No facturado';
+        const bNoFacturado = b.estatus === 'No facturado';
+        
+        if (aNoFacturado && !bNoFacturado) return -1;
+        if (!aNoFacturado && bNoFacturado) return 1;
+
+        // Prioridad 2: Orden cronológico (Más reciente arriba)
+        const parseGasto = (str: string) => {
+            if (!str) return 0;
+            const match = String(str).match(/[A-Za-z]+-(\d{2})(\d{2})(\d{4})-(\d+)/);
+            if (match) {
+                const [ , mm, dd, yyyy, seq ] = match;
+                return parseInt(`${yyyy}${mm}${dd}${seq.padStart(4, '0')}`, 10);
+            }
+            return 0;
+        };
+
+        const valA = parseGasto(a.numeroGasto);
+        const valB = parseGasto(b.numeroGasto);
+
+        if (valA !== valB) {
+            return valB - valA; 
+        }
+
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.fecha || 0).getTime();
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.fecha || 0).getTime();
+        return dateB - dateA;
+      });
+
       setMttoGlobales(mttoData);
 
     } catch (e) {
@@ -83,29 +126,44 @@ const MttoDashboard = () => {
   const eliminarMtto = async (id: string) => {
     if (!id) return;
     if (window.confirm('¿Estás seguro de eliminar este registro permanentemente?')) {
+      
+      const respaldoGlobales = [...mttoGlobales];
+      setMttoGlobales(prev => prev.filter(m => m.id !== id));
+      setGastosSeleccionados(prev => prev.filter(selId => String(selId) !== String(id)));
+      if (mttoViendo?.id === id) setMttoViendo(null);
+      
       try {
-        await eliminarRegistro('gastos_mtto', id);
-        await cargarDatos(); 
-        setGastosSeleccionados(prev => prev.filter(selId => String(selId) !== String(id)));
+        const docRef = doc(db, 'gastos_mtto', id);
+        await deleteDoc(docRef);
       } catch (error) {
-        console.error("Error al eliminar:", error);
-        alert("Hubo un error al intentar eliminar el registro.");
+        console.error("Error al eliminar en Firebase:", error);
+        alert("Hubo un error al eliminar en el servidor. El registro regresará a la lista.");
+        setMttoGlobales(respaldoGlobales);
       }
     }
   };
 
   const mostrarNombreUnidad = (unidadValor: string) => {
     if (!unidadValor) return '-';
-    if (unidadValor.length > 15 && catalogosCacheados.unidades) {
+    if (unidadValor === 'Oficina') return 'Oficina';
+    if (catalogosCacheados.unidades) {
         const uni = catalogosCacheados.unidades.find((u:any) => u.id === unidadValor);
-        return uni ? (uni.numeroEconomico || uni.nombre) : unidadValor;
+        if (uni) return uni.unidad || uni.numeroEconomico || uni.nombre;
     }
     return unidadValor;
   };
 
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: string, campoRetorno: string = 'nombre') => {
+  const mostrarDatoMapeado = (id: any, catalogo: string, campoRetorno: string = 'nombre') => {
     if (!id) return '-';
-    if (!catalogosCacheados[catalogo] || !Array.isArray(catalogosCacheados[catalogo])) return id;
+    if (!catalogosCacheados[catalogo] || !Array.isArray(catalogosCacheados[catalogo])) return String(id);
+    
+    if (Array.isArray(id)) {
+        return id.map(itemId => {
+            const elemento = catalogosCacheados[catalogo].find((item: any) => item.id === itemId);
+            return elemento ? (elemento[campoRetorno] || elemento.nombre || elemento.descripcion || itemId) : itemId;
+        }).join(', ');
+    }
+
     const elemento = catalogosCacheados[catalogo].find((item: any) => item.id === id);
     if (!elemento) return id;
     return elemento[campoRetorno] || elemento.nombre || elemento.descripcion || elemento.ref || id;
@@ -116,7 +174,6 @@ const MttoDashboard = () => {
     return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
   
-  // ✅ CORRECCIÓN: Se eliminó el parámetro "nuevoMtto" para limpiar la alerta ts(6133)
   const handleGuardado = () => {
     cargarDatos(); 
     setEstadoFormulario('cerrado');
@@ -146,26 +203,20 @@ const MttoDashboard = () => {
     setCargandoMasivo(true);
     try {
       const batch = writeBatch(db);
-      const estatusFacturado = 'Facturado'; 
-
       idsValidos.forEach(id => {
         const docRef = doc(db, 'gastos_mtto', id);
         batch.update(docRef, { 
           invoice: nuevoInvoiceTexto.trim(),
-          estatus: estatusFacturado 
+          estatus: 'Facturado' 
         });
       });
-
       await batch.commit();
       await cargarDatos(); 
-
-      alert(`Se aplicó el Invoice a ${idsValidos.length} registro(s) exitosamente.`);
+      alert(`Se aplicó el Invoice exitosamente.`);
       setModalInvoiceMasivo(false);
       setGastosSeleccionados([]); 
       setNuevoInvoiceTexto('');
-
     } catch (error) {
-      console.error("Error en actualización masiva:", error);
       alert("Hubo un error al aplicar el Invoice masivo.");
     } finally {
       setCargandoMasivo(false);
@@ -178,29 +229,38 @@ const MttoDashboard = () => {
       String(m.numeroGasto || '').toLowerCase().includes(b) ||
       String(m.invoice || '').toLowerCase().includes(b) ||
       String(m.estatus || '').toLowerCase().includes(b) ||
-      String(m.operador || '').toLowerCase().includes(b) ||
+      String(m.operadorNombre || m.operador || '').toLowerCase().includes(b) ||
       String(m.proveedorNombre || '').toLowerCase().includes(b)
     ));
   }, [busqueda, mttoGlobales]);
+
+  // ✅ CÁLCULO DEL SUMARIO DE GASTOS EN TIEMPO REAL
+  const resumenSeleccion = useMemo(() => {
+    let totalImporte = 0;
+    let totalIva = 0;
+    let granTotal = 0;
+    const numerosGasto: string[] = [];
+
+    gastosSeleccionados.forEach(id => {
+      const gasto = mttoGlobales.find(m => m.id === id);
+      if (gasto) {
+        totalImporte += parseFloat(gasto.importe || 0);
+        totalIva += parseFloat(gasto.ivaMonto || 0);
+        granTotal += parseFloat(gasto.total || 0);
+        
+        if (gasto.numeroGasto) {
+           numerosGasto.push(gasto.numeroGasto);
+        }
+      }
+    });
+
+    return { totalImporte, totalIva, granTotal, cantidad: gastosSeleccionados.length, numerosGasto };
+  }, [gastosSeleccionados, mttoGlobales]);
 
   const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
   const registrosEnPantalla = registrosFiltrados.slice(indicePrimerRegistro, indiceUltimoRegistro);
-  
-  const registrosElegibles = registrosEnPantalla.filter(m => !(m.estatus === 'Facturado' || (m.invoice && m.invoice.trim() !== '')));
-  const isAllSelected = registrosElegibles.length > 0 && registrosElegibles.every(m => gastosSeleccionados.includes(m.id));
-
-  const handleSelectAll = () => {
-    const idsElegibles = registrosElegibles.map(m => m.id);
-    if (idsElegibles.length === 0) return;
-    if (isAllSelected) {
-      setGastosSeleccionados(prev => prev.filter(id => !idsElegibles.includes(id)));
-    } else {
-      const idsNuevos = idsElegibles.filter(id => !gastosSeleccionados.includes(id));
-      setGastosSeleccionados(prev => [...prev, ...idsNuevos]);
-    }
-  };
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -210,7 +270,7 @@ const MttoDashboard = () => {
     const encabezados = [
       '# de Gasto', '# de Invoice', 'Estatus', 'Fecha', 'Unidad', 'Operador', 
       'Descripcion', 'Proveedor', 'Tipo de Servicio', 'Autorizado por', 
-      'Credito/Contado', 'Moneda', 'Importe', 'IVA', 'Ret IVA', 'Ret ISR', 
+      'Credito/Contado', 'Plazo (Dias)', 'Moneda', 'Importe', 'IVA', 'Ret IVA', 'Ret ISR', 
       'Total', 'Factura', 'Fecha Factura', 'Descripcion', 'Fecha de Pago', 
       'Forma de pago', 'Observaciones', 'Asignar Operacion'
     ];
@@ -221,13 +281,14 @@ const MttoDashboard = () => {
       `"${m.estatus || ''}"`,
       `"${m.fecha || ''}"`,
       `"${mostrarNombreUnidad(m.unidadId || m.unidad)}"`,
-      `"${m.operador || ''}"`,
+      `"${m.operadorNombre || m.operador || ''}"`,
       `"${m.descripcion || m.descripcionGeneral || ''}"`,
       `"${m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas')}"`,
       `"${mostrarDatoMapeado(m.tipoServicioId, 'servicios')}"`,
       `"${m.autorizadoPor || ''}"`,
       `"${m.condicionPago || ''}"`,
-      `"${mostrarDatoMapeado(m.monedaId, 'monedas')}"`,
+      `"${m.plazo || ''}"`,
+      `"${mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda')}"`,
       `"${Number(m.importe || 0).toFixed(2)}"`,
       `"${Number(m.ivaMonto || 0).toFixed(2)} (${m.ivaPorcentaje || 0}%)"`,
       `"${Number(m.retIva || 0).toFixed(2)}"`,
@@ -237,7 +298,7 @@ const MttoDashboard = () => {
       `"${m.fechaFactura || ''}"`,
       `"${m.descripcionFactura || ''}"`,
       `"${m.fechaPago || ''}"`,
-      `"${mostrarDatoMapeado(m.formaPagoId, 'formasPago')}"`,
+      `"${mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago')}"`,
       `"${m.observaciones || ''}"`,
       `"${mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')}"`
     ].join(','));
@@ -259,20 +320,19 @@ const MttoDashboard = () => {
     { id: 'documentos', label: 'Documentos y Cierre' }
   ];
 
+  // Estilos reutilizables para el panel de detalles
+  const labelStyle = { color:'#8b949e', display:'block', fontSize:'0.8rem', marginBottom: '4px', textTransform: 'uppercase' as const, fontWeight: 'bold' };
+  const valStyle = { color: '#c9d1d9', fontSize: '0.95rem', fontWeight: '500' };
+  const boxStyle = { backgroundColor:'#161b22', padding:'12px', borderRadius:'6px', color: '#c9d1d9', border: '1px solid #30363d', marginTop: '4px', minHeight: '60px' };
+
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
       
       <style>{`
-        .detail-grid-3 {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 20px;
-        }
-        @media (max-width: 768px) {
-          .detail-grid-3 {
-            grid-template-columns: 1fr;
-          }
-        }
+        .detail-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        @media (max-width: 768px) { .detail-grid-3 { grid-template-columns: 1fr; } }
+        .row-hover { background-color: #0d1117; transition: background-color 0.2s; cursor: pointer; border-bottom: 1px solid #21262d; }
+        .row-hover:hover { background-color: #21262d; }
       `}</style>
 
       {estadoFormulario !== 'cerrado' && (
@@ -285,252 +345,230 @@ const MttoDashboard = () => {
         />
       )}
 
-      {/* ✅ HEADER ESTILO OPERACIONES */}
       <div style={{ marginBottom: '24px' }}>
-        <h1 className="module-title" style={{ fontSize: '1.8rem', color: '#f0f6fc', margin: '0 0 16px 0', fontWeight: 'bold' }}>
-          Gastos Mantenimiento (MTTO)
-        </h1>
-
-        {/* TABS DEBAJO DEL TÍTULO */}
+        <h1 className="module-title" style={{ fontSize: '1.8rem', color: '#f0f6fc', margin: '0 0 16px 0', fontWeight: 'bold' }}>Gastos Mantenimiento (MTTO)</h1>
         <div style={{ display: 'flex', borderBottom: '1px solid #30363d', gap: '16px' }}>
-          <button
-            onClick={() => setVistaActiva('tabla')}
-            style={{
-              padding: '8px 16px', background: 'none', border: 'none',
-              borderBottom: vistaActiva === 'tabla' ? '2px solid #D84315' : '2px solid transparent',
-              color: vistaActiva === 'tabla' ? '#f0f6fc' : '#8b949e',
-              cursor: 'pointer', fontWeight: vistaActiva === 'tabla' ? '600' : 'normal',
-              fontSize: '0.95rem', transition: 'all 0.2s ease',
-              display: 'flex', alignItems: 'center', gap: '8px'
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+          <button onClick={() => setVistaActiva('tabla')} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: vistaActiva === 'tabla' ? '2px solid #D84315' : '2px solid transparent', color: vistaActiva === 'tabla' ? '#f0f6fc' : '#8b949e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: vistaActiva === 'tabla' ? 'bold' : 'normal' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             Todos los Gastos (MTTO)
           </button>
-          <button
-            onClick={() => setVistaActiva('agrupado')}
-            style={{
-              padding: '8px 16px', background: 'none', border: 'none',
-              borderBottom: vistaActiva === 'agrupado' ? '2px solid #D84315' : '2px solid transparent',
-              color: vistaActiva === 'agrupado' ? '#f0f6fc' : '#8b949e',
-              cursor: 'pointer', fontWeight: vistaActiva === 'agrupado' ? '600' : 'normal',
-              fontSize: '0.95rem', transition: 'all 0.2s ease',
-              display: 'flex', alignItems: 'center', gap: '8px'
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          <button onClick={() => setVistaActiva('agrupado')} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: vistaActiva === 'agrupado' ? '2px solid #D84315' : '2px solid transparent', color: vistaActiva === 'agrupado' ? '#f0f6fc' : '#8b949e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: vistaActiva === 'agrupado' ? 'bold' : 'normal' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
             Agrupados por Invoice
           </button>
         </div>
       </div>
 
-      {/* ✅ ENRUTADOR DE VISTAS */}
-      {vistaActiva === 'agrupado' ? (
-        <MttoAgrupadosInvoice />
-      ) : (
+      {vistaActiva === 'agrupado' ? <MttoAgrupadosInvoice /> : (
         <div style={{ width: '100%', margin: '0 auto' }}>
-
-          {/* BARRA DE CONTROLES: ESTILO OPERACIONES */}
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
             
-            {/* Izquierda: Filtros y Buscador */}
             <div style={{ display: 'flex', gap: '12px', flex: '1 1 auto', maxWidth: '600px' }}>
               <div style={{ width: '150px' }}>
-                <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }}>
-                  <option>Filtro: Todo</option>
-                </select>
+                <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }}><option>Filtro: Todo</option></select>
               </div>
-
               <div style={{ position: 'relative', width: '100%' }}>
-                <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input 
-                  type="text" 
-                  placeholder="Buscar por # Gasto, Invoice, Operador..." 
-                  value={busqueda}
-                  onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px 8px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }}
-                />
+                <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" placeholder="Buscar por # Gasto, Invoice, Operador..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
               </div>
             </div>
 
-            {/* Derecha: Botones Cuadrados */}
             <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               {gastosSeleccionados.length > 0 && (
                 <button 
+                  title="Asignar Invoice Masivo"
                   onClick={() => setModalInvoiceMasivo(true)} 
-                  style={{ backgroundColor: '#238636', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: '500', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  style={{ backgroundColor: '#238636', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fillRule="evenodd" d="M1.5 1.5A.5.5 0 0 0 1 2v4.8a2.5 2.5 0 0 0 2.5 2.5h9.793l-3.347 3.346a.5.5 0 0 0 .708.708l4.2-4.2a.5.5 0 0 0 0-.708l-4-4a.5.5 0 1 0-.708.708L13.293 8.3H3.5A1.5 1.5 0 0 1 2 6.8V2a.5.5 0 0 0-.5-.5z"/></svg>
-                  Asignar Invoice ({gastosSeleccionados.length})
+                  <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fillRule="evenodd" d="M1.5 1.5A.5.5 0 0 0 1 2v4.8a2.5 2.5 0 0 0 2.5 2.5h9.793l-3.347 3.346a.5.5 0 0 0 .708.708l4.2-4.2a.5.5 0 1 0-.708.708L13.293 8.3H3.5A1.5 1.5 0 0 1 2 6.8V2a.5.5 0 0 0-.5-.5z"/></svg>
+                  ({gastosSeleccionados.length})
                 </button>
               )}
-
-              <button className="btn btn-outline" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#21262d', border: '1px solid #30363d', padding: '8px 16px', borderRadius: '6px', color: '#c9d1d9' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                Exportar CSV
+              <button 
+                title="Exportar a CSV"
+                onClick={exportarCSV} 
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', padding: '8px 12px', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer' }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               </button>
-              <button className="btn btn-primary" onClick={handleNuevo} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}>
-                + Agregar Gasto
+              <button 
+                title="Agregar Gasto MTTO"
+                onClick={handleNuevo} 
+                style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               </button>
             </div>
           </div>
 
-          {/* TABLA RESPONSIVE */}
-          <div className="content-body" style={{ display: 'block', width: '100%' }}>
-            <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-              {cargando ? (
-                <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Descargando base de datos MTTO...</div>
-              ) : (
-                <table className="data-table" style={{ width: '100%', minWidth: '3200px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
-                    <tr>
-                      <th style={{ padding: '16px 8px', width: '40px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={isAllSelected}
-                          onChange={handleSelectAll}
-                          disabled={registrosElegibles.length === 0}
-                          style={{ cursor: registrosElegibles.length === 0 ? 'not-allowed' : 'pointer', transform: 'scale(1.2)' }}
-                        />
-                      </th>
-
-                      <th style={{ padding: '16px', width: '140px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: '56px', backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
-                        Acciones
-                      </th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># de Gasto</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># de Invoice</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Estatus</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Unidad</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Operador</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Descripción</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Proveedor</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Tipo de Servicio</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Autorizado por</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Crédito/Contado</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Moneda</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Importe</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>IVA</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Ret IVA</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Ret ISR</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Total</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Factura</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha Factura</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Descripción (Factura)</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha de Pago</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Forma de pago</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Observaciones</th>
-                      <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Asignar Operación</th>
-                    </tr>
-                  </thead>
-                  
-                  <tbody>
-                    {registrosEnPantalla.length === 0 ? (
-                      <tr>
-                        <td colSpan={26} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
-                          {busqueda ? 'No se encontraron gastos para tu búsqueda.' : 'No hay gastos MTTO registrados.'}
-                        </td>
-                      </tr>
-                    ) : (
-                      registrosEnPantalla.map((m: any) => {
-                        const isSelected = gastosSeleccionados.includes(m.id);
-                        const yaFacturado = m.estatus === 'Facturado' || (m.invoice && m.invoice.trim() !== '');
-
-                        return (
-                        <tr 
-                          key={m.id} 
-                          style={{ borderBottom: '1px solid #21262d', backgroundColor: isSelected ? 'rgba(56, 139, 253, 0.1)' : (hoveredRowId === m.id ? '#21262d' : '#0d1117'), transition: 'background-color 0.2s', cursor: 'pointer' }}
-                          onMouseEnter={() => setHoveredRowId(m.id)} 
-                          onMouseLeave={() => setHoveredRowId(null)}
-                          onClick={() => { setMttoViendo(m); setPestañaDetalleActiva('general'); }} 
-                        >
-                          <td style={{ padding: '16px 8px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: isSelected ? '#1f2937' : 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                            {!yaFacturado && (
-                              <input 
-                                type="checkbox" 
-                                checked={isSelected}
-                                onChange={() => toggleSeleccion(m.id)}
-                                style={{ cursor: 'pointer', transform: 'scale(1.2)' }}
-                              />
-                            )}
-                          </td>
-
-                          <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: '56px', backgroundColor: isSelected ? '#1f2937' : 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                            <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button 
-                                type="button"
-                                className="btn-small btn-edit" 
-                                onClick={(e) => { e.stopPropagation(); editarMtto(m); }}
-                                style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '4px 8px', fontSize: '0.8rem', transition: 'all 0.2s' }}
-                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
-                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                              >
-                                Editar
-                              </button>
-                              <button 
-                                type="button"
-                                className="btn-small btn-danger-outline" 
-                                onClick={(e) => { e.stopPropagation(); eliminarMtto(m.id); }}
-                                style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '4px 8px', fontSize: '0.8rem', transition: 'all 0.2s' }}
-                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          </td>
-
-                          <td className="font-mono" style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.numeroGasto || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap', fontWeight: m.invoice ? 'bold' : 'normal' }}>{m.invoice || '-'}</td>
-                          <td className="status-text" style={{ padding: '16px', color: m.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.estatus || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.fecha || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarNombreUnidad(m.unidadId || m.unidad)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.operador || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={m.descripcion || m.descripcionGeneral}>{m.descripcion || m.descripcionGeneral || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas')}>{m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas')}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarDatoMapeado(m.tipoServicioId, 'servicios')}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.autorizadoPor || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.condicionPago || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarDatoMapeado(m.monedaId, 'monedas')}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatoMoneda(m.importe)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatoMoneda(m.ivaMonto)} <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>({m.ivaPorcentaje || 0}%)</span></td>
-                          <td style={{ padding: '16px', color: '#f85149', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatoMoneda(m.retIva)}</td>
-                          <td style={{ padding: '16px', color: '#f85149', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatoMoneda(m.retIsr)}</td>
-                          <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', fontSize: '1rem', whiteSpace: 'nowrap' }}>{formatoMoneda(m.total)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.facturaTexto || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.fechaFactura || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={m.descripcionFactura}>{m.descripcionFactura || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{m.fechaPago || '-'}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarDatoMapeado(m.formaPagoId, 'formasPago')}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={m.observaciones}>{m.observaciones || '-'}</td>
-                          <td style={{ padding: '16px', color: '#58a6ff', fontSize: '0.95rem', whiteSpace: 'nowrap', fontWeight: '500' }}>{mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')}</td>
-                        </tr>
-                      );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {/* CONTROLES DE PAGINACIÓN */}
-            {registrosFiltrados.length > 0 && !cargando && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-                <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
-                  Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} gastos
+          {/* ✅ PANEL DE SUMARIO DE GASTOS */}
+          {gastosSeleccionados.length > 0 && (
+            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Seleccionados</span>
+                  <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenSeleccion.cantidad}</span>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
-                  <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
-                  <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma Importe (Base)</span>
+                  <span style={{ color: '#3fb950', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.totalImporte)}</span>
+                </div>
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma IVA</span>
+                  <span style={{ color: '#3fb950', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.totalIva)}</span>
+                </div>
+                <div>
+                  <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Gran Total</span>
+                  <span style={{ color: '#f0f6fc', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.granTotal)}</span>
                 </div>
               </div>
+              <div style={{ borderTop: '1px dashed #30363d', paddingTop: '16px' }}>
+                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Gastos incluidos:</span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {resumenSeleccion.numerosGasto.map((ref, i) => (
+                    <span key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', padding: '4px 10px', borderRadius: '12px', fontSize: '0.85rem', fontFamily: 'monospace' }}>{ref}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
+            {cargando ? <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando datos...</div> : (
+              <table className="data-table" style={{ width: '100%', minWidth: '3200px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+                  <tr>
+                    <th style={{ padding: '16px 8px', width: '40px', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}></th>
+                    <th style={{ padding: '16px', width: '100px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: '56px', backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}># Gasto</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Invoice</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Estatus</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Fecha</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Unidad</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Operador</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Descripción</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Proveedor</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Tipo de Servicio</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Autorizado por</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Crédito/Contado</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Moneda</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Importe</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>IVA</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Ret IVA</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Ret ISR</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Total</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Factura</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Fecha Factura</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Descripción (Factura)</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Fecha de Pago</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Forma de pago</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Observaciones</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Asignar Operación</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registrosEnPantalla.length === 0 ? (
+                    <tr><td colSpan={26} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>
+                  ) : (
+                    registrosEnPantalla.map((m: any) => {
+                      const isSelected = gastosSeleccionados.includes(m.id);
+                      const yaFacturado = m.estatus === 'Facturado' || (m.invoice && m.invoice.trim() !== '');
+                      return (
+                      <tr 
+                        key={m.id} 
+                        className="row-hover"
+                        style={{ backgroundColor: isSelected ? 'rgba(56, 139, 253, 0.1)' : '' }}
+                        onClick={() => setMttoViendo(m)}
+                      >
+                        <td style={{ padding: '16px 8px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: isSelected ? '#1f2937' : 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
+                          {!yaFacturado && <input type="checkbox" checked={isSelected} onChange={() => toggleSeleccion(m.id)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />}
+                        </td>
+                        <td style={{ padding: '16px', position: 'sticky', left: '56px', backgroundColor: isSelected ? '#1f2937' : 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            <button 
+                              title="Editar Gasto"
+                              onClick={() => editarMtto(m)} 
+                              style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#3b82f6', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            </button>
+                            <button 
+                              title="Eliminar Gasto"
+                              onClick={() => eliminarMtto(m.id)} 
+                              style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            </button>
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold' }}>{m.numeroGasto}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.invoice || '-'}</td>
+                        <td style={{ padding: '16px', color: m.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>{m.estatus}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.fecha}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarNombreUnidad(m.unidadId || m.unidad)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.operadorNombre || m.operador || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.descripcion || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.proveedorNombre || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(m.tipoServicioId, 'servicios')}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.autorizadoPor || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.condicionPago || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda')}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(m.importe)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(m.ivaMonto)} <span style={{fontSize:'0.8rem'}}>({m.ivaPorcentaje || 0}%)</span></td>
+                        <td style={{ padding: '16px', color: '#f85149' }}>{formatoMoneda(m.retIva)}</td>
+                        <td style={{ padding: '16px', color: '#f85149' }}>{formatoMoneda(m.retIsr)}</td>
+                        <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold' }}>{formatoMoneda(m.total)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.facturaTexto || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.fechaFactura || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.descripcionFactura || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.fechaPago || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago')}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.observaciones || '-'}</td>
+                        <td style={{ padding: '16px', color: '#58a6ff' }}>{mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')}</td>
+                      </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             )}
           </div>
+
+          {/* CONTROLES DE PAGINACIÓN ICONOGRÁFICOS */}
+          {registrosFiltrados.length > 0 && !cargando && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} gastos
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  title="Página Anterior"
+                  onClick={irPaginaAnterior} 
+                  disabled={paginaActual === 1} 
+                  style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <button 
+                  title="Página Siguiente"
+                  onClick={irPaginaSiguiente} 
+                  disabled={paginaActual === totalPaginas || totalPaginas === 0} 
+                  style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* ✅ MODAL INVOICE MASIVO */}
+      {/* MODAL INVOICE MASIVO */}
       {modalInvoiceMasivo && (
         <div className="modal-overlay" style={{ zIndex: 3000 }}>
           <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px' }}>
@@ -539,231 +577,114 @@ const MttoDashboard = () => {
               <button onClick={() => setModalInvoiceMasivo(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
             <div style={{ padding: '24px' }}>
-              <p style={{ color: '#8b949e', fontSize: '0.9rem', marginBottom: '20px' }}>
-                Estás a punto de asignar el mismo número de Invoice a <strong>{gastosSeleccionados.length}</strong> registro(s). El estatus de todos pasará automáticamente a <span style={{ color: '#3fb950', fontWeight: 'bold' }}>Facturado</span>.
-              </p>
+              <p style={{ color: '#8b949e', fontSize: '0.9rem', marginBottom: '20px' }}>Estás a punto de asignar el mismo número de Invoice a <strong>{gastosSeleccionados.length}</strong> registro(s).</p>
               <div className="form-group">
                 <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem', fontWeight: 'bold' }}>Número de Invoice a Asignar</label>
-                <input 
-                  type="text" 
-                  placeholder="Ej: INV-99234"
-                  value={nuevoInvoiceTexto} 
-                  onChange={e => setNuevoInvoiceTexto(e.target.value)} 
-                  autoFocus
-                  style={{ width: '100%', padding: '12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#f0f6fc', fontSize: '1.1rem' }} 
-                />
+                <input type="text" placeholder="Ej: INV-99234" value={nuevoInvoiceTexto} onChange={e => setNuevoInvoiceTexto(e.target.value)} autoFocus style={{ width: '100%', padding: '12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#f0f6fc', fontSize: '1.1rem' }} />
               </div>
             </div>
             <div className="form-actions" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px' }}>
               <button onClick={() => setModalInvoiceMasivo(false)} disabled={cargandoMasivo} className="btn btn-outline" style={{ padding: '8px 16px', borderRadius: '6px' }}>Cancelar</button>
-              <button onClick={aplicarInvoiceMasivo} disabled={cargandoMasivo || !nuevoInvoiceTexto.trim()} className="btn btn-primary" style={{ padding: '8px 16px', borderRadius: '6px', backgroundColor: '#238636', border: 'none' }}>
-                {cargandoMasivo ? 'Aplicando...' : 'Aplicar a Seleccionados'}
-              </button>
+              <button onClick={aplicarInvoiceMasivo} disabled={cargandoMasivo || !nuevoInvoiceTexto.trim()} className="btn btn-primary" style={{ padding: '8px 16px', borderRadius: '6px', backgroundColor: '#238636', border: 'none' }}>{cargandoMasivo ? 'Aplicando...' : 'Aplicar'}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ✅ VISTA: MODAL DETALLES ELEGANTES EN PESTAÑAS (TABS) */}
+      {/* ✅ MODAL DE DETALLES RECONSTRUIDO CON TODOS LOS CAMPOS */}
       {mttoViendo && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="form-card detail-card" style={{ maxWidth: '1000px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', borderRadius: '12px', border: '1px solid #30363d', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+        <div className="modal-overlay" style={{ zIndex: 1500 }}>
+          <div className="form-card detail-card" style={{ maxWidth: '1000px', width: '100%', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+            <div className="form-header" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0, color: '#f0f6fc' }}>Detalle de Gasto <span style={{ color: '#58a6ff' }}>{mttoViendo.numeroGasto}</span></h2>
+              <button onClick={() => setMttoViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
             
-            {/* HEADER DEL MODAL */}
-            <div className="form-header" style={{ padding: '20px 24px', borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem' }}>
-                Detalles del Gasto <span style={{ color: '#58a6ff' }}>{mttoViendo.numeroGasto || '-'}</span>
-              </h2>
-              <button 
-                onClick={() => { setMttoViendo(null); setPestañaDetalleActiva('general'); }} 
-                style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', transition: 'background-color 0.2s' }}
-                onMouseEnter={(e:any) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                onMouseLeave={(e:any) => e.currentTarget.style.backgroundColor = 'transparent'}
-              >
-                ✕
-              </button>
+            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px' }}>
+              {tabsDetalle.map(tab => (<button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)} style={{ padding: '12px 16px', background: 'none', border: 'none', borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #D84315' : '2px solid transparent', color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e', cursor: 'pointer' }}>{tab.label}</button>))}
             </div>
-
-            {/* ✅ SISTEMA DE PESTAÑAS (TABS) */}
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px', overflowX: 'auto', flexShrink: 0 }}>
-              {tabsDetalle.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setPestañaDetalleActiva(tab.id)}
-                  style={{
-                    padding: '12px 16px',
-                    background: 'none',
-                    border: 'none',
-                    borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #D84315' : '2px solid transparent',
-                    color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e',
-                    cursor: 'pointer',
-                    fontWeight: pestañaDetalleActiva === tab.id ? '600' : 'normal',
-                    fontSize: '0.9rem',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.2s'
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* CONTENIDO DEL DETALLE (SCROLLABLE) */}
-            <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+            
+            <div className="detail-content" style={{ padding: '24px', overflowY: 'auto' }}>
               
               {/* PESTAÑA 1: INFORMACIÓN GENERAL */}
               {pestañaDetalleActiva === 'general' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <h3 style={{ color: '#D84315', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '10px', fontSize: '1.1rem' }}>
-                    Información Básica
-                  </h3>
-                  <div className="detail-grid-3">
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}># de Gasto</span>
-                      <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '0.95rem' }}>{mttoViendo.numeroGasto || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}># de Invoice</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.invoice || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Estatus</span>
-                      <span style={{ color: mttoViendo.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold', fontSize: '0.95rem' }}>{mttoViendo.estatus || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Fecha</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.fecha || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Tipo de Gasto</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.tipoGasto || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Unidad</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mostrarNombreUnidad(mttoViendo.unidadId || mttoViendo.unidad)}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Operador</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.operador || '-'}</span>
-                    </div>
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Descripción General</span>
-                      <div style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem', backgroundColor: '#161b22', padding: '12px', borderRadius: '6px', border: '1px solid #30363d', marginTop: '4px' }}>
-                        {mttoViendo.descripcion || mttoViendo.descripcionGeneral || '-'}
-                      </div>
-                    </div>
-                  </div>
+                <div className="detail-grid-3">
+                   <div><label style={labelStyle}># DE GASTO</label><span style={valStyle}>{mttoViendo.numeroGasto || '-'}</span></div>
+                   <div><label style={labelStyle}># DE INVOICE</label><span style={valStyle}>{mttoViendo.invoice || '-'}</span></div>
+                   <div><label style={labelStyle}>ESTATUS</label><span style={{color: mttoViendo.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold'}}>{mttoViendo.estatus || '-'}</span></div>
+                   <div><label style={labelStyle}>FECHA</label><span style={valStyle}>{mttoViendo.fecha || '-'}</span></div>
+                   <div><label style={labelStyle}>TIPO DE GASTO</label><span style={valStyle}>{mttoViendo.tipoGasto || '-'}</span></div>
+                   <div><label style={labelStyle}>UNIDAD</label><span style={valStyle}>{mostrarNombreUnidad(mttoViendo.unidadId || mttoViendo.unidad)}</span></div>
+                   <div><label style={labelStyle}>OPERADOR</label><span style={valStyle}>{mttoViendo.operadorNombre || mttoViendo.operador || '-'}</span></div>
+                   <div style={{gridColumn:'span 3'}}><label style={labelStyle}>DESCRIPCIÓN GENERAL</label><div style={boxStyle}>{mttoViendo.descripcion || mttoViendo.descripcionGeneral || '-'}</div></div>
                 </div>
               )}
 
-              {/* PESTAÑA 2: DETALLES FINANCIEROS */}
+              {/* PESTAÑA 2: FINANZAS */}
               {pestañaDetalleActiva === 'finanzas' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <h3 style={{ color: '#D84315', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '10px', fontSize: '1.1rem' }}>
-                    Información Financiera
-                  </h3>
-                  <div className="detail-grid-3">
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Proveedor</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.proveedorNombre || mostrarDatoMapeado(mttoViendo.proveedorId, 'empresas')}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Tipo de Servicio</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mostrarDatoMapeado(mttoViendo.tipoServicioId, 'servicios')}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Condición de Pago</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.condicionPago || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Moneda</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mostrarDatoMapeado(mttoViendo.monedaId, 'monedas')}</span>
-                    </div>
-                    
-                    <div style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Importe (Monto Base)</span>
-                      <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1rem' }}>{formatoMoneda(mttoViendo.importe)}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>IVA (+)</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{formatoMoneda(mttoViendo.ivaMonto)} <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>({mttoViendo.ivaPorcentaje || 0}%)</span></span>
-                    </div>
-                    <div></div> {/* Spacer */}
-                    
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Ret IVA (-)</span>
-                      <span style={{ color: '#f85149', fontWeight: '500', fontSize: '0.95rem' }}>{formatoMoneda(mttoViendo.retIva)}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Ret ISR (-)</span>
-                      <span style={{ color: '#f85149', fontWeight: '500', fontSize: '0.95rem' }}>{formatoMoneda(mttoViendo.retIsr)}</span>
-                    </div>
-
-                    <div style={{ gridColumn: 'span 3', marginTop: '16px' }}>
-                      <div style={{ backgroundColor: '#0d1117', border: '1px solid #3fb950', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-                        <span style={{ display: 'block', fontSize: '0.85rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>TOTAL FINAL</span>
-                        <span style={{ fontSize: '2rem', color: '#3fb950', fontWeight: 'bold' }}>{formatoMoneda(mttoViendo.total)}</span>
+                <div className="detail-grid-3">
+                   <div style={{gridColumn: 'span 3'}}><label style={labelStyle}>PROVEEDOR</label><span style={valStyle}>{mttoViendo.proveedorNombre || mostrarDatoMapeado(mttoViendo.proveedorId, 'empresas')}</span></div>
+                   <div style={{gridColumn: 'span 3'}}><label style={labelStyle}>TIPO DE SERVICIO</label>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+                          {Array.isArray(mttoViendo.tipoServicioId) && mttoViendo.tipoServicioId.length > 0 
+                          ? mttoViendo.tipoServicioId.map((idS: string) => (
+                              <span key={idS} style={{ backgroundColor: '#21262d', padding: '4px 8px', borderRadius: '16px', fontSize: '0.85rem', border: '1px solid #30363d', color: '#c9d1d9' }}>
+                                  {mostrarDatoMapeado(idS, 'servicios')}
+                              </span>
+                              ))
+                          : <span style={valStyle}>{mostrarDatoMapeado(mttoViendo.tipoServicioId, 'servicios')}</span>
+                          }
                       </div>
-                    </div>
-                  </div>
+                   </div>
+                   <div><label style={labelStyle}>CONDICIÓN DE PAGO</label><span style={valStyle}>{mttoViendo.condicionPago || '-'}</span></div>
+                   {mttoViendo.condicionPago === 'Crédito' && (
+                     <div><label style={labelStyle}>PLAZO (DÍAS)</label><span style={valStyle}>{mttoViendo.plazo || '-'}</span></div>
+                   )}
+                   <div><label style={labelStyle}>MONEDA</label><span style={valStyle}>{mostrarDatoMapeado(mttoViendo.monedaId, 'monedas', 'moneda')}</span></div>
+
+                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+
+                   <div><label style={labelStyle}>IMPORTE (MONTO BASE)</label><span style={{color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem'}}>{formatoMoneda(mttoViendo.importe)}</span></div>
+                   <div><label style={labelStyle}>IVA (+)</label><span style={valStyle}>{formatoMoneda(mttoViendo.ivaMonto)} <span style={{fontSize:'0.8rem'}}>({mttoViendo.ivaPorcentaje || 0}%)</span></span></div>
+                   <div></div>
+                   
+                   <div><label style={labelStyle}>RET IVA (-)</label><span style={{color: '#f85149'}}>{formatoMoneda(mttoViendo.retIva)}</span></div>
+                   <div><label style={labelStyle}>RET ISR (-)</label><span style={{color: '#f85149'}}>{formatoMoneda(mttoViendo.retIsr)}</span></div>
+
+                   <div style={{gridColumn:'span 3'}}><label style={{...labelStyle, color:'#3fb950'}}>TOTAL FINAL</label><span style={{fontSize:'1.8rem', fontWeight:'bold', color:'#3fb950'}}>{formatoMoneda(mttoViendo.total)}</span></div>
                 </div>
               )}
 
               {/* PESTAÑA 3: DOCUMENTOS Y CIERRE */}
               {pestañaDetalleActiva === 'documentos' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <h3 style={{ color: '#D84315', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '10px', fontSize: '1.1rem' }}>
-                    Documentos, Facturación y Cierre
-                  </h3>
-                  <div className="detail-grid-3">
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Factura (Texto)</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.facturaTexto || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Descripción Factura</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.descripcionFactura || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Fecha de Pago</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.fechaPago || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Forma de Pago</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mostrarDatoMapeado(mttoViendo.formaPagoId, 'formasPago')}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Autorizado Por</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{mttoViendo.autorizadoPor || '-'}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Asignar a Operación</span>
-                      <span style={{ color: '#58a6ff', fontWeight: '500', fontSize: '0.95rem' }}>{mostrarDatoMapeado(mttoViendo.operacionAsignadaId, 'operaciones', 'ref')}</span>
-                    </div>
-                    <div style={{ gridColumn: '1 / -1' }}>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>Observaciones</span>
-                      <div style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem', backgroundColor: '#161b22', padding: '12px', borderRadius: '6px', border: '1px solid #30363d', minHeight: '60px', marginTop: '4px' }}>
-                        {mttoViendo.observaciones || '-'}
-                      </div>
-                    </div>
-                  </div>
+                <div className="detail-grid-3">
+                   <div><label style={labelStyle}>FACTURA (TEXTO)</label><span style={valStyle}>{mttoViendo.facturaTexto || '-'}</span></div>
+                   <div><label style={labelStyle}>FECHA FACTURA</label><span style={valStyle}>{mttoViendo.fechaFactura || '-'}</span></div>
+                   <div><label style={labelStyle}>DESCRIPCIÓN FACTURA</label><span style={valStyle}>{mttoViendo.descripcionFactura || '-'}</span></div>
+                   
+                   <div><label style={labelStyle}>ARCHIVO (PDF)</label>
+                      {mttoViendo.archivoPdfUrl ? (
+                          <a href={mttoViendo.archivoPdfUrl} target="_blank" rel="noreferrer" style={{color: '#58a6ff', textDecoration: 'underline'}}>Ver Documento</a>
+                      ) : <span style={valStyle}>Sin archivo</span>}
+                   </div>
+
+                   <div><label style={labelStyle}>FECHA DE PAGO</label><span style={valStyle}>{mttoViendo.fechaPago || '-'}</span></div>
+                   <div><label style={labelStyle}>FORMA DE PAGO</label><span style={valStyle}>{mostrarDatoMapeado(mttoViendo.formaPagoId, 'formasPago', 'forma_pago')}</span></div>
+                   
+                   <div><label style={labelStyle}>AUTORIZADO POR</label><span style={valStyle}>{mttoViendo.autorizadoPor || '-'}</span></div>
+                   <div><label style={labelStyle}>ASIGNAR A OPERACIÓN</label><span style={valStyle}>{mostrarDatoMapeado(mttoViendo.operacionAsignadaId, 'operaciones', 'ref')}</span></div>
+
+                   <div style={{gridColumn:'span 3'}}><label style={labelStyle}>OBSERVACIONES</label><div style={boxStyle}>{mttoViendo.observaciones || '-'}</div></div>
                 </div>
               )}
-
             </div>
-
-            {/* PIE DEL MODAL DE DETALLE */}
-            <div className="form-actions detail-actions" style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
-              <button onClick={() => { setMttoViendo(null); setPestañaDetalleActiva('general'); }} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px' }}>
-                Cerrar Detalles
-              </button>
+            
+            <div style={{ padding: '16px 24px', textAlign: 'right', borderTop: '1px solid #30363d' }}>
+              <button onClick={() => setMttoViendo(null)} className="btn btn-outline">Cerrar Detalles</button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };

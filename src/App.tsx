@@ -7,11 +7,11 @@ import { registrarLog } from './utils/logger';
 
 import { Login } from './features/auth/components/Login';
 import OperacionesDashboard from './features/operaciones/components/OperacionesDashboard';
-// ✅ IMPORTACIONES CORREGIDAS
 import ServiciosCompletados from './features/operaciones/components/ServiciosCompletados';
 import ServiciosCancelados from './features/operaciones/components/ServiciosCancelados';
 
 import EmpresasDashboard from './features/empresas/components/EmpresasDashboard';
+import { ContactosDashboard } from './features/contactos/components/ContactosDashboard';
 import { TipoCambioDashboard } from './features/tipoCambio/components/TipoCambioDashboard';
 import CatalogosDashboard from './features/catalogos/components/CatalogosDashboard';
 import { CombustibleDashboard } from './features/combustible/components/CombustibleDashboard';
@@ -30,6 +30,7 @@ import { ConfiguradorStatus } from './features/configuracion/components/Configur
 import { RelojChecadorModal } from './features/relojChecador/components/RelojChecadorModal';
 import { HistorialChequeosDashboard } from './features/relojChecador/components/HistorialChequeosDashboard';
 import MttoDashboard from './features/gastos/components/mtto/MttoDashboard';
+import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
 
 import './App.css';
 
@@ -38,7 +39,8 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto'>('operaciones');
+  // ✅ CORRECCIÓN TS(2367): Añadido 'facturacionClientes' a la lista de tipos permitidos
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -128,8 +130,11 @@ function App() {
     return <Login onLoginSuccess={() => setEstaAutenticado(true)} />;
   }
 
-  const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
-  const esClientesActivo = moduloActivo === 'conveniosClientes';
+  const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
+  
+  // ✅ MODIFICACIÓN: Agregado facturacionClientes para que el menú Clientes se mantenga encendido
+  const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes';
+  
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion';
@@ -174,6 +179,8 @@ function App() {
         {menuClientesAbierto && (
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosClientes')}>Convenio de Clientes</div>
+            {/* ✅ AGREGADO EL ENLACE A FACTURACIÓN DENTRO DE CLIENTES */}
+            <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionClientes')}>Facturación</div>
           </div>
         )}
 
@@ -205,6 +212,7 @@ function App() {
         {menuBasesDatosAbierto && (
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'empresas' ? 'active' : ''}`} onClick={() => setModuloActivo('empresas')}>Empresas</div>
+            <div className={`sidebar-subitem ${moduloActivo === 'contactos' ? 'active' : ''}`} onClick={() => setModuloActivo('contactos')}>Contactos</div>
             <div className={`sidebar-subitem ${moduloActivo === 'direcciones' ? 'active' : ''}`} onClick={() => setModuloActivo('direcciones')}>Direcciones</div>
             <div className={`sidebar-subitem ${moduloActivo === 'tipoCambio' ? 'active' : ''}`} onClick={() => setModuloActivo('tipoCambio')}>Tipo de Cambio</div>
             <div className={`sidebar-subitem ${moduloActivo === 'combustible' ? 'active' : ''}`} onClick={() => setModuloActivo('combustible')}>Combustible</div>
@@ -291,12 +299,12 @@ function App() {
           </div>
         </div>
 
-        {/* ✅ RENDERIZADO CONDICIONAL DE TODOS LOS MÓDULOS INCLUYENDO EL NUEVO */}
         {moduloActivo === 'operaciones' && <OperacionesDashboard />}
         {moduloActivo === 'serviciosCompletados' && <ServiciosCompletados />}
         {moduloActivo === 'serviciosCancelados' && <ServiciosCancelados />}
         {moduloActivo === 'mtto' && <MttoDashboard />} 
         {moduloActivo === 'empresas' && <EmpresasDashboard />}
+        {moduloActivo === 'contactos' && <ContactosDashboard />}
         {moduloActivo === 'direcciones' && <DireccionesDashboard />}
         {moduloActivo === 'tipoCambio' && <TipoCambioDashboard />}
         {moduloActivo === 'combustible' && <CombustibleDashboard />}
@@ -313,6 +321,7 @@ function App() {
         {moduloActivo === 'usuarios' && <UsuariosDashboard />}
         {moduloActivo === 'logs' && <LogsDashboard />}
         {moduloActivo === 'flujosOperacion' && <ConfiguradorStatus />}
+        {moduloActivo === 'facturacionClientes' && <FacturacionClientesDashboard />}
         
       </div>
     </div>

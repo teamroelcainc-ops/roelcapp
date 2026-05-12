@@ -151,7 +151,7 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
     fields: [
       { name: 'nombre_puesto', label: 'Nombre del puesto', type: 'text', required: true },
       { name: 'departamento', label: 'Departamento', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_departamentos', labelField: 'departamento', valueField: 'id' } },
-      { name: 'empresa', label: 'Empresa', type: 'select', required: true, dynamicOptions: { collection: 'empresas', labelField: 'nombre', valueField: 'id', filterField: 'tiposEmpresa', filterValue: 'f21b15a4' } }
+      { name: 'empresa', label: 'Empresa', type: 'select', required: true, dynamicOptions: { collection: 'empresas', labelField: 'nombre', valueField: 'id' } }
     ]
   },
   regimen_fiscal: {
@@ -201,7 +201,7 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       { name: 'nombre_gasto', label: 'Tipo de Gasto', type: 'text', required: true },
       { name: 'categoria_gasto', label: 'Tipo de Gasto (Cat)', type: 'select', required: true, options: ['Puente', 'Gastos'] },
       { name: 'importe', label: 'Importe', type: 'number', required: true },
-      { name: 'moneda', label: 'Moneda', type: 'select', required: true, options: ['Dolares', 'Pesos'] },
+      { name: 'moneda', label: 'Moneda', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_moneda', labelField: 'moneda', valueField: 'id' } },
       { name: 'trafico', label: 'Exportación/Importación', type: 'select', required: true, options: ['Exportación', 'Importación'] }
     ]
   },
@@ -259,7 +259,8 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       {
         collection: 'tarifas_rendimiento',
         titulo: 'Rendimiento y Combustible',
-        foreignKey: 'tipo_servicio_id',
+        // ✅ CORRECCIÓN CLAVE: El nombre real de la llave foránea en Firebase es ID_SERVICES
+        foreignKey: 'ID_SERVICES', 
         icono: (
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="3" y1="22" x2="15" y2="22" />
@@ -269,9 +270,10 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
           </svg>
         ),
         fields: [
-          { name: 'tipo_combustible', label: 'Gasolina / Diesel', type: 'select', required: true, options: ['Gasolina', 'Diesel'] },
-          { name: 'unidad_medida', label: 'Galones / Litros', type: 'select', required: true, options: ['Litros', 'Galones'] },
-          { name: 'cantidad', label: 'Cantidad', type: 'number', required: true }
+          // ✅ CORRECCIÓN CLAVE: Usamos los nombres exactos que están en Firebase (Combustible, GALONES, Quantity)
+          { name: 'Combustible', label: 'Gasolina / Diesel', type: 'select', required: true, options: ['Gasolina', 'Diesel'] },
+          { name: 'GALONES', label: 'Galones / Litros', type: 'select', required: true, options: ['Litros', 'Galones'] },
+          { name: 'Quantity', label: 'Cantidad', type: 'number', required: true }
         ]
       }
     ]

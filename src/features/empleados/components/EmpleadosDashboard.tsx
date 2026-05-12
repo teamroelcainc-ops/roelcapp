@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase';
 import { EmployeeForm } from './EmployeeForm';
+import { HerramientasEmpleado } from './HerramientasEmpleado'; 
 import type { Employee } from '../../../types/empleado';
 
 export const EmpleadosDashboard = () => {
@@ -13,8 +14,9 @@ export const EmpleadosDashboard = () => {
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [empleadoEditando, setEmpleadoEditando] = useState<Employee | null>(null);
   
-  // Estado para el Modal de Detalle de solo lectura
+  // Estado para el Modal de Detalle de solo lectura y sus pestañas
   const [empleadoViendo, setEmpleadoViendo] = useState<Employee | null>(null);
+  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'empresa' | 'herramientas'>('general');
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [paginaActual, setPaginaActual] = useState(1);
@@ -45,6 +47,11 @@ export const EmpleadosDashboard = () => {
     }
   };
 
+  const verDetalle = (emp: Employee) => {
+    setEmpleadoViendo(emp);
+    setActiveTabDetalle('general');
+  };
+
   const formatearFecha = (isoString: string | undefined | null) => {
     if (!isoString) return '-';
     return new Date(isoString + 'T00:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -60,7 +67,6 @@ export const EmpleadosDashboard = () => {
       (e.cargoNombre || '').toLowerCase().includes(b)
     );
   }).sort((a, b) => {
-    // Extrae los números del ID (ej. "Col-015" -> 15) para un orden matemático perfecto
     const numA = parseInt((a.employeeId || '').replace(/\D/g, ''), 10) || 0;
     const numB = parseInt((b.employeeId || '').replace(/\D/g, ''), 10) || 0;
     return numB - numA; // Descendente
@@ -74,39 +80,16 @@ export const EmpleadosDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
-  const exportarCSV = () => {
-    if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
-    const encabezados = [
-      '# Empleado', 'Activo', 'Nombres', 'Ap. Paterno', 'Ap. Materno', 'Cargo', 
-      'Operaciones', 'Teléfono Asig.', 'F. Nacimiento', 'F. Ingreso'
-    ];
-    
-    const lineas = registrosFiltrados.map(emp => [
-      `"${emp.employeeId || ''}"`,
-      `"${emp.activo ? 'Sí' : 'No'}"`, 
-      `"${emp.firstName || ''}"`,
-      `"${emp.lastNamePaternal || ''}"`,
-      `"${emp.lastNameMaternal || ''}"`,
-      `"${emp.cargoNombre || ''}"`,
-      `"${emp.operacionesIds?.length || 0} Asignadas"`,
-      `"${emp.telefonoAsignado || ''}"`,
-      `"${formatearFecha(emp.birthDate)}"`,
-      `"${formatearFecha(emp.fechaIngreso)}"`
-    ].join(','));
-
-    const csvContent = [encabezados.join(','), ...lineas].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Empleados_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   const mostrarDato = (dato: any) => (dato && dato !== '' ? dato : '-');
   const formatoMoneda = (monto: any) => `$ ${parseFloat(monto || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  const tabStyle = (isActive: boolean) => ({
+    padding: '12px 20px', background: 'none', border: 'none',
+    borderBottom: isActive ? '2px solid #D84315' : '2px solid transparent',
+    color: isActive ? '#f0f6fc' : '#8b949e', cursor: 'pointer',
+    fontWeight: isActive ? '600' : 'normal', fontSize: '0.9rem',
+    transition: 'all 0.2s ease', outline: 'none'
+  });
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
@@ -160,13 +143,14 @@ export const EmpleadosDashboard = () => {
             </div>
           </div>
 
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
-            <button className="btn btn-outline" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap', backgroundColor: '#21262d', border: '1px solid #30363d', padding: '8px 16px', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-              Exportar CSV
-            </button>
-            <button className="btn btn-primary" onClick={handleNuevo} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500', whiteSpace: 'nowrap' }}>
-              + Alta de Empleado
+          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '150px' }}>
+            <button 
+              className="btn btn-primary" 
+              title="Alta de Empleado"
+              onClick={handleNuevo} 
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
             </button>
           </div>
         </div>
@@ -179,7 +163,7 @@ export const EmpleadosDashboard = () => {
               <table className="data-table responsive-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
-                    <th style={{ padding: '16px', width: '140px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                    <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Empleado</th>
                     <th style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Activo</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Nombres</th>
@@ -206,29 +190,31 @@ export const EmpleadosDashboard = () => {
                         style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === emp.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }}
                         onMouseEnter={() => setHoveredRowId(emp.id!)} 
                         onMouseLeave={() => setHoveredRowId(null)}
-                        onClick={() => setEmpleadoViendo(emp)} 
+                        onClick={() => verDetalle(emp)} 
                       >
                         <td data-label="Acciones" style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: hoveredRowId === emp.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
                           <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                             <button 
                               type="button"
                               className="btn-small btn-edit" 
+                              title="Editar Empleado"
                               onClick={(e) => { e.stopPropagation(); editarEmpleado(emp); }}
-                              style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '4px 8px', fontSize: '0.8rem', transition: 'all 0.2s' }}
+                              style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
-                              Editar
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             </button>
                             <button 
                               type="button"
                               className="btn-small btn-danger-outline" 
+                              title="Eliminar Empleado"
                               onClick={(e) => { e.stopPropagation(); eliminarEmpleado(emp.id!); }}
-                              style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '4px 8px', fontSize: '0.8rem', transition: 'all 0.2s' }}
+                              style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
-                              Eliminar
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                             </button>
                           </div>
                         </td>
@@ -254,6 +240,7 @@ export const EmpleadosDashboard = () => {
             )}
           </div>
 
+          {/* CONTROLES DE PAGINACIÓN ICONOGRÁFICOS */}
           {registrosFiltrados.length > 0 && !cargando && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
@@ -261,17 +248,21 @@ export const EmpleadosDashboard = () => {
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button 
-                  onClick={irPaginaAnterior} disabled={paginaActual === 1}
-                  style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}
+                  onClick={irPaginaAnterior} 
+                  disabled={paginaActual === 1}
+                  title="Página Anterior"
+                  style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  Anterior
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
                 <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
                 <button 
-                  onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0}
-                  style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}
+                  onClick={irPaginaSiguiente} 
+                  disabled={paginaActual === totalPaginas || totalPaginas === 0}
+                  title="Página Siguiente"
+                  style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 >
-                  Siguiente
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </button>
               </div>
             </div>
@@ -280,25 +271,38 @@ export const EmpleadosDashboard = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL DE DETALLE (Solo Lectura) */}
+      {/* ✅ MODAL DE DETALLE (Solo Lectura con Pestañas) */}
       {empleadoViendo && (
         <div className="modal-overlay" style={{ zIndex: 1500 }}>
-          <div className="form-card detail-card" style={{ maxWidth: '950px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', display: 'flex', flexDirection: 'column' }}>
+          <div className="form-card detail-card" style={{ maxWidth: '850px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             
-            <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid #30363d' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                Ficha del Empleado <span style={{ color: '#58a6ff' }}>{empleadoViendo.employeeId}</span>
-                <span style={{ fontSize: '0.8rem', padding: '4px 10px', borderRadius: '12px', backgroundColor: empleadoViendo.activo ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: empleadoViendo.activo ? '#10b981' : '#ef4444', fontWeight: 'bold', border: empleadoViendo.activo ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)' }}>
-                  {empleadoViendo.activo ? 'Activo' : 'Baja'}
-                </span>
-              </h2>
-              <button onClick={() => setEmpleadoViendo(null)} className="btn-window close">✕</button>
+            <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '24px', borderBottom: '1px solid #30363d' }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  Ficha del Empleado <span style={{ color: '#D84315' }}>{empleadoViendo.employeeId}</span>
+                </h2>
+                {empleadoViendo.activo ? (
+                  <span style={{ display: 'inline-block', marginTop: '8px', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981', fontWeight: 'bold', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                    ESTADO ACTIVO
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-block', marginTop: '8px', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontWeight: 'bold', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+                    DADO DE BAJA EL {formatearFecha((empleadoViendo as any).fechaBaja)}
+                  </span>
+                )}
+              </div>
+              <button onClick={() => setEmpleadoViendo(null)} className="btn-window close" style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px' }}>
+              <button type="button" onClick={() => setActiveTabDetalle('general')} style={tabStyle(activeTabDetalle === 'general')}>Datos Personales</button>
+              <button type="button" onClick={() => setActiveTabDetalle('empresa')} style={tabStyle(activeTabDetalle === 'empresa')}>Alta en Empresa</button>
+              <button type="button" onClick={() => setActiveTabDetalle('herramientas')} style={tabStyle(activeTabDetalle === 'herramientas')}>Herramientas / Operativa</button>
             </div>
             
-            <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+            <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1, minHeight: '350px' }}>
               
-              {/* BANNER DE BAJA DE EMPLEADO */}
-              {!empleadoViendo.activo && (
+              {!empleadoViendo.activo && activeTabDetalle === 'empresa' && (
                 <div style={{ backgroundColor: 'rgba(248, 81, 73, 0.1)', border: '1px solid rgba(248, 81, 73, 0.4)', borderRadius: '8px', padding: '16px', marginBottom: '24px', display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
                   <div style={{ fontSize: '24px' }}>⚠️</div>
                   <div>
@@ -311,66 +315,77 @@ export const EmpleadosDashboard = () => {
                 </div>
               )}
 
-              {/* ESTRUCTURA 3 COLUMNAS */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                
-                {/* SECCIÓN DATOS PERSONALES */}
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <h3 style={{ color: '#D84315', fontSize: '1.1rem', margin: '0 0 12px 0', borderBottom: '1px solid #30363d', paddingBottom: '8px' }}>1. Datos Personales</h3>
+              {activeTabDetalle === 'general' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', animation: 'fadeIn 0.3s ease' }}>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Nombres</span><span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1rem' }}>{mostrarDato(empleadoViendo.firstName)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Apellido Paterno</span><span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1rem' }}>{mostrarDato(empleadoViendo.lastNamePaternal)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Apellido Materno</span><span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1rem' }}>{mostrarDato(empleadoViendo.lastNameMaternal)}</span></div>
+                  
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>RFC</span><span style={{ color: '#c9d1d9', fontWeight: '500', letterSpacing: '1px' }}>{mostrarDato(empleadoViendo.rfc)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha Nacimiento</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatearFecha(empleadoViendo.birthDate)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Alías</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.alias)}</span></div>
+
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono Personal</span><span style={{ color: '#58a6ff', fontWeight: '500' }}>{mostrarDato(empleadoViendo.personalPhone)}</span></div>
+                  <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Correo Personal</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.personalEmail)}</span></div>
+
+                  <div style={{ gridColumn: '1 / -1' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Dirección Exacta</span><span style={{ color: '#c9d1d9', fontWeight: '500', display: 'block', padding: '16px', backgroundColor: '#161b22', borderRadius: '8px', border: '1px dashed #30363d' }}>{mostrarDato(empleadoViendo.addressLabel)}</span></div>
+                  
+                  <div style={{ backgroundColor: 'rgba(216, 67, 21, 0.05)', border: '1px solid rgba(216, 67, 21, 0.2)', padding: '16px', borderRadius: '8px', gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Contacto de Emergencia</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.emergencyContactName)}</span></div>
+                    <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono de Emergencia</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.emergencyContactPhone)}</span></div>
+                  </div>
                 </div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Nombres</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.firstName)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Apellido Paterno</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.lastNamePaternal)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Apellido Materno</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.lastNameMaternal)}</span></div>
-                
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>RFC</span><span style={{ color: '#c9d1d9', fontWeight: '500', letterSpacing: '1px' }}>{mostrarDato(empleadoViendo.rfc)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha Nacimiento</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatearFecha(empleadoViendo.birthDate)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Alías</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.alias)}</span></div>
+              )}
 
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono Personal</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.personalPhone)}</span></div>
-                <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Correo Personal</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.personalEmail)}</span></div>
+              {activeTabDetalle === 'empresa' && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', animation: 'fadeIn 0.3s ease' }}>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Empresa Asignada</span><span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{mostrarDato(empleadoViendo.empresaNombre)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cargo</span><span style={{ color: '#58a6ff', fontWeight: '500' }}>{mostrarDato(empleadoViendo.cargoNombre)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Departamento</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.departamentoNombre)}</span></div>
 
-                <div style={{ gridColumn: '1 / -1' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Dirección Exacta</span><span style={{ color: '#c9d1d9', fontWeight: '500', display: 'block', padding: '12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>{mostrarDato(empleadoViendo.addressLabel)}</span></div>
-                
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#ff7b72', fontWeight: 'bold', marginBottom: '4px' }}>Contacto de Emergencia</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.emergencyContactName)}</span></div>
-                <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#ff7b72', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono de Emergencia</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.emergencyContactPhone)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Ingreso</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatearFecha(empleadoViendo.fechaIngreso)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha Alta IMSS</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatearFecha(empleadoViendo.fechaAltaIMSS)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operaciones Autorizadas</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{empleadoViendo.operacionesIds?.length || 0} asignadas</span></div>
 
-                {/* SECCIÓN ALTA DE LA EMPRESA */}
-                <div style={{ gridColumn: '1 / -1', marginTop: '16px' }}>
-                  <h3 style={{ color: '#D84315', fontSize: '1.1rem', margin: '0 0 12px 0', borderBottom: '1px solid #30363d', paddingBottom: '8px' }}>2. Alta en Empresa</h3>
+                  <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', marginTop: '8px' }}>
+                    <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Salario Diario Integrado</span><span style={{ color: '#3fb950', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(empleadoViendo.salarioDiario)}</span></div>
+                    <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descuento IMSS</span><span style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(empleadoViendo.descuentoIMSS)}</span></div>
+                    <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descuento INFONAVIT</span><span style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(empleadoViendo.descuentoInfonavit)}</span></div>
+                  </div>
+
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones (Empresa)</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', display: 'block', padding: '16px', backgroundColor: '#0d1117', borderRadius: '6px', border: '1px dashed #30363d', minHeight: '60px' }}>
+                      {mostrarDato((empleadoViendo as any).observacionesEmpresa)}
+                    </span>
+                  </div>
                 </div>
-                
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Empresa Asignada</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.empresaNombre)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cargo</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.cargoNombre)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Departamento</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.departamentoNombre)}</span></div>
+              )}
 
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Ingreso</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatearFecha(empleadoViendo.fechaIngreso)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha Alta IMSS</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatearFecha(empleadoViendo.fechaAltaIMSS)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operaciones Autorizadas</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{empleadoViendo.operacionesIds?.length || 0} asignadas</span></div>
+              {activeTabDetalle === 'herramientas' && (
+                <div style={{ animation: 'fadeIn 0.3s ease' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase' }}>Fondo de Gastos Asignados</span>
+                      <span style={{ color: '#3fb950', fontWeight: 'bold', fontSize: '1.5rem' }}>{formatoMoneda(empleadoViendo.gastosAsignados)}</span>
+                    </div>
+                    
+                    <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase' }}>Teléfono de Flota (Empresarial)</span>
+                      <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.2rem' }}>{mostrarDato(empleadoViendo.telefonoAsignado)}</span>
+                    </div>
+                  </div>
 
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Salario Diario Integrado</span><span style={{ color: '#3fb950', fontWeight: 'bold' }}>{formatoMoneda(empleadoViendo.salarioDiario)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descuento IMSS</span><span style={{ color: '#f85149', fontWeight: 'bold' }}>{formatoMoneda(empleadoViendo.descuentoIMSS)}</span></div>
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descuento INFONAVIT</span><span style={{ color: '#f85149', fontWeight: 'bold' }}>{formatoMoneda(empleadoViendo.descuentoInfonavit)}</span></div>
-
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones (Empresa)</span>
-                  <span style={{ color: '#c9d1d9', fontWeight: '500', display: 'block', padding: '12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d', minHeight: '60px' }}>
-                    {mostrarDato((empleadoViendo as any).observacionesEmpresa)}
-                  </span>
+                  {/* ✅ AQUÍ ESTÁ INCRUSTADO EL COMPONENTE DE HERRAMIENTAS */}
+                  {empleadoViendo.id && (
+                    <HerramientasEmpleado empleadoId={empleadoViendo.id} />
+                  )}
                 </div>
-
-                {/* SECCIÓN OPERADOR / HERRAMIENTAS */}
-                <div style={{ gridColumn: '1 / -1', marginTop: '16px' }}>
-                  <h3 style={{ color: '#D84315', fontSize: '1.1rem', margin: '0 0 12px 0', borderBottom: '1px solid #30363d', paddingBottom: '8px' }}>3. Herramientas y Operativa</h3>
-                </div>
-
-                <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Gastos Asignados</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatoMoneda(empleadoViendo.gastosAsignados)}</span></div>
-                <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Teléfono de Flota (Asignado)</span><span style={{ color: '#c9d1d9', fontWeight: '500' }}>{mostrarDato(empleadoViendo.telefonoAsignado)}</span></div>
-
-              </div>
+              )}
             </div>
 
-            <div className="form-actions detail-actions" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px', flexShrink: 0 }}>
-              <button onClick={() => setEmpleadoViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px' }}>Cerrar Ficha</button>
+            <div className="form-actions detail-actions" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#0d1117', flexShrink: 0 }}>
+              <button onClick={() => setEmpleadoViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', cursor: 'pointer' }}>Cerrar Ficha</button>
             </div>
           </div>
         </div>

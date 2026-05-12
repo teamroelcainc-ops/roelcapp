@@ -1,3 +1,4 @@
+// src/features/catalogos/components/CatalogDetailView.tsx
 import React from 'react';
 import type { CatalogSchema, CatalogDetailSchema } from '../config/catalogSchemas';
 
@@ -74,13 +75,26 @@ export const CatalogDetailView: React.FC<Props> = ({ schema, parentData, details
       {/* SECCIÓN DE DETALLES: Sub-colecciones */}
       {schema.details && schema.details.length > 0 && (
         <div className="p-6 flex flex-col gap-8">
-          {schema.details.map((detailSchema) => (
-            <ResponsiveTable 
-              key={detailSchema.collection} 
-              schema={detailSchema} 
-              data={detailsData[detailSchema.collection] || []} 
-            />
-          ))}
+          {schema.details.map((detailSchema) => {
+            let dataList = detailsData[detailSchema.collection] || [];
+            
+            // ✅ REGLA ESTRICTA: Conexión de ID_SERVICES con catalogo_tarifas_referencia
+            // Filtramos localmente para garantizar que los detalles correspondan exclusivamente al ID padre.
+            if (detailSchema.collection === 'tarifas_rendimiento') {
+              dataList = dataList.filter((row: any) => String(row.ID_SERVICES) === String(parentData.id));
+            } else {
+              // Respaldo de seguridad para el resto de colecciones dinámicas
+              dataList = dataList.filter((row: any) => String(row[detailSchema.foreignKey]) === String(parentData.id));
+            }
+
+            return (
+              <ResponsiveTable 
+                key={detailSchema.collection} 
+                schema={detailSchema} 
+                data={dataList} 
+              />
+            );
+          })}
         </div>
       )}
     </div>

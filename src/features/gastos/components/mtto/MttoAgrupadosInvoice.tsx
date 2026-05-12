@@ -1,6 +1,6 @@
 // src/features/gastos/components/mtto/MttoAgrupadosInvoice.tsx
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, orderBy } from 'firebase/firestore'; 
+import { collection, query, getDocs, limit } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase';
 
 interface GastoMtto {
@@ -43,9 +43,43 @@ const MttoAgrupadosInvoice = () => {
     const cargarGastos = async () => {
       setCargando(true);
       try {
-        const q = query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'));
+        // ✅ CORRECCIÓN 1: Evitar el orderBy('createdAt') que bloquea los datos migrados
+        const q = query(collection(db, 'gastos_mtto'), limit(500));
         const snap = await getDocs(q);
-        const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as GastoMtto));
+        
+        // ✅ CORRECCIÓN 2: Sincronización automática de estatus basada en el Invoice
+        let data = snap.docs.map(d => {
+          const rawData = d.data();
+          const tieneInvoice = rawData.invoice && String(rawData.invoice).trim() !== '';
+          return { 
+            id: d.id, 
+            ...rawData, 
+            estatus: tieneInvoice ? 'Facturado' : 'No facturado' 
+          } as GastoMtto;
+        });
+
+        // ✅ CORRECCIÓN 3: Orden matemático por # de Gasto (Más reciente arriba)
+        data.sort((a, b) => {
+          const parseGasto = (str: string) => {
+            if (!str) return 0;
+            const match = String(str).match(/[A-Za-z]+-(\d{2})(\d{2})(\d{4})-(\d+)/);
+            if (match) {
+                const [ , mm, dd, yyyy, seq ] = match;
+                return parseInt(`${yyyy}${mm}${dd}${seq.padStart(4, '0')}`, 10);
+            }
+            return 0;
+          };
+
+          const valA = parseGasto(a.numeroGasto);
+          const valB = parseGasto(b.numeroGasto);
+
+          if (valA !== valB) return valB - valA;
+          
+          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.fecha || 0).getTime();
+          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.fecha || 0).getTime();
+          return dateB - dateA;
+        });
+
         setGastosGlobales(data);
       } catch (error) {
         console.error("Error al cargar gastos para agrupación:", error);
@@ -118,11 +152,9 @@ const MttoAgrupadosInvoice = () => {
     return `${dUTC.getDate()} de ${meses[dUTC.getMonth()]} de ${dUTC.getFullYear()}`;
   };
 
-  // ✅ GENERADOR NATIVO DE PDF (React -> Navegador)
   const handleGenerarDocumento = (grupo: GrupoInvoice) => {
     let filasHTML = '';
     
-    // Construir dinámicamente las filas de la tabla
     grupo.gastos.forEach(g => {
       const fechaFmt = formatearFechaEspañol(g.fecha);
       filasHTML += `
@@ -136,17 +168,14 @@ const MttoAgrupadosInvoice = () => {
       `;
     });
 
-    // Extraer datos comunes del primer gasto del grupo
     const primerGasto = grupo.gastos[0] || {};
     const proveedorNum = primerGasto.proveedorId || "N/A";
     const razonSocial = primerGasto.proveedorNombre || "VARIOS";
     const rfc = primerGasto.estatus || "FACTURADO";
     const fechaActual = formatearFechaEspañol(new Date());
 
-    // ⚠️ REEMPLAZA ESTO CON TU LOGO EN BASE64 O UNA URL PÚBLICA DE LA IMAGEN
-    const logoBase64 = ""; // "data:image/png;base64,iVBORw0KGgoAAA..."
+    const logoBase64 = "";
 
-    // Construir el documento HTML
     const htmlDocument = `
       <!DOCTYPE html>
       <html lang="es">
@@ -272,7 +301,6 @@ const MttoAgrupadosInvoice = () => {
         </table>
       </div>
       <script>
-        // Carga automática del panel de impresión al abrir la ventana
         window.onload = function() {
           setTimeout(function() {
             window.print();
@@ -283,7 +311,6 @@ const MttoAgrupadosInvoice = () => {
       </html>
     `;
 
-    // Abrir en una nueva ventana y renderizar
     const printWindow = window.open('', '_blank');
     if (printWindow) {
       printWindow.document.open();

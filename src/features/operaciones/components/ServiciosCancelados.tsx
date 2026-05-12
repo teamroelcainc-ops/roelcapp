@@ -35,6 +35,7 @@ const ServiciosCancelados = () => {
         catGuardados = JSON.parse(cacheCatStr);
         setCatalogosGlobales(catGuardados);
       } else {
+        console.warn(`[FIREBASE READ] Descargando TODOS los catálogos por primera vez.`);
         const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap, statusSnap, uniProvSnap, opeProvSnap] = await Promise.all([
           getDocs(collection(db, 'empresas')),
           getDocs(collection(db, 'catalogo_tipo_operacion')),
@@ -75,19 +76,26 @@ const ServiciosCancelados = () => {
         setCatalogosGlobales(catGuardados);
       }
 
-      const operacionesSnap = await getDocs(query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc')));
+      const queryOperacionesCanceladas = query(
+        collection(db, 'operaciones'), 
+        where('status', '==', '7607f692'), 
+        orderBy('fechaServicio', 'desc'), 
+        limit(100)
+      );
 
-      const opDataRaw = operacionesSnap.docs.map((d: any) => {
+      const operacionesSnap = await getDocs(queryOperacionesCanceladas);
+
+      const operacionesCanceladas = operacionesSnap.docs.map((d: any) => {
         const data = d.data() as any;
         const clienteObj = catGuardados.empresas.find((e: any) => e.id === data.clientePaga);
         return { id: d.id, ...data, nombreCliente: clienteObj ? clienteObj.nombre : (data.clientePaga || 'Desconocido') };
       });
 
-      const operacionesCanceladas = opDataRaw.filter((op: any) => String(op.status).trim() === '7607f692');
       setOperacionesGlobales(operacionesCanceladas);
 
     } catch (e) {
       console.error("Error al pre-cargar datos:", e);
+      alert("Hubo un problema al descargar las operaciones. Verifica tu conexión.");
     }
     setCargandoOperaciones(false);
   };
@@ -311,7 +319,6 @@ const ServiciosCancelados = () => {
     generarPruebaEntregaPDF(datosPDF);
   };
 
-  // ✅ NUEVA FUNCIÓN PARA CARTA DE INSTRUCCIONES FLETES
   const handleDescargarCartaInstrucciones = () => {
     if (!operacionViendo) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
@@ -409,7 +416,7 @@ const ServiciosCancelados = () => {
         <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: '0 0 24px 0', fontWeight: 'bold' }}>🚫 Servicios Cancelados</h1>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
           <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
-            <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9' }}><option>Filtro: Todo</option></select>
+            <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '10px', borderRadius: '6px' }}><option>Filtro: Todo</option></select>
           </div>
           <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'center' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
@@ -418,8 +425,12 @@ const ServiciosCancelados = () => {
             </div>
           </div>
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
-            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.8rem', padding: '4px 12px' }}>↻ Actualizar</button>
-            <button className="btn btn-outline" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>Exportar CSV</button>
+            <button className="btn btn-outline" onClick={forzarRecarga} title="Recargar Catálogos" style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
+            </button>
+            <button className="btn btn-outline" onClick={exportarCSV} title="Exportar CSV" style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            </button>
           </div>
         </div>
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
@@ -427,13 +438,49 @@ const ServiciosCancelados = () => {
             {cargandoOperaciones ? (<div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones...</div>) : (
               <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
-                  <tr><th style={{ padding: '16px' }}># Ref</th><th style={{ padding: '16px' }}>Fecha</th><th style={{ padding: '16px' }}>Tipo</th><th style={{ padding: '16px' }}>Status</th><th style={{ padding: '16px' }}>Tarifa</th><th style={{ padding: '16px' }}>Remolque</th><th style={{ padding: '16px' }}>Proveedor</th><th style={{ padding: '16px' }}>Unidad</th><th style={{ padding: '16px' }}>Cliente</th><th style={{ padding: '16px' }}>Subtotal</th></tr>
+                  <tr>
+                    <th style={{ padding: '16px', width: '100px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Ref</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Tipo de Operación</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Status</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Convenio (Tarifa)</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Remolque</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Proveedor</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Unidad</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Cliente (Paga)</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Subtotal</th>
+                  </tr>
                 </thead>
                 <tbody>
-                  {operacionesEnPantalla.length === 0 ? (<tr><td colSpan={10} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>) : (
+                  {operacionesEnPantalla.length === 0 ? (<tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>) : (
                     operacionesEnPantalla.map((op: any) => (
                       <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
-                        <td style={{ padding: '16px' }}>{op.ref || op.id?.substring(0,6)}</td><td style={{ padding: '16px' }}>{op.fechaServicio}</td><td style={{ padding: '16px' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')}</td><td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre')}</td><td style={{ padding: '16px' }}>{op.convenioNombre || obtenerNombreConvenioCliente(op.convenio)}</td><td style={{ padding: '16px' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'placa')}</td><td style={{ padding: '16px' }}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas')}</td><td style={{ padding: '16px' }}>{mostrarDatoMapeado(op.unidad, 'unidades')}</td><td style={{ padding: '16px' }}>{op.nombreCliente}</td><td style={{ padding: '16px' }}>{formatoMoneda(op.subtotalCliente)}</td>
+                        <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
+                          <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            {/* Único botón: Ver Detalles */}
+                            <button 
+                              type="button" 
+                              title="Ver Detalles"
+                              onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setPestañaDetalleActiva('general'); }}
+                              style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </button>
+                          </div>
+                        </td>
+                        <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0,6)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')}</td>
+                        <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre')}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.convenioNombre || obtenerNombreConvenioCliente(op.convenio)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'placa')}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas')}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades')}</td>
+                        <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{op.nombreCliente}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.subtotalCliente)}</td>
                       </tr>
                     ))
                   )}
@@ -444,7 +491,25 @@ const ServiciosCancelados = () => {
           {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones</div>
-              <div style={{ display: 'flex', gap: '8px' }}><button onClick={irPaginaAnterior} disabled={paginaActual === 1}>Anterior</button><span style={{ padding: '6px 12px' }}>{paginaActual} / {totalPaginas || 1}</span><button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas}>Siguiente</button></div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  title="Página Anterior"
+                  onClick={irPaginaAnterior} 
+                  disabled={paginaActual === 1}
+                  style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                </button>
+                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <button 
+                  title="Página Siguiente"
+                  onClick={irPaginaSiguiente} 
+                  disabled={paginaActual === totalPaginas || totalPaginas === 0}
+                  style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -477,8 +542,8 @@ const ServiciosCancelados = () => {
                   📄 Instrucciones
                 </button>
 
-                <button onClick={verHistorial} style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>Bitácora</button>
-                <button onClick={() => setOperacionViendo(null)} className="btn-window close">✕</button>
+                <button onClick={verHistorial} style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>📋 Bitácora</button>
+                <button onClick={() => setOperacionViendo(null)} className="btn-window close" style={{ padding: '6px', borderRadius: '50%' }}>✕</button>
               </div>
             </div>
             <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px', overflowX: 'auto' }}>

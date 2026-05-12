@@ -35,8 +35,9 @@ const MultiSelectCheckbox: React.FC<{
     }
   };
 
+  // ✅ CORRECCIÓN: Mostrar los nombres seleccionados en lugar del conteo
   const displayText = selectedValues.length > 0 
-    ? `${selectedValues.length} seleccionado(s)` 
+    ? selectedValues.join(', ') 
     : placeholder;
 
   return (
@@ -47,11 +48,15 @@ const MultiSelectCheckbox: React.FC<{
         style={{
           cursor: 'pointer', border: isOpen ? '1px solid #3b82f6' : '1px solid #30363d',
           backgroundColor: '#010409', color: selectedValues.length > 0 ? '#c9d1d9' : '#8b949e',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none'
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none',
+          padding: '10px'
         }}
       >
-        <span>{displayText}</span>
-        <span style={{ fontSize: '0.8rem' }}>{isOpen ? '▲' : '▼'}</span>
+        {/* Agregado overflow hidden para que textos muy largos no rompan la caja */}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
+          {displayText}
+        </span>
+        <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>{isOpen ? '▲' : '▼'}</span>
       </div>
       
       {isOpen && (
@@ -84,7 +89,6 @@ const MultiSelectCheckbox: React.FC<{
     </div>
   );
 };
-
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR ESTRICTO
@@ -136,7 +140,7 @@ const SearchableSelect: React.FC<{
         required={required && !value} 
         style={{
           cursor: 'text', border: isOpen ? '1px solid #3b82f6' : '1px solid #30363d',
-          backgroundColor: '#010409', color: '#c9d1d9'
+          backgroundColor: '#010409', color: '#c9d1d9', padding: '10px'
         }}
       />
       
@@ -214,8 +218,8 @@ const ModalNuevoRegimen: React.FC<{ isOpen: boolean; onClose: () => void }> = ({
             <input type="text" className="form-control" value={descripcion} onChange={e => setDescripcion(e.target.value)} required />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
-            <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+            <button type="button" onClick={onClose} className="btn btn-outline" style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={guardando} style={{ padding: '8px 16px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
           </div>
         </form>
       </div>
@@ -266,7 +270,6 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     
     regimenFiscalId: '',
     regimenFiscalLabel: '',
-    // Enlazar de manera estricta a IDs para respetar el diseño de BD relacional
     moneda: '', 
     tipoFactura: '', 
     condicionPago: 'Crédito',
@@ -445,7 +448,6 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     transition: 'all 0.2s ease', outline: 'none'
   });
 
-  // Para el filtrado encadenado de tipo de factura en base al ID de la moneda seleccionada
   const monedaSeleccionadaString = monedas.find(m => m.id === formData.moneda)?.moneda || formData.moneda;
   const tiposFacturasFiltrados = tiposFacturas.filter(tf => tf.moneda === monedaSeleccionadaString);
   
@@ -454,7 +456,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
   return (
     <>
-      <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
+      <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`} style={{ zIndex: 1050 }}>
         <div className="form-card" style={{ maxWidth: '850px', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
           
           <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -463,11 +465,11 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
             </h2>
             <div className="header-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
               {estado === 'abierto' ? (
-                <button type="button" onClick={onMinimize} className="btn-window">🗕</button>
+                <button type="button" onClick={onMinimize} className="btn-window" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>🗕</button>
               ) : (
-                <button type="button" onClick={onRestore} className="btn-window restore">🗖</button>
+                <button type="button" onClick={onRestore} className="btn-window restore" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>🗖</button>
               )}
-              <button type="button" onClick={onClose} className="btn-window close">✕</button>
+              <button type="button" onClick={onClose} className="btn-window close" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
           </div>
 
@@ -479,229 +481,232 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
               <button type="button" onClick={() => setActiveTab('contacto')} style={tabStyle(activeTab === 'contacto')}>Contacto</button>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ padding: '24px', maxHeight: '65vh', overflowY: 'auto' }}>
-              
-              {/* --- PESTAÑA 1: INFORMACIÓN GENERAL --- */}
-              <div style={{ display: activeTab === 'general' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
-                <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label orange"># de Empresa (Automático)</label>
-                    <input type="text" className="form-control" value={formData.numCliente} disabled style={{ backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed', width: '150px', textAlign: 'center', fontWeight: 'bold' }} />
-                  </div>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '24px', maxHeight: '65vh', overflowY: 'auto' }}>
+                
+                {/* --- PESTAÑA 1: INFORMACIÓN GENERAL --- */}
+                <div style={{ display: activeTab === 'general' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
+                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label className="form-label orange" style={{ color: '#D84315', display: 'block', marginBottom: '8px' }}># de Empresa (Automático)</label>
+                      <input type="text" className="form-control" value={formData.numCliente} disabled style={{ backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed', width: '150px', textAlign: 'center', fontWeight: 'bold', padding: '10px', border: '1px solid #30363d', borderRadius: '4px' }} />
+                    </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Razón Social <span style={{ color: '#ff4d4d' }}>*</span></label>
-                    <input type="text" name="nombre" className="form-control" value={formData.nombre} onChange={handleChange} required />
-                  </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Razón Social <span style={{ color: '#ff4d4d' }}>*</span></label>
+                      <input type="text" name="nombre" className="form-control" value={formData.nombre} onChange={handleChange} required style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                    </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Nombre Corto / Alias</label>
-                    <input type="text" name="nombreCorto" className="form-control" value={formData.nombreCorto} onChange={handleChange} />
-                  </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Nombre Corto / Alias</label>
+                      <input type="text" name="nombreCorto" className="form-control" value={formData.nombreCorto} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                    </div>
 
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">Tipo(s) de Empresa <span style={{ color: '#ff4d4d' }}>*</span></label>
-                    <MultiSelectCheckbox 
-                      options={catalogoTiposEmpresa} 
-                      selectedValues={formData.tiposEmpresa} 
-                      onChange={handleTiposEmpresaChange} 
-                      placeholder="Seleccionar tipos..."
-                    />
-                  </div>
-
-                  {formData.tiposEmpresa.includes('Proveedor (Servicios)') && (
-                    <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: 'rgba(216, 67, 21, 0.05)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(216, 67, 21, 0.2)' }}>
-                      <label className="form-label" style={{ color: '#D84315' }}>Servicios que Ofrece (Solo para Proveedores de Servicios)</label>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Tipo(s) de Empresa <span style={{ color: '#ff4d4d' }}>*</span></label>
                       <MultiSelectCheckbox 
-                        options={catalogoTiposServicio} 
-                        selectedValues={formData.tiposServicio} 
-                        onChange={handleTiposServicioChange} 
-                        placeholder="Seleccionar servicios..."
+                        options={catalogoTiposEmpresa} 
+                        selectedValues={formData.tiposEmpresa} 
+                        onChange={handleTiposEmpresaChange} 
+                        placeholder="Seleccionar tipos..."
                       />
                     </div>
-                  )}
 
-                  {formData.tiposEmpresa.includes('Cliente (Mercancía)') && (
-                    <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                      <label className="form-label" style={{ color: '#58a6ff' }}>Cliente que Paga (Relacionado) *</label>
-                      <SearchableSelect 
-                        options={opcionesClientesPaga}
-                        value={formData.clienteRelacionadoId}
-                        onChange={(id, label) => setFormData(prev => ({ ...prev, clienteRelacionadoId: id, clienteRelacionadoNombre: label }))}
-                        placeholder="Buscar cliente principal (Cliente Paga)..."
-                        required={true}
-                      />
-                    </div>
-                  )}
-
-                  <div className="form-group">
-                    <label className="form-label">RFC / Tax ID <span style={{ color: '#ff4d4d' }}>*</span></label>
-                    <input type="text" name="rfcTaxId" className="form-control font-mono" value={formData.rfcTaxId} onChange={handleChange} required />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Status</label>
-                    <select name="status" className="form-control" value={formData.status} onChange={handleChange}>
-                      <option value="Activa">Activa</option>
-                      <option value="Inactiva">Inactiva</option>
-                      <option value="Baja">Baja</option>
-                    </select>
-                  </div>
-
-                  {formData.status === 'Baja' && (
-                    <div style={{ gridColumn: 'span 2', backgroundColor: 'rgba(239, 68, 68, 0.05)', padding: '16px', borderRadius: '8px', border: '1px dashed #ef4444', display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px' }}>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label" style={{ color: '#ef4444' }}>Fecha de Baja *</label>
-                        <input type="date" name="fechaBaja" className="form-control" value={formData.fechaBaja} onChange={handleChange} required />
-                      </div>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label" style={{ color: '#ef4444' }}>Observaciones de Baja *</label>
-                        <input type="text" name="observacionesBaja" className="form-control" value={formData.observacionesBaja} onChange={handleChange} placeholder="Motivo de la baja..." required />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* --- PESTAÑA 2: INFORMACIÓN FISCAL Y COMERCIAL --- */}
-              <div style={{ display: activeTab === 'fiscal' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
-                <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  
-                  <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                    <label className="form-label" style={{ color: '#58a6ff' }}>Régimen Fiscal (Buscar en Catálogo)</label>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <div style={{ flex: 1 }}>
-                        <SearchableSelect 
-                          options={regimenesFiscales}
-                          value={formData.regimenFiscalId}
-                          onChange={(id, label) => setFormData(prev => ({ ...prev, regimenFiscalId: id, regimenFiscalLabel: label }))}
-                          placeholder="Buscar Régimen Fiscal..."
+                    {formData.tiposEmpresa.includes('Proveedor (Servicios)') && (
+                      <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: 'rgba(216, 67, 21, 0.05)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(216, 67, 21, 0.2)' }}>
+                        <label className="form-label" style={{ color: '#D84315', display: 'block', marginBottom: '8px' }}>Servicios que Ofrece (Solo para Proveedores de Servicios)</label>
+                        <MultiSelectCheckbox 
+                          options={catalogoTiposServicio} 
+                          selectedValues={formData.tiposServicio} 
+                          onChange={handleTiposServicioChange} 
+                          placeholder="Seleccionar servicios..."
                         />
                       </div>
-                      <button type="button" className="btn btn-outline" onClick={() => setModalRegimenAbierto(true)} style={{ height: '38px', whiteSpace: 'nowrap' }}>
-                        + Nuevo
-                      </button>
-                    </div>
-                  </div>
+                    )}
 
-                  <div className="form-group">
-                    <label className="form-label">Moneda</label>
-                    {/* MODIFICACIÓN: AHORA GUARDA EL ID EN LA BASE DE DATOS */}
-                    <select name="moneda" className="form-control" value={formData.moneda} onChange={handleChange}>
-                      <option value="">Seleccione Moneda...</option>
-                      {monedas.map(mon => (
-                        <option key={mon.id} value={mon.id}>{mon.moneda}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Tipo de Factura</label>
-                    {/* MODIFICACIÓN: AHORA GUARDA EL ID EN LA BASE DE DATOS */}
-                    <select 
-                      name="tipoFactura" 
-                      className="form-control" 
-                      value={formData.tipoFactura} 
-                      onChange={handleChange}
-                      disabled={!formData.moneda}
-                      style={{ 
-                        opacity: formData.moneda ? 1 : 0.5,
-                        backgroundColor: '#010409',
-                        color: formData.moneda ? '#c9d1d9' : '#8b949e'
-                      }}
-                    >
-                      <option value="">{formData.moneda ? 'Seleccione Tipo de Factura...' : 'Primero seleccione Moneda'}</option>
-                      {tiposFacturasFiltrados.map(tf => (
-                        <option key={tf.id} value={tf.id}>{tf.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label" style={{ color: '#58a6ff' }}>Crédito / Contado</label>
-                    <select name="condicionPago" className="form-control" value={formData.condicionPago} onChange={handleCondicionPagoChange}>
-                      <option value="Crédito">Crédito</option>
-                      <option value="Contado">Contado</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9' }}>Días de Crédito</label>
-                    <input type="number" name="diasCredito" className="form-control" value={formData.diasCredito} onChange={(e) => setFormData(prev => ({ ...prev, diasCredito: parseInt(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9' }}>Límite de Crédito ($)</label>
-                    <input type="number" step="0.01" name="limiteCredito" className="form-control" value={formData.limiteCredito} onChange={(e) => setFormData(prev => ({ ...prev, limiteCredito: parseFloat(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* --- PESTAÑA 3: CONTACTO Y DIRECCIÓN --- */}
-              <div style={{ display: activeTab === 'contacto' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
-                <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                  
-                  <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                    <label className="form-label" style={{ color: '#58a6ff' }}>Dirección de la Empresa (Buscar en Base de Datos)</label>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <div style={{ flex: 1 }}>
+                    {formData.tiposEmpresa.includes('Cliente (Mercancía)') && (
+                      <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                        <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Cliente que Paga (Relacionado) *</label>
                         <SearchableSelect 
-                          options={direccionesDB}
-                          value={formData.direccionId}
-                          onChange={(id, label) => setFormData(prev => ({ ...prev, direccionId: id, direccionLabel: label, direccion: label }))}
-                          placeholder="Buscar dirección guardada..."
+                          options={opcionesClientesPaga}
+                          value={formData.clienteRelacionadoId}
+                          onChange={(id, label) => setFormData(prev => ({ ...prev, clienteRelacionadoId: id, clienteRelacionadoNombre: label }))}
+                          placeholder="Buscar cliente principal (Cliente Paga)..."
+                          required={true}
                         />
                       </div>
-                      <button type="button" className="btn btn-outline" onClick={() => setModalDireccionAbierto(true)} style={{ height: '38px', whiteSpace: 'nowrap' }}>
-                        + Añadir Nueva
-                      </button>
+                    )}
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>RFC / Tax ID <span style={{ color: '#ff4d4d' }}>*</span></label>
+                      <input type="text" name="rfcTaxId" className="form-control font-mono" value={formData.rfcTaxId} onChange={handleChange} required style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Status</label>
+                      <select name="status" className="form-control" value={formData.status} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}>
+                        <option value="Activa">Activa</option>
+                        <option value="Inactiva">Inactiva</option>
+                        <option value="Baja">Baja</option>
+                      </select>
+                    </div>
+
+                    {formData.status === 'Baja' && (
+                      <div style={{ gridColumn: 'span 2', backgroundColor: 'rgba(239, 68, 68, 0.05)', padding: '16px', borderRadius: '8px', border: '1px dashed #ef4444', display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px' }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label" style={{ color: '#ef4444', display: 'block', marginBottom: '8px' }}>Fecha de Baja *</label>
+                          <input type="date" name="fechaBaja" className="form-control" value={formData.fechaBaja} onChange={handleChange} required style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label" style={{ color: '#ef4444', display: 'block', marginBottom: '8px' }}>Observaciones de Baja *</label>
+                          <input type="text" name="observacionesBaja" className="form-control" value={formData.observacionesBaja} onChange={handleChange} placeholder="Motivo de la baja..." required style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* --- PESTAÑA 2: INFORMACIÓN FISCAL Y COMERCIAL --- */}
+                <div style={{ display: activeTab === 'fiscal' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
+                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    
+                    <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+                      <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Régimen Fiscal (Buscar en Catálogo)</label>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <div style={{ flex: 1 }}>
+                          <SearchableSelect 
+                            options={regimenesFiscales}
+                            value={formData.regimenFiscalId}
+                            onChange={(id, label) => setFormData(prev => ({ ...prev, regimenFiscalId: id, regimenFiscalLabel: label }))}
+                            placeholder="Buscar Régimen Fiscal..."
+                          />
+                        </div>
+                        <button type="button" className="btn btn-outline" onClick={() => setModalRegimenAbierto(true)} style={{ height: '38px', whiteSpace: 'nowrap', padding: '0 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>
+                          + Nuevo
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Moneda</label>
+                      <select name="moneda" className="form-control" value={formData.moneda} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}>
+                        <option value="">Seleccione Moneda...</option>
+                        {monedas.map(mon => (
+                          <option key={mon.id} value={mon.id}>{mon.moneda}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Tipo de Factura</label>
+                      <select 
+                        name="tipoFactura" 
+                        className="form-control" 
+                        value={formData.tipoFactura} 
+                        onChange={handleChange}
+                        disabled={!formData.moneda}
+                        style={{ 
+                          width: '100%', padding: '10px', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box',
+                          opacity: formData.moneda ? 1 : 0.5,
+                          backgroundColor: '#010409',
+                          color: formData.moneda ? '#c9d1d9' : '#8b949e'
+                        }}
+                      >
+                        <option value="">{formData.moneda ? 'Seleccione Tipo de Factura...' : 'Primero seleccione Moneda'}</option>
+                        {tiposFacturasFiltrados.map(tf => (
+                          <option key={tf.id} value={tf.id}>{tf.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Crédito / Contado</label>
+                      <select name="condicionPago" className="form-control" value={formData.condicionPago} onChange={handleCondicionPagoChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}>
+                        <option value="Crédito">Crédito</option>
+                        <option value="Contado">Contado</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9', display: 'block', marginBottom: '8px' }}>Días de Crédito</label>
+                      <input type="number" name="diasCredito" className="form-control" value={formData.diasCredito} onChange={(e) => setFormData(prev => ({ ...prev, diasCredito: parseInt(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ color: formData.condicionPago === 'Contado' ? '#484f58' : '#c9d1d9', display: 'block', marginBottom: '8px' }}>Límite de Crédito ($)</label>
+                      <input type="number" step="0.01" name="limiteCredito" className="form-control" value={formData.limiteCredito} onChange={(e) => setFormData(prev => ({ ...prev, limiteCredito: parseFloat(e.target.value) || 0 }))} disabled={formData.condicionPago === 'Contado'} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box', opacity: formData.condicionPago === 'Contado' ? 0.5 : 1 }} />
                     </div>
                   </div>
+                </div>
 
-                  <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                    <label className="form-label">Google Maps (URL)</label>
-                    <div style={{ display: 'flex', gap: '12px' }}>
-                      <input type="url" name="maps" className="form-control" value={formData.maps} onChange={handleChange} placeholder="https://maps.app.goo.gl/..." style={{ flex: 1 }} />
-                      {formData.maps && (
-                        <a href={formData.maps} target="_blank" rel="noopener noreferrer" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
-                          Abrir Mapa
-                        </a>
-                      )}
+                {/* --- PESTAÑA 3: CONTACTO Y DIRECCIÓN --- */}
+                <div style={{ display: activeTab === 'contacto' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
+                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                    
+                    <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+                      <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Dirección de la Empresa (Buscar en Base de Datos)</label>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <div style={{ flex: 1 }}>
+                          <SearchableSelect 
+                            options={direccionesDB}
+                            value={formData.direccionId}
+                            onChange={(id, label) => setFormData(prev => ({ ...prev, direccionId: id, direccionLabel: label, direccion: label }))}
+                            placeholder="Buscar dirección guardada..."
+                          />
+                        </div>
+                        <button type="button" className="btn btn-outline" onClick={() => setModalDireccionAbierto(true)} style={{ height: '38px', whiteSpace: 'nowrap', padding: '0 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>
+                          + Añadir Nueva
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Teléfono de Contacto</label>
-                    <input type="tel" name="telefono" className="form-control" value={formData.telefono} onChange={handleChange} placeholder="Ej. 555-123-4567" />
-                  </div>
+                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Google Maps (URL)</label>
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <input type="url" name="maps" className="form-control" value={formData.maps} onChange={handleChange} placeholder="https://maps.app.goo.gl/..." style={{ flex: 1, padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                        {formData.maps && (
+                          <a href={formData.maps} target="_blank" rel="noopener noreferrer" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', padding: '0 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px' }}>
+                            Abrir Mapa
+                          </a>
+                        )}
+                      </div>
+                    </div>
 
-                  <div className="form-group">
-                    <label className="form-label">Correo Electrónico</label>
-                    <input type="email" name="correo" className="form-control" value={formData.correo} onChange={handleChange} placeholder="contacto@empresa.com" />
-                  </div>
+                    {/* ✅ LOS CAMPOS RESTANTES DE CONTACTO */}
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Teléfono</label>
+                      <input type="text" name="telefono" className="form-control" value={formData.telefono} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                    </div>
 
+                    <div className="form-group">
+                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Correo Electrónico</label>
+                      <input type="email" name="correo" className="form-control" value={formData.correo} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                    </div>
+
+                  </div>
                 </div>
               </div>
 
-              <div className="form-actions" style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end', gap: '16px', borderTop: '1px solid #30363d', paddingTop: '24px' }}>
-                <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={cargando}>
-                  {cargando ? 'Guardando...' : 'Guardar Empresa'}
-                </button>
+              {/* ✅ BOTONES DEL FORMULARIO */}
+              <div className="form-actions" style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#0d1117' }}>
+                <button type="button" onClick={onClose} className="btn btn-outline" style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
+                <button type="submit" className="btn btn-primary" disabled={cargando} style={{ padding: '8px 16px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{cargando ? 'Guardando...' : 'Guardar Empresa'}</button>
               </div>
-
             </form>
           </div>
         </div>
       </div>
 
-      {modalDireccionAbierto && (
-        <div style={{ zIndex: 2000, position: 'relative' }}>
-          <FormularioDireccion estado="abierto" onClose={() => setModalDireccionAbierto(false)} />
-        </div>
-      )}
-      
       <ModalNuevoRegimen isOpen={modalRegimenAbierto} onClose={() => setModalRegimenAbierto(false)} />
+      
+      {modalDireccionAbierto && (
+        <FormularioDireccion 
+          estado="abierto"
+          onClose={() => setModalDireccionAbierto(false)}
+          onMinimize={() => {}}
+          onRestore={() => {}}
+        />
+      )}
     </>
   );
 };

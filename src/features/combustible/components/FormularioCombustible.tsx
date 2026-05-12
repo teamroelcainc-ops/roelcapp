@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../../../config/firebase'; 
+import { db, actualizarRegistro } from '../../../config/firebase'; 
 import type { Moneda, CombustibleRecord } from '../../../types/combustible';
 import { getMonedasCatalogo, getTipoCambioPorFecha, saveCombustible } from '../services/combustibleService';
 
@@ -90,6 +90,7 @@ const SearchableSelect: React.FC<{
 
 interface FormProps {
   estado?: 'abierto' | 'minimizado';
+  initialData?: CombustibleRecord | null; // ✅ PROPIEDAD AGREGADA PARA LA EDICIÓN
   onClose: () => void;
   onSuccess: () => void;
   onMinimize?: () => void; 
@@ -98,6 +99,7 @@ interface FormProps {
 
 export const FormularioCombustible: React.FC<FormProps> = ({ 
   estado = 'abierto', 
+  initialData, // ✅ RECIBIMOS LOS DATOS
   onClose, 
   onSuccess,
   onMinimize = () => {},
@@ -123,13 +125,31 @@ export const FormularioCombustible: React.FC<FormProps> = ({
     const fetchMonedas = async () => {
       const data = await getMonedasCatalogo();
       setMonedas(data);
-      if (data.length > 0) {
+      if (data.length > 0 && !initialData) {
         setMonedaSeleccionada(data[0]);
         setTipoMedida(data[0].esDolar ? 'Galones' : 'Litros');
       }
     };
     fetchMonedas();
-  }, []);
+  }, [initialData]);
+
+  // ✅ EFECTO PARA LLENAR EL FORMULARIO SI ESTAMOS EDITANDO
+  useEffect(() => {
+    if (initialData) {
+      setFecha(initialData.fecha || todayISO);
+      setTipoCombustible(initialData.tipoCombustible || 'Diesel');
+      setTipoMedida(initialData.tipoMedida || '');
+      setProveedorId(initialData.proveedorId || '');
+      setProveedorNombre(initialData.proveedor || '');
+      setCosto(initialData.costo || 0);
+
+      // Si las monedas ya cargaron, buscamos la que corresponde al registro
+      if (initialData.monedaId && monedas.length > 0) {
+        const monedaMatch = monedas.find(m => m.id === initialData.monedaId);
+        if (monedaMatch) setMonedaSeleccionada(monedaMatch);
+      }
+    }
+  }, [initialData, monedas, todayISO]);
 
   useEffect(() => {
     const cargarProveedores = async () => {
@@ -162,6 +182,8 @@ export const FormularioCombustible: React.FC<FormProps> = ({
       if (monedaSeleccionada?.esDolar && fecha) {
         setCargandoApi(true);
         const tc = await getTipoCambioPorFecha();
+        // Si estamos editando y es el mismo día, respetamos el tc guardado temporalmente, 
+        // pero preferimos siempre usar el oficial de la API para mantener integridad.
         setTipoCambio(tc);
         setCargandoApi(false);
       } else {
@@ -182,21 +204,32 @@ export const FormularioCombustible: React.FC<FormProps> = ({
         return;
     }
 
-    const record: CombustibleRecord = {
+    // Usamos 'any' internamente para que no nos de conflicto si el ID va o no incluido
+    const record: any = {
       fecha,
       tipoCombustible,
       monedaId: monedaSeleccionada.id,
       monedaNombre: monedaSeleccionada.nombre,
       tipoMedida: tipoMedida as 'Litros' | 'Galones',
       proveedor: proveedorNombre, 
-      proveedorId: proveedorId, // Ya no marcará error si actualizaste los Tipos
+      proveedorId: proveedorId, 
       costo,
       ...(esDolar && { tipoCambio, totalPesos })
     };
 
-    await saveCombustible(record);
-    onSuccess();
-    onClose();
+    try {
+      // ✅ SI HAY INITIAL DATA, ACTUALIZAMOS. SI NO, CREAMOS UNO NUEVO
+      if (initialData && (initialData as any).id) {
+        await actualizarRegistro('combustibles', (initialData as any).id, record);
+      } else {
+        await saveCombustible(record as CombustibleRecord);
+      }
+      onSuccess();
+      onClose();
+    } catch (error) {
+      console.error("Error al guardar:", error);
+      alert('Hubo un error al guardar los datos. Revisa tu conexión.');
+    }
   };
 
   const handleMonedaChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -215,7 +248,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
       <div className="form-card" style={{ maxWidth: '700px' }}>
         <div className="form-header">
-          <h2>{estado === 'minimizado' ? 'Editando...' : 'Nuevo Costo de Combustible'}</h2>
+          <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? 'Editar Costo de Combustible' : 'Nuevo Costo de Combustible')}</h2>
           <div className="header-actions">
             {estado === 'abierto' ? (
               <button type="button" onClick={onMinimize} className="btn-window">🗕</button>
