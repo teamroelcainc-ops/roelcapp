@@ -1,6 +1,6 @@
 // src/features/empresas/components/EmpresasDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc } from 'firebase/firestore';
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa } from './FormularioEmpresa';
 import { registrarLog } from '../../../utils/logger';
@@ -11,7 +11,6 @@ const opcionesFiltro = [
   'Propietario (Remolques)', 'Bodega', 'Cliente (Paga)', 'Proveedor (Transporte)', 'Empresas Roelca'
 ];
 
-// 📋 LISTA DE TODAS LAS COLUMNAS DISPONIBLES PARA EXCEL
 const opcionesColumnasExcel = [
   { key: 'numCliente', label: '# de Cliente' },
   { key: 'nombre', label: 'Razón Social' },
@@ -41,9 +40,12 @@ const EmpresasDashboard = () => {
   const [empresaEditando, setEmpresaEditando] = useState<any | null>(null);
   
   const [empresaViendo, setEmpresaViendo] = useState<any | null>(null);
-  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'fiscal' | 'contacto'>('general');
+  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'fiscal' | 'contacto' | 'uso'>('general');
+  const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
+  const [cargandoUso, setCargandoUso] = useState(false);
 
   const [empresas, setEmpresas] = useState<any[]>([]);
+  const [lastUsedMap, setLastUsedMap] = useState<Record<string, string>>({}); 
   const [filtroActivo, setFiltroActivo] = useState('Todo');
   const [busqueda, setBusqueda] = useState('');
 
@@ -53,34 +55,56 @@ const EmpresasDashboard = () => {
   const [observacionesBaja, setObservacionesBaja] = useState('');
   const [guardandoBaja, setGuardandoBaja] = useState(false);
 
-  // ✅ ESTADOS PARA EL MODAL DE EXCEL
   const [modalExcelAbierto, setModalExcelAbierto] = useState(false);
   const [excelFiltroTipo, setExcelFiltroTipo] = useState('Todo');
   const [excelColumnasSeleccionadas, setExcelColumnasSeleccionadas] = useState<string[]>(
     opcionesColumnasExcel.map(col => col.key)
   );
 
-  // MOTOR DE DICCIONARIOS PARA TRADUCCIÓN DE IDs
   const [diccionarios, setDiccionarios] = useState<any>({});
-
-  // ✅ ESTADOS DE PAGINACIÓN
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
-
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'empresas'), (snapshot) => {
+    const unsubscribeEmpresas = onSnapshot(collection(db, 'empresas'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
       data.sort((a: any, b: any) => {
         if (a.numCliente && b.numCliente) {
           return b.numCliente.localeCompare(a.numCliente, undefined, { numeric: true, sensitivity: 'base' });
         }
         return 0;
       });
-      
       setEmpresas(data);
+    });
+
+    const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(1500));
+    const unsubscribeOperaciones = onSnapshot(qOps, (snap) => {
+      const usageMap: Record<string, string> = {};
+      
+      snap.docs.forEach(doc => {
+        const data = doc.data();
+        const date = data.fechaServicio || data.createdAt;
+        if (!date) return;
+        
+        const fields = [
+          data.clientePaga, 
+          data.clienteMercancia, 
+          data.provServicios, 
+          data.proveedorUnidad, 
+          data.destino, 
+          data.origen
+        ];
+        
+        fields.forEach(f => {
+          if (f && typeof f === 'string') {
+            if (!usageMap[f] || new Date(date) > new Date(usageMap[f])) {
+              usageMap[f] = date.split('T')[0];
+            }
+          }
+        });
+      });
+      setLastUsedMap(usageMap);
     });
 
     const fetchDiccionarios = async () => {
@@ -106,13 +130,68 @@ const EmpresasDashboard = () => {
           tiposEmpresa: tEmpresa, tiposServicio: tServicio 
         });
       } catch (error) {
-        console.error("Error cargando diccionarios de traducción:", error);
+        console.error("Error cargando diccionarios:", error);
       }
     };
 
     fetchDiccionarios();
-    return () => unsubscribe();
+    
+    return () => {
+      unsubscribeEmpresas();
+      unsubscribeOperaciones();
+    };
   }, []);
+
+  // ✅ EFECTO INTELIGENTE: AUTOMATIZA EL STATUS SEGÚN EL SEMÁFORO
+  useEffect(() => {
+    const syncStatusAutomatico = async () => {
+      if (empresas.length === 0 || Object.keys(lastUsedMap).length === 0) return;
+      const batch = writeBatch(db);
+      let updates = 0;
+      const hoy = new Date();
+
+      empresas.forEach(emp => {
+        const statusActual = emp.status || 'Activa'; 
+        const fechaUso = lastUsedMap[emp.id] || emp.fechaUltimoServicio;
+        
+        if (!fechaUso) return; // Si nunca ha operado, ignoramos.
+
+        const diffTime = hoy.getTime() - new Date(fechaUso + 'T00:00:00').getTime();
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+        // Semáforo Rojo (> 90 días) -> Se da de baja automáticamente
+        if (diffDays >= 91 && statusActual !== 'Baja') {
+          batch.update(doc(db, 'empresas', emp.id), {
+            status: 'Baja',
+            fechaBaja: hoy.toISOString().split('T')[0],
+            observacionesBaja: 'Sistema: Baja automática por inactividad mayor a 90 días (Semáforo Rojo).'
+          });
+          updates++;
+        } 
+        // Semáforo Amarillo o Verde (<= 90 días) -> Se reactiva automáticamente si estaba de baja por el sistema
+        else if (diffDays <= 90 && statusActual === 'Baja' && emp.observacionesBaja?.includes('Sistema: Baja automática')) {
+          batch.update(doc(db, 'empresas', emp.id), {
+            status: 'Activa',
+            fechaBaja: '',
+            observacionesBaja: ''
+          });
+          updates++;
+        }
+      });
+
+      if (updates > 0) {
+        try {
+          await batch.commit();
+          console.log(`[SEMÁFORO] Se sincronizó el estatus de ${updates} empresas por inactividad.`);
+        } catch (error) {
+          console.error("Error al aplicar bajas automáticas:", error);
+        }
+      }
+    };
+
+    const timer = setTimeout(syncStatusAutomatico, 2500);
+    return () => clearTimeout(timer);
+  }, [empresas, lastUsedMap]);
 
   useEffect(() => {
     setPaginaActual(1);
@@ -126,9 +205,47 @@ const EmpresasDashboard = () => {
     setEstadoFormulario('abierto'); 
   };
 
-  const verDetalle = (empresa: any) => {
+  const verDetalle = async (empresa: any) => {
     setEmpresaViendo(empresa);
     setActiveTabDetalle('general');
+    setCargandoUso(true);
+    setOperacionesUso([]);
+
+    try {
+      const camposConsulta = [
+        { field: 'clientePaga', label: 'Cliente (Paga)' },
+        { field: 'clienteMercancia', label: 'Cliente (Mercancía)' },
+        { field: 'provServicios', label: 'Prov. Servicios' },
+        { field: 'proveedorUnidad', label: 'Prov. Unidad' },
+        { field: 'destino', label: 'Destino' },
+        { field: 'origen', label: 'Origen' }
+      ];
+
+      const opsMap = new Map();
+
+      await Promise.all(camposConsulta.map(async (c) => {
+        const q = query(collection(db, 'operaciones'), where(c.field, '==', empresa.id), limit(15));
+        const snap = await getDocs(q);
+        
+        snap.forEach(doc => {
+          if (!opsMap.has(doc.id)) {
+            opsMap.set(doc.id, { id: doc.id, ...doc.data(), rolesUso: [c.label] });
+          } else {
+            opsMap.get(doc.id).rolesUso.push(c.label);
+          }
+        });
+      }));
+      
+      const opsList = Array.from(opsMap.values()).sort((a, b) => 
+        new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime()
+      );
+      
+      setOperacionesUso(opsList);
+    } catch (error) {
+      console.error("Error al obtener historial de uso:", error);
+    } finally {
+      setCargandoUso(false);
+    }
   };
   
   const eliminarEmpresa = async (id: string) => {
@@ -214,6 +331,20 @@ const EmpresasDashboard = () => {
     return [];
   };
 
+  // ✅ INDICADOR DE COLOR CSS ESTRICTO
+  const obtenerColorInactividad = (fechaStr: string) => {
+    if (!fechaStr) return 'transparent'; // Jamás se ha usado: Sin color
+    const fechaUltimo = new Date(fechaStr + 'T00:00:00');
+    const hoy = new Date();
+    
+    const diffTime = hoy.getTime() - fechaUltimo.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 45) return '#10b981'; // Verde
+    if (diffDays >= 46 && diffDays <= 90) return '#f59e0b'; // Amarillo
+    return '#ef4444'; // Rojo (> 90)
+  };
+
   const registrosListos = useMemo(() => {
     return empresas.map(emp => {
       let clienteRelName = emp.clienteRelacionadoNombre;
@@ -221,8 +352,12 @@ const EmpresasDashboard = () => {
         const match = empresas.find(e => e.id === emp.clienteRelacionadoId);
         clienteRelName = match ? match.nombre : emp.clienteRelacionadoId;
       }
+      
+      const fechaDinamicaUso = lastUsedMap[emp.id] || emp.fechaUltimoServicio || '';
+
       return {
         ...emp,
+        _fechaDinamicaUso: fechaDinamicaUso,
         _regimenLabel: getLabelExt(emp.regimenFiscalLabel, emp.regimenFiscalId || emp.regimenFiscal, 'regimenes'),
         _monedaLabel: getLabel(emp.moneda, 'monedas'),
         _facturaLabel: getLabel(emp.tipoFactura, 'facturas'),
@@ -232,7 +367,7 @@ const EmpresasDashboard = () => {
         _tiposServicioArray: getArrayLabels(emp.tiposServicio, 'tiposServicio')
       };
     });
-  }, [empresas, diccionarios]);
+  }, [empresas, diccionarios, lastUsedMap]);
 
   const registrosFiltrados = useMemo(() => {
     return registrosListos.filter(emp => {
@@ -301,7 +436,7 @@ const EmpresasDashboard = () => {
       if (excelColumnasSeleccionadas.includes('servicios')) rowData['Servicios Ofrecidos'] = renderArrayValues(emp._tiposServicioArray);
       if (excelColumnasSeleccionadas.includes('clienteRelacionado')) rowData['Cliente Relacionado'] = emp._clienteRelLabel !== '-' ? emp._clienteRelLabel : '';
       if (excelColumnasSeleccionadas.includes('rfcTaxId')) rowData['RFC/Tax ID'] = emp.rfcTaxId || '';
-      if (excelColumnasSeleccionadas.includes('fechaUltimoServicio')) rowData['Último Servicio'] = emp.fechaUltimoServicio || '';
+      if (excelColumnasSeleccionadas.includes('fechaUltimoServicio')) rowData['Último Servicio'] = emp._fechaDinamicaUso || '';
       if (excelColumnasSeleccionadas.includes('regimenFiscal')) rowData['Régimen Fiscal'] = emp._regimenLabel !== '-' ? emp._regimenLabel : '';
       if (excelColumnasSeleccionadas.includes('moneda')) rowData['Moneda'] = emp._monedaLabel !== '-' ? emp._monedaLabel : '';
       if (excelColumnasSeleccionadas.includes('tipoFactura')) rowData['Tipo de Factura'] = emp._facturaLabel !== '-' ? emp._facturaLabel : '';
@@ -407,9 +542,9 @@ const EmpresasDashboard = () => {
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
             <table className="data-table" style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+              <thead style={{ backgroundColor: '#1f2937', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  <th style={{ padding: '16px', width: '140px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                  <th style={{ padding: '16px', width: '140px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#1f2937', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># de Cliente</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Empresa</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Nombre Corto</th>
@@ -427,7 +562,10 @@ const EmpresasDashboard = () => {
                     </td>
                   </tr>
                 ) : (
-                  registrosEnPantalla.map((emp) => (
+                  registrosEnPantalla.map((emp) => {
+                    const colorSemaforo = obtenerColorInactividad(emp._fechaDinamicaUso);
+                    
+                    return (
                     <tr 
                       key={emp.id} 
                       style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === emp.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }}
@@ -449,7 +587,6 @@ const EmpresasDashboard = () => {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           
-                          {/* BOTÓN DAR BAJA */}
                           {emp.status !== 'Baja' && (
                             <button 
                               className="btn-small btn-warning" 
@@ -477,9 +614,29 @@ const EmpresasDashboard = () => {
                         </div>
                       </td>
 
+                      {/* ✅ SEMÁFORO ESTILO CSS (Columna # de Cliente) */}
                       <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
-                        {emp.status === 'Baja' ? <span style={{ color: '#ef4444', textDecoration: 'line-through' }}>{emp.numCliente}</span> : emp.numCliente}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {colorSemaforo !== 'transparent' && (
+                            <span 
+                              title={`Último uso en operaciones: ${emp._fechaDinamicaUso}`} 
+                              style={{ 
+                                width: '12px', 
+                                height: '12px', 
+                                borderRadius: '50%', 
+                                backgroundColor: colorSemaforo, 
+                                display: 'inline-block', 
+                                flexShrink: 0, 
+                                boxShadow: `0 0 5px ${colorSemaforo}` 
+                              }}>
+                            </span>
+                          )}
+                          <span style={{ textDecoration: emp.status === 'Baja' ? 'line-through' : 'none', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc' }}>
+                            {emp.numCliente}
+                          </span>
+                        </div>
                       </td>
+
                       <td style={{ padding: '16px', fontWeight: '500', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
                         {emp.nombre} {emp.status === 'Baja' && <span style={{ fontSize: '0.7rem', border: '1px solid #ef4444', padding: '2px 4px', borderRadius: '4px', marginLeft: '6px' }}>BAJA</span>}
                       </td>
@@ -491,9 +648,13 @@ const EmpresasDashboard = () => {
                         {renderArrayValues(emp._tiposServicioArray)}
                       </td>
                       <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarDato(emp.rfcTaxId)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarDato(emp.fechaUltimoServicio)}</td>
+                      
+                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
+                        {mostrarDato(emp._fechaDinamicaUso)}
+                      </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -611,7 +772,7 @@ const EmpresasDashboard = () => {
       {/* MODAL DETALLES DE EMPRESA */}
       {empresaViendo && (
         <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-          <div className="form-card detail-card" style={{ maxWidth: '850px', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', overflow: 'hidden' }}>
+          <div className="form-card detail-card" style={{ maxWidth: '850px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', overflow: 'hidden' }}>
             
             <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
@@ -625,13 +786,14 @@ const EmpresasDashboard = () => {
               <button onClick={() => setEmpresaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
             
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px' }}>
+            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px', overflowX: 'auto' }}>
               <button type="button" onClick={() => setActiveTabDetalle('general')} style={tabStyle(activeTabDetalle === 'general')}>General</button>
               <button type="button" onClick={() => setActiveTabDetalle('fiscal')} style={tabStyle(activeTabDetalle === 'fiscal')}>Comercial / Fiscal</button>
               <button type="button" onClick={() => setActiveTabDetalle('contacto')} style={tabStyle(activeTabDetalle === 'contacto')}>Contacto</button>
+              <button type="button" onClick={() => setActiveTabDetalle('uso')} style={tabStyle(activeTabDetalle === 'uso')}>Historial de Uso</button>
             </div>
 
-            <div className="detail-content" style={{ padding: '24px', minHeight: '300px' }}>
+            <div className="detail-content" style={{ padding: '24px', minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
               
               {activeTabDetalle === 'general' && (
                 <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', animation: 'fadeIn 0.3s ease' }}>
@@ -643,7 +805,12 @@ const EmpresasDashboard = () => {
                   <div className="detail-item" style={{ gridColumn: 'span 3' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Servicios Ofrecidos</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{renderArrayValues(empresaViendo._tiposServicioArray)}</span></div>
                   
                   <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>RFC / Tax ID</span><span className="detail-value font-mono" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.rfcTaxId)}</span></div>
-                  <div className="detail-item" style={{ gridColumn: 'span 2' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Fecha del último servicio</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.fechaUltimoServicio)}</span></div>
+                  <div className="detail-item" style={{ gridColumn: 'span 2' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Fecha del último servicio</span><span className="detail-value" style={{ color: '#c9d1d9' }}>
+                    {obtenerColorInactividad(empresaViendo._fechaDinamicaUso) !== 'transparent' && (
+                      <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: obtenerColorInactividad(empresaViendo._fechaDinamicaUso), display: 'inline-block', marginRight: '6px', boxShadow: `0 0 5px ${obtenerColorInactividad(empresaViendo._fechaDinamicaUso)}` }}></span>
+                    )}
+                    {mostrarDato(empresaViendo._fechaDinamicaUso)}
+                  </span></div>
                   
                   {Array.isArray(empresaViendo.tiposEmpresa) && empresaViendo.tiposEmpresa.includes('Cliente (Mercancía)') && (
                     <div className="detail-item" style={{ gridColumn: 'span 3' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Cliente Paga (Relacionado)</span><span className="detail-value" style={{ color: '#58a6ff', fontWeight: '500' }}>{mostrarDato(empresaViendo._clienteRelLabel)}</span></div>
@@ -677,6 +844,51 @@ const EmpresasDashboard = () => {
                   </div>
                   <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Teléfono</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.telefono)}</span></div>
                   <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Correo Electrónico</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.correo)}</span></div>
+                </div>
+              )}
+
+              {/* ✅ TABLA HISTORIAL DE USO */}
+              {activeTabDetalle === 'uso' && (
+                <div style={{ animation: 'fadeIn 0.3s ease' }}>
+                  {cargandoUso ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando historial detallado...</div>
+                  ) : operacionesUso.length === 0 ? (
+                    <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
+                      Esta empresa aún no ha sido utilizada en ninguna operación bajo los roles verificados.
+                    </div>
+                  ) : (
+                    <>
+                      <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
+                        Mostrando las operaciones donde esta empresa coincidió como: Cliente Paga, Cliente Mercancía, Prov. Servicios, Prov. Unidad, Destino u Origen.
+                      </p>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
+                        <thead style={{ backgroundColor: '#1f2937' }}>
+                          <tr>
+                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>REF. OPERACIÓN</th>
+                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>FECHA</th>
+                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>ROLES EN LA OP.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {operacionesUso.map(op => (
+                            <tr key={op.id} style={{ borderBottom: '1px solid #30363d' }}>
+                              <td style={{ padding: '12px 16px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold' }}>{op.ref || op.id.substring(0,6)}</td>
+                              <td style={{ padding: '12px 16px', color: '#c9d1d9' }}>{op.fechaServicio || op.createdAt}</td>
+                              <td style={{ padding: '12px 16px', color: '#c9d1d9' }}>
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                  {op.rolesUso.map((rol: string, idx: number) => (
+                                    <span key={idx} style={{ backgroundColor: '#21262d', border: '1px solid #30363d', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem' }}>
+                                      {rol}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
+                  )}
                 </div>
               )}
 

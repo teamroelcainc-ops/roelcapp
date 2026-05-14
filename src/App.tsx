@@ -30,7 +30,8 @@ import { ConfiguradorStatus } from './features/configuracion/components/Configur
 import { RelojChecadorModal } from './features/relojChecador/components/RelojChecadorModal';
 import { HistorialChequeosDashboard } from './features/relojChecador/components/HistorialChequeosDashboard';
 import MttoDashboard from './features/gastos/components/mtto/MttoDashboard';
-import { ReferenciasDieselDashboard } from './features/diesel/components/ReferenciasDieselDashboard'; // ✅ NUEVO MÓDULO IMPORTADO
+import { ReferenciasDieselDashboard } from './features/diesel/components/ReferenciasDieselDashboard';
+import { ReferenciasNominaDashboard } from './features/nominas/components/ReferenciasNominaDashboard'; // ✅ MÓDULO IMPORTADO
 import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
 
 import './App.css';
@@ -40,8 +41,7 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  // ✅ Añadido 'referenciasDiesel' a la lista de tipos permitidos
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'referenciasDiesel'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'referenciasDiesel' | 'referenciasNomina'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -136,10 +136,12 @@ function App() {
   const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes';
   
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores';
-  const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia';
+  
+  // ✅ Incluimos referenciasNomina para que el menú Empleados permanezca iluminado
+  const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina';
+  
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion';
   
-  // ✅ Actualizado para que el menú de Gastos se quede encendido
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel';
 
   return (
@@ -171,7 +173,6 @@ function App() {
         {menuGastosAbierto && (
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => setModuloActivo('mtto')}>MTTO</div>
-            {/* ✅ AGREGADO EL ENLACE A REFERENCIAS DEL DIESEL */}
             <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasDiesel')}>Referencias del Diesel</div>
           </div>
         )}
@@ -205,6 +206,8 @@ function App() {
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'colaboradores' ? 'active' : ''}`} onClick={() => setModuloActivo('colaboradores')}>Colaboradores</div>
             <div className={`sidebar-subitem ${moduloActivo === 'historialAsistencia' ? 'active' : ''}`} onClick={() => setModuloActivo('historialAsistencia')}>Historial de Chequeo</div>
+            {/* ✅ AGREGADO EL ENLACE A NÓMINA BAJO EMPLEADOS */}
+            <div className={`sidebar-subitem ${moduloActivo === 'referenciasNomina' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasNomina')}>Nómina</div>
           </div>
         )}
 
@@ -307,6 +310,7 @@ function App() {
         {moduloActivo === 'serviciosCancelados' && <ServiciosCancelados />}
         {moduloActivo === 'mtto' && <MttoDashboard />} 
         {moduloActivo === 'referenciasDiesel' && <ReferenciasDieselDashboard />} 
+        {moduloActivo === 'referenciasNomina' && <ReferenciasNominaDashboard />} 
         {moduloActivo === 'empresas' && <EmpresasDashboard />}
         {moduloActivo === 'contactos' && <ContactosDashboard />}
         {moduloActivo === 'direcciones' && <DireccionesDashboard />}
