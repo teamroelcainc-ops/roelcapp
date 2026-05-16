@@ -26,6 +26,7 @@ const CAMPOS_OPERACION = [
 
 export const ConfiguradorStatus = () => {
   const [catalogoStatus, setCatalogoStatus] = useState<string[]>([]);
+  const [tiposOperacion, setTiposOperacion] = useState<any[]>([]); // ✅ Nuevo estado para Tipo de Operación
   
   // ✅ 3 Variables de Combinación (Llave Compuesta)
   const [tipoServicio, setTipoServicio] = useState('');
@@ -39,13 +40,23 @@ export const ConfiguradorStatus = () => {
   const estaListoParaConfigurar = tipoServicio !== '' && trafico !== '' && carga !== '';
   const configId = `${tipoServicio}_${trafico}_${carga}`; // Ej: Transfer_Importación_Cargada
 
-  // 1. Cargar el catálogo de estatus disponibles
+  // 1. Cargar el catálogo de estatus disponibles y Tipos de Operación
   useEffect(() => {
     const cargarCatalogos = async () => {
       try {
+        // Cargar Estatus
         const statusSnap = await getDocs(collection(db, 'catalogo_status_servicio'));
         const statuses = statusSnap.docs.map(d => d.data().nombre).filter(Boolean);
         setCatalogoStatus(statuses);
+
+        // ✅ Cargar Tipos de Operación
+        const opSnap = await getDocs(collection(db, 'catalogo_tipo_operacion'));
+        const operacionesPermitidas = ['logística', 'logistica', 'fletes', 'transfer'];
+        const operaciones = opSnap.docs
+          .map(d => ({ id: d.id, tipo_operacion: d.data().tipo_operacion }))
+          .filter(op => op.tipo_operacion && operacionesPermitidas.includes(op.tipo_operacion.toLowerCase()));
+        
+        setTiposOperacion(operaciones);
       } catch (error) {
         console.error("Error cargando catálogos:", error);
       }
@@ -173,12 +184,9 @@ export const ConfiguradorStatus = () => {
             <label className="form-label orange">Tipo de Servicio</label>
             <select className="form-control" value={tipoServicio} onChange={e => setTipoServicio(e.target.value)}>
               <option value="">-- Seleccionar --</option>
-              <option value="Logística">Logística</option>
-              <option value="Transfer">Transfer</option>
-              <option value="Fletes">Fletes</option>
-              <option value="Movimiento">Movimiento</option>
-              <option value="Trompo">Trompo</option>
-              <option value="Demoras">Demoras</option>
+              {tiposOperacion.map(op => (
+                <option key={op.id} value={op.tipo_operacion}>{op.tipo_operacion}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -187,7 +195,9 @@ export const ConfiguradorStatus = () => {
               <option value="">-- Seleccionar --</option>
               <option value="Importación">Importación</option>
               <option value="Exportación">Exportación</option>
-              <option value="N/A">N/A</option>
+              <option value="Movimiento">Movimiento</option>
+              <option value="Demora">Demora</option>
+              <option value="Trompo">Trompo</option>
             </select>
           </div>
           <div>
