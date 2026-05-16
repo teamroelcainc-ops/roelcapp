@@ -26,7 +26,7 @@ const CAMPOS_OPERACION = [
 
 export const ConfiguradorStatus = () => {
   const [catalogoStatus, setCatalogoStatus] = useState<string[]>([]);
-  const [tiposOperacion, setTiposOperacion] = useState<any[]>([]); // ✅ Nuevo estado para Tipo de Operación
+  const [tiposOperacion, setTiposOperacion] = useState<any[]>([]); 
   
   // ✅ 3 Variables de Combinación (Llave Compuesta)
   const [tipoServicio, setTipoServicio] = useState('');
@@ -195,9 +195,8 @@ export const ConfiguradorStatus = () => {
               <option value="">-- Seleccionar --</option>
               <option value="Importación">Importación</option>
               <option value="Exportación">Exportación</option>
-              <option value="Movimiento">Movimiento</option>
-              <option value="Demora">Demora</option>
-              <option value="Trompo">Trompo</option>
+              <option value="Movimiento LDO">Movimiento LDO</option>
+              <option value="Movimiento NLD">Movimiento NLD</option>
             </select>
           </div>
           <div>
@@ -207,6 +206,7 @@ export const ConfiguradorStatus = () => {
               <option value="Cargada">Cargada</option>
               <option value="Vacía">Vacía</option>
               <option value="N/A">N/A</option>
+              <option value="Trompo">Trompo</option>
             </select>
           </div>
         </div>
