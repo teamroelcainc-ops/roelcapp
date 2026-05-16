@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro, eliminarRegistro } from '../../../config/firebase';
+import { registrarLog } from '../../../utils/logger'; // ✅ Importación del logger
 
 import { listaCatalogos } from '../config/catalogSchemas';
 import type { CatalogSchema, CatalogField } from '../config/catalogSchemas';
@@ -232,6 +233,7 @@ const CatalogosDashboard = () => {
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filtroFijo]);
 
+  // ✅ LOGICA DE GUARDADO PRINCIPAL CON LOG
   const guardarRegistro = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catalogoSeleccionado) return;
@@ -250,10 +252,31 @@ const CatalogosDashboard = () => {
 
     try {
       const col = `catalogo_${catalogoSeleccionado.id}`;
-      registroActual ? await actualizarRegistro(col, registroActual.id, formData) : await agregarRegistro(col, formData);
+      
+      if (registroActual) {
+        await actualizarRegistro(col, registroActual.id, formData);
+        await registrarLog('Catálogos', 'Edición', `Editó un registro en el catálogo de ${catalogoSeleccionado.titulo}`);
+      } else {
+        await agregarRegistro(col, formData);
+        await registrarLog('Catálogos', 'Creación', `Agregó un nuevo registro al catálogo de ${catalogoSeleccionado.titulo}`);
+      }
+
       setModalEstado('cerrado');
       setRegistroActual(null); 
     } catch (error) { alert('Error en Firebase al guardar.'); }
+  };
+
+  // ✅ FUNCIÓN DE ELIMINACIÓN PRINCIPAL CON LOG
+  const eliminarRegistroPrincipal = async (id: string) => {
+    if (!catalogoSeleccionado) return;
+    if (window.confirm('¿Desea eliminar permanentemente este registro?')) {
+      try {
+        await eliminarRegistro(`catalogo_${catalogoSeleccionado.id}`, id);
+        await registrarLog('Catálogos', 'Eliminación', `Eliminó un registro del catálogo de ${catalogoSeleccionado.titulo}`);
+      } catch (error) {
+        alert("Hubo un error al intentar eliminar el registro.");
+      }
+    }
   };
 
   const handleAgregarEditarSubdetalle = (coleccion: string, data?: any) => {
@@ -272,14 +295,19 @@ const CatalogosDashboard = () => {
     setSubModalEstado('abierto');
   };
 
+  // ✅ LOGICA DE GUARDADO DE SUB-REGISTRO CON LOG
   const guardarSubRegistro = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       const realCol = CACHE_NOMBRES_COLECCIONES[subColeccionActual.collection] || subColeccionActual.collection;
+      const tituloSub = getDetailTitle(subColeccionActual);
+
       if (subRegistroActual) {
         await actualizarRegistro(realCol, subRegistroActual.id, subFormData);
+        await registrarLog('Catálogos', 'Edición', `Editó un detalle (${tituloSub}) en el catálogo de ${catalogoSeleccionado?.titulo}`);
       } else {
         await agregarRegistro(realCol, subFormData);
+        await registrarLog('Catálogos', 'Creación', `Agregó un detalle (${tituloSub}) al catálogo de ${catalogoSeleccionado?.titulo}`);
       }
       setSubModalEstado('cerrado');
       setSubRegistroActual(null);
@@ -288,11 +316,13 @@ const CatalogosDashboard = () => {
     } catch (error) { alert('Error al guardar el sub-registro en Firebase.'); }
   };
 
+  // ✅ FUNCIÓN DE ELIMINACIÓN DE SUB-REGISTRO CON LOG
   const handleEliminarSubdetalle = async (coleccion: string, id: string) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar este registro permanentemente?')) {
       try { 
         const realCol = CACHE_NOMBRES_COLECCIONES[coleccion] || coleccion;
         await eliminarRegistro(realCol, id); 
+        await registrarLog('Catálogos', 'Eliminación', `Eliminó un detalle vinculado al catálogo de ${catalogoSeleccionado?.titulo}`);
       } catch (error) { alert("Hubo un error al eliminar el registro."); }
     }
   };
@@ -475,10 +505,12 @@ const CatalogosDashboard = () => {
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
+                          
+                          {/* ✅ LLAMADA A LA FUNCIÓN REFACTORIZADA PARA ELIMINAR CON LOG */}
                           <button 
                             className="btn-small btn-danger" 
                             title="Eliminar Registro"
-                            onClick={async (e) => { e.stopPropagation(); if (window.confirm('¿Desea eliminar permanentemente este registro?')) await eliminarRegistro(`catalogo_${catalogoSeleccionado!.id}`, reg.id); }} 
+                            onClick={async (e) => { e.stopPropagation(); await eliminarRegistroPrincipal(reg.id); }} 
                             style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}

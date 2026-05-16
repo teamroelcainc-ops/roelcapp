@@ -1,444 +1,554 @@
 // src/features/facturacion/components/FacturacionClientesDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, query, where, limit } from 'firebase/firestore';
+import { 
+  collection, 
+  onSnapshot, 
+  query, 
+  writeBatch, 
+  doc, 
+  limit,
+  orderBy
+} from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 
-// 📋 DEFINICIÓN DE TODAS LAS COLUMNAS DINÁMICAS
-const COLUMNAS_BASE = [
-  { id: 'refOp', label: '# Referencia Op.' },
-  { id: 'fecha', label: 'Fecha del Servicio' },
-  { id: 'cartaPorte', label: '# Carta Porte' },
-  { id: 'remolque', label: '# Remolque' },
-  { id: 'refCliente', label: '# Ref. Cliente' },
-  { id: 'clientePaga', label: 'Cliente que paga' },
-  { id: 'operador', label: 'Operador' },
-  { id: 'convenioProv', label: 'Convenio' },
-  { id: 'facturadoEn', label: 'Facturado En' },
-  { id: 'convenioCliente', label: 'Convenio del cliente' },
-  { id: 'costosAdic', label: 'Costos adic. (Cliente)' },
-  { id: 'totalFacturar', label: 'Total a facturar' },
-  { id: 'dolaresCliente', label: 'Dólares cliente' },
-  { id: 'tipoCambio', label: 'Tipo de cambio' },
-  { id: 'pesosCliente', label: 'Pesos Cliente' },
-  { id: 'observaciones', label: 'Observaciones' }
-];
-
 export const FacturacionClientesDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'por_facturar' | 'facturado'>('por_facturar');
-  const [operaciones, setOperaciones] = useState<any[]>([]);
-  const [busqueda, setBusqueda] = useState('');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial'>('historial');
   
+  const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
+  const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
+  
+  // Catálogos
+  const [empresasList, setEmpresasList] = useState<any[]>([]);
+
+  // Filtros Pestaña 1
+  const [filtroCliente, setFiltroCliente] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
-  const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
 
-  // DICCIONARIOS PARA TRADUCIR IDs
-  const [clientesDict, setClientesDict] = useState<Record<string, string>>({});
-  const [statusDict, setStatusDict] = useState<Record<string, string>>({});
-  const [direccionesDict, setDireccionesDict] = useState<Record<string, string>>({});
-  const [empleadosDict, setEmpleadosDict] = useState<Record<string, string>>({});
-  const [remolquesDict, setRemolquesDict] = useState<Record<string, string>>({});
-
+  // Paginación y Búsqueda
+  const [busquedaHistorial, setBusquedaHistorial] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
-  // ✅ ESTADOS PARA GESTIÓN DE COLUMNAS (Drag & Drop)
-  const [modalConfigColumnas, setModalConfigColumnas] = useState(false);
-  const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c, visible: true })));
-  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
+  // Estado del Modal de Facturación
+  const [modalAbierto, setModalAbierto] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
 
-  // ✅ ESTADOS PARA EXCEL
-  const [modalExcel, setModalExcel] = useState(false);
-  const [columnasExcel, setColumnasExcel] = useState<string[]>(COLUMNAS_BASE.map(c => c.id));
-
-  // 1. CARGAR DICCIONARIOS
-  useEffect(() => {
-    const unsubClientes = onSnapshot(collection(db, 'empresas'), (snapshot) => {
-      const dict: Record<string, string> = {};
-      snapshot.forEach(doc => { dict[doc.id] = doc.data().nombre || doc.data().nombreCorto || 'Cliente Desconocido'; });
-      setClientesDict(dict);
-    });
-    const unsubStatus = onSnapshot(collection(db, 'catalogo_status_servicio'), (snapshot) => {
-      const dict: Record<string, string> = {};
-      snapshot.forEach(doc => { dict[doc.id] = doc.data().nombre || 'Status Desconocido'; });
-      setStatusDict(dict);
-    });
-    const unsubDirecciones = onSnapshot(collection(db, 'direcciones'), (snapshot) => {
-      const dict: Record<string, string> = {};
-      snapshot.forEach(doc => { dict[doc.id] = doc.data().direccionCompleta || doc.data().calle || 'Dirección Desconocida'; });
-      setDireccionesDict(dict);
-    });
-    const unsubEmpleados = onSnapshot(collection(db, 'empleados'), (snapshot) => {
-      const dict: Record<string, string> = {};
-      snapshot.forEach(doc => { 
-        const data = doc.data();
-        dict[doc.id] = `${data.firstName || ''} ${data.lastNamePaternal || ''}`.trim() || 'Operador Desconocido'; 
-      });
-      setEmpleadosDict(dict);
-    });
-    const unsubRemolques = onSnapshot(collection(db, 'remolques'), (snapshot) => {
-      const dict: Record<string, string> = {};
-      snapshot.forEach(doc => { dict[doc.id] = doc.data().economico || doc.data().numeroRemolque || 'Remolque Desconocido'; });
-      setRemolquesDict(dict);
-    });
-
-    return () => { unsubClientes(); unsubStatus(); unsubDirecciones(); unsubEmpleados(); unsubRemolques(); };
-  }, []);
-
-  // 2. CARGAR OPERACIONES
-  useEffect(() => {
-    let qOperaciones;
-    if (activeTab === 'por_facturar') {
-      qOperaciones = query(collection(db, 'operaciones'), where('status', 'in', ['f557b751', 'c2d57403']));
-    } else {
-      qOperaciones = query(collection(db, 'operaciones'), where('facturado', '==', true), limit(150));
-    }
-
-    const unsubOperaciones = onSnapshot(qOperaciones, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setOperaciones(data);
-    });
-
-    return () => unsubOperaciones();
-  }, [activeTab]);
-
-  useEffect(() => {
-    setPaginaActual(1);
-    setSeleccionadas([]);
-  }, [busqueda, activeTab]);
-
-  const formatearFecha = (fechaString: string) => {
-    if (!fechaString) return '-';
-    try { return new Date(fechaString + 'T00:00:00').toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }); } 
-    catch { return fechaString; }
-  };
+  // Campos del Formulario
+  const [invoiceForm, setInvoiceForm] = useState('');
+  const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
+  const [facturaCcpForm, setFacturaCcpForm] = useState('');
 
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
-    return isNaN(num) ? '-' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // PROCESAR Y FILTRAR REGISTROS
-  const registrosFiltrados = useMemo(() => {
-    let filtrados = operaciones.map(op => {
-      const idClienteQuePaga = op.clientePaga || op.clientePagaId || op.clienteId;
-      return {
-        ...op,
-        _clienteNombre: clientesDict[idClienteQuePaga] || idClienteQuePaga || 'Sin Cliente',
-        _statusNombre: statusDict[op.status] || op.status || 'Sin Status',
-        _numeroReferencia: op.numReferencia || op.numeroReferencia || op.referencia || op.folio || op.idOperacion || op.id?.substring(0,6),
-        _origenNombre: direccionesDict[op.origenId || op.origen] || op.origenId || op.origen || '-',
-        _destinoNombre: direccionesDict[op.destinoId || op.destino] || op.destinoId || op.destino || '-',
-        _operadorNombre: empleadosDict[op.operadorId || op.operador] || op.operadorId || op.operador || '-',
-        _remolqueNombre: remolquesDict[op.remolqueId || op.remolque] || op.remolqueId || op.remolque || '-'
-      };
+  const formatearFechaSpanish = (fechaString: string) => {
+    if (!fechaString) return '-';
+    try { 
+      return new Date(fechaString + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }); 
+    } catch { return fechaString; }
+  };
+
+  // ✅ 1. CARGA DEL HISTORIAL DE FACTURAS (Lectura Mínima)
+  useEffect(() => {
+    const qFacturas = query(collection(db, 'facturas_clientes'), orderBy('createdAt', 'desc'), limit(400));
+    const unSubFacturas = onSnapshot(qFacturas, (snap) => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      setFacturasGlobales(docs);
+    });
+    return () => unSubFacturas();
+  }, []);
+
+  // ✅ 2. LAZY LOAD DE OPERACIONES Y EMPRESAS (Solo si entras a Asignar Operaciones)
+  useEffect(() => {
+    if (activeTab !== 'operaciones') return;
+
+    const unSubEmpresas = onSnapshot(collection(db, 'empresas'), (snap) => {
+      setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     });
 
-    if (busqueda.trim() !== '') {
-      const term = busqueda.toLowerCase();
-      filtrados = filtrados.filter(op => 
-        String(op._numeroReferencia || '').toLowerCase().includes(term) ||
-        String(op._clienteNombre || '').toLowerCase().includes(term) ||
-        String(op._origenNombre || '').toLowerCase().includes(term) ||
-        String(op._destinoNombre || '').toLowerCase().includes(term) ||
-        String(op.cartaPorte || '').toLowerCase().includes(term)
-      );
-    }
-    return filtrados.sort((a, b) => (b.fechaServicio || b.createdAt || '').localeCompare(a.fechaServicio || a.createdAt || ''));
-  }, [operaciones, busqueda, clientesDict, statusDict, direccionesDict, empleadosDict, remolquesDict]);
+    const qOps = query(collection(db, 'operaciones'), limit(500));
+    const unSubOperaciones = onSnapshot(qOps, (snap) => {
+      const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      ops.sort((a: any, b: any) => new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime());
+      setOperacionesGlobales(ops);
+    });
+
+    return () => { unSubEmpresas(); unSubOperaciones(); };
+  }, [activeTab]);
+
+  // ✅ TRADUCTOR DE CLIENTES
+  const getNombreCliente = (idOrName: string) => {
+    if (!idOrName) return '-';
+    const found = empresasList.find(e => e.id === idOrName || e.nombre === idOrName || e.nombreCorto === idOrName);
+    return found ? (found.nombre || found.nombreCorto || idOrName) : idOrName;
+  };
+
+  // ✅ FILTRADO ESTRICTO DE OPERACIONES (Solo status completados f557b751 / c2d57403 y sin factura)
+  const operacionesDisponibles = useMemo(() => {
+    return operacionesGlobales.filter(op => {
+      const statusValido = ['f557b751', 'c2d57403'].includes(op.status);
+      const noFacturada = !op.facturaClienteId && !op.facturado;
+      return statusValido && noFacturada;
+    });
+  }, [operacionesGlobales]);
+
+  // ✅ AUTO-GENERAR LISTA DE CLIENTES BASADA EN OPERACIONES Y TIPO DE EMPRESA
+  const clientesOptions = useMemo(() => {
+    const ids = operacionesDisponibles.map(op => op.clientePaga || op.clientePagaId || op.clienteId).filter(Boolean);
+    const uniqueIds = Array.from(new Set(ids));
+    
+    return uniqueIds.map(id => {
+      const empresa = empresasList.find(e => e.id === id);
+      return {
+        id: id,
+        nombre: empresa ? (empresa.nombre || empresa.nombreCorto || id) : getNombreCliente(id),
+        tiposEmpresa: empresa?.tiposEmpresa || []
+      };
+    })
+    // ⚠️ REGLA ESTRICTA: La empresa debe tener '11894dfd' en su arreglo de tiposEmpresa
+    .filter(c => Array.isArray(c.tiposEmpresa) && c.tiposEmpresa.includes('11894dfd'))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [operacionesDisponibles, empresasList]);
+
+  // ✅ EXTRAER LA MONEDA DEL CLIENTE SELECCIONADO
+  const monedaFacturacion = useMemo(() => {
+    if (!filtroCliente) return '-';
+    const empresa = empresasList.find(e => e.id === filtroCliente);
+    if (!empresa) return '-';
+    
+    const idMoneda = empresa.monedaRef || empresa.moneda;
+    if (idMoneda === 'f95d8894') return 'MXN';
+    if (idMoneda === '7dca62b3') return 'USD';
+    return idMoneda || 'No definida en catálogo';
+  }, [filtroCliente, empresasList]);
+
+  const operacionesPendientes = useMemo(() => {
+    if (!filtroCliente) return []; 
+    return operacionesDisponibles.filter(op => {
+      const idCliente = op.clientePaga || op.clientePagaId || op.clienteId;
+      return idCliente === filtroCliente;
+    });
+  }, [operacionesDisponibles, filtroCliente]);
+
+  const toggleSeleccion = (id: string) => {
+    setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+  };
 
   const resumenSeleccion = useMemo(() => {
-    let totalPesos = 0; let totalDolares = 0; let totalFacturar = 0; const referencias: string[] = [];
+    let subtotal = 0;
+    const refs: string[] = [];
     seleccionadas.forEach(id => {
-      const op = operaciones.find(o => o.id === id);
+      const op = operacionesGlobales.find(o => o.id === id);
       if (op) {
-        totalPesos += parseFloat(op.pesosCliente || op.montoMXN || 0);
-        totalDolares += parseFloat(op.dolaresCliente || op.montoUSD || 0);
-        totalFacturar += parseFloat(op.totalFacturar || op.total || op.subtotalCliente || 0);
-        const numRef = op.numReferencia || op.numeroReferencia || op.referencia || op.folio || op.idOperacion || op.id?.substring(0,6);
-        if (numRef) referencias.push(numRef);
+        subtotal += Number(op.totalFacturar || op.total || op.subtotalCliente || 0);
+        refs.push(op.numReferencia || op.referencia || op.ref || op.id?.substring(0,6));
       }
     });
-    return { totalPesos, totalDolares, totalFacturar, cantidad: seleccionadas.length, referencias };
-  }, [seleccionadas, operaciones]);
+    return { subtotal, refs };
+  }, [seleccionadas, operacionesGlobales]);
 
-  const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
-  const indiceUltimoRegistro = paginaActual * registrosPorPagina;
-  const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const registrosEnPantalla = registrosFiltrados.slice(indicePrimerRegistro, indiceUltimoRegistro);
+  // ✅ GUARDADO DE LA FACTURA (Desnormalizado Estricto)
+  const handleGuardarFactura = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invoiceForm.trim()) return alert("El # de Invoice es obligatorio.");
+    setGuardando(true);
+    
+    try {
+      const batch = writeBatch(db);
+      const nuevoId = doc(collection(db, 'facturas_clientes')).id;
 
-  const handleSelectRow = (id: string) => setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
-  const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
-  const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
+      // Generamos el array estático de operaciones para el historial
+      const operacionesResumenEstable = seleccionadas.map(id => {
+        const op = operacionesGlobales.find(o => o.id === id);
+        return {
+          id: id,
+          ref: op?.numReferencia || op?.referencia || op?.ref || id.substring(0,6),
+          monto: Number(op?.totalFacturar || op?.total || op?.subtotalCliente || 0)
+        };
+      });
 
-  // ✅ RENDERIZADOR DINÁMICO DE CELDAS
-  const renderCellContent = (op: any, colId: string) => {
-    switch (colId) {
-      case 'refOp': return <span style={{ color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op._numeroReferencia}</span>;
-      case 'fecha': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFecha(op.fechaServicio || op.fecha || op.createdAt)}</span>;
-      case 'cartaPorte': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.cartaPorte || op.numeroCartaPorte || '-'}</span>;
-      case 'remolque': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op._remolqueNombre}</span>;
-      case 'refCliente': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.referenciaCliente || op.refCliente || '-'}</span>;
-      case 'clientePaga': return <span style={{ color: '#f0f6fc', fontWeight: '500', whiteSpace: 'nowrap' }}>{op._clienteNombre}</span>;
-      case 'operador': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op._operadorNombre}</span>;
-      case 'convenioProv': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.convenio || op.nombreConvenio || '-'}</span>;
-      case 'facturadoEn': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.facturadoEn || op.monedaFacturacion || '-'}</span>;
-      case 'convenioCliente': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.convenioCliente || op.tarifaCliente || '-'}</span>;
-      case 'costosAdic': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatoMoneda(op.costosAdicionalesCliente || op.cargosExtra)}</span>;
-      case 'totalFacturar': return <span style={{ color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(op.totalFacturar || op.total || op.subtotalCliente)}</span>;
-      case 'dolaresCliente': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatoMoneda(op.dolaresCliente || op.montoUSD)}</span>;
-      case 'tipoCambio': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatoMoneda(op.tipoCambio || op.tipoCambioValor)}</span>;
-      case 'pesosCliente': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatoMoneda(op.pesosCliente || op.montoMXN)}</span>;
-      case 'observaciones': return <div style={{ color: '#8b949e', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={op.observaciones || op.notas || op.observacionesCobrar}>{op.observaciones || op.notas || op.observacionesCobrar || '-'}</div>;
-      default: return '-';
+      const data = {
+        invoice: invoiceForm.trim(),
+        fecha: fechaForm,
+        facturaCcp: facturaCcpForm.trim(),
+        clienteId: filtroCliente,
+        clienteNombre: getNombreCliente(filtroCliente),
+        monedaFacturacion: monedaFacturacion, // Guardamos la moneda estática
+        operacionesIds: seleccionadas,
+        operacionesGuardadas: operacionesResumenEstable,
+        subtotalFactura: resumenSeleccion.subtotal,
+        createdAt: new Date().toISOString()
+      };
+
+      batch.set(doc(db, 'facturas_clientes', nuevoId), data);
+      
+      seleccionadas.forEach(id => {
+        batch.update(doc(db, 'operaciones', id), { 
+          facturaClienteId: nuevoId, 
+          facturaClienteInvoice: invoiceForm.trim(),
+          facturado: true
+        });
+      });
+
+      await batch.commit();
+      setModalAbierto(false);
+      setSeleccionadas([]);
+      setInvoiceForm('');
+      setFacturaCcpForm('');
+      setActiveTab('historial');
+    } catch (error) {
+      console.error(error);
+      alert("Error al guardar la factura.");
+    } finally {
+      setGuardando(false);
     }
   };
 
-  // ✅ LOGICA DRAG & DROP COLUMNAS
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    e.dataTransfer.effectAllowed = 'move';
-    setDraggedColIndex(index);
-  };
+  const handleEliminarFactura = async (e: React.MouseEvent, facData: any) => {
+    e.stopPropagation();
+    if (window.confirm(`¿Estás seguro de eliminar la factura ${facData.invoice}? Las operaciones asociadas quedarán liberadas nuevamente.`)) {
+      try {
+        const batch = writeBatch(db);
+        batch.delete(doc(db, 'facturas_clientes', facData.id));
 
-  const handleDragEnter = (index: number) => {
-    if (draggedColIndex === null || draggedColIndex === index) return;
-    const nuevasColumnas = [...columnasTabla];
-    const colMovida = nuevasColumnas.splice(draggedColIndex, 1)[0];
-    nuevasColumnas.splice(index, 0, colMovida);
-    setDraggedColIndex(index);
-    setColumnasTabla(nuevasColumnas);
-  };
-
-  const toggleColumnaVisible = (index: number) => {
-    const nuevas = [...columnasTabla];
-    nuevas[index].visible = !nuevas[index].visible;
-    setColumnasTabla(nuevas);
-  };
-
-  // ✅ EXPORTAR A EXCEL
-  const generarExcel = () => {
-    if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
-    if (columnasExcel.length === 0) return alert("Selecciona al menos una columna para exportar.");
-
-    const datosExcel = registrosFiltrados.map(op => {
-      const fila: any = {};
-      
-      columnasExcel.forEach(colId => {
-        const config = COLUMNAS_BASE.find(c => c.id === colId);
-        if (config) {
-           let valRaw = renderCellContent(op, colId);
-           // Si renderCell devuelve JSX, intentamos extraer el texto
-           fila[config.label] = typeof valRaw === 'object' && valRaw.props ? (valRaw.props.children || '') : valRaw;
+        if (Array.isArray(facData.operacionesIds)) {
+          facData.operacionesIds.forEach((opId: string) => {
+            batch.update(doc(db, 'operaciones', opId), {
+              facturaClienteId: null,
+              facturaClienteInvoice: null,
+              facturado: false
+            });
+          });
         }
-      });
-      return fila;
-    });
+        await batch.commit();
+      } catch (error) {
+        console.error("Error al eliminar factura:", error);
+        alert("Hubo un error al eliminar.");
+      }
+    }
+  };
+
+  // ✅ FILTRADO Y PAGINACIÓN HISTORIAL
+  const historialFiltrado = useMemo(() => {
+    const t = busquedaHistorial.toLowerCase();
+    return facturasGlobales.filter(f => 
+      (f.invoice || '').toLowerCase().includes(t) || 
+      (f.clienteNombre || '').toLowerCase().includes(t) ||
+      (f.facturaCcp || '').toLowerCase().includes(t)
+    );
+  }, [facturasGlobales, busquedaHistorial]);
+
+  const totalPaginas = Math.ceil(historialFiltrado.length / registrosPorPagina);
+  const indexLast = paginaActual * registrosPorPagina;
+  const indexFirst = indexLast - registrosPorPagina;
+  const registrosVisibles = historialFiltrado.slice(indexFirst, indexLast);
+
+  const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
+  const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
+
+  const exportarCSV = () => {
+    if (historialFiltrado.length === 0) return alert("No hay datos para exportar.");
+    const datosExcel = historialFiltrado.map(f => ({
+      'Invoice': f.invoice,
+      'Cliente': f.clienteNombre,
+      'Fecha Factura': formatearFechaSpanish(f.fecha),
+      'Factura CCP': f.facturaCcp || '-',
+      'Moneda': f.monedaFacturacion || 'N/A',
+      'Cant. Operaciones': f.operacionesIds?.length || 0,
+      'Total Facturado': f.subtotalFactura
+    }));
 
     const worksheet = XLSX.utils.json_to_sheet(datosExcel);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Facturacion');
-    XLSX.writeFile(workbook, `Reporte_Facturacion_${new Date().toISOString().split('T')[0]}.xlsx`);
-    setModalExcel(false);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Facturas_Clientes');
+    XLSX.writeFile(workbook, `Facturas_Clientes_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const tabStyle = (isActive: boolean) => ({ padding: '12px 24px', background: 'none', border: 'none', borderBottom: isActive ? '2px solid #D84315' : '2px solid transparent', color: isActive ? '#f0f6fc' : '#8b949e', cursor: 'pointer', fontWeight: isActive ? '600' : 'normal', fontSize: '1rem', transition: 'all 0.2s ease', outline: 'none' });
+  const tabStyle = (active: boolean) => ({
+    padding: '12px 24px', background: 'none', border: 'none', cursor: 'pointer',
+    color: active ? '#f0f6fc' : '#8b949e', borderBottom: active ? '2px solid #D84315' : '2px solid transparent',
+    fontWeight: active ? 'bold' : 'normal' as any
+  });
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
-      <div style={{ width: '100%', margin: '0 auto' }}>
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>Facturación de Clientes</h1>
+    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
+      <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Facturación de Clientes</h1>
 
-        <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '24px' }}>
-          <button type="button" onClick={() => setActiveTab('por_facturar')} style={tabStyle(activeTab === 'por_facturar')}>Por Facturar</button>
-          <button type="button" onClick={() => setActiveTab('facturado')} style={tabStyle(activeTab === 'facturado')}>Facturado</button>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
-          <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
-            <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <input type="text" placeholder="Buscar por Referencia, Carta Porte, Cliente, Origen..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 12px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }} />
-          </div>
-          
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button title="Configurar Columnas" onClick={() => setModalConfigColumnas(true)} style={{ backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-            </button>
-            <button title="Exportar a Excel" onClick={() => setModalExcel(true)} style={{ backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </button>
-            {activeTab === 'por_facturar' && (
-              <button disabled={seleccionadas.length === 0} title="Generar Factura Múltiple" style={{ backgroundColor: seleccionadas.length === 0 ? '#30363d' : '#D84315', color: seleccionadas.length === 0 ? '#8b949e' : '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: seleccionadas.length === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.2s ease' }}>
-                <svg width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path fillRule="evenodd" d="M1.5 1.5A.5.5 0 0 0 1 2v4.8a2.5 2.5 0 0 0 2.5 2.5h9.793l-3.347 3.346a.5.5 0 0 0 .708.708l4.2-4.2a.5.5 0 1 0-.708.708L13.293 8.3H3.5A1.5 1.5 0 0 1 2 6.8V2a.5.5 0 0 0-.5-.5z"/></svg>
-                {seleccionadas.length > 0 && <span style={{marginLeft: '6px', fontWeight: 'bold'}}>{seleccionadas.length}</span>}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* ✅ PANEL DE SUMARIO DE FACTURACIÓN */}
-        {activeTab === 'por_facturar' && seleccionadas.length > 0 && (
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px' }}>
-              <div style={{ borderRight: '1px solid #30363d' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Seleccionadas</span>
-                <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenSeleccion.cantidad}</span>
-              </div>
-              <div style={{ borderRight: '1px solid #30363d' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma en Dólares</span>
-                <span style={{ color: '#3fb950', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.totalDolares)}</span>
-              </div>
-              <div style={{ borderRight: '1px solid #30363d' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma en Pesos</span>
-                <span style={{ color: '#3fb950', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.totalPesos)}</span>
-              </div>
-              <div>
-                <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total a Facturar Estimado</span>
-                <span style={{ color: '#f0f6fc', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.totalFacturar)}</span>
-              </div>
-            </div>
-            <div style={{ borderTop: '1px dashed #30363d', paddingTop: '16px' }}>
-              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Operaciones incluidas:</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {resumenSeleccion.referencias.map((ref, i) => (
-                  <span key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', padding: '4px 10px', borderRadius: '12px', fontSize: '0.85rem', fontFamily: 'monospace' }}>{ref}</span>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TABLA DE DATOS DINÁMICA */}
-        <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', backgroundColor: '#161b22' }}>
-          <table style={{ width: '100%', minWidth: '1500px', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead style={{ backgroundColor: '#1f2937' }}>
-              <tr>
-                {activeTab === 'por_facturar' && (
-                  <th style={{ padding: '16px', width: '50px', borderBottom: '1px solid #30363d', position: 'sticky', left: 0, backgroundColor: '#1f2937', zIndex: 10 }}></th>
-                )}
-                <th style={{ padding: '16px', width: '100px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d', position: 'sticky', left: activeTab === 'por_facturar' ? '50px' : 0, backgroundColor: '#1f2937', zIndex: 10 }}>Acciones</th>
-                {columnasTabla.filter(c => c.visible).map(col => (
-                  <th key={col.id} style={{ padding: '16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>
-                    {col.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {registrosEnPantalla.length === 0 ? (
-                <tr><td colSpan={columnasTabla.length + 2} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay operaciones para mostrar.</td></tr>
-              ) : (
-                registrosEnPantalla.map(op => (
-                  <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(59, 130, 246, 0.1)' : 'transparent', transition: 'background-color 0.2s', cursor: 'pointer' }} onClick={() => setOperacionViendo(op)} onMouseEnter={(e:any) => e.currentTarget.style.backgroundColor = seleccionadas.includes(op.id) ? 'rgba(59, 130, 246, 0.15)' : '#21262d'} onMouseLeave={(e:any) => e.currentTarget.style.backgroundColor = seleccionadas.includes(op.id) ? 'rgba(59, 130, 246, 0.1)' : 'transparent'}>
-                    {activeTab === 'por_facturar' && (
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: seleccionadas.includes(op.id) ? 'rgba(59, 130, 246, 0.15)' : 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e) => e.stopPropagation()}>
-                        <input type="checkbox" checked={seleccionadas.includes(op.id)} onChange={() => handleSelectRow(op.id)} style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
-                      </td>
-                    )}
-                    <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: activeTab === 'por_facturar' ? '50px' : 0, backgroundColor: seleccionadas.includes(op.id) ? 'rgba(59, 130, 246, 0.15)' : 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e) => e.stopPropagation()}>
-                      <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                        <button type="button" title="Editar Operación" onClick={(e) => { e.stopPropagation(); console.log("Editar"); }} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
-                        <button type="button" title="Eliminar Operación" onClick={(e) => { e.stopPropagation(); console.log("Eliminar"); }} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
-                      </div>
-                    </td>
-                    {columnasTabla.filter(c => c.visible).map(col => (
-                      <td key={col.id} style={{ padding: '16px' }}>{renderCellContent(op, col.id)}</td>
-                    ))}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* CONTROLES DE PAGINACIÓN */}
-        {registrosFiltrados.length > 0 && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
-            <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros</div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button title="Página Anterior" onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
-              <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
-              <button title="Página Siguiente" onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
-            </div>
-          </div>
-        )}
+      <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '24px' }}>
+        <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
+        <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
       </div>
 
-      {/* ✅ MODAL PARA ORDENAR Y OCULTAR COLUMNAS (Drag and Drop nativo) */}
-      {modalConfigColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '400px', maxWidth: '90%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button onClick={() => setModalConfigColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer' }}>✕</button>
+      {activeTab === 'operaciones' ? (
+        <div className="animation-fade-in">
+          
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+            <div style={{ flex: 1, minWidth: '300px' }}>
+              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>CLIENTE</label>
+              <select value={filtroCliente} onChange={e => { setFiltroCliente(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }}>
+                <option value="">Seleccionar Cliente con viajes pendientes...</option>
+                {clientesOptions.map((c, i) => <option key={i} value={c.id}>{c.nombre}</option>)}
+              </select>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>Arrastra las filas para reordenar las columnas de la tabla. Desmarca las que desees ocultar.</p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '50vh', overflowY: 'auto' }}>
-              {columnasTabla.map((col, idx) => (
-                <li 
-                  key={col.id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, idx)}
-                  onDragEnter={() => handleDragEnter(idx)}
-                  onDragEnd={() => setDraggedColIndex(null)}
-                  onDragOver={(e) => e.preventDefault()}
-                  style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', marginBottom: '8px', borderRadius: '6px', cursor: 'grab' }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
-                  <span style={{ color: col.visible ? '#c9d1d9' : '#484f58' }}>{col.label}</span>
-                </li>
-              ))}
-            </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
-              <button onClick={() => setModalConfigColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 24px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Listo</button>
+
+            <button 
+              disabled={seleccionadas.length === 0} 
+              onClick={() => setModalAbierto(true)}
+              style={{ padding: '10px 20px', backgroundColor: seleccionadas.length > 0 ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: seleccionadas.length > 0 ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+            >
+              Generar Factura ({seleccionadas.length})
+            </button>
+          </div>
+
+          {seleccionadas.length > 0 && (
+            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones Seleccionadas</span>
+                  <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{seleccionadas.length}</span>
+                </div>
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Estimado</span>
+                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
+                </div>
+                <div>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Moneda del Cliente</span>
+                  <span style={{ color: '#D84315', fontSize: '1.8rem', fontWeight: 'bold' }}>{monedaFacturacion}</span>
+                </div>
+              </div>
             </div>
+          )}
+
+          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)', backgroundColor: '#161b22' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+                <tr>
+                  <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}></th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>REF. OPERACIÓN</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA SERVICIO</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CLIENTE</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CARTA PORTE</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>DESTINO</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>SUBTOTAL OP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!filtroCliente ? (
+                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona un Cliente en el filtro superior para ver las operaciones listas para facturar.</td></tr>
+                ) : operacionesPendientes.length === 0 ? (
+                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones pendientes de facturar para este cliente.</td></tr>
+                ) : (
+                  operacionesPendientes.map(op => (
+                    <tr key={op.id} onClick={() => toggleSeleccion(op.id)} style={{ cursor: 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
+                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}><input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} /></td>
+                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.numReferencia || op.referencia || op.ref || op.id.substring(0,6)}</td>
+                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>
+                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId)}</td>
+                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.cartaPorte || op.numeroCartaPorte || '-'}</td>
+                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.destino || '-'}</td>
+                      <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(op.totalFacturar || op.total || op.subtotalCliente)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      ) : (
+        <div className="animation-fade-in">
+          <div style={{ position: 'relative', marginBottom: '20px', display: 'flex', justifyContent: 'space-between' }}>
+            <input type="text" placeholder="Buscar en historial (Invoice, Cliente, CCP)..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)} style={{ width: '100%', maxWidth: '400px', padding: '10px 16px', backgroundColor: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
+            <button title="Exportar a Excel" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            </button>
+          </div>
+
+          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', backgroundColor: '#161b22' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+                <tr>
+                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>ACCIONES</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>INVOICE</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CLIENTE</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>MONEDA</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FACTURA CCP</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CANT. OPS</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {registrosVisibles.length === 0 ? (
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay facturas registradas.</td></tr>
+                ) : (
+                  registrosVisibles.map(f => (
+                    <tr key={f.id} style={{ borderBottom: '1px solid #21262d' }}>
+                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          <button 
+                            title="Ver Ficha" 
+                            onClick={() => setFacturaViendo(f)} 
+                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                          </button>
+                          
+                          <button 
+                            title="Eliminar Factura" 
+                            onClick={(e) => handleEliminarFactura(e, f)} 
+                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                          </button>
+                        </div>
+                      </td>
+                      <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{f.invoice}</td>
+                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(f.fecha)}</td>
+                      <td style={{ padding: '16px', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{f.clienteNombre || '-'}</td>
+                      <td style={{ padding: '16px', color: '#10b981', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{f.monedaFacturacion || 'N/A'}</td>
+                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{f.facturaCcp || '-'}</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>{f.operacionesIds?.length || 0}</td>
+                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(f.subtotalFactura)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+          {totalPaginas > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
+              <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '8px 16px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Anterior</button>
+              <span style={{ color: '#fff', alignSelf: 'center' }}>{paginaActual} / {totalPaginas}</span>
+              <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas} style={{ padding: '8px 16px', cursor: (paginaActual === totalPaginas) ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Siguiente</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* MODAL FORMULARIO GENERAR FACTURA */}
+      {modalAbierto && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(8px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '16px' }}>
+              <h2 style={{ color: '#f0f6fc', margin: 0 }}>Generar Factura</h2>
+              <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d', marginBottom: '24px' }}>
+              <div>
+                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Cliente</span>
+                <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{getNombreCliente(filtroCliente)}</span>
+              </div>
+              <div style={{ textAlign: 'center', borderLeft: '1px solid #30363d', borderRight: '1px solid #30363d', padding: '0 20px' }}>
+                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Moneda Cliente</span>
+                <span style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>{monedaFacturacion}</span>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal ({seleccionadas.length} Ops)</span>
+                <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
+              </div>
+            </div>
+            
+            <form onSubmit={handleGuardarFactura}>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>NÚMERO DE INVOICE</label>
+                  <input type="text" required placeholder="Ej. INV-2026-001" value={invoiceForm} onChange={e => setInvoiceForm(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold', fontSize: '1.1rem' }} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FECHA DE FACTURACIÓN</label>
+                  <input type="date" required value={fechaForm} onChange={e => setFechaForm(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FACTURA CCP (Opcional)</label>
+                  <input type="text" placeholder="Referencia CCP..." value={facturaCcpForm} onChange={e => setFacturaCcpForm(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '20px' }}>
+                <button type="button" onClick={() => setModalAbierto(false)} disabled={guardando} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+                <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : 'Confirmar Factura'}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* ✅ MODAL DE EXPORTACIÓN A EXCEL */}
-      {modalExcel && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '500px', maxWidth: '90%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#238636" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                Exportar Reporte
-              </h3>
-              <button onClick={() => setModalExcel(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer' }}>✕</button>
+      {/* ✅ MODAL FICHA DE FACTURA (SOLO LECTURA) */}
+      {facturaViendo && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>Ficha de Factura</h2>
+              <button onClick={() => setFacturaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.9rem', marginBottom: '16px' }}>Selecciona las columnas que deseas incluir en el archivo Excel:</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', maxHeight: '50vh', overflowY: 'auto' }}>
-              {COLUMNAS_BASE.map(col => {
-                const isChecked = columnasExcel.includes(col.id);
-                return (
-                  <label key={`ex_${col.id}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isChecked ? '#f0f6fc' : '#8b949e', cursor: 'pointer', fontSize: '0.85rem' }}>
-                    <input type="checkbox" checked={isChecked} onChange={() => setColumnasExcel(prev => prev.includes(col.id) ? prev.filter(k => k !== col.id) : [...prev, col.id])} />
-                    {col.label}
-                  </label>
-                );
-              })}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-              <button onClick={() => setColumnasExcel(COLUMNAS_BASE.map(c => c.id))} style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer', textDecoration: 'underline' }}>Seleccionar Todas</button>
-              <button onClick={generarExcel} style={{ backgroundColor: '#238636', color: '#fff', border: 'none', padding: '8px 24px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Descargar Excel</button>
-            </div>
-          </div>
-        </div>
-      )}
+            
+            <div style={{ padding: '24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                
+                <div style={{ gridColumn: 'span 3', display: 'flex', justifyContent: 'space-between', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Invoice</span>
+                    <span style={{ color: '#D84315', fontSize: '1.4rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{facturaViendo.invoice}</span>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Moneda</span>
+                    <span style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>{facturaViendo.monedaFacturacion || 'N/A'}</span>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Fecha de Facturación</span>
+                    <span style={{ color: '#c9d1d9', fontSize: '1.1rem', fontWeight: 'bold' }}>{formatearFechaSpanish(facturaViendo.fecha)}</span>
+                  </div>
+                </div>
 
-      {/* MODAL DETALLES DE LA OPERACIÓN (Visualizador Oculto) */}
-      {operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 1500, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ maxWidth: '600px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', overflow: 'hidden' }}>
-            <div style={{ borderBottom: '1px solid #30363d', padding: '24px', display: 'flex', justifyContent: 'space-between' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0 }}>Detalles de la Operación</h2>
-              <button onClick={() => setOperacionViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+                <div>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Cliente Facturado</span>
+                  <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{facturaViendo.clienteNombre || '-'}</span>
+                </div>
+                <div>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Factura CCP</span>
+                  <span style={{ color: '#c9d1d9', fontSize: '1rem' }}>{facturaViendo.facturaCcp || '-'}</span>
+                </div>
+                <div>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Facturado</span>
+                  <span style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>{formatoMoneda(facturaViendo.subtotalFactura)}</span>
+                </div>
+
+                <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
+
+                {/* ✅ LECTURA ESTÁTICA DE LAS REFERENCIAS FACTURADAS */}
+                <div style={{ gridColumn: 'span 3', marginTop: '8px' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
+                    Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0})
+                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                    {facturaViendo.operacionesGuardadas?.map((op: any) => (
+                      <div 
+                        key={op.id} 
+                        style={{ 
+                          backgroundColor: '#21262d', border: '1px solid #58a6ff', 
+                          padding: '8px 14px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '4px'
+                        }}
+                      >
+                        <span style={{ color: '#58a6ff', fontSize: '0.9rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{op.ref}</span>
+                        <span style={{ color: '#3fb950', fontSize: '0.85rem' }}>{formatoMoneda(op.monto)}</span>
+                      </div>
+                    )) || <span style={{ color: '#8b949e' }}>Sin detalle de operaciones.</span>}
+                  </div>
+                </div>
+
+              </div>
             </div>
-            <div style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-              <div style={{ gridColumn: 'span 2' }}><span style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block' }}>Cliente que Paga</span><span style={{ color: '#58a6ff', fontSize: '1.1rem', fontWeight: 'bold' }}>{operacionViendo._clienteNombre}</span></div>
-              <div><span style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block' }}>Número de Referencia</span><span style={{ color: '#f0f6fc', fontFamily: 'monospace' }}>{operacionViendo._numeroReferencia}</span></div>
-              <div><span style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block' }}>Fecha de Servicio</span><span style={{ color: '#c9d1d9' }}>{formatearFecha(operacionViendo.fechaServicio || operacionViendo.fecha || operacionViendo.createdAt)}</span></div>
+            
+            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
+              <button onClick={() => setFacturaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
             </div>
           </div>
         </div>

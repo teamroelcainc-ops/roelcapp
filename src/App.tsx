@@ -5,6 +5,7 @@ import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger'; 
 
+// --- IMPORTACIONES DE MÓDULOS ---
 import { Login } from './features/auth/components/Login';
 import OperacionesDashboard from './features/operaciones/components/OperacionesDashboard';
 import ServiciosCompletados from './features/operaciones/components/ServiciosCompletados';
@@ -31,7 +32,9 @@ import { RelojChecadorModal } from './features/relojChecador/components/RelojChe
 import { HistorialChequeosDashboard } from './features/relojChecador/components/HistorialChequeosDashboard';
 import MttoDashboard from './features/gastos/components/mtto/MttoDashboard';
 import { ReferenciasDieselDashboard } from './features/diesel/components/ReferenciasDieselDashboard';
-import { ReferenciasNominaDashboard } from './features/nominas/components/ReferenciasNominaDashboard'; // ✅ MÓDULO IMPORTADO
+import { ReferenciasNominaDashboard } from './features/nominas/components/ReferenciasNominaDashboard';
+import { DeduccionesDashboard } from './features/empleados/components/DeduccionesDashboard';
+// ✅ AQUÍ ESTÁ LA IMPORTACIÓN QUE FALTABA Y CAUSABA EL ERROR:
 import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
 
 import './App.css';
@@ -41,7 +44,7 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'referenciasDiesel' | 'referenciasNomina'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'referenciasDiesel' | 'referenciasNomina' | 'deducciones'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -132,16 +135,10 @@ function App() {
   }
 
   const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
-  
   const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes';
-  
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores';
-  
-  // ✅ Incluimos referenciasNomina para que el menú Empleados permanezca iluminado
-  const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina';
-  
+  const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion';
-  
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel';
 
   return (
@@ -206,8 +203,8 @@ function App() {
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'colaboradores' ? 'active' : ''}`} onClick={() => setModuloActivo('colaboradores')}>Colaboradores</div>
             <div className={`sidebar-subitem ${moduloActivo === 'historialAsistencia' ? 'active' : ''}`} onClick={() => setModuloActivo('historialAsistencia')}>Historial de Chequeo</div>
-            {/* ✅ AGREGADO EL ENLACE A NÓMINA BAJO EMPLEADOS */}
             <div className={`sidebar-subitem ${moduloActivo === 'referenciasNomina' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasNomina')}>Nómina</div>
+            <div className={`sidebar-subitem ${moduloActivo === 'deducciones' ? 'active' : ''}`} onClick={() => setModuloActivo('deducciones')}>Deducciones</div>
           </div>
         )}
 
@@ -311,6 +308,7 @@ function App() {
         {moduloActivo === 'mtto' && <MttoDashboard />} 
         {moduloActivo === 'referenciasDiesel' && <ReferenciasDieselDashboard />} 
         {moduloActivo === 'referenciasNomina' && <ReferenciasNominaDashboard />} 
+        {moduloActivo === 'deducciones' && <DeduccionesDashboard />} 
         {moduloActivo === 'empresas' && <EmpresasDashboard />}
         {moduloActivo === 'contactos' && <ContactosDashboard />}
         {moduloActivo === 'direcciones' && <DireccionesDashboard />}

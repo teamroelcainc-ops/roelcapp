@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore'; 
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
+import * as XLSX from 'xlsx';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -25,86 +26,89 @@ const ServiciosCompletados = () => {
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
-  const descargarTodo = async () => {
+  // ✅ 1. CARGA RÁPIDA: Solo trae operaciones completadas (Desnormalizado)
+  const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     try {
-      let catGuardados = null;
-      const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
-
-      if (cacheCatStr) {
-        catGuardados = JSON.parse(cacheCatStr);
-        setCatalogosGlobales(catGuardados);
-      } else {
-        console.warn(`[FIREBASE READ] Descargando TODOS los catálogos por primera vez.`);
-        const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap, statusSnap, uniProvSnap, opeProvSnap] = await Promise.all([
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'catalogo_tipo_operacion')),
-          getDocs(collection(db, 'catalogo_embalaje')),
-          getDocs(collection(db, 'remolques')),
-          getDocs(collection(db, 'catalogo_tarifas_referencia')), 
-          getDocs(collection(db, 'convenios_proveedores')),
-          getDocs(collection(db, 'convenios_proveedores_detalles')), 
-          getDocs(collection(db, 'tipo_cambio')),
-          getDocs(collection(db, 'convenios_clientes')),
-          getDocs(collection(db, 'convenios_clientes_detalles')),
-          getDocs(collection(db, 'unidades')),
-          getDocs(collection(db, 'empleados')),
-          getDocs(collection(db, 'catalogo_status_servicio')),
-          getDocs(collection(db, 'unidades_proveedor')),
-          getDocs(collection(db, 'proveedores_unidad'))
-        ]);
-
-        catGuardados = {
-          empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })), 
-          catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          empleados: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          unidades_proveedor: uniProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
-        };
-        
-        sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
-        setCatalogosGlobales(catGuardados);
-      }
-
-      // ✅ SOLUCIÓN AL ERROR DE FIREBASE:
-      // Solo usamos orderBy y limit. El filtrado de status se hace en memoria para no requerir índice compuesto.
       const queryOperacionesRecientes = query(
         collection(db, 'operaciones'),
         orderBy('fechaServicio', 'desc'),
-        limit(300)
+        limit(400)
       );
 
       const operacionesSnap = await getDocs(queryOperacionesRecientes);
+      console.log(`[FIREBASE READ] Descargadas ${operacionesSnap.docs.length} operaciones para evaluar completados.`);
 
       const operacionesCompletadas = operacionesSnap.docs
         .map((d: any) => ({ id: d.id, ...d.data() }))
-        .filter((op: any) => ['f557b751', 'c2d57403'].includes(String(op.status).trim())) // Filtramos en RAM
-        .map((op: any) => {
-          const clienteObj = catGuardados.empresas.find((e: any) => e.id === op.clientePaga);
-          return { ...op, nombreCliente: clienteObj ? clienteObj.nombre : (op.clientePaga || 'Desconocido') };
+        .filter((op: any) => {
+          const statusId = String(op.status || '').trim();
+          const statusTexto = String(op.statusNombre || op.status || '').toLowerCase();
+          return ['f557b751', 'c2d57403'].includes(statusId) || statusTexto.includes('completado');
         });
 
       setOperacionesGlobales(operacionesCompletadas);
 
     } catch (e) {
-      console.error("Error al pre-cargar datos:", e);
-      alert("Hubo un problema al descargar las operaciones. Verifica tu conexión.");
+      console.error("Error al cargar operaciones completadas:", e);
+      alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
     }
     setCargandoOperaciones(false);
   };
 
+  // ✅ 2. CARGA PEREZOSA DE CATÁLOGOS (Solo cuando se necesitan para PDFs)
+  const cargarCatalogosSiEsNecesario = async () => {
+    if (Object.keys(catalogosGlobales).length > 0) return; 
+
+    const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
+    if (cacheCatStr) {
+      setCatalogosGlobales(JSON.parse(cacheCatStr));
+      return;
+    }
+
+    console.warn(`[FIREBASE READ] Descargando catálogos pesados por primera vez...`);
+    const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap, statusSnap, uniProvSnap, opeProvSnap] = await Promise.all([
+      getDocs(collection(db, 'empresas')),
+      getDocs(collection(db, 'catalogo_tipo_operacion')),
+      getDocs(collection(db, 'catalogo_embalaje')),
+      getDocs(collection(db, 'remolques')),
+      getDocs(collection(db, 'catalogo_tarifas_referencia')), 
+      getDocs(collection(db, 'convenios_proveedores')),
+      getDocs(collection(db, 'convenios_proveedores_detalles')), 
+      getDocs(collection(db, 'tipo_cambio')),
+      getDocs(collection(db, 'convenios_clientes')),
+      getDocs(collection(db, 'convenios_clientes_detalles')),
+      getDocs(collection(db, 'unidades')),
+      getDocs(collection(db, 'empleados')),
+      getDocs(collection(db, 'catalogo_status_servicio')),
+      getDocs(collection(db, 'unidades_proveedor')),
+      getDocs(collection(db, 'proveedores_unidad'))
+    ]);
+
+    const catGuardados = {
+      empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })), 
+      catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      empleados: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      unidades_proveedor: uniProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
+    };
+    
+    sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
+    setCatalogosGlobales(catGuardados);
+  };
+
   useEffect(() => {
-    descargarTodo();
+    descargarOperaciones();
   }, []);
 
   useEffect(() => {
@@ -112,6 +116,7 @@ const ServiciosCompletados = () => {
   }, [busqueda]);
   
   const mostrarDato = (dato: any) => (dato && dato !== '' ? dato : '-');
+  
   const formatearFechaHora = (isoString: string | undefined | null) => {
     if (!isoString) return '-';
     return new Date(isoString).toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -123,38 +128,20 @@ const ServiciosCompletados = () => {
     return val || '-';
   };
 
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre') => {
+  // Esta función ahora se usa como respaldo solo en Generación de PDFs y Bitácora
+  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
+    if (valorDesnormalizado) return valorDesnormalizado;
     if (!id) return '-';
     if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
+    
     const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => item.id === id);
     if (!elementoEncontrado) return id;
+
     if (catalogo === 'empleados') {
       return elementoEncontrado.firstName ? `${elementoEncontrado.firstName} ${elementoEncontrado.lastNamePaternal || ''}`.trim() : elementoEncontrado.nombre || id;
     }
+
     return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || elementoEncontrado.descripcion || elementoEncontrado.placa || id;
-  };
-
-  const obtenerNombreConvenioCliente = (id: string) => {
-    if (operacionViendo?.convenioNombre) return operacionViendo.convenioNombre;
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvDetalles?.find((d:any) => d.id === id);
-    if (detalle) {
-        const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio_id || detalle.tipoConvenio || detalle.tipo_convenio || detalle['TIPO DE CONVENIO'];
-        const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || id;
-    }
-    return id;
-  };
-
-  const obtenerNombreConvenioProv = (id: string) => {
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvProvDetalles?.find((d:any) => d.id === id);
-    if (detalle) {
-        const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio || detalle.tarifaId || detalle['TIPO DE CONVENIO'];
-        const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || detalle.tipoConvenioNombre || id;
-    }
-    return id;
   };
 
   const formatoMoneda = (monto: any) => {
@@ -166,8 +153,8 @@ const ServiciosCompletados = () => {
     setModalHorarios('historial');
     setCargandoHorarios(true);
     try {
-      const dbQuery = query(collection(db, 'horarios'), where('operacionId', '==', operacionViendo.id));
-      const snap = await getDocs(dbQuery);
+      const q = query(collection(db, 'horarios'), where('operacionId', '==', operacionViendo.id));
+      const snap = await getDocs(q);
       const data = snap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }));
       data.sort((a: any, b: any) => new Date(b.fechaHora).getTime() - new Date(a.fechaHora).getTime());
       setHistorialList(data);
@@ -177,152 +164,102 @@ const ServiciosCompletados = () => {
     setCargandoHorarios(false);
   };
 
-  const handleDescargarSolicitudRetiro = () => {
+  // ✅ PDFs: Descargan catálogos solo si se solicita generar documento
+  const handleDescargarSolicitudRetiro = async () => {
+    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-    const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas');
+    const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) 
-      : 'N/A';
-      
+      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor)
-      : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
       tipoMovimiento: operacionViendo.trafico || 'N/A',
-      remolqueNombre: remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A',
-      remolquePlacas: remolqueObj ? remolqueObj.placa : 'N/A',
-      clienteMercancia: mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
-      unidadNombre: unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal,
+      remolqueNombre: operacionViendo.remolquePlaca || operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
+      remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
+      clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       unidadPlacas: unidadObj ? (unidadObj.placa || 'N/A') : 'N/A',
-      empleadoNombre: mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal,
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
+      empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
     });
   };
 
-  const handleDescargarInstruccionesServicio = () => {
+  const handleDescargarInstruccionesServicio = async () => {
+    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) 
-      : 'N/A';
-      
+      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor)
-      : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
-    const datosPDF = {
+    generarInstruccionesServicioPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'N/A',
       fecha: operacionViendo.fechaServicio || '',
-      unidadNombre: unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal,
-      empleadoNombre: mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal,
-      remolqueNombre: remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A',
-      remolquePlacas: remolqueObj ? remolqueObj.placa : 'N/A',
-      tipoOperacion: mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
-      origenNombre: origenObj ? origenObj.nombre : 'N/A',
+      unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
+      empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
+      remolqueNombre: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
+      remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
+      tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
+      origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      clienteMercancia: mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
+      clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
-    };
-
-    generarInstruccionesServicioPDF(datosPDF);
+    });
   };
 
-  const handleDescargarCheckList = () => {
+  const handleDescargarCheckList = async () => {
+    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) 
-      : 'N/A';
-      
+      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor)
-      : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
-    const empNombre = mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal;
-    const uniNombre = unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal;
+    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
+    const uniNombre = operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal);
     const uniPlacas = unidadObj ? (unidadObj.placa || 'N/A') : 'N/A';
-    
-    const tractorInfoStr = `${uniNombre} / ${uniPlacas} / ${empNombre}`;
 
-    const datosPDF = {
+    generarCheckListPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fecha: operacionViendo.fechaServicio || '',
-      cliente: mostrarDatoMapeado(operacionViendo.clientePaga, 'empresas'),
-      remolque: remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A',
-      proveedor: mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas'),
-      tractorInfo: tractorInfoStr,
+      cliente: operacionViendo.clienteNombre || mostrarDatoMapeado(operacionViendo.clientePaga, 'empresas'),
+      remolque: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
+      proveedor: operacionViendo.proveedorUnidadNombre || mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas'),
+      tractorInfo: `${uniNombre} / ${uniPlacas} / ${empNombre}`,
       numeroPedimento: operacionViendo.numDoda || 'N/A',
       prefileEntrys: String(operacionViendo.cantEntrys || '0'),
       entryReferencia: operacionViendo.numeroEntrys || 'N/A',
       manifiesto: operacionViendo.numManifiesto || 'N/A',
-      origenNombre: origenObj ? origenObj.nombre : 'N/A',
+      origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
       operadorNombre: empNombre,
       supervisor: operacionViendo.observacionesEjecutivo || 'Despacho',
-    };
-
-    generarCheckListPDF(datosPDF);
+    });
   };
 
-  const handleDescargarPruebaEntrega = () => {
-    if (!operacionViendo) return;
-
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-
-    const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor)
-      : 'N/A';
-
-    const empNombre = mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal;
-    const tipoOpNombre = mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion');
-    const trafico = operacionViendo.trafico || '';
-
-    const datosPDF = {
-      referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
-      fechaServicio: operacionViendo.fechaServicio || 'N/A',
-      fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
-      origenNombre: origenObj ? origenObj.nombre : 'N/A',
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
-      origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
-      destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
-      destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
-      tipoServicio: `${tipoOpNombre} ${trafico}`,
-      tipoUnidad: remolqueObj ? (remolqueObj.tipo || remolqueObj.descripcion || 'Remolque') : 'N/A',
-      numeroEconomico: remolqueObj ? remolqueObj.nombre : 'N/A',
-      placas: remolqueObj ? remolqueObj.placa : 'N/A',
-      operador: empNombre,
-      descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A'
-    };
-
-    generarPruebaEntregaPDF(datosPDF);
-  };
-
-  const handleDescargarCartaInstrucciones = () => {
+  const handleDescargarPruebaEntrega = async () => {
+    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
@@ -331,27 +268,60 @@ const ServiciosCompletados = () => {
     const operadorProvVal = operacionViendo.operadorProveedor
       ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
-    const empNombre = mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal;
+    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
+
+    generarPruebaEntregaPDF({
+      referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
+      fechaServicio: operacionViendo.fechaServicio || 'N/A',
+      fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
+      origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
+      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
+      origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
+      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
+      destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
+      tipoServicio: `${operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')} ${operacionViendo.trafico || ''}`,
+      tipoUnidad: remolqueObj ? (remolqueObj.tipo || remolqueObj.descripcion || 'Remolque') : 'N/A',
+      numeroEconomico: operacionViendo.remolqueNombre || (remolqueObj ? remolqueObj.nombre : 'N/A'),
+      placas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
+      operador: empNombre,
+      descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A'
+    });
+  };
+
+  const handleDescargarCartaInstrucciones = async () => {
+    await cargarCatalogosSiEsNecesario();
+    if (!operacionViendo) return;
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+
+    const operadorProvVal = operacionViendo.operadorProveedor
+      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+
+    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
 
     generarCartaInstruccionesPDF({
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
-      tipoServicio: mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
+      tipoServicio: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       trafico: operacionViendo.trafico || '',
       tipoUnidad: remolqueObj ? (remolqueObj.tipo || remolqueObj.descripcion || 'Remolque') : 'N/A',
-      numeroEconomico: remolqueObj ? remolqueObj.nombre : 'N/A',
-      placas: remolqueObj ? remolqueObj.placa : 'N/A',
+      numeroEconomico: operacionViendo.remolqueNombre || (remolqueObj ? remolqueObj.nombre : 'N/A'),
+      placas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
       operador: empNombre,
       descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A',
       origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
-      origenNombre: origenObj ? origenObj.nombre : 'N/A',
+      origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
       origenColonia: origenObj ? (origenObj.colonia || 'N/A') : 'N/A',
       origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
       destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
       destinoColonia: destinoObj ? (destinoObj.colonia || 'N/A') : 'N/A',
       destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
@@ -366,17 +336,15 @@ const ServiciosCompletados = () => {
   const operacionesFiltradas = useMemo(() => {
     const b = busqueda.toLowerCase();
     return operacionesGlobales.filter(op => {
-      const statusTexto = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre').toLowerCase();
       return (
         String(op.ref || op.id || '').toLowerCase().includes(b) ||
         String(op.fechaServicio || '').toLowerCase().includes(b) ||
-        String(op.nombreCliente || '').toLowerCase().includes(b) ||
-        String(op.tipoServicio || '').toLowerCase().includes(b) ||
-        String(op.trafico || '').toLowerCase().includes(b) ||
-        String(statusTexto || '').toLowerCase().includes(b) 
+        String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
+        String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
+        String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
       );
     });
-  }, [busqueda, operacionesGlobales, catalogosGlobales]);
+  }, [busqueda, operacionesGlobales]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -386,30 +354,39 @@ const ServiciosCompletados = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
+  // ✅ EXPORTACIÓN CON LIBRERÍA XLSX
   const exportarCSV = () => {
     if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
-    const encabezados = ['# Ref', 'Fecha', 'Tipo de Operación', 'Status', 'Convenio (Tarifa)', '# de Remolque', 'Proveedor', 'Unidad', 'Cliente (Paga)', 'Convenio (Prov)', 'Cargos Adicionales', 'Subtotal'];
-    const lineas = operacionesFiltradas.map(op => [
-      `"${op.ref || op.id?.substring(0,6) || ''}"`, `"${op.fechaServicio || ''}"`, `"${mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')}"`, `"${mostrarDatoMapeado(op.status, 'statusServicio', 'nombre')}"`, `"${op.convenioNombre || obtenerNombreConvenioCliente(op.convenio)}"`, `"${mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'placa')}"`, `"${mostrarDatoMapeado(op.proveedorUnidad, 'empresas')}"`, `"${mostrarDatoMapeado(op.unidad, 'unidades')}"`, `"${op.nombreCliente || ''}"`, `"${obtenerNombreConvenioProv(op.convenioProveedor)}"`, `"${formatoMoneda(op.cargosAdicionales)}"`, `"${formatoMoneda(op.subtotalCliente)}"`
-    ].join(','));
-    const csvContent = [encabezados.join(','), ...lineas].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Servicios_Completados_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    
+    const datosExcel = operacionesFiltradas.map(op => ({
+      '# Ref': op.ref || op.id?.substring(0,6) || '',
+      'Fecha': op.fechaServicio || '',
+      'Tipo de Operación': op.tipoOperacionNombre || op.tipoOperacionId || '-',
+      'Status': op.statusNombre || op.status || '-',
+      'Convenio (Tarifa)': op.convenioNombre || op.convenio || '-',
+      '# de Remolque': op.remolquePlaca || op.numeroRemolque || '-',
+      'Proveedor': op.proveedorUnidadNombre || op.proveedorUnidad || '-',
+      'Unidad': op.unidadNombre || op.unidad || '-',
+      'Cliente (Paga)': op.clienteNombre || op.nombreCliente || op.clientePaga || '-',
+      'Convenio (Prov)': op.convenioProveedorNombre || op.convenioProveedor || '-',
+      'Cargos Adicionales': op.cargosAdicionales || 0,
+      'Subtotal': op.subtotalCliente || 0
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(datosExcel);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Completados');
+    XLSX.writeFile(workbook, `Servicios_Completados_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
 
-  const evalTipoOpText = operacionViendo ? (catalogosGlobales.tiposOperacion?.find((op: any) => op.id === operacionViendo.tipoOperacionId)?.tipo_operacion || '').toLowerCase() : '';
+  const evalTipoOpText = String(operacionViendo?.tipoOperacionNombre || operacionViendo?.tipoOperacionId || '').toLowerCase();
   const evalIsTransfer = evalTipoOpText.includes('transfer');
   const evalIsFletes = evalTipoOpText.includes('fletes') || evalTipoOpText.includes('flete');
   const evalIsLogistica = evalTipoOpText.includes('logistica') || evalTipoOpText.includes('logística');
-  const evalIsRoelca = mostrarDatoMapeado(operacionViendo?.proveedorUnidad, 'empresas').toLowerCase().includes('roelca');
+  const evalIsRoelca = String(operacionViendo?.proveedorUnidadNombre || operacionViendo?.proveedorUnidad || '').toLowerCase().includes('roelca');
+  
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
@@ -431,7 +408,7 @@ const ServiciosCompletados = () => {
             <button className="btn btn-outline" onClick={forzarRecarga} style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', borderRadius: '6px', cursor: 'pointer' }} title="Recargar Catálogos">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
             </button>
-            <button className="btn btn-outline" onClick={exportarCSV} style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }} title="Exportar CSV">
+            <button className="btn btn-outline" onClick={exportarCSV} style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }} title="Exportar Excel">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
@@ -442,9 +419,7 @@ const ServiciosCompletados = () => {
               <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
-                    <th style={{ padding: '16px', width: '80px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
-                      Acciones
-                    </th>
+                    <th style={{ padding: '16px', width: '80px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Ref</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Tipo de Operación</th>
@@ -478,7 +453,18 @@ const ServiciosCompletados = () => {
                             </button>
                           </div>
                         </td>
-                        <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0,6)}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')}</td><td style={{ padding: '16px', color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre')}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{op.convenioNombre || obtenerNombreConvenioCliente(op.convenio)}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'placa')}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas')}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades')}</td><td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{op.nombreCliente}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{obtenerNombreConvenioProv(op.convenioProveedor)}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.cargosAdicionales)}</td><td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.subtotalCliente)}</td>
+                        <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0,6)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.tipoOperacionNombre || op.tipoOperacionId || '-'}</td>
+                        <td style={{ padding: '16px', color: '#10b981', fontWeight: 'bold' }}>{op.statusNombre || op.status || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.convenioNombre || op.convenio || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.remolquePlaca || op.numeroRemolque || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.proveedorUnidadNombre || op.proveedorUnidad || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.unidadNombre || op.unidad || '-'}</td>
+                        <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{op.clienteNombre || op.nombreCliente || op.clientePaga || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.convenioProveedorNombre || op.convenioProveedor || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.cargosAdicionales)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.subtotalCliente)}</td>
                       </tr>
                     ))
                   )}
@@ -488,7 +474,7 @@ const ServiciosCompletados = () => {
           </div>
           {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones completadas</div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button 
                   title="Página Anterior"
@@ -515,74 +501,66 @@ const ServiciosCompletados = () => {
       {operacionViendo && (
         <div className="modal-overlay" style={{ zIndex: 1500 }}>
           <div className="form-card detail-card" style={{ maxWidth: '1100px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            
             <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: 'none' }}>
               <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                Detalle de Operación 
+                Detalle de Operación Completada
                 <span style={{ color: '#10b981', padding: '4px 10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderRadius: '6px', border: '1px solid rgba(16, 185, 129, 0.3)', fontSize: '1.2rem' }}>
                   {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
                 </span>
               </h2>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: '0.2s' }}>
-                  📋 Bitácora
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+                
+                {evalIsFletes && (
+                  <>
+                    <button onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                      📄 Carta Instrucciones
+                    </button>
+                    <button onClick={handleDescargarPruebaEntrega} title="Descargar Prueba de Entrega" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                      📄 Prueba Entrega
+                    </button>
+                  </>
+                )}
+
+                <button onClick={handleDescargarCheckList} title="Descargar Check List" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                  📄 Check List
                 </button>
-                <div style={{ width: '1px', height: '24px', backgroundColor: '#30363d', margin: '0 4px' }}></div>
+                <button onClick={handleDescargarSolicitudRetiro} title="Descargar Solicitud de Retiro" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                  📄 Solicitud
+                </button>
+                <button onClick={handleDescargarInstruccionesServicio} title="Descargar Instrucciones de Servicio" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                  📄 Instrucciones
+                </button>
+
+                <button onClick={verHistorial} style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>📋 Bitácora</button>
                 <button onClick={() => setOperacionViendo(null)} className="btn-window close" style={{ padding: '6px', borderRadius: '50%' }}>✕</button>
               </div>
             </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#010409', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
-              <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '0.5px' }}>DOCUMENTOS:</span>
-              
-              {evalIsFletes && (
-                <>
-                  <button onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones" style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#58a6ff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '4px', gap: '6px', fontSize: '0.85rem', transition: '0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                    📄 Carta Instrucciones
-                  </button>
-                  <button onClick={handleDescargarPruebaEntrega} title="Descargar Prueba de Entrega" style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#58a6ff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '4px', gap: '6px', fontSize: '0.85rem', transition: '0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                    📄 Prueba Entrega
-                  </button>
-                </>
-              )}
-
-              <button onClick={handleDescargarCheckList} title="Descargar Check List" style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#58a6ff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '4px', gap: '6px', fontSize: '0.85rem', transition: '0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                📄 Check List
-              </button>
-              <button onClick={handleDescargarSolicitudRetiro} title="Descargar Solicitud de Retiro" style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#58a6ff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '4px', gap: '6px', fontSize: '0.85rem', transition: '0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                📄 Solicitud Retiro
-              </button>
-              <button onClick={handleDescargarInstruccionesServicio} title="Descargar Instrucciones de Servicio" style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#58a6ff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '4px', gap: '6px', fontSize: '0.85rem', transition: '0.2s' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                📄 Instrucciones Serv.
-              </button>
-            </div>
-
             <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px', overflowX: 'auto' }}>
-              {tabsDetalle.map(tab => (<button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)} style={{ padding: '12px 16px', background: 'none', border: 'none', borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #D84315' : '2px solid transparent', color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e', cursor: 'pointer' }}>{tab.label}</button>))}
+              {tabsDetalle.map(tab => (<button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)} style={{ padding: '12px 16px', background: 'none', border: 'none', borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #10b981' : '2px solid transparent', color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e', cursor: 'pointer' }}>{tab.label}</button>))}
             </div>
             <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
               {pestañaDetalleActiva === 'general' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Tipo</span><span>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{color: '#10b981'}}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre')}</span></span></div>
-                  {evalIsFletes && (<div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>Tipo</span><span>{operacionViendo.tipoOperacionNombre || operacionViendo.tipoOperacionId || '-'}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{color: '#10b981'}}>{operacionViendo.statusNombre || operacionViendo.status || '-'}</span></span></div>
+                  {evalIsFletes && (<div><span style={{ display: 'block', fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Paga)</span><span>{mostrarDato(operacionViendo.nombreCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio (Tarifa)</span><span>{obtenerNombreConvenioCliente(operacionViendo.convenio)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># de Remolque</span><span>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'placa')}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Paga)</span><span>{mostrarDato(operacionViendo.clienteNombre || operacionViendo.nombreCliente || operacionViendo.clientePaga)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio (Tarifa)</span><span>{operacionViendo.convenioNombre || operacionViendo.convenio || '-'}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># de Remolque</span><span>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Ref Cliente</span><span>{mostrarDato(operacionViendo.refCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Origen</span><span>{mostrarDatoMapeado(operacionViendo.origen, 'empresas')}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Destino</span><span>{mostrarDatoMapeado(operacionViendo.destino, 'empresas')}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Origen</span><span>{operacionViendo.origenNombre || operacionViendo.origen || '-'}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Destino</span><span>{operacionViendo.destinoNombre || operacionViendo.destino || '-'}</span></div>
                   <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Observaciones Ejecutivo</span><div style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>{mostrarDato(operacionViendo.observacionesEjecutivo)}</div></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'pedimento' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Mercancía)</span><span>{mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas')}</span></div>
+                  <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Mercancía)</span><span>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Descripción de la Mercancía</span><span>{mostrarDato(operacionViendo.descripcionMercancia)}</span></div>
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cantidad</span><span>{mostrarDato(operacionViendo.cantidad)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Embalaje</span><span>{mostrarDatoMapeado(operacionViendo.embalaje, 'embalajes', 'clave')}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Embalaje</span><span>{operacionViendo.embalajeNombre || operacionViendo.embalaje || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Peso (Kg)</span><span>{mostrarDato(operacionViendo.pesoKg)}</span></div>
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># DODA</span><span>{mostrarDato(operacionViendo.numDoda)}</span></div>
@@ -595,17 +573,17 @@ const ServiciosCompletados = () => {
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cant. Entry's</span><span>{mostrarDato(operacionViendo.cantEntrys)}</span></div>
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># Manifiesto</span><span>{mostrarDato(operacionViendo.numManifiesto)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Servicios</span><span>{mostrarDatoMapeado(operacionViendo.provServicios, 'empresas')}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Servicios</span><span>{operacionViendo.provServiciosNombre || operacionViendo.provServicios || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Costo Manifiesto</span><span>{formatoMoneda(operacionViendo.montoManifiesto)}</span></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'unidad' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas')}</span></div>
+                  <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{operacionViendo.proveedorUnidadNombre || operacionViendo.proveedorUnidad || '-'}</span></div>
                   <div style={{ gridColumn: 'span 3', backgroundColor: '#161b22', padding: '20px', borderRadius: '12px', border: '1px solid #30363d' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio Proveedor</span><span>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor)}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio Proveedor</span><span>{operacionViendo.convenioProveedorNombre || operacionViendo.convenioProveedor || '-'}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Moneda Base</span><span>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span></div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
@@ -622,8 +600,8 @@ const ServiciosCompletados = () => {
                   {showDetailInternalFleet && (
                     <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                       <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0' }}>Flota Operativa (Roelca)</h4></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'numeroEconomico') || mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'nombre')}</span></div>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Operador Asignado</span><span>{mostrarDatoMapeado(operacionViendo.operador, 'empleados')}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Unidad Asignada</span><span>{operacionViendo.unidadNombre || operacionViendo.unidad || '-'}</span></div>
+                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Operador Asignado</span><span>{operacionViendo.operadorNombre || operacionViendo.operador || '-'}</span></div>
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Sueldo Operador</span><span>{formatoMoneda(operacionViendo.sueldoOperador)}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Sueldo Extra</span><span>{formatoMoneda(operacionViendo.sueldoExtra)}</span></div>

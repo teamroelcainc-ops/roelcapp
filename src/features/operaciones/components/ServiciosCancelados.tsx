@@ -25,83 +25,84 @@ const ServiciosCancelados = () => {
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
-  const descargarTodo = async () => {
+  // ✅ 1. CARGA RÁPIDA: Solo trae operaciones canceladas (Desnormalizado)
+  const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     try {
-      let catGuardados = null;
-      const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
-
-      if (cacheCatStr) {
-        catGuardados = JSON.parse(cacheCatStr);
-        setCatalogosGlobales(catGuardados);
-      } else {
-        console.warn(`[FIREBASE READ] Descargando TODOS los catálogos por primera vez.`);
-        const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap, statusSnap, uniProvSnap, opeProvSnap] = await Promise.all([
-          getDocs(collection(db, 'empresas')),
-          getDocs(collection(db, 'catalogo_tipo_operacion')),
-          getDocs(collection(db, 'catalogo_embalaje')),
-          getDocs(collection(db, 'remolques')),
-          getDocs(collection(db, 'catalogo_tarifas_referencia')), 
-          getDocs(collection(db, 'convenios_proveedores')),
-          getDocs(collection(db, 'convenios_proveedores_detalles')), 
-          getDocs(collection(db, 'tipo_cambio')),
-          getDocs(collection(db, 'convenios_clientes')),
-          getDocs(collection(db, 'convenios_clientes_detalles')),
-          getDocs(collection(db, 'unidades')),
-          getDocs(collection(db, 'empleados')),
-          getDocs(collection(db, 'catalogo_status_servicio')),
-          getDocs(collection(db, 'unidades_proveedor')),
-          getDocs(collection(db, 'proveedores_unidad'))
-        ]);
-
-        catGuardados = {
-          empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })), 
-          catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          empleados: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          unidades_proveedor: uniProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-          proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
-        };
-        
-        sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
-        setCatalogosGlobales(catGuardados);
-      }
-
       const queryOperacionesCanceladas = query(
         collection(db, 'operaciones'), 
         where('status', '==', '7607f692'), 
         orderBy('fechaServicio', 'desc'), 
-        limit(100)
+        limit(150)
       );
 
       const operacionesSnap = await getDocs(queryOperacionesCanceladas);
+      console.log(`[FIREBASE READ] Descargadas ${operacionesSnap.docs.length} operaciones canceladas.`);
 
-      const operacionesCanceladas = operacionesSnap.docs.map((d: any) => {
-        const data = d.data() as any;
-        const clienteObj = catGuardados.empresas.find((e: any) => e.id === data.clientePaga);
-        return { id: d.id, ...data, nombreCliente: clienteObj ? clienteObj.nombre : (data.clientePaga || 'Desconocido') };
-      });
+      const operacionesCanceladas = operacionesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
 
       setOperacionesGlobales(operacionesCanceladas);
 
     } catch (e) {
-      console.error("Error al pre-cargar datos:", e);
-      alert("Hubo un problema al descargar las operaciones. Verifica tu conexión.");
+      console.error("Error al cargar operaciones canceladas:", e);
+      alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
     }
     setCargandoOperaciones(false);
   };
 
+  // ✅ 2. CARGA PEREZOSA DE CATÁLOGOS (Solo cuando se necesitan para PDFs)
+  const cargarCatalogosSiEsNecesario = async () => {
+    if (Object.keys(catalogosGlobales).length > 0) return; 
+
+    const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
+    if (cacheCatStr) {
+      setCatalogosGlobales(JSON.parse(cacheCatStr));
+      return;
+    }
+
+    console.warn(`[FIREBASE READ] Descargando catálogos pesados por primera vez...`);
+    const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap, statusSnap, uniProvSnap, opeProvSnap] = await Promise.all([
+      getDocs(collection(db, 'empresas')),
+      getDocs(collection(db, 'catalogo_tipo_operacion')),
+      getDocs(collection(db, 'catalogo_embalaje')),
+      getDocs(collection(db, 'remolques')),
+      getDocs(collection(db, 'catalogo_tarifas_referencia')), 
+      getDocs(collection(db, 'convenios_proveedores')),
+      getDocs(collection(db, 'convenios_proveedores_detalles')), 
+      getDocs(collection(db, 'tipo_cambio')),
+      getDocs(collection(db, 'convenios_clientes')),
+      getDocs(collection(db, 'convenios_clientes_detalles')),
+      getDocs(collection(db, 'unidades')),
+      getDocs(collection(db, 'empleados')),
+      getDocs(collection(db, 'catalogo_status_servicio')),
+      getDocs(collection(db, 'unidades_proveedor')),
+      getDocs(collection(db, 'proveedores_unidad'))
+    ]);
+
+    const catGuardados = {
+      empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })), 
+      catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      empleados: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      unidades_proveedor: uniProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
+    };
+    
+    sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
+    setCatalogosGlobales(catGuardados);
+  };
+
   useEffect(() => {
-    descargarTodo();
+    descargarOperaciones();
   }, []);
 
   useEffect(() => {
@@ -109,6 +110,7 @@ const ServiciosCancelados = () => {
   }, [busqueda]);
   
   const mostrarDato = (dato: any) => (dato && dato !== '' ? dato : '-');
+  
   const formatearFechaHora = (isoString: string | undefined | null) => {
     if (!isoString) return '-';
     return new Date(isoString).toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -120,38 +122,20 @@ const ServiciosCancelados = () => {
     return val || '-';
   };
 
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre') => {
+  // ✅ Función robusta para leer del catálogo si existe, o usar el dato desnormalizado
+  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
+    if (valorDesnormalizado) return valorDesnormalizado; // Prioridad al valor estático de la operación
     if (!id) return '-';
     if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
+    
     const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => item.id === id);
     if (!elementoEncontrado) return id;
+
     if (catalogo === 'empleados') {
       return elementoEncontrado.firstName ? `${elementoEncontrado.firstName} ${elementoEncontrado.lastNamePaternal || ''}`.trim() : elementoEncontrado.nombre || id;
     }
+
     return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || elementoEncontrado.descripcion || elementoEncontrado.placa || id;
-  };
-
-  const obtenerNombreConvenioCliente = (id: string) => {
-    if (operacionViendo?.convenioNombre) return operacionViendo.convenioNombre;
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvDetalles?.find((d:any) => d.id === id);
-    if (detalle) {
-        const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio_id || detalle.tipoConvenio || detalle.tipo_convenio || detalle['TIPO DE CONVENIO'];
-        const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || id;
-    }
-    return id;
-  };
-
-  const obtenerNombreConvenioProv = (id: string) => {
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvProvDetalles?.find((d:any) => d.id === id);
-    if (detalle) {
-        const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio || detalle.tarifaId || detalle['TIPO DE CONVENIO'];
-        const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || detalle.tipoConvenioNombre || id;
-    }
-    return id;
   };
 
   const formatoMoneda = (monto: any) => {
@@ -174,152 +158,102 @@ const ServiciosCancelados = () => {
     setCargandoHorarios(false);
   };
 
-  const handleDescargarSolicitudRetiro = () => {
+  // ✅ PDFs: Descargan catálogos solo si se solicita generar documento
+  const handleDescargarSolicitudRetiro = async () => {
+    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-    const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas');
+    const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) 
-      : 'N/A';
-      
+      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor)
-      : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
       tipoMovimiento: operacionViendo.trafico || 'N/A',
-      remolqueNombre: remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A',
-      remolquePlacas: remolqueObj ? remolqueObj.placa : 'N/A',
-      clienteMercancia: mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
-      unidadNombre: unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal,
+      remolqueNombre: operacionViendo.remolquePlaca || operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
+      remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
+      clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       unidadPlacas: unidadObj ? (unidadObj.placa || 'N/A') : 'N/A',
-      empleadoNombre: mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal,
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
+      empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
     });
   };
 
-  const handleDescargarInstruccionesServicio = () => {
+  const handleDescargarInstruccionesServicio = async () => {
+    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) 
-      : 'N/A';
-      
+      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor)
-      : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
-    const datosPDF = {
+    generarInstruccionesServicioPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'N/A',
       fecha: operacionViendo.fechaServicio || '',
-      unidadNombre: unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal,
-      empleadoNombre: mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal,
-      remolqueNombre: remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A',
-      remolquePlacas: remolqueObj ? remolqueObj.placa : 'N/A',
-      tipoOperacion: mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
-      origenNombre: origenObj ? origenObj.nombre : 'N/A',
+      unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
+      empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
+      remolqueNombre: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
+      remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
+      tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
+      origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      clienteMercancia: mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
+      clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
-    };
-
-    generarInstruccionesServicioPDF(datosPDF);
+    });
   };
 
-  const handleDescargarCheckList = () => {
+  const handleDescargarCheckList = async () => {
+    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
-
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
     const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) 
-      : 'N/A';
-      
+      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor)
-      : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
-    const empNombre = mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal;
-    const uniNombre = unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal;
+    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
+    const uniNombre = operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal);
     const uniPlacas = unidadObj ? (unidadObj.placa || 'N/A') : 'N/A';
-    
-    const tractorInfoStr = `${uniNombre} / ${uniPlacas} / ${empNombre}`;
 
-    const datosPDF = {
+    generarCheckListPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fecha: operacionViendo.fechaServicio || '',
-      cliente: mostrarDatoMapeado(operacionViendo.clientePaga, 'empresas'),
-      remolque: remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A',
-      proveedor: mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas'),
-      tractorInfo: tractorInfoStr,
+      cliente: operacionViendo.clienteNombre || mostrarDatoMapeado(operacionViendo.clientePaga, 'empresas'),
+      remolque: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
+      proveedor: operacionViendo.proveedorUnidadNombre || mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas'),
+      tractorInfo: `${uniNombre} / ${uniPlacas} / ${empNombre}`,
       numeroPedimento: operacionViendo.numDoda || 'N/A',
       prefileEntrys: String(operacionViendo.cantEntrys || '0'),
       entryReferencia: operacionViendo.numeroEntrys || 'N/A',
       manifiesto: operacionViendo.numManifiesto || 'N/A',
-      origenNombre: origenObj ? origenObj.nombre : 'N/A',
+      origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
       operadorNombre: empNombre,
       supervisor: operacionViendo.observacionesEjecutivo || 'Despacho',
-    };
-
-    generarCheckListPDF(datosPDF);
+    });
   };
 
-  const handleDescargarPruebaEntrega = () => {
-    if (!operacionViendo) return;
-
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
-    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-
-    const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor)
-      : 'N/A';
-
-    const empNombre = mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal;
-    const tipoOpNombre = mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion');
-    const trafico = operacionViendo.trafico || '';
-
-    const datosPDF = {
-      referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
-      fechaServicio: operacionViendo.fechaServicio || 'N/A',
-      fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
-      origenNombre: origenObj ? origenObj.nombre : 'N/A',
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
-      origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
-      destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
-      destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
-      tipoServicio: `${tipoOpNombre} ${trafico}`,
-      tipoUnidad: remolqueObj ? (remolqueObj.tipo || remolqueObj.descripcion || 'Remolque') : 'N/A',
-      numeroEconomico: remolqueObj ? remolqueObj.nombre : 'N/A',
-      placas: remolqueObj ? remolqueObj.placa : 'N/A',
-      operador: empNombre,
-      descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A'
-    };
-
-    generarPruebaEntregaPDF(datosPDF);
-  };
-
-  const handleDescargarCartaInstrucciones = () => {
+  const handleDescargarPruebaEntrega = async () => {
+    await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
@@ -328,27 +262,60 @@ const ServiciosCancelados = () => {
     const operadorProvVal = operacionViendo.operadorProveedor
       ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
-    const empNombre = mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal;
+    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
+
+    generarPruebaEntregaPDF({
+      referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
+      fechaServicio: operacionViendo.fechaServicio || 'N/A',
+      fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
+      origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
+      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
+      origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
+      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
+      destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
+      tipoServicio: `${operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')} ${operacionViendo.trafico || ''}`,
+      tipoUnidad: remolqueObj ? (remolqueObj.tipo || remolqueObj.descripcion || 'Remolque') : 'N/A',
+      numeroEconomico: operacionViendo.remolqueNombre || (remolqueObj ? remolqueObj.nombre : 'N/A'),
+      placas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
+      operador: empNombre,
+      descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A'
+    });
+  };
+
+  const handleDescargarCartaInstrucciones = async () => {
+    await cargarCatalogosSiEsNecesario();
+    if (!operacionViendo) return;
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
+    const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
+    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+
+    const operadorProvVal = operacionViendo.operadorProveedor
+      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+
+    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
 
     generarCartaInstruccionesPDF({
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
-      tipoServicio: mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
+      tipoServicio: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       trafico: operacionViendo.trafico || '',
       tipoUnidad: remolqueObj ? (remolqueObj.tipo || remolqueObj.descripcion || 'Remolque') : 'N/A',
-      numeroEconomico: remolqueObj ? remolqueObj.nombre : 'N/A',
-      placas: remolqueObj ? remolqueObj.placa : 'N/A',
+      numeroEconomico: operacionViendo.remolqueNombre || (remolqueObj ? remolqueObj.nombre : 'N/A'),
+      placas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
       operador: empNombre,
       descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A',
       origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
-      origenNombre: origenObj ? origenObj.nombre : 'N/A',
+      origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
       origenColonia: origenObj ? (origenObj.colonia || 'N/A') : 'N/A',
       origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
       destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
-      destinoNombre: destinoObj ? destinoObj.nombre : 'N/A',
+      destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
       destinoColonia: destinoObj ? (destinoObj.colonia || 'N/A') : 'N/A',
       destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
@@ -360,20 +327,20 @@ const ServiciosCancelados = () => {
     window.location.reload();
   };
 
+  // ✅ FILTRO BASADO EN TEXTOS DESNORMALIZADOS
   const operacionesFiltradas = useMemo(() => {
     const b = busqueda.toLowerCase();
     return operacionesGlobales.filter(op => {
-      const statusTexto = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre').toLowerCase();
       return (
         String(op.ref || op.id || '').toLowerCase().includes(b) ||
         String(op.fechaServicio || '').toLowerCase().includes(b) ||
-        String(op.nombreCliente || '').toLowerCase().includes(b) ||
-        String(op.tipoServicio || '').toLowerCase().includes(b) ||
+        String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
+        String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
         String(op.trafico || '').toLowerCase().includes(b) ||
-        String(statusTexto || '').toLowerCase().includes(b) 
+        String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
       );
     });
-  }, [busqueda, operacionesGlobales, catalogosGlobales]);
+  }, [busqueda, operacionesGlobales]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -387,7 +354,18 @@ const ServiciosCancelados = () => {
     if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
     const encabezados = ['# Ref', 'Fecha', 'Tipo de Operación', 'Status', 'Convenio (Tarifa)', '# de Remolque', 'Proveedor', 'Unidad', 'Cliente (Paga)', 'Convenio (Prov)', 'Cargos Adicionales', 'Subtotal'];
     const lineas = operacionesFiltradas.map(op => [
-      `"${op.ref || op.id?.substring(0,6) || ''}"`, `"${op.fechaServicio || ''}"`, `"${mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')}"`, `"${mostrarDatoMapeado(op.status, 'statusServicio', 'nombre')}"`, `"${op.convenioNombre || obtenerNombreConvenioCliente(op.convenio)}"`, `"${mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'placa')}"`, `"${mostrarDatoMapeado(op.proveedorUnidad, 'empresas')}"`, `"${mostrarDatoMapeado(op.unidad, 'unidades')}"`, `"${op.nombreCliente || ''}"`, `"${obtenerNombreConvenioProv(op.convenioProveedor)}"`, `"${formatoMoneda(op.cargosAdicionales)}"`, `"${formatoMoneda(op.subtotalCliente)}"`
+      `"${op.ref || op.id?.substring(0,6) || ''}"`, 
+      `"${op.fechaServicio || ''}"`, 
+      `"${op.tipoOperacionNombre || op.tipoOperacionId || ''}"`, 
+      `"${op.statusNombre || op.status || ''}"`, 
+      `"${op.convenioNombre || op.convenio || ''}"`, 
+      `"${op.remolquePlaca || op.numeroRemolque || ''}"`, 
+      `"${op.proveedorUnidadNombre || op.proveedorUnidad || ''}"`, 
+      `"${op.unidadNombre || op.unidad || ''}"`, 
+      `"${op.clienteNombre || op.nombreCliente || ''}"`, 
+      `"${op.convenioProveedorNombre || op.convenioProveedor || ''}"`, 
+      `"${formatoMoneda(op.cargosAdicionales)}"`, 
+      `"${formatoMoneda(op.subtotalCliente)}"`
     ].join(','));
     const csvContent = [encabezados.join(','), ...lineas].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -402,11 +380,12 @@ const ServiciosCancelados = () => {
 
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
 
-  const evalTipoOpText = operacionViendo ? (catalogosGlobales.tiposOperacion?.find((op: any) => op.id === operacionViendo.tipoOperacionId)?.tipo_operacion || '').toLowerCase() : '';
+  const evalTipoOpText = String(operacionViendo?.tipoOperacionNombre || operacionViendo?.tipoOperacionId || '').toLowerCase();
   const evalIsTransfer = evalTipoOpText.includes('transfer');
   const evalIsFletes = evalTipoOpText.includes('fletes') || evalTipoOpText.includes('flete');
   const evalIsLogistica = evalTipoOpText.includes('logistica') || evalTipoOpText.includes('logística');
-  const evalIsRoelca = mostrarDatoMapeado(operacionViendo?.proveedorUnidad, 'empresas').toLowerCase().includes('roelca');
+  const evalIsRoelca = String(operacionViendo?.proveedorUnidadNombre || operacionViendo?.proveedorUnidad || '').toLowerCase().includes('roelca');
+  
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
@@ -473,13 +452,13 @@ const ServiciosCancelados = () => {
                         </td>
                         <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0,6)}</td>
                         <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')}</td>
-                        <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre')}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.convenioNombre || obtenerNombreConvenioCliente(op.convenio)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'placa')}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas')}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades')}</td>
-                        <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{op.nombreCliente}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.tipoOperacionNombre || op.tipoOperacionId || '-'}</td>
+                        <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{op.statusNombre || op.status || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.convenioNombre || op.convenio || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.remolquePlaca || op.numeroRemolque || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.proveedorUnidadNombre || op.proveedorUnidad || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.unidadNombre || op.unidad || '-'}</td>
+                        <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{op.clienteNombre || op.nombreCliente || op.clientePaga || '-'}</td>
                         <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.subtotalCliente)}</td>
                       </tr>
                     ))
@@ -490,7 +469,7 @@ const ServiciosCancelados = () => {
           </div>
           {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones canceladas</div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button 
                   title="Página Anterior"
@@ -552,26 +531,26 @@ const ServiciosCancelados = () => {
             <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
               {pestañaDetalleActiva === 'general' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Tipo</span><span>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{color: '#ef4444'}}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre')}</span></span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Tipo</span><span>{operacionViendo.tipoOperacionNombre || operacionViendo.tipoOperacionId || '-'}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{color: '#ef4444'}}>{operacionViendo.statusNombre || operacionViendo.status || '-'}</span></span></div>
                   {evalIsFletes && (<div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Paga)</span><span>{mostrarDato(operacionViendo.nombreCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio (Tarifa)</span><span>{obtenerNombreConvenioCliente(operacionViendo.convenio)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># de Remolque</span><span>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'placa')}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Paga)</span><span>{mostrarDato(operacionViendo.clienteNombre || operacionViendo.nombreCliente || operacionViendo.clientePaga)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio (Tarifa)</span><span>{operacionViendo.convenioNombre || operacionViendo.convenio || '-'}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># de Remolque</span><span>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Ref Cliente</span><span>{mostrarDato(operacionViendo.refCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Origen</span><span>{mostrarDatoMapeado(operacionViendo.origen, 'empresas')}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Destino</span><span>{mostrarDatoMapeado(operacionViendo.destino, 'empresas')}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Origen</span><span>{operacionViendo.origenNombre || operacionViendo.origen || '-'}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Destino</span><span>{operacionViendo.destinoNombre || operacionViendo.destino || '-'}</span></div>
                   <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Observaciones Ejecutivo</span><div style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>{mostrarDato(operacionViendo.observacionesEjecutivo)}</div></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'pedimento' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Mercancía)</span><span>{mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas')}</span></div>
+                  <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Mercancía)</span><span>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Descripción de la Mercancía</span><span>{mostrarDato(operacionViendo.descripcionMercancia)}</span></div>
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cantidad</span><span>{mostrarDato(operacionViendo.cantidad)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Embalaje</span><span>{mostrarDatoMapeado(operacionViendo.embalaje, 'embalajes', 'clave')}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Embalaje</span><span>{operacionViendo.embalajeNombre || operacionViendo.embalaje || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Peso (Kg)</span><span>{mostrarDato(operacionViendo.pesoKg)}</span></div>
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># DODA</span><span>{mostrarDato(operacionViendo.numDoda)}</span></div>
@@ -584,17 +563,17 @@ const ServiciosCancelados = () => {
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cant. Entry's</span><span>{mostrarDato(operacionViendo.cantEntrys)}</span></div>
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># Manifiesto</span><span>{mostrarDato(operacionViendo.numManifiesto)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Servicios</span><span>{mostrarDatoMapeado(operacionViendo.provServicios, 'empresas')}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Servicios</span><span>{operacionViendo.provServiciosNombre || operacionViendo.provServicios || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Costo Manifiesto</span><span>{formatoMoneda(operacionViendo.montoManifiesto)}</span></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'unidad' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas')}</span></div>
+                  <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{operacionViendo.proveedorUnidadNombre || operacionViendo.proveedorUnidad || '-'}</span></div>
                   <div style={{ gridColumn: 'span 3', backgroundColor: '#161b22', padding: '20px', borderRadius: '12px', border: '1px solid #30363d' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio Proveedor</span><span>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor)}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio Proveedor</span><span>{operacionViendo.convenioProveedorNombre || operacionViendo.convenioProveedor || '-'}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Moneda Base</span><span>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span></div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
@@ -611,8 +590,8 @@ const ServiciosCancelados = () => {
                   {showDetailInternalFleet && (
                     <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                       <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0' }}>Flota Operativa (Roelca)</h4></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'numeroEconomico') || mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'nombre')}</span></div>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Operador Asignado</span><span>{mostrarDatoMapeado(operacionViendo.operador, 'empleados')}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Unidad Asignada</span><span>{operacionViendo.unidadNombre || operacionViendo.unidad || '-'}</span></div>
+                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Operador Asignado</span><span>{operacionViendo.operadorNombre || operacionViendo.operador || '-'}</span></div>
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Sueldo Operador</span><span>{formatoMoneda(operacionViendo.sueldoOperador)}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Sueldo Extra</span><span>{formatoMoneda(operacionViendo.sueldoExtra)}</span></div>

@@ -17,6 +17,7 @@ interface FormProps {
 
 type TabType = 'general' | 'pedimento' | 'manifiesto' | 'unidad' | 'cobrar';
 
+// ✅ CONSTANTES DE MONEDA AÑADIDAS PARA SOLUCIONAR EL ERROR
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
@@ -40,6 +41,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     catalogoConvProvDetalles = [],
     unidades = [],      
     empleados = [], 
+    statusServicio = [],
+    catalogoMoneda = [],
     unidadesProveedor = catalogosCacheados?.unidades_proveedor || [],
     proveedoresUnidad = catalogosCacheados?.proveedores_unidad || []
   } = catalogosCacheados || {};
@@ -47,6 +50,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [listaEmpleadosLocal, setListaEmpleadosLocal] = useState<any[]>(empleados);
   const [listaUniProvLocal, setListaUniProvLocal] = useState<any[]>(unidadesProveedor);
   const [listaOpeProvLocal, setListaOpeProvLocal] = useState<any[]>(proveedoresUnidad);
+  const [listaMonedasLocal, setListaMonedasLocal] = useState<any[]>(catalogoMoneda);
 
   const [listaConveniosCliente, setListaConveniosCliente] = useState<any[]>([]);
   const [listaConveniosProveedor, setListaConveniosProveedor] = useState<any[]>([]);
@@ -126,12 +130,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           const snap = await getDocs(collection(db, 'proveedores_unidad'));
           setListaOpeProvLocal(snap.docs.map(d => ({id: d.id, ...d.data()})));
         }
+        if (!catalogoMoneda || catalogoMoneda.length === 0) {
+          const snap = await getDocs(collection(db, 'catalogo_moneda'));
+          setListaMonedasLocal(snap.docs.map(d => ({id: d.id, ...d.data()})));
+        }
       } catch (error) {
         console.warn("Fallo cargando catálogos faltantes locales:", error);
       }
     };
     cargarFaltantes();
-  }, [empleados, unidadesProveedor, proveedoresUnidad]);
+  }, [empleados, unidadesProveedor, proveedoresUnidad, catalogoMoneda]);
 
   const buildConfigId = () => {
     let tipoOpText = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || 'N/A';
@@ -162,7 +170,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       try {
         const statusCalculado = await calcularStatusDinamico(configId, formData, initialData?.status);
-        setStatusPreview(statusCalculado);
+        const statusObj = statusServicio?.find((s:any) => s.id === statusCalculado);
+        setStatusPreview(statusObj?.descripcion || statusObj?.nombre || statusCalculado);
         setStatusError(null);
       } catch (error: any) {
         setStatusPreview('');
@@ -172,7 +181,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }, 800);
 
     return () => clearTimeout(timerId);
-  }, [formData, initialData, tiposOperacion]);
+  }, [formData, initialData, tiposOperacion, statusServicio]);
 
   useEffect(() => {
     const sOp = Number(formData.sueldoOperador) || 0;
@@ -205,8 +214,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         cargosAdicionalesProv: Number(initialData.cargosAdicionalesProv) || 0,
         cargosAdicionales: Number(initialData.cargosAdicionales) || 0,
         sueldoOperador: Number(initialData.sueldoOperador) || 0, 
-        sueldoExtra: Number(initialData.sueldoExtra) || 0,       
-        combustible: Number(initialData.combustible) || 0,       
+        sueldoExtra: Number(initialData.sueldoExtra) || 0,        
+        combustible: Number(initialData.combustible) || 0,        
         combustibleExtra: Number(initialData.combustibleExtra) || 0,  
         unidadProveedor: initialData.unidadProveedor || '',
         operadorProveedor: initialData.operadorProveedor || '',
@@ -217,44 +226,49 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       setFormData(prev => ({ ...prev, ...safeInitialData }));
 
-      const getNombre = (id: string, catalogo: any[], campo = 'nombre') => {
-        if (!id || !catalogo || !Array.isArray(catalogo)) return '';
-        const item = catalogo.find(e => e.id === id);
-        return item ? (item[campo] || item.descripcion || item.nombre || '') : '';
+      // ✅ TIPOS AÑADIDOS A LAS FUNCIONES MAPEO
+      const getNombreEmpresa = (id: string) => {
+        if (!id) return '';
+        const item = empresas.find((e: any) => e.id === id);
+        return item ? item.nombre : id;
       };
 
-      setSearchClientePaga(getNombre(initialData.clientePaga, empresas) || '');
-      setSearchOrigen(getNombre(initialData.origen, empresas) || '');
-      setSearchDestino(getNombre(initialData.destino, empresas) || '');
-      setSearchRemolque(getNombre(initialData.numeroRemolque, remolques, 'placa') || getNombre(initialData.numeroRemolque, remolques, 'nombre') || ''); 
-      setSearchClienteMercancia(getNombre(initialData.clienteMercancia, empresas) || '');
-      setSearchProvServicios(getNombre(initialData.provServicios, empresas) || '');
-      setSearchProvTransporte(getNombre(initialData.proveedorUnidad, empresas) || '');
-      setSearchUnidad(getNombre(initialData.unidad, unidades, 'unidad') || getNombre(initialData.unidad, unidades, 'numeroEconomico') || getNombre(initialData.unidad, unidades, 'nombre') || '');
+      const getNombreRemolque = (id: string) => {
+        if (!id) return '';
+        const item = remolques.find((r: any) => r.id === id);
+        return item ? `${item.nombre || ''} ${item.placas || item.placa || ''}`.trim() : id;
+      };
+
+      const getNombreOperador = (id: string) => {
+        if (!id) return '';
+        const item = listaEmpleadosLocal.find((e: any) => e.id === id);
+        return item ? `${item.firstName || ''} ${item.lastNamePaternal || ''}`.trim() : id;
+      };
+
+      const getNombreUnidad = (id: string) => {
+        if (!id) return '';
+        const item = unidades.find((u: any) => u.id === id);
+        return item ? item.unidad || item.nombre : id;
+      };
+
+      setSearchClientePaga(initialData.clienteNombre || getNombreEmpresa(initialData.clientePaga));
+      setSearchOrigen(initialData.origenNombre || getNombreEmpresa(initialData.origen));
+      setSearchDestino(initialData.destinoNombre || getNombreEmpresa(initialData.destino));
+      setSearchClienteMercancia(initialData.clienteMercanciaNombre || getNombreEmpresa(initialData.clienteMercancia));
+      setSearchProvServicios(initialData.provServiciosNombre || getNombreEmpresa(initialData.provServicios));
+      setSearchProvTransporte(initialData.proveedorUnidadNombre || getNombreEmpresa(initialData.proveedorUnidad));
       
-      const op = listaEmpleadosLocal.find((e: any) => e.id === initialData.operador);
-      if (op) {
-        setSearchOperador(`${op.firstName || op.nombres || op.nombre || ''} ${op.lastNamePaternal || op.apellidoPaterno || op.apPaterno || ''}`.trim());
-      } else {
-        setSearchOperador(initialData.operador || '');
-      }
+      setSearchRemolque(initialData.remolqueNombre || getNombreRemolque(initialData.numeroRemolque)); 
+      setSearchUnidad(initialData.unidadNombre || getNombreUnidad(initialData.unidad));
+      setSearchOperador(initialData.operadorNombre || getNombreOperador(initialData.operador));
 
       const uProv = listaUniProvLocal.find((e: any) => e.id === initialData.unidadProveedor);
-      if (uProv) {
-        setSearchUnidadProveedor(uProv.numeroUnidad || uProv.numero_unidad || uProv.unidad || uProv.placas || initialData.unidadProveedor || '');
-      } else {
-        setSearchUnidadProveedor(initialData.unidadProveedor || '');
-      }
+      setSearchUnidadProveedor(initialData.unidadProveedorNombre || (uProv ? (uProv.numeroUnidad || uProv.numero_unidad || uProv.unidad || uProv.placas) : initialData.unidadProveedor || ''));
 
       const opProv = listaOpeProvLocal.find((e: any) => e.id === initialData.operadorProveedor);
-      if (opProv) {
-        setSearchOperadorProveedor(opProv.nombre || opProv.nombres || opProv.nombreCompleto || initialData.operadorProveedor || '');
-      } else {
-        setSearchOperadorProveedor(initialData.operadorProveedor || '');
-      }
+      setSearchOperadorProveedor(initialData.operadorProveedorNombre || (opProv ? (opProv.nombre || opProv.nombres || opProv.nombreCompleto) : initialData.operadorProveedor || ''));
     }
   }, [initialData, empresas, remolques, unidades, listaEmpleadosLocal, listaUniProvLocal, listaOpeProvLocal]);
-
 
   useEffect(() => {
     if (!formData.fechaServicio || !catalogoTC || catalogoTC.length === 0) return;
@@ -289,7 +303,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setBuscandoTC(false);
   }, [formData.fechaServicio, catalogoTC, initialData]);
 
-  // ✅ MAPEO DE CONVENIOS DE CLIENTE CON PRIORIDAD A LA DESCRIPCION DEL CATÁLOGO DE TARIFAS
+  // MAPEO DE CONVENIOS DE CLIENTE
   useEffect(() => {
     let clientId = formData.clientePaga;
     if (!clientId && searchClientePaga && empresas) {
@@ -320,7 +334,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         return {
           id: d.id, 
           tarifaBaseId: tarifaId,
-          // Prioridad absoluta a la 'descripcion' de la tabla catalogo_tarifas_referencia
           descripcion: tObj?.descripcion || tObj?.nombre || d.tipoConvenioNombre || (tarifaId ? `Desconocido (${tarifaId})` : 'Sin Asignar'),
           monedaMaestro: d.moneda || maestroAsociado?.moneda || ID_USD,
           tarifaMonto: Number(d.tarifa || d.monto || d.precio || 0),
@@ -331,7 +344,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     } else setListaConveniosCliente([]);
   }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas]);
 
-  // ✅ MAPEO DE CONVENIOS DE PROVEEDOR CON PRIORIDAD A LA DESCRIPCION DEL CATÁLOGO DE TARIFAS
+  // MAPEO DE CONVENIOS DE PROVEEDOR
   useEffect(() => {
     const procesarConveniosProveedor = async () => {
       let provId = formData.proveedorUnidad;
@@ -374,7 +387,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         const tObj = tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
         const maestroParent = maestrosAsociados.find((m:any) => String(m.id).trim() === String(d.convenioId).trim());
 
-        // Prioridad absoluta a la 'descripcion' de la tabla catalogo_tarifas_referencia
         let nombreFinal = tObj?.descripcion || tObj?.nombre || d.tipoConvenioNombre || 'Concepto sin nombre';
 
         return {
@@ -423,6 +435,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if(!initialData) resolverFlujo();
   }, [formData.convenio, listaConveniosCliente, tarifas, initialData]);
 
+  // ✅ CÁLCULOS MATEMÁTICOS DE CONVERSIONES (USANDO ID_USD E ID_MXN)
   useEffect(() => {
     const fact = formData.facturadoEnUnidad; 
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
@@ -430,18 +443,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     
     let dol = 0; let pes = 0; let conv = 0;
     
-    if (fact === ID_USD) {
-      dol = subtotal;
-      pes = 0;
-      conv = subtotal * tc;
-    } else if (fact === ID_MXN) {
-      dol = 0;
-      pes = subtotal;
-      conv = subtotal;
+    const esDolar = fact === ID_USD || (listaMonedasLocal.find((m: any) => m.id === fact)?.moneda || '').toUpperCase().includes('USD');
+    const esPeso = fact === ID_MXN || (listaMonedasLocal.find((m: any) => m.id === fact)?.moneda || '').toUpperCase().includes('MXN');
+
+    if (esDolar) {
+      dol = subtotal; pes = 0; conv = subtotal * tc;
+    } else if (esPeso) {
+      dol = 0; pes = subtotal; conv = subtotal;
     }
 
     setFormData(prev => ({ ...prev, subtotalProv: subtotal, dolaresProv: dol, pesosProv: pes, conversionProv: conv }));
-  }, [formData.facturadoEnUnidad, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado]);
+  }, [formData.facturadoEnUnidad, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, listaMonedasLocal]);
 
   useEffect(() => {
     const fact = formData.facturadoEnCobrar; 
@@ -450,21 +462,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     
     let dol = 0; let pes = 0; let conv = 0;
 
-    if (fact === ID_USD) {
-      dol = subtotal;
-      pes = 0;
-      conv = subtotal * tc;
-    } else if (fact === ID_MXN) {
-      dol = 0;
-      pes = subtotal;
-      conv = subtotal;
+    const esDolar = fact === ID_USD || (listaMonedasLocal.find((m: any) => m.id === fact)?.moneda || '').toUpperCase().includes('USD');
+    const esPeso = fact === ID_MXN || (listaMonedasLocal.find((m: any) => m.id === fact)?.moneda || '').toUpperCase().includes('MXN');
+
+    if (esDolar) {
+      dol = subtotal; pes = 0; conv = subtotal * tc;
+    } else if (esPeso) {
+      dol = 0; pes = subtotal; conv = subtotal;
     }
 
     const utilidad = conv - Number(formData.conversionProv || 0); 
     setFormData(prev => ({ 
       ...prev, subtotalCliente: subtotal, dolaresCliente: dol, pesosCliente: pes, conversionCliente: conv, utilidadEstimada: utilidad 
     }));
-  }, [formData.facturadoEnCobrar, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado]);
+  }, [formData.facturadoEnCobrar, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado, listaMonedasLocal]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -482,11 +493,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  const filClientesPaga = empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb')) || [];
-  const filClientesMercancia = empresas?.filter((e:any) => e.tiposEmpresa?.includes('51246232')) || [];
-  const filProveedoresServicios = empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd')) || [];
-  const filOrigenesDestinos = empresas?.filter((e:any) => e.tiposEmpresa?.includes('6e7af5ab')) || [];
-  const filProveedoresTransporte = empresas?.filter((e:any) => e.tiposEmpresa?.includes('ca21ab07')) || []; 
+  // ✅ FILTRADO ESTRICTO EXIGIDO (Validación por TiposEmpresa y Status Activo)
+  const filClientesPaga = empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb') && e.status === 'Activa') || [];
+  const filClientesMercancia = empresas?.filter((e:any) => e.tiposEmpresa?.includes('51246232') && e.status === 'Activa') || [];
+  const filProveedoresServicios = empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd') && e.status === 'Activa') || [];
+  const filOrigenesDestinos = empresas?.filter((e:any) => e.tiposEmpresa?.includes('6e7af5ab') && e.status === 'Activa') || [];
+  const filProveedoresTransporte = empresas?.filter((e:any) => e.tiposEmpresa?.includes('ca21ab07') && e.status === 'Activa') || []; 
 
   const sOrigen = (searchOrigen || '').toLowerCase();
   const sDestino = (searchDestino || '').toLowerCase();
@@ -496,7 +508,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const sProvServicios = (searchProvServicios || '').toLowerCase();
   const sProvTransp = (searchProvTransporte || '').toLowerCase();
   const sUnidad = (searchUnidad || '').toLowerCase();
-  
   const sOperador = (searchOperador || '').toLowerCase();
   const sUnidadProv = (searchUnidadProveedor || '').toLowerCase();
   const sOperadorProv = (searchOperadorProveedor || '').toLowerCase();
@@ -504,15 +515,24 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const resultadosOrigen = filOrigenesDestinos.filter((e:any) => (e.nombre || '').toLowerCase().includes(sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen));
   const resultadosDestino = filOrigenesDestinos.filter((e:any) => (e.nombre || '').toLowerCase().includes(sDestino) || (e.direccion || '').toLowerCase().includes(sDestino));
   const resultadosClientePaga = filClientesPaga.filter((e:any) => (e.nombre || '').toLowerCase().includes(sClientePaga));
-  const resultadosRemolque = remolques?.filter((e:any) => (e.placa || '').toLowerCase().includes(sRemolque) || (e.nombre || '').toLowerCase().includes(sRemolque)) || [];
+  
+  const resultadosRemolque = remolques?.filter((e:any) => {
+    const texto = `${e.nombre || ''} ${e.placas || e.placa || ''}`.toLowerCase().trim();
+    return texto.includes(sRemolque);
+  }) || [];
+  
   const resultadosClienteMercancia = filClientesMercancia.filter((e:any) => (e.nombre || '').toLowerCase().includes(sClienteMerc));
   const resultadosProvServicios = filProveedoresServicios.filter((e:any) => (e.nombre || '').toLowerCase().includes(sProvServicios));
   const resultadosProvTransporte = filProveedoresTransporte.filter((e:any) => (e.nombre || '').toLowerCase().includes(sProvTransp));
-  const resultadosUnidad = unidades?.filter((u:any) => (u.unidad || u.numeroEconomico || u.nombre || '').toLowerCase().includes(sUnidad)) || [];
+  
+  const resultadosUnidad = unidades?.filter((u:any) => {
+    const texto = (u.unidad || '').toLowerCase();
+    return texto.includes(sUnidad);
+  }) || [];
   
   const resultadosOperador = listaEmpleadosLocal.filter((o:any) => {
-    const nombreCompleto = `${o.firstName || o.nombres || o.nombre || ''} ${o.lastNamePaternal || o.apellidoPaterno || o.apPaterno || ''}`.trim();
-    return nombreCompleto.toLowerCase().includes(sOperador);
+    const nombreCompleto = `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim().toLowerCase();
+    return nombreCompleto.includes(sOperador);
   });
 
   const resultadosUnidadProveedor = listaUniProvLocal.filter((u:any) => {
@@ -534,6 +554,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const showInternalFleet = isTransfer || ((isLogistica || isFletes) && isRoelca);
   const showExternalFleet = (isLogistica || isFletes) && !isRoelca;
 
+  // ✅ DESNORMALIZACIÓN EN EL GUARDADO (Ahorro Masivo de Lecturas en la Base de Datos)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCargando(true);
@@ -544,12 +565,34 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const detalleDoc = listaConveniosCliente.find((c:any) => c.id === formData.convenio);
       const { pdfCartaPorte, pdfDoda, pdfManifiesto, pdfsEntrys, ...datosLimpios } = formData;
       
+      const tipoOpObj = tiposOperacion.find((t:any) => t.id === formData.tipoOperacionId);
+      const statusObj = statusServicio?.find((s:any) => s.id === statusCalculado);
+      const monedaCobroObj = listaMonedasLocal.find((m:any) => m.id === formData.facturadoEnCobrar);
+      const monedaUnidadObj = listaMonedasLocal.find((m:any) => m.id === formData.facturadoEnUnidad);
+      const convProvObj = listaConveniosProveedor.find((c:any) => c.id === formData.convenioProveedor);
+
       const operacionData: any = { 
         ...datosLimpios, 
         convenioNombre: detalleDoc?.descripcion || formData.convenioNombre || 'Sin descripción', 
         status: statusCalculado || 'Pendiente', 
+        statusNombre: statusObj?.descripcion || statusObj?.nombre || statusCalculado || 'Pendiente',
         tienePdfDoda: !!pdfDoda, 
-        cantPdfsEntrys: (pdfsEntrys || []).filter(Boolean).length 
+        cantPdfsEntrys: (pdfsEntrys || []).filter(Boolean).length,
+
+        // CAMPOS DESNORMALIZADOS ESTRICTOS (Se guardan los nombres)
+        clienteNombre: searchClientePaga || '',
+        origenNombre: searchOrigen || '',
+        destinoNombre: searchDestino || '',
+        remolqueNombre: searchRemolque || '',
+        clienteMercanciaNombre: searchClienteMercancia || '',
+        provServiciosNombre: searchProvServicios || '',
+        proveedorUnidadNombre: searchProvTransporte || '',
+        unidadNombre: searchUnidad || '',
+        operadorNombre: searchOperador || '',
+        tipoOperacionNombre: tipoOpObj?.tipo_operacion || '',
+        monedaCobroNombre: monedaCobroObj?.moneda || '',
+        monedaUnidadNombre: monedaUnidadObj?.moneda || '',
+        convenioProveedorNombre: convProvObj?.tipoConvenioNombre || ''
       };
 
       Object.keys(operacionData).forEach(key => {
@@ -603,24 +646,24 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
               {pestañaActiva === 'general' && (
                  <div className="form-grid">
-                 <div className="form-group"><label className="form-label orange">Tipo de Operación (tipoOperacionId)</label><select name="tipoOperacionId" className="form-control" value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
-                 <div className="form-group"><label className="form-label orange">Fecha de Servicio (fechaServicio)</label><input type="date" name="fechaServicio" className="form-control" value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
+                 <div className="form-group"><label className="form-label orange">Tipo de Operación</label><select name="tipoOperacionId" className="form-control" value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
+                 <div className="form-group"><label className="form-label orange">Fecha de Servicio</label><input type="date" name="fechaServicio" className="form-control" value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
                  
                  {isFletes && (
                    <div className="form-group">
-                     <label className="form-label orange">Fecha de Cita (fechaCita)</label>
+                     <label className="form-label orange">Fecha de Cita</label>
                      <input type="datetime-local" name="fechaCita" className="form-control" value={formData.fechaCita || ''} onChange={handleChange} />
                    </div>
                  )}
                  
                  <div className="form-group" style={{ position: 'relative' }}>
-                  <label className="form-label">Cliente (Paga) (clientePaga)</label>
+                  <label className="form-label">Cliente (Paga)</label>
                   <input type="text" className="form-control" placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga} 
                   onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }} 
                   onFocus={() => setShowDropdownClientePaga(true)} />
                   {showDropdownClientePaga && searchClientePaga && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                      {resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClientePaga.map((c:any) => (
+                      {resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados (Status inactivo o tipo erróneo)</div> : resultadosClientePaga.map((c:any) => (
                         <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} 
                         onClick={() => { 
                           const monedaDefault = c.monedaId || c.moneda || '';
@@ -634,61 +677,61 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   )}
                  </div>
 
-                 <div className="form-group"><label className="form-label">Convenio (Tarifa) (convenio)</label><select name="convenio" className="form-control" value={formData.convenio || ''} onChange={handleChange} required disabled={listaConveniosCliente.length === 0}><option value="">-- Seleccione un Convenio --</option>{listaConveniosCliente.map((c:any) => (<option key={c.id} value={c.id}>{c.descripcion}</option>))}</select>{listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}</div>
+                 <div className="form-group"><label className="form-label">Convenio (Tarifa)</label><select name="convenio" className="form-control" value={formData.convenio || ''} onChange={handleChange} required disabled={listaConveniosCliente.length === 0}><option value="">-- Seleccione un Convenio --</option>{listaConveniosCliente.map((c:any) => (<option key={c.id} value={c.id}>{c.descripcion}</option>))}</select>{listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}</div>
                  <div className="form-group" style={{ position: 'relative' }}>
-                  <label className="form-label"># de Remolque (numeroRemolque)</label>
+                  <label className="form-label"># de Remolque</label>
                   <input type="text" className="form-control" placeholder="Buscar remolque..." value={searchRemolque} onChange={e => { setSearchRemolque(e.target.value); setShowDropdownRemolque(true); if (formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: '' })); }} onFocus={() => setShowDropdownRemolque(true)} />
-                  {showDropdownRemolque && searchRemolque && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosRemolque.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosRemolque.map((r:any) => (<div key={r.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(r.placa || r.nombre); setShowDropdownRemolque(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{r.placa || r.nombre}</div></div>))}</div>)}
+                  {showDropdownRemolque && searchRemolque && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosRemolque.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosRemolque.map((r:any) => (<div key={r.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(`${r.nombre || ''} ${r.placas || r.placa || ''}`.trim()); setShowDropdownRemolque(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{`${r.nombre || ''} ${r.placas || r.placa || ''}`.trim()}</div></div>))}</div>)}
                  </div>
-                 <div className="form-group"><label className="form-label">Ref Cliente (refCliente)</label><input type="text" name="refCliente" className="form-control" value={formData.refCliente || ''} onChange={handleChange} /></div>
-                 <div className="form-group" style={{ position: 'relative' }}><label className="form-label orange">Origen (origen)</label><input type="text" className="form-control" placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} />{showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(o.nombre); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{o.nombre}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{o.direccion}</div></div>))}</div>)}</div>
-                 <div className="form-group" style={{ position: 'relative' }}><label className="form-label orange">Destino (destino)</label><input type="text" className="form-control" placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} />{showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(d.nombre); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{d.nombre}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{d.direccion}</div></div>))}</div>)}</div>
-                 <div className="form-group" style={{ gridColumn: 'span 2' }}><label className="form-label">Observaciones Ejecutivo (observacionesEjecutivo)</label><input type="text" name="observacionesEjecutivo" className="form-control" value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
+                 <div className="form-group"><label className="form-label">Ref Cliente</label><input type="text" name="refCliente" className="form-control" value={formData.refCliente || ''} onChange={handleChange} /></div>
+                 <div className="form-group" style={{ position: 'relative' }}><label className="form-label orange">Origen</label><input type="text" className="form-control" placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} />{showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(o.nombre); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{o.nombre}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{o.direccion}</div></div>))}</div>)}</div>
+                 <div className="form-group" style={{ position: 'relative' }}><label className="form-label orange">Destino</label><input type="text" className="form-control" placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} />{showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(d.nombre); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{d.nombre}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{d.direccion}</div></div>))}</div>)}</div>
+                 <div className="form-group" style={{ gridColumn: 'span 2' }}><label className="form-label">Observaciones Ejecutivo</label><input type="text" name="observacionesEjecutivo" className="form-control" value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
                </div>
               )}
 
               {pestañaActiva === 'pedimento' && (
                 <div className="form-grid">
-                  <div className="form-group" style={{ position: 'relative', gridColumn: 'span 2' }}><label className="form-label">Cliente (Mercancía) (clienteMercancia)</label><input type="text" className="form-control" placeholder="Escriba para buscar cliente mercancía..." value={searchClienteMercancia} onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }} onFocus={() => setShowDropdownClienteMercancia(true)} />{showDropdownClienteMercancia && searchClienteMercancia && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosClienteMercancia.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(c.nombre); setShowDropdownClienteMercancia(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}</div>
-                  <div className="form-group"><label className="form-label">Descripción de la Mercancía (descripcionMercancia)</label><input type="text" name="descripcionMercancia" className="form-control" value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
-                  <div className="form-group"><label className="form-label">Cantidad (Enteros) (cantidad)</label><input type="number" step="1" name="cantidad" className="form-control" value={formData.cantidad || ''} onChange={handleChange} /></div>
-                  <div className="form-group"><label className="form-label">Embalaje (embalaje)</label><select name="embalaje" className="form-control" value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{embalajes?.map((e:any) => <option key={e.id} value={e.id}>{e.clave || e.nombre}</option>)}</select></div>
-                  <div className="form-group"><label className="form-label">Peso (Kg) Decimales (pesoKg)</label><input type="number" step="0.01" name="pesoKg" className="form-control" value={formData.pesoKg || ''} onChange={handleChange} /></div>
-                  <div className="form-group"><label className="form-label">PDF - Carta Porte (pdfCartaPorte)</label><input type="file" accept=".pdf" className="form-control" onChange={(e) => handleFileChange(e, 'pdfCartaPorte')} /></div>
-                  <div className="form-group"><label className="form-label"># DODA (numDoda)</label><input type="text" name="numDoda" className="form-control" value={formData.numDoda || ''} onChange={handleChange} /></div>
-                  <div className="form-group"><label className="form-label">Fecha de Emisión (fechaEmisionDoda)</label><input type="date" name="fechaEmisionDoda" className="form-control" value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
-                  <div className="form-group"><label className="form-label">PDF - DODA (pdfDoda)</label><input type="file" accept=".pdf" className="form-control" onChange={(e) => handleFileChange(e, 'pdfDoda')} /></div>
+                  <div className="form-group" style={{ position: 'relative', gridColumn: 'span 2' }}><label className="form-label">Cliente (Mercancía)</label><input type="text" className="form-control" placeholder="Escriba para buscar cliente mercancía..." value={searchClienteMercancia} onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }} onFocus={() => setShowDropdownClienteMercancia(true)} />{showDropdownClienteMercancia && searchClienteMercancia && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosClienteMercancia.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(c.nombre); setShowDropdownClienteMercancia(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}</div>
+                  <div className="form-group"><label className="form-label">Descripción de la Mercancía</label><input type="text" name="descripcionMercancia" className="form-control" value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
+                  <div className="form-group"><label className="form-label">Cantidad (Enteros)</label><input type="number" step="1" name="cantidad" className="form-control" value={formData.cantidad || ''} onChange={handleChange} /></div>
+                  <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className="form-control" value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{embalajes?.map((e:any) => <option key={e.id} value={e.id}>{e.clave || e.nombre}</option>)}</select></div>
+                  <div className="form-group"><label className="form-label">Peso (Kg) Decimales</label><input type="number" step="0.01" name="pesoKg" className="form-control" value={formData.pesoKg || ''} onChange={handleChange} /></div>
+                  <div className="form-group"><label className="form-label">PDF - Carta Porte</label><input type="file" accept=".pdf" className="form-control" onChange={(e) => handleFileChange(e, 'pdfCartaPorte')} /></div>
+                  <div className="form-group"><label className="form-label"># DODA</label><input type="text" name="numDoda" className="form-control" value={formData.numDoda || ''} onChange={handleChange} /></div>
+                  <div className="form-group"><label className="form-label">Fecha de Emisión DODA</label><input type="date" name="fechaEmisionDoda" className="form-control" value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
+                  <div className="form-group"><label className="form-label">PDF - DODA</label><input type="file" accept=".pdf" className="form-control" onChange={(e) => handleFileChange(e, 'pdfDoda')} /></div>
                 </div>
               )}
 
               {pestañaActiva === 'manifiesto' && (
                 <div className="form-grid">
                   <div className="form-group">
-                    <label className="form-label"># de Entry's (numeroEntrys)</label>
+                    <label className="form-label"># de Entry's</label>
                     <input type="text" name="numeroEntrys" className="form-control" value={formData.numeroEntrys || ''} onChange={handleChange} />
                   </div>
                   
-                  <div className="form-group"><label className="form-label">Cantidad de Entry's (Max 10) (cantEntrys)</label><input type="number" max="10" min="0" name="cantEntrys" className="form-control" value={formData.cantEntrys || 0} onChange={(e) => { const val = Math.min(10, Math.max(0, parseInt(e.target.value) || 0)); setFormData(prev => ({ ...prev, cantEntrys: val, pdfsEntrys: new Array(val).fill(null) })); }} /></div>
+                  <div className="form-group"><label className="form-label">Cantidad de Entry's (Max 10)</label><input type="number" max="10" min="0" name="cantEntrys" className="form-control" value={formData.cantEntrys || 0} onChange={(e) => { const val = Math.min(10, Math.max(0, parseInt(e.target.value) || 0)); setFormData(prev => ({ ...prev, cantEntrys: val, pdfsEntrys: new Array(val).fill(null) })); }} /></div>
                   
-                  {Array.from({ length: Number(formData.cantEntrys) || 0 }).map((_, i) => (<div className="form-group" key={i}><label className="form-label">PDF Entry #{i + 1} (pdfsEntrys)</label><input type="file" accept=".pdf" className="form-control" onChange={(e) => handleFileChange(e, '', i)} /></div>))}
+                  {Array.from({ length: Number(formData.cantEntrys) || 0 }).map((_, i) => (<div className="form-group" key={i}><label className="form-label">PDF Entry #{i + 1}</label><input type="file" accept=".pdf" className="form-control" onChange={(e) => handleFileChange(e, '', i)} /></div>))}
                   <div className="form-group" style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d' }} /></div>
                   
-                  <div className="form-group"><label className="form-label"># Manifiesto (numManifiesto)</label><input type="text" name="numManifiesto" className="form-control" value={formData.numManifiesto || ''} onChange={handleChange} /></div>
-                  <div className="form-group" style={{ position: 'relative' }}><label className="form-label">Proveedor de Servicios (provServicios)</label><input type="text" className="form-control" placeholder="Escriba para buscar proveedor..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} />{showDropdownProvServicios && searchProvServicios && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, provServicios: c.id })); setSearchProvServicios(c.nombre); setShowDropdownProvServicios(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}</div>
+                  <div className="form-group"><label className="form-label"># Manifiesto</label><input type="text" name="numManifiesto" className="form-control" value={formData.numManifiesto || ''} onChange={handleChange} /></div>
+                  <div className="form-group" style={{ position: 'relative' }}><label className="form-label">Proveedor de Servicios</label><input type="text" className="form-control" placeholder="Escriba para buscar proveedor..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} />{showDropdownProvServicios && searchProvServicios && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, provServicios: c.id })); setSearchProvServicios(c.nombre); setShowDropdownProvServicios(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}</div>
                   
                   <div className="form-group">
-                    <label className="form-label">Costo Manifiesto ($) (montoManifiesto)</label>
+                    <label className="form-label">Costo Manifiesto ($)</label>
                     <input type="number" step="0.01" name="montoManifiesto" className="form-control" value={formData.montoManifiesto || ''} onChange={handleChange} />
                   </div>
                   
-                  <div className="form-group"><label className="form-label">PDF Manifiesto (pdfManifiesto)</label><input type="file" accept=".pdf" className="form-control" onChange={(e) => handleFileChange(e, 'pdfManifiesto')} /></div>
+                  <div className="form-group"><label className="form-label">PDF Manifiesto</label><input type="file" accept=".pdf" className="form-control" onChange={(e) => handleFileChange(e, 'pdfManifiesto')} /></div>
                 </div>
               )}
 
               {pestañaActiva === 'unidad' && (
                 <div className="form-grid">
                   <div className="form-group" style={{ position: 'relative', gridColumn: 'span 3' }}>
-                    <label className="form-label">Proveedor de Transporte (proveedorUnidad)</label>
+                    <label className="form-label">Proveedor de Transporte</label>
                     <input type="text" className="form-control" placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} 
                     onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} 
                     onFocus={() => setShowDropdownProvTransporte(true)} />
@@ -710,15 +753,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', gridColumn: '1 / -1', marginBottom: '16px' }}>
                     <div className="form-group">
-                      <label className="form-label">Facturado En: (facturadoEnUnidad)</label>
+                      <label className="form-label">Facturado En:</label>
                       <select name="facturadoEnUnidad" className="form-control" value={formData.facturadoEnUnidad || ''} onChange={handleChange}>
                         <option value="">-- Seleccionar --</option>
-                        <option value={ID_USD}>USD ($)</option>
-                        <option value={ID_MXN}>MXN ($)</option>
+                        {listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
                       </select>
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Convenio Proveedor (convenioProveedor)</label>
+                      <label className="form-label">Convenio Proveedor</label>
                       <select 
                         name="convenioProveedor" 
                         className="form-control" 
@@ -740,23 +782,23 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </select>
                       {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
                     </div>
-                    <div className="form-group"><label className="form-label">Moneda del Convenio (Base) (monedaConvenioProv)</label><input type="text" className="form-control" readOnly value={formData.monedaConvenioProv === ID_USD ? 'USD' : (formData.monedaConvenioProv === ID_MXN ? 'MXN' : 'Sin Asignar')} /></div>
+                    <div className="form-group"><label className="form-label">Moneda del Convenio (Base)</label><input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m: any) => m.id === formData.monedaConvenioProv)?.moneda || 'Sin Asignar'} /></div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', gridColumn: '1 / -1', marginBottom: '16px' }}>
-                    <div className="form-group"><label className="form-label">Monto a Pagar (Base) (totalAPagarProv)</label><input type="number" name="totalAPagarProv" className="form-control" value={formData.totalAPagarProv || ''} onChange={handleChange} /></div>
-                    <div className="form-group"><label className="form-label">Costos Adicionales (cargosAdicionalesProv)</label><input type="number" name="cargosAdicionalesProv" className="form-control" value={formData.cargosAdicionalesProv || ''} onChange={handleChange} /></div>
-                    <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Costos) (subtotalProv)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalProv) || 0).toFixed(2)}</div></div>
+                    <div className="form-group"><label className="form-label">Monto a Pagar (Base)</label><input type="number" name="totalAPagarProv" className="form-control" value={formData.totalAPagarProv || ''} onChange={handleChange} /></div>
+                    <div className="form-group"><label className="form-label">Costos Adicionales</label><input type="number" name="cargosAdicionalesProv" className="form-control" value={formData.cargosAdicionalesProv || ''} onChange={handleChange} /></div>
+                    <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Costos)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalProv) || 0).toFixed(2)}</div></div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', gridColumn: '1 / -1', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
-                    <div className="form-group"><label className="form-label">Tipo de Cambio del Día (tipoCambioAprobado)</label><input type="text" className="form-control" readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
-                    <div className="form-group"><label className="form-label">Dólares (dolaresProv)</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresProv) || 0).toFixed(2)}</div></div>
-                    <div className="form-group"><label className="form-label">Pesos (pesosProv)</label><div style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.pesosProv) || 0).toFixed(2)}</div></div>
+                    <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className="form-control" readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
+                    <div className="form-group"><label className="form-label">Dólares</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresProv) || 0).toFixed(2)}</div></div>
+                    <div className="form-group"><label className="form-label">Pesos</label><div style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.pesosProv) || 0).toFixed(2)}</div></div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', gridColumn: '1 / -1', paddingTop: '16px' }}>
-                    <div className="form-group" style={{ gridColumn: '3' }}><label className="form-label orange">Conversión Final (Contabilidad) (conversionProv)</label><div style={{ color: '#f85149', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.conversionProv) || 0).toFixed(2)}</div></div>
+                    <div className="form-group" style={{ gridColumn: '3' }}><label className="form-label orange">Conversión Final (Contabilidad)</label><div style={{ color: '#f85149', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.conversionProv) || 0).toFixed(2)}</div></div>
                   </div>
                   
                   <div className="form-group" style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d' }} /></div>
@@ -764,13 +806,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   {showInternalFleet && (
                     <>
                       <div className="form-group" style={{ position: 'relative' }}>
-                        <label className="form-label">Unidad (unidad)</label>
+                        <label className="form-label">Unidad</label>
                         <input type="text" className="form-control" placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} />
                         {showDropdownUnidad && searchUnidad && (
                           <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                             {resultadosUnidad.map((u:any) => (
-                              <div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(u.unidad || u.numeroEconomico || u.nombre); setShowDropdownUnidad(false); }}>
-                                <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{u.unidad || u.numeroEconomico || u.nombre}</div>
+                              <div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(u.unidad || u.nombre); setShowDropdownUnidad(false); }}>
+                                <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{u.unidad || u.nombre}</div>
                               </div>
                             ))}
                           </div>
@@ -778,14 +820,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
                       
                       <div className="form-group" style={{ position: 'relative' }}>
-                        <label className="form-label">Operador (operador)</label>
+                        <label className="form-label">Operador</label>
                         <input type="text" className="form-control" placeholder="Buscar operador..." value={searchOperador} 
                         onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} 
                         onFocus={() => setShowDropdownOperador(true)} />
                         {showDropdownOperador && searchOperador && (
                           <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                             {resultadosOperador.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>Sin resultados</div> : resultadosOperador.map((o:any) => {
-                              const nombreCompleto = `${o.firstName || o.nombres || o.nombre || ''} ${o.lastNamePaternal || o.apellidoPaterno || o.apPaterno || ''}`.trim();
+                              const nombreCompleto = `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim();
                               return (
                                 <div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} 
                                 onClick={() => { 
@@ -802,15 +844,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
 
                       <div className="form-group">
-                        <label className="form-label">Sueldo del Operador (sueldoOperador)</label>
+                        <label className="form-label">Sueldo del Operador</label>
                         <input type="number" step="0.01" name="sueldoOperador" className="form-control" value={formData.sueldoOperador || ''} onChange={handleChange} />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Sueldo Extra (sueldoExtra)</label>
+                        <label className="form-label">Sueldo Extra</label>
                         <input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || ''} onChange={handleChange} />
                       </div>
                       <div className="form-group">
-                        <label className="form-label orange">Sueldo Total (sueldoTotal)</label>
+                        <label className="form-label orange">Sueldo Total</label>
                         <div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>
                           ${(Number(formData.sueldoTotal) || 0).toFixed(2)}
                         </div>
@@ -819,15 +861,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-group" style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d' }} /></div>
                       
                       <div className="form-group">
-                        <label className="form-label">Combustible (combustible)</label>
+                        <label className="form-label">Combustible</label>
                         <input type="number" step="0.01" name="combustible" className="form-control" value={formData.combustible || ''} onChange={handleChange} />
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Combustible Extra (combustibleExtra)</label>
+                        <label className="form-label">Combustible Extra</label>
                         <input type="number" step="0.01" name="combustibleExtra" className="form-control" value={formData.combustibleExtra || ''} onChange={handleChange} />
                       </div>
                       <div className="form-group">
-                        <label className="form-label orange">Total Combustible (combustibleTotal)</label>
+                        <label className="form-label orange">Total Combustible</label>
                         <div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>
                           ${(Number(formData.combustibleTotal) || 0).toFixed(2)}
                         </div>
@@ -838,7 +880,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   {showExternalFleet && (
                     <>
                       <div className="form-group" style={{ position: 'relative', gridColumn: 'span 1' }}>
-                        <label className="form-label" style={{ color: '#58a6ff' }}>Unidad del Proveedor (unidadProveedor)</label>
+                        <label className="form-label" style={{ color: '#58a6ff' }}>Unidad del Proveedor</label>
                         <input type="text" className="form-control" style={{ border: '1px solid #58a6ff' }} placeholder="Buscar unidad externa..."
                           value={searchUnidadProveedor}
                           onChange={e => { 
@@ -866,7 +908,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         )}
                       </div>
                       <div className="form-group" style={{ position: 'relative', gridColumn: 'span 2' }}>
-                        <label className="form-label" style={{ color: '#58a6ff' }}>Operador del Proveedor (operadorProveedor)</label>
+                        <label className="form-label" style={{ color: '#58a6ff' }}>Operador del Proveedor</label>
                         <input type="text" className="form-control" style={{ border: '1px solid #58a6ff' }} placeholder="Buscar operador externo..."
                           value={searchOperadorProveedor}
                           onChange={e => { 
@@ -913,8 +955,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
               {pestañaActiva === 'cobrar' && (
                 <div className="form-grid">
-                  <div className="form-group"><label className="form-label">Facturado En: (facturadoEnCobrar)</label><select name="facturadoEnCobrar" className="form-control" value={formData.facturadoEnCobrar || ''} onChange={handleChange}><option value="">-- Seleccionar Moneda --</option><option value={ID_USD}>USD ($)</option><option value={ID_MXN}>MXN ($)</option></select></div>
-                  <div className="form-group"><label className="form-label">Moneda Convenio (Cliente) (monedaConvenioCliente)</label><input type="text" className="form-control" readOnly value={formData.monedaConvenioCliente === ID_USD ? 'USD' : (formData.monedaConvenioCliente === ID_MXN ? 'MXN' : 'Sin Asignar')} /></div>
+                  <div className="form-group">
+                    <label className="form-label">Facturado En: (facturadoEnCobrar)</label>
+                    <select name="facturadoEnCobrar" className="form-control" value={formData.facturadoEnCobrar || ''} onChange={handleChange}>
+                      <option value="">-- Seleccionar Moneda --</option>
+                      {listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group"><label className="form-label">Moneda Convenio (Cliente) (monedaConvenioCliente)</label><input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m: any) => m.id === formData.monedaConvenioCliente)?.moneda || 'Sin Asignar'} /></div>
                   <div className="form-group"><label className="form-label">Convenio Seleccionado (Monto Base) (montoConvenioCliente)</label><input type="number" className="form-control" readOnly value={formData.montoConvenioCliente || 0} /></div>
                   <div className="form-group"><label className="form-label">Cargos Adicionales (cargosAdicionales)</label><input type="number" name="cargosAdicionales" className="form-control" value={formData.cargosAdicionales || ''} onChange={handleChange} /></div>
                   <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Cargos) (subtotalCliente)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalCliente) || 0).toFixed(2)}</div></div>
