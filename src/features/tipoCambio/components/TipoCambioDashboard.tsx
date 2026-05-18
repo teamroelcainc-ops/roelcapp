@@ -1,9 +1,18 @@
 // src/features/tipoCambio/components/TipoCambioDashboard.tsx
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore'; 
 import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { FormularioTipoCambio } from './FormularioTipoCambio';
+import * as XLSX from 'xlsx';
+
+// ✅ TODAS LAS COLUMNAS BASE DE LA TABLA TIPO DE CAMBIO
+const COLUMNAS_BASE = [
+  { id: 'fecha', label: 'Fecha', visible: true },
+  { id: 'dia', label: 'Día', visible: true },
+  { id: 'tcDof', label: 'T.C. DOF', visible: true },
+  { id: 'tendencia', label: 'Tendencia', visible: true }
+];
 
 export const TipoCambioDashboard = () => {
   const [registrosGlobales, setRegistrosGlobales] = useState<any[]>([]);
@@ -16,8 +25,12 @@ export const TipoCambioDashboard = () => {
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
-  // Estado para el hover de las filas (solución fondo móvil)
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+
+  // ✅ ESTADOS PARA CONFIGURACIÓN DE COLUMNAS (DRAG & DROP)
+  const [modalColumnas, setModalColumnas] = useState(false);
+  const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
+  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'tipo_cambio'), (snapshot) => {
@@ -70,7 +83,7 @@ export const TipoCambioDashboard = () => {
     return <span><span style={{color: '#8b949e', marginRight: '6px'}}>—</span>{texto}</span>;
   };
 
-  // ✅ FILTRADO Y BUSQUEDA
+  // ✅ FILTRADO Y BÚSQUEDA
   const registrosFiltrados = registrosGlobales.filter(r => {
     const b = busqueda.toLowerCase();
     const coincideBusqueda = 
@@ -91,6 +104,65 @@ export const TipoCambioDashboard = () => {
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
+
+  // ✅ LÓGICA DE DRAG & DROP PARA COLUMNAS
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedColIndex(index);
+  };
+
+  const handleDragEnter = (index: number) => {
+    if (draggedColIndex === null || draggedColIndex === index) return;
+    const nuevasColumnas = [...columnasTabla];
+    const colMovida = nuevasColumnas.splice(draggedColIndex, 1)[0];
+    nuevasColumnas.splice(index, 0, colMovida);
+    setDraggedColIndex(index);
+    setColumnasTabla(nuevasColumnas);
+  };
+
+  const toggleColumnaVisible = (index: number) => {
+    const nuevas = [...columnasTabla];
+    nuevas[index].visible = !nuevas[index].visible;
+    setColumnasTabla(nuevas);
+  };
+
+  // ✅ RENDERIZADOR DINÁMICO DE CELDAS
+  const renderCellContent = (registro: any, colId: string) => {
+    switch (colId) {
+      case 'fecha': return <span style={{ fontWeight: '500', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{formatearFecha(registro.fecha)}</span>;
+      case 'dia': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{registro.dia || '-'}</span>;
+      case 'tcDof': return <span style={{ color: '#10b981', fontWeight: 'bold', whiteSpace: 'nowrap' }}>${registro.tcDof}</span>;
+      case 'tendencia': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{renderTendencia(registro.tipoTendencia, registro.tendencia)}</span>;
+      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+    }
+  };
+
+  // ✅ EXPORTAR EXCEL CON LAS COLUMNAS VISIBLES ACTUALMENTE
+  const exportarExcel = () => {
+    if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
+    
+    const columnasVisibles = columnasTabla.filter(c => c.visible);
+
+    const datosExcel = registrosFiltrados.map(reg => {
+      const fila: any = {};
+      columnasVisibles.forEach(col => {
+        let val: any = '-';
+        switch (col.id) {
+          case 'fecha': val = formatearFecha(reg.fecha); break;
+          case 'dia': val = reg.dia || ''; break;
+          case 'tcDof': val = Number(reg.tcDof || 0); break;
+          case 'tendencia': val = reg.tendencia || ''; break;
+        }
+        fila[col.label] = val;
+      });
+      return fila;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(datosExcel);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Tipo de Cambio');
+    XLSX.writeFile(workbook, `Tipo_Cambio_DOF_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
@@ -128,7 +200,7 @@ export const TipoCambioDashboard = () => {
               <option value="Todos">Filtro: Todos</option>
               <option value="subio">Tendencia: Subió</option>
               <option value="bajo">Tendencia: Bajó</option>
-              <option value="mantuvo">Tendencia: Se mantuvo</option>
+              <option value="igual">Tendencia: Se mantuvo</option>
             </select>
           </div>
 
@@ -149,6 +221,22 @@ export const TipoCambioDashboard = () => {
           {/* Derecha: Botones Iconográficos */}
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '150px' }}>
             <button 
+              className="btn btn-outline" 
+              title="Configurar Columnas"
+              onClick={() => setModalColumnas(true)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+            <button 
+              className="btn btn-outline" 
+              title="Exportar a Excel"
+              onClick={exportarExcel} 
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            </button>
+            <button 
               className="btn btn-primary" 
               title="Nuevo Registro"
               onClick={handleNuevo} 
@@ -168,17 +256,18 @@ export const TipoCambioDashboard = () => {
                   <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
                     Acciones
                   </th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Día</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>T.C. DOF</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Tendencia</th>
+                  {columnasTabla.filter(c => c.visible).map(col => (
+                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                      {col.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               
               <tbody>
                 {registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                       {busqueda || filtroTendencia !== 'Todos' ? 'No se encontraron registros con estos filtros.' : 'Aún no hay registros de tipo de cambio. Haz clic en el botón de agregar (+) para crear el primero.'}
                     </td>
                   </tr>
@@ -217,14 +306,11 @@ export const TipoCambioDashboard = () => {
                         </div>
                       </td>
 
-                      <td style={{ padding: '16px', fontWeight: '500', color: '#f0f6fc', whiteSpace: 'nowrap' }}>
-                        {formatearFecha(registro.fecha)}
-                      </td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{registro.dia}</td>
-                      <td style={{ padding: '16px', color: '#10b981', fontWeight: 'bold', whiteSpace: 'nowrap' }}>${registro.tcDof}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>
-                        {renderTendencia(registro.tipoTendencia, registro.tendencia)}
-                      </td>
+                      {columnasTabla.filter(c => c.visible).map(col => (
+                        <td key={`cell_${registro.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                          {renderCellContent(registro, col.id)}
+                        </td>
+                      ))}
                     </tr>
                   ))
                 )}
@@ -262,6 +348,41 @@ export const TipoCambioDashboard = () => {
 
         </div>
       </div>
+
+      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {modalColumnas && (
+        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
+              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {columnasTabla.map((col, idx) => (
+                <li 
+                  key={col.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragEnter={() => handleDragEnter(idx)}
+                  onDragEnd={() => setDraggedColIndex(null)}
+                  onDragOver={(e) => e.preventDefault()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

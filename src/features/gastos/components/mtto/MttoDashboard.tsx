@@ -1,11 +1,41 @@
 // src/features/gastos/components/mtto/MttoDashboard.tsx
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FormularioMtto } from './FormularioMtto';
 import { collection, query, getDocs, limit, doc, deleteDoc, writeBatch } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase'; 
 import MttoAgrupadosInvoice from './MttoAgrupadosInvoice';
+import * as XLSX from 'xlsx';
 
 type VistaMaestra = 'tabla' | 'agrupado';
+
+// ✅ TODAS LAS COLUMNAS DE LA COLECCIÓN MTTO CON NOMBRES LEGIBLES
+const COLUMNAS_BASE = [
+  { id: 'numeroGasto', label: '# Gasto', visible: true },
+  { id: 'invoice', label: 'Invoice', visible: true },
+  { id: 'estatus', label: 'Estatus', visible: true },
+  { id: 'fecha', label: 'Fecha', visible: true },
+  { id: 'unidad', label: 'Unidad', visible: true },
+  { id: 'operador', label: 'Operador', visible: true },
+  { id: 'descripcion', label: 'Descripción', visible: true },
+  { id: 'proveedor', label: 'Proveedor', visible: true },
+  { id: 'tipoServicio', label: 'Tipo de Servicio', visible: true },
+  { id: 'autorizadoPor', label: 'Autorizado por', visible: true },
+  { id: 'condicionPago', label: 'Crédito/Contado', visible: true },
+  { id: 'plazo', label: 'Plazo (Dias)', visible: false },
+  { id: 'moneda', label: 'Moneda', visible: true },
+  { id: 'importe', label: 'Importe', visible: true },
+  { id: 'iva', label: 'IVA', visible: true },
+  { id: 'retIva', label: 'Ret IVA', visible: true },
+  { id: 'retIsr', label: 'Ret ISR', visible: true },
+  { id: 'total', label: 'Total', visible: true },
+  { id: 'facturaTexto', label: 'Factura', visible: true },
+  { id: 'fechaFactura', label: 'Fecha Factura', visible: true },
+  { id: 'descripcionFactura', label: 'Descripción (Factura)', visible: true },
+  { id: 'fechaPago', label: 'Fecha de Pago', visible: true },
+  { id: 'formaPago', label: 'Forma de pago', visible: true },
+  { id: 'observaciones', label: 'Observaciones', visible: true },
+  { id: 'operacionAsignada', label: 'Asignar Operación', visible: true }
+];
 
 const MttoDashboard = () => {
   const [vistaActiva, setVistaActiva] = useState<VistaMaestra>('tabla');
@@ -25,6 +55,11 @@ const MttoDashboard = () => {
   const [modalInvoiceMasivo, setModalInvoiceMasivo] = useState(false);
   const [nuevoInvoiceTexto, setNuevoInvoiceTexto] = useState('');
   const [cargandoMasivo, setCargandoMasivo] = useState(false);
+
+  // Estados para configuración de columnas
+  const [modalColumnas, setModalColumnas] = useState(false);
+  const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
+  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
   const cargarDatos = async () => {
     setCargando(true);
@@ -265,53 +300,105 @@ const MttoDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
-  const exportarCSV = () => {
-    if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
-    const encabezados = [
-      '# de Gasto', '# de Invoice', 'Estatus', 'Fecha', 'Unidad', 'Operador', 
-      'Descripcion', 'Proveedor', 'Tipo de Servicio', 'Autorizado por', 
-      'Credito/Contado', 'Plazo (Dias)', 'Moneda', 'Importe', 'IVA', 'Ret IVA', 'Ret ISR', 
-      'Total', 'Factura', 'Fecha Factura', 'Descripcion', 'Fecha de Pago', 
-      'Forma de pago', 'Observaciones', 'Asignar Operacion'
-    ];
-    
-    const lineas = registrosFiltrados.map(m => [
-      `"${m.numeroGasto || ''}"`,
-      `"${m.invoice || ''}"`, 
-      `"${m.estatus || ''}"`,
-      `"${m.fecha || ''}"`,
-      `"${mostrarNombreUnidad(m.unidadId || m.unidad)}"`,
-      `"${m.operadorNombre || m.operador || ''}"`,
-      `"${m.descripcion || m.descripcionGeneral || ''}"`,
-      `"${m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas')}"`,
-      `"${mostrarDatoMapeado(m.tipoServicioId, 'servicios')}"`,
-      `"${m.autorizadoPor || ''}"`,
-      `"${m.condicionPago || ''}"`,
-      `"${m.plazo || ''}"`,
-      `"${mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda')}"`,
-      `"${Number(m.importe || 0).toFixed(2)}"`,
-      `"${Number(m.ivaMonto || 0).toFixed(2)} (${m.ivaPorcentaje || 0}%)"`,
-      `"${Number(m.retIva || 0).toFixed(2)}"`,
-      `"${Number(m.retIsr || 0).toFixed(2)}"`,
-      `"${Number(m.total || 0).toFixed(2)}"`,
-      `"${m.facturaTexto || ''}"`,
-      `"${m.fechaFactura || ''}"`,
-      `"${m.descripcionFactura || ''}"`,
-      `"${m.fechaPago || ''}"`,
-      `"${mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago')}"`,
-      `"${m.observaciones || ''}"`,
-      `"${mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')}"`
-    ].join(','));
+  // ✅ LÓGICA DE DRAG & DROP PARA COLUMNAS
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedColIndex(index);
+  };
 
-    const csvContent = [encabezados.join(','), ...lineas].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `MTTO_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDragEnter = (index: number) => {
+    if (draggedColIndex === null || draggedColIndex === index) return;
+    const nuevasColumnas = [...columnasTabla];
+    const colMovida = nuevasColumnas.splice(draggedColIndex, 1)[0];
+    nuevasColumnas.splice(index, 0, colMovida);
+    setDraggedColIndex(index);
+    setColumnasTabla(nuevasColumnas);
+  };
+
+  const toggleColumnaVisible = (index: number) => {
+    const nuevas = [...columnasTabla];
+    nuevas[index].visible = !nuevas[index].visible;
+    setColumnasTabla(nuevas);
+  };
+
+  // ✅ RENDERIZADOR DINÁMICO DE CELDAS MTTO
+  const renderCellContent = (m: any, colId: string) => {
+    switch (colId) {
+      case 'numeroGasto': return <span style={{ color: '#58a6ff', fontWeight: 'bold' }}>{m.numeroGasto || '-'}</span>;
+      case 'invoice': return <span style={{ color: '#c9d1d9' }}>{m.invoice || '-'}</span>;
+      case 'estatus': return <span style={{ color: m.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>{m.estatus || '-'}</span>;
+      case 'fecha': return <span style={{ color: '#c9d1d9' }}>{m.fecha || '-'}</span>;
+      case 'unidad': return <span style={{ color: '#c9d1d9' }}>{mostrarNombreUnidad(m.unidadId || m.unidad)}</span>;
+      case 'operador': return <span style={{ color: '#c9d1d9' }}>{m.operadorNombre || m.operador || '-'}</span>;
+      case 'descripcion': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}>{m.descripcion || m.descripcionGeneral || '-'}</span>;
+      case 'proveedor': return <span style={{ color: '#c9d1d9' }}>{m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas')}</span>;
+      case 'tipoServicio': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(m.tipoServicioId, 'servicios')}</span>;
+      case 'autorizadoPor': return <span style={{ color: '#c9d1d9' }}>{m.autorizadoPor || '-'}</span>;
+      case 'condicionPago': return <span style={{ color: '#c9d1d9' }}>{m.condicionPago || '-'}</span>;
+      case 'plazo': return <span style={{ color: '#c9d1d9' }}>{m.plazo || '-'}</span>;
+      case 'moneda': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda')}</span>;
+      case 'importe': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(m.importe)}</span>;
+      case 'iva': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(m.ivaMonto)} <span style={{fontSize:'0.8rem'}}>({m.ivaPorcentaje || 0}%)</span></span>;
+      case 'retIva': return <span style={{ color: '#f85149' }}>{formatoMoneda(m.retIva)}</span>;
+      case 'retIsr': return <span style={{ color: '#f85149' }}>{formatoMoneda(m.retIsr)}</span>;
+      case 'total': return <span style={{ color: '#3fb950', fontWeight: 'bold' }}>{formatoMoneda(m.total)}</span>;
+      case 'facturaTexto': return <span style={{ color: '#c9d1d9' }}>{m.facturaTexto || '-'}</span>;
+      case 'fechaFactura': return <span style={{ color: '#c9d1d9' }}>{m.fechaFactura || '-'}</span>;
+      case 'descripcionFactura': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}>{m.descripcionFactura || '-'}</span>;
+      case 'fechaPago': return <span style={{ color: '#c9d1d9' }}>{m.fechaPago || '-'}</span>;
+      case 'formaPago': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago')}</span>;
+      case 'observaciones': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}>{m.observaciones || '-'}</span>;
+      case 'operacionAsignada': return <span style={{ color: '#58a6ff' }}>{mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')}</span>;
+      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+    }
+  };
+
+  // ✅ EXPORTACIÓN EN EXCEL (XLSX) RESPALDADA EN COLUMNAS VISIBLES
+  const exportarExcel = () => {
+    if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
+    
+    const columnasVisibles = columnasTabla.filter(c => c.visible);
+
+    const datosExcel = registrosFiltrados.map(m => {
+      const fila: any = {};
+      columnasVisibles.forEach(col => {
+        let val: any = '-';
+        switch (col.id) {
+          case 'numeroGasto': val = m.numeroGasto || ''; break;
+          case 'invoice': val = m.invoice || ''; break;
+          case 'estatus': val = m.estatus || ''; break;
+          case 'fecha': val = m.fecha || ''; break;
+          case 'unidad': val = mostrarNombreUnidad(m.unidadId || m.unidad); break;
+          case 'operador': val = m.operadorNombre || m.operador || ''; break;
+          case 'descripcion': val = m.descripcion || m.descripcionGeneral || ''; break;
+          case 'proveedor': val = m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas'); break;
+          case 'tipoServicio': val = mostrarDatoMapeado(m.tipoServicioId, 'servicios'); break;
+          case 'autorizadoPor': val = m.autorizadoPor || ''; break;
+          case 'condicionPago': val = m.condicionPago || ''; break;
+          case 'plazo': val = m.plazo || ''; break;
+          case 'moneda': val = mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda'); break;
+          case 'importe': val = Number(m.importe || 0); break;
+          case 'iva': val = `${Number(m.ivaMonto || 0).toFixed(2)} (${m.ivaPorcentaje || 0}%)`; break;
+          case 'retIva': val = Number(m.retIva || 0); break;
+          case 'retIsr': val = Number(m.retIsr || 0); break;
+          case 'total': val = Number(m.total || 0); break;
+          case 'facturaTexto': val = m.facturaTexto || ''; break;
+          case 'fechaFactura': val = m.fechaFactura || ''; break;
+          case 'descripcionFactura': val = m.descripcionFactura || ''; break;
+          case 'fechaPago': val = m.fechaPago || ''; break;
+          case 'formaPago': val = mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago'); break;
+          case 'observaciones': val = m.observaciones || ''; break;
+          case 'operacionAsignada': val = mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref'); break;
+        }
+        fila[col.label] = val;
+      });
+      return fila;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(datosExcel);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Gastos MTTO');
+    XLSX.writeFile(workbook, `Gastos_MTTO_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const tabsDetalle = [
@@ -384,9 +471,14 @@ const MttoDashboard = () => {
                   ({gastosSeleccionados.length})
                 </button>
               )}
+              
+              <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+              </button>
+
               <button 
-                title="Exportar a CSV"
-                onClick={exportarCSV} 
+                title="Exportar a Excel"
+                onClick={exportarExcel} 
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', padding: '8px 12px', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer' }}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -435,40 +527,21 @@ const MttoDashboard = () => {
 
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
             {cargando ? <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando datos...</div> : (
-              <table className="data-table" style={{ width: '100%', minWidth: '3200px', borderCollapse: 'collapse', textAlign: 'left' }}>
+              <table className="data-table" style={{ width: '100%', minWidth: '1500px', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
                     <th style={{ padding: '16px 8px', width: '40px', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}></th>
                     <th style={{ padding: '16px', width: '100px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: '56px', backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}># Gasto</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Invoice</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Estatus</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Fecha</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Unidad</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Operador</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Descripción</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Proveedor</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Tipo de Servicio</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Autorizado por</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Crédito/Contado</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Moneda</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Importe</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>IVA</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Ret IVA</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Ret ISR</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Total</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Factura</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Fecha Factura</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Descripción (Factura)</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Fecha de Pago</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Forma de pago</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Observaciones</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Asignar Operación</th>
+                    {columnasTabla.filter(c => c.visible).map(col => (
+                      <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                        {col.label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {registrosEnPantalla.length === 0 ? (
-                    <tr><td colSpan={26} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>
+                    <tr><td colSpan={columnasTabla.length + 2} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>
                   ) : (
                     registrosEnPantalla.map((m: any) => {
                       const isSelected = gastosSeleccionados.includes(m.id);
@@ -505,30 +578,11 @@ const MttoDashboard = () => {
                             </button>
                           </div>
                         </td>
-                        <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold' }}>{m.numeroGasto}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.invoice || '-'}</td>
-                        <td style={{ padding: '16px', color: m.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>{m.estatus}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.fecha}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarNombreUnidad(m.unidadId || m.unidad)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.operadorNombre || m.operador || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.descripcion || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.proveedorNombre || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(m.tipoServicioId, 'servicios')}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.autorizadoPor || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.condicionPago || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda')}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(m.importe)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(m.ivaMonto)} <span style={{fontSize:'0.8rem'}}>({m.ivaPorcentaje || 0}%)</span></td>
-                        <td style={{ padding: '16px', color: '#f85149' }}>{formatoMoneda(m.retIva)}</td>
-                        <td style={{ padding: '16px', color: '#f85149' }}>{formatoMoneda(m.retIsr)}</td>
-                        <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold' }}>{formatoMoneda(m.total)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.facturaTexto || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.fechaFactura || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.descripcionFactura || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{m.fechaPago || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago')}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.observaciones || '-'}</td>
-                        <td style={{ padding: '16px', color: '#58a6ff' }}>{mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')}</td>
+                        {columnasTabla.filter(c => c.visible).map(col => (
+                          <td key={`cell_${m.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                            {renderCellContent(m, col.id)}
+                          </td>
+                        ))}
                       </tr>
                       );
                     })
@@ -538,7 +592,7 @@ const MttoDashboard = () => {
             )}
           </div>
 
-          {/* CONTROLES DE PAGINACIÓN ICONOGRÁFICOS */}
+          {/* CONTROLES DE PAGINACIÓN */}
           {registrosFiltrados.length > 0 && !cargando && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
@@ -591,7 +645,50 @@ const MttoDashboard = () => {
         </div>
       )}
 
-      {/* ✅ MODAL DE DETALLES RECONSTRUIDO CON TODOS LOS CAMPOS */}
+      {/* ✅ MODAL PARA CONFIGURAR COLUMNAS EN GRID DE 3 COLUMNAS */}
+      {modalColumnas && (
+        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '1000px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
+              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
+            
+            <ul style={{ 
+              listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', 
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' 
+            }}>
+              {columnasTabla.map((col, idx) => (
+                <li 
+                  key={col.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragEnter={() => handleDragEnter(idx)}
+                  onDragEnd={() => setDraggedColIndex(null)}
+                  onDragOver={(e) => e.preventDefault()}
+                  style={{ 
+                    display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', 
+                    backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', 
+                    border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab',
+                    transition: 'background-color 0.2s'
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                  <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
+                </li>
+              ))}
+            </ul>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL DE DETALLES RECONSTRUIDO */}
       {mttoViendo && (
         <div className="modal-overlay" style={{ zIndex: 1500 }}>
           <div className="form-card detail-card" style={{ maxWidth: '1000px', width: '100%', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>

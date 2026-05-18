@@ -35,6 +35,17 @@ const opcionesColumnasExcel = [
   { key: 'observacionesBaja', label: 'Observaciones de Baja' }
 ];
 
+// ✅ GRID DINÁMICO DE COLUMNAS BASE PARA LA TABLA PRINCIPAL
+const COLUMNAS_BASE = [
+  { id: 'numCliente', label: '# de Cliente', visible: true },
+  { id: 'nombre', label: 'Empresa', visible: true },
+  { id: 'nombreCorto', label: 'Nombre Corto', visible: true },
+  { id: 'tiposEmpresa', label: 'Tipo de Empresa', visible: true },
+  { id: 'servicios', label: 'Servicios', visible: true },
+  { id: 'rfcTaxId', label: 'RFC / Tax Id', visible: true },
+  { id: 'fechaServicio', label: 'Fecha Serv.', visible: true }
+];
+
 const EmpresasDashboard = () => {
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [empresaEditando, setEmpresaEditando] = useState<any | null>(null);
@@ -65,6 +76,11 @@ const EmpresasDashboard = () => {
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+
+  // Estados para configuración interactiva de columnas en la tabla
+  const [modalColumnas, setModalColumnas] = useState(false);
+  const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
+  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
   useEffect(() => {
     const unsubscribeEmpresas = onSnapshot(collection(db, 'empresas'), (snapshot) => {
@@ -107,12 +123,25 @@ const EmpresasDashboard = () => {
       setLastUsedMap(usageMap);
     });
 
+    // ✅ OPTIMIZACIÓN DE LECTURAS Y DICCIONARIOS A PRUEBA DE FALLOS
     const fetchDiccionarios = async () => {
+      const cacheKey = 'roelca_empresas_dict_v2'; // Cambiamos la llave para obligar a que se limpie la caché antigua
+      const cacheData = sessionStorage.getItem(cacheKey);
+      if (cacheData) {
+        setDiccionarios(JSON.parse(cacheData));
+        return;
+      }
+
+      console.warn(`[FIREBASE READ] Descargando diccionarios de empresas a caché...`);
       try {
         const getDict = async (col: string, labelField: string, formatFn?: Function) => {
           const snap = await getDocs(collection(db, col));
           const dict: any = {};
-          snap.forEach(doc => dict[doc.id] = formatFn ? formatFn(doc.data()) : doc.data()[labelField]);
+          snap.forEach(doc => {
+            const data = doc.data();
+            // A prueba de fallos: busca el campo deseado, o nombre, o tipo, o descripción.
+            dict[doc.id] = formatFn ? formatFn(data) : (data[labelField] || data.nombre || data.tipo || data.descripcion || doc.id);
+          });
           return dict;
         };
 
@@ -121,14 +150,17 @@ const EmpresasDashboard = () => {
           getDict('catalogo_moneda', 'moneda'),
           getDict('catalogo_tipo_factura', 'nombre'),
           getDict('direcciones', 'direccionCompleta'),
-          getDict('catalogo_tipo_empresa', 'tipo'),
+          getDict('catalogo_tipo_empresa', 'nombre'),
           getDict('catalogo_tipo_servicio', 'nombre')
         ]);
 
-        setDiccionarios({ 
+        const totalDict = { 
           regimenes: reg, monedas: mon, facturas: fac, direcciones: dir, 
           tiposEmpresa: tEmpresa, tiposServicio: tServicio 
-        });
+        };
+
+        sessionStorage.setItem(cacheKey, JSON.stringify(totalDict));
+        setDiccionarios(totalDict);
       } catch (error) {
         console.error("Error cargando diccionarios:", error);
       }
@@ -142,7 +174,6 @@ const EmpresasDashboard = () => {
     };
   }, []);
 
-  // ✅ EFECTO INTELIGENTE: AUTOMATIZA EL STATUS SEGÚN EL SEMÁFORO
   useEffect(() => {
     const syncStatusAutomatico = async () => {
       if (empresas.length === 0 || Object.keys(lastUsedMap).length === 0) return;
@@ -154,12 +185,11 @@ const EmpresasDashboard = () => {
         const statusActual = emp.status || 'Activa'; 
         const fechaUso = lastUsedMap[emp.id] || emp.fechaUltimoServicio;
         
-        if (!fechaUso) return; // Si nunca ha operado, ignoramos.
+        if (!fechaUso) return;
 
         const diffTime = hoy.getTime() - new Date(fechaUso + 'T00:00:00').getTime();
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-        // Semáforo Rojo (> 90 días) -> Se da de baja automáticamente
         if (diffDays >= 91 && statusActual !== 'Baja') {
           batch.update(doc(db, 'empresas', emp.id), {
             status: 'Baja',
@@ -168,7 +198,6 @@ const EmpresasDashboard = () => {
           });
           updates++;
         } 
-        // Semáforo Amarillo o Verde (<= 90 días) -> Se reactiva automáticamente si estaba de baja por el sistema
         else if (diffDays <= 90 && statusActual === 'Baja' && emp.observacionesBaja?.includes('Sistema: Baja automática')) {
           batch.update(doc(db, 'empresas', emp.id), {
             status: 'Activa',
@@ -205,47 +234,41 @@ const EmpresasDashboard = () => {
     setEstadoFormulario('abierto'); 
   };
 
-  const verDetalle = async (empresa: any) => {
+  const verDetailDirecto = (empresa: any) => {
     setEmpresaViendo(empresa);
     setActiveTabDetalle('general');
     setCargandoUso(true);
     setOperacionesUso([]);
 
-    try {
-      const camposConsulta = [
-        { field: 'clientePaga', label: 'Cliente (Paga)' },
-        { field: 'clienteMercancia', label: 'Cliente (Mercancía)' },
-        { field: 'provServicios', label: 'Prov. Servicios' },
-        { field: 'proveedorUnidad', label: 'Prov. Unidad' },
-        { field: 'destino', label: 'Destino' },
-        { field: 'origen', label: 'Origen' }
-      ];
+    const camposConsulta = [
+      { field: 'clientePaga', label: 'Cliente (Paga)' },
+      { field: 'clienteMercancia', label: 'Cliente (Mercancía)' },
+      { field: 'provServicios', label: 'Prov. Servicios' },
+      { field: 'proveedorUnidad', label: 'Prov. Unidad' },
+      { field: 'destino', label: 'Destino' },
+      { field: 'origen', label: 'Origen' }
+    ];
 
-      const opsMap = new Map();
+    const opsMap = new Map();
 
-      await Promise.all(camposConsulta.map(async (c) => {
-        const q = query(collection(db, 'operaciones'), where(c.field, '==', empresa.id), limit(15));
-        const snap = await getDocs(q);
-        
-        snap.forEach(doc => {
-          if (!opsMap.has(doc.id)) {
-            opsMap.set(doc.id, { id: doc.id, ...doc.data(), rolesUso: [c.label] });
-          } else {
-            opsMap.get(doc.id).rolesUso.push(c.label);
-          }
-        });
-      }));
+    Promise.all(camposConsulta.map(async (c) => {
+      const q = query(collection(db, 'operaciones'), where(c.field, '==', empresa.id), limit(15));
+      const snap = await getDocs(q);
       
+      snap.forEach(doc => {
+        if (!opsMap.has(doc.id)) {
+          opsMap.set(doc.id, { id: doc.id, ...doc.data(), rolesUso: [c.label] });
+        } else {
+          opsMap.get(doc.id).rolesUso.push(c.label);
+        }
+      });
+    })).then(() => {
       const opsList = Array.from(opsMap.values()).sort((a, b) => 
         new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime()
       );
-      
       setOperacionesUso(opsList);
-    } catch (error) {
-      console.error("Error al obtener historial de uso:", error);
-    } finally {
       setCargandoUso(false);
-    }
+    }).catch(() => setCargandoUso(false));
   };
   
   const eliminarEmpresa = async (id: string) => {
@@ -303,46 +326,57 @@ const EmpresasDashboard = () => {
   const getLabel = (idOrRaw: string, dictName: string) => {
     if (!idOrRaw) return '-';
     const dict = diccionarios[dictName];
-    if (dict && dict[idOrRaw]) return dict[idOrRaw];
-    return idOrRaw; 
+    const idLimpio = String(idOrRaw).trim();
+    if (dict && dict[idLimpio]) return dict[idLimpio];
+    return idLimpio; 
   };
 
   const getLabelExt = (labelField: string, idField: string, dictName: string) => {
     if (labelField && labelField !== '-') return labelField;
     if (!idField) return '-';
     const dict = diccionarios[dictName];
-    if (dict && dict[idField]) return dict[idField];
-    return idField;
+    const idLimpio = String(idField).trim();
+    if (dict && dict[idLimpio]) return dict[idLimpio];
+    return idLimpio;
   };
 
+  // ✅ FUNCIÓN REFORZADA PARA BUSCAR NOMBRES DE ARRAYS
   const getArrayLabels = (idsArray: any, dictName: string) => {
     if (!idsArray) return [];
     const dict = diccionarios[dictName];
+    
+    const processItem = (item: any) => {
+      if (!item) return '';
+      // Si el registro ya trae un objeto con el nombre (común en multi-selects viejos)
+      if (typeof item === 'object') {
+        return item.nombre || item.tipo || dict?.[item.id] || item.id;
+      }
+      // Si es un simple String (ID)
+      const idStr = String(item).trim();
+      if (dict && dict[idStr]) return dict[idStr];
+      return idStr;
+    };
+
     if (Array.isArray(idsArray)) {
-      return idsArray.map(item => {
-        if (dict && dict[item]) return dict[item];
-        return item;
-      });
+      return idsArray.map(processItem).filter(Boolean);
     }
     if (typeof idsArray === 'string') {
-      if (dict && dict[idsArray]) return [dict[idsArray]];
-      return [idsArray];
+      return [processItem(idsArray)];
     }
     return [];
   };
 
-  // ✅ INDICADOR DE COLOR CSS ESTRICTO
   const obtenerColorInactividad = (fechaStr: string) => {
-    if (!fechaStr) return 'transparent'; // Jamás se ha usado: Sin color
+    if (!fechaStr) return 'transparent'; 
     const fechaUltimo = new Date(fechaStr + 'T00:00:00');
     const hoy = new Date();
     
     const diffTime = hoy.getTime() - fechaUltimo.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays <= 45) return '#10b981'; // Verde
-    if (diffDays >= 46 && diffDays <= 90) return '#f59e0b'; // Amarillo
-    return '#ef4444'; // Rojo (> 90)
+    if (diffDays <= 45) return '#10b981'; 
+    if (diffDays >= 46 && diffDays <= 90) return '#f59e0b'; 
+    return '#ef4444'; 
   };
 
   const registrosListos = useMemo(() => {
@@ -407,6 +441,62 @@ const EmpresasDashboard = () => {
 
   const seleccionarTodasColumnas = () => setExcelColumnasSeleccionadas(opcionesColumnasExcel.map(c => c.key));
   const deseleccionarTodasColumnas = () => setExcelColumnasSeleccionadas([]);
+
+  // Drag & Drop de columnas
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedColIndex(index);
+  };
+
+  const handleDragEnter = (index: number) => {
+    if (draggedColIndex === null || draggedColIndex === index) return;
+    const nuevasColumnas = [...columnasTabla];
+    const colMovida = nuevasColumnas.splice(draggedColIndex, 1)[0];
+    nuevasColumnas.splice(index, 0, colMovida);
+    setDraggedColIndex(index);
+    setColumnasTabla(nuevasColumnas);
+  };
+
+  const toggleColumnaVisible = (index: number) => {
+    const nuevas = [...columnasTabla];
+    nuevas[index].visible = !nuevas[index].visible;
+    setColumnasTabla(nuevas);
+  };
+
+  // ✅ RENDERIZADOR CENTRALIZADO DE CELDAS PARA EMPRESAS
+  const renderCellContent = (emp: any, colId: string) => {
+    const colorSemaforo = obtenerColorInactividad(emp._fechaDinamicaUso);
+    switch (colId) {
+      case 'numCliente':
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {colorSemaforo !== 'transparent' && (
+              <span 
+                title={`Último uso en operaciones: ${emp._fechaDinamicaUso}`} 
+                style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: colorSemaforo, display: 'inline-block', flexShrink: 0, boxShadow: `0 0 5px ${colorSemaforo}` }}
+              />
+            )}
+            <span style={{ textDecoration: emp.status === 'Baja' ? 'line-through' : 'none', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc', fontFamily: 'monospace' }}>
+              {emp.numCliente}
+            </span>
+          </div>
+        );
+      case 'nombre':
+        return (
+          <span style={{ fontWeight: '500', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc' }}>
+            {emp.nombre} {emp.status === 'Baja' && <span style={{ fontSize: '0.7rem', border: '1px solid #ef4444', padding: '2px 4px', borderRadius: '4px', marginLeft: '6px' }}>BAJA</span>}
+          </span>
+        );
+      case 'nombreCorto': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(emp.nombreCorto)}</span>;
+      case 'tiposEmpresa': return <span style={{ color: '#c9d1d9', fontSize: '0.85rem' }}>{renderArrayValues(emp._tiposEmpresaArray)}</span>;
+      case 'servicios': return <span style={{ color: '#c9d1d9', fontSize: '0.85rem' }}>{renderArrayValues(emp._tiposServicioArray)}</span>;
+      case 'rfcTaxId': return <span style={{ color: '#c9d1d9', fontFamily: 'monospace' }}>{mostrarDato(emp.rfcTaxId)}</span>;
+      case 'fechaService':
+      case 'fechaServicio':
+        return <span style={{ color: '#c9d1d9' }}>{mostrarDato(emp._fechaDinamicaUso)}</span>;
+      default: return '-';
+    }
+  };
 
   const ejecutarExportacionExcel = () => {
     if (excelColumnasSeleccionadas.length === 0) return alert("Selecciona al menos una columna para exportar.");
@@ -475,6 +565,15 @@ const EmpresasDashboard = () => {
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
       
+      <style>{`
+        .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        @media (max-width: 768px) { .detail-grid { grid-template-columns: 1fr; } }
+        .dot { height: 10px; width: 10px; borderRadius: '50%'; display: 'inline-block'; }
+        .dot-green { backgroundColor: #10b981; }
+        .dot-red { backgroundColor: #ef4444; }
+        .dot-gray { backgroundColor: #8b949e; }
+      `}</style>
+
       {estadoFormulario !== 'cerrado' && (
         <FormularioEmpresa 
           estado={estadoFormulario} initialData={empresaEditando} registros={empresas}
@@ -522,6 +621,14 @@ const EmpresasDashboard = () => {
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
             <button 
               className="btn btn-outline" 
+              title="Configurar Columnas"
+              onClick={() => setModalColumnas(true)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+            <button 
+              className="btn btn-outline" 
               title="Exportar a Excel"
               onClick={() => setModalExcelAbierto(true)} 
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
@@ -545,33 +652,28 @@ const EmpresasDashboard = () => {
               <thead style={{ backgroundColor: '#1f2937', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: '16px', width: '140px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#1f2937', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># de Cliente</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Empresa</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Nombre Corto</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Tipo de Empresa</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Servicios</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>RFC / Tax Id</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha Serv.</th>
+                  {columnasTabla.filter(c => c.visible).map(col => (
+                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                      {col.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                       {busqueda || filtroActivo !== 'Todo' ? 'No se encontraron empresas con estos filtros.' : 'Aún no hay empresas registradas.'}
                     </td>
                   </tr>
                 ) : (
-                  registrosEnPantalla.map((emp) => {
-                    const colorSemaforo = obtenerColorInactividad(emp._fechaDinamicaUso);
-                    
-                    return (
+                  registrosEnPantalla.map((emp) => (
                     <tr 
                       key={emp.id} 
                       style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === emp.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }}
                       onMouseEnter={() => setHoveredRowId(emp.id)} 
                       onMouseLeave={() => setHoveredRowId(null)}
-                      onClick={() => verDetalle(emp)}
+                      onClick={() => verDetailDirecto(emp)}
                     >
                       <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
                         <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
@@ -590,7 +692,7 @@ const EmpresasDashboard = () => {
                           {emp.status !== 'Baja' && (
                             <button 
                               className="btn-small btn-warning" 
-                              title="Dar de Baja a la Empresa"
+                              title="Dar de Baja"
                               onClick={(e) => { e.stopPropagation(); abrirModalBaja(emp); }}
                               style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
@@ -602,7 +704,7 @@ const EmpresasDashboard = () => {
 
                           <button 
                             className="btn-small btn-danger" 
-                            title="Eliminar Empresa"
+                            title="Eliminar"
                             onClick={(e) => { e.stopPropagation(); eliminarEmpresa(emp.id); }}
                             style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
@@ -613,48 +715,13 @@ const EmpresasDashboard = () => {
 
                         </div>
                       </td>
-
-                      {/* ✅ SEMÁFORO ESTILO CSS (Columna # de Cliente) */}
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {colorSemaforo !== 'transparent' && (
-                            <span 
-                              title={`Último uso en operaciones: ${emp._fechaDinamicaUso}`} 
-                              style={{ 
-                                width: '12px', 
-                                height: '12px', 
-                                borderRadius: '50%', 
-                                backgroundColor: colorSemaforo, 
-                                display: 'inline-block', 
-                                flexShrink: 0, 
-                                boxShadow: `0 0 5px ${colorSemaforo}` 
-                              }}>
-                            </span>
-                          )}
-                          <span style={{ textDecoration: emp.status === 'Baja' ? 'line-through' : 'none', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc' }}>
-                            {emp.numCliente}
-                          </span>
-                        </div>
-                      </td>
-
-                      <td style={{ padding: '16px', fontWeight: '500', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
-                        {emp.nombre} {emp.status === 'Baja' && <span style={{ fontSize: '0.7rem', border: '1px solid #ef4444', padding: '2px 4px', borderRadius: '4px', marginLeft: '6px' }}>BAJA</span>}
-                      </td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarDato(emp.nombreCorto)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.85rem', maxWidth: '200px', whiteSpace: 'normal' }}>
-                        {renderArrayValues(emp._tiposEmpresaArray)}
-                      </td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.85rem', maxWidth: '200px', whiteSpace: 'normal' }}>
-                        {renderArrayValues(emp._tiposServicioArray)}
-                      </td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{mostrarDato(emp.rfcTaxId)}</td>
-                      
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
-                        {mostrarDato(emp._fechaDinamicaUso)}
-                      </td>
+                      {columnasTabla.filter(c => c.visible).map(col => (
+                        <td key={`cell_${emp.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                          {renderCellContent(emp, col.id)}
+                        </td>
+                      ))}
                     </tr>
-                    );
-                  })
+                  ))
                 )}
               </tbody>
             </table>
@@ -666,104 +733,93 @@ const EmpresasDashboard = () => {
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button 
-                  title="Página Anterior"
-                  onClick={irPaginaAnterior} 
-                  disabled={paginaActual === 1}
-                  style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                </button>
+                <button title="Anterior" onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
                 <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
-                <button 
-                  title="Página Siguiente"
-                  onClick={irPaginaSiguiente} 
-                  disabled={paginaActual === totalPaginas || totalPaginas === 0}
-                  style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </button>
+                <button title="Siguiente" onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
               </div>
             </div>
           )}
-
         </div>
       </div>
+
+      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {modalColumnas && (
+        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
+              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {columnasTabla.map((col, idx) => (
+                <li 
+                  key={col.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragEnter={() => handleDragEnter(idx)}
+                  onDragEnd={() => setDraggedColIndex(null)}
+                  onDragOver={(e) => e.preventDefault()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL CONFIGURACIÓN REPORTE EXCEL */}
       {modalExcelAbierto && (
         <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div style={{ maxWidth: '600px', width: '100%', backgroundColor: '#0d1117', borderRadius: '12px', border: '1px solid #30363d', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
-            
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#238636" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#238636" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 Generar Reporte Excel
               </h2>
               <button onClick={() => setModalExcelAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-
             <div style={{ padding: '24px', flex: 1, overflowY: 'auto' }}>
-              
               <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', color: '#f0f6fc', fontWeight: 'bold', marginBottom: '8px', fontSize: '1rem' }}>
-                  1. Selecciona el Tipo de Cliente/Empresa a exportar:
-                </label>
-                <select 
-                  value={excelFiltroTipo} 
-                  onChange={(e) => setExcelFiltroTipo(e.target.value)}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem' }}
-                >
+                <label style={{ display: 'block', color: '#f0f6fc', fontWeight: 'bold', marginBottom: '8px', fontSize: '1rem' }}>1. Selecciona el Tipo de Cliente/Empresa a exportar:</label>
+                <select value={excelFiltroTipo} onChange={(e) => setExcelFiltroTipo(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem' }}>
                   {opcionesFiltro.map(opcion => (
                     <option key={`xls_${opcion}`} value={opcion}>{opcion === 'Todo' ? 'Todos los registros' : opcion}</option>
                   ))}
                 </select>
               </div>
-
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '12px' }}>
-                  <label style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1rem', margin: 0 }}>
-                    2. Selecciona las columnas a incluir:
-                  </label>
+                  <label style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1rem', margin: 0 }}>2. Selecciona las columnas a incluir:</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button onClick={seleccionarTodasColumnas} style={{ background: 'transparent', border: 'none', color: '#58a6ff', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>Marcar todas</button>
                     <button onClick={deseleccionarTodasColumnas} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>Desmarcar todas</button>
                   </div>
                 </div>
-
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
                   {opcionesColumnasExcel.map(col => {
                     const isChecked = excelColumnasSeleccionadas.includes(col.key);
                     return (
                       <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isChecked ? '#f0f6fc' : '#8b949e', cursor: 'pointer', fontSize: '0.9rem' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={isChecked}
-                          onChange={() => handleToggleColumnaExcel(col.key)}
-                          style={{ cursor: 'pointer' }}
-                        />
+                        <input type="checkbox" checked={isChecked} onChange={() => handleToggleColumnaExcel(col.key)} style={{ cursor: 'pointer' }} />
                         {col.label}
                       </label>
                     );
                   })}
                 </div>
               </div>
-
             </div>
-
             <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button 
-                onClick={() => setModalExcelAbierto(false)} 
-                style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}
-              >
-                Cancelar
-              </button>
-              <button 
-                onClick={ejecutarExportacionExcel}
-                style={{ padding: '8px 16px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
-              >
-                Generar y Descargar Excel
-              </button>
+              <button onClick={() => setModalExcelAbierto(false)} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={ejecutarExportacionExcel} style={{ padding: '8px 16px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Generar y Descargar Excel</button>
             </div>
           </div>
         </div>
@@ -892,6 +948,10 @@ const EmpresasDashboard = () => {
                 </div>
               )}
 
+            </div>
+            
+            <div style={{ padding: '16px 24px', textAlign: 'right', borderTop: '1px solid #30363d' }}>
+              <button onClick={() => setEmpresaViendo(null)} className="btn btn-outline">Cerrar Detalles</button>
             </div>
           </div>
         </div>

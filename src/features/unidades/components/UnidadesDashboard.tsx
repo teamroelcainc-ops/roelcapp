@@ -4,6 +4,21 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { FormularioUnidad } from './FormularioUnidad';
 import type { UnidadRecord } from '../../../types/unidad'; 
+import * as XLSX from 'xlsx';
+
+// ✅ COLUMNAS BASE DE LA TABLA UNIDADES
+const COLUMNAS_BASE = [
+  { id: 'unidad', label: 'Unidad', visible: true },
+  { id: 'tipo', label: 'Tipo', visible: true },
+  { id: 'status', label: 'Status', visible: true },
+  { id: 'placas', label: 'Placas', visible: true },
+  { id: 'serie', label: 'Serie', visible: true },
+  { id: 'marca', label: 'Marca', visible: true },
+  { id: 'modelo', label: 'Modelo', visible: true },
+  { id: 'tanque1', label: 'Tanque 1', visible: true },
+  { id: 'tanque2', label: 'Tanque 2', visible: true },
+  { id: 'porcentaje', label: '% Recarga', visible: true }
+];
 
 export const UnidadesDashboard: React.FC = () => {
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
@@ -14,12 +29,16 @@ export const UnidadesDashboard: React.FC = () => {
   const [busqueda, setBusqueda] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<string>('Todos');
 
-  // ✅ ESTADOS DE PAGINACIÓN (Frontend - 0 Costos de Lectura)
+  // ✅ ESTADOS DE PAGINACIÓN
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
-  // Estado para el hover de las filas (solución para fondo sólido en móvil)
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+
+  // ✅ ESTADOS PARA CONFIGURACIÓN DE COLUMNAS (DRAG & DROP)
+  const [modalColumnas, setModalColumnas] = useState(false);
+  const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
+  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
   // Suscripción en tiempo real a Firebase
   useEffect(() => {
@@ -91,7 +110,7 @@ export const UnidadesDashboard: React.FC = () => {
     return resultado;
   }, [registrosGlobales, filtroTipo, busqueda]);
 
-  // ✅ LOGICA DE PAGINACIÓN
+  // ✅ LÓGICA DE PAGINACIÓN
   const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
@@ -100,24 +119,77 @@ export const UnidadesDashboard: React.FC = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
-  // ✅ Función para Exportar a CSV
-  const exportarCSV = () => {
+  // ✅ LÓGICA DE DRAG & DROP PARA COLUMNAS
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedColIndex(index);
+  };
+
+  const handleDragEnter = (index: number) => {
+    if (draggedColIndex === null || draggedColIndex === index) return;
+    const nuevasColumnas = [...columnasTabla];
+    const colMovida = nuevasColumnas.splice(draggedColIndex, 1)[0];
+    nuevasColumnas.splice(index, 0, colMovida);
+    setDraggedColIndex(index);
+    setColumnasTabla(nuevasColumnas);
+  };
+
+  const toggleColumnaVisible = (index: number) => {
+    const nuevas = [...columnasTabla];
+    nuevas[index].visible = !nuevas[index].visible;
+    setColumnasTabla(nuevas);
+  };
+
+  // ✅ RENDERIZADOR DINÁMICO DE CELDAS
+  const renderCellContent = (reg: UnidadRecord, colId: string) => {
+    switch (colId) {
+      case 'unidad': return <span style={{ fontWeight: '500', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{reg.unidad}</span>;
+      case 'tipo': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tipoUnidadNombre || 'Sin Asignar'}</span>;
+      case 'status': return reg.activo 
+        ? <span style={{ backgroundColor: 'rgba(63, 185, 80, 0.1)', color: '#3fb950', border: '1px solid #3fb950', padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Activo</span> 
+        : <span style={{ backgroundColor: 'rgba(248, 81, 73, 0.1)', color: '#f85149', border: '1px solid #f85149', padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Inactivo</span>;
+      case 'placas': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.placas || '-'}</span>;
+      case 'serie': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.serie || '-'}</span>;
+      case 'marca': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.marca || '-'}</span>;
+      case 'modelo': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.modelo || '-'}</span>;
+      case 'tanque1': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tanqueUno || 0}</span>;
+      case 'tanque2': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tanqueDos || 0}</span>;
+      case 'porcentaje': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{Number(reg.porcentajeRecarga || 0).toFixed(2)} %</span>;
+      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+    }
+  };
+
+  // ✅ EXPORTAR EXCEL CON LAS COLUMNAS VISIBLES ACTUALMENTE
+  const exportarExcel = () => {
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
-    const encabezados = ['Unidad', 'Tipo', 'Estatus', 'Placas', 'Serie', 'Marca', 'Modelo', 'Tanque 1', 'Tanque 2', 'Porcentaje'];
-    const lineas = registrosFiltrados.map(r => [
-      `"${r.unidad || ''}"`, `"${r.tipoUnidadNombre || 'Sin Asignar'}"`, `"${r.activo ? 'Activo' : 'Inactivo'}"`,
-      `"${r.placas || ''}"`, `"${r.serie || ''}"`, `"${r.marca || ''}"`, `"${r.modelo || ''}"`,
-      `"${r.tanqueUno || 0}"`, `"${r.tanqueDos || 0}"`, `"${Number(r.porcentajeRecarga || 0).toFixed(2)}"`
-    ].join(','));
-    const csvContent = [encabezados.join(','), ...lineas].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Unidades_Propias_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    
+    const columnasVisibles = columnasTabla.filter(c => c.visible);
+
+    const datosExcel = registrosFiltrados.map(reg => {
+      const fila: any = {};
+      columnasVisibles.forEach(col => {
+        let val: any = '-';
+        switch (col.id) {
+          case 'unidad': val = reg.unidad || ''; break;
+          case 'tipo': val = reg.tipoUnidadNombre || 'Sin Asignar'; break;
+          case 'status': val = reg.activo ? 'Activo' : 'Inactivo'; break;
+          case 'placas': val = reg.placas || ''; break;
+          case 'serie': val = reg.serie || ''; break;
+          case 'marca': val = reg.marca || ''; break;
+          case 'modelo': val = reg.modelo || ''; break;
+          case 'tanque1': val = Number(reg.tanqueUno || 0); break;
+          case 'tanque2': val = Number(reg.tanqueDos || 0); break;
+          case 'porcentaje': val = Number(reg.porcentajeRecarga || 0); break;
+        }
+        fila[col.label] = val;
+      });
+      return fila;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(datosExcel);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Unidades Propias');
+    XLSX.writeFile(workbook, `Unidades_Propias_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   return (
@@ -177,8 +249,16 @@ export const UnidadesDashboard: React.FC = () => {
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '150px' }}>
             <button 
               className="btn btn-outline" 
-              title="Exportar a CSV"
-              onClick={exportarCSV} 
+              title="Configurar Columnas"
+              onClick={() => setModalColumnas(true)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+            <button 
+              className="btn btn-outline" 
+              title="Exportar a Excel"
+              onClick={exportarExcel} 
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
@@ -200,27 +280,21 @@ export const UnidadesDashboard: React.FC = () => {
             <table className="data-table" style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  {/* Acciones al principio */}
                   <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
                     Acciones
                   </th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>UNIDAD</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>TIPO</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>STATUS</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PLACAS</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>SERIE</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>MARCA</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>MODELO</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>TANQUE 1</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>TANQUE 2</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>% RECARGA</th>
+                  {columnasTabla.filter(c => c.visible).map(col => (
+                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                      {col.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               
               <tbody>
                 {registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                       {busqueda || filtroTipo !== 'Todos' ? 'No se encontraron unidades con estos filtros.' : 'Aún no hay unidades registradas.'}
                     </td>
                   </tr>
@@ -259,22 +333,11 @@ export const UnidadesDashboard: React.FC = () => {
                         </div>
                       </td>
 
-                      <td style={{ padding: '16px', fontWeight: '500', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{reg.unidad}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tipoUnidadNombre || 'Sin Asignar'}</td>
-                      <td style={{ padding: '16px', whiteSpace: 'nowrap' }}>
-                        {reg.activo ? (
-                          <span style={{ backgroundColor: 'rgba(63, 185, 80, 0.1)', color: '#3fb950', border: '1px solid #3fb950', padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Activo</span>
-                        ) : (
-                          <span style={{ backgroundColor: 'rgba(248, 81, 73, 0.1)', color: '#f85149', border: '1px solid #f85149', padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Inactivo</span>
-                        )}
-                      </td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.placas || '-'}</td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.serie || '-'}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.marca || '-'}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.modelo || '-'}</td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tanqueUno || 0}</td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tanqueDos || 0}</td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{Number(reg.porcentajeRecarga || 0).toFixed(2)} %</td>
+                      {columnasTabla.filter(col => col.visible).map(col => (
+                        <td key={`cell_${reg.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                          {renderCellContent(reg, col.id)}
+                        </td>
+                      ))}
                     </tr>
                   ))
                 )}
@@ -312,6 +375,41 @@ export const UnidadesDashboard: React.FC = () => {
 
         </div>
       </div>
+
+      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {modalColumnas && (
+        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
+              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {columnasTabla.map((col, idx) => (
+                <li 
+                  key={col.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragEnter={() => handleDragEnter(idx)}
+                  onDragEnd={() => setDraggedColIndex(null)}
+                  onDragOver={(e) => e.preventDefault()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

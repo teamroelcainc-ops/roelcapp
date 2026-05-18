@@ -167,7 +167,6 @@ const OperacionesDashboard = () => {
     setCargandoOperaciones(false);
   };
 
-  // ✅ INICIAMOS LA CARGA DEL CATÁLOGO PARA TRADUCIR LOS IDS ANTIGUOS
   useEffect(() => { 
     const init = async () => {
       await cargarCatalogosSiEsNecesario();
@@ -228,16 +227,21 @@ const OperacionesDashboard = () => {
     return val || '-';
   };
 
-  // ✅ FUNCIÓN MEJORADA: CONCATENA TEXTOS Y HACE FALLBACK SI FALTA DATA
   const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-') return valorDesnormalizado; 
+    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-') {
+      if (catalogo === 'statusServicio' && valorDesnormalizado.length > 30) {
+        // Fallback
+      } else {
+        return valorDesnormalizado; 
+      }
+    }
+
     if (!id) return '-';
     if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
     
-    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => item.id === id);
+    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => item.id === id || item.nombre === id);
     if (!elementoEncontrado) return id;
 
-    // Reglas estrictas pedidas:
     if (catalogo === 'empleados') {
       return `${elementoEncontrado.firstName || ''} ${elementoEncontrado.lastNamePaternal || ''}`.trim() || id;
     }
@@ -251,7 +255,7 @@ const OperacionesDashboard = () => {
       return elementoEncontrado.moneda || id;
     }
     if (catalogo === 'statusServicio') {
-      return elementoEncontrado.descripcion || elementoEncontrado.nombre || id;
+      return elementoEncontrado.nombre || id;
     }
     if (catalogo === 'tiposOperacion') {
       return elementoEncontrado.tipo_operacion || id;
@@ -320,10 +324,9 @@ const OperacionesDashboard = () => {
       batch.set(horarioRef, { operacionId: operacionViendo.id, status: nuevoStatus, fechaHora: nuevaFechaHora, registradoEn: new Date().toISOString() });
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       
-      // Actualizamos para que también tenga el texto desnormalizado del status
       batch.update(opRef, { 
         status: nuevoStatus,
-        statusNombre: nuevoStatus // Dependiendo de la estructura, guardamos el texto para no gastar lecturas
+        statusNombre: nuevoStatus
       });
 
       await batch.commit();
@@ -543,14 +546,13 @@ const OperacionesDashboard = () => {
     setColumnasTabla(nuevas);
   };
 
-  // ✅ RENDERIZADOR DINÁMICO DE CELDAS PARA LA TABLA (Usa Nombres Directos o Fallback al Catálogo)
   const renderCellContent = (op: any, colId: string) => {
     switch (colId) {
       case 'ref': return <span className="font-mono" style={{ color: '#58a6ff', fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}</span>;
       case 'fechaServicio': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.fechaServicio)}</span>;
       case 'fechaCita': return <span style={{ color: '#c9d1d9' }}>{formatearFechaHora(op.fechaCita)}</span>;
       case 'tipoOperacion': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</span>;
-      case 'status': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'descripcion', op.statusNombre)}</span>;
+      case 'status': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</span>;
       case 'trafico': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.trafico)}</span>;
       case 'cliente': return <span style={{ color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
       case 'convenioTarifa': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
@@ -582,10 +584,10 @@ const OperacionesDashboard = () => {
       case 'operador': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.operador, 'empleados', 'nombre', op.operadorNombre)}</span>;
       case 'sueldoOperador': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.sueldoOperador)}</span>;
       case 'sueldoExtra': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.sueldoExtra)}</span>;
-      case 'sueldoTotal': return <span style={{ color: '#f0f6fc' }}>{formatoMoneda(op.sueldoTotal)}</span>;
+      case 'sueldoTotal': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.sueldoTotal)}</span>;
       case 'combustible': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.combustible)}</span>;
       case 'combustibleExtra': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.combustibleExtra)}</span>;
-      case 'combustibleTotal': return <span style={{ color: '#f0f6fc' }}>{formatoMoneda(op.combustibleTotal)}</span>;
+      case 'combustibleTotal': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.combustibleTotal)}</span>;
       case 'clienteMercancia': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre)}</span>;
       case 'descripcionMercancia': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.descripcionMercancia)}</span>;
       case 'cantidad': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.cantidad)}</span>;
@@ -607,12 +609,10 @@ const OperacionesDashboard = () => {
     }
   };
 
-  const exportarCSV = async () => {
+  const exportarExcel = async () => {
     if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
     
     const columnasVisibles = columnasTabla.filter(c => c.visible);
-    
-    // Forzamos la descarga de catálogos si no existen, para asegurar que el Excel salga con NOMBRES y no IDs
     await cargarCatalogosSiEsNecesario();
 
     const datosExcel = operacionesFiltradas.map(op => {
@@ -624,7 +624,7 @@ const OperacionesDashboard = () => {
           case 'fechaServicio': val = op.fechaServicio || ''; break;
           case 'fechaCita': val = formatearFechaHora(op.fechaCita); break;
           case 'tipoOperacion': val = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre); break;
-          case 'status': val = mostrarDatoMapeado(op.status, 'statusServicio', 'descripcion', op.statusNombre); break;
+          case 'status': val = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre); break; 
           case 'trafico': val = op.trafico || ''; break;
           case 'cliente': val = mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente); break;
           case 'convenioTarifa': val = obtenerNombreConvenioCliente(op.convenio, op.convenioNombre); break;
@@ -678,6 +678,7 @@ const OperacionesDashboard = () => {
           case 'observacionesUnidad': val = op.observacionesUnidad || ''; break;
           case 'observacionesCobrar': val = op.observacionesCobrar || ''; break;
         }
+        
         fila[col.label] = val;
       });
       return fila;
@@ -743,7 +744,7 @@ const OperacionesDashboard = () => {
             <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
             </button>
-            <button className="btn btn-outline" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
+            <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button className="btn btn-primary" onClick={handleNuevo} style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', gap: '6px' }}>

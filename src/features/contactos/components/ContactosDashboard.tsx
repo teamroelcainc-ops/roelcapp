@@ -1,8 +1,17 @@
 // src/features/contactos/components/ContactosDashboard.tsx
-import { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import React, { useState, useEffect, useMemo } from 'react';
+import { collection, onSnapshot, getDocs } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase';
 import { FormularioContacto } from './FormularioContacto';
+
+// ✅ TODAS LAS COLUMNAS DE LA COLECCIÓN CON NOMBRES LEGIBLES
+const COLUMNAS_BASE = [
+  { id: 'empresa', label: 'Empresa / Cliente', visible: true },
+  { id: 'persona', label: 'Persona Encargada', visible: true },
+  { id: 'puesto', label: 'Puesto', visible: true },
+  { id: 'telefono', label: 'Teléfono', visible: true },
+  { id: 'correo', label: 'Correo', visible: true }
+];
 
 export const ContactosDashboard = () => {
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
@@ -18,21 +27,43 @@ export const ContactosDashboard = () => {
   const registrosPorPagina = 50;
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
-  // Cargar Contactos y Diccionario de Empresas
+  // Estados para configuración de columnas
+  const [modalColumnas, setModalColumnas] = useState(false);
+  const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
+  const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
+
+  // Cargar Contactos y Diccionario de Empresas (Optimizado con Caché)
   useEffect(() => {
+    const fetchEmpresas = async () => {
+      const cacheKey = 'roelca_empresas_contactos_dict';
+      const cacheData = sessionStorage.getItem(cacheKey);
+
+      if (cacheData) {
+        setEmpresasDict(JSON.parse(cacheData));
+        return;
+      }
+
+      console.warn(`[FIREBASE READ] Descargando catálogo de empresas para Contactos...`);
+      try {
+        const snap = await getDocs(collection(db, 'empresas'));
+        const dict: Record<string, string> = {};
+        snap.forEach(doc => { dict[doc.id] = doc.data().nombre || 'Sin nombre'; });
+        
+        sessionStorage.setItem(cacheKey, JSON.stringify(dict));
+        setEmpresasDict(dict);
+      } catch (e) {
+        console.error("Error al cargar empresas:", e);
+      }
+    };
+
+    fetchEmpresas();
+
     const unsubContactos = onSnapshot(collection(db, 'contactos'), (snapshot) => {
       setContactos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    const unsubEmpresas = onSnapshot(collection(db, 'empresas'), (snapshot) => {
-      const dict: Record<string, string> = {};
-      snapshot.forEach(doc => { dict[doc.id] = doc.data().nombre || 'Sin nombre'; });
-      setEmpresasDict(dict);
-    });
-
     return () => {
       unsubContactos();
-      unsubEmpresas();
     };
   }, []);
 
@@ -85,6 +116,39 @@ export const ContactosDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
+  // Lógica de Drag & Drop para columnas
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedColIndex(index);
+  };
+
+  const handleDragEnter = (index: number) => {
+    if (draggedColIndex === null || draggedColIndex === index) return;
+    const nuevasColumnas = [...columnasTabla];
+    const colMovida = nuevasColumnas.splice(draggedColIndex, 1)[0];
+    nuevasColumnas.splice(index, 0, colMovida);
+    setDraggedColIndex(index);
+    setColumnasTabla(nuevasColumnas);
+  };
+
+  const toggleColumnaVisible = (index: number) => {
+    const nuevas = [...columnasTabla];
+    nuevas[index].visible = !nuevas[index].visible;
+    setColumnasTabla(nuevas);
+  };
+
+  // Renderizador Dinámico de Celdas
+  const renderCellContent = (c: any, colId: string) => {
+    switch (colId) {
+      case 'empresa': return <span style={{ color: '#58a6ff', fontWeight: '500' }}>{c._empresaNombre}</span>;
+      case 'persona': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{c.persona_encargada}</span>;
+      case 'puesto': return <span style={{ color: '#c9d1d9' }}>{c.puesto || '-'}</span>;
+      case 'telefono': return <span style={{ color: '#c9d1d9' }}>{c.telefono || '-'}</span>;
+      case 'correo': return <span style={{ color: '#c9d1d9' }}>{c.correo || '-'}</span>;
+      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+    }
+  };
+
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
       
@@ -114,14 +178,25 @@ export const ContactosDashboard = () => {
               />
             </div>
           </div>
-          <button 
-            className="btn btn-primary" 
-            title="Agregar Nuevo Contacto"
-            onClick={handleNuevo} 
-            style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          </button>
+          
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              className="btn btn-outline" 
+              title="Configurar Columnas"
+              onClick={() => setModalColumnas(true)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            </button>
+            <button 
+              className="btn btn-primary" 
+              title="Agregar Nuevo Contacto"
+              onClick={handleNuevo} 
+              style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+          </div>
         </div>
 
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
@@ -132,17 +207,17 @@ export const ContactosDashboard = () => {
                   <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d' }}>
                     Acciones
                   </th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Empresa / Cliente</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Persona Encargada</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Puesto</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Teléfono</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Correo</th>
+                  {columnasTabla.filter(c => c.visible).map(col => (
+                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                      {col.label}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No se encontraron contactos.</td>
+                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No se encontraron contactos.</td>
                   </tr>
                 ) : (
                   registrosEnPantalla.map((c) => (
@@ -175,11 +250,11 @@ export const ContactosDashboard = () => {
                           </button>
                         </div>
                       </td>
-                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: '500' }}>{c._empresaNombre}</td>
-                      <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: 'bold' }}>{c.persona_encargada}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9' }}>{c.puesto}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9' }}>{c.telefono || '-'}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9' }}>{c.correo || '-'}</td>
+                      {columnasTabla.filter(col => col.visible).map(col => (
+                        <td key={`cell_${c.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                          {renderCellContent(c, col.id)}
+                        </td>
+                      ))}
                     </tr>
                   ))
                 )}
@@ -217,6 +292,40 @@ export const ContactosDashboard = () => {
 
         </div>
       </div>
+
+      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {modalColumnas && (
+        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
+              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {columnasTabla.map((col, idx) => (
+                <li 
+                  key={col.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragEnter={() => handleDragEnter(idx)}
+                  onDragEnd={() => setDraggedColIndex(null)}
+                  onDragOver={(e) => e.preventDefault()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL DE DETALLES DEL CONTACTO */}
       {contactoViendo && (

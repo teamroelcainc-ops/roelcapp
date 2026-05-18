@@ -43,11 +43,9 @@ const MttoAgrupadosInvoice = () => {
     const cargarGastos = async () => {
       setCargando(true);
       try {
-        // ✅ CORRECCIÓN 1: Evitar el orderBy('createdAt') que bloquea los datos migrados
         const q = query(collection(db, 'gastos_mtto'), limit(500));
         const snap = await getDocs(q);
         
-        // ✅ CORRECCIÓN 2: Sincronización automática de estatus basada en el Invoice
         let data = snap.docs.map(d => {
           const rawData = d.data();
           const tieneInvoice = rawData.invoice && String(rawData.invoice).trim() !== '';
@@ -58,7 +56,6 @@ const MttoAgrupadosInvoice = () => {
           } as GastoMtto;
         });
 
-        // ✅ CORRECCIÓN 3: Orden matemático por # de Gasto (Más reciente arriba)
         data.sort((a, b) => {
           const parseGasto = (str: string) => {
             if (!str) return 0;
@@ -404,37 +401,22 @@ const MttoAgrupadosInvoice = () => {
                   </div>
                 </div>
 
+                {/* ✅ VISTA SIMPLIFICADA: SOLO REFERENCIAS (# DE GASTO) */}
                 {isAbierto && (
                   <div style={{ borderTop: isSinInvoice ? '1px solid #30363d' : '1px solid rgba(63, 185, 80, 0.2)', padding: '16px' }}>
-                    <div className="table-container" style={{ borderRadius: '6px', overflowX: 'auto', border: '1px solid #30363d' }}>
-                      <table className="data-table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#010409' }}>
-                        <thead style={{ backgroundColor: '#161b22' }}>
-                          <tr>
-                            <th style={{ padding: '12px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}># Gasto</th>
-                            <th style={{ padding: '12px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Fecha</th>
-                            <th style={{ padding: '12px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Proveedor</th>
-                            <th style={{ padding: '12px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d', textAlign: 'right' }}>Importe Base</th>
-                            <th style={{ padding: '12px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d', textAlign: 'right' }}>IVA</th>
-                            <th style={{ padding: '12px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d', textAlign: 'right' }}>Retenciones</th>
-                            <th style={{ padding: '12px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d', textAlign: 'right' }}>Total Final</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {grupo.gastos.map((g, index) => (
-                            <tr key={g.id} style={{ borderBottom: index === grupo.gastos.length - 1 ? 'none' : '1px solid #21262d', transition: 'background-color 0.2s' }} onMouseEnter={(e:any) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e:any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                              <td className="font-mono" style={{ padding: '12px', color: '#58a6ff', fontSize: '0.9rem' }}>{g.numeroGasto || '-'}</td>
-                              <td style={{ padding: '12px', color: '#c9d1d9', fontSize: '0.9rem' }}>{formatearFechaEspañol(g.fecha)}</td>
-                              <td style={{ padding: '12px', color: '#c9d1d9', fontSize: '0.9rem', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.proveedorNombre || '-'}</td>
-                              <td style={{ padding: '12px', color: '#c9d1d9', fontSize: '0.9rem', textAlign: 'right' }}>{formatoMoneda(g.importe)}</td>
-                              <td style={{ padding: '12px', color: '#c9d1d9', fontSize: '0.9rem', textAlign: 'right' }}>{formatoMoneda(g.ivaMonto)}</td>
-                              <td style={{ padding: '12px', color: '#f85149', fontSize: '0.9rem', textAlign: 'right' }}>
-                                {Number(g.retIva) + Number(g.retIsr) > 0 ? formatoMoneda(Number(g.retIva) + Number(g.retIsr)) : '-'}
-                              </td>
-                              <td style={{ padding: '12px', color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem', textAlign: 'right' }}>{formatoMoneda(g.total)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
+                      Gastos incluidos en este Invoice:
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {grupo.gastos.map(g => (
+                        <span 
+                          key={g.id} 
+                          title={`Importe Base: ${formatoMoneda(g.importe)} | Proveedor: ${g.proveedorNombre || 'N/A'}`}
+                          style={{ backgroundColor: '#161b22', border: '1px solid #30363d', color: '#58a6ff', padding: '6px 14px', borderRadius: '16px', fontSize: '0.9rem', fontFamily: 'monospace', fontWeight: 'bold' }}
+                        >
+                          {g.numeroGasto || '-'}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}

@@ -1,6 +1,6 @@
 // src/features/configuracion/components/LogsDashboard.tsx
 import { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 
 interface LogRecord {
@@ -21,8 +21,9 @@ export const LogsDashboard = () => {
   const [filtroFecha, setFiltroFecha] = useState(''); // Formato YYYY-MM-DD
 
   useEffect(() => {
-    // Traemos los logs ordenados por fecha, del más reciente al más antiguo
-    const q = query(collection(db, 'historial_actividad'), orderBy('fecha', 'desc'));
+    // Traemos los logs ordenados por fecha, del más reciente al más antiguo. 
+    // Agregamos un límite de seguridad (ej. 500) para no consumir lecturas infinitas de Firebase
+    const q = query(collection(db, 'historial_actividad'), orderBy('fecha', 'desc'), limit(500));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as LogRecord));
       setLogs(data);
@@ -30,8 +31,14 @@ export const LogsDashboard = () => {
     return () => unsubscribe();
   }, []);
 
+  // Verificar si hay al menos un filtro activo
+  const hayFiltrosActivos = filtroUsuario !== '' || filtroModulo !== '' || filtroFecha !== '';
+
   // Lógica de Filtrado Múltiple
   const logsFiltrados = useMemo(() => {
+    // Si no hay filtros activos, no mostramos NINGÚN registro
+    if (!hayFiltrosActivos) return [];
+
     return logs.filter(log => {
       const coincideUsuario = filtroUsuario ? log.usuario.toLowerCase().includes(filtroUsuario.toLowerCase()) : true;
       const coincideModulo = filtroModulo ? log.modulo.toLowerCase().includes(filtroModulo.toLowerCase()) : true;
@@ -39,7 +46,7 @@ export const LogsDashboard = () => {
       
       return coincideUsuario && coincideModulo && coincideFecha;
     });
-  }, [logs, filtroUsuario, filtroModulo, filtroFecha]);
+  }, [logs, filtroUsuario, filtroModulo, filtroFecha, hayFiltrosActivos]);
 
   // Formatear la fecha estrictamente en español
   const formatearFechaHora = (fechaIso: string) => {
@@ -55,7 +62,7 @@ export const LogsDashboard = () => {
     });
   };
 
-  // Extraer lista de módulos únicos para el selector
+  // Extraer lista de módulos únicos para el selector (basado en los logs recientes)
   const modulosUnicos = Array.from(new Set(logs.map(log => log.modulo))).sort();
 
   return (
@@ -64,7 +71,7 @@ export const LogsDashboard = () => {
       {/* CABECERA */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2 style={{ fontSize: '1.25rem', color: '#8b949e', margin: 0, fontWeight: '400' }}>
-          Configuración {'>'} <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Historial de Actividad ({logsFiltrados.length})</span>
+          Configuración {'>'} <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Historial de Actividad {hayFiltrosActivos ? `(${logsFiltrados.length})` : ''}</span>
         </h2>
       </div>
 
@@ -134,8 +141,15 @@ export const LogsDashboard = () => {
             </tr>
           </thead>
           <tbody>
-            {logsFiltrados.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay registros que coincidan con los filtros.</td></tr>
+            {!hayFiltrosActivos ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: 'center', padding: '60px', color: '#8b949e' }}>
+                  <div style={{ fontSize: '1.1rem', marginBottom: '8px' }}>🔍</div>
+                  Por favor, aplica al menos un filtro en la parte superior para visualizar el historial.
+                </td>
+              </tr>
+            ) : logsFiltrados.length === 0 ? (
+              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay registros que coincidan con los filtros aplicados.</td></tr>
             ) : (
               logsFiltrados.map(log => (
                 <tr key={log.id} style={{ borderBottom: '1px solid #21262d' }}>
