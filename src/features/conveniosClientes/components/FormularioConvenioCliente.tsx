@@ -43,7 +43,8 @@ const SearchableSelect: React.FC<{
           setIsOpen(true);
         }}
         onBlur={() => {
-          setTimeout(() => setIsOpen(false), 200);
+          // CORRECCIÓN 2: Eliminado el setTimeout problemático
+          setIsOpen(false);
           setSearchTerm(selectedLabel); 
         }}
         required={required && !value} 
@@ -59,7 +60,13 @@ const SearchableSelect: React.FC<{
             filteredOptions.map(opt => (
               <li
                 key={opt.id}
-                onClick={() => { onChange(opt.id, opt.label); setSearchTerm(opt.label); setIsOpen(false); }}
+                // CORRECCIÓN 2: onMouseDown evita que se dispare el onBlur del input antes de seleccionar
+                onMouseDown={(e) => { 
+                  e.preventDefault(); 
+                  onChange(opt.id, opt.label); 
+                  setSearchTerm(opt.label); 
+                  setIsOpen(false); 
+                }}
                 style={{ padding: '8px 12px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #21262d', fontSize: '0.85rem' }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
@@ -189,15 +196,16 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   useEffect(() => {
     const cargarCatalogos = async () => {
       try {
-        const catEmpresasSnap = await getDocs(collection(db, 'catalogo_tipo_empresa'));
-        const idsValidosClientePaga: string[] = [];
-        catEmpresasSnap.forEach(doc => { if (doc.data().tipo?.toLowerCase().includes('cliente (paga)')) idsValidosClientePaga.push(doc.id); });
-
         const empSnapshot = await getDocs(collection(db, 'empresas'));
         const todasEmpresas = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // CORRECCIÓN 1: Selección directa por status y 7eec9cbb
         setClientes(todasEmpresas.filter((emp: any) => {
-          if (Array.isArray(emp.tiposEmpresa)) return emp.tiposEmpresa.some((valor: string) => valor.toLowerCase().includes('cliente (paga)') || idsValidosClientePaga.includes(valor));
-          return JSON.stringify(emp).toLowerCase().includes('cliente (paga)');
+          const isActiva = emp.status === 'Activa';
+          const hasTipo = Array.isArray(emp.tiposEmpresa) 
+            ? emp.tiposEmpresa.includes('7eec9cbb') 
+            : emp.tiposEmpresa === '7eec9cbb';
+          return isActiva && hasTipo;
         }));
 
         const monSnapshot = await getDocs(collection(db, 'catalogo_moneda'));
@@ -220,7 +228,6 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
           const q = query(collection(db, 'convenios_clientes_detalles'), where('convenioId', '==', initialData.id));
           const snap = await getDocs(q);
           
-          // ✅ CORRECCIÓN CRÍTICA: Cruzamos el ID contra la lista de tarifarios para recuperar el nombre
           const detallesBD = snap.docs.map(docSnap => {
             const data = docSnap.data();
             const refMaster = tarifarios.find(t => t.id === data.tipoConvenioId);
@@ -228,7 +235,6 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
               id: docSnap.id,
               convenioId: data.convenioId,
               tipoConvenioId: data.tipoConvenioId,
-              // Si el nombre ya está en BD lo usamos, si no, lo recuperamos del catálogo
               tipoConvenioNombre: data.tipoConvenioNombre || (refMaster ? refMaster.descripcion : 'No identificado'),
               tarifa: data.tarifa || 0
             } as ConvenioDetalleRecord;
@@ -242,7 +248,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
       setFormData(prev => ({ ...prev, numeroConvenio: generarSiguienteConvenio() }));
       setDetalles([]);
     }
-  }, [initialData, registrosExistentes, tarifarios]); // Se dispara cuando los tarifarios están listos
+  }, [initialData, registrosExistentes, tarifarios]); 
 
   const generarSiguienteConvenio = () => {
     if (registrosExistentes.length === 0) return 'CONV-001';
@@ -280,7 +286,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     const nuevoDetalle = {
       id: `local_${Date.now()}`, 
       tipoConvenioId: detalleDraft.tipoConvenioId,
-      tipoConvenioNombre: detalleDraft.tipoConvenioNombre, // ✅ SE INYECTA EL NOMBRE AQUÍ PARA LA UI
+      tipoConvenioNombre: detalleDraft.tipoConvenioNombre,
       tarifa: detalleDraft.tarifa,
       _isNew: true 
     };
@@ -302,28 +308,35 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     setCargando(true);
     try {
       const batch = writeBatch(db);
-      let masterId = formData.id;
+      
+      // CORRECCIÓN 3: Aseguramos la existencia de la llave primaria para los detalles
+      let masterId = initialData?.id || (formData as any).id;
       const docRefMaestro = masterId ? doc(db, 'convenios_clientes', masterId) : doc(collection(db, 'convenios_clientes'));
       
       if (!masterId) {
         masterId = docRefMaestro.id;
-        batch.set(docRefMaestro, { ...formData, numeroConvenio: generarSiguienteConvenio() });
+        const { id, ...dataToSave } = formData as any; // Evita inyectar id undefined al crear
+        batch.set(docRefMaestro, { ...dataToSave, numeroConvenio: generarSiguienteConvenio() });
       } else {
-        batch.update(docRefMaestro, { ...formData });
+        const { id, ...dataToSave } = formData as any;
+        batch.update(docRefMaestro, { ...dataToSave });
       }
 
       detalles.forEach(det => {
         if (det._isNew) {
           const detRef = doc(collection(db, 'convenios_clientes_detalles'));
           batch.set(detRef, {
-            convenioId: masterId,
+            convenioId: masterId, // Relación fuerte a llave primaria
             tipoConvenioId: det.tipoConvenioId,
-            tipoConvenioNombre: det.tipoConvenioNombre, // ✅ SE GUARDA EN DB PARA FUTURAS CONSULTAS
-            tarifa: det.tarifa
+            tipoConvenioNombre: det.tipoConvenioNombre,
+            tarifa: Number(det.tarifa)
           });
         } else {
           const detRef = doc(db, 'convenios_clientes_detalles', det.id!);
-          batch.update(detRef, { tarifa: det.tarifa });
+          batch.update(detRef, { 
+            tarifa: Number(det.tarifa),
+            convenioId: masterId // Garantizamos que la relación se mantenga en DB
+          });
         }
       });
 

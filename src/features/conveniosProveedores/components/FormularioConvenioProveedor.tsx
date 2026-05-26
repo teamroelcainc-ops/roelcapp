@@ -31,7 +31,11 @@ const SearchableSelect: React.FC<{
         value={isOpen ? searchTerm : selectedLabel}
         onChange={(e) => { setSearchTerm(e.target.value); setIsOpen(true); }}
         onFocus={() => { setSearchTerm(''); setIsOpen(true); }}
-        onBlur={() => { setTimeout(() => setIsOpen(false), 200); setSearchTerm(selectedLabel); }}
+        onBlur={() => { 
+          // CORRECCIÓN 2: Eliminado el setTimeout problemático
+          setIsOpen(false); 
+          setSearchTerm(selectedLabel); 
+        }}
         required={required && !value} 
         style={{ cursor: 'text', border: isOpen ? '1px solid #3b82f6' : '', backgroundColor: '#0d1117', color: '#c9d1d9' }}
       />
@@ -42,7 +46,15 @@ const SearchableSelect: React.FC<{
         }}>
           {filteredOptions.length > 0 ? (
             filteredOptions.map(opt => (
-              <li key={opt.id} onClick={() => { onChange(opt.id, opt.label); setSearchTerm(opt.label); setIsOpen(false); }}
+              <li 
+                key={opt.id} 
+                // CORRECCIÓN 2: onMouseDown evita que se dispare el onBlur del input antes de seleccionar
+                onMouseDown={(e) => { 
+                  e.preventDefault(); 
+                  onChange(opt.id, opt.label); 
+                  setSearchTerm(opt.label); 
+                  setIsOpen(false); 
+                }}
                 style={{ padding: '8px 12px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #21262d', fontSize: '0.85rem' }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
@@ -104,21 +116,21 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
   useEffect(() => {
     const cargarCatalogos = async () => {
       try {
-        const catEmpresasSnap = await getDocs(collection(db, 'catalogo_tipo_empresa'));
-        const idsValidosProveedor: string[] = [];
-        catEmpresasSnap.forEach(doc => { if (doc.data().tipo?.toLowerCase().includes('proveedor')) idsValidosProveedor.push(doc.id); });
-
         const empSnapshot = await getDocs(collection(db, 'empresas'));
         const todasEmpresas = empSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // CORRECCIÓN 1: Selección estricta de proveedores con status Activa y tipo ca21ab07
         setProveedores(todasEmpresas.filter((emp: any) => {
-          if (Array.isArray(emp.tiposEmpresa)) return emp.tiposEmpresa.some((v: string) => v === '11894dfd' || idsValidosProveedor.includes(v));
-          return JSON.stringify(emp).toLowerCase().includes('proveedor');
+          const isActiva = emp.status === 'Activa';
+          const hasTipo = Array.isArray(emp.tiposEmpresa) 
+            ? emp.tiposEmpresa.includes('ca21ab07') 
+            : emp.tiposEmpresa === 'ca21ab07';
+          return isActiva && hasTipo;
         }));
 
         const monSnapshot = await getDocs(collection(db, 'catalogo_moneda'));
         setMonedas(monSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
 
-        // Cargamos todas las tarifas de referencia (El Maestro de Tipos de Convenio)
         const tarifarioSnapshot = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
         setTarifarios(tarifarioSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
       } catch (error) { console.error("Error catálogos:", error); }
@@ -126,7 +138,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     cargarCatalogos();
   }, []);
 
-  // 2. CARGA DE DATOS Y JOIN DE NOMBRES (HIDRATACIÓN BLINDADA CONTRA DATOS VIEJOS)
+  // 2. CARGA DE DATOS Y JOIN DE NOMBRES
   useEffect(() => {
     if (initialData && initialData.id && tarifarios.length > 0) {
       setFormData(initialData);
@@ -138,26 +150,19 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
           
           const detallesBD = snap.docs.map(docSnap => {
             const data = docSnap.data();
-            
-            // ✅ Rescate de ID: Los datos viejos pueden usar nombres de campo diferentes
             const idReal = data.tipoConvenioId || data.tarifaId || data.tipo_convenio || '';
-            
-            // Cruzamos con el maestro de tarifas
             const refMaster = tarifarios.find(t => String(t.id).trim() === String(idReal).trim());
             
             let nombreAsignado = data.tipoConvenioNombre;
-            
-            // ✅ FORZAMOS LA SOBREESCRITURA si el campo viene vacío O si dice "Concepto no identificado"
             if (!nombreAsignado || String(nombreAsignado).trim() === '' || String(nombreAsignado).includes('no identificado')) {
-              // Priorizamos tipo_operacionNombre (solicitud exacta del usuario)
               nombreAsignado = refMaster ? (refMaster.tipo_operacionNombre || refMaster.tipo_operacion || refMaster.descripcion || 'Sin nombre en catálogo') : 'Concepto no identificado';
             }
 
             return {
               id: docSnap.id,
               convenioId: data.convenioId,
-              tipoConvenioId: idReal, // Guardamos el ID rescatado
-              tipoConvenioNombre: nombreAsignado, // Inyectamos el nombre validado
+              tipoConvenioId: idReal,
+              tipoConvenioNombre: nombreAsignado,
               tarifa: data.tarifa || 0
             } as ConvenioProveedorDetalleRecord;
           });
@@ -170,7 +175,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
       setFormData(prev => ({ ...prev, numeroConvenio: generarSiguienteConvenio() }));
       setDetalles([]);
     }
-  }, [initialData, registrosExistentes, tarifarios]); // Se recarga si los tarifarios cambian
+  }, [initialData, registrosExistentes, tarifarios]);
 
   const generarSiguienteConvenio = () => {
     if (registrosExistentes.length === 0) return 'CPRV-001';
@@ -181,8 +186,6 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
   const handleTipoConvenioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
     const tarifario = tarifarios.find(t => t.id === id);
-    
-    // ✅ Al seleccionar un nuevo elemento, buscamos estrictamente tipo_operacionNombre
     const nombreTarifario = tarifario ? (tarifario.tipo_operacionNombre || tarifario.tipo_operacion || tarifario.descripcion || 'Desconocido') : '';
 
     let sugerencias: number[] = [];
@@ -228,32 +231,36 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     setCargando(true);
     try {
       const batch = writeBatch(db);
-      let masterId = formData.id;
+      
+      // CORRECCIÓN 3: Extracción explícita para asegurar la integridad de la relación convenioId
+      let masterId = initialData?.id || (formData as any).id;
       const docRefMaestro = masterId ? doc(db, 'convenios_proveedores', masterId) : doc(collection(db, 'convenios_proveedores'));
       
       if (!masterId) {
         masterId = docRefMaestro.id;
-        batch.set(docRefMaestro, { ...formData, numeroConvenio: generarSiguienteConvenio() });
+        const { id, ...dataToSave } = formData as any;
+        batch.set(docRefMaestro, { ...dataToSave, numeroConvenio: generarSiguienteConvenio() });
       } else {
-        batch.update(docRefMaestro, { ...formData });
+        const { id, ...dataToSave } = formData as any;
+        batch.update(docRefMaestro, { ...dataToSave });
       }
 
       detalles.forEach(det => {
         if (det._isNew) {
           const detRef = doc(collection(db, 'convenios_proveedores_detalles'));
           batch.set(detRef, { 
-            convenioId: masterId, 
+            convenioId: masterId, // Forzado relacional fuerte
             tipoConvenioId: det.tipoConvenioId, 
             tipoConvenioNombre: det.tipoConvenioNombre, 
-            tarifa: det.tarifa 
+            tarifa: Number(det.tarifa)
           });
         } else {
           const detRef = doc(db, 'convenios_proveedores_detalles', det.id!);
-          // Al actualizar, inyectamos el nombre reparado de vuelta a Firebase
           batch.update(detRef, { 
-            tarifa: det.tarifa, 
+            tarifa: Number(det.tarifa), 
             tipoConvenioId: det.tipoConvenioId, 
-            tipoConvenioNombre: det.tipoConvenioNombre 
+            tipoConvenioNombre: det.tipoConvenioNombre,
+            convenioId: masterId // Garantizado en actualizaciones
           });
         }
       });
@@ -264,8 +271,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     } catch (error) { 
       console.error(error);
       alert('Error al guardar convenio transaccional.'); 
-    }
-    finally { setCargando(false); }
+    } finally { setCargando(false); }
   };
 
   return (
@@ -357,15 +363,14 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                         <tr key={det.id} style={{ borderTop: '1px solid #30363d', backgroundColor: '#0d1117' }} onMouseEnter={(e:any) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e:any) => e.currentTarget.style.backgroundColor = '#0d1117'}>
                           <td style={{ padding: '12px', textAlign: 'center', color: '#8b949e' }}>{index + 1}</td>
                           <td style={{ padding: '12px', color: '#c9d1d9', fontWeight: '500' }}>{det.tipoConvenioNombre}</td>
-                          <td style={{ padding: '12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right' }}>${Number(det.tarifa).toFixed(2)}</td>
+                          <td style={{ padding: '12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right' }}>${` ${Number(det.tarifa).toFixed(2)}`}</td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
                             <button 
                               type="button" 
                               onClick={() => handleEliminarDetalle(det.id!, det._isNew)} 
                               style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '4px 12px', fontSize: '0.8rem', transition: 'all 0.2s' }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               ✕ Quitar
                             </button>
                           </td>

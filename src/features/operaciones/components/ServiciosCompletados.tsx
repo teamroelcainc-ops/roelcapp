@@ -1,4 +1,3 @@
-// src/features/operaciones/components/ServiciosCompletados.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore'; 
 import { db } from '../../../config/firebase'; 
@@ -8,7 +7,6 @@ import * as XLSX from 'xlsx';
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
-// ✅ TODAS LAS COLUMNAS DE LA COLECCIÓN CON NOMBRES LEGIBLES
 const COLUMNAS_BASE = [
   { id: 'ref', label: '# Referencia', visible: true },
   { id: 'fechaServicio', label: 'Fecha Servicio', visible: true },
@@ -81,6 +79,10 @@ const ServiciosCompletados = () => {
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
 
+  const [filterFecha, setFilterFecha] = useState('');
+  const [filterRemolque, setFilterRemolque] = useState('');
+  const [filterCliente, setFilterCliente] = useState('');
+
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 50;
@@ -91,7 +93,6 @@ const ServiciosCompletados = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // ✅ 1. CARGA RÁPIDA: Solo trae operaciones completadas
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     try {
@@ -114,13 +115,12 @@ const ServiciosCompletados = () => {
       setOperacionesGlobales(operacionesCompletadas);
 
     } catch (e) {
-      console.error("Error al cargar operaciones completadas:", e);
+      console.error(e);
       alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
     }
     setCargandoOperaciones(false);
   };
 
-  // ✅ 2. CARGA PEREZOSA DE CATÁLOGOS (Usada para exportar Excel o generar PDFs)
   const cargarCatalogosSiEsNecesario = async () => {
     if (Object.keys(catalogosGlobales).length > 0) return; 
 
@@ -172,9 +172,9 @@ const ServiciosCompletados = () => {
     init();
   }, []);
 
-  useEffect(() => { setPaginaActual(1); }, [busqueda]);
+  useEffect(() => { setPaginaActual(1); }, [busqueda, filterFecha, filterRemolque, filterCliente]);
   
-  const mostrarDato = (dato: any) => (dato && dato !== '' ? dato : '-');
+  const mostrarDato = (text: any) => (text && text !== '' ? text : '-');
   
   const formatearFechaHora = (isoString: string | undefined | null) => {
     if (!isoString) return '-';
@@ -190,7 +190,6 @@ const ServiciosCompletados = () => {
   const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
     if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) {
       if (catalogo === 'statusServicio' && valorDesnormalizado.length > 30) {
-        // Fallback para estatus viejos mal guardados
       } else {
         return valorDesnormalizado; 
       }
@@ -268,7 +267,7 @@ const ServiciosCompletados = () => {
     setCargandoHorarios(false);
   };
 
-  const handleDescargarSolicitudRetiro = async () => {
+  const handleDescSolicitudRetiro = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
@@ -437,18 +436,38 @@ const ServiciosCompletados = () => {
   };
 
   const operacionesFiltradas = useMemo(() => {
-    const b = busqueda.toLowerCase();
-    return operacionesGlobales.filter(op => {
-      return (
-        String(op.ref || op.id || '').toLowerCase().includes(b) ||
-        String(op.fechaServicio || '').toLowerCase().includes(b) ||
-        String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
-        String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
-        String(op.trafico || '').toLowerCase().includes(b) ||
-        String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
-      );
-    });
-  }, [busqueda, operacionesGlobales]);
+    if (!filterFecha && !filterRemolque && !filterCliente) {
+      return [];
+    }
+
+    let filtradas = operacionesGlobales;
+
+    if (filterFecha) {
+      filtradas = filtradas.filter(op => String(op.fechaServicio || '').includes(filterFecha));
+    }
+    if (filterRemolque) {
+      filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
+    }
+    if (filterCliente) {
+      filtradas = filtradas.filter(op => String(op.clientePaga || op.clienteId || '') === filterCliente || String(op.clienteNombre || '').toLowerCase().includes(filterCliente.toLowerCase()));
+    }
+
+    if (busqueda.trim()) {
+      const b = busqueda.toLowerCase();
+      filtradas = filtradas.filter(op => {
+        return (
+          String(op.ref || op.id || '').toLowerCase().includes(b) ||
+          String(op.fechaServicio || '').toLowerCase().includes(b) ||
+          String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
+          String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
+          String(op.trafico || '').toLowerCase().includes(b) ||
+          String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
+        );
+      });
+    }
+
+    return filtradas;
+  }, [busqueda, operacionesGlobales, filterFecha, filterRemolque, filterCliente]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -541,7 +560,6 @@ const ServiciosCompletados = () => {
     }
   };
 
-  // ✅ EXPORTAR EXCEL TOTALMENTE LIMPIO USANDO XLSX
   const exportarExcel = async () => {
     if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
     
@@ -640,35 +658,54 @@ const ServiciosCompletados = () => {
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
-
-     <div style={{ width: '100%', margin: '0 auto' }}>
+      <div style={{ width: '100%', margin: '0 auto' }}>
         <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#10b981', margin: '0 0 24px 0', fontWeight: 'bold' }}>
           ✓ Servicios Completados
         </h1>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
-          <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
-            <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9' }}>
-              <option>Filtro: Todo</option>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA</label>
+            <input type="date" value={filterFecha} onChange={(e) => setFilterFecha(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+          </div>
+
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE</label>
+            <select value={filterRemolque} onChange={(e) => setFilterRemolque(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
+              <option value="">Seleccionar Remolque...</option>
+              {catalogosGlobales.remolques?.map((rem: any) => (
+                <option key={rem.id} value={rem.id}>{`${rem.nombre || ''} ${rem.placas || rem.placa || ''}`.trim()}</option>
+              ))}
             </select>
           </div>
-          <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'center' }}>
-            <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
-              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Buscar por Ref, Cliente, Status..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }} />
+
+          <div style={{ flex: '1 1 240px' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA</label>
+            <select value={filterCliente} onChange={(e) => setFilterCliente(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
+              <option value="">Seleccionar Cliente...</option>
+              {catalogosGlobales.empresas?.map((emp: any) => (
+                <option key={emp.id} value={emp.id}>{emp.nombre || emp.id}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL</label>
+            <div style={{ position: 'relative' }}>
+              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 36px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
             </div>
           </div>
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
-            
-            <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-            </button>
 
-            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
+          <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', marginLeft: 'auto', paddingBottom: '2px' }}>
+            <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ padding: '10px 12px' }} title="Configurar Columnas">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
-            <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <button className="btn btn-outline" onClick={forzarRecarga} style={{ padding: '10px 12px' }} title="Recargar Catálogos">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
+            </button>
+            <button className="btn btn-outline" onClick={exportarExcel} style={{ padding: '10px 12px' }} title="Exportar a Excel">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
         </div>
@@ -692,8 +729,18 @@ const ServiciosCompletados = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {operacionesEnPantalla.length === 0 ? (
-                    <tr><td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>
+                  {!filterFecha && !filterRemolque && !filterCliente ? (
+                    <tr>
+                      <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e', fontWeight: '500' }}>
+                        Por favor coloque al menos un filtro (Fecha, Remolque o Cliente) para desplegar los registros.
+                      </td>
+                    </tr>
+                  ) : operacionesEnPantalla.length === 0 ? (
+                    <tr>
+                      <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                        Sin resultados para los filtros seleccionados.
+                      </td>
+                    </tr>
                   ) : (
                     operacionesEnPantalla.map((op: any) => (
                       <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
@@ -795,42 +842,42 @@ const ServiciosCompletados = () => {
                 </div>
                 
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
+                  <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
                   </button>
                   <div style={{ width: '1px', height: '24px', backgroundColor: '#30363d', margin: '0 8px' }}></div>
-                  <button onClick={() => setOperacionViendo(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', transition: '0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
+                  <button onClick={() => setOperacionViendo(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', transition: '0.2s' }}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 </div>
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderTop: '1px solid #30363d', marginTop: '4px', flexWrap: 'wrap' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '0.5px', marginRight: '8px' }}>GENERAR DOCUMENTOS:</span>
+                <span style={{ display: 'block', fontSize: '0.75rem', color: '#8b949e', fontWeight: 'bold', letterSpacing: '0.5px', marginRight: '8px' }}>GENERAR DOCUMENTOS:</span>
                 
                 {evalIsFletes && (
                   <>
-                    <button onClick={handleDescargarCartaInstrucciones} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <button onClick={handleDescargarCartaInstrucciones} style={btnDocStyle}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                       Carta Instrucciones
                     </button>
-                    <button onClick={handleDescargarPruebaEntrega} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <button onClick={handleDescargarPruebaEntrega} style={btnDocStyle}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                       Prueba Entrega
                     </button>
                   </>
                 )}
 
-                <button onClick={handleDescargarCheckList} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                <button onClick={handleDescargarCheckList} style={btnDocStyle}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                   Check List
                 </button>
-                <button onClick={handleDescargarSolicitudRetiro} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                <button onClick={handleDescSolicitudRetiro} style={btnDocStyle}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                   Solicitud Retiro
                 </button>
-                <button onClick={handleDescargarInstruccionesServicio} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                <button onClick={handleDescargarInstruccionesServicio} style={btnDocStyle}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                   Instrucciones Serv.
                 </button>
@@ -1180,7 +1227,6 @@ const ServiciosCompletados = () => {
         </div>
       )}
 
-      {/* MODAL HISTORIAL Y STATUS */}
       {modalHorarios === 'historial' && (
         <div className="modal-overlay" style={{ zIndex: 2000 }}>
           <div className="form-card" style={{ maxWidth: '650px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>

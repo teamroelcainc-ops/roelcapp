@@ -382,3 +382,5 @@ export const RemolquesDashboard: React.FC = () => {
     </div>
   );
 };
+
+export default RemolquesDashboard;

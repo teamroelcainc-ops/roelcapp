@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FormularioOperacion } from './FormularioOperacion';
 import { collection, doc, writeBatch, query, getDocs, orderBy, limit, where } from 'firebase/firestore'; 
 import { db, eliminarRegistro } from '../../../config/firebase'; 
-import { obtenerBotonesHorarioDinamicos } from '../config/statusRules';
+import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
 
@@ -85,6 +85,11 @@ const OperacionesDashboard = () => {
   const [nuevoStatus, setNuevoStatus] = useState('');
   const [nuevaFechaHora, setNuevaFechaHora] = useState('');
   
+  // ✅ NUEVO: Estado para indicar qué botón de status se está guardando (para feedback visual)
+  const [guardandoStatusRapido, setGuardandoStatusRapido] = useState<string | null>(null);
+  // ✅ NUEVO: Último status guardado exitosamente (para animación de check verde por 1.5s)
+  const [ultimoStatusGuardado, setUltimoStatusGuardado] = useState<string | null>(null);
+  
   const [botonesDisponibles, setBotonesDisponibles] = useState<string[]>([]);
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
 
@@ -100,48 +105,71 @@ const OperacionesDashboard = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
+  // ✅ MEJORADO: Carga catálogos usando el sistema de caché unificado L1+L2+TTL.
+  // Antes: usaba sessionStorage propio que se pierde al cerrar pestaña, y se re-descargaban
+  // los 16 catálogos en cada sesión nueva. Ahora: localStorage con TTL de 6 horas, así que
+  // mientras estés en horario laboral solo se descargan UNA VEZ al día (o cuando se invalide).
+  //
+  // Mapeo entre nombres internos del componente y nombres reales de las colecciones de Firestore.
+  // Las claves a la izquierda son las que se usan dentro del componente.
   const cargarCatalogosSiEsNecesario = async () => {
-    if (Object.keys(catalogosGlobales).length > 0) return; 
+    if (Object.keys(catalogosGlobales).length > 0) return;
 
-    const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
-    if (cacheCatStr) {
-      setCatalogosGlobales(JSON.parse(cacheCatStr));
-      return;
-    }
-
-    console.warn(`[FIREBASE READ] Descargando catálogos pesados a caché...`);
-    const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap, statusSnap, uniProvSnap, opeProvSnap, monSnap] = await Promise.all([
-      getDocs(collection(db, 'empresas')), getDocs(collection(db, 'catalogo_tipo_operacion')),
-      getDocs(collection(db, 'catalogo_embalaje')), getDocs(collection(db, 'remolques')),
-      getDocs(collection(db, 'catalogo_tarifas_referencia')), getDocs(collection(db, 'convenios_proveedores')),
-      getDocs(collection(db, 'convenios_proveedores_detalles')), getDocs(collection(db, 'tipo_cambio')),
-      getDocs(collection(db, 'convenios_clientes')), getDocs(collection(db, 'convenios_clientes_detalles')),
-      getDocs(collection(db, 'unidades')), getDocs(collection(db, 'empleados')),
-      getDocs(collection(db, 'catalogo_status_servicio')), getDocs(collection(db, 'unidades_proveedor')),
-      getDocs(collection(db, 'proveedores_unidad')), getDocs(collection(db, 'catalogo_moneda'))
-    ]);
-
-    const catGuardados = {
-      empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })), 
-      catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      empleados: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      unidades_proveedor: uniProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoMoneda: monSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
+    const mapeoColecciones: Record<string, { coleccion: string; ttl: number }> = {
+      empresas:                  { coleccion: 'empresas',                       ttl: 6 * 60 * 60 * 1000 },
+      tiposOperacion:            { coleccion: 'catalogo_tipo_operacion',        ttl: 24 * 60 * 60 * 1000 },
+      embalajes:                 { coleccion: 'catalogo_embalaje',              ttl: 24 * 60 * 60 * 1000 },
+      remolques:                 { coleccion: 'remolques',                      ttl: 24 * 60 * 60 * 1000 },
+      tarifas:                   { coleccion: 'catalogo_tarifas_referencia',    ttl: 6 * 60 * 60 * 1000 },
+      conveniosProv:             { coleccion: 'convenios_proveedores',          ttl: 6 * 60 * 60 * 1000 },
+      catalogoConvProvDetalles:  { coleccion: 'convenios_proveedores_detalles', ttl: 6 * 60 * 60 * 1000 },
+      catalogoTC:                { coleccion: 'tipo_cambio',                    ttl: 30 * 60 * 1000 }, // TC cambia diario
+      catalogoConvClientes:      { coleccion: 'convenios_clientes',             ttl: 6 * 60 * 60 * 1000 },
+      catalogoConvDetalles:      { coleccion: 'convenios_clientes_detalles',    ttl: 6 * 60 * 60 * 1000 },
+      unidades:                  { coleccion: 'unidades',                       ttl: 24 * 60 * 60 * 1000 },
+      empleados:                 { coleccion: 'empleados',                      ttl: 24 * 60 * 60 * 1000 },
+      statusServicio:            { coleccion: 'catalogo_status_servicio',       ttl: 24 * 60 * 60 * 1000 },
+      unidades_proveedor:        { coleccion: 'unidades_proveedor',             ttl: 24 * 60 * 60 * 1000 },
+      proveedores_unidad:        { coleccion: 'proveedores_unidad',             ttl: 24 * 60 * 60 * 1000 },
+      catalogoMoneda:            { coleccion: 'catalogo_moneda',                ttl: 24 * 60 * 60 * 1000 },
     };
-    
-    sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
-    setCatalogosGlobales(catGuardados);
+
+    // Helper: leer de localStorage si está fresco, sino de Firestore
+    const cargarUnCatalogo = async (alias: string, coleccion: string, ttlMs: number): Promise<[string, any[]]> => {
+      const lsKey = `cat_v1__${coleccion}`;
+      try {
+        const raw = localStorage.getItem(lsKey);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && Array.isArray(parsed.data) && (Date.now() - parsed.ts) < ttlMs) {
+            return [alias, parsed.data];
+          }
+        }
+      } catch {}
+
+      // No estaba en caché o expiró: leer Firestore
+      console.warn(`[FIREBASE READ] Descargando "${coleccion}"...`);
+      const snap = await getDocs(collection(db, coleccion));
+      const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      try {
+        localStorage.setItem(lsKey, JSON.stringify({ data, ts: Date.now() }));
+      } catch (e) {
+        console.warn(`No se pudo cachear "${coleccion}":`, e);
+      }
+      return [alias, data];
+    };
+
+    try {
+      const entradas = await Promise.all(
+        Object.entries(mapeoColecciones).map(([alias, { coleccion, ttl }]) =>
+          cargarUnCatalogo(alias, coleccion, ttl)
+        )
+      );
+      const catGuardados = Object.fromEntries(entradas);
+      setCatalogosGlobales(catGuardados);
+    } catch (e) {
+      console.error('Error cargando catálogos:', e);
+    }
   };
 
   const descargarOperaciones = async () => {
@@ -181,7 +209,18 @@ const OperacionesDashboard = () => {
     const cargarBotones = async () => {
       if (operacionViendo) {
         const botones = await obtenerBotonesHorarioDinamicos(operacionViendo);
-        setBotonesDisponibles(botones);
+        // ✅ DEBUG: para verificar qué devuelve la función de reglas
+        console.log('[DEBUG StatusButtons] Operación:', {
+          id: operacionViendo.id,
+          status: operacionViendo.status,
+          statusNombre: operacionViendo.statusNombre,
+          tipoOperacion: operacionViendo.tipoOperacionNombre,
+          trafico: operacionViendo.trafico
+        });
+        console.log('[DEBUG StatusButtons] Botones devueltos por la regla:', botones);
+        setBotonesDisponibles(botones || []);
+      } else {
+        setBotonesDisponibles([]);
       }
     };
     cargarBotones();
@@ -341,6 +380,112 @@ const OperacionesDashboard = () => {
     setCargandoHorarios(false);
   };
 
+  // ✅ MEJORADO: Registro de status con respuesta INSTANTÁNEA y CASCADA automática.
+  //
+  // Cuando el usuario presiona un botón manual/decisión, ejecutamos `resolverCascadaStatus`
+  // que devuelve la cadena completa de status que se atraviesan (incluyendo los automáticos
+  // intermedios sin botón). Por ejemplo:
+  //   Click en "Salida del Patio" → cadena: ["Salida del Patio", "En Tránsito a Origen"]
+  // El status final de la operación queda en el ÚLTIMO de la cadena, y la bitácora registra
+  // TODOS los pasos como eventos separados con la misma marca de tiempo.
+  const registrarStatusRapido = async (statusNombre: string) => {
+    if (!operacionViendo || !statusNombre) return;
+    if (guardandoStatusRapido) return;
+
+    setGuardandoStatusRapido(statusNombre);
+
+    // Snapshot para revertir si algo falla
+    const operacionPrevia = operacionViendo;
+    const operacionesPrevias = operacionesGlobales;
+    const botonesPrevios = botonesDisponibles;
+
+    try {
+      // ✅ Resolver la cascada de estados (el manual + los automáticos en cadena)
+      const cadenaStatus = await resolverCascadaStatus(statusNombre, operacionViendo);
+      const statusFinal = cadenaStatus[cadenaStatus.length - 1];
+
+      // ✅ Actualización optimista INMEDIATA con el status FINAL de la cascada
+      const operacionActualizada = {
+        ...operacionViendo,
+        status: statusFinal,
+        statusNombre: statusFinal
+      };
+      setOperacionViendo(operacionActualizada);
+      setOperacionesGlobales(prev => prev.map((op: any) =>
+        op.id === operacionViendo.id ? operacionActualizada : op
+      ));
+
+      // ✅ Recalcular botones del siguiente paso INMEDIATAMENTE
+      obtenerBotonesHorarioDinamicos(operacionActualizada)
+        .then(botones => setBotonesDisponibles(botones || []))
+        .catch(() => {});
+
+      // Calcular fecha/hora local
+      const now = new Date();
+      const tzOffset = now.getTimezoneOffset() * 60000;
+      const fechaHoraLocal = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+      const registradoEn = new Date().toISOString();
+
+      // ✅ Guardado en segundo plano: una entrada en bitácora POR CADA paso de la cascada
+      (async () => {
+        try {
+          const batch = writeBatch(db);
+
+          // Una entrada de historial por cada status en la cadena.
+          // Todos comparten la misma fechaHora (el operador hizo una sola acción) pero quedan registrados.
+          cadenaStatus.forEach((statusPaso, idx) => {
+            const horarioRef = doc(collection(db, 'horarios'));
+            batch.set(horarioRef, {
+              operacionId: operacionViendo.id,
+              status: statusPaso,
+              fechaHora: fechaHoraLocal,
+              registradoEn: registradoEn,
+              // Metadata útil: orden dentro de la cascada (0 = el que presionó el usuario)
+              ordenCascada: idx,
+              esAutomatico: idx > 0,
+            });
+          });
+
+          // El documento de la operación queda con el status FINAL
+          const opRef = doc(db, 'operaciones', String(operacionViendo.id));
+          batch.update(opRef, {
+            status: statusFinal,
+            statusNombre: statusFinal
+          });
+
+          await batch.commit();
+
+          setGuardandoStatusRapido(null);
+          setUltimoStatusGuardado(statusNombre);
+          setTimeout(() => setUltimoStatusGuardado(null), 1500);
+        } catch (e: any) {
+          console.error("Error al registrar status:", e);
+          // ✅ REVERTIR cambios optimistas
+          setOperacionViendo(operacionPrevia);
+          setOperacionesGlobales(operacionesPrevias);
+          setBotonesDisponibles(botonesPrevios);
+          setGuardandoStatusRapido(null);
+
+          // ✅ Detectar si es error de cuota para dar mensaje útil
+          const msg = String(e?.message || e?.code || e || '').toLowerCase();
+          if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
+            alert(
+              "⚠️ Cuota de Firestore agotada.\n\n" +
+              "Tu proyecto superó el límite gratuito diario. La cuota se reinicia a las 2 AM (hora México).\n\n" +
+              "Recomendación: activa el plan Blaze en Firebase Console para evitar este límite."
+            );
+          } else {
+            alert("Error al guardar el status. Se revirtió el cambio.");
+          }
+        }
+      })();
+    } catch (e) {
+      console.error("Error resolviendo cascada:", e);
+      setGuardandoStatusRapido(null);
+      alert("Error al procesar el cambio de status. Intenta de nuevo.");
+    }
+  };
+
   const handleOperacionGuardada = () => {
     descargarOperaciones();
     setEstadoFormulario('cerrado');
@@ -348,6 +493,13 @@ const OperacionesDashboard = () => {
   };
 
   const forzarRecarga = () => {
+    // ✅ Limpiar el nuevo caché de catálogos (todas las claves cat_v1__*)
+    try {
+      Object.keys(localStorage)
+        .filter(k => k.startsWith('cat_v1__') || k.startsWith('flujo_v1__'))
+        .forEach(k => localStorage.removeItem(k));
+    } catch {}
+    // También limpiar el caché viejo por si quedó algo
     sessionStorage.removeItem('roelca_catalogos_v2');
     window.location.reload();
   };
@@ -491,16 +643,12 @@ const OperacionesDashboard = () => {
       placas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
       operador: empNombre,
       descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A',
-      origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
+      origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A', 
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      origenColonia: origenObj ? (origenObj.colonia || 'N/A') : 'N/A',
-      origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
-      destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
+      origenDireccion: 'N/A', origenColonia: 'N/A', origenCP: 'N/A',
+      destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A', 
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
-      destinoColonia: destinoObj ? (destinoObj.colonia || 'N/A') : 'N/A',
-      destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
+      destinoDireccion: 'N/A', destinoColonia: 'N/A', destinoCP: 'N/A',
     });
   };
 
@@ -701,7 +849,6 @@ const OperacionesDashboard = () => {
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
-  const btnActionStyle = { background: '#D84315', border: 'none', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
@@ -879,16 +1026,17 @@ const OperacionesDashboard = () => {
                   <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.6rem', fontWeight: 600, letterSpacing: '-0.5px' }}>
                     Detalle de Operación 
                   </h2>
-                  <div style={{ marginTop: '8px', color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>
-                    {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
+                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>
+                      {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
+                    </span>
+                    <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>
+                      {mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}
+                    </span>
                   </div>
                 </div>
                 
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <button onClick={abrirRegistroHorario} title="Registrar Horario / Cambiar Status" style={btnActionStyle}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                    Status
-                  </button>
                   <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
@@ -898,6 +1046,143 @@ const OperacionesDashboard = () => {
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 </div>
+              </div>
+
+              {/* ✅ REDISEÑADO: Botones de status rápidos con UI/UX moderna.
+                  - Pills con círculo de ícono prominente a la izquierda.
+                  - Feedback instantáneo: el botón muestra check animado al guardar.
+                  - Sin estado "Guardando..." bloqueante: la UI ya reaccionó antes.
+                  - Hover sutil con elevación. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 0 10px 0', borderTop: '1px solid #30363d', flexWrap: 'wrap' }}>
+                <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>SIGUIENTE PASO</span>
+                
+                {botonesDisponibles.length > 0 ? (
+                  <>
+                    {botonesDisponibles.map((botonStr: string) => {
+                      const esExitoso = ultimoStatusGuardado === botonStr;
+                      return (
+                        <button
+                          key={botonStr}
+                          onClick={() => registrarStatusRapido(botonStr)}
+                          disabled={guardandoStatusRapido !== null}
+                          className="status-pill"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '10px',
+                            padding: '6px 18px 6px 6px',
+                            borderRadius: '999px',
+                            border: 'none',
+                            background: esExitoso
+                              ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                              : 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                            color: '#fff',
+                            cursor: guardandoStatusRapido && !esExitoso ? 'wait' : 'pointer',
+                            fontWeight: 600,
+                            fontSize: '0.9rem',
+                            boxShadow: esExitoso
+                              ? '0 4px 14px rgba(16, 185, 129, 0.4)'
+                              : '0 4px 14px rgba(234, 88, 12, 0.35)',
+                            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                            opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1,
+                            position: 'relative',
+                            overflow: 'hidden',
+                          }}
+                          title={`Marcar como: ${botonStr}`}
+                        >
+                          {/* Círculo del ícono */}
+                          <span style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: '50%',
+                            background: 'rgba(255,255,255,0.22)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>
+                            {esExitoso ? (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pop 0.3s ease-out' }}>
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                              </svg>
+                            )}
+                          </span>
+                          <span style={{ whiteSpace: 'nowrap' }}>{botonStr}</span>
+                        </button>
+                      );
+                    })}
+
+                    {/* Botón circular pequeño para registro retroactivo */}
+                    <button
+                      onClick={abrirRegistroHorario}
+                      className="status-circle-btn"
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        background: '#21262d',
+                        border: '1px solid #30363d',
+                        color: '#8b949e',
+                        cursor: 'pointer',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s ease',
+                        flexShrink: 0,
+                      }}
+                      title="Registrar con fecha/hora distinta (retroactivo)"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                      </svg>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ color: '#8b949e', fontSize: '0.85rem', fontStyle: 'italic', marginRight: '8px' }}>
+                      No hay transiciones automáticas configuradas.
+                    </span>
+                    <button
+                      onClick={abrirRegistroHorario}
+                      className="status-pill"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '6px 18px 6px 6px',
+                        borderRadius: '999px',
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: '0.9rem',
+                        boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)',
+                        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      }}
+                      title="Registrar status manualmente"
+                    >
+                      <span style={{
+                        width: 28, height: 28, borderRadius: '50%',
+                        background: 'rgba(255,255,255,0.22)',
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                      </span>
+                      Registrar Status
+                    </button>
+                  </>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderTop: '1px solid #30363d', marginTop: '4px', flexWrap: 'wrap' }}>
@@ -965,7 +1250,7 @@ const OperacionesDashboard = () => {
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Servicio / Status</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.fechaServicio)} <span style={{color: '#30363d', margin: '0 8px'}}>|</span> <span style={{color: '#10b981', fontWeight: 'bold'}}>{operacionViendo.statusNombre || operacionViendo.status || '-'}</span></span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.fechaServicio)} <span style={{color: '#30363d', margin: '0 8px'}}>|</span> <span style={{color: '#10b981', fontWeight: 'bold'}}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span>
                   </div>
                   
                   {evalIsFletes ? (
@@ -1274,15 +1559,18 @@ const OperacionesDashboard = () => {
         </div>
       )}
 
-      {/* MODAL HISTORIAL Y STATUS */}
+      {/* ✅ Modal de registro retroactivo (se mantiene como respaldo si el usuario necesita fecha distinta) */}
       {modalHorarios === 'registrar' && (
         <div className="modal-overlay" style={{ zIndex: 2000 }}>
           <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
             <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '20px 24px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f0f6fc' }}>Nuevo Movimiento</h2>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f0f6fc' }}>Registrar Movimiento (Fecha Personalizada)</h2>
               <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
             </div>
             <div style={{ padding: '24px' }}>
+              <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
+                Usa este formulario solo si necesitas registrar un movimiento con una fecha y hora distinta a la actual.
+              </p>
               <div className="form-group">
                 <label className="form-label" style={{ color: '#8b949e' }}>Fecha y Hora</label>
                 <input type="datetime-local" className="form-control" value={nuevaFechaHora} onChange={e => setNuevaFechaHora(e.target.value)} />
@@ -1290,9 +1578,20 @@ const OperacionesDashboard = () => {
               <div className="form-group">
                 <label className="form-label" style={{ color: '#8b949e' }}>Estatus / Hito</label>
                 <select className="form-control" value={nuevoStatus} onChange={e => setNuevoStatus(e.target.value)}>
-                  {botonesDisponibles.map((botonStr: string) => (
-                    <option key={botonStr} value={botonStr}>{botonStr}</option>
-                  ))}
+                  <option value="">-- Selecciona un status --</option>
+                  {/* Si hay botones disponibles por reglas, usar esos.
+                      Si no, mostrar el catálogo completo de status como fallback. */}
+                  {botonesDisponibles.length > 0 ? (
+                    botonesDisponibles.map((botonStr: string) => (
+                      <option key={botonStr} value={botonStr}>{botonStr}</option>
+                    ))
+                  ) : (
+                    (catalogosGlobales.statusServicio || [])
+                      .filter((s: any) => s.nombre) 
+                      .map((s: any) => (
+                        <option key={s.id} value={s.nombre}>{s.nombre}</option>
+                      ))
+                  )}
                 </select>
               </div>
               <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary" style={{ width: '100%', marginTop: '24px', padding: '12px', borderRadius: '6px', fontWeight: 'bold' }}>
@@ -1342,6 +1641,37 @@ const OperacionesDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* ✅ Animaciones y micro-interacciones para los botones de status */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes pop {
+          0%   { transform: scale(0); opacity: 0; }
+          60%  { transform: scale(1.3); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .status-pill {
+          transform: translateY(0);
+        }
+        .status-pill:not(:disabled):hover {
+          transform: translateY(-2px);
+          filter: brightness(1.08);
+          box-shadow: 0 8px 20px rgba(234, 88, 12, 0.5) !important;
+        }
+        .status-pill:not(:disabled):active {
+          transform: translateY(0);
+          filter: brightness(0.95);
+        }
+        .status-circle-btn:hover {
+          background: #30363d !important;
+          color: #ea580c !important;
+          border-color: #ea580c !important;
+          transform: scale(1.08);
+        }
+      `}</style>
 
     </div>
   );

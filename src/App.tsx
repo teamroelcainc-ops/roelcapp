@@ -1,16 +1,13 @@
-// src/App.tsx
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger'; 
 
-// --- IMPORTACIONES DE MÓDULOS ---
 import { Login } from './features/auth/components/Login';
 import OperacionesDashboard from './features/operaciones/components/OperacionesDashboard';
 import ServiciosCompletados from './features/operaciones/components/ServiciosCompletados';
 import ServiciosCancelados from './features/operaciones/components/ServiciosCancelados';
-
 import EmpresasDashboard from './features/empresas/components/EmpresasDashboard';
 import { ContactosDashboard } from './features/contactos/components/ContactosDashboard';
 import { TipoCambioDashboard } from './features/tipoCambio/components/TipoCambioDashboard';
@@ -34,7 +31,6 @@ import MttoDashboard from './features/gastos/components/mtto/MttoDashboard';
 import { ReferenciasDieselDashboard } from './features/diesel/components/ReferenciasDieselDashboard';
 import { ReferenciasNominaDashboard } from './features/nominas/components/ReferenciasNominaDashboard';
 import { DeduccionesDashboard } from './features/empleados/components/DeduccionesDashboard';
-// ✅ AQUÍ ESTÁ LA IMPORTACIÓN QUE FALTABA Y CAUSABA EL ERROR:
 import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
 
 import './App.css';
@@ -78,17 +74,17 @@ function App() {
   const handleCerrarSesion = async (motivo: 'manual' | 'inactividad' = 'manual') => {
     if (auth.currentUser) {
       try {
-        const detalle = motivo === 'inactividad' ? 'Cierre de sesión automático por inactividad (5 min)' : 'Cierre de sesión manual voluntario';
+        const detalle = motivo === 'inactividad' ? 'Cierre de sesión automático por inactividad (10 min)' : 'Cierre de sesión manual voluntario';
         await registrarLog('Sesión', 'Cierre de Sesión', detalle);
         await updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { isOnline: false });
       } catch (error) {
-        console.warn("No se pudo actualizar estado online o log al salir", error);
+        console.warn(error);
       }
       await signOut(auth);
     }
     setEstaAutenticado(false);
     if (motivo === 'inactividad') {
-      alert("Tu sesión se ha cerrado automáticamente por seguridad tras 5 minutos de inactividad.");
+      alert("Tu sesión se ha cerrado automáticamente por seguridad tras 10 minutos de inactividad.");
     }
   };
 
@@ -97,7 +93,7 @@ function App() {
     let timeoutId: ReturnType<typeof setTimeout>;
     const resetTimer = () => {
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => { handleCerrarSesion('inactividad'); }, 300000); 
+      timeoutId = setTimeout(() => { handleCerrarSesion('inactividad'); }, 600000); 
     };
     window.addEventListener('mousemove', resetTimer);
     window.addEventListener('keydown', resetTimer);
@@ -116,7 +112,7 @@ function App() {
   useEffect(() => {
     const handleTabClose = () => {
       if (auth.currentUser) {
-        updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { isOnline: false }).catch(()=>console.log("Cerró muy rápido"));
+        updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { isOnline: false }).catch(() => console.log("Cerró rápido"));
       }
     };
     window.addEventListener('beforeunload', handleTabClose);

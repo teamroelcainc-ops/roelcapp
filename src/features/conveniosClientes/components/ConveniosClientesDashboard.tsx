@@ -1,125 +1,213 @@
-// src/features/conveniosClientes/components/ConveniosClientesDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc } from 'firebase/firestore';
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase'; 
 import { FormularioConvenioCliente } from './FormularioConvenioCliente';
 import { registrarLog } from '../../../utils/logger';
 
+// ============================================================
+// HELPERS DE CRUCE (NORMALIZACIÓN)
+// ------------------------------------------------------------
+// El problema raíz: una operación guarda el detalle del convenio
+// en el campo "convenio" (ID del doc de convenios_clientes_detalles)
+// y su nombre en "convenioNombre". Para que el cruce no falle nunca,
+// normalizamos textos y cruzamos por VARIAS llaves.
+// ============================================================
+const normalizar = (texto: any): string => {
+  if (texto === null || texto === undefined) return '';
+  return String(texto)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, ''); // quita acentos
+};
+
 export const ConveniosClientesDashboard: React.FC = () => {
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [registroEditando, setRegistroEditando] = useState<any | null>(null);
   
-  // ESTADOS PARA EL DETALLE Y USO
   const [convenioViendo, setConvenioViendo] = useState<any | null>(null);
   const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'detalles' | 'uso'>('general');
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
-  
-  // MAPAS DE USO DOBLES (General y por Detalle)
-  const [lastUsedConvenioMap, setLastUsedConvenioMap] = useState<Record<string, string>>({}); 
-  const [lastUsedDetalleMap, setLastUsedDetalleMap] = useState<Record<string, string>>({});
 
-  // ESTADOS DE BAJA
+  // Todas las operaciones (en vivo) — base para todos los cruces.
+  const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
+  // Todos los detalles de convenios (en vivo): doc de convenios_clientes_detalles.
+  const [detallesGlobales, setDetallesGlobales] = useState<any[]>([]);
+
   const [modalBajaAbierto, setModalBajaAbierto] = useState(false);
   const [convenioParaBaja, setConvenioParaBaja] = useState<any | null>(null);
   const [fechaBaja, setFechaBaja] = useState(new Date().toISOString().split('T')[0]);
   const [observacionesBaja, setObservacionesBaja] = useState('');
   const [guardandoBaja, setGuardandoBaja] = useState(false);
 
-  // Lista de TODOS los registros bajados de la BD
   const [registrosGlobales, setRegistrosGlobales] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [filtroActivo, setFiltroActivo] = useState('Todo');
   
-  // ESTADOS DE PAGINACIÓN
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
-  // Estado para el hover de las filas
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
+  // =========================================================
+  // 1. CARGA EN TIEMPO REAL: CONVENIOS + DETALLES + OPERACIONES
+  // =========================================================
   useEffect(() => {
-    // 1. Escuchar Convenios
+    // 1.A) Convenios maestros
     const unsubscribeConvenios = onSnapshot(collection(db, 'convenios_clientes'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Ordenamiento descendente estricto por número de convenio
       data.sort((a: any, b: any) => {
         const numA = parseInt((a.numeroConvenio || '').replace(/\D/g, ''), 10) || 0;
         const numB = parseInt((b.numeroConvenio || '').replace(/\D/g, ''), 10) || 0;
         return numB - numA;
       });
-      
       setRegistrosGlobales(data);
     });
 
-    // 2. Escuchar Operaciones para el Semáforo General y de Detalles
-    const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(1500));
+    // 1.B) Detalles de convenios (convenios_clientes_detalles)
+    const unsubscribeDetalles = onSnapshot(collection(db, 'convenios_clientes_detalles'), (snap) => {
+      setDetallesGlobales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    // 1.C) Operaciones (limitadas a las más recientes para el cruce)
+    const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(3000));
     const unsubscribeOperaciones = onSnapshot(qOps, (snap) => {
-      const convMap: Record<string, string> = {};
-      const detMap: Record<string, string> = {};
-      
-      snap.docs.forEach(doc => {
-        const data = doc.data();
-        const date = data.fechaServicio || data.createdAt;
-        const convenioId = data.convenioCliente || data.convenioClienteId || data.convenioId;
-        const detalleId = data.convenioTarifa || data.convenioTarifaId || data.tarifaId; 
-        
-        if (date) {
-          const dateStr = date.split('T')[0];
-
-          // Guardamos el uso del convenio general
-          if (convenioId && typeof convenioId === 'string') {
-            if (!convMap[convenioId] || new Date(dateStr) > new Date(convMap[convenioId])) {
-              convMap[convenioId] = dateStr;
-            }
-          }
-
-          // Guardamos el uso del detalle/tarifa específico
-          if (detalleId && typeof detalleId === 'string') {
-            if (!detMap[detalleId] || new Date(dateStr) > new Date(detMap[detalleId])) {
-              detMap[detalleId] = dateStr;
-            }
-          }
-        }
-      });
-      setLastUsedConvenioMap(convMap);
-      setLastUsedDetalleMap(detMap);
+      setOperacionesGlobales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
     return () => {
       unsubscribeConvenios();
+      unsubscribeDetalles();
       unsubscribeOperaciones();
     };
   }, []);
 
-  // Mapeamos los registros integrando la regla: "La fecha del convenio es la máxima de sus detalles"
-  const registrosListos = useMemo(() => {
-    return registrosGlobales.map(reg => {
-      // Tomamos la fecha base si la hay
-      let maxFechaUso = lastUsedConvenioMap[reg.id] || reg.fechaUltimoUso || '';
+  // =========================================================
+  // 2. ÍNDICES DE CRUCE ROBUSTOS
+  //    Construimos varios mapas para que el cruce funcione
+  //    aunque la operación solo guarde el ID, solo el nombre,
+  //    o ambos. Llave de detalle = idDetalle.
+  // =========================================================
 
-      // Iteramos sus detalles para buscar una fecha más reciente
-      if (reg.detalles && Array.isArray(reg.detalles)) {
-        reg.detalles.forEach((det: any) => {
-          const idDet = det.id || det.idDetalle;
-          if (idDet && lastUsedDetalleMap[idDet]) {
-            if (!maxFechaUso || new Date(lastUsedDetalleMap[idDet]) > new Date(maxFechaUso)) {
-              maxFechaUso = lastUsedDetalleMap[idDet];
-            }
-          }
-        });
+  // Mapa auxiliar: idDetalle -> convenioId maestro
+  const detalleToConvenio = useMemo(() => {
+    const m: Record<string, string> = {};
+    detallesGlobales.forEach(d => {
+      if (d.convenioId) m[String(d.id).trim()] = String(d.convenioId).trim();
+    });
+    return m;
+  }, [detallesGlobales]);
+
+  // Para cruzar por nombre necesitamos saber qué convenio (cliente) tiene cada detalle.
+  // Mapa: convenioId -> clienteId
+  const convenioToCliente = useMemo(() => {
+    const m: Record<string, string> = {};
+    registrosGlobales.forEach(c => {
+      if (c.clienteId) m[String(c.id).trim()] = String(c.clienteId).trim();
+    });
+    return m;
+  }, [registrosGlobales]);
+
+  // Última fecha de uso por DETALLE.
+  // Se calcula recorriendo TODAS las operaciones y cruzando por:
+  //   (a) ID del detalle  -> operacion.convenio === detalle.id
+  //   (b) Nombre + cliente -> operacion.convenioNombre === detalle.tipoConvenioNombre
+  //       y el cliente de la operación coincide con el del convenio.
+  const lastUsedDetalleMap = useMemo(() => {
+    const map: Record<string, string> = {};
+
+    // Índice de nombres: "clienteId|nombreNormalizado" -> [idDetalle, ...]
+    const nombreIndex: Record<string, string[]> = {};
+    detallesGlobales.forEach(d => {
+      const idDet = String(d.id).trim();
+      const convId = detalleToConvenio[idDet];
+      const cliId = convId ? (convenioToCliente[convId] || '') : '';
+      const nom = normalizar(
+        d.tipoConvenioNombre || d.tarifaNombre || d.nombre || d.descripcion
+      );
+      if (!nom) return;
+      const key = `${cliId}|${nom}`;
+      if (!nombreIndex[key]) nombreIndex[key] = [];
+      nombreIndex[key].push(idDet);
+      // También indexamos sin cliente, como último recurso.
+      const keySinCliente = `|${nom}`;
+      if (!nombreIndex[keySinCliente]) nombreIndex[keySinCliente] = [];
+      nombreIndex[keySinCliente].push(idDet);
+    });
+
+    const registrar = (idDetalle: string, fecha: string) => {
+      const id = String(idDetalle).trim();
+      if (!id || !fecha) return;
+      if (!map[id] || new Date(fecha) > new Date(map[id])) {
+        map[id] = fecha;
+      }
+    };
+
+    operacionesGlobales.forEach(op => {
+      const fechaRaw = op.fechaServicio || op.createdAt;
+      if (!fechaRaw || typeof fechaRaw !== 'string') return;
+      const fecha = fechaRaw.split('T')[0];
+
+      // (a) Cruce directo por ID del detalle.
+      const idEnOp = op.convenio || op.convenioTarifa || op.convenioTarifaId || op.tarifaId;
+      let cruzadoPorId = false;
+      if (idEnOp && typeof idEnOp === 'string' && detalleToConvenio[String(idEnOp).trim()] !== undefined) {
+        registrar(idEnOp, fecha);
+        cruzadoPorId = true;
       }
 
-      return {
-        ...reg,
-        _fechaDinamicaUso: maxFechaUso,
-        status: reg.status || 'Activo'
-      };
+      // (b) Cruce por nombre del detalle (respaldo si el ID no existe/coincide).
+      if (!cruzadoPorId) {
+        const nombreOp = normalizar(
+          op.convenioNombre || op.convenioTarifaNombre || op.tarifaNombre || op.convenioTarifa
+        );
+        if (nombreOp) {
+          const cliOp = String(op.clientePaga || op.clienteId || '').trim();
+          // 1ro intentamos con cliente (más preciso)
+          let candidatos = nombreIndex[`${cliOp}|${nombreOp}`];
+          // 2do, si no hay, intentamos solo por nombre
+          if (!candidatos || candidatos.length === 0) {
+            candidatos = nombreIndex[`|${nombreOp}`];
+          }
+          if (candidatos) {
+            candidatos.forEach(idDet => registrar(idDet, fecha));
+          }
+        }
+      }
     });
-  }, [registrosGlobales, lastUsedConvenioMap, lastUsedDetalleMap]);
 
-  // EFECTO: AUTOMATIZAR ESTATUS (Baja/Activo) POR INACTIVIDAD ROJA (>90 días)
+    return map;
+  }, [operacionesGlobales, detallesGlobales, detalleToConvenio, convenioToCliente]);
+
+  // Última fecha de uso por CONVENIO maestro = la fecha más reciente
+  // entre TODOS sus detalles (el último detalle usado).
+  const lastUsedConvenioMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    Object.entries(lastUsedDetalleMap).forEach(([idDetalle, fecha]) => {
+      const convId = detalleToConvenio[idDetalle];
+      if (!convId) return;
+      if (!map[convId] || new Date(fecha) > new Date(map[convId])) {
+        map[convId] = fecha;
+      }
+    });
+    return map;
+  }, [lastUsedDetalleMap, detalleToConvenio]);
+
+  // =========================================================
+  // 3. REGISTROS LISTOS (con fecha dinámica de uso)
+  // =========================================================
+  const registrosListos = useMemo(() => {
+    return registrosGlobales.map(reg => ({
+      ...reg,
+      _fechaDinamicaUso: lastUsedConvenioMap[reg.id] || reg.fechaUltimoUso || '',
+      status: reg.status || 'Activo'
+    }));
+  }, [registrosGlobales, lastUsedConvenioMap]);
+
+  // =========================================================
+  // 4. SINCRONIZACIÓN AUTOMÁTICA DE STATUS (Semáforo > 90 días)
+  // =========================================================
   useEffect(() => {
     const syncStatusAutomatico = async () => {
       if (registrosListos.length === 0) return;
@@ -156,9 +244,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
       if (updates > 0) {
         try {
           await batch.commit();
-          console.log(`[CONVENIOS CLIENTES] Estatus de ${updates} convenios sincronizados por inactividad.`);
         } catch (error) {
-          console.error("Error al aplicar bajas automáticas:", error);
         }
       }
     };
@@ -181,25 +267,53 @@ export const ConveniosClientesDashboard: React.FC = () => {
     setEstadoFormulario('abierto'); 
   };
 
-  // AL ABRIR DETALLE, BUSCAMOS EL HISTORIAL DE USO DEL CONVENIO Y SUS DETALLES
+  // =========================================================
+  // 5. FICHA DE DETALLE
+  //    Carga los detalles del convenio y filtra (desde memoria,
+  //    sin nuevas lecturas) las operaciones que lo usaron.
+  // =========================================================
   const verDetalle = async (convenio: any) => {
-    setConvenioViendo(convenio);
+    setConvenioViendo({ ...convenio, detalles: [] }); 
     setActiveTabDetalle('general');
     setCargandoUso(true);
     setOperacionesUso([]);
 
     try {
-      const q = query(collection(db, 'operaciones'), where('convenioCliente', '==', convenio.id), limit(30));
-      const snap = await getDocs(q);
-      
-      const opsList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      opsList.sort((a: any, b: any) => 
+      // Detalles del convenio
+      const qDetalles = query(collection(db, 'convenios_clientes_detalles'), where('convenioId', '==', convenio.id));
+      const snapDetalles = await getDocs(qDetalles);
+      const detallesList = snapDetalles.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setConvenioViendo((prev: any) => ({ ...prev, detalles: detallesList }));
+
+      // IDs y nombres válidos de este convenio para filtrar operaciones.
+      const idsDetalles = new Set(detallesList.map(d => String(d.id).trim()));
+      const nombresDetalles = new Set(
+        detallesList
+          .map(d => normalizar((d as any).tipoConvenioNombre || (d as any).tarifaNombre || (d as any).nombre || (d as any).descripcion))
+          .filter(Boolean)
+      );
+      const clienteConvenio = String(convenio.clienteId || '').trim();
+
+      // Filtramos operaciones desde memoria (operacionesGlobales ya está en vivo).
+      const opsFiltradas = operacionesGlobales.filter(op => {
+        const idEnOp = String(op.convenio || op.convenioTarifa || op.convenioTarifaId || op.tarifaId || '').trim();
+        if (idEnOp && idsDetalles.has(idEnOp)) return true;
+
+        // Respaldo por nombre + cliente
+        const nombreOp = normalizar(op.convenioNombre || op.convenioTarifaNombre || op.tarifaNombre || op.convenioTarifa);
+        if (!nombreOp || !nombresDetalles.has(nombreOp)) return false;
+        const cliOp = String(op.clientePaga || op.clienteId || '').trim();
+        // Si conocemos el cliente, exigimos coincidencia; si no, aceptamos por nombre.
+        return !clienteConvenio || !cliOp || cliOp === clienteConvenio;
+      });
+
+      opsFiltradas.sort((a: any, b: any) => 
         new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime()
       );
       
-      setOperacionesUso(opsList);
+      setOperacionesUso(opsFiltradas.slice(0, 50));
     } catch (error) {
-      console.error("Error al obtener historial de uso:", error);
+      console.error("Error cargando ficha del convenio:", error);
     } finally {
       setCargandoUso(false);
     }
@@ -212,13 +326,11 @@ export const ConveniosClientesDashboard: React.FC = () => {
         await eliminarRegistro('convenios_clientes', id);
         await registrarLog('Convenios', 'Eliminación', `Eliminó permanentemente un convenio de cliente.`);
       } catch (error) {
-        console.error("Error al eliminar:", error);
         alert('Hubo un error al eliminar. Revisa tu conexión.');
       }
     }
   };
 
-  // FUNCIONES DE BAJA MANUAL
   const abrirModalBaja = (convenio: any) => {
     setConvenioParaBaja(convenio);
     setFechaBaja(new Date().toISOString().split('T')[0]);
@@ -256,21 +368,19 @@ export const ConveniosClientesDashboard: React.FC = () => {
     });
   };
 
-  // INDICADOR DE INACTIVIDAD (PUNTO DE COLOR CSS)
   const obtenerColorInactividad = (fechaStr: string) => {
-    if (!fechaStr) return '#8b949e'; // Gris si nunca se ha usado
+    if (!fechaStr) return '#8b949e'; 
     const fechaUltimo = new Date(fechaStr + 'T00:00:00');
     const hoy = new Date();
     
     const diffTime = hoy.getTime() - fechaUltimo.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
-    if (diffDays <= 45) return '#10b981'; // Verde
-    if (diffDays >= 46 && diffDays <= 90) return '#f59e0b'; // Amarillo
-    return '#ef4444'; // Rojo
+    if (diffDays <= 45) return '#10b981'; 
+    if (diffDays >= 46 && diffDays <= 90) return '#f59e0b'; 
+    return '#ef4444'; 
   };
 
-  // Filtrado GLOBAL por buscador inteligente y Estatus
   const registrosFiltrados = useMemo(() => {
     return registrosListos.filter(reg => {
       let pasaFiltro = true;
@@ -291,7 +401,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
     });
   }, [registrosListos, filtroActivo, busqueda]);
 
-  // LÓGICA DE PAGINACIÓN
   const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
@@ -300,7 +409,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
-  // Función para Exportar a CSV
   const exportarCSV = () => {
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
     
@@ -351,15 +459,12 @@ export const ConveniosClientesDashboard: React.FC = () => {
 
       <div style={{ width: '100%', margin: '0 auto' }}>
         
-        {/* TÍTULO LIMPIO */}
         <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
           Convenios de Clientes
         </h1>
 
-        {/* BARRA DE CONTROLES */}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
           
-          {/* Izquierda: Filtro de Estatus */}
           <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
             <select 
               className="form-control" 
@@ -373,7 +478,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
             </select>
           </div>
 
-          {/* Centro: Buscador Inteligente */}
           <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'center' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
               <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -387,7 +491,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
             </div>
           </div>
 
-          {/* Derecha: Botones Iconográficos */}
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
             <button 
               className="btn btn-outline" 
@@ -408,7 +511,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* TABLA RESPONSIVE */}
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
             <table className="data-table" style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -484,7 +586,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* SEMÁFORO EN COLUMNA 2 */}
                       <td className="font-mono" style={{ padding: '16px', fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <span 
@@ -524,7 +625,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
             </table>
           </div>
 
-          {/* CONTROLES DE PAGINACIÓN */}
           {registrosFiltrados.length > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
@@ -554,7 +654,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL DE DETALLES DE CONVENIO */}
       {convenioViendo && (
         <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1000, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="form-card detail-card" style={{ maxWidth: '850px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
@@ -603,7 +702,11 @@ export const ConveniosClientesDashboard: React.FC = () => {
                   </div>
                   <div className="detail-item">
                     <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Último Uso Operativo</span>
-                    <span className="detail-value font-mono" style={{ color: '#58a6ff', fontWeight: 'bold' }}>{convenioViendo._fechaDinamicaUso ? formatearFechaEsp(convenioViendo._fechaDinamicaUso) : '-'}</span>
+                    <span className="detail-value font-mono" style={{ color: '#58a6ff', fontWeight: 'bold' }}>
+                      {lastUsedConvenioMap[convenioViendo.id]
+                        ? formatearFechaEsp(lastUsedConvenioMap[convenioViendo.id])
+                        : '-'}
+                    </span>
                   </div>
 
                   <div className="detail-item" style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
@@ -626,7 +729,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* PESTAÑA: DETALLES / TARIFAS DEL CONVENIO CON SEMÁFORO CSS */}
               {activeTabDetalle === 'detalles' && (
                 <div style={{ animation: 'fadeIn 0.3s ease' }}>
                   <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
@@ -649,20 +751,24 @@ export const ConveniosClientesDashboard: React.FC = () => {
                         </thead>
                         <tbody>
                           {convenioViendo.detalles.map((det: any, idx: number) => {
-                            const idDet = det.id || det.idDetalle; 
+                            // El cruce usa el ID del documento del detalle, que es
+                            // exactamente lo que la operación guarda en "convenio".
+                            const idDet = String(det.id || '').trim();
+                            const nomDet = det.tipoConvenioNombre || det.tarifaNombre || det.nombre || det.tipoOperacionNombre || det.tipoServicio;
+
                             const fechaUso = idDet ? (lastUsedDetalleMap[idDet] || '') : '';
                             const colorInactividadDetalle = obtenerColorInactividad(fechaUso);
 
                             return (
-                              <tr key={idx} style={{ borderBottom: '1px solid #30363d' }}>
+                              <tr key={idDet || idx} style={{ borderBottom: '1px solid #30363d' }}>
                                 <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
-                                  {det.nombre || det.tipoOperacionNombre || det.tipoServicio || `Tarifa ${idx + 1}`}
+                                  {nomDet || `Tarifa ${idx + 1}`}
                                 </td>
                                 <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem' }}>
                                   {det.origenNombre || det.origen || '-'} → {det.destinoNombre || det.destino || '-'}
                                 </td>
-                                <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem' }}>
-                                  C: ${det.costo || 0} / V: ${det.venta || 0}
+                                <td style={{ padding: '12px 16px', color: '#10b981', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                  {det.tarifa !== undefined ? `$${det.tarifa}` : `C: $${det.costo || 0} / V: $${det.venta || 0}`}
                                 </td>
                                 <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -691,7 +797,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
                 </div>
               )}
 
-              {/* PESTAÑA HISTORIAL DE USO (OPERACIONES) */}
               {activeTabDetalle === 'uso' && (
                 <div style={{ animation: 'fadeIn 0.3s ease' }}>
                   {cargandoUso ? (
@@ -716,8 +821,10 @@ export const ConveniosClientesDashboard: React.FC = () => {
                         </thead>
                         <tbody>
                           {operacionesUso.map(op => {
-                            const detalleUsado = op.convenioTarifaNombre || op.tarifaNombre || op.convenioTarifa || 'No especificado';
-                            const ruta = op.origen && op.destino ? `${op.origen} → ${op.destino}` : '-';
+                            const detalleUsado = op.convenioNombre || op.convenioTarifaNombre || op.tarifaNombre || op.convenioTarifa || 'No especificado';
+                            const ruta = (op.origenNombre || op.origen) && (op.destinoNombre || op.destino)
+                              ? `${op.origenNombre || op.origen} → ${op.destinoNombre || op.destino}`
+                              : '-';
 
                             return (
                               <tr key={op.id} style={{ borderBottom: '1px solid #30363d' }}>
@@ -744,7 +851,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DE BAJA DE CONVENIO MANUAL */}
       {modalBajaAbierto && (
         <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1100, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="form-card modal-content" style={{ maxWidth: '400px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '8px', padding: '24px' }}>
