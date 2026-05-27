@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { collection, doc, getDoc, setDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+// ✅ FIX #3: importamos limpiarCacheFlujos para invalidar la caché tras cada guardado.
+//    Así la app usa de inmediato la versión nueva del flujo sin necesidad de Forzar Recarga.
+import { limpiarCacheFlujos } from '../../operaciones/config/statusRules';
 
 /* ============================================================
    TIPOS
@@ -56,11 +59,107 @@ const NODE_W = 260;
 const NODE_H = 96;
 const GRID = 20;
 
-// ✅ NUEVO: espaciado para el layout vertical en árbol
-const V_SPACING = 60;   // separación vertical entre niveles (de un nodo a su hijo)
-const H_SPACING = 40;   // separación horizontal entre hermanos (cuando hay ramas paralelas)
-const ROOT_X = 120;     // X inicial de la primera columna
-const ROOT_Y = 120;     // Y inicial del primer nivel
+const V_SPACING = 60;
+const H_SPACING = 40;
+const ROOT_X = 120;
+const ROOT_Y = 120;
+
+/* ============================================================
+   ✅ FIX #1 y #2: SANITIZADOR DE OPCIONES SIGUIENTES
+   --------------------------------------------------------------
+   Toma un array de "referencias" que pueden ser:
+     - ids válidos del flujo actual           → se conservan
+     - nombreStatus de algún nodo del flujo   → se convierten al id correcto
+     - referencias rotas (nodos borrados)     → se descartan
+     - auto-referencias (un nodo apunta a sí mismo) → se descartan
+     - duplicados                             → se descartan
+   Devuelve un array limpio que SOLO contiene ids válidos.
+
+   Esto previene el bug donde una operación tiene en opcionesSiguientes
+   una mezcla como ["3. Documentado (Asignado)", "n_1779801733288_3h49"]
+   y resolverCascadaStatus() no encuentra los candidatos automáticos.
+============================================================ */
+const sanitizarOpcionesSiguientes = (
+  refs: string[] | undefined,
+  ownId: string,
+  todosNodos: ReglaStatus[]
+): { limpio: string[]; cambios: string[] } => {
+  if (!refs || refs.length === 0) return { limpio: [], cambios: [] };
+
+  const idsValidos = new Set(todosNodos.map(n => n.id));
+  const cambios: string[] = [];
+  const limpio: string[] = [];
+  const yaAgregados = new Set<string>();
+
+  for (const ref of refs) {
+    const valor = String(ref ?? '').trim();
+    if (!valor) {
+      cambios.push(`Se eliminó una referencia vacía.`);
+      continue;
+    }
+
+    // Caso 1: es un id válido → conservar
+    if (idsValidos.has(valor)) {
+      if (valor === ownId) {
+        cambios.push(`Se eliminó auto-referencia (un nodo apuntaba a sí mismo).`);
+        continue;
+      }
+      if (!yaAgregados.has(valor)) {
+        limpio.push(valor);
+        yaAgregados.add(valor);
+      }
+      continue;
+    }
+
+    // Caso 2: NO es id, ¿coincide con nombreStatus de algún nodo?
+    const coincidencias = todosNodos.filter(n => n.nombreStatus === valor);
+    if (coincidencias.length === 1) {
+      const idResuelto = coincidencias[0].id;
+      cambios.push(`"${valor}" se convirtió al id del nodo "${coincidencias[0].nombreStatus}".`);
+      if (idResuelto !== ownId && !yaAgregados.has(idResuelto)) {
+        limpio.push(idResuelto);
+        yaAgregados.add(idResuelto);
+      }
+      continue;
+    }
+
+    // Caso 3: nombre con más de una coincidencia (ambiguo) → descartar
+    if (coincidencias.length > 1) {
+      cambios.push(`"${valor}" es ambiguo (${coincidencias.length} nodos tienen ese mismo nombre). Se descartó; vuelve a conectar manualmente.`);
+      continue;
+    }
+
+    // Caso 4: ni id ni nombre conocido → referencia rota
+    cambios.push(`Se eliminó referencia rota: "${valor}" (no existe ningún nodo con ese id ni nombre).`);
+  }
+
+  return { limpio, cambios };
+};
+
+/* ============================================================
+   ✅ Sanitizador GLOBAL: recorre todos los nodos del flujo y
+   limpia sus opcionesSiguientes. Devuelve el flujo limpio y la
+   lista de cambios aplicados (para mostrar al usuario o loggear).
+============================================================ */
+const sanitizarFlujo = (
+  flujo: ReglaStatus[]
+): { flujo: ReglaStatus[]; cambios: string[] } => {
+  const cambiosGlobales: string[] = [];
+
+  const limpio = flujo.map(nodo => {
+    const { limpio: refsLimpias, cambios } = sanitizarOpcionesSiguientes(
+      nodo.opcionesSiguientes,
+      nodo.id,
+      flujo
+    );
+    if (cambios.length > 0) {
+      cambios.forEach(c => cambiosGlobales.push(`[${nodo.nombreStatus || nodo.id}] ${c}`));
+    }
+    return { ...nodo, opcionesSiguientes: refsLimpias };
+  });
+
+  return { flujo: limpio, cambios: cambiosGlobales };
+};
 
 /* ============================================================
    EDITOR PRINCIPAL
@@ -72,7 +171,6 @@ const EditorFlujoAppSheet = ({
   flujoInicial?: CombinacionEdicion;
   onVolver: () => void;
 }) => {
-  /* ---------- estado base ---------- */
   const [catalogoStatus, setCatalogoStatus] = useState<string[]>([]);
   const [tiposOperacion, setTiposOperacion] = useState<any[]>([]);
   const [tipoServicio, setTipoServicio] = useState(flujoInicial?.tipoServicio || '');
@@ -81,51 +179,34 @@ const EditorFlujoAppSheet = ({
   const [reglas, setReglas]             = useState<ReglaStatus[]>([]);
   const [cargando, setCargando]         = useState(false);
   const [guardando, setGuardando]       = useState(false);
-  const [mensaje, setMensaje]           = useState<{ tipo: 'ok' | 'err'; texto: string } | null>(null);
+  // ✅ Ahora hay 3 tipos de mensaje: 'ok' (verde), 'warn' (amarillo), 'err' (rojo)
+  const [mensaje, setMensaje]           = useState<{ tipo: 'ok' | 'err' | 'warn'; texto: string } | null>(null);
 
-  /* ---------- canvas ---------- */
   const [zoom, setZoom]             = useState(1);
   const [pan, setPan]               = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning]   = useState(false);
   const panStart                    = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
-  /* ---------- selección / drag ---------- */
   const [nodoSel, setNodoSel]                 = useState<string | null>(null);
   const [draggingId, setDraggingId]           = useState<string | null>(null);
   const dragOffset                            = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  /* ---------- conexiones ---------- */
   const [conectando, setConectando]   = useState<{ from: string; toX: number; toY: number } | null>(null);
 
-  /* ---------- inspector colapsable ---------- */
-  // ✅ Estado para mostrar/ocultar el panel derecho.
-  // Empieza colapsado. Se abre SOLO cuando el usuario presiona el botón flotante de "Inspector".
-  // Importante: NO se abre solo al hacer clic en un nodo, para no interrumpir el flujo de trabajo.
   const [inspectorColapsado, setInspectorColapsado] = useState(true);
-
-  // ✅ Menú flotante "Agregar nodo" (botón + en el canvas)
   const [menuAgregarAbierto, setMenuAgregarAbierto] = useState(false);
 
-  /* ---------- refs ---------- */
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const configId = `${tipoServicio}_${trafico}_${carga}`;
   const configValido = !!tipoServicio && !!trafico && !!carga;
 
   /* ============================================================
-     LAYOUT VERTICAL EN ÁRBOL
-     Calcula posiciones siguiendo la jerarquía de conexiones:
-     - Raíces (sin padre) arriba.
-     - Hijos debajo de su padre.
-     - Hermanos del mismo nivel se distribuyen horizontalmente SIN solaparse,
-       respetando que cada subárbol tenga su propio espacio.
-     - Cuando un nodo tiene varios hijos (rama de decisión), los hijos se
-       centran horizontalmente debajo del padre.
+     LAYOUT VERTICAL EN ÁRBOL (sin cambios)
   ============================================================ */
   const calcularLayoutVertical = useCallback((nodos: ReglaStatus[]): ReglaStatus[] => {
     if (nodos.length === 0) return nodos;
 
-    // 1) Mapas auxiliares
     const mapa = new Map(nodos.map(n => [n.id, n]));
     const padres = new Map<string, string[]>();
     nodos.forEach(n => padres.set(n.id, []));
@@ -137,19 +218,12 @@ const EditorFlujoAppSheet = ({
       });
     });
 
-    // 2) Raíces
     let raices = nodos.filter(n => (padres.get(n.id) || []).length === 0);
     if (raices.length === 0) raices = [nodos[0]];
 
-    // 3) Algoritmo "Reingold-Tilford" simplificado:
-    //    - Recorremos el árbol en post-orden calculando el "ancho" (en columnas) que ocupa cada subárbol.
-    //    - El ancho de un nodo hoja = 1 columna.
-    //    - El ancho de un nodo con hijos = suma de anchos de sus hijos.
-    //    - Luego asignamos coordenadas X según el ancho acumulado, y Y según la profundidad.
-
-    const COLUMN_W = NODE_W + H_SPACING; // ancho de una "columna" en píxeles
-    const visitados = new Set<string>();   // para evitar ciclos
-    const anchoSubarbol = new Map<string, number>(); // # columnas que ocupa cada subárbol
+    const COLUMN_W = NODE_W + H_SPACING;
+    const visitados = new Set<string>();
+    const anchoSubarbol = new Map<string, number>();
 
     const calcularAncho = (id: string): number => {
       if (visitados.has(id)) return anchoSubarbol.get(id) ?? 1;
@@ -168,9 +242,6 @@ const EditorFlujoAppSheet = ({
     };
     raices.forEach(r => calcularAncho(r.id));
 
-    // 4) Asignación de coordenadas:
-    //    - Y: nivel de profundidad * (NODE_H + V_SPACING)
-    //    - X: cada subárbol ocupa "anchoSubarbol" columnas; el nodo se centra dentro de sus columnas.
     const nuevasPos = new Map<string, NodoPosicion>();
     const colocados = new Set<string>();
 
@@ -182,14 +253,12 @@ const EditorFlujoAppSheet = ({
       const ancho = anchoSubarbol.get(id) ?? 1;
       const hijos = (nodo.opcionesSiguientes || []).filter(h => mapa.has(h));
 
-      // Centro del nodo: dentro de las columnas que ocupa su subárbol
       const centroColumna = columnaInicio + ancho / 2;
       nuevasPos.set(id, {
         x: ROOT_X + (centroColumna - 0.5) * COLUMN_W - NODE_W / 2 + NODE_W / 2,
         y: ROOT_Y + nivel * (NODE_H + V_SPACING),
       });
 
-      // Colocar hijos de izquierda a derecha, cada uno ocupando sus columnas
       let cursor = columnaInicio;
       hijos.forEach(h => {
         const anchoHijo = anchoSubarbol.get(h) ?? 1;
@@ -198,7 +267,6 @@ const EditorFlujoAppSheet = ({
       });
     };
 
-    // Colocar todas las raíces una al lado de la otra
     let cursorRaiz = 0;
     raices.forEach(r => {
       const ancho = anchoSubarbol.get(r.id) ?? 1;
@@ -206,7 +274,6 @@ const EditorFlujoAppSheet = ({
       cursorRaiz += ancho;
     });
 
-    // Nodos huérfanos (no alcanzables desde ninguna raíz): los apilamos al final
     nodos.forEach(n => {
       if (!nuevasPos.has(n.id)) {
         nuevasPos.set(n.id, {
@@ -220,7 +287,6 @@ const EditorFlujoAppSheet = ({
     return nodos.map(n => ({ ...n, posicion: nuevasPos.get(n.id) || n.posicion || { x: ROOT_X, y: ROOT_Y } }));
   }, []);
 
-  /* posición automática inicial cuando agregamos un nodo nuevo: lo ponemos debajo del último */
   const autoPosicion = (idx: number): NodoPosicion => ({
     x: ROOT_X,
     y: ROOT_Y + idx * (NODE_H + V_SPACING),
@@ -234,9 +300,6 @@ const EditorFlujoAppSheet = ({
       try {
         const statusSnap = await getDocs(collection(db, 'catalogo_status_servicio'));
         const nombres = statusSnap.docs.map(d => d.data().nombre as string).filter(Boolean);
-        // ✅ Orden natural por el número que aparece al inicio del nombre.
-        // "10.1 MET" debe ir DESPUÉS de "2. Algo", no antes (como haría sort() alfabético).
-        // Usamos Intl.Collator con numeric:true que entiende secuencias de dígitos como números.
         const collator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
         nombres.sort(collator.compare);
         setCatalogoStatus(nombres);
@@ -263,9 +326,25 @@ const EditorFlujoAppSheet = ({
               ...r,
               posicion: r.posicion ?? autoPosicion(i),
             }));
-          // ✅ Si hay nodos sin posición guardada, recalculamos layout vertical de todos
-          const tieneSinPos = flujoData.some(r => !r.posicion);
-          setReglas(tieneSinPos ? calcularLayoutVertical(flujoData) : flujoData);
+
+          // ✅ FIX #2: Reparar datos sucios al cargar.
+          // Si el documento de Firestore tiene basura en opcionesSiguientes
+          // (nombres en vez de IDs, referencias rotas, duplicados, auto-refs),
+          // se limpian automáticamente al cargar. El usuario ve un toast amarillo
+          // de aviso, y al presionar "Guardar" la versión limpia queda en Firestore.
+          const { flujo: flujoLimpio, cambios } = sanitizarFlujo(flujoData);
+
+          if (cambios.length > 0) {
+            console.warn('[ConfiguradorStatus] Datos del flujo reparados al cargar:', cambios);
+            setMensaje({
+              tipo: 'warn',
+              texto: `Se repararon ${cambios.length} referencia(s). Guarda para conservar los cambios.`,
+            });
+            setTimeout(() => setMensaje(null), 7000);
+          }
+
+          const tieneSinPos = flujoLimpio.some(r => !r.posicion);
+          setReglas(tieneSinPos ? calcularLayoutVertical(flujoLimpio) : flujoLimpio);
         } else {
           setReglas([]);
         }
@@ -294,9 +373,6 @@ const EditorFlujoAppSheet = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nodoSel]);
 
-  /* ============================================================
-     COORDENADAS DEL MOUSE EN EL CANVAS (en unidades del mundo)
-  ============================================================ */
   const mouseToWorld = useCallback((clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
@@ -306,9 +382,6 @@ const EditorFlujoAppSheet = ({
     };
   }, [pan.x, pan.y, zoom]);
 
-  /* ============================================================
-     PAN DEL CANVAS
-  ============================================================ */
   const onCanvasMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).dataset.canvasBg !== 'true') return;
     setNodoSel(null);
@@ -316,9 +389,6 @@ const EditorFlujoAppSheet = ({
     panStart.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
   };
 
-  /* ============================================================
-     DRAG DE NODOS
-  ============================================================ */
   const onNodeMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     const regla = reglas.find(r => r.id === id);
@@ -329,9 +399,6 @@ const EditorFlujoAppSheet = ({
     dragOffset.current = { x: w.x - regla.posicion.x, y: w.y - regla.posicion.y };
   };
 
-  /* ============================================================
-     MOVIMIENTO GLOBAL DE MOUSE
-  ============================================================ */
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (isPanning && panStart.current) {
@@ -366,9 +433,6 @@ const EditorFlujoAppSheet = ({
     };
   }, [isPanning, draggingId, conectando, mouseToWorld]);
 
-  /* ============================================================
-     ZOOM (rueda)
-  ============================================================ */
   const onWheel = (e: React.WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
@@ -376,12 +440,8 @@ const EditorFlujoAppSheet = ({
     setZoom(z => Math.max(0.4, Math.min(1.6, z + delta)));
   };
 
-  /* ============================================================
-     OPERACIONES SOBRE NODOS
-  ============================================================ */
   const agregarNodo = (tipo: ReglaStatus['tipoMecanismo']) => {
     const idx = reglas.length;
-    // ✅ Si hay nodos previos, posicionar el nuevo debajo del más bajo (en Y), no encimado.
     let posInicial: NodoPosicion;
     if (reglas.length === 0) {
       posInicial = { x: ROOT_X, y: ROOT_Y };
@@ -403,7 +463,7 @@ const EditorFlujoAppSheet = ({
     };
     setReglas(prev => [...prev, nuevo]);
     setNodoSel(nuevo.id);
-    setMenuAgregarAbierto(false); // ✅ cierra el menú flotante si estaba abierto
+    setMenuAgregarAbierto(false);
   };
 
   const actualizarNodo = (id: string, patch: Partial<ReglaStatus>) => {
@@ -433,10 +493,6 @@ const EditorFlujoAppSheet = ({
     setNodoSel(copia.id);
   };
 
-  /* ============================================================
-     CONEXIONES
-     ✅ AHORA: salida por ABAJO del nodo, entrada por ARRIBA.
-  ============================================================ */
   const iniciarConexion = (e: React.MouseEvent, fromId: string) => {
     e.stopPropagation();
     const r = reglas.find(x => x.id === fromId);
@@ -469,13 +525,26 @@ const EditorFlujoAppSheet = ({
 
   /* ============================================================
      GUARDAR
+     ✅ FIX #1: Sanitizamos antes de hacer setDoc (defensa final).
+     ✅ FIX #3: Invalidamos el caché de flujos tras guardar exitosamente.
   ============================================================ */
   const guardar = async () => {
     if (!configValido) {
       setMensaje({ tipo: 'err', texto: 'Selecciona Servicio, Tráfico y Carga antes de guardar.' });
       return;
     }
-    const flujoFinal = reglas.map((r, i) => ({
+
+    // ✅ FIX #1: Antes de guardar, pasamos TODO por el sanitizador.
+    // Esto garantiza que opcionesSiguientes SOLO contenga ids válidos del flujo actual.
+    // Nunca más vamos a tener en Firestore una mezcla como
+    // ["3. Documentado (Asignado)", "n_1779801733288_3h49"] que rompe la cascada.
+    const { flujo: flujoSanitizado, cambios: cambiosSanitizacion } = sanitizarFlujo(reglas);
+
+    if (cambiosSanitizacion.length > 0) {
+      console.warn('[ConfiguradorStatus] Datos limpiados antes de guardar:', cambiosSanitizacion);
+    }
+
+    const flujoFinal = flujoSanitizado.map((r, i) => ({
       ...r,
       orden: i + 1,
     }));
@@ -491,6 +560,19 @@ const EditorFlujoAppSheet = ({
         ultimaActualizacion: new Date().toISOString(),
         flujo: flujoFinal,
       });
+
+      // ✅ FIX #3: Invalidar el caché de ESTE flujo (memoria + localStorage).
+      // La próxima vez que se abra una operación que use este configId,
+      // statusRules.ts leerá la versión fresca de Firestore en vez de
+      // la versión cacheada vieja. Esto elimina la necesidad de "Forzar Recarga".
+      try {
+        limpiarCacheFlujos(configId);
+        console.log(`[ConfiguradorStatus] Caché de flujo "${configId}" invalidado tras guardado.`);
+      } catch (cacheErr) {
+        // Si por algún motivo el helper falla, NO rompemos el guardado.
+        console.warn('[ConfiguradorStatus] No se pudo invalidar caché de flujo:', cacheErr);
+      }
+
       setMensaje({ tipo: 'ok', texto: 'Flujo guardado correctamente.' });
       setTimeout(() => onVolver(), 700);
     } catch (e: any) {
@@ -500,23 +582,14 @@ const EditorFlujoAppSheet = ({
     }
   };
 
-  /* ============================================================
-     AUTO-LAYOUT (ahora usa el layout vertical en árbol)
-  ============================================================ */
   const autoOrganizar = () => {
     setReglas(prev => calcularLayoutVertical(prev));
     setPan({ x: 0, y: 0 });
     setZoom(1);
   };
 
-  /* ============================================================
-     DERIVADOS
-  ============================================================ */
   const reglaSel = useMemo(() => reglas.find(r => r.id === nodoSel) || null, [reglas, nodoSel]);
 
-  /* ✅ helpers para puntos de conexión VERTICALES:
-        - salida: parte inferior centrada
-        - entrada: parte superior centrada */
   const portOut = (r: ReglaStatus) => ({
     x: (r.posicion?.x ?? 0) + NODE_W / 2,
     y: (r.posicion?.y ?? 0) + NODE_H,
@@ -526,29 +599,21 @@ const EditorFlujoAppSheet = ({
     y: (r.posicion?.y ?? 0),
   });
 
-  /* ✅ Curva Bézier VERTICAL (los puntos de control se desplazan en Y, no en X).
-        Esto hace que la línea salga hacia abajo del nodo origen
-        y entre hacia abajo del nodo destino, como en un diagrama de flujo real. */
   const curva = (x1: number, y1: number, x2: number, y2: number) => {
     const dy = Math.max(40, Math.abs(y2 - y1) * 0.5);
     return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
   };
 
-  /* tamaño "virtual" del mundo */
   const worldSize = useMemo(() => {
     const maxX = Math.max(2400, ...reglas.map(r => (r.posicion?.x ?? 0) + NODE_W + 400));
     const maxY = Math.max(1600, ...reglas.map(r => (r.posicion?.y ?? 0) + NODE_H + 400));
     return { w: maxX, h: maxY };
   }, [reglas]);
 
-  /* ============================================================
-     RENDER
-  ============================================================ */
   return (
     <div style={S.shell}>
       <style>{CSS_GLOBAL}</style>
 
-      {/* ===== TOP BAR ===== */}
       <header style={S.topbar}>
         <div style={S.topLeft}>
           <button onClick={onVolver} style={S.backBtn} title="Volver">
@@ -593,9 +658,19 @@ const EditorFlujoAppSheet = ({
           {mensaje && (
             <div style={{
               ...S.toast,
-              background: mensaje.tipo === 'ok' ? 'rgba(52,211,153,0.12)' : 'rgba(248,113,113,0.12)',
-              color:      mensaje.tipo === 'ok' ? '#34d399' : '#f87171',
-              border: `1px solid ${mensaje.tipo === 'ok' ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)'}`,
+              background:
+                mensaje.tipo === 'ok'   ? 'rgba(52,211,153,0.12)' :
+                mensaje.tipo === 'warn' ? 'rgba(245,158,11,0.12)' :
+                                          'rgba(248,113,113,0.12)',
+              color:
+                mensaje.tipo === 'ok'   ? '#34d399' :
+                mensaje.tipo === 'warn' ? '#fbbf24' :
+                                          '#f87171',
+              border: `1px solid ${
+                mensaje.tipo === 'ok'   ? 'rgba(52,211,153,0.4)' :
+                mensaje.tipo === 'warn' ? 'rgba(245,158,11,0.4)' :
+                                          'rgba(248,113,113,0.4)'
+              }`,
             }}>
               {mensaje.texto}
             </div>
@@ -610,9 +685,7 @@ const EditorFlujoAppSheet = ({
         </div>
       </header>
 
-      {/* ===== CUERPO ===== */}
       <div style={S.body}>
-        {/* Sidebar izquierdo: paleta de nodos */}
         <aside style={S.sidebar}>
           <div style={S.sidebarTitle}>Bloques</div>
           <div style={S.sidebarSub}>Haz clic para agregar al lienzo</div>
@@ -651,7 +724,6 @@ const EditorFlujoAppSheet = ({
           </div>
         </aside>
 
-        {/* Canvas central */}
         <div
           ref={canvasRef}
           style={S.canvas}
@@ -659,14 +731,12 @@ const EditorFlujoAppSheet = ({
           onWheel={onWheel}
           data-canvas-bg="true"
         >
-          {/* Fondo de cuadrícula */}
           <div data-canvas-bg="true" style={{
             ...S.gridBg,
             backgroundPosition: `${pan.x}px ${pan.y}px`,
             backgroundSize: `${GRID * zoom}px ${GRID * zoom}px, ${GRID * 5 * zoom}px ${GRID * 5 * zoom}px`,
           }} />
 
-          {/* Capa transformable */}
           <div
             data-canvas-bg="true"
             style={{
@@ -679,7 +749,6 @@ const EditorFlujoAppSheet = ({
               cursor: isPanning ? 'grabbing' : 'default',
             }}
           >
-            {/* SVG de conexiones */}
             <svg
               width={worldSize.w}
               height={worldSize.h}
@@ -711,7 +780,6 @@ const EditorFlujoAppSheet = ({
                         markerEnd={isHi ? 'url(#arrowHi)' : 'url(#arrow)'}
                         style={{ transition: 'stroke 120ms ease' }}
                       />
-                      {/* Botón eliminar conexión, a la mitad */}
                       <g
                         transform={`translate(${(p1.x + p2.x) / 2}, ${(p1.y + p2.y) / 2})`}
                         style={{ cursor: 'pointer' }}
@@ -725,7 +793,6 @@ const EditorFlujoAppSheet = ({
                 })
               )}
 
-              {/* Conexión en progreso */}
               {conectando && (() => {
                 const from = reglas.find(r => r.id === conectando.from);
                 if (!from?.posicion) return null;
@@ -742,7 +809,6 @@ const EditorFlujoAppSheet = ({
               })()}
             </svg>
 
-            {/* Nodo START (visual, no editable) */}
             <div style={{
               position: 'absolute',
               left: ROOT_X + NODE_W / 2 - 110,
@@ -761,7 +827,6 @@ const EditorFlujoAppSheet = ({
               ▼ Evento: Nueva Operación
             </div>
 
-            {/* Nodos */}
             {reglas.map(r => {
               const meta = TIPO_META[r.tipoMecanismo];
               const isSel = nodoSel === r.id;
@@ -787,7 +852,6 @@ const EditorFlujoAppSheet = ({
                     transition: 'box-shadow 140ms ease, border-color 140ms ease',
                   }}
                 >
-                  {/* franja superior */}
                   <div style={{
                     height: 6,
                     background: `linear-gradient(90deg, ${meta.color}, transparent)`,
@@ -838,7 +902,6 @@ const EditorFlujoAppSheet = ({
                     )}
                   </div>
 
-                  {/* ✅ Puerto entrada (ARRIBA, centrado) */}
                   <div
                     onMouseUp={() => finalizarConexion(r.id)}
                     style={{
@@ -852,7 +915,6 @@ const EditorFlujoAppSheet = ({
                     }}
                     title="Entrada (recibe el flujo)"
                   />
-                  {/* ✅ Puerto salida (ABAJO, centrado) */}
                   <div
                     onMouseDown={(e) => iniciarConexion(e, r.id)}
                     style={{
@@ -887,7 +949,6 @@ const EditorFlujoAppSheet = ({
             )}
           </div>
 
-          {/* Controles flotantes de zoom */}
           <div style={S.zoomBar}>
             <button style={S.zoomBtn} onClick={() => setZoom(z => Math.min(1.6, z + 0.1))}>+</button>
             <div style={S.zoomLabel}>{Math.round(zoom * 100)}%</div>
@@ -896,9 +957,6 @@ const EditorFlujoAppSheet = ({
             <button style={S.zoomBtn} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} title="Reset">⌂</button>
           </div>
 
-          {/* ✅ NUEVO: Botón flotante "+ Agregar nodo" abajo a la izquierda del canvas.
-              Abre un mini-menú con los 3 tipos disponibles.
-              Útil para no tener que ir al sidebar izquierdo cada vez. */}
           <div style={S.addNodeContainer}>
             {menuAgregarAbierto && (
               <div style={S.addNodeMenu}>
@@ -949,10 +1007,8 @@ const EditorFlujoAppSheet = ({
           )}
         </div>
 
-        {/* Panel derecho: inspector (colapsable) */}
         <aside style={{
           ...S.inspector,
-          // ✅ Cuando está colapsado, ancho 0 con transición suave para ocultarlo sin desmontarlo.
           width: inspectorColapsado ? 0 : 340,
           minWidth: inspectorColapsado ? 0 : 340,
           borderLeft: inspectorColapsado ? 'none' : '1px solid #1c2230',
@@ -960,7 +1016,6 @@ const EditorFlujoAppSheet = ({
         }}>
           {!inspectorColapsado && (
             <>
-              {/* Botón para colapsar (flecha apuntando a la derecha, dentro del panel) */}
               <button
                 onClick={() => setInspectorColapsado(true)}
                 style={S.inspectorToggleInside}
@@ -993,8 +1048,6 @@ const EditorFlujoAppSheet = ({
           )}
         </aside>
 
-        {/* ✅ Botón flotante para expandir el inspector cuando está colapsado.
-            Se posiciona pegado al borde derecho. Muestra un badge si hay un nodo seleccionado. */}
         {inspectorColapsado && (
           <button
             onClick={() => setInspectorColapsado(false)}
@@ -1111,7 +1164,6 @@ const Inspector = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Encabezado */}
       <div style={{
         padding: '14px 16px',
         borderBottom: '1px solid #232a3a',
@@ -1134,9 +1186,7 @@ const Inspector = ({
         </div>
       </div>
 
-      {/* Contenido scroll */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
-        {/* Nombre del estatus */}
         <Section title="Nombre del estatus">
           <select
             value={regla.nombreStatus}
@@ -1148,7 +1198,6 @@ const Inspector = ({
           </select>
         </Section>
 
-        {/* Tipo de mecanismo */}
         <Section title="Mecanismo de avance">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
             {(Object.keys(TIPO_META) as ReglaStatus['tipoMecanismo'][]).map(t => {
@@ -1184,7 +1233,6 @@ const Inspector = ({
           </div>
         </Section>
 
-        {/* Campos requeridos */}
         <Section title="Campos requeridos para avanzar" hint="Los caminos siguientes solo se activan si estos campos están llenos.">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {campos.map(c => {
@@ -1212,7 +1260,6 @@ const Inspector = ({
           </div>
         </Section>
 
-        {/* Conexiones salientes */}
         <Section title="Caminos siguientes" hint="Estos son los nodos a los que conecta este paso.">
           {(regla.opcionesSiguientes || []).length === 0 ? (
             <div style={{ fontSize: 12.5, color: '#6b7385', fontStyle: 'italic', padding: '8px 0' }}>
@@ -1223,6 +1270,37 @@ const Inspector = ({
               {regla.opcionesSiguientes.map(toId => {
                 const target = todosNodos.find(n => n.id === toId);
                 const tMeta = target ? TIPO_META[target.tipoMecanismo] : null;
+
+                // ✅ Si el target no existe (referencia rota), lo mostramos en rojo
+                // con un mensaje claro, para que el usuario pueda quitarlo a mano.
+                // Aunque sanitizarFlujo() limpia esto al cargar, dejamos esta UI
+                // como red de seguridad.
+                if (!target) {
+                  return (
+                    <div key={toId} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '7px 10px',
+                      background: 'rgba(248,113,113,0.08)',
+                      border: '1px solid rgba(248,113,113,0.3)',
+                      borderRadius: 8,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                        <span style={{ color: '#f87171' }}>⚠</span>
+                        <span style={{
+                          fontSize: 12,
+                          color: '#fca5a5',
+                          fontStyle: 'italic',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}>Referencia rota: {String(toId).substring(0, 24)}…</span>
+                      </div>
+                      <button onClick={() => onDesconectar(toId)} style={{
+                        background: 'none', border: 'none', color: '#f87171', cursor: 'pointer',
+                        fontSize: 14, padding: '0 4px',
+                      }} title="Eliminar referencia rota">×</button>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={toId} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1237,7 +1315,7 @@ const Inspector = ({
                         fontSize: 13,
                         color: '#c9d1d9',
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>{target?.nombreStatus || '(sin nombre)'}</span>
+                      }}>{target.nombreStatus || '(sin nombre)'}</span>
                     </div>
                     <button onClick={() => onDesconectar(toId)} style={{
                       background: 'none', border: 'none', color: '#f87171', cursor: 'pointer',
@@ -1251,7 +1329,6 @@ const Inspector = ({
         </Section>
       </div>
 
-      {/* Acciones inferiores */}
       <div style={{
         padding: 12,
         borderTop: '1px solid #232a3a',
@@ -1486,6 +1563,7 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 12,
     borderRadius: 8,
     fontWeight: 500,
+    maxWidth: 360,
   },
 
   body: { display: 'flex', flex: 1, overflow: 'hidden' },
@@ -1564,7 +1642,6 @@ const S: Record<string, React.CSSProperties> = {
   },
   zoomLabel: { fontSize: 11, color: '#7a8499', textAlign: 'center', padding: '2px 0' },
 
-  // ✅ NUEVO: Botón flotante "+" (FAB) y su menú desplegable.
   addNodeContainer: {
     position: 'absolute',
     left: 20,
@@ -1635,7 +1712,6 @@ const S: Record<string, React.CSSProperties> = {
     color: '#5f697d',
   },
 
-  // ✅ Botón "←" pequeño dentro del panel, esquina superior izquierda, para colapsar.
   inspectorToggleInside: {
     position: 'absolute',
     top: 12,
@@ -1655,7 +1731,6 @@ const S: Record<string, React.CSSProperties> = {
     zIndex: 5,
   },
 
-  // ✅ Botón flotante vertical pegado al borde derecho del canvas para expandir el inspector.
   inspectorToggleOutside: {
     position: 'absolute',
     right: 0,
