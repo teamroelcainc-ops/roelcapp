@@ -1,9 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { collection, doc, getDoc, setDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-// ✅ FIX #3: importamos limpiarCacheFlujos para invalidar la caché tras cada guardado.
-//    Así la app usa de inmediato la versión nueva del flujo sin necesidad de Forzar Recarga.
-import { limpiarCacheFlujos } from '../../operaciones/config/statusRules';
 
 /* ============================================================
    TIPOS
@@ -53,113 +50,11 @@ const TIPO_META: Record<ReglaStatus['tipoMecanismo'], { label: string; color: st
 };
 
 /* ============================================================
-   CONSTANTES DE LAYOUT (VERTICAL / TOP-DOWN)
+   CONSTANTES DE LAYOUT
 ============================================================ */
 const NODE_W = 260;
 const NODE_H = 96;
 const GRID = 20;
-
-const V_SPACING = 60;
-const H_SPACING = 40;
-const ROOT_X = 120;
-const ROOT_Y = 120;
-
-/* ============================================================
-   ✅ FIX #1 y #2: SANITIZADOR DE OPCIONES SIGUIENTES
-   --------------------------------------------------------------
-   Toma un array de "referencias" que pueden ser:
-     - ids válidos del flujo actual           → se conservan
-     - nombreStatus de algún nodo del flujo   → se convierten al id correcto
-     - referencias rotas (nodos borrados)     → se descartan
-     - auto-referencias (un nodo apunta a sí mismo) → se descartan
-     - duplicados                             → se descartan
-   Devuelve un array limpio que SOLO contiene ids válidos.
-
-   Esto previene el bug donde una operación tiene en opcionesSiguientes
-   una mezcla como ["3. Documentado (Asignado)", "n_1779801733288_3h49"]
-   y resolverCascadaStatus() no encuentra los candidatos automáticos.
-============================================================ */
-const sanitizarOpcionesSiguientes = (
-  refs: string[] | undefined,
-  ownId: string,
-  todosNodos: ReglaStatus[]
-): { limpio: string[]; cambios: string[] } => {
-  if (!refs || refs.length === 0) return { limpio: [], cambios: [] };
-
-  const idsValidos = new Set(todosNodos.map(n => n.id));
-  const cambios: string[] = [];
-  const limpio: string[] = [];
-  const yaAgregados = new Set<string>();
-
-  for (const ref of refs) {
-    const valor = String(ref ?? '').trim();
-    if (!valor) {
-      cambios.push(`Se eliminó una referencia vacía.`);
-      continue;
-    }
-
-    // Caso 1: es un id válido → conservar
-    if (idsValidos.has(valor)) {
-      if (valor === ownId) {
-        cambios.push(`Se eliminó auto-referencia (un nodo apuntaba a sí mismo).`);
-        continue;
-      }
-      if (!yaAgregados.has(valor)) {
-        limpio.push(valor);
-        yaAgregados.add(valor);
-      }
-      continue;
-    }
-
-    // Caso 2: NO es id, ¿coincide con nombreStatus de algún nodo?
-    const coincidencias = todosNodos.filter(n => n.nombreStatus === valor);
-    if (coincidencias.length === 1) {
-      const idResuelto = coincidencias[0].id;
-      cambios.push(`"${valor}" se convirtió al id del nodo "${coincidencias[0].nombreStatus}".`);
-      if (idResuelto !== ownId && !yaAgregados.has(idResuelto)) {
-        limpio.push(idResuelto);
-        yaAgregados.add(idResuelto);
-      }
-      continue;
-    }
-
-    // Caso 3: nombre con más de una coincidencia (ambiguo) → descartar
-    if (coincidencias.length > 1) {
-      cambios.push(`"${valor}" es ambiguo (${coincidencias.length} nodos tienen ese mismo nombre). Se descartó; vuelve a conectar manualmente.`);
-      continue;
-    }
-
-    // Caso 4: ni id ni nombre conocido → referencia rota
-    cambios.push(`Se eliminó referencia rota: "${valor}" (no existe ningún nodo con ese id ni nombre).`);
-  }
-
-  return { limpio, cambios };
-};
-
-/* ============================================================
-   ✅ Sanitizador GLOBAL: recorre todos los nodos del flujo y
-   limpia sus opcionesSiguientes. Devuelve el flujo limpio y la
-   lista de cambios aplicados (para mostrar al usuario o loggear).
-============================================================ */
-const sanitizarFlujo = (
-  flujo: ReglaStatus[]
-): { flujo: ReglaStatus[]; cambios: string[] } => {
-  const cambiosGlobales: string[] = [];
-
-  const limpio = flujo.map(nodo => {
-    const { limpio: refsLimpias, cambios } = sanitizarOpcionesSiguientes(
-      nodo.opcionesSiguientes,
-      nodo.id,
-      flujo
-    );
-    if (cambios.length > 0) {
-      cambios.forEach(c => cambiosGlobales.push(`[${nodo.nombreStatus || nodo.id}] ${c}`));
-    }
-    return { ...nodo, opcionesSiguientes: refsLimpias };
-  });
-
-  return { flujo: limpio, cambios: cambiosGlobales };
-};
 
 /* ============================================================
    EDITOR PRINCIPAL
@@ -171,6 +66,7 @@ const EditorFlujoAppSheet = ({
   flujoInicial?: CombinacionEdicion;
   onVolver: () => void;
 }) => {
+  /* ---------- estado base ---------- */
   const [catalogoStatus, setCatalogoStatus] = useState<string[]>([]);
   const [tiposOperacion, setTiposOperacion] = useState<any[]>([]);
   const [tipoServicio, setTipoServicio] = useState(flujoInicial?.tipoServicio || '');
@@ -179,118 +75,31 @@ const EditorFlujoAppSheet = ({
   const [reglas, setReglas]             = useState<ReglaStatus[]>([]);
   const [cargando, setCargando]         = useState(false);
   const [guardando, setGuardando]       = useState(false);
-  // ✅ Ahora hay 3 tipos de mensaje: 'ok' (verde), 'warn' (amarillo), 'err' (rojo)
-  const [mensaje, setMensaje]           = useState<{ tipo: 'ok' | 'err' | 'warn'; texto: string } | null>(null);
+  const [mensaje, setMensaje]           = useState<{ tipo: 'ok' | 'err'; texto: string } | null>(null);
 
+  /* ---------- canvas ---------- */
   const [zoom, setZoom]             = useState(1);
   const [pan, setPan]               = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning]   = useState(false);
   const panStart                    = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
+  /* ---------- selección / drag ---------- */
   const [nodoSel, setNodoSel]                 = useState<string | null>(null);
+  const [seleccionados, setSeleccionados]     = useState<Set<string>>(new Set());
   const [draggingId, setDraggingId]           = useState<string | null>(null);
   const dragOffset                            = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  /* ---------- conexiones ---------- */
   const [conectando, setConectando]   = useState<{ from: string; toX: number; toY: number } | null>(null);
 
-  const [inspectorColapsado, setInspectorColapsado] = useState(true);
-  const [menuAgregarAbierto, setMenuAgregarAbierto] = useState(false);
+  /* ---------- portapapeles ---------- */
+  const [clipboardInfo, setClipboardInfo]   = useState<{ count: number; origen: string } | null>(null);
 
+  /* ---------- refs ---------- */
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const configId = `${tipoServicio}_${trafico}_${carga}`;
   const configValido = !!tipoServicio && !!trafico && !!carga;
-
-  /* ============================================================
-     LAYOUT VERTICAL EN ÁRBOL (sin cambios)
-  ============================================================ */
-  const calcularLayoutVertical = useCallback((nodos: ReglaStatus[]): ReglaStatus[] => {
-    if (nodos.length === 0) return nodos;
-
-    const mapa = new Map(nodos.map(n => [n.id, n]));
-    const padres = new Map<string, string[]>();
-    nodos.forEach(n => padres.set(n.id, []));
-    nodos.forEach(n => {
-      (n.opcionesSiguientes || []).forEach(hijoId => {
-        const lista = padres.get(hijoId) || [];
-        if (!lista.includes(n.id)) lista.push(n.id);
-        padres.set(hijoId, lista);
-      });
-    });
-
-    let raices = nodos.filter(n => (padres.get(n.id) || []).length === 0);
-    if (raices.length === 0) raices = [nodos[0]];
-
-    const COLUMN_W = NODE_W + H_SPACING;
-    const visitados = new Set<string>();
-    const anchoSubarbol = new Map<string, number>();
-
-    const calcularAncho = (id: string): number => {
-      if (visitados.has(id)) return anchoSubarbol.get(id) ?? 1;
-      visitados.add(id);
-      const nodo = mapa.get(id);
-      const hijos = (nodo?.opcionesSiguientes || []).filter(h => mapa.has(h));
-      if (hijos.length === 0) {
-        anchoSubarbol.set(id, 1);
-        return 1;
-      }
-      let total = 0;
-      hijos.forEach(h => { total += calcularAncho(h); });
-      const ancho = Math.max(1, total);
-      anchoSubarbol.set(id, ancho);
-      return ancho;
-    };
-    raices.forEach(r => calcularAncho(r.id));
-
-    const nuevasPos = new Map<string, NodoPosicion>();
-    const colocados = new Set<string>();
-
-    const colocar = (id: string, columnaInicio: number, nivel: number) => {
-      if (colocados.has(id)) return;
-      colocados.add(id);
-      const nodo = mapa.get(id);
-      if (!nodo) return;
-      const ancho = anchoSubarbol.get(id) ?? 1;
-      const hijos = (nodo.opcionesSiguientes || []).filter(h => mapa.has(h));
-
-      const centroColumna = columnaInicio + ancho / 2;
-      nuevasPos.set(id, {
-        x: ROOT_X + (centroColumna - 0.5) * COLUMN_W - NODE_W / 2 + NODE_W / 2,
-        y: ROOT_Y + nivel * (NODE_H + V_SPACING),
-      });
-
-      let cursor = columnaInicio;
-      hijos.forEach(h => {
-        const anchoHijo = anchoSubarbol.get(h) ?? 1;
-        colocar(h, cursor, nivel + 1);
-        cursor += anchoHijo;
-      });
-    };
-
-    let cursorRaiz = 0;
-    raices.forEach(r => {
-      const ancho = anchoSubarbol.get(r.id) ?? 1;
-      colocar(r.id, cursorRaiz, 0);
-      cursorRaiz += ancho;
-    });
-
-    nodos.forEach(n => {
-      if (!nuevasPos.has(n.id)) {
-        nuevasPos.set(n.id, {
-          x: ROOT_X + cursorRaiz * COLUMN_W,
-          y: ROOT_Y + Array.from(nuevasPos.values()).reduce((m, p) => Math.max(m, p.y), 0) + (NODE_H + V_SPACING),
-        });
-        cursorRaiz += 1;
-      }
-    });
-
-    return nodos.map(n => ({ ...n, posicion: nuevasPos.get(n.id) || n.posicion || { x: ROOT_X, y: ROOT_Y } }));
-  }, []);
-
-  const autoPosicion = (idx: number): NodoPosicion => ({
-    x: ROOT_X,
-    y: ROOT_Y + idx * (NODE_H + V_SPACING),
-  });
 
   /* ============================================================
      CARGA INICIAL
@@ -299,11 +108,7 @@ const EditorFlujoAppSheet = ({
     const cargarDatos = async () => {
       try {
         const statusSnap = await getDocs(collection(db, 'catalogo_status_servicio'));
-        const nombres = statusSnap.docs.map(d => d.data().nombre as string).filter(Boolean);
-        const collator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
-        nombres.sort(collator.compare);
-        setCatalogoStatus(nombres);
-
+        setCatalogoStatus(statusSnap.docs.map(d => d.data().nombre).sort());
         const opSnap = await getDocs(collection(db, 'catalogo_tipo_operacion'));
         setTiposOperacion(opSnap.docs.map(d => ({ id: d.id, tipo_operacion: d.data().tipo_operacion })));
       } catch (e) {
@@ -311,7 +116,25 @@ const EditorFlujoAppSheet = ({
       }
     };
     cargarDatos();
+
+    // Cargar info del portapapeles persistido
+    leerClipboardInfo();
   }, []);
+
+  const leerClipboardInfo = () => {
+    try {
+      const raw = localStorage.getItem('roelca_flujo_clipboard');
+      if (!raw) { setClipboardInfo(null); return; }
+      const parsed = JSON.parse(raw);
+      if (parsed?.nodos?.length) {
+        setClipboardInfo({ count: parsed.nodos.length, origen: parsed.origen || 'flujo previo' });
+      } else {
+        setClipboardInfo(null);
+      }
+    } catch {
+      setClipboardInfo(null);
+    }
+  };
 
   useEffect(() => {
     const cargarReglas = async () => {
@@ -326,25 +149,7 @@ const EditorFlujoAppSheet = ({
               ...r,
               posicion: r.posicion ?? autoPosicion(i),
             }));
-
-          // ✅ FIX #2: Reparar datos sucios al cargar.
-          // Si el documento de Firestore tiene basura en opcionesSiguientes
-          // (nombres en vez de IDs, referencias rotas, duplicados, auto-refs),
-          // se limpian automáticamente al cargar. El usuario ve un toast amarillo
-          // de aviso, y al presionar "Guardar" la versión limpia queda en Firestore.
-          const { flujo: flujoLimpio, cambios } = sanitizarFlujo(flujoData);
-
-          if (cambios.length > 0) {
-            console.warn('[ConfiguradorStatus] Datos del flujo reparados al cargar:', cambios);
-            setMensaje({
-              tipo: 'warn',
-              texto: `Se repararon ${cambios.length} referencia(s). Guarda para conservar los cambios.`,
-            });
-            setTimeout(() => setMensaje(null), 7000);
-          }
-
-          const tieneSinPos = flujoLimpio.some(r => !r.posicion);
-          setReglas(tieneSinPos ? calcularLayoutVertical(flujoLimpio) : flujoLimpio);
+          setReglas(flujoData);
         } else {
           setReglas([]);
         }
@@ -356,23 +161,57 @@ const EditorFlujoAppSheet = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tipoServicio, trafico, carga]);
 
+  /* posición automática inicial en cascada diagonal suave */
+  const autoPosicion = (i: number): NodoPosicion => ({
+    x: 120 + (i % 3) * (NODE_W + 80),
+    y: 120 + Math.floor(i / 3) * (NODE_H + 100) + (i % 3) * 40,
+  });
+
   /* ============================================================
      ATAJOS DE TECLADO
   ============================================================ */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' && nodoSel) {
-        eliminarNodo(nodoSel);
+      // No interceptar cuando el foco está en un input/textarea/select
+      const target = e.target as HTMLElement;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        return;
+      }
+
+      const cmd = e.ctrlKey || e.metaKey;
+
+      if (cmd && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        copiarSeleccion();
+      } else if (cmd && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        pegarClipboard();
+      } else if (cmd && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        duplicarSeleccion();
+      } else if (cmd && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        seleccionarTodo();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (seleccionados.size > 0) {
+          e.preventDefault();
+          eliminarSeleccion();
+        }
       } else if (e.key === 'Escape') {
         setNodoSel(null);
+        setSeleccionados(new Set());
         setConectando(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodoSel]);
+  }, [nodoSel, seleccionados, reglas]);
 
+  /* ============================================================
+     COORDENADAS DEL MOUSE EN EL CANVAS (en unidades del mundo)
+  ============================================================ */
   const mouseToWorld = useCallback((clientX: number, clientY: number) => {
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
@@ -382,23 +221,50 @@ const EditorFlujoAppSheet = ({
     };
   }, [pan.x, pan.y, zoom]);
 
+  /* ============================================================
+     PAN DEL CANVAS (clic medio o espacio + arrastre o clic en vacío)
+  ============================================================ */
   const onCanvasMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).dataset.canvasBg !== 'true') return;
-    setNodoSel(null);
+    // NO deseleccionamos aquí: si el usuario va a hacer pan, perdería su selección.
+    // La deselección sucede solo si el mouseup ocurre sin haberse movido (click "limpio"),
+    // lo cual se evalúa en el handler global de mouseup más abajo.
     setIsPanning(true);
     panStart.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
   };
 
+  /* ============================================================
+     DRAG DE NODOS
+  ============================================================ */
   const onNodeMouseDown = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     const regla = reglas.find(r => r.id === id);
     if (!regla?.posicion) return;
-    setNodoSel(id);
+
+    // Multi-selección con Ctrl/Cmd
+    if (e.ctrlKey || e.metaKey) {
+      setSeleccionados(prev => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+      setNodoSel(id);
+    } else {
+      // Si el nodo NO está dentro de la selección actual, reemplazamos por solo él
+      if (!seleccionados.has(id)) {
+        setSeleccionados(new Set([id]));
+      }
+      setNodoSel(id);
+    }
+
     setDraggingId(id);
     const w = mouseToWorld(e.clientX, e.clientY);
     dragOffset.current = { x: w.x - regla.posicion.x, y: w.y - regla.posicion.y };
   };
 
+  /* ============================================================
+     MOVIMIENTO GLOBAL DE MOUSE (drag de nodo, pan, conexión)
+  ============================================================ */
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (isPanning && panStart.current) {
@@ -411,16 +277,40 @@ const EditorFlujoAppSheet = ({
         const w = mouseToWorld(e.clientX, e.clientY);
         const nx = Math.round((w.x - dragOffset.current.x) / GRID) * GRID;
         const ny = Math.round((w.y - dragOffset.current.y) / GRID) * GRID;
-        setReglas(prev => prev.map(r =>
-          r.id === draggingId ? { ...r, posicion: { x: nx, y: ny } } : r
-        ));
+
+        setReglas(prev => {
+          const anchor = prev.find(r => r.id === draggingId);
+          if (!anchor?.posicion) return prev;
+          const dx = nx - anchor.posicion.x;
+          const dy = ny - anchor.posicion.y;
+          // Mover todos los seleccionados; si no hay set, solo el arrastrado
+          const target = seleccionados.size > 1 && seleccionados.has(draggingId)
+            ? seleccionados
+            : new Set([draggingId]);
+          return prev.map(r => {
+            if (!target.has(r.id) || !r.posicion) return r;
+            return { ...r, posicion: { x: r.posicion.x + dx, y: r.posicion.y + dy } };
+          });
+        });
       }
       if (conectando) {
         const w = mouseToWorld(e.clientX, e.clientY);
         setConectando(c => c ? { ...c, toX: w.x, toY: w.y } : c);
       }
     };
-    const onUp = () => {
+    const onUp = (e: MouseEvent) => {
+      // Determinar si fue un click limpio sobre el lienzo (sin arrastre apreciable).
+      // Si lo fue, deseleccionar (a menos que haya Ctrl/Cmd, que indica "agregar selección").
+      if (isPanning && panStart.current) {
+        const dx = Math.abs(e.clientX - panStart.current.x);
+        const dy = Math.abs(e.clientY - panStart.current.y);
+        const movioApenas = dx < 5 && dy < 5;
+        const conModif = e.ctrlKey || e.metaKey || e.shiftKey;
+        if (movioApenas && !conModif) {
+          setNodoSel(null);
+          setSeleccionados(new Set());
+        }
+      }
       setIsPanning(false);
       panStart.current = null;
       setDraggingId(null);
@@ -433,6 +323,9 @@ const EditorFlujoAppSheet = ({
     };
   }, [isPanning, draggingId, conectando, mouseToWorld]);
 
+  /* ============================================================
+     ZOOM (rueda)
+  ============================================================ */
   const onWheel = (e: React.WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
@@ -440,18 +333,11 @@ const EditorFlujoAppSheet = ({
     setZoom(z => Math.max(0.4, Math.min(1.6, z + delta)));
   };
 
+  /* ============================================================
+     OPERACIONES SOBRE NODOS
+  ============================================================ */
   const agregarNodo = (tipo: ReglaStatus['tipoMecanismo']) => {
     const idx = reglas.length;
-    let posInicial: NodoPosicion;
-    if (reglas.length === 0) {
-      posInicial = { x: ROOT_X, y: ROOT_Y };
-    } else {
-      const masAbajo = reglas.reduce(
-        (acc, r) => (r.posicion && r.posicion.y > acc.y ? r.posicion : acc),
-        { x: ROOT_X, y: ROOT_Y } as NodoPosicion
-      );
-      posInicial = { x: masAbajo.x, y: masAbajo.y + NODE_H + V_SPACING };
-    }
     const nuevo: ReglaStatus = {
       id: `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       orden: idx + 1,
@@ -459,11 +345,10 @@ const EditorFlujoAppSheet = ({
       tipoMecanismo: tipo,
       camposRequeridos: [],
       opcionesSiguientes: [],
-      posicion: posInicial,
+      posicion: autoPosicion(idx),
     };
     setReglas(prev => [...prev, nuevo]);
     setNodoSel(nuevo.id);
-    setMenuAgregarAbierto(false);
   };
 
   const actualizarNodo = (id: string, patch: Partial<ReglaStatus>) => {
@@ -476,6 +361,11 @@ const EditorFlujoAppSheet = ({
       .map(r => ({ ...r, opcionesSiguientes: (r.opcionesSiguientes || []).filter(s => s !== id) }))
     );
     setNodoSel(null);
+    setSeleccionados(prev => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
 
   const duplicarNodo = (id: string) => {
@@ -491,16 +381,153 @@ const EditorFlujoAppSheet = ({
     };
     setReglas(prev => [...prev, copia]);
     setNodoSel(copia.id);
+    setSeleccionados(new Set([copia.id]));
   };
 
+  /* ============================================================
+     PORTAPAPELES (COPIAR / PEGAR ENTRE FLUJOS)
+  ============================================================ */
+  const nuevoId = () => `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  const copiarSeleccion = () => {
+    if (seleccionados.size === 0) return;
+    const nodos = reglas.filter(r => seleccionados.has(r.id));
+    if (nodos.length === 0) return;
+
+    // Filtrar conexiones para que solo queden las que apuntan a nodos también copiados
+    const idsCopiados = new Set(nodos.map(n => n.id));
+    const payload = {
+      version: 1,
+      origen: configValido ? configId : 'flujo sin guardar',
+      copiadoEn: new Date().toISOString(),
+      nodos: nodos.map(n => ({
+        ...n,
+        opcionesSiguientes: (n.opcionesSiguientes || []).filter(s => idsCopiados.has(s)),
+      })),
+    };
+    try {
+      localStorage.setItem('roelca_flujo_clipboard', JSON.stringify(payload));
+      setClipboardInfo({ count: nodos.length, origen: payload.origen });
+      setMensaje({
+        tipo: 'ok',
+        texto: `${nodos.length} ${nodos.length === 1 ? 'paso copiado' : 'pasos copiados'} al portapapeles.`,
+      });
+      setTimeout(() => setMensaje(null), 2200);
+    } catch {
+      setMensaje({ tipo: 'err', texto: 'No se pudo copiar (almacenamiento lleno).' });
+    }
+  };
+
+  const pegarClipboard = () => {
+    let payload: any;
+    try {
+      const raw = localStorage.getItem('roelca_flujo_clipboard');
+      if (!raw) {
+        setMensaje({ tipo: 'err', texto: 'El portapapeles está vacío. Primero copia algún paso.' });
+        setTimeout(() => setMensaje(null), 2500);
+        return;
+      }
+      payload = JSON.parse(raw);
+    } catch {
+      setMensaje({ tipo: 'err', texto: 'Portapapeles corrupto.' });
+      return;
+    }
+    if (!payload?.nodos?.length) return;
+
+    // Mapeo de IDs viejos -> nuevos para mantener conexiones internas
+    const mapIds: Record<string, string> = {};
+    payload.nodos.forEach((n: ReglaStatus) => { mapIds[n.id] = nuevoId(); });
+
+    // Offset para evitar que se peguen exactamente encima
+    const offsetX = 60;
+    const offsetY = 60;
+    const baseOrden = reglas.length;
+
+    const pegados: ReglaStatus[] = payload.nodos.map((n: ReglaStatus, i: number) => ({
+      ...n,
+      id: mapIds[n.id],
+      orden: baseOrden + i + 1,
+      // Re-mapeamos las conexiones siguientes a los nuevos IDs (solo las internas al grupo)
+      opcionesSiguientes: (n.opcionesSiguientes || [])
+        .map(s => mapIds[s])
+        .filter(Boolean),
+      posicion: {
+        x: (n.posicion?.x ?? 100) + offsetX,
+        y: (n.posicion?.y ?? 100) + offsetY,
+      },
+    }));
+
+    setReglas(prev => [...prev, ...pegados]);
+    setSeleccionados(new Set(pegados.map(p => p.id)));
+    setNodoSel(pegados[0]?.id ?? null);
+
+    setMensaje({
+      tipo: 'ok',
+      texto: `${pegados.length} ${pegados.length === 1 ? 'paso pegado' : 'pasos pegados'} desde "${payload.origen}".`,
+    });
+    setTimeout(() => setMensaje(null), 2500);
+  };
+
+  const duplicarSeleccion = () => {
+    if (seleccionados.size === 0) return;
+    const nodos = reglas.filter(r => seleccionados.has(r.id));
+    const idsCopiados = new Set(nodos.map(n => n.id));
+    const mapIds: Record<string, string> = {};
+    nodos.forEach(n => { mapIds[n.id] = nuevoId(); });
+
+    const baseOrden = reglas.length;
+    const duplicados: ReglaStatus[] = nodos.map((n, i) => ({
+      ...n,
+      id: mapIds[n.id],
+      orden: baseOrden + i + 1,
+      opcionesSiguientes: (n.opcionesSiguientes || [])
+        .filter(s => idsCopiados.has(s))
+        .map(s => mapIds[s]),
+      posicion: {
+        x: (n.posicion?.x ?? 100) + 40,
+        y: (n.posicion?.y ?? 100) + 40,
+      },
+    }));
+
+    setReglas(prev => [...prev, ...duplicados]);
+    setSeleccionados(new Set(duplicados.map(d => d.id)));
+    setNodoSel(duplicados[0]?.id ?? null);
+  };
+
+  const eliminarSeleccion = () => {
+    if (seleccionados.size === 0) return;
+    if (seleccionados.size > 1) {
+      if (!window.confirm(`¿Eliminar ${seleccionados.size} nodos seleccionados?`)) return;
+    }
+    const ids = seleccionados;
+    setReglas(prev => prev
+      .filter(r => !ids.has(r.id))
+      .map(r => ({ ...r, opcionesSiguientes: (r.opcionesSiguientes || []).filter(s => !ids.has(s)) }))
+    );
+    setSeleccionados(new Set());
+    setNodoSel(null);
+  };
+
+  const seleccionarTodo = () => {
+    setSeleccionados(new Set(reglas.map(r => r.id)));
+  };
+
+  const limpiarClipboard = () => {
+    localStorage.removeItem('roelca_flujo_clipboard');
+    setClipboardInfo(null);
+  };
+
+  /* ============================================================
+     CONEXIONES (drag desde puerto de salida hasta puerto de entrada)
+  ============================================================ */
   const iniciarConexion = (e: React.MouseEvent, fromId: string) => {
     e.stopPropagation();
     const r = reglas.find(x => x.id === fromId);
     if (!r?.posicion) return;
     setConectando({
       from: fromId,
-      toX: r.posicion.x + NODE_W / 2,
-      toY: r.posicion.y + NODE_H,
+      toX: r.posicion.x + NODE_W,
+      toY: r.posicion.y + NODE_H / 2,
     });
   };
 
@@ -525,26 +552,14 @@ const EditorFlujoAppSheet = ({
 
   /* ============================================================
      GUARDAR
-     ✅ FIX #1: Sanitizamos antes de hacer setDoc (defensa final).
-     ✅ FIX #3: Invalidamos el caché de flujos tras guardar exitosamente.
   ============================================================ */
   const guardar = async () => {
     if (!configValido) {
       setMensaje({ tipo: 'err', texto: 'Selecciona Servicio, Tráfico y Carga antes de guardar.' });
       return;
     }
-
-    // ✅ FIX #1: Antes de guardar, pasamos TODO por el sanitizador.
-    // Esto garantiza que opcionesSiguientes SOLO contenga ids válidos del flujo actual.
-    // Nunca más vamos a tener en Firestore una mezcla como
-    // ["3. Documentado (Asignado)", "n_1779801733288_3h49"] que rompe la cascada.
-    const { flujo: flujoSanitizado, cambios: cambiosSanitizacion } = sanitizarFlujo(reglas);
-
-    if (cambiosSanitizacion.length > 0) {
-      console.warn('[ConfiguradorStatus] Datos limpiados antes de guardar:', cambiosSanitizacion);
-    }
-
-    const flujoFinal = flujoSanitizado.map((r, i) => ({
+    // Reordenar por nombre/orden actual respetando lo que ya hay
+    const flujoFinal = reglas.map((r, i) => ({
       ...r,
       orden: i + 1,
     }));
@@ -560,19 +575,6 @@ const EditorFlujoAppSheet = ({
         ultimaActualizacion: new Date().toISOString(),
         flujo: flujoFinal,
       });
-
-      // ✅ FIX #3: Invalidar el caché de ESTE flujo (memoria + localStorage).
-      // La próxima vez que se abra una operación que use este configId,
-      // statusRules.ts leerá la versión fresca de Firestore en vez de
-      // la versión cacheada vieja. Esto elimina la necesidad de "Forzar Recarga".
-      try {
-        limpiarCacheFlujos(configId);
-        console.log(`[ConfiguradorStatus] Caché de flujo "${configId}" invalidado tras guardado.`);
-      } catch (cacheErr) {
-        // Si por algún motivo el helper falla, NO rompemos el guardado.
-        console.warn('[ConfiguradorStatus] No se pudo invalidar caché de flujo:', cacheErr);
-      }
-
       setMensaje({ tipo: 'ok', texto: 'Flujo guardado correctamente.' });
       setTimeout(() => onVolver(), 700);
     } catch (e: any) {
@@ -582,38 +584,50 @@ const EditorFlujoAppSheet = ({
     }
   };
 
+  /* ============================================================
+     AUTO-LAYOUT
+  ============================================================ */
   const autoOrganizar = () => {
-    setReglas(prev => calcularLayoutVertical(prev));
+    setReglas(prev => prev.map((r, i) => ({ ...r, posicion: autoPosicion(i) })));
     setPan({ x: 0, y: 0 });
     setZoom(1);
   };
 
+  /* ============================================================
+     DERIVADOS
+  ============================================================ */
   const reglaSel = useMemo(() => reglas.find(r => r.id === nodoSel) || null, [reglas, nodoSel]);
 
+  /* helpers para puntos de conexión */
   const portOut = (r: ReglaStatus) => ({
-    x: (r.posicion?.x ?? 0) + NODE_W / 2,
-    y: (r.posicion?.y ?? 0) + NODE_H,
+    x: (r.posicion?.x ?? 0) + NODE_W,
+    y: (r.posicion?.y ?? 0) + NODE_H / 2,
   });
   const portIn = (r: ReglaStatus) => ({
-    x: (r.posicion?.x ?? 0) + NODE_W / 2,
-    y: (r.posicion?.y ?? 0),
+    x: (r.posicion?.x ?? 0),
+    y: (r.posicion?.y ?? 0) + NODE_H / 2,
   });
 
   const curva = (x1: number, y1: number, x2: number, y2: number) => {
-    const dy = Math.max(40, Math.abs(y2 - y1) * 0.5);
-    return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+    const dx = Math.max(60, Math.abs(x2 - x1) * 0.5);
+    return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   };
 
+  /* tamaño "virtual" del mundo: dejamos margen amplio */
   const worldSize = useMemo(() => {
     const maxX = Math.max(2400, ...reglas.map(r => (r.posicion?.x ?? 0) + NODE_W + 400));
     const maxY = Math.max(1600, ...reglas.map(r => (r.posicion?.y ?? 0) + NODE_H + 400));
     return { w: maxX, h: maxY };
   }, [reglas]);
 
+  /* ============================================================
+     RENDER
+  ============================================================ */
   return (
     <div style={S.shell}>
       <style>{CSS_GLOBAL}</style>
 
+      {/* ===== TOP BAR ===== */}
       <header style={S.topbar}>
         <div style={S.topLeft}>
           <button onClick={onVolver} style={S.backBtn} title="Volver">
@@ -642,35 +656,40 @@ const EditorFlujoAppSheet = ({
             label="Tráfico"
             value={trafico}
             onChange={setTrafico}
-            options={['Importación', 'Exportación', 'Movimiento LDO', 'Movimiento NLD', 'N/A']}
+            options={['Importación', 'Exportación', 'Nacional', 'N/A']}
             placeholder="Selecciona…"
           />
           <SelectorCampo
             label="Carga"
             value={carga}
             onChange={setCarga}
-            options={['Cargada', 'Vacía', 'N/A']}
+            options={['Llena', 'Vacía', 'N/A']}
             placeholder="Selecciona…"
           />
         </div>
 
         <div style={S.topRight}>
+          {seleccionados.size > 1 && (
+            <div style={{
+              padding: '4px 10px',
+              background: 'rgba(167,139,250,0.10)',
+              border: '1px solid rgba(167,139,250,0.35)',
+              borderRadius: 999,
+              fontSize: 11.5,
+              color: '#cfc1ff',
+              fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <span style={{ fontSize: 14 }}>✓</span>
+              {seleccionados.size} seleccionados
+            </div>
+          )}
           {mensaje && (
             <div style={{
               ...S.toast,
-              background:
-                mensaje.tipo === 'ok'   ? 'rgba(52,211,153,0.12)' :
-                mensaje.tipo === 'warn' ? 'rgba(245,158,11,0.12)' :
-                                          'rgba(248,113,113,0.12)',
-              color:
-                mensaje.tipo === 'ok'   ? '#34d399' :
-                mensaje.tipo === 'warn' ? '#fbbf24' :
-                                          '#f87171',
-              border: `1px solid ${
-                mensaje.tipo === 'ok'   ? 'rgba(52,211,153,0.4)' :
-                mensaje.tipo === 'warn' ? 'rgba(245,158,11,0.4)' :
-                                          'rgba(248,113,113,0.4)'
-              }`,
+              background: mensaje.tipo === 'ok' ? 'rgba(52,211,153,0.12)' : 'rgba(248,113,113,0.12)',
+              color:      mensaje.tipo === 'ok' ? '#34d399' : '#f87171',
+              border: `1px solid ${mensaje.tipo === 'ok' ? 'rgba(52,211,153,0.4)' : 'rgba(248,113,113,0.4)'}`,
             }}>
               {mensaje.texto}
             </div>
@@ -685,7 +704,9 @@ const EditorFlujoAppSheet = ({
         </div>
       </header>
 
+      {/* ===== CUERPO ===== */}
       <div style={S.body}>
+        {/* Sidebar izquierdo: paleta de nodos */}
         <aside style={S.sidebar}>
           <div style={S.sidebarTitle}>Bloques</div>
           <div style={S.sidebarSub}>Haz clic para agregar al lienzo</div>
@@ -706,24 +727,111 @@ const EditorFlujoAppSheet = ({
             onClick={() => agregarNodo('boton_decision')}
           />
 
-          <div style={{ ...S.sidebarTitle, marginTop: 24 }}>Herramientas</div>
+          <div style={{ ...S.sidebarTitle, marginTop: 24 }}>Portapapeles</div>
+          <div style={S.sidebarSub}>
+            Copia pasos de un flujo para reutilizarlos en otro.
+          </div>
+
+          {clipboardInfo && (
+            <div style={{
+              background: 'linear-gradient(180deg, rgba(167,139,250,0.10), rgba(99,102,241,0.06))',
+              border: '1px solid rgba(167,139,250,0.32)',
+              borderRadius: 10,
+              padding: '10px 12px',
+              marginBottom: 10,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                <div style={{
+                  fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1,
+                  color: '#a78bfa', fontWeight: 700,
+                }}>En portapapeles</div>
+                <button
+                  onClick={limpiarClipboard}
+                  title="Vaciar portapapeles"
+                  style={{
+                    background: 'none', border: 'none', color: '#7a8499',
+                    cursor: 'pointer', fontSize: 13, padding: 0,
+                  }}
+                >×</button>
+              </div>
+              <div style={{ fontSize: 13, color: '#e6ebf5', fontWeight: 600, marginTop: 4 }}>
+                {clipboardInfo.count} {clipboardInfo.count === 1 ? 'paso' : 'pasos'}
+              </div>
+              <div style={{ fontSize: 11, color: '#7a8499', marginTop: 2 }}>
+                desde <span style={{ color: '#a9b3c7' }}>{clipboardInfo.origen}</span>
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={copiarSeleccion}
+            disabled={seleccionados.size === 0}
+            style={{
+              ...S.toolBtn,
+              opacity: seleccionados.size === 0 ? 0.5 : 1,
+              cursor: seleccionados.size === 0 ? 'not-allowed' : 'pointer',
+            }}
+            title="Ctrl+C"
+          >
+            <span>⎘</span> Copiar selección
+            {seleccionados.size > 0 && (
+              <span style={S.kbdInline}>{seleccionados.size}</span>
+            )}
+          </button>
+          <button
+            onClick={pegarClipboard}
+            disabled={!clipboardInfo}
+            style={{
+              ...S.toolBtn,
+              opacity: !clipboardInfo ? 0.5 : 1,
+              cursor: !clipboardInfo ? 'not-allowed' : 'pointer',
+              ...(clipboardInfo ? {
+                borderColor: 'rgba(167,139,250,0.45)',
+                color: '#cfc1ff',
+                background: 'rgba(167,139,250,0.08)',
+              } : {}),
+            }}
+            title="Ctrl+V"
+          >
+            <span>⎗</span> Pegar aquí
+            {clipboardInfo && <span style={S.kbdInline}>{clipboardInfo.count}</span>}
+          </button>
+          <button
+            onClick={duplicarSeleccion}
+            disabled={seleccionados.size === 0}
+            style={{
+              ...S.toolBtn,
+              opacity: seleccionados.size === 0 ? 0.5 : 1,
+              cursor: seleccionados.size === 0 ? 'not-allowed' : 'pointer',
+            }}
+            title="Ctrl+D"
+          >
+            <span>⧉</span> Duplicar selección
+          </button>
+
+          <div style={{ ...S.sidebarTitle, marginTop: 24 }}>Lienzo</div>
           <button onClick={autoOrganizar} style={S.toolBtn}>
-            <span>⟲</span> Reorganizar (vertical)
+            <span>⟲</span> Reorganizar nodos
           </button>
           <button onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} style={S.toolBtn}>
             <span>⤧</span> Centrar vista
           </button>
+          <button onClick={seleccionarTodo} style={S.toolBtn} title="Ctrl+A">
+            <span>▣</span> Seleccionar todo
+          </button>
 
           <div style={S.legend}>
-            <div style={S.legendTitle}>Tips</div>
-            <div style={S.legendItem}><b>El flujo va de arriba hacia abajo</b>.</div>
-            <div style={S.legendItem}>Usa el botón <b>+</b> abajo del lienzo o esta paleta para agregar nodos.</div>
-            <div style={S.legendItem}>Para <b>múltiples caminos</b>, arrastra desde el puerto inferior de un nodo hacia varios nodos distintos. Cada conexión es un camino.</div>
-            <div style={S.legendItem}><b>Ctrl + Rueda</b> para zoom.</div>
-            <div style={S.legendItem}><b>Supr</b> elimina el nodo seleccionado.</div>
+            <div style={S.legendTitle}>Atajos</div>
+            <div style={S.legendItem}><b>Ctrl + Click</b> añade a la selección.</div>
+            <div style={S.legendItem}><b>Ctrl + C / V</b> copiar y pegar pasos.</div>
+            <div style={S.legendItem}><b>Ctrl + D</b> duplicar en sitio.</div>
+            <div style={S.legendItem}><b>Ctrl + A</b> seleccionar todo.</div>
+            <div style={S.legendItem}><b>Supr</b> elimina la selección.</div>
+            <div style={S.legendItem}><b>Ctrl + Rueda</b> zoom.</div>
           </div>
         </aside>
 
+        {/* Canvas central */}
         <div
           ref={canvasRef}
           style={S.canvas}
@@ -731,12 +839,14 @@ const EditorFlujoAppSheet = ({
           onWheel={onWheel}
           data-canvas-bg="true"
         >
+          {/* Fondo de cuadrícula */}
           <div data-canvas-bg="true" style={{
             ...S.gridBg,
             backgroundPosition: `${pan.x}px ${pan.y}px`,
             backgroundSize: `${GRID * zoom}px ${GRID * zoom}px, ${GRID * 5 * zoom}px ${GRID * 5 * zoom}px`,
           }} />
 
+          {/* Capa transformable */}
           <div
             data-canvas-bg="true"
             style={{
@@ -749,6 +859,7 @@ const EditorFlujoAppSheet = ({
               cursor: isPanning ? 'grabbing' : 'default',
             }}
           >
+            {/* SVG de conexiones */}
             <svg
               width={worldSize.w}
               height={worldSize.h}
@@ -769,7 +880,8 @@ const EditorFlujoAppSheet = ({
                   if (!target || !r.posicion || !target.posicion) return null;
                   const p1 = portOut(r);
                   const p2 = portIn(target);
-                  const isHi = nodoSel === r.id || nodoSel === toId;
+                  const isHi = nodoSel === r.id || nodoSel === toId
+                            || seleccionados.has(r.id) || seleccionados.has(toId);
                   return (
                     <g key={`${r.id}-${toId}`} style={{ pointerEvents: 'auto' }}>
                       <path
@@ -780,6 +892,7 @@ const EditorFlujoAppSheet = ({
                         markerEnd={isHi ? 'url(#arrowHi)' : 'url(#arrow)'}
                         style={{ transition: 'stroke 120ms ease' }}
                       />
+                      {/* Botón eliminar conexión, a la mitad */}
                       <g
                         transform={`translate(${(p1.x + p2.x) / 2}, ${(p1.y + p2.y) / 2})`}
                         style={{ cursor: 'pointer' }}
@@ -793,6 +906,7 @@ const EditorFlujoAppSheet = ({
                 })
               )}
 
+              {/* Conexión en progreso */}
               {conectando && (() => {
                 const from = reglas.find(r => r.id === conectando.from);
                 if (!from?.posicion) return null;
@@ -809,9 +923,10 @@ const EditorFlujoAppSheet = ({
               })()}
             </svg>
 
+            {/* Nodo START (visual, no editable) */}
             <div style={{
               position: 'absolute',
-              left: ROOT_X + NODE_W / 2 - 110,
+              left: 40,
               top: 40,
               padding: '10px 18px',
               borderRadius: 999,
@@ -824,17 +939,30 @@ const EditorFlujoAppSheet = ({
               textTransform: 'uppercase',
               boxShadow: '0 4px 18px rgba(167,139,250,0.18)',
             }}>
-              ▼ Evento: Nueva Operación
+              ▶ Evento: Nueva Operación
             </div>
 
+            {/* Nodos */}
             {reglas.map(r => {
               const meta = TIPO_META[r.tipoMecanismo];
               const isSel = nodoSel === r.id;
+              const isMulti = seleccionados.has(r.id);
+              const borderColor = isSel
+                ? meta.color
+                : (isMulti ? '#a78bfa' : '#2c3344');
+              const shadow = isSel
+                ? `0 0 0 4px ${meta.color}22, 0 10px 30px rgba(0,0,0,0.5)`
+                : (isMulti
+                    ? `0 0 0 3px rgba(167,139,250,0.20), 0 8px 24px rgba(0,0,0,0.45)`
+                    : '0 6px 22px rgba(0,0,0,0.4)');
               return (
                 <div
                   key={r.id}
                   onMouseDown={(e) => onNodeMouseDown(e, r.id)}
-                  onClick={(e) => { e.stopPropagation(); setNodoSel(r.id); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // El estado real se sincronizó ya en mouseDown; aquí evitamos solo el bubble
+                  }}
                   style={{
                     position: 'absolute',
                     left: r.posicion?.x ?? 0,
@@ -842,16 +970,27 @@ const EditorFlujoAppSheet = ({
                     width: NODE_W,
                     minHeight: NODE_H,
                     background: 'linear-gradient(180deg, #1c2230 0%, #161b25 100%)',
-                    border: `1.5px solid ${isSel ? meta.color : '#2c3344'}`,
+                    border: `1.5px solid ${borderColor}`,
                     borderRadius: 14,
-                    boxShadow: isSel
-                      ? `0 0 0 4px ${meta.color}22, 0 10px 30px rgba(0,0,0,0.5)`
-                      : '0 6px 22px rgba(0,0,0,0.4)',
+                    boxShadow: shadow,
                     cursor: draggingId === r.id ? 'grabbing' : 'grab',
                     userSelect: 'none',
                     transition: 'box-shadow 140ms ease, border-color 140ms ease',
                   }}
                 >
+                  {/* indicador de multi-selección */}
+                  {isMulti && !isSel && (
+                    <div style={{
+                      position: 'absolute', top: -8, right: -8,
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: '#a78bfa', color: '#0a0d14',
+                      fontSize: 11, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: '2px solid #0a0d14',
+                      boxShadow: '0 2px 6px rgba(167,139,250,0.5)',
+                    }}>✓</div>
+                  )}
+                  {/* franja superior */}
                   <div style={{
                     height: 6,
                     background: `linear-gradient(90deg, ${meta.color}, transparent)`,
@@ -902,32 +1041,30 @@ const EditorFlujoAppSheet = ({
                     )}
                   </div>
 
+                  {/* Puerto entrada (izquierda) */}
                   <div
                     onMouseUp={() => finalizarConexion(r.id)}
                     style={{
-                      position: 'absolute',
-                      left: NODE_W / 2 - 7,
-                      top: -7,
+                      position: 'absolute', left: -7, top: NODE_H / 2 - 7,
                       width: 14, height: 14, borderRadius: '50%',
                       background: '#0d1117',
                       border: `2px solid ${meta.color}`,
                       boxShadow: `0 0 0 3px ${meta.color}22`,
                     }}
-                    title="Entrada (recibe el flujo)"
+                    title="Entrada"
                   />
+                  {/* Puerto salida (derecha) */}
                   <div
                     onMouseDown={(e) => iniciarConexion(e, r.id)}
                     style={{
-                      position: 'absolute',
-                      left: NODE_W / 2 - 7,
-                      bottom: -7,
+                      position: 'absolute', right: -7, top: NODE_H / 2 - 7,
                       width: 14, height: 14, borderRadius: '50%',
                       background: meta.color,
                       border: '2px solid #0d1117',
                       cursor: 'crosshair',
                       boxShadow: `0 0 12px ${meta.color}aa`,
                     }}
-                    title="Salida (arrastra hacia abajo para conectar)"
+                    title="Arrastra para conectar"
                   />
                 </div>
               );
@@ -949,6 +1086,7 @@ const EditorFlujoAppSheet = ({
             )}
           </div>
 
+          {/* Controles flotantes de zoom */}
           <div style={S.zoomBar}>
             <button style={S.zoomBtn} onClick={() => setZoom(z => Math.min(1.6, z + 0.1))}>+</button>
             <div style={S.zoomLabel}>{Math.round(zoom * 100)}%</div>
@@ -957,116 +1095,34 @@ const EditorFlujoAppSheet = ({
             <button style={S.zoomBtn} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} title="Reset">⌂</button>
           </div>
 
-          <div style={S.addNodeContainer}>
-            {menuAgregarAbierto && (
-              <div style={S.addNodeMenu}>
-                {(Object.keys(TIPO_META) as ReglaStatus['tipoMecanismo'][]).map(t => {
-                  const m = TIPO_META[t];
-                  return (
-                    <button
-                      key={t}
-                      onClick={() => agregarNodo(t)}
-                      style={{
-                        ...S.addNodeMenuItem,
-                        borderLeft: `3px solid ${m.color}`,
-                      }}
-                      onMouseEnter={(e) => { e.currentTarget.style.background = m.bg; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.background = '#11151d'; }}
-                    >
-                      <span style={{ color: m.color, fontSize: 16, marginRight: 8 }}>{m.icon}</span>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                        <span style={{ color: m.color, fontWeight: 600, fontSize: 12 }}>{m.label}</span>
-                        <span style={{ color: '#7a8499', fontSize: 11, marginTop: 2 }}>
-                          {t === 'automatico'     && 'Avanza al cumplir campos'}
-                          {t === 'manual'         && 'Requiere acción manual'}
-                          {t === 'boton_decision' && 'Múltiples caminos'}
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <button
-              onClick={() => setMenuAgregarAbierto(v => !v)}
-              style={{
-                ...S.addNodeFab,
-                background: menuAgregarAbierto
-                  ? 'linear-gradient(135deg, #4f46e5, #7c3aed)'
-                  : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                transform: menuAgregarAbierto ? 'rotate(45deg)' : 'rotate(0deg)',
-              }}
-              title="Agregar nodo al flujo"
-            >
-              <span style={{ fontSize: 22, lineHeight: 1, color: '#fff', fontWeight: 300 }}>+</span>
-            </button>
-          </div>
-
           {cargando && (
             <div style={S.loadingOverlay}>Cargando flujo…</div>
           )}
         </div>
 
-        <aside style={{
-          ...S.inspector,
-          width: inspectorColapsado ? 0 : 340,
-          minWidth: inspectorColapsado ? 0 : 340,
-          borderLeft: inspectorColapsado ? 'none' : '1px solid #1c2230',
-          transition: 'width 200ms ease, min-width 200ms ease',
-        }}>
-          {!inspectorColapsado && (
-            <>
-              <button
-                onClick={() => setInspectorColapsado(true)}
-                style={S.inspectorToggleInside}
-                title="Ocultar panel"
-              >
-                →
-              </button>
-
-              {!reglaSel ? (
-                <div style={S.emptyInspector}>
-                  <div style={{ fontSize: 40, marginBottom: 8 }}>◌</div>
-                  <div style={{ fontWeight: 600, color: '#c9d1d9' }}>Inspector</div>
-                  <div style={{ marginTop: 6, fontSize: 13, color: '#7a8499', lineHeight: 1.5 }}>
-                    Selecciona un nodo del lienzo para configurar su nombre, mecanismo de avance, campos requeridos y conexiones.
-                  </div>
-                </div>
-              ) : (
-                <Inspector
-                  regla={reglaSel}
-                  catalogoStatus={catalogoStatus}
-                  campos={CAMPOS_OPERACION}
-                  todosNodos={reglas}
-                  onChange={(patch) => actualizarNodo(reglaSel.id, patch)}
-                  onDuplicar={() => duplicarNodo(reglaSel.id)}
-                  onEliminar={() => eliminarNodo(reglaSel.id)}
-                  onDesconectar={(toId) => eliminarConexion(reglaSel.id, toId)}
-                />
-              )}
-            </>
+        {/* Panel derecho: inspector */}
+        <aside style={S.inspector}>
+          {!reglaSel ? (
+            <div style={S.emptyInspector}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>◌</div>
+              <div style={{ fontWeight: 600, color: '#c9d1d9' }}>Inspector</div>
+              <div style={{ marginTop: 6, fontSize: 13, color: '#7a8499', lineHeight: 1.5 }}>
+                Selecciona un nodo del lienzo para configurar su nombre, mecanismo de avance, campos requeridos y conexiones.
+              </div>
+            </div>
+          ) : (
+            <Inspector
+              regla={reglaSel}
+              catalogoStatus={catalogoStatus}
+              campos={CAMPOS_OPERACION}
+              todosNodos={reglas}
+              onChange={(patch) => actualizarNodo(reglaSel.id, patch)}
+              onDuplicar={() => duplicarNodo(reglaSel.id)}
+              onEliminar={() => eliminarNodo(reglaSel.id)}
+              onDesconectar={(toId) => eliminarConexion(reglaSel.id, toId)}
+            />
           )}
         </aside>
-
-        {inspectorColapsado && (
-          <button
-            onClick={() => setInspectorColapsado(false)}
-            style={S.inspectorToggleOutside}
-            title={reglaSel ? `Mostrar inspector (${reglaSel.nombreStatus || 'nodo seleccionado'})` : 'Mostrar inspector'}
-          >
-            <span style={{ fontSize: 16, lineHeight: 1 }}>←</span>
-            <span style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>
-              Inspector
-            </span>
-            {reglaSel && (
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: TIPO_META[reglaSel.tipoMecanismo].color,
-                boxShadow: `0 0 8px ${TIPO_META[reglaSel.tipoMecanismo].color}`,
-              }} />
-            )}
-          </button>
-        )}
       </div>
     </div>
   );
@@ -1164,6 +1220,7 @@ const Inspector = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Encabezado */}
       <div style={{
         padding: '14px 16px',
         borderBottom: '1px solid #232a3a',
@@ -1186,7 +1243,9 @@ const Inspector = ({
         </div>
       </div>
 
+      {/* Contenido scroll */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {/* Nombre del estatus */}
         <Section title="Nombre del estatus">
           <select
             value={regla.nombreStatus}
@@ -1198,6 +1257,7 @@ const Inspector = ({
           </select>
         </Section>
 
+        {/* Tipo de mecanismo */}
         <Section title="Mecanismo de avance">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
             {(Object.keys(TIPO_META) as ReglaStatus['tipoMecanismo'][]).map(t => {
@@ -1233,6 +1293,7 @@ const Inspector = ({
           </div>
         </Section>
 
+        {/* Campos requeridos */}
         <Section title="Campos requeridos para avanzar" hint="Los caminos siguientes solo se activan si estos campos están llenos.">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {campos.map(c => {
@@ -1260,47 +1321,17 @@ const Inspector = ({
           </div>
         </Section>
 
+        {/* Conexiones salientes */}
         <Section title="Caminos siguientes" hint="Estos son los nodos a los que conecta este paso.">
           {(regla.opcionesSiguientes || []).length === 0 ? (
             <div style={{ fontSize: 12.5, color: '#6b7385', fontStyle: 'italic', padding: '8px 0' }}>
-              Aún no hay conexiones. Arrastra desde el puerto inferior de este nodo hacia el puerto superior de otro.
+              Aún no hay conexiones. Arrastra desde el puerto derecho de este nodo hacia otro.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {regla.opcionesSiguientes.map(toId => {
                 const target = todosNodos.find(n => n.id === toId);
                 const tMeta = target ? TIPO_META[target.tipoMecanismo] : null;
-
-                // ✅ Si el target no existe (referencia rota), lo mostramos en rojo
-                // con un mensaje claro, para que el usuario pueda quitarlo a mano.
-                // Aunque sanitizarFlujo() limpia esto al cargar, dejamos esta UI
-                // como red de seguridad.
-                if (!target) {
-                  return (
-                    <div key={toId} style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '7px 10px',
-                      background: 'rgba(248,113,113,0.08)',
-                      border: '1px solid rgba(248,113,113,0.3)',
-                      borderRadius: 8,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                        <span style={{ color: '#f87171' }}>⚠</span>
-                        <span style={{
-                          fontSize: 12,
-                          color: '#fca5a5',
-                          fontStyle: 'italic',
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}>Referencia rota: {String(toId).substring(0, 24)}…</span>
-                      </div>
-                      <button onClick={() => onDesconectar(toId)} style={{
-                        background: 'none', border: 'none', color: '#f87171', cursor: 'pointer',
-                        fontSize: 14, padding: '0 4px',
-                      }} title="Eliminar referencia rota">×</button>
-                    </div>
-                  );
-                }
-
                 return (
                   <div key={toId} style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1310,12 +1341,12 @@ const Inspector = ({
                     borderRadius: 8,
                   }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                      <span style={{ color: tMeta?.color ?? '#8b94a9' }}>↓</span>
+                      <span style={{ color: tMeta?.color ?? '#8b94a9' }}>→</span>
                       <span style={{
                         fontSize: 13,
                         color: '#c9d1d9',
                         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>{target.nombreStatus || '(sin nombre)'}</span>
+                      }}>{target?.nombreStatus || '(sin nombre)'}</span>
                     </div>
                     <button onClick={() => onDesconectar(toId)} style={{
                       background: 'none', border: 'none', color: '#f87171', cursor: 'pointer',
@@ -1329,6 +1360,7 @@ const Inspector = ({
         </Section>
       </div>
 
+      {/* Acciones inferiores */}
       <div style={{
         padding: 12,
         borderTop: '1px solid #232a3a',
@@ -1563,7 +1595,6 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: 12,
     borderRadius: 8,
     fontWeight: 500,
-    maxWidth: 360,
   },
 
   body: { display: 'flex', flex: 1, overflow: 'hidden' },
@@ -1594,6 +1625,17 @@ const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     marginTop: 6,
     transition: 'all 120ms ease',
+  },
+  kbdInline: {
+    marginLeft: 'auto',
+    background: '#222a39',
+    color: '#cfc1ff',
+    fontSize: 10.5,
+    fontWeight: 700,
+    padding: '1px 7px',
+    borderRadius: 999,
+    minWidth: 18,
+    textAlign: 'center',
   },
 
   legend: {
@@ -1642,53 +1684,6 @@ const S: Record<string, React.CSSProperties> = {
   },
   zoomLabel: { fontSize: 11, color: '#7a8499', textAlign: 'center', padding: '2px 0' },
 
-  addNodeContainer: {
-    position: 'absolute',
-    left: 20,
-    bottom: 20,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: 10,
-    zIndex: 6,
-  },
-  addNodeFab: {
-    width: 52,
-    height: 52,
-    borderRadius: '50%',
-    border: 'none',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    boxShadow: '0 8px 24px rgba(99,102,241,0.45)',
-    transition: 'transform 200ms ease, background 200ms ease',
-  },
-  addNodeMenu: {
-    background: '#0f1320',
-    border: '1px solid #2a3142',
-    borderRadius: 10,
-    padding: 6,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-    minWidth: 220,
-    boxShadow: '0 12px 28px rgba(0,0,0,0.5)',
-    animation: 'fadeUp 160ms ease',
-  },
-  addNodeMenuItem: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '9px 10px',
-    background: '#11151d',
-    border: '1px solid transparent',
-    borderRadius: 7,
-    cursor: 'pointer',
-    transition: 'background 120ms ease',
-    width: '100%',
-    textAlign: 'left',
-  },
-
   loadingOverlay: {
     position: 'absolute', inset: 0,
     background: 'rgba(10,13,20,0.7)',
@@ -1704,53 +1699,11 @@ const S: Record<string, React.CSSProperties> = {
     borderLeft: '1px solid #1c2230',
     display: 'flex', flexDirection: 'column',
     overflow: 'hidden',
-    position: 'relative',
   },
   emptyInspector: {
     padding: '60px 24px',
     textAlign: 'center',
     color: '#5f697d',
-  },
-
-  inspectorToggleInside: {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    width: 26,
-    height: 26,
-    borderRadius: 6,
-    background: '#1a1f2b',
-    border: '1px solid #2c3344',
-    color: '#a9b3c7',
-    cursor: 'pointer',
-    fontSize: 14,
-    fontWeight: 600,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 5,
-  },
-
-  inspectorToggleOutside: {
-    position: 'absolute',
-    right: 0,
-    top: '50%',
-    transform: 'translateY(-50%)',
-    background: 'linear-gradient(180deg, #1a1f2b, #151a24)',
-    border: '1px solid #2c3344',
-    borderRight: 'none',
-    borderTopLeftRadius: 10,
-    borderBottomLeftRadius: 10,
-    color: '#a9b3c7',
-    cursor: 'pointer',
-    padding: '14px 8px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 8,
-    boxShadow: '-4px 0 14px rgba(0,0,0,0.35)',
-    zIndex: 5,
-    transition: 'background 120ms ease',
   },
 
   input: {
@@ -1798,9 +1751,4 @@ const CSS_GLOBAL = `
     box-shadow: 0 8px 20px rgba(0,0,0,0.4);
   }
   .hov-row:hover { background: #11151d; }
-
-  @keyframes fadeUp {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
 `;
