@@ -3,6 +3,8 @@ import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBat
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase'; 
 import { FormularioConvenioCliente } from './FormularioConvenioCliente';
 import { registrarLog } from '../../../utils/logger';
+// ✅ NUEVO (Cambio 1): helper cacheado para resolver tipoConvenioId → descripcion
+import { obtenerTarifasReferencia } from '../services/tarifasReferenciaService';
 
 // ============================================================
 // HELPERS DE CRUCE (NORMALIZACIÓN)
@@ -34,6 +36,18 @@ export const ConveniosClientesDashboard: React.FC = () => {
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   // Todos los detalles de convenios (en vivo): doc de convenios_clientes_detalles.
   const [detallesGlobales, setDetallesGlobales] = useState<any[]>([]);
+
+  // ✅ NUEVO (Cambio 2): catálogo catalogo_tarifas_referencia indexado por id.
+  // Se carga UNA SOLA VEZ por sesión (cache en memoria + sessionStorage en el helper).
+  const [tarifasReferencia, setTarifasReferencia] = useState<Record<string, any>>({});
+  useEffect(() => {
+    obtenerTarifasReferencia()
+      .then(setTarifasReferencia)
+      .catch((err) => {
+        console.error('[ConveniosClientesDashboard] Error cargando catalogo_tarifas_referencia:', err);
+        setTarifasReferencia({});
+      });
+  }, []);
 
   const [modalBajaAbierto, setModalBajaAbierto] = useState(false);
   const [convenioParaBaja, setConvenioParaBaja] = useState<any | null>(null);
@@ -754,7 +768,25 @@ export const ConveniosClientesDashboard: React.FC = () => {
                             // El cruce usa el ID del documento del detalle, que es
                             // exactamente lo que la operación guarda en "convenio".
                             const idDet = String(det.id || '').trim();
-                            const nomDet = det.tipoConvenioNombre || det.tarifaNombre || det.nombre || det.tipoOperacionNombre || det.tipoServicio;
+                            // ✅ NUEVO (Cambio 3): resolver descripción real desde catalogo_tarifas_referencia
+                            // (usando tipoConvenioId del detalle). Cae a fallbacks si no encuentra.
+                            const refDoc = det.tipoConvenioId ? tarifasReferencia[String(det.tipoConvenioId)] : null;
+                            const descMaster = refDoc?.descripcion || refDoc?.nombre || '';
+                            const nomDet = det.tipoConvenioNombre || descMaster || det.tarifaNombre || det.nombre || det.tipoOperacionNombre || det.tipoServicio;
+
+                            // 🔍 DIAGNÓSTICO TEMPORAL — elimínalo cuando funcione
+                            const catalogoCount = Object.keys(tarifasReferencia).length;
+                            let diagnostico = '';
+                            if (!det.tipoConvenioId) {
+                              diagnostico = '🔶 Sin tipoConvenioId en el detalle (registro viejo)';
+                            } else if (catalogoCount === 0) {
+                              diagnostico = '🔶 Catálogo NO cargado (0 docs en tarifasReferencia)';
+                            } else if (!refDoc) {
+                              diagnostico = `🔶 tipoConvenioId="${det.tipoConvenioId}" no existe en catálogo (${catalogoCount} docs cargados)`;
+                            } else {
+                              diagnostico = `✅ Encontrado: "${descMaster}"`;
+                            }
+                            console.log(`[FichaConvenio] detalle #${idx + 1}:`, { det, refDoc, diagnostico });
 
                             const fechaUso = idDet ? (lastUsedDetalleMap[idDet] || '') : '';
                             const colorInactividadDetalle = obtenerColorInactividad(fechaUso);
@@ -763,6 +795,9 @@ export const ConveniosClientesDashboard: React.FC = () => {
                               <tr key={idDet || idx} style={{ borderBottom: '1px solid #30363d' }}>
                                 <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
                                   {nomDet || `Tarifa ${idx + 1}`}
+                                  <div style={{ fontSize: '0.7rem', color: '#fb923c', marginTop: '4px', fontFamily: 'monospace' }}>
+                                    {diagnostico}
+                                  </div>
                                 </td>
                                 <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem' }}>
                                   {det.origenNombre || det.origen || '-'} → {det.destinoNombre || det.destino || '-'}
