@@ -33,15 +33,90 @@ type CombinacionEdicion =
   | undefined;
 
 /* ============================================================
-   CATÁLOGOS LOCALES
+   CATÁLOGO COMPLETO DE CAMPOS DE OPERACIÓN
+   Todos los campos del FormularioOperacion, agrupados por sección.
+   Estos son los que pueden marcarse como "requeridos" para que un nodo
+   automático avance, o como obligatorios antes de mostrar un manual/decisión.
 ============================================================ */
-const CAMPOS_OPERACION = [
-  { id: 'operador',        label: 'Operador Asignado'   },
-  { id: 'unidad',          label: 'Unidad Asignada'     },
-  { id: 'numeroRemolque',  label: 'Número de Remolque'  },
-  { id: 'numDoda',         label: 'DODA'                },
-  { id: 'numManifiesto',   label: 'Manifiesto'          }
+const CAMPOS_OPERACION_COMPLETOS: { seccion: string; campos: { id: string; label: string }[] }[] = [
+  {
+    seccion: 'General',
+    campos: [
+      { id: 'tipoOperacionId',        label: 'Tipo de Operación' },
+      { id: 'fechaServicio',          label: 'Fecha de Servicio' },
+      { id: 'fechaCita',              label: 'Fecha de Cita' },
+      { id: 'clientePaga',            label: 'Cliente (Paga)' },
+      { id: 'convenio',               label: 'Convenio (Tarifa)' },
+      { id: 'numeroRemolque',         label: 'Número de Remolque' },
+      { id: 'refCliente',             label: 'Ref Cliente' },
+      { id: 'origen',                 label: 'Origen' },
+      { id: 'destino',                label: 'Destino' },
+      { id: 'observacionesEjecutivo', label: 'Observaciones Ejecutivo' },
+    ],
+  },
+  {
+    seccion: 'Pedimento y Carta Porte',
+    campos: [
+      { id: 'clienteMercancia',     label: 'Cliente (Mercancía)' },
+      { id: 'descripcionMercancia', label: 'Descripción Mercancía' },
+      { id: 'cantidad',             label: 'Cantidad' },
+      { id: 'embalaje',             label: 'Embalaje' },
+      { id: 'pesoKg',               label: 'Peso (Kg)' },
+      { id: 'numDoda',              label: '# DODA' },
+      { id: 'fechaEmisionDoda',     label: 'Fecha Emisión DODA' },
+      { id: 'pdfCartaPorte',        label: 'PDF Carta Porte' },
+      { id: 'pdfDoda',              label: 'PDF DODA' },
+    ],
+  },
+  {
+    seccion: "Entry's y Manifiesto",
+    campos: [
+      { id: 'numeroEntrys',     label: "# de Entry's" },
+      { id: 'cantEntrys',       label: "Cantidad de Entry's" },
+      { id: 'pdfsEntrys',       label: "PDFs Entry's" },
+      { id: 'numManifiesto',    label: '# Manifiesto' },
+      { id: 'provServicios',    label: 'Proveedor de Servicios' },
+      { id: 'montoManifiesto',  label: 'Costo Manifiesto' },
+      { id: 'pdfManifiesto',    label: 'PDF Manifiesto' },
+    ],
+  },
+  {
+    seccion: 'Unidad y Operador',
+    campos: [
+      { id: 'proveedorUnidad',        label: 'Proveedor de Transporte' },
+      { id: 'facturadoEnUnidad',      label: 'Facturado En (Unidad)' },
+      { id: 'convenioProveedor',      label: 'Convenio Proveedor' },
+      { id: 'totalAPagarProv',        label: 'Monto a Pagar Proveedor' },
+      { id: 'cargosAdicionalesProv',  label: 'Cargos Adicionales Proveedor' },
+      { id: 'unidad',                 label: 'Unidad (Flota Interna)' },
+      { id: 'operador',               label: 'Operador (Flota Interna)' },
+      { id: 'sueldoOperador',         label: 'Sueldo Operador' },
+      { id: 'sueldoExtra',            label: 'Sueldo Extra' },
+      { id: 'combustible',            label: 'Combustible' },
+      { id: 'combustibleExtra',       label: 'Combustible Extra' },
+      { id: 'unidadProveedor',        label: 'Unidad del Proveedor (Externa)' },
+      { id: 'operadorProveedor',      label: 'Operador del Proveedor (Externo)' },
+      { id: 'observacionesUnidad',    label: 'Observaciones Unidad' },
+    ],
+  },
+  {
+    seccion: 'Por Cobrar',
+    campos: [
+      { id: 'facturadoEnCobrar',     label: 'Facturado En (Cobrar)' },
+      { id: 'montoConvenioCliente',  label: 'Monto Convenio Cliente' },
+      { id: 'cargosAdicionales',     label: 'Cargos Adicionales Cliente' },
+      { id: 'tipoCambioAprobado',    label: 'Tipo de Cambio Aprobado' },
+      { id: 'observacionesCobrar',   label: 'Observaciones Cobrar' },
+    ],
+  },
 ];
+
+// Mapa plano id → label para búsquedas rápidas
+const CAMPOS_OPERACION_FLAT: { id: string; label: string }[] =
+  CAMPOS_OPERACION_COMPLETOS.flatMap(s => s.campos);
+
+const labelCampo = (id: string): string =>
+  CAMPOS_OPERACION_FLAT.find(c => c.id === id)?.label || id;
 
 const TIPO_META: Record<ReglaStatus['tipoMecanismo'], { label: string; color: string; bg: string; icon: string }> = {
   automatico:     { label: 'Automático',       color: '#34d399', bg: 'rgba(52,211,153,0.10)', icon: '⚡' },
@@ -55,6 +130,255 @@ const TIPO_META: Record<ReglaStatus['tipoMecanismo'], { label: string; color: st
 const NODE_W = 260;
 const NODE_H = 96;
 const GRID = 20;
+const SIDEBAR_W = 260;
+const INSPECTOR_W = 340;
+
+/* ============================================================
+   MODAL: SELECCIÓN DE CAMPOS REQUERIDOS
+============================================================ */
+const ModalCamposRequeridos = ({
+  abierto,
+  seleccionados,
+  tipoMecanismo,
+  onConfirmar,
+  onCerrar,
+}: {
+  abierto: boolean;
+  seleccionados: string[];
+  tipoMecanismo: ReglaStatus['tipoMecanismo'];
+  onConfirmar: (ids: string[]) => void;
+  onCerrar: () => void;
+}) => {
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+  const [busqueda, setBusqueda] = useState('');
+
+  useEffect(() => {
+    if (abierto) {
+      setSeleccion(new Set(seleccionados));
+      setBusqueda('');
+    }
+  }, [abierto, seleccionados]);
+
+  if (!abierto) return null;
+
+  const toggle = (id: string) => {
+    setSeleccion(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const marcarSeccion = (campos: { id: string }[]) => {
+    setSeleccion(prev => {
+      const next = new Set(prev);
+      campos.forEach(c => next.add(c.id));
+      return next;
+    });
+  };
+
+  const limpiarSeccion = (campos: { id: string }[]) => {
+    setSeleccion(prev => {
+      const next = new Set(prev);
+      campos.forEach(c => next.delete(c.id));
+      return next;
+    });
+  };
+
+  const limpiarTodo = () => setSeleccion(new Set());
+
+  const filtro = busqueda.trim().toLowerCase();
+  const seccionesFiltradas = filtro
+    ? CAMPOS_OPERACION_COMPLETOS
+        .map(s => ({
+          ...s,
+          campos: s.campos.filter(c =>
+            c.label.toLowerCase().includes(filtro) || c.id.toLowerCase().includes(filtro)
+          ),
+        }))
+        .filter(s => s.campos.length > 0)
+    : CAMPOS_OPERACION_COMPLETOS;
+
+  const meta = TIPO_META[tipoMecanismo];
+
+  return (
+    <div
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 3000,
+        background: 'rgba(5,7,12,0.7)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div style={{
+        width: 'min(720px, 100%)', maxHeight: '88vh',
+        background: 'linear-gradient(180deg, #11151d 0%, #0d1118 100%)',
+        border: '1px solid #232a3a', borderRadius: 14,
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+        overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '18px 20px',
+          borderBottom: '1px solid #1c2230',
+          background: `linear-gradient(180deg, ${meta.bg}, transparent)`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 8,
+              background: meta.bg, color: meta.color,
+              border: `1px solid ${meta.color}55`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 16, fontWeight: 700,
+            }}>{meta.icon}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#e6ebf5', letterSpacing: -0.2 }}>
+                Campos requeridos para avanzar
+              </div>
+              <div style={{ fontSize: 12, color: '#7a8499', marginTop: 2 }}>
+                Marca los campos del formulario de operaciones que deben estar llenos.
+              </div>
+            </div>
+            <button onClick={onCerrar} style={{
+              background: 'none', border: 'none', color: '#7a8499',
+              cursor: 'pointer', fontSize: 20, padding: '0 4px',
+            }} title="Cerrar (Esc)">×</button>
+          </div>
+
+          {/* Buscador */}
+          <input
+            autoFocus
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar campo…"
+            style={{
+              width: '100%',
+              background: '#0a0d14',
+              border: '1px solid #232a3a',
+              color: '#e6ebf5',
+              borderRadius: 8,
+              padding: '9px 12px',
+              fontSize: 13,
+              outline: 'none',
+              marginTop: 10,
+            }}
+          />
+        </div>
+
+        {/* Lista */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+          {seccionesFiltradas.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 40, color: '#5f697d', fontSize: 13 }}>
+              No se encontraron campos.
+            </div>
+          ) : seccionesFiltradas.map(sec => {
+            const totalSec = sec.campos.length;
+            const marcadosSec = sec.campos.filter(c => seleccion.has(c.id)).length;
+            return (
+              <div key={sec.seccion} style={{ marginBottom: 16 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  marginBottom: 8,
+                }}>
+                  <div style={{
+                    fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2,
+                    color: '#a9b3c7', fontWeight: 700,
+                  }}>
+                    {sec.seccion}
+                    <span style={{
+                      marginLeft: 8, background: '#1a1f2b', border: '1px solid #2a3142',
+                      borderRadius: 999, padding: '1px 8px', fontSize: 10.5, color: '#7a8499',
+                      fontWeight: 600,
+                    }}>
+                      {marcadosSec}/{totalSec}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => marcarSeccion(sec.campos)} style={miniBtn}>Marcar todos</button>
+                    <button onClick={() => limpiarSeccion(sec.campos)} style={miniBtn}>Limpiar</button>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  {sec.campos.map(c => {
+                    const checked = seleccion.has(c.id);
+                    return (
+                      <label key={c.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '8px 10px',
+                        background: checked ? `${meta.bg}` : '#0f1320',
+                        border: `1px solid ${checked ? meta.color + '66' : '#222a39'}`,
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        transition: 'all 120ms ease',
+                        fontSize: 12.5,
+                        color: checked ? '#e6ebf5' : '#a9b3c7',
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggle(c.id)}
+                          style={{ accentColor: meta.color, flexShrink: 0 }}
+                        />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.label}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '14px 20px',
+          borderTop: '1px solid #1c2230',
+          background: '#0a0d14',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 12,
+        }}>
+          <div style={{ fontSize: 12, color: '#7a8499' }}>
+            <b style={{ color: '#e6ebf5' }}>{seleccion.size}</b> campo{seleccion.size === 1 ? '' : 's'} seleccionado{seleccion.size === 1 ? '' : 's'}
+            {seleccion.size > 0 && (
+              <button onClick={limpiarTodo} style={{
+                marginLeft: 10, background: 'none', border: 'none',
+                color: '#f87171', cursor: 'pointer', fontSize: 12, padding: 0,
+              }}>Limpiar todo</button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onCerrar} style={{
+              background: '#1a1f2b', color: '#c9d1d9',
+              border: '1px solid #2c3344', borderRadius: 8,
+              padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+            }}>Cancelar</button>
+            <button onClick={() => onConfirmar(Array.from(seleccion))} style={{
+              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+              color: '#fff', border: 'none', borderRadius: 8,
+              padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+              boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
+            }}>Aplicar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const miniBtn: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px solid #2a3142',
+  color: '#a9b3c7',
+  borderRadius: 6,
+  padding: '3px 8px',
+  fontSize: 11,
+  cursor: 'pointer',
+};
 
 /* ============================================================
    EDITOR PRINCIPAL
@@ -95,6 +419,16 @@ const EditorFlujoAppSheet = ({
   /* ---------- portapapeles ---------- */
   const [clipboardInfo, setClipboardInfo]   = useState<{ count: number; origen: string } | null>(null);
 
+  /* ---------- ✅ NUEVO: visibilidad de paneles laterales ---------- */
+  const [sidebarVisible, setSidebarVisible]     = useState(true);
+  const [inspectorVisible, setInspectorVisible] = useState(true);
+
+  /* ---------- ✅ NUEVO: modal de campos requeridos ---------- */
+  const [modalCamposAbierto, setModalCamposAbierto] = useState(false);
+
+  /* ---------- ✅ NUEVO: dropdown del botón "Agregar paso" ---------- */
+  const [menuAgregarAbierto, setMenuAgregarAbierto] = useState(false);
+
   /* ---------- refs ---------- */
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
@@ -116,8 +450,6 @@ const EditorFlujoAppSheet = ({
       }
     };
     cargarDatos();
-
-    // Cargar info del portapapeles persistido
     leerClipboardInfo();
   }, []);
 
@@ -168,16 +500,50 @@ const EditorFlujoAppSheet = ({
   });
 
   /* ============================================================
+     ✅ NUEVO: AUTO-CENTRAR EL FLUJO
+     Se ejecuta cuando:
+       - se toggle la visibilidad de los paneles laterales
+       - se cargan reglas nuevas
+     Calcula el bounding box del flujo y ajusta `pan` para que
+     el centro del flujo coincida con el centro del canvas visible.
+  ============================================================ */
+  const centrarFlujo = useCallback(() => {
+    if (reglas.length === 0 || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    const minX = Math.min(...reglas.map(r => r.posicion?.x ?? 0));
+    const maxX = Math.max(...reglas.map(r => (r.posicion?.x ?? 0) + NODE_W));
+    const minY = Math.min(...reglas.map(r => r.posicion?.y ?? 0));
+    const maxY = Math.max(...reglas.map(r => (r.posicion?.y ?? 0) + NODE_H));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    setPan({
+      x: rect.width / 2 - cx * zoom,
+      y: rect.height / 2 - cy * zoom,
+    });
+  }, [reglas, zoom]);
+
+  // Centra cuando cambia la visibilidad de cualquier panel.
+  // Pequeño delay para que el DOM termine la transición de ancho.
+  useEffect(() => {
+    const t = setTimeout(centrarFlujo, 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sidebarVisible, inspectorVisible]);
+
+  /* ============================================================
      ATAJOS DE TECLADO
   ============================================================ */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // No interceptar cuando el foco está en un input/textarea/select
       const target = e.target as HTMLElement;
       const tag = target?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
         return;
       }
+      // No procesar atajos si hay un modal abierto (excepto Escape)
+      if (modalCamposAbierto && e.key !== 'Escape') return;
 
       const cmd = e.ctrlKey || e.metaKey;
 
@@ -199,15 +565,19 @@ const EditorFlujoAppSheet = ({
           eliminarSeleccion();
         }
       } else if (e.key === 'Escape') {
-        setNodoSel(null);
-        setSeleccionados(new Set());
-        setConectando(null);
+        if (modalCamposAbierto) setModalCamposAbierto(false);
+        else if (menuAgregarAbierto) setMenuAgregarAbierto(false);
+        else {
+          setNodoSel(null);
+          setSeleccionados(new Set());
+          setConectando(null);
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodoSel, seleccionados, reglas]);
+  }, [nodoSel, seleccionados, reglas, modalCamposAbierto, menuAgregarAbierto]);
 
   /* ============================================================
      COORDENADAS DEL MOUSE EN EL CANVAS (en unidades del mundo)
@@ -222,13 +592,10 @@ const EditorFlujoAppSheet = ({
   }, [pan.x, pan.y, zoom]);
 
   /* ============================================================
-     PAN DEL CANVAS (clic medio o espacio + arrastre o clic en vacío)
+     PAN DEL CANVAS
   ============================================================ */
   const onCanvasMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).dataset.canvasBg !== 'true') return;
-    // NO deseleccionamos aquí: si el usuario va a hacer pan, perdería su selección.
-    // La deselección sucede solo si el mouseup ocurre sin haberse movido (click "limpio"),
-    // lo cual se evalúa en el handler global de mouseup más abajo.
     setIsPanning(true);
     panStart.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
   };
@@ -241,7 +608,6 @@ const EditorFlujoAppSheet = ({
     const regla = reglas.find(r => r.id === id);
     if (!regla?.posicion) return;
 
-    // Multi-selección con Ctrl/Cmd
     if (e.ctrlKey || e.metaKey) {
       setSeleccionados(prev => {
         const next = new Set(prev);
@@ -250,7 +616,6 @@ const EditorFlujoAppSheet = ({
       });
       setNodoSel(id);
     } else {
-      // Si el nodo NO está dentro de la selección actual, reemplazamos por solo él
       if (!seleccionados.has(id)) {
         setSeleccionados(new Set([id]));
       }
@@ -263,7 +628,7 @@ const EditorFlujoAppSheet = ({
   };
 
   /* ============================================================
-     MOVIMIENTO GLOBAL DE MOUSE (drag de nodo, pan, conexión)
+     MOVIMIENTO GLOBAL DE MOUSE
   ============================================================ */
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -283,7 +648,6 @@ const EditorFlujoAppSheet = ({
           if (!anchor?.posicion) return prev;
           const dx = nx - anchor.posicion.x;
           const dy = ny - anchor.posicion.y;
-          // Mover todos los seleccionados; si no hay set, solo el arrastrado
           const target = seleccionados.size > 1 && seleccionados.has(draggingId)
             ? seleccionados
             : new Set([draggingId]);
@@ -299,8 +663,6 @@ const EditorFlujoAppSheet = ({
       }
     };
     const onUp = (e: MouseEvent) => {
-      // Determinar si fue un click limpio sobre el lienzo (sin arrastre apreciable).
-      // Si lo fue, deseleccionar (a menos que haya Ctrl/Cmd, que indica "agregar selección").
       if (isPanning && panStart.current) {
         const dx = Math.abs(e.clientX - panStart.current.x);
         const dy = Math.abs(e.clientY - panStart.current.y);
@@ -349,6 +711,10 @@ const EditorFlujoAppSheet = ({
     };
     setReglas(prev => [...prev, nuevo]);
     setNodoSel(nuevo.id);
+    setSeleccionados(new Set([nuevo.id]));
+    setMenuAgregarAbierto(false);
+    // Al crear un nodo, asegurar que el inspector esté visible para editarlo
+    if (!inspectorVisible) setInspectorVisible(true);
   };
 
   const actualizarNodo = (id: string, patch: Partial<ReglaStatus>) => {
@@ -385,7 +751,7 @@ const EditorFlujoAppSheet = ({
   };
 
   /* ============================================================
-     PORTAPAPELES (COPIAR / PEGAR ENTRE FLUJOS)
+     PORTAPAPELES
   ============================================================ */
   const nuevoId = () => `n_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 
@@ -394,7 +760,6 @@ const EditorFlujoAppSheet = ({
     const nodos = reglas.filter(r => seleccionados.has(r.id));
     if (nodos.length === 0) return;
 
-    // Filtrar conexiones para que solo queden las que apuntan a nodos también copiados
     const idsCopiados = new Set(nodos.map(n => n.id));
     const payload = {
       version: 1,
@@ -434,11 +799,9 @@ const EditorFlujoAppSheet = ({
     }
     if (!payload?.nodos?.length) return;
 
-    // Mapeo de IDs viejos -> nuevos para mantener conexiones internas
     const mapIds: Record<string, string> = {};
     payload.nodos.forEach((n: ReglaStatus) => { mapIds[n.id] = nuevoId(); });
 
-    // Offset para evitar que se peguen exactamente encima
     const offsetX = 60;
     const offsetY = 60;
     const baseOrden = reglas.length;
@@ -447,7 +810,6 @@ const EditorFlujoAppSheet = ({
       ...n,
       id: mapIds[n.id],
       orden: baseOrden + i + 1,
-      // Re-mapeamos las conexiones siguientes a los nuevos IDs (solo las internas al grupo)
       opcionesSiguientes: (n.opcionesSiguientes || [])
         .map(s => mapIds[s])
         .filter(Boolean),
@@ -518,7 +880,7 @@ const EditorFlujoAppSheet = ({
   };
 
   /* ============================================================
-     CONEXIONES (drag desde puerto de salida hasta puerto de entrada)
+     CONEXIONES
   ============================================================ */
   const iniciarConexion = (e: React.MouseEvent, fromId: string) => {
     e.stopPropagation();
@@ -558,11 +920,7 @@ const EditorFlujoAppSheet = ({
       setMensaje({ tipo: 'err', texto: 'Selecciona Servicio, Tráfico y Carga antes de guardar.' });
       return;
     }
-    // Reordenar por nombre/orden actual respetando lo que ya hay
-    const flujoFinal = reglas.map((r, i) => ({
-      ...r,
-      orden: i + 1,
-    }));
+    const flujoFinal = reglas.map((r, i) => ({ ...r, orden: i + 1 }));
 
     setGuardando(true);
     setMensaje(null);
@@ -589,8 +947,7 @@ const EditorFlujoAppSheet = ({
   ============================================================ */
   const autoOrganizar = () => {
     setReglas(prev => prev.map((r, i) => ({ ...r, posicion: autoPosicion(i) })));
-    setPan({ x: 0, y: 0 });
-    setZoom(1);
+    setTimeout(() => { setZoom(1); centrarFlujo(); }, 30);
   };
 
   /* ============================================================
@@ -598,7 +955,6 @@ const EditorFlujoAppSheet = ({
   ============================================================ */
   const reglaSel = useMemo(() => reglas.find(r => r.id === nodoSel) || null, [reglas, nodoSel]);
 
-  /* helpers para puntos de conexión */
   const portOut = (r: ReglaStatus) => ({
     x: (r.posicion?.x ?? 0) + NODE_W,
     y: (r.posicion?.y ?? 0) + NODE_H / 2,
@@ -613,7 +969,6 @@ const EditorFlujoAppSheet = ({
     return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
   };
 
-  /* tamaño "virtual" del mundo: dejamos margen amplio */
   const worldSize = useMemo(() => {
     const maxX = Math.max(2400, ...reglas.map(r => (r.posicion?.x ?? 0) + NODE_W + 400));
     const maxY = Math.max(1600, ...reglas.map(r => (r.posicion?.y ?? 0) + NODE_H + 400));
@@ -642,6 +997,15 @@ const EditorFlujoAppSheet = ({
               <div style={S.brandSub}>{configValido ? configId.replace(/_/g, ' · ') : 'Nuevo flujo'}</div>
             </div>
           </div>
+
+          {/* ✅ NUEVO: Toggle del sidebar izquierdo */}
+          <button
+            onClick={() => setSidebarVisible(v => !v)}
+            style={{ ...S.iconBtn, marginLeft: 4 }}
+            title={sidebarVisible ? 'Ocultar paleta' : 'Mostrar paleta'}
+          >
+            {sidebarVisible ? '◀' : '▶'}
+          </button>
         </div>
 
         <div style={S.topCenter}>
@@ -694,6 +1058,78 @@ const EditorFlujoAppSheet = ({
               {mensaje.texto}
             </div>
           )}
+
+          {/* ✅ NUEVO: Botón "Agregar paso" prominente con dropdown */}
+          <div style={{ position: 'relative' }}>
+            <button
+              onClick={() => setMenuAgregarAbierto(v => !v)}
+              style={S.addStepBtn}
+              title="Agregar nuevo paso al flujo"
+            >
+              <span style={{ fontSize: 15, lineHeight: 1, marginRight: 2 }}>+</span>
+              Agregar paso
+              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.8 }}>▾</span>
+            </button>
+            {menuAgregarAbierto && (
+              <>
+                {/* backdrop para cerrar el menú clickeando fuera */}
+                <div
+                  onClick={() => setMenuAgregarAbierto(false)}
+                  style={{ position: 'fixed', inset: 0, zIndex: 1100 }}
+                />
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                  width: 260,
+                  background: '#11151d',
+                  border: '1px solid #2a3142',
+                  borderRadius: 12,
+                  padding: 6,
+                  boxShadow: '0 16px 40px rgba(0,0,0,0.55)',
+                  zIndex: 1200,
+                }}>
+                  {(Object.keys(TIPO_META) as ReglaStatus['tipoMecanismo'][]).map(t => {
+                    const m = TIPO_META[t];
+                    return (
+                      <button
+                        key={t}
+                        onClick={() => agregarNodo(t)}
+                        className="hov-tile"
+                        style={{
+                          width: '100%',
+                          display: 'flex', gap: 10, alignItems: 'flex-start',
+                          background: 'transparent',
+                          border: 'none',
+                          borderRadius: 8,
+                          padding: '9px 10px',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{
+                          width: 28, height: 28, borderRadius: 7,
+                          background: m.bg, color: m.color,
+                          border: `1px solid ${m.color}44`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 14, fontWeight: 700, flexShrink: 0,
+                        }}>{m.icon}</div>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: m.color, marginBottom: 2 }}>
+                            {m.label}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#7a8499', lineHeight: 1.35 }}>
+                            {t === 'automatico' && 'Avanza solo cuando los campos requeridos se llenan.'}
+                            {t === 'manual'     && 'El usuario presiona un botón para avanzar.'}
+                            {t === 'boton_decision' && 'Divide el flujo en múltiples caminos.'}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+
           <button onClick={guardar} disabled={guardando || !configValido} style={{
             ...S.saveBtn,
             opacity: guardando || !configValido ? 0.55 : 1,
@@ -701,135 +1137,146 @@ const EditorFlujoAppSheet = ({
           }}>
             {guardando ? 'Guardando…' : 'Guardar flujo'}
           </button>
+
+          {/* ✅ NUEVO: Toggle del inspector */}
+          <button
+            onClick={() => setInspectorVisible(v => !v)}
+            style={S.iconBtn}
+            title={inspectorVisible ? 'Ocultar inspector' : 'Mostrar inspector'}
+          >
+            {inspectorVisible ? '▶' : '◀'}
+          </button>
         </div>
       </header>
 
       {/* ===== CUERPO ===== */}
       <div style={S.body}>
-        {/* Sidebar izquierdo: paleta de nodos */}
-        <aside style={S.sidebar}>
-          <div style={S.sidebarTitle}>Bloques</div>
-          <div style={S.sidebarSub}>Haz clic para agregar al lienzo</div>
+        {/* Sidebar izquierdo: paleta de nodos (toggleable) */}
+        {sidebarVisible && (
+          <aside style={S.sidebar}>
+            <div style={S.sidebarTitle}>Bloques</div>
+            <div style={S.sidebarSub}>Haz clic para agregar al lienzo</div>
 
-          <BlockTile tipo="automatico"
-            title="Automático"
-            desc="Avanza solo cuando se cumplen los campos requeridos."
-            onClick={() => agregarNodo('automatico')}
-          />
-          <BlockTile tipo="manual"
-            title="Acción Manual"
-            desc="El usuario presiona un botón para avanzar."
-            onClick={() => agregarNodo('manual')}
-          />
-          <BlockTile tipo="boton_decision"
-            title="Decisión"
-            desc="Divide el flujo en múltiples caminos posibles."
-            onClick={() => agregarNodo('boton_decision')}
-          />
+            <BlockTile tipo="automatico"
+              title="Automático"
+              desc="Avanza solo cuando se cumplen los campos requeridos."
+              onClick={() => agregarNodo('automatico')}
+            />
+            <BlockTile tipo="manual"
+              title="Acción Manual"
+              desc="El usuario presiona un botón para avanzar."
+              onClick={() => agregarNodo('manual')}
+            />
+            <BlockTile tipo="boton_decision"
+              title="Decisión"
+              desc="Divide el flujo en múltiples caminos posibles."
+              onClick={() => agregarNodo('boton_decision')}
+            />
 
-          <div style={{ ...S.sidebarTitle, marginTop: 24 }}>Portapapeles</div>
-          <div style={S.sidebarSub}>
-            Copia pasos de un flujo para reutilizarlos en otro.
-          </div>
-
-          {clipboardInfo && (
-            <div style={{
-              background: 'linear-gradient(180deg, rgba(167,139,250,0.10), rgba(99,102,241,0.06))',
-              border: '1px solid rgba(167,139,250,0.32)',
-              borderRadius: 10,
-              padding: '10px 12px',
-              marginBottom: 10,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                <div style={{
-                  fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1,
-                  color: '#a78bfa', fontWeight: 700,
-                }}>En portapapeles</div>
-                <button
-                  onClick={limpiarClipboard}
-                  title="Vaciar portapapeles"
-                  style={{
-                    background: 'none', border: 'none', color: '#7a8499',
-                    cursor: 'pointer', fontSize: 13, padding: 0,
-                  }}
-                >×</button>
-              </div>
-              <div style={{ fontSize: 13, color: '#e6ebf5', fontWeight: 600, marginTop: 4 }}>
-                {clipboardInfo.count} {clipboardInfo.count === 1 ? 'paso' : 'pasos'}
-              </div>
-              <div style={{ fontSize: 11, color: '#7a8499', marginTop: 2 }}>
-                desde <span style={{ color: '#a9b3c7' }}>{clipboardInfo.origen}</span>
-              </div>
+            <div style={{ ...S.sidebarTitle, marginTop: 24 }}>Portapapeles</div>
+            <div style={S.sidebarSub}>
+              Copia pasos de un flujo para reutilizarlos en otro.
             </div>
-          )}
 
-          <button
-            onClick={copiarSeleccion}
-            disabled={seleccionados.size === 0}
-            style={{
-              ...S.toolBtn,
-              opacity: seleccionados.size === 0 ? 0.5 : 1,
-              cursor: seleccionados.size === 0 ? 'not-allowed' : 'pointer',
-            }}
-            title="Ctrl+C"
-          >
-            <span>⎘</span> Copiar selección
-            {seleccionados.size > 0 && (
-              <span style={S.kbdInline}>{seleccionados.size}</span>
+            {clipboardInfo && (
+              <div style={{
+                background: 'linear-gradient(180deg, rgba(167,139,250,0.10), rgba(99,102,241,0.06))',
+                border: '1px solid rgba(167,139,250,0.32)',
+                borderRadius: 10,
+                padding: '10px 12px',
+                marginBottom: 10,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                  <div style={{
+                    fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1,
+                    color: '#a78bfa', fontWeight: 700,
+                  }}>En portapapeles</div>
+                  <button
+                    onClick={limpiarClipboard}
+                    title="Vaciar portapapeles"
+                    style={{
+                      background: 'none', border: 'none', color: '#7a8499',
+                      cursor: 'pointer', fontSize: 13, padding: 0,
+                    }}
+                  >×</button>
+                </div>
+                <div style={{ fontSize: 13, color: '#e6ebf5', fontWeight: 600, marginTop: 4 }}>
+                  {clipboardInfo.count} {clipboardInfo.count === 1 ? 'paso' : 'pasos'}
+                </div>
+                <div style={{ fontSize: 11, color: '#7a8499', marginTop: 2 }}>
+                  desde <span style={{ color: '#a9b3c7' }}>{clipboardInfo.origen}</span>
+                </div>
+              </div>
             )}
-          </button>
-          <button
-            onClick={pegarClipboard}
-            disabled={!clipboardInfo}
-            style={{
-              ...S.toolBtn,
-              opacity: !clipboardInfo ? 0.5 : 1,
-              cursor: !clipboardInfo ? 'not-allowed' : 'pointer',
-              ...(clipboardInfo ? {
-                borderColor: 'rgba(167,139,250,0.45)',
-                color: '#cfc1ff',
-                background: 'rgba(167,139,250,0.08)',
-              } : {}),
-            }}
-            title="Ctrl+V"
-          >
-            <span>⎗</span> Pegar aquí
-            {clipboardInfo && <span style={S.kbdInline}>{clipboardInfo.count}</span>}
-          </button>
-          <button
-            onClick={duplicarSeleccion}
-            disabled={seleccionados.size === 0}
-            style={{
-              ...S.toolBtn,
-              opacity: seleccionados.size === 0 ? 0.5 : 1,
-              cursor: seleccionados.size === 0 ? 'not-allowed' : 'pointer',
-            }}
-            title="Ctrl+D"
-          >
-            <span>⧉</span> Duplicar selección
-          </button>
 
-          <div style={{ ...S.sidebarTitle, marginTop: 24 }}>Lienzo</div>
-          <button onClick={autoOrganizar} style={S.toolBtn}>
-            <span>⟲</span> Reorganizar nodos
-          </button>
-          <button onClick={() => { setPan({ x: 0, y: 0 }); setZoom(1); }} style={S.toolBtn}>
-            <span>⤧</span> Centrar vista
-          </button>
-          <button onClick={seleccionarTodo} style={S.toolBtn} title="Ctrl+A">
-            <span>▣</span> Seleccionar todo
-          </button>
+            <button
+              onClick={copiarSeleccion}
+              disabled={seleccionados.size === 0}
+              style={{
+                ...S.toolBtn,
+                opacity: seleccionados.size === 0 ? 0.5 : 1,
+                cursor: seleccionados.size === 0 ? 'not-allowed' : 'pointer',
+              }}
+              title="Ctrl+C"
+            >
+              <span>⎘</span> Copiar selección
+              {seleccionados.size > 0 && (
+                <span style={S.kbdInline}>{seleccionados.size}</span>
+              )}
+            </button>
+            <button
+              onClick={pegarClipboard}
+              disabled={!clipboardInfo}
+              style={{
+                ...S.toolBtn,
+                opacity: !clipboardInfo ? 0.5 : 1,
+                cursor: !clipboardInfo ? 'not-allowed' : 'pointer',
+                ...(clipboardInfo ? {
+                  borderColor: 'rgba(167,139,250,0.45)',
+                  color: '#cfc1ff',
+                  background: 'rgba(167,139,250,0.08)',
+                } : {}),
+              }}
+              title="Ctrl+V"
+            >
+              <span>⎗</span> Pegar aquí
+              {clipboardInfo && <span style={S.kbdInline}>{clipboardInfo.count}</span>}
+            </button>
+            <button
+              onClick={duplicarSeleccion}
+              disabled={seleccionados.size === 0}
+              style={{
+                ...S.toolBtn,
+                opacity: seleccionados.size === 0 ? 0.5 : 1,
+                cursor: seleccionados.size === 0 ? 'not-allowed' : 'pointer',
+              }}
+              title="Ctrl+D"
+            >
+              <span>⧉</span> Duplicar selección
+            </button>
 
-          <div style={S.legend}>
-            <div style={S.legendTitle}>Atajos</div>
-            <div style={S.legendItem}><b>Ctrl + Click</b> añade a la selección.</div>
-            <div style={S.legendItem}><b>Ctrl + C / V</b> copiar y pegar pasos.</div>
-            <div style={S.legendItem}><b>Ctrl + D</b> duplicar en sitio.</div>
-            <div style={S.legendItem}><b>Ctrl + A</b> seleccionar todo.</div>
-            <div style={S.legendItem}><b>Supr</b> elimina la selección.</div>
-            <div style={S.legendItem}><b>Ctrl + Rueda</b> zoom.</div>
-          </div>
-        </aside>
+            <div style={{ ...S.sidebarTitle, marginTop: 24 }}>Lienzo</div>
+            <button onClick={autoOrganizar} style={S.toolBtn}>
+              <span>⟲</span> Reorganizar nodos
+            </button>
+            <button onClick={() => { setZoom(1); centrarFlujo(); }} style={S.toolBtn}>
+              <span>⤧</span> Centrar vista
+            </button>
+            <button onClick={seleccionarTodo} style={S.toolBtn} title="Ctrl+A">
+              <span>▣</span> Seleccionar todo
+            </button>
+
+            <div style={S.legend}>
+              <div style={S.legendTitle}>Atajos</div>
+              <div style={S.legendItem}><b>Ctrl + Click</b> añade a la selección.</div>
+              <div style={S.legendItem}><b>Ctrl + C / V</b> copiar y pegar pasos.</div>
+              <div style={S.legendItem}><b>Ctrl + D</b> duplicar en sitio.</div>
+              <div style={S.legendItem}><b>Ctrl + A</b> seleccionar todo.</div>
+              <div style={S.legendItem}><b>Supr</b> elimina la selección.</div>
+              <div style={S.legendItem}><b>Ctrl + Rueda</b> zoom.</div>
+            </div>
+          </aside>
+        )}
 
         {/* Canvas central */}
         <div
@@ -892,7 +1339,6 @@ const EditorFlujoAppSheet = ({
                         markerEnd={isHi ? 'url(#arrowHi)' : 'url(#arrow)'}
                         style={{ transition: 'stroke 120ms ease' }}
                       />
-                      {/* Botón eliminar conexión, a la mitad */}
                       <g
                         transform={`translate(${(p1.x + p2.x) / 2}, ${(p1.y + p2.y) / 2})`}
                         style={{ cursor: 'pointer' }}
@@ -906,7 +1352,6 @@ const EditorFlujoAppSheet = ({
                 })
               )}
 
-              {/* Conexión en progreso */}
               {conectando && (() => {
                 const from = reglas.find(r => r.id === conectando.from);
                 if (!from?.posicion) return null;
@@ -923,7 +1368,7 @@ const EditorFlujoAppSheet = ({
               })()}
             </svg>
 
-            {/* Nodo START (visual, no editable) */}
+            {/* Nodo START */}
             <div style={{
               position: 'absolute',
               left: 40,
@@ -959,10 +1404,7 @@ const EditorFlujoAppSheet = ({
                 <div
                   key={r.id}
                   onMouseDown={(e) => onNodeMouseDown(e, r.id)}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // El estado real se sincronizó ya en mouseDown; aquí evitamos solo el bubble
-                  }}
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     position: 'absolute',
                     left: r.posicion?.x ?? 0,
@@ -978,7 +1420,6 @@ const EditorFlujoAppSheet = ({
                     transition: 'box-shadow 140ms ease, border-color 140ms ease',
                   }}
                 >
-                  {/* indicador de multi-selección */}
                   {isMulti && !isSel && (
                     <div style={{
                       position: 'absolute', top: -8, right: -8,
@@ -990,7 +1431,6 @@ const EditorFlujoAppSheet = ({
                       boxShadow: '0 2px 6px rgba(167,139,250,0.5)',
                     }}>✓</div>
                   )}
-                  {/* franja superior */}
                   <div style={{
                     height: 6,
                     background: `linear-gradient(90deg, ${meta.color}, transparent)`,
@@ -1031,7 +1471,7 @@ const EditorFlujoAppSheet = ({
                       <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                         {r.camposRequeridos.slice(0, 3).map(c => (
                           <span key={c} style={S.tag}>
-                            {CAMPOS_OPERACION.find(x => x.id === c)?.label || c}
+                            {labelCampo(c)}
                           </span>
                         ))}
                         {r.camposRequeridos.length > 3 && (
@@ -1081,7 +1521,9 @@ const EditorFlujoAppSheet = ({
               }}>
                 <div style={{ fontSize: 44, marginBottom: 6 }}>◇</div>
                 <div style={{ fontWeight: 600, color: '#8b94a9', fontSize: 16 }}>Lienzo vacío</div>
-                <div style={{ marginTop: 4, fontSize: 13 }}>Agrega un bloque desde la paleta de la izquierda para empezar.</div>
+                <div style={{ marginTop: 4, fontSize: 13 }}>
+                  Usa el botón <b style={{ color: '#a78bfa' }}>+ Agregar paso</b> arriba o la paleta lateral para comenzar.
+                </div>
               </div>
             )}
           </div>
@@ -1092,7 +1534,7 @@ const EditorFlujoAppSheet = ({
             <div style={S.zoomLabel}>{Math.round(zoom * 100)}%</div>
             <button style={S.zoomBtn} onClick={() => setZoom(z => Math.max(0.4, z - 0.1))}>−</button>
             <div style={{ height: 1, background: '#2a3142', margin: '4px 0' }} />
-            <button style={S.zoomBtn} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} title="Reset">⌂</button>
+            <button style={S.zoomBtn} onClick={() => { setZoom(1); centrarFlujo(); }} title="Centrar">⌂</button>
           </div>
 
           {cargando && (
@@ -1100,30 +1542,44 @@ const EditorFlujoAppSheet = ({
           )}
         </div>
 
-        {/* Panel derecho: inspector */}
-        <aside style={S.inspector}>
-          {!reglaSel ? (
-            <div style={S.emptyInspector}>
-              <div style={{ fontSize: 40, marginBottom: 8 }}>◌</div>
-              <div style={{ fontWeight: 600, color: '#c9d1d9' }}>Inspector</div>
-              <div style={{ marginTop: 6, fontSize: 13, color: '#7a8499', lineHeight: 1.5 }}>
-                Selecciona un nodo del lienzo para configurar su nombre, mecanismo de avance, campos requeridos y conexiones.
+        {/* Panel derecho: inspector (toggleable) */}
+        {inspectorVisible && (
+          <aside style={S.inspector}>
+            {!reglaSel ? (
+              <div style={S.emptyInspector}>
+                <div style={{ fontSize: 40, marginBottom: 8 }}>◌</div>
+                <div style={{ fontWeight: 600, color: '#c9d1d9' }}>Inspector</div>
+                <div style={{ marginTop: 6, fontSize: 13, color: '#7a8499', lineHeight: 1.5 }}>
+                  Selecciona un nodo del lienzo para configurar su nombre, mecanismo de avance, campos requeridos y conexiones.
+                </div>
               </div>
-            </div>
-          ) : (
-            <Inspector
-              regla={reglaSel}
-              catalogoStatus={catalogoStatus}
-              campos={CAMPOS_OPERACION}
-              todosNodos={reglas}
-              onChange={(patch) => actualizarNodo(reglaSel.id, patch)}
-              onDuplicar={() => duplicarNodo(reglaSel.id)}
-              onEliminar={() => eliminarNodo(reglaSel.id)}
-              onDesconectar={(toId) => eliminarConexion(reglaSel.id, toId)}
-            />
-          )}
-        </aside>
+            ) : (
+              <Inspector
+                regla={reglaSel}
+                catalogoStatus={catalogoStatus}
+                todosNodos={reglas}
+                onChange={(patch) => actualizarNodo(reglaSel.id, patch)}
+                onDuplicar={() => duplicarNodo(reglaSel.id)}
+                onEliminar={() => eliminarNodo(reglaSel.id)}
+                onDesconectar={(toId) => eliminarConexion(reglaSel.id, toId)}
+                onAbrirModalCampos={() => setModalCamposAbierto(true)}
+              />
+            )}
+          </aside>
+        )}
       </div>
+
+      {/* ✅ NUEVO: Modal de selección de campos requeridos */}
+      <ModalCamposRequeridos
+        abierto={modalCamposAbierto && !!reglaSel}
+        seleccionados={reglaSel?.camposRequeridos || []}
+        tipoMecanismo={reglaSel?.tipoMecanismo || 'automatico'}
+        onCerrar={() => setModalCamposAbierto(false)}
+        onConfirmar={(ids) => {
+          if (reglaSel) actualizarNodo(reglaSel.id, { camposRequeridos: ids });
+          setModalCamposAbierto(false);
+        }}
+      />
     </div>
   );
 };
@@ -1199,24 +1655,20 @@ const BlockTile = ({ tipo, title, desc, onClick }: {
 };
 
 const Inspector = ({
-  regla, catalogoStatus, campos, todosNodos,
-  onChange, onDuplicar, onEliminar, onDesconectar
+  regla, catalogoStatus, todosNodos,
+  onChange, onDuplicar, onEliminar, onDesconectar, onAbrirModalCampos,
 }: {
   regla: ReglaStatus;
   catalogoStatus: string[];
-  campos: { id: string; label: string }[];
   todosNodos: ReglaStatus[];
   onChange: (p: Partial<ReglaStatus>) => void;
   onDuplicar: () => void;
   onEliminar: () => void;
   onDesconectar: (toId: string) => void;
+  onAbrirModalCampos: () => void;
 }) => {
   const meta = TIPO_META[regla.tipoMecanismo];
-  const toggleCampo = (id: string) => {
-    const set = new Set(regla.camposRequeridos || []);
-    set.has(id) ? set.delete(id) : set.add(id);
-    onChange({ camposRequeridos: Array.from(set) });
-  };
+  const camposCount = (regla.camposRequeridos || []).length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -1293,32 +1745,69 @@ const Inspector = ({
           </div>
         </Section>
 
-        {/* Campos requeridos */}
-        <Section title="Campos requeridos para avanzar" hint="Los caminos siguientes solo se activan si estos campos están llenos.">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {campos.map(c => {
-              const checked = regla.camposRequeridos?.includes(c.id);
-              return (
-                <label key={c.id} style={{
-                  display: 'flex', alignItems: 'center', gap: 9,
-                  padding: '8px 10px',
-                  background: checked ? 'rgba(96,165,250,0.08)' : '#11151d',
-                  border: `1px solid ${checked ? '#3b5a8a' : '#222a39'}`,
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  transition: 'all 120ms ease',
+        {/* ✅ NUEVO: Campos requeridos (ahora via modal) */}
+        <Section
+          title="Campos requeridos para avanzar"
+          hint="Marca los campos del formulario de operaciones que deben estar llenos para que este paso se active."
+        >
+          {camposCount === 0 ? (
+            <div style={{
+              padding: '12px 14px',
+              background: '#0f1320',
+              border: '1px dashed #2a3142',
+              borderRadius: 8,
+              fontSize: 12.5,
+              color: '#7a8499',
+              textAlign: 'center',
+              marginBottom: 8,
+            }}>
+              Sin campos requeridos.
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: 5,
+              marginBottom: 10,
+              padding: '8px 10px',
+              background: '#0f1320',
+              border: '1px solid #222a39',
+              borderRadius: 8,
+              maxHeight: 140,
+              overflowY: 'auto',
+            }}>
+              {(regla.camposRequeridos || []).map(id => (
+                <span key={id} style={{
+                  fontSize: 11,
+                  background: meta.bg,
+                  border: `1px solid ${meta.color}55`,
+                  color: meta.color,
+                  borderRadius: 999,
+                  padding: '3px 9px',
+                  fontWeight: 600,
                 }}>
-                  <input
-                    type="checkbox"
-                    checked={!!checked}
-                    onChange={() => toggleCampo(c.id)}
-                    style={{ accentColor: '#60a5fa' }}
-                  />
-                  <span style={{ fontSize: 13, color: checked ? '#cfe0f7' : '#c9d1d9' }}>{c.label}</span>
-                </label>
-              );
-            })}
-          </div>
+                  {labelCampo(id)}
+                </span>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={onAbrirModalCampos}
+            style={{
+              width: '100%',
+              background: `linear-gradient(135deg, ${meta.color}22, ${meta.color}11)`,
+              border: `1px solid ${meta.color}55`,
+              color: meta.color,
+              borderRadius: 8,
+              padding: '9px 12px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              transition: 'all 120ms ease',
+            }}
+          >
+            <span style={{ fontSize: 14 }}>⚙</span>
+            {camposCount === 0 ? 'Configurar campos' : `Editar campos (${camposCount})`}
+          </button>
         </Section>
 
         {/* Conexiones salientes */}
@@ -1567,6 +2056,14 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 8, padding: '7px 12px',
     fontSize: 13, fontWeight: 500,
   },
+  iconBtn: {
+    background: '#1a1f2b', border: '1px solid #2c3344',
+    color: '#a9b3c7', cursor: 'pointer',
+    borderRadius: 8, width: 32, height: 32,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 11, fontWeight: 600,
+    transition: 'all 120ms ease',
+  },
   divider: { width: 1, height: 28, background: '#232a3a' },
 
   brand: { display: 'flex', alignItems: 'center', gap: 10 },
@@ -1590,6 +2087,18 @@ const S: Record<string, React.CSSProperties> = {
     boxShadow: '0 6px 18px rgba(99,102,241,0.32)',
     transition: 'transform 100ms ease',
   },
+  addStepBtn: {
+    background: 'linear-gradient(135deg, rgba(167,139,250,0.18), rgba(99,102,241,0.18))',
+    color: '#cfc1ff',
+    border: '1px solid rgba(167,139,250,0.4)',
+    borderRadius: 10,
+    padding: '8px 14px',
+    fontWeight: 600,
+    fontSize: 13,
+    cursor: 'pointer',
+    display: 'flex', alignItems: 'center', gap: 4,
+    transition: 'all 120ms ease',
+  },
   toast: {
     padding: '6px 12px',
     fontSize: 12,
@@ -1600,7 +2109,7 @@ const S: Record<string, React.CSSProperties> = {
   body: { display: 'flex', flex: 1, overflow: 'hidden' },
 
   sidebar: {
-    width: 260,
+    width: SIDEBAR_W,
     flexShrink: 0,
     background: '#0d1118',
     borderRight: '1px solid #1c2230',
@@ -1693,7 +2202,7 @@ const S: Record<string, React.CSSProperties> = {
   },
 
   inspector: {
-    width: 340,
+    width: INSPECTOR_W,
     flexShrink: 0,
     background: '#0d1118',
     borderLeft: '1px solid #1c2230',
@@ -1749,6 +2258,7 @@ const CSS_GLOBAL = `
     transform: translateY(-1px);
     border-color: #3a4360 !important;
     box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+    background: #1a1f2b !important;
   }
   .hov-row:hover { background: #11151d; }
 `;
