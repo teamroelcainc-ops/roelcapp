@@ -656,14 +656,14 @@ const EditorFlujoAppSheet = ({
             label="Tráfico"
             value={trafico}
             onChange={setTrafico}
-            options={['Importación', 'Exportación', 'Nacional', 'N/A']}
+            options={['Importación', 'Exportación', 'Movimiento LDO', 'Movimiento NLD', 'N/A']}
             placeholder="Selecciona…"
           />
           <SelectorCampo
             label="Carga"
             value={carga}
             onChange={setCarga}
-            options={['Llena', 'Vacía', 'N/A']}
+            options={['Cargada', 'Vacía', 'N/A']}
             placeholder="Selecciona…"
           />
         </div>
