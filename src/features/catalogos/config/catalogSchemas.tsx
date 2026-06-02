@@ -295,6 +295,14 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       { name: 'moneda', label: 'Moneda', type: 'select', required: true, options: ['Dolares', 'Pesos'] },
       { name: 'empresaId', label: 'Empresa', type: 'select', required: true, dynamicOptions: { collection: 'empresas', labelField: 'nombre', valueField: 'id' } }
     ]
+  },
+  // ✅ NUEVO: Catálogo de Tráfico (solo campo Nombre)
+  trafico: {
+    id: 'trafico', titulo: 'Tráfico',
+    icono: <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM10 17H6v-2h4v2zm0-4H6v-2h4v2zm0-4H6V7h4v2zm8 8h-6v-2h6v2zm0-4h-6v-2h6v2zm0-4h-6V7h6v2z"/>,
+    fields: [
+      { name: 'nombre', label: 'Nombre', type: 'text', required: true }
+    ]
   }
 };
 
