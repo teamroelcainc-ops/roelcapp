@@ -211,7 +211,10 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
     fields: [
       { name: 'descripcion', label: 'Descripción', type: 'text', required: true },
       { name: 'aduana', label: 'Aduana', type: 'select', required: true, options: ['Sí', 'No'] },
-      { name: 'movimiento', label: 'Importación/Exportación', type: 'select', required: true, options: ['Importación', 'Exportación', 'Movimiento', 'Trompo'] }
+      // ✅ MODIFICADO: las opciones ahora vienen del catálogo `catalogo_trafico` (campo `nombre`).
+      // Mantenemos valueField='nombre' para que los registros existentes (que guardan texto
+      // como "Importación", "Movimiento", etc.) sigan resolviendo correctamente.
+      { name: 'movimiento', label: 'Importación/Exportación', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_trafico', labelField: 'nombre', valueField: 'nombre' } }
     ]
   },
   tarifas_referencia: {
@@ -296,7 +299,7 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       { name: 'empresaId', label: 'Empresa', type: 'select', required: true, dynamicOptions: { collection: 'empresas', labelField: 'nombre', valueField: 'id' } }
     ]
   },
-  // ✅ NUEVO: Catálogo de Tráfico (solo campo Nombre)
+  // ✅ Catálogo de Tráfico (solo campo Nombre) — alimenta el campo "Importación/Exportación" de Tipos de Tarifarios
   trafico: {
     id: 'trafico', titulo: 'Tráfico',
     icono: <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM10 17H6v-2h4v2zm0-4H6v-2h4v2zm0-4H6V7h4v2zm8 8h-6v-2h6v2zm0-4h-6v-2h6v2zm0-4h-6V7h6v2z"/>,
