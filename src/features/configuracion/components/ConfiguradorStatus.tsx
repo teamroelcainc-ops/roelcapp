@@ -393,6 +393,8 @@ const EditorFlujoAppSheet = ({
   /* ---------- estado base ---------- */
   const [catalogoStatus, setCatalogoStatus] = useState<string[]>([]);
   const [tiposOperacion, setTiposOperacion] = useState<any[]>([]);
+  // ✅ NUEVO: opciones del dropdown "Tráfico" vienen ahora del catálogo `catalogo_trafico`
+  const [traficos, setTraficos] = useState<string[]>([]);
   const [tipoServicio, setTipoServicio] = useState(flujoInicial?.tipoServicio || '');
   const [trafico, setTrafico]           = useState(flujoInicial?.trafico       || '');
   const [carga, setCarga]               = useState(flujoInicial?.carga         || '');
@@ -445,6 +447,14 @@ const EditorFlujoAppSheet = ({
         setCatalogoStatus(statusSnap.docs.map(d => d.data().nombre).sort());
         const opSnap = await getDocs(collection(db, 'catalogo_tipo_operacion'));
         setTiposOperacion(opSnap.docs.map(d => ({ id: d.id, tipo_operacion: d.data().tipo_operacion })));
+        // ✅ NUEVO: lee `catalogo_trafico` y deja solo los `nombre` ordenados
+        const trafSnap = await getDocs(collection(db, 'catalogo_trafico'));
+        setTraficos(
+          trafSnap.docs
+            .map(d => (d.data() as any).nombre)
+            .filter((n: any) => typeof n === 'string' && n.trim() !== '')
+            .sort((a: string, b: string) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+        );
       } catch (e) {
         console.error(e);
       }
@@ -1020,7 +1030,7 @@ const EditorFlujoAppSheet = ({
             label="Tráfico"
             value={trafico}
             onChange={setTrafico}
-            options={['Importación', 'Exportación', 'Movimiento LDO', 'Movimiento NLD', 'N/A']}
+            options={traficos}
             placeholder="Selecciona…"
           />
           <SelectorCampo
