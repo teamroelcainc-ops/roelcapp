@@ -8,6 +8,7 @@ import { Login } from './features/auth/components/Login';
 import OperacionesDashboard from './features/operaciones/components/OperacionesDashboard';
 import ServiciosCompletados from './features/operaciones/components/ServiciosCompletados';
 import ServiciosCancelados from './features/operaciones/components/ServiciosCancelados';
+import ReportesDashboard from './features/reportes/components/ReportesDashboard';
 import EmpresasDashboard from './features/empresas/components/EmpresasDashboard';
 import { ContactosDashboard } from './features/contactos/components/ContactosDashboard';
 import { TipoCambioDashboard } from './features/tipoCambio/components/TipoCambioDashboard';
@@ -40,7 +41,7 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'referenciasDiesel' | 'referenciasNomina' | 'deducciones'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'referenciasDiesel' | 'referenciasNomina' | 'deducciones' | 'reportes'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -157,6 +158,10 @@ function App() {
 
         <div className={`sidebar-item ${moduloActivo === 'serviciosCancelados' ? 'active' : ''}`} onClick={() => setModuloActivo('serviciosCancelados')}>
           Servicios Cancelados
+        </div>
+
+        <div className={`sidebar-item ${moduloActivo === 'reportes' ? 'active' : ''}`} onClick={() => setModuloActivo('reportes')}>
+          Reportes
         </div>
 
         <div className={`sidebar-item sidebar-item-with-icon ${esGastosActivo && !menuGastosAbierto ? 'active' : ''}`} onClick={() => setMenuGastosAbierto(!menuGastosAbierto)}>
@@ -301,6 +306,7 @@ function App() {
         {moduloActivo === 'operaciones' && <OperacionesDashboard />}
         {moduloActivo === 'serviciosCompletados' && <ServiciosCompletados />}
         {moduloActivo === 'serviciosCancelados' && <ServiciosCancelados />}
+        {moduloActivo === 'reportes' && <ReportesDashboard />}
         {moduloActivo === 'mtto' && <MttoDashboard />} 
         {moduloActivo === 'referenciasDiesel' && <ReferenciasDieselDashboard />} 
         {moduloActivo === 'referenciasNomina' && <ReferenciasNominaDashboard />} 

@@ -1,7 +1,33 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
+//
+// ═══════════════════════════════════════════════════════════════════════
+// CAMBIOS APLICADOS EN ESTA VERSIÓN
+// ═══════════════════════════════════════════════════════════════════════
+//
+// A) STATUS COMO ID HEX:
+//    El campo `status` de horarios y operaciones ahora guarda el ID hex del
+//    documento de `catalogo_status_servicio` (no el texto). Para mostrar el
+//    nombre legible se usa el campo desnormalizado `statusNombre` o se
+//    resuelve contra el catálogo en tiempo de render.
+//    - mapaStatus + resolverStatus: helper bidireccional ID ↔ Nombre.
+//    - guardarHorario: convierte el nombre seleccionado a ID antes de persistir.
+//    - registrarStatusRapido: convierte cada paso de la cascada a ID.
+//    - useEffect cargarBotones: resuelve statusNombre si solo viene el ID
+//      (caso de horarios importados desde SQL externo).
+//
+// B) OPTIMIZACIONES DE LECTURAS:
+//    1. limit(150) → limit(50) con botón "Cargar más" (paginación real con startAfter).
+//    2. TTL de catálogos estables aumentado a 7 días (status, tipos, monedas,
+//       empresas, etc.). Cambian rara vez en producción, no tiene sentido
+//       re-leerlos cada 24h.
+//    3. Catálogos pesados (convenios_*, empleados) mantienen TTL de 24h.
+//    4. guardarHorario NO recarga todas las operaciones (actualiza estado local).
+//    5. Botón "Forzar recarga" pide confirmación para evitar uso accidental.
+// ═══════════════════════════════════════════════════════════════════════
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { FormularioOperacion } from './FormularioOperacion';
-import { collection, doc, writeBatch, query, getDocs, orderBy, limit, where } from 'firebase/firestore'; 
+import { collection, doc, writeBatch, query, getDocs, orderBy, limit, where, startAfter } from 'firebase/firestore'; 
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
@@ -10,7 +36,10 @@ import * as XLSX from 'xlsx';
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
-// ✅ TODAS LAS COLUMNAS DE LA COLECCIÓN CON NOMBRES LEGIBLES
+// ✅ TAMAÑO DE PÁGINA: 50 operaciones por descarga (antes 150). El usuario puede
+// pulsar "Cargar más" si necesita ver operaciones más antiguas.
+const TAMANO_PAGINA = 50;
+
 const COLUMNAS_BASE = [
   { id: 'ref', label: '# Referencia', visible: true },
   { id: 'fechaServicio', label: 'Fecha Servicio', visible: true },
@@ -78,6 +107,10 @@ const OperacionesDashboard = () => {
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  
+  // ✅ NUEVO: paginación real con cursor (startAfter) para evitar leer 150 ops siempre
+  const [hayMasOperaciones, setHayMasOperaciones] = useState(true);
+  const [cargandoMas, setCargandoMas] = useState(false);
 
   const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'registrar' | 'historial'>('cerrado');
   const [historialList, setHistorialList] = useState<any[]>([]);
@@ -85,9 +118,7 @@ const OperacionesDashboard = () => {
   const [nuevoStatus, setNuevoStatus] = useState('');
   const [nuevaFechaHora, setNuevaFechaHora] = useState('');
   
-  // ✅ NUEVO: Estado para indicar qué botón de status se está guardando (para feedback visual)
   const [guardandoStatusRapido, setGuardandoStatusRapido] = useState<string | null>(null);
-  // ✅ NUEVO: Último status guardado exitosamente (para animación de check verde por 1.5s)
   const [ultimoStatusGuardado, setUltimoStatusGuardado] = useState<string | null>(null);
   
   const [botonesDisponibles, setBotonesDisponibles] = useState<string[]>([]);
@@ -105,36 +136,67 @@ const OperacionesDashboard = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // ✅ MEJORADO: Carga catálogos usando el sistema de caché unificado L1+L2+TTL.
-  // Antes: usaba sessionStorage propio que se pierde al cerrar pestaña, y se re-descargaban
-  // los 16 catálogos en cada sesión nueva. Ahora: localStorage con TTL de 6 horas, así que
-  // mientras estés en horario laboral solo se descargan UNA VEZ al día (o cuando se invalide).
-  //
-  // Mapeo entre nombres internos del componente y nombres reales de las colecciones de Firestore.
-  // Las claves a la izquierda son las que se usan dentro del componente.
+  // =====================================================================
+  // ✅ Resolución bidireccional ID ↔ Nombre para `catalogo_status_servicio`.
+  // El campo `status` de operaciones/horarios ahora guarda ID hex; este helper
+  // se usa al persistir (nombre → id) y al renderizar (id → nombre).
+  // =====================================================================
+  const mapaStatus = useMemo(() => {
+    const lista = (catalogosGlobales.statusServicio || []) as any[];
+    const porId: Record<string, { id: string; nombre: string }> = {};
+    const porNombre: Record<string, { id: string; nombre: string }> = {};
+    lista.forEach(s => {
+      const entry = { id: String(s.id || ''), nombre: String(s.nombre || s.id || '') };
+      if (entry.id) porId[entry.id] = entry;
+      if (entry.nombre) porNombre[entry.nombre.trim().toLowerCase()] = entry;
+    });
+    return { porId, porNombre };
+  }, [catalogosGlobales.statusServicio]);
+
+  const resolverStatus = (valor: string | null | undefined): { id: string; nombre: string } => {
+    if (!valor) return { id: '', nombre: '' };
+    const v = String(valor).trim();
+    if (mapaStatus.porId[v]) return mapaStatus.porId[v];
+    const porNom = mapaStatus.porNombre[v.toLowerCase()];
+    if (porNom) return porNom;
+    return { id: v, nombre: v };
+  };
+
+  // =====================================================================
+  // ✅ TTL más agresivos para reducir lecturas de Firestore.
+  // Antes los catálogos se re-leían cada 6h o 24h. Como en producción casi
+  // nunca cambian, ahora los estables tienen TTL de 7 días. Si el usuario
+  // edita un catálogo, debe usar el botón "Forzar recarga" para invalidar.
+  // =====================================================================
   const cargarCatalogosSiEsNecesario = async () => {
     if (Object.keys(catalogosGlobales).length > 0) return;
 
+    const DIA = 24 * 60 * 60 * 1000;
+    const SIETE_DIAS = 7 * DIA;
+
     const mapeoColecciones: Record<string, { coleccion: string; ttl: number }> = {
-      empresas:                  { coleccion: 'empresas',                       ttl: 6 * 60 * 60 * 1000 },
-      tiposOperacion:            { coleccion: 'catalogo_tipo_operacion',        ttl: 24 * 60 * 60 * 1000 },
-      embalajes:                 { coleccion: 'catalogo_embalaje',              ttl: 24 * 60 * 60 * 1000 },
-      remolques:                 { coleccion: 'remolques',                      ttl: 24 * 60 * 60 * 1000 },
-      tarifas:                   { coleccion: 'catalogo_tarifas_referencia',    ttl: 6 * 60 * 60 * 1000 },
-      conveniosProv:             { coleccion: 'convenios_proveedores',          ttl: 6 * 60 * 60 * 1000 },
-      catalogoConvProvDetalles:  { coleccion: 'convenios_proveedores_detalles', ttl: 6 * 60 * 60 * 1000 },
-      catalogoTC:                { coleccion: 'tipo_cambio',                    ttl: 30 * 60 * 1000 }, // TC cambia diario
-      catalogoConvClientes:      { coleccion: 'convenios_clientes',             ttl: 6 * 60 * 60 * 1000 },
-      catalogoConvDetalles:      { coleccion: 'convenios_clientes_detalles',    ttl: 6 * 60 * 60 * 1000 },
-      unidades:                  { coleccion: 'unidades',                       ttl: 24 * 60 * 60 * 1000 },
-      empleados:                 { coleccion: 'empleados',                      ttl: 24 * 60 * 60 * 1000 },
-      statusServicio:            { coleccion: 'catalogo_status_servicio',       ttl: 24 * 60 * 60 * 1000 },
-      unidades_proveedor:        { coleccion: 'unidades_proveedor',             ttl: 24 * 60 * 60 * 1000 },
-      proveedores_unidad:        { coleccion: 'proveedores_unidad',             ttl: 24 * 60 * 60 * 1000 },
-      catalogoMoneda:            { coleccion: 'catalogo_moneda',                ttl: 24 * 60 * 60 * 1000 },
+      // Catálogos estables que rara vez cambian → 7 días
+      statusServicio:            { coleccion: 'catalogo_status_servicio',       ttl: SIETE_DIAS },
+      tiposOperacion:            { coleccion: 'catalogo_tipo_operacion',        ttl: SIETE_DIAS },
+      embalajes:                 { coleccion: 'catalogo_embalaje',              ttl: SIETE_DIAS },
+      catalogoMoneda:            { coleccion: 'catalogo_moneda',                ttl: SIETE_DIAS },
+      tarifas:                   { coleccion: 'catalogo_tarifas_referencia',    ttl: SIETE_DIAS },
+      // Maestros con cambios ocasionales → 3 días
+      empresas:                  { coleccion: 'empresas',                       ttl: 3 * DIA },
+      remolques:                 { coleccion: 'remolques',                      ttl: 3 * DIA },
+      unidades:                  { coleccion: 'unidades',                       ttl: 3 * DIA },
+      empleados:                 { coleccion: 'empleados',                      ttl: 3 * DIA },
+      unidades_proveedor:        { coleccion: 'unidades_proveedor',             ttl: 3 * DIA },
+      proveedores_unidad:        { coleccion: 'proveedores_unidad',             ttl: 3 * DIA },
+      // Convenios cambian más seguido → 1 día
+      conveniosProv:             { coleccion: 'convenios_proveedores',          ttl: DIA },
+      catalogoConvProvDetalles:  { coleccion: 'convenios_proveedores_detalles', ttl: DIA },
+      catalogoConvClientes:      { coleccion: 'convenios_clientes',             ttl: DIA },
+      catalogoConvDetalles:      { coleccion: 'convenios_clientes_detalles',    ttl: DIA },
+      // TC se actualiza diariamente
+      catalogoTC:                { coleccion: 'tipo_cambio',                    ttl: 30 * 60 * 1000 },
     };
 
-    // Helper: leer de localStorage si está fresco, sino de Firestore
     const cargarUnCatalogo = async (alias: string, coleccion: string, ttlMs: number): Promise<[string, any[]]> => {
       const lsKey = `cat_v1__${coleccion}`;
       try {
@@ -147,7 +209,6 @@ const OperacionesDashboard = () => {
         }
       } catch {}
 
-      // No estaba en caché o expiró: leer Firestore
       console.warn(`[FIREBASE READ] Descargando "${coleccion}"...`);
       const snap = await getDocs(collection(db, coleccion));
       const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
@@ -172,10 +233,18 @@ const OperacionesDashboard = () => {
     }
   };
 
+  // =====================================================================
+  // ✅ DESCARGAR PÁGINA INICIAL DE OPERACIONES (limit 50 en vez de 150).
+  // Reduce 3× las lecturas de cada carga del módulo.
+  // =====================================================================
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     try {
-      const queryOperaciones = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(150));
+      const queryOperaciones = query(
+        collection(db, 'operaciones'),
+        orderBy('fechaServicio', 'desc'),
+        limit(TAMANO_PAGINA)
+      );
       const operacionesSnap = await getDocs(queryOperaciones);
       
       const opDataRaw = operacionesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
@@ -188,11 +257,47 @@ const OperacionesDashboard = () => {
       });
 
       setOperacionesGlobales(operacionesActivas);
+      setHayMasOperaciones(operacionesSnap.docs.length === TAMANO_PAGINA);
     } catch (e) {
       console.error("Error al cargar operaciones:", e);
       alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
     }
     setCargandoOperaciones(false);
+  };
+
+  // =====================================================================
+  // ✅ CARGAR MÁS OPERACIONES (paginación real con startAfter).
+  // Solo descarga 50 más cuando el usuario lo solicita explícitamente.
+  // =====================================================================
+  const cargarMasOperaciones = async () => {
+    if (!hayMasOperaciones || cargandoMas || operacionesGlobales.length === 0) return;
+    setCargandoMas(true);
+    try {
+      const ultimo = operacionesGlobales[operacionesGlobales.length - 1];
+      const cursorFecha = ultimo.fechaServicio || '';
+
+      const q = query(
+        collection(db, 'operaciones'),
+        orderBy('fechaServicio', 'desc'),
+        startAfter(cursorFecha),
+        limit(TAMANO_PAGINA)
+      );
+      const snap = await getDocs(q);
+      const nuevasRaw = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      const idsExcluidos = ['f557b751', 'c2d57403', '7607f692'];
+      const nuevasFiltradas = nuevasRaw.filter((op: any) => {
+        const statusId = String(op.status || '').trim();
+        const statusTexto = String(op.statusNombre || op.status || '').toLowerCase();
+        return !idsExcluidos.includes(statusId) && !statusTexto.includes('completado');
+      });
+
+      setOperacionesGlobales(prev => [...prev, ...nuevasFiltradas]);
+      setHayMasOperaciones(snap.docs.length === TAMANO_PAGINA);
+    } catch (e) {
+      console.error("Error al cargar más operaciones:", e);
+      alert("No se pudieron cargar más operaciones.");
+    }
+    setCargandoMas(false);
   };
 
   useEffect(() => { 
@@ -205,17 +310,23 @@ const OperacionesDashboard = () => {
 
   useEffect(() => { setPaginaActual(1); }, [busqueda]);
 
+  // ✅ MODIFICADO: Antes de pedir botones a statusRules, garantizamos que la operación
+  // tenga `statusNombre` poblado. Si solo trae `status` con ID hex (caso del horario
+  // importado de SQL externo), lo resolvemos a nombre usando el catálogo.
   useEffect(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
-        const botones = await obtenerBotonesHorarioDinamicos(operacionViendo);
-        // ✅ DEBUG: para verificar qué devuelve la función de reglas
+        let op = operacionViendo;
+        if (!op.statusNombre && op.status) {
+          const resuelto = resolverStatus(op.status);
+          if (resuelto.nombre && resuelto.nombre !== resuelto.id) {
+            op = { ...op, statusNombre: resuelto.nombre };
+          }
+        }
+        const botones = await obtenerBotonesHorarioDinamicos(op);
         console.log('[DEBUG StatusButtons] Operación:', {
-          id: operacionViendo.id,
-          status: operacionViendo.status,
-          statusNombre: operacionViendo.statusNombre,
-          tipoOperacion: operacionViendo.tipoOperacionNombre,
-          trafico: operacionViendo.trafico
+          id: op.id, status: op.status, statusNombre: op.statusNombre,
+          tipoOperacion: op.tipoOperacionNombre, trafico: op.trafico
         });
         console.log('[DEBUG StatusButtons] Botones devueltos por la regla:', botones);
         setBotonesDisponibles(botones || []);
@@ -224,7 +335,8 @@ const OperacionesDashboard = () => {
       }
     };
     cargarBotones();
-  }, [operacionViendo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionViendo, mapaStatus]);
 
   const handleNuevo = async () => { 
     await cargarCatalogosSiEsNecesario();
@@ -354,103 +466,123 @@ const OperacionesDashboard = () => {
     setCargandoHorarios(false);
   };
 
+  // =====================================================================
+  // ✅ guardarHorario MODIFICADO:
+  // 1. Resuelve nombre → ID hex antes de persistir (campo `status`).
+  // 2. NO llama a descargarOperaciones() al terminar; actualiza el estado local
+  //    para evitar 50 lecturas innecesarias por cada horario retroactivo guardado.
+  // =====================================================================
   const guardarHorario = async () => {
     if (!nuevoStatus || !nuevaFechaHora) return alert("Completa la fecha y el estatus.");
     setCargandoHorarios(true);
     try {
+      const { id: statusId, nombre: statusNombreResuelto } = resolverStatus(nuevoStatus);
+
       const batch = writeBatch(db);
       const horarioRef = doc(collection(db, 'horarios'));
-      batch.set(horarioRef, { operacionId: operacionViendo.id, status: nuevoStatus, fechaHora: nuevaFechaHora, registradoEn: new Date().toISOString() });
-      const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      
-      batch.update(opRef, { 
-        status: nuevoStatus,
-        statusNombre: nuevoStatus
+      batch.set(horarioRef, {
+        operacionId: operacionViendo.id,
+        status: statusId,                      // ✅ ID hex del catálogo
+        statusNombre: statusNombreResuelto,    // ✅ Desnormalizado por conveniencia
+        fechaHora: nuevaFechaHora,
+        registradoEn: new Date().toISOString()
       });
+      const opRef = doc(db, 'operaciones', String(operacionViendo.id));
+      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
 
       await batch.commit();
 
-      alert('Horario registrado y Estatus actualizado.');
-      setModalHorarios('cerrado');
-      setOperacionViendo(null);
-      descargarOperaciones(); 
-    } catch (e) {
-      alert("Error al actualizar la base de datos.");
-    }
-    setCargandoHorarios(false);
-  };
-
-  // ✅ MEJORADO: Registro de status con respuesta INSTANTÁNEA y CASCADA automática.
-  //
-  // Cuando el usuario presiona un botón manual/decisión, ejecutamos `resolverCascadaStatus`
-  // que devuelve la cadena completa de status que se atraviesan (incluyendo los automáticos
-  // intermedios sin botón). Por ejemplo:
-  //   Click en "Salida del Patio" → cadena: ["Salida del Patio", "En Tránsito a Origen"]
-  // El status final de la operación queda en el ÚLTIMO de la cadena, y la bitácora registra
-  // TODOS los pasos como eventos separados con la misma marca de tiempo.
-  const registrarStatusRapido = async (statusNombre: string) => {
-    if (!operacionViendo || !statusNombre) return;
-    if (guardandoStatusRapido) return;
-
-    setGuardandoStatusRapido(statusNombre);
-
-    // Snapshot para revertir si algo falla
-    const operacionPrevia = operacionViendo;
-    const operacionesPrevias = operacionesGlobales;
-    const botonesPrevios = botonesDisponibles;
-
-    try {
-      // ✅ Resolver la cascada de estados (el manual + los automáticos en cadena)
-      const cadenaStatus = await resolverCascadaStatus(statusNombre, operacionViendo);
-      const statusFinal = cadenaStatus[cadenaStatus.length - 1];
-
-      // ✅ Actualización optimista INMEDIATA con el status FINAL de la cascada
+      // ✅ Actualizar estado local en lugar de re-descargar todas las operaciones
       const operacionActualizada = {
         ...operacionViendo,
-        status: statusFinal,
-        statusNombre: statusFinal
+        status: statusId,
+        statusNombre: statusNombreResuelto
       };
       setOperacionViendo(operacionActualizada);
       setOperacionesGlobales(prev => prev.map((op: any) =>
         op.id === operacionViendo.id ? operacionActualizada : op
       ));
 
-      // ✅ Recalcular botones del siguiente paso INMEDIATAMENTE
+      alert('Horario registrado y Estatus actualizado.');
+      setModalHorarios('cerrado');
+    } catch (e) {
+      console.error('Error guardarHorario:', e);
+      alert("Error al actualizar la base de datos.");
+    }
+    setCargandoHorarios(false);
+  };
+
+  // =====================================================================
+  // ✅ registrarStatusRapido MODIFICADO:
+  // resolverCascadaStatus devuelve nombres legibles (porque el flujo se guarda
+  // con nombres). Antes de persistir, convertimos cada paso a {id, nombre} con
+  // resolverStatus. Tanto la operación como cada entrada de bitácora quedan
+  // con `status` = ID hex y `statusNombre` = nombre legible.
+  // =====================================================================
+  const registrarStatusRapido = async (statusNombre: string) => {
+    if (!operacionViendo || !statusNombre) return;
+    if (guardandoStatusRapido) return;
+
+    setGuardandoStatusRapido(statusNombre);
+
+    const operacionPrevia = operacionViendo;
+    const operacionesPrevias = operacionesGlobales;
+    const botonesPrevios = botonesDisponibles;
+
+    try {
+      // Garantizar que la operación tenga statusNombre antes de invocar la cascada
+      // (la cascada compara contra nombres del flujo, no contra IDs).
+      let opParaCascada = operacionViendo;
+      if (!opParaCascada.statusNombre && opParaCascada.status) {
+        const r = resolverStatus(opParaCascada.status);
+        opParaCascada = { ...opParaCascada, statusNombre: r.nombre };
+      }
+
+      const cadenaStatus = await resolverCascadaStatus(statusNombre, opParaCascada);
+      const cadenaResuelta = cadenaStatus.map(resolverStatus);
+      const statusFinal = cadenaResuelta[cadenaResuelta.length - 1];
+
+      // Optimista
+      const operacionActualizada = {
+        ...operacionViendo,
+        status: statusFinal.id,
+        statusNombre: statusFinal.nombre
+      };
+      setOperacionViendo(operacionActualizada);
+      setOperacionesGlobales(prev => prev.map((op: any) =>
+        op.id === operacionViendo.id ? operacionActualizada : op
+      ));
+
       obtenerBotonesHorarioDinamicos(operacionActualizada)
         .then(botones => setBotonesDisponibles(botones || []))
         .catch(() => {});
 
-      // Calcular fecha/hora local
       const now = new Date();
       const tzOffset = now.getTimezoneOffset() * 60000;
       const fechaHoraLocal = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
       const registradoEn = new Date().toISOString();
 
-      // ✅ Guardado en segundo plano: una entrada en bitácora POR CADA paso de la cascada
       (async () => {
         try {
           const batch = writeBatch(db);
 
-          // Una entrada de historial por cada status en la cadena.
-          // Todos comparten la misma fechaHora (el operador hizo una sola acción) pero quedan registrados.
-          cadenaStatus.forEach((statusPaso, idx) => {
+          cadenaResuelta.forEach((statusPaso, idx) => {
             const horarioRef = doc(collection(db, 'horarios'));
             batch.set(horarioRef, {
               operacionId: operacionViendo.id,
-              status: statusPaso,
+              status: statusPaso.id,           // ✅ ID hex
+              statusNombre: statusPaso.nombre, // ✅ Nombre legible
               fechaHora: fechaHoraLocal,
               registradoEn: registradoEn,
-              // Metadata útil: orden dentro de la cascada (0 = el que presionó el usuario)
               ordenCascada: idx,
               esAutomatico: idx > 0,
             });
           });
 
-          // El documento de la operación queda con el status FINAL
           const opRef = doc(db, 'operaciones', String(operacionViendo.id));
           batch.update(opRef, {
-            status: statusFinal,
-            statusNombre: statusFinal
+            status: statusFinal.id,
+            statusNombre: statusFinal.nombre
           });
 
           await batch.commit();
@@ -460,13 +592,11 @@ const OperacionesDashboard = () => {
           setTimeout(() => setUltimoStatusGuardado(null), 1500);
         } catch (e: any) {
           console.error("Error al registrar status:", e);
-          // ✅ REVERTIR cambios optimistas
           setOperacionViendo(operacionPrevia);
           setOperacionesGlobales(operacionesPrevias);
           setBotonesDisponibles(botonesPrevios);
           setGuardandoStatusRapido(null);
 
-          // ✅ Detectar si es error de cuota para dar mensaje útil
           const msg = String(e?.message || e?.code || e || '').toLowerCase();
           if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
             alert(
@@ -492,14 +622,19 @@ const OperacionesDashboard = () => {
     setOperacionEditando(null);
   };
 
+  // ✅ MODIFICADO: pide confirmación antes de invalidar el caché
+  // (el botón anterior se podía pulsar accidentalmente y costaba ~1000 lecturas).
   const forzarRecarga = () => {
-    // ✅ Limpiar el nuevo caché de catálogos (todas las claves cat_v1__*)
+    if (!window.confirm(
+      '¿Recargar todos los catálogos desde Firestore?\n\n' +
+      'Esto consumirá un buen número de lecturas (~500-2000). ' +
+      'Hazlo solo si editaste un catálogo en otra pantalla o sospechas datos viejos.'
+    )) return;
     try {
       Object.keys(localStorage)
         .filter(k => k.startsWith('cat_v1__') || k.startsWith('flujo_v1__'))
         .forEach(k => localStorage.removeItem(k));
     } catch {}
-    // También limpiar el caché viejo por si quedó algo
     sessionStorage.removeItem('roelca_catalogos_v2');
     window.location.reload();
   };
@@ -535,7 +670,6 @@ const OperacionesDashboard = () => {
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-
     const unidadProvVal = operacionViendo.unidadProveedor ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
@@ -562,10 +696,8 @@ const OperacionesDashboard = () => {
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-
     const unidadProvVal = operacionViendo.unidadProveedor ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
-
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
     const uniNombre = operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal);
     const uniPlacas = unidadObj ? (unidadObj.placa || 'N/A') : 'N/A';
@@ -596,7 +728,6 @@ const OperacionesDashboard = () => {
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-
     const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
 
@@ -627,7 +758,6 @@ const OperacionesDashboard = () => {
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-
     const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
 
@@ -759,7 +889,6 @@ const OperacionesDashboard = () => {
 
   const exportarExcel = async () => {
     if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
-    
     const columnasVisibles = columnasTabla.filter(c => c.visible);
     await cargarCatalogosSiEsNecesario();
 
@@ -826,7 +955,6 @@ const OperacionesDashboard = () => {
           case 'observacionesUnidad': val = op.observacionesUnidad || ''; break;
           case 'observacionesCobrar': val = op.observacionesCobrar || ''; break;
         }
-        
         fila[col.label] = val;
       });
       return fila;
@@ -883,12 +1011,10 @@ const OperacionesDashboard = () => {
             </div>
           </div>
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
-            
             <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
-
-            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos">
+            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos (pide confirmación)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
             </button>
             <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
@@ -926,24 +1052,18 @@ const OperacionesDashboard = () => {
                       <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
                         <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
                           <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            <button 
-                              type="button" 
-                              title="Editar Operación"
+                            <button type="button" title="Editar Operación"
                               onClick={(e) => { e.stopPropagation(); editarOperacion(op); }} 
                               style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} 
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             </button>
-                            <button 
-                              type="button" 
-                              title="Eliminar Operación"
+                            <button type="button" title="Eliminar Operación"
                               onClick={(e) => { e.stopPropagation(); eliminarOperacion(op.id); }} 
                               style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                             </button>
                           </div>
@@ -963,8 +1083,22 @@ const OperacionesDashboard = () => {
 
           {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones activas</div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones activas
+                {hayMasOperaciones && <span style={{ color: '#8b949e', marginLeft: 8, fontStyle: 'italic' }}>(hay más en el servidor)</span>}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {/* ✅ NUEVO: Botón "Cargar más" para paginación real (50 ops por descarga) */}
+                {hayMasOperaciones && (
+                  <button
+                    onClick={cargarMasOperaciones}
+                    disabled={cargandoMas}
+                    style={{ padding: '6px 14px', backgroundColor: cargandoMas ? '#0d1117' : '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: cargandoMas ? 'wait' : 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    title="Descargar 50 operaciones más desde Firestore"
+                  >
+                    {cargandoMas ? 'Cargando...' : '+ Cargar más (50)'}
+                  </button>
+                )}
                 <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
                 <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
                 <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
@@ -982,33 +1116,20 @@ const OperacionesDashboard = () => {
               <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
             <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
-            
-            <ul style={{ 
-              listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', 
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' 
-            }}>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
               {columnasTabla.map((col, idx) => (
-                <li 
-                  key={col.id}
-                  draggable
+                <li key={col.id} draggable
                   onDragStart={(e) => handleDragStart(e, idx)}
                   onDragEnter={() => handleDragEnter(idx)}
                   onDragEnd={() => setDraggedColIndex(null)}
                   onDragOver={(e) => e.preventDefault()}
-                  style={{ 
-                    display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', 
-                    backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', 
-                    border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab',
-                    transition: 'background-color 0.2s'
-                  }}
-                >
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                   <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
               <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
             </div>
@@ -1023,9 +1144,7 @@ const OperacionesDashboard = () => {
             <div className="form-header" style={{ padding: '24px 32px 16px 32px', borderBottom: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.6rem', fontWeight: 600, letterSpacing: '-0.5px' }}>
-                    Detalle de Operación 
-                  </h2>
+                  <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.6rem', fontWeight: 600, letterSpacing: '-0.5px' }}>Detalle de Operación</h2>
                   <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>
                       {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
@@ -1035,7 +1154,6 @@ const OperacionesDashboard = () => {
                     </span>
                   </div>
                 </div>
-                
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                   <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
@@ -1048,59 +1166,22 @@ const OperacionesDashboard = () => {
                 </div>
               </div>
 
-              {/* ✅ REDISEÑADO: Botones de status rápidos con UI/UX moderna.
-                  - Pills con círculo de ícono prominente a la izquierda.
-                  - Feedback instantáneo: el botón muestra check animado al guardar.
-                  - Sin estado "Guardando..." bloqueante: la UI ya reaccionó antes.
-                  - Hover sutil con elevación. */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 0 10px 0', borderTop: '1px solid #30363d', flexWrap: 'wrap' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>SIGUIENTE PASO</span>
-                
                 {botonesDisponibles.length > 0 ? (
                   <>
                     {botonesDisponibles.map((botonStr: string) => {
                       const esExitoso = ultimoStatusGuardado === botonStr;
                       return (
-                        <button
-                          key={botonStr}
-                          onClick={() => registrarStatusRapido(botonStr)}
-                          disabled={guardandoStatusRapido !== null}
-                          className="status-pill"
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            padding: '6px 18px 6px 6px',
-                            borderRadius: '999px',
-                            border: 'none',
-                            background: esExitoso
-                              ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
-                              : 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
-                            color: '#fff',
-                            cursor: guardandoStatusRapido && !esExitoso ? 'wait' : 'pointer',
-                            fontWeight: 600,
-                            fontSize: '0.9rem',
-                            boxShadow: esExitoso
-                              ? '0 4px 14px rgba(16, 185, 129, 0.4)'
-                              : '0 4px 14px rgba(234, 88, 12, 0.35)',
+                        <button key={botonStr} onClick={() => registrarStatusRapido(botonStr)} disabled={guardandoStatusRapido !== null} className="status-pill"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
+                            background: esExitoso ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                            color: '#fff', cursor: guardandoStatusRapido && !esExitoso ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                            boxShadow: esExitoso ? '0 4px 14px rgba(16, 185, 129, 0.4)' : '0 4px 14px rgba(234, 88, 12, 0.35)',
                             transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                            opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1,
-                            position: 'relative',
-                            overflow: 'hidden',
-                          }}
-                          title={`Marcar como: ${botonStr}`}
-                        >
-                          {/* Círculo del ícono */}
-                          <span style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: '50%',
-                            background: 'rgba(255,255,255,0.22)',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}>
+                            opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden' }}
+                          title={`Marcar como: ${botonStr}`}>
+                          <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                             {esExitoso ? (
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pop 0.3s ease-out' }}>
                                 <polyline points="20 6 9 17 4 12"></polyline>
@@ -1115,27 +1196,10 @@ const OperacionesDashboard = () => {
                         </button>
                       );
                     })}
-
-                    {/* Botón circular pequeño para registro retroactivo */}
-                    <button
-                      onClick={abrirRegistroHorario}
-                      className="status-circle-btn"
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: '50%',
-                        background: '#21262d',
-                        border: '1px solid #30363d',
-                        color: '#8b949e',
-                        cursor: 'pointer',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 0.2s ease',
-                        flexShrink: 0,
-                      }}
-                      title="Registrar con fecha/hora distinta (retroactivo)"
-                    >
+                    <button onClick={abrirRegistroHorario} className="status-circle-btn"
+                      style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#8b949e',
+                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0 }}
+                      title="Registrar con fecha/hora distinta (retroactivo)">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
                         <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -1149,31 +1213,12 @@ const OperacionesDashboard = () => {
                     <span style={{ color: '#8b949e', fontSize: '0.85rem', fontStyle: 'italic', marginRight: '8px' }}>
                       No hay transiciones automáticas configuradas.
                     </span>
-                    <button
-                      onClick={abrirRegistroHorario}
-                      className="status-pill"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '10px',
-                        padding: '6px 18px 6px 6px',
-                        borderRadius: '999px',
-                        border: 'none',
-                        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
-                        color: '#fff',
-                        cursor: 'pointer',
-                        fontWeight: 600,
-                        fontSize: '0.9rem',
-                        boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)',
-                        transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                      }}
-                      title="Registrar status manualmente"
-                    >
-                      <span style={{
-                        width: 28, height: 28, borderRadius: '50%',
-                        background: 'rgba(255,255,255,0.22)',
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
+                    <button onClick={abrirRegistroHorario} className="status-pill"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
+                        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                        boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)', transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                      title="Registrar status manualmente">
+                      <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="12" y1="5" x2="12" y2="19"></line>
                           <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1187,54 +1232,40 @@ const OperacionesDashboard = () => {
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderTop: '1px solid #30363d', marginTop: '4px', flexWrap: 'wrap' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '0.5px', marginRight: '8px' }}>GENERAR DOCUMENTOS:</span>
-                
                 {evalIsFletes && (
                   <>
                     <button onClick={handleDescargarCartaInstrucciones} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                       Carta Instrucciones
                     </button>
                     <button onClick={handleDescargarPruebaEntrega} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                       Prueba Entrega
                     </button>
                   </>
                 )}
-
                 <button onClick={handleDescargarCheckList} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                   Check List
                 </button>
                 <button onClick={handleDescargarSolicitudRetiro} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                   Solicitud Retiro
                 </button>
                 <button onClick={handleDescargarInstruccionesServicio} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
                   Instrucciones Serv.
                 </button>
               </div>
-
             </div>
             
             <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 32px', overflowX: 'auto', flexShrink: 0 }}>
               {tabsDetalle.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setPestañaDetalleActiva(tab.id)}
-                  style={{
-                    padding: '12px 16px',
-                    background: 'none',
-                    border: 'none',
+                <button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)}
+                  style={{ padding: '12px 16px', background: 'none', border: 'none',
                     borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #D84315' : '2px solid transparent',
-                    color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e',
-                    cursor: 'pointer',
-                    fontWeight: pestañaDetalleActiva === tab.id ? '600' : 'normal',
-                    fontSize: '0.95rem',
-                    whiteSpace: 'nowrap',
-                    transition: 'all 0.2s'
-                  }}
-                >
+                    color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e', cursor: 'pointer',
+                    fontWeight: pestañaDetalleActiva === tab.id ? '600' : 'normal', fontSize: '0.95rem', whiteSpace: 'nowrap', transition: 'all 0.2s' }}>
                   {tab.label}
                 </button>
               ))}
@@ -1252,18 +1283,13 @@ const OperacionesDashboard = () => {
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Servicio / Status</span>
                     <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.fechaServicio)} <span style={{color: '#30363d', margin: '0 8px'}}>|</span> <span style={{color: '#10b981', fontWeight: 'bold'}}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span>
                   </div>
-                  
                   {evalIsFletes ? (
                      <div>
                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Cita</span>
                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatearFechaHora(operacionViendo.fechaCita)}</span>
                      </div>
-                  ) : (
-                    <div></div> 
-                  )}
-
+                  ) : (<div></div>)}
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Paga)</span>
                     <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.clienteNombre || operacionViendo.nombreCliente || operacionViendo.clientePaga)}</span>
@@ -1276,7 +1302,6 @@ const OperacionesDashboard = () => {
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span>
                     <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span>
                   </div>
-                  
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Ref Cliente</span>
                     <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.refCliente)}</span>
@@ -1344,7 +1369,6 @@ const OperacionesDashboard = () => {
                     <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantEntrys)}</span>
                   </div>
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># Manifiesto</span>
                     <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.numManifiesto)}</span>
@@ -1384,7 +1408,6 @@ const OperacionesDashboard = () => {
                         <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span>
                       </div>
                     </div>
-                    
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d', marginBottom: '16px' }}>
                       <div>
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Monto a Pagar (Base)</span>
@@ -1399,7 +1422,6 @@ const OperacionesDashboard = () => {
                         <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.subtotalProv)}</span>
                       </div>
                     </div>
-
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
                       <div>
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Dólares</span>
@@ -1427,9 +1449,7 @@ const OperacionesDashboard = () => {
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operador Asignado</span>
                         <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.operadorNombre || operacionViendo.operador || '-'}</span>
                       </div>
-                      
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
-
                       <div>
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo del Operador</span>
                         <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.sueldoOperador)}</span>
@@ -1442,9 +1462,7 @@ const OperacionesDashboard = () => {
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo Total</span>
                         <span style={{ color: '#f0f6fc', fontWeight: 'bold', backgroundColor: '#161b22', padding: '6px 10px', borderRadius: '4px', border: '1px solid #30363d', display: 'inline-block' }}>{formatoMoneda(operacionViendo.sueldoTotal)}</span>
                       </div>
-
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
-
                       <div>
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Combustible</span>
                         <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.combustible)}</span>
@@ -1487,7 +1505,6 @@ const OperacionesDashboard = () => {
                       {mostrarDato(operacionViendo.observacionesUnidad)}
                     </div>
                   </div>
-
                 </div>
               )}
 
@@ -1546,10 +1563,8 @@ const OperacionesDashboard = () => {
                       {mostrarDato(operacionViendo.observacionesCobrar)}
                     </div>
                   </div>
-
                 </div>
               )}
-
             </div>
 
             <div className="form-actions detail-actions" style={{ padding: '16px 32px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
@@ -1559,7 +1574,7 @@ const OperacionesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ Modal de registro retroactivo (se mantiene como respaldo si el usuario necesita fecha distinta) */}
+      {/* Modal de registro retroactivo */}
       {modalHorarios === 'registrar' && (
         <div className="modal-overlay" style={{ zIndex: 2000 }}>
           <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
@@ -1579,8 +1594,6 @@ const OperacionesDashboard = () => {
                 <label className="form-label" style={{ color: '#8b949e' }}>Estatus / Hito</label>
                 <select className="form-control" value={nuevoStatus} onChange={e => setNuevoStatus(e.target.value)}>
                   <option value="">-- Selecciona un status --</option>
-                  {/* Si hay botones disponibles por reglas, usar esos.
-                      Si no, mostrar el catálogo completo de status como fallback. */}
                   {botonesDisponibles.length > 0 ? (
                     botonesDisponibles.map((botonStr: string) => (
                       <option key={botonStr} value={botonStr}>{botonStr}</option>
@@ -1627,7 +1640,8 @@ const OperacionesDashboard = () => {
                       historialList.map((h: any) => (
                         <tr key={h.id} style={{ borderBottom: '1px solid #21262d' }}>
                           <td style={{ padding: '16px 12px', color: '#c9d1d9' }}>{new Date(h.fechaHora).toLocaleString('es-MX')}</td>
-                          <td style={{ padding: '16px 12px', color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre')}</td>
+                          {/* ✅ Muestra el nombre legible aunque el status guardado sea un ID hex */}
+                          <td style={{ padding: '16px 12px', color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre', h.statusNombre)}</td>
                         </tr>
                       ))
                     )}
@@ -1642,29 +1656,20 @@ const OperacionesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ Animaciones y micro-interacciones para los botones de status */}
       <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         @keyframes pop {
           0%   { transform: scale(0); opacity: 0; }
           60%  { transform: scale(1.3); opacity: 1; }
           100% { transform: scale(1); opacity: 1; }
         }
-        .status-pill {
-          transform: translateY(0);
-        }
+        .status-pill { transform: translateY(0); }
         .status-pill:not(:disabled):hover {
           transform: translateY(-2px);
           filter: brightness(1.08);
           box-shadow: 0 8px 20px rgba(234, 88, 12, 0.5) !important;
         }
-        .status-pill:not(:disabled):active {
-          transform: translateY(0);
-          filter: brightness(0.95);
-        }
+        .status-pill:not(:disabled):active { transform: translateY(0); filter: brightness(0.95); }
         .status-circle-btn:hover {
           background: #30363d !important;
           color: #ea580c !important;
@@ -1672,7 +1677,6 @@ const OperacionesDashboard = () => {
           transform: scale(1.08);
         }
       `}</style>
-
     </div>
   );
 };

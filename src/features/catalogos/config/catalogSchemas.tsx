@@ -211,10 +211,10 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
     fields: [
       { name: 'descripcion', label: 'Descripción', type: 'text', required: true },
       { name: 'aduana', label: 'Aduana', type: 'select', required: true, options: ['Sí', 'No'] },
-      // ✅ MODIFICADO: las opciones ahora vienen del catálogo `catalogo_trafico` (campo `nombre`).
-      // Mantenemos valueField='nombre' para que los registros existentes (que guardan texto
-      // como "Importación", "Movimiento", etc.) sigan resolviendo correctamente.
-      { name: 'movimiento', label: 'Importación/Exportación', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_trafico', labelField: 'nombre', valueField: 'nombre' } }
+      // ✅ MODIFICADO: opciones desde `catalogo_trafico`. Guarda el ID hex del documento,
+      // muestra el campo `nombre`. Los 66 registros existentes guardan TEXTO en `movimiento`,
+      // así que se debe correr la migración (ver MigracionTrafico.tsx) o se verán crudos.
+      { name: 'movimiento', label: 'Importación/Exportación', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_trafico', labelField: 'nombre', valueField: 'id' } }
     ]
   },
   tarifas_referencia: {
