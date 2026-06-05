@@ -69,7 +69,7 @@ const COLUMNAS_BASE = [
 
 const ServiciosCompletados = () => {
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
-  const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
+  const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
 
   const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'historial'>('cerrado');
@@ -93,16 +93,25 @@ const ServiciosCompletados = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  const descargarOperaciones = async () => {
+  // ✅ MODIFICADO: ahora requiere clienteId. Hace una query específica por cliente
+  // (where + orderBy + limit 500) en lugar de descargar las últimas 400 sin filtro.
+  // Esto trae incluso operaciones viejas del cliente y ahorra cuota de Firestore
+  // porque solo descarga cuando el usuario elige un cliente.
+  const descargarOperaciones = async (clienteId: string) => {
+    if (!clienteId) {
+      setOperacionesGlobales([]);
+      return;
+    }
     setCargandoOperaciones(true);
     try {
-      const queryOperacionesRecientes = query(
+      const queryClienteCompletadas = query(
         collection(db, 'operaciones'),
+        where('clientePaga', '==', clienteId),
         orderBy('fechaServicio', 'desc'),
-        limit(400)
+        limit(500)
       );
 
-      const operacionesSnap = await getDocs(queryOperacionesRecientes);
+      const operacionesSnap = await getDocs(queryClienteCompletadas);
       
       const operacionesCompletadas = operacionesSnap.docs
         .map((d: any) => ({ id: d.id, ...d.data() }))
@@ -164,13 +173,17 @@ const ServiciosCompletados = () => {
     setCatalogosGlobales(catGuardados);
   };
 
+  // ✅ MODIFICADO: al montar solo cargamos catálogos (no operaciones).
+  // Las operaciones se cargarán cuando el usuario elija un cliente.
   useEffect(() => { 
-    const init = async () => {
-      await cargarCatalogosSiEsNecesario();
-      await descargarOperaciones();
-    };
-    init();
+    cargarCatalogosSiEsNecesario();
   }, []);
+
+  // ✅ NUEVO: cuando cambia el cliente seleccionado, se hace la query específica.
+  useEffect(() => {
+    descargarOperaciones(filterCliente);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterCliente]);
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filterFecha, filterRemolque, filterCliente]);
   
@@ -435,10 +448,10 @@ const ServiciosCompletados = () => {
     window.location.reload();
   };
 
+  // ✅ MODIFICADO: el cliente ya está aplicado en la query a Firestore (no se vuelve a filtrar aquí).
+  // Sólo refinamos en memoria por fecha, remolque o búsqueda general.
   const operacionesFiltradas = useMemo(() => {
-    if (!filterFecha && !filterRemolque && !filterCliente) {
-      return [];
-    }
+    if (!filterCliente) return [];
 
     let filtradas = operacionesGlobales;
 
@@ -447,9 +460,6 @@ const ServiciosCompletados = () => {
     }
     if (filterRemolque) {
       filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
-    }
-    if (filterCliente) {
-      filtradas = filtradas.filter(op => String(op.clientePaga || op.clienteId || '') === filterCliente || String(op.clienteNombre || '').toLowerCase().includes(filterCliente.toLowerCase()));
     }
 
     if (busqueda.trim()) {
@@ -663,7 +673,19 @@ const ServiciosCompletados = () => {
           ✓ Servicios Completados
         </h1>
 
+        {/* ✅ MODIFICADO: Cliente ahora es el primer filtro y es el principal.
+            Al elegir cliente se dispara la query a Firestore. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+          <div style={{ flex: '1 1 260px' }}>
+            <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA ★</label>
+            <select value={filterCliente} onChange={(e) => setFilterCliente(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }}>
+              <option value="">Seleccionar Cliente...</option>
+              {catalogosGlobales.empresas?.map((emp: any) => (
+                <option key={emp.id} value={emp.id}>{emp.nombre || emp.id}</option>
+              ))}
+            </select>
+          </div>
+
           <div style={{ flex: '1 1 180px' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA</label>
             <input type="date" value={filterFecha} onChange={(e) => setFilterFecha(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
@@ -675,16 +697,6 @@ const ServiciosCompletados = () => {
               <option value="">Seleccionar Remolque...</option>
               {catalogosGlobales.remolques?.map((rem: any) => (
                 <option key={rem.id} value={rem.id}>{`${rem.nombre || ''} ${rem.placas || rem.placa || ''}`.trim()}</option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ flex: '1 1 240px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA</label>
-            <select value={filterCliente} onChange={(e) => setFilterCliente(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
-              <option value="">Seleccionar Cliente...</option>
-              {catalogosGlobales.empresas?.map((emp: any) => (
-                <option key={emp.id} value={emp.id}>{emp.nombre || emp.id}</option>
               ))}
             </select>
           </div>
@@ -729,10 +741,10 @@ const ServiciosCompletados = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {!filterFecha && !filterRemolque && !filterCliente ? (
+                  {!filterCliente ? (
                     <tr>
                       <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e', fontWeight: '500' }}>
-                        Por favor coloque al menos un filtro (Fecha, Remolque o Cliente) para desplegar los registros.
+                        Selecciona un cliente para ver sus servicios completados.
                       </td>
                     </tr>
                   ) : operacionesEnPantalla.length === 0 ? (
