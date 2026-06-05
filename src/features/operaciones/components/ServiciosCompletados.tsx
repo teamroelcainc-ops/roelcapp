@@ -93,40 +93,71 @@ const ServiciosCompletados = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // ✅ MODIFICADO: ahora requiere clienteId. Hace una query específica por cliente
-  // (where + orderBy + limit 500) en lugar de descargar las últimas 400 sin filtro.
-  // Esto trae incluso operaciones viejas del cliente y ahorra cuota de Firestore
-  // porque solo descarga cuando el usuario elige un cliente.
+  // ✅ MODIFICADO: query específica por cliente con FALLBACK automático.
+  // Estrategia:
+  //   1) Intentamos query con where + orderBy + limit (rápida pero requiere índice compuesto).
+  //   2) Si Firestore falla por falta de índice, hacemos query sin orderBy (sólo where + limit)
+  //      —no requiere índice compuesto— y ordenamos en memoria.
+  //   3) En cualquier otro error mostramos el mensaje real al usuario.
   const descargarOperaciones = async (clienteId: string) => {
     if (!clienteId) {
       setOperacionesGlobales([]);
       return;
     }
     setCargandoOperaciones(true);
-    try {
-      const queryClienteCompletadas = query(
-        collection(db, 'operaciones'),
-        where('clientePaga', '==', clienteId),
-        orderBy('fechaServicio', 'desc'),
-        limit(500)
-      );
 
-      const operacionesSnap = await getDocs(queryClienteCompletadas);
-      
-      const operacionesCompletadas = operacionesSnap.docs
-        .map((d: any) => ({ id: d.id, ...d.data() }))
+    const filtrarCompletadas = (docs: any[]) =>
+      docs.map((d: any) => ({ id: d.id, ...d.data() }))
         .filter((op: any) => {
           const statusId = String(op.status || '').trim();
           const statusTexto = String(op.statusNombre || op.status || '').toLowerCase();
           return ['f557b751', 'c2d57403'].includes(statusId) || statusTexto.includes('completado');
         });
 
-      setOperacionesGlobales(operacionesCompletadas);
+    try {
+      // Intento 1: query óptima con orderBy
+      const queryOptima = query(
+        collection(db, 'operaciones'),
+        where('clientePaga', '==', clienteId),
+        orderBy('fechaServicio', 'desc'),
+        limit(500)
+      );
+      const snap = await getDocs(queryOptima);
+      setOperacionesGlobales(filtrarCompletadas(snap.docs));
+    } catch (e: any) {
+      const msg = String(e?.message || e?.code || e || '');
+      const esErrorDeIndice = msg.toLowerCase().includes('index') || msg.toLowerCase().includes('failed-precondition');
 
-    } catch (e) {
-      console.error(e);
-      alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
+      if (esErrorDeIndice) {
+        // Mostrar el link de Firebase en consola (Firestore lo incluye en el mensaje)
+        console.warn('[ServiciosCompletados] Falta el índice compuesto. Aplicando fallback sin orderBy.');
+        console.warn('[ServiciosCompletados] Crea el índice con este link (incluido en el error original):');
+        console.warn(msg);
+
+        try {
+          // Intento 2: fallback sin orderBy (no requiere índice compuesto)
+          const queryFallback = query(
+            collection(db, 'operaciones'),
+            where('clientePaga', '==', clienteId),
+            limit(500)
+          );
+          const snap2 = await getDocs(queryFallback);
+          const completadas = filtrarCompletadas(snap2.docs);
+          // Ordenar en memoria por fechaServicio desc
+          completadas.sort((a: any, b: any) =>
+            String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
+          );
+          setOperacionesGlobales(completadas);
+        } catch (e2: any) {
+          console.error('[ServiciosCompletados] Fallback también falló:', e2);
+          alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${e2?.message || e2}`);
+        }
+      } else {
+        console.error('[ServiciosCompletados] Error al cargar operaciones:', e);
+        alert(`Hubo un problema al cargar las operaciones.\n\nDetalle: ${msg}\n\nRevisa la consola del navegador (F12) para más información.`);
+      }
     }
+
     setCargandoOperaciones(false);
   };
 
