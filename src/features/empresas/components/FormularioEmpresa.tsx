@@ -91,6 +91,116 @@ const MultiSelectCheckbox: React.FC<{
 };
 
 // =========================================
+// SUB-COMPONENTE: SELECTOR MULTIPLE CON BUSCADOR (id/label) + CHIPS
+// Para campos como "Cliente que Paga (Relacionado)" donde se puede
+// seleccionar varios registros y la lista puede ser larga.
+// =========================================
+const MultiSearchableSelect: React.FC<{
+  options: { id: string, label: string }[];
+  selectedIds: string[];
+  onChange: (ids: string[], labels: string[]) => void;
+  placeholder?: string;
+}> = ({ options, selectedIds, onChange, placeholder = "Buscar..." }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const seleccionados = options.filter(o => selectedIds.includes(o.id));
+  const filtrados = options.filter(o => o.label.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  const emitir = (nuevosIds: string[]) => {
+    const labels = options.filter(o => nuevosIds.includes(o.id)).map(o => o.label);
+    onChange(nuevosIds, labels);
+  };
+
+  const toggle = (id: string) => {
+    if (selectedIds.includes(id)) emitir(selectedIds.filter(x => x !== id));
+    else emitir([...selectedIds, id]);
+  };
+
+  const quitar = (id: string) => emitir(selectedIds.filter(x => x !== id));
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      {/* Chips de seleccionados */}
+      {seleccionados.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+          {seleccionados.map(s => (
+            <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', backgroundColor: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '14px', color: '#c9d1d9', fontSize: '0.8rem' }}>
+              {s.label}
+              <button type="button" onClick={() => quitar(s.id)} title="Quitar" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '0.9rem' }}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        className="form-control"
+        style={{
+          cursor: 'pointer', border: isOpen ? '1px solid #3b82f6' : '1px solid #30363d',
+          backgroundColor: '#010409', color: '#8b949e',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none',
+          padding: '10px'
+        }}
+      >
+        <span>{selectedIds.length > 0 ? `${selectedIds.length} cliente(s) seleccionado(s)` : placeholder}</span>
+        <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>{isOpen ? '▲' : '▼'}</span>
+      </div>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '260px', overflowY: 'auto',
+          backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px',
+          zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
+        }}>
+          <div style={{ padding: '8px', borderBottom: '1px solid #21262d', position: 'sticky', top: 0, backgroundColor: '#161b22' }}>
+            <input
+              type="text"
+              autoFocus
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar cliente..."
+              style={{ width: '100%', padding: '8px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}
+            />
+          </div>
+          {filtrados.length > 0 ? filtrados.map(opt => (
+            <label
+              key={opt.id}
+              style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.9rem' }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+            >
+              <input
+                type="checkbox"
+                checked={selectedIds.includes(opt.id)}
+                onChange={() => toggle(opt.id)}
+                style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              {opt.label}
+            </label>
+          )) : (
+            <div style={{ padding: '8px 16px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+              No se encontraron coincidencias
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR ESTRICTO
 // =========================================
 const SearchableSelect: React.FC<{
@@ -263,8 +373,9 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     observacionesBaja: '', 
     tiposEmpresa: [] as string[], 
     tiposServicio: [] as string[], 
-    clienteRelacionadoId: '', 
-    clienteRelacionadoNombre: '', 
+    // ✅ Ahora se pueden relacionar VARIOS clientes que pagan
+    clienteRelacionadoIds: [] as string[], 
+    clienteRelacionadoNombres: [] as string[], 
     rfcTaxId: '',
     fechaUltimoServicio: '',
     
@@ -352,6 +463,21 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
         data.tiposServicio = [];
       }
 
+      // ✅ Compatibilidad: convertir el cliente relacionado único (formato viejo)
+      // a los nuevos arreglos de selección múltiple.
+      if (!Array.isArray(data.clienteRelacionadoIds)) {
+        if (data.clienteRelacionadoId) {
+          data.clienteRelacionadoIds = [data.clienteRelacionadoId];
+          data.clienteRelacionadoNombres = data.clienteRelacionadoNombre ? [data.clienteRelacionadoNombre] : [];
+        } else {
+          data.clienteRelacionadoIds = [];
+          data.clienteRelacionadoNombres = [];
+        }
+      }
+      if (!Array.isArray(data.clienteRelacionadoNombres)) {
+        data.clienteRelacionadoNombres = [];
+      }
+
       setFormData(data as any);
     } else {
       setFormData(prev => ({ ...prev, numCliente: generarSiguienteNumCliente() }));
@@ -376,8 +502,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     setFormData(prev => {
       const newData = { ...prev, tiposEmpresa: nuevosValores };
       if (!nuevosValores.includes('Cliente (Mercancía)')) {
-        newData.clienteRelacionadoId = '';
-        newData.clienteRelacionadoNombre = '';
+        newData.clienteRelacionadoIds = [];
+        newData.clienteRelacionadoNombres = [];
       }
       if (!nuevosValores.includes('Proveedor (Servicios)')) {
         newData.tiposServicio = [];
@@ -411,6 +537,13 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
     if (formData.tiposEmpresa.length === 0) {
       alert("Debes seleccionar al menos un Tipo de Empresa.");
+      setActiveTab('general');
+      return;
+    }
+
+    // ✅ Si es Cliente (Mercancía), exige al menos un cliente que paga relacionado.
+    if (formData.tiposEmpresa.includes('Cliente (Mercancía)') && formData.clienteRelacionadoIds.length === 0) {
+      alert("Debes relacionar al menos un Cliente que Paga.");
       setActiveTab('general');
       return;
     }
@@ -526,13 +659,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     {formData.tiposEmpresa.includes('Cliente (Mercancía)') && (
                       <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                        <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Cliente que Paga (Relacionado) *</label>
-                        <SearchableSelect 
+                        <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Cliente(s) que Paga (Relacionados) *</label>
+                        <MultiSearchableSelect 
                           options={opcionesClientesPaga}
-                          value={formData.clienteRelacionadoId}
-                          onChange={(id, label) => setFormData(prev => ({ ...prev, clienteRelacionadoId: id, clienteRelacionadoNombre: label }))}
-                          placeholder="Buscar cliente principal (Cliente Paga)..."
-                          required={true}
+                          selectedIds={formData.clienteRelacionadoIds}
+                          onChange={(ids, labels) => setFormData(prev => ({ ...prev, clienteRelacionadoIds: ids, clienteRelacionadoNombres: labels }))}
+                          placeholder="Buscar y seleccionar clientes que pagan..."
                         />
                       </div>
                     )}
