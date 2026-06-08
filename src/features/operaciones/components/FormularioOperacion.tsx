@@ -56,6 +56,9 @@ const ID_MXN = 'f95d8894';
 // ✅ Regla: este tipo de operación obliga a un proveedor fijo
 const TIPO_OP_PROVEEDOR_FIJO = '8ec24dfe';
 const PROVEEDOR_FIJO_ID = '349123';
+// Costo de manifiesto que se precarga al seleccionar el Proveedor de Servicios.
+// Cámbialo aquí si el valor base cambia; el usuario igual puede editarlo en el campo.
+const COSTO_MANIFIESTO_DEFAULT = 8.52;
 
 // ✅ NUEVO: tipos de empresa por string legible (lo que FormularioEmpresa entiende para preseleccionar)
 const TIPO_EMP_CLIENTE_PAGA      = 'Cliente (Paga)';
@@ -142,55 +145,45 @@ const CampoArchivo = ({
   resaltar?: boolean;
 }) => {
   const cargado = !!file;
+  const [arrastrando, setArrastrando] = useState(false);
+
+  // Al soltar un archivo construimos un evento sintético compatible con el mismo
+  // handler del <input type="file"> (que solo lee e.target.files[0]).
+  const onDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setArrastrando(false);
+    const archivos = e.dataTransfer?.files;
+    if (archivos && archivos.length > 0) {
+      onChange({ target: { files: archivos } } as unknown as React.ChangeEvent<HTMLInputElement>);
+    }
+  };
+
+  const fondo = arrastrando
+    ? 'rgba(251, 146, 60, 0.14)'
+    : cargado ? 'rgba(63, 185, 80, 0.10)' : (resaltar ? 'rgba(248, 81, 73, 0.06)' : '#010409');
+  const borde = arrastrando
+    ? '1px dashed #fb923c'
+    : cargado ? '1px solid rgba(63, 185, 80, 0.45)' : (resaltar ? '1px dashed #f85149' : '1px dashed #30363d');
+
   return (
     <div className="form-group">
       <label className="form-label">{label}</label>
       <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          padding: '10px 12px',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          transition: 'all 0.15s ease',
-          backgroundColor: cargado ? 'rgba(63, 185, 80, 0.10)' : (resaltar ? 'rgba(248, 81, 73, 0.06)' : '#010409'),
-          border: cargado ? '1px solid rgba(63, 185, 80, 0.45)' : (resaltar ? '1px dashed #f85149' : '1px dashed #30363d'),
-        }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!arrastrando) setArrastrando(true); }}
+        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setArrastrando(true); }}
+        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setArrastrando(false); }}
+        onDrop={onDrop}
+        style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s ease', backgroundColor: fondo, border: borde }}
       >
-        <span
-          style={{
-            flexShrink: 0,
-            width: '26px',
-            height: '26px',
-            borderRadius: '6px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: cargado ? '#238636' : '#21262d',
-            color: cargado ? '#fff' : '#8b949e',
-          }}
-        >
+        <span style={{ flexShrink: 0, width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: cargado ? '#238636' : '#21262d', color: cargado ? '#fff' : '#8b949e' }}>
           {cargado ? <IconCheck size={15} /> : <IconPlus size={15} />}
         </span>
-        <span
-          style={{
-            flex: 1,
-            minWidth: 0,
-            fontSize: '0.85rem',
-            fontWeight: cargado ? 600 : 400,
-            color: cargado ? '#3fb950' : '#8b949e',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {cargado ? `✓ ${file!.name}` : 'Haz clic para seleccionar archivo'}
+        <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', fontWeight: cargado ? 600 : 400, color: arrastrando ? '#fb923c' : (cargado ? '#3fb950' : '#8b949e'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {arrastrando ? 'Suelta el archivo aquí…' : (cargado ? `✓ ${file!.name}` : 'Haz clic o arrastra un archivo aquí')}
         </span>
-        {cargado && (
-          <span style={{ flexShrink: 0, fontSize: '0.7rem', color: '#7ee787', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            Cargado
-          </span>
+        {cargado && !arrastrando && (
+          <span style={{ flexShrink: 0, fontSize: '0.7rem', color: '#7ee787', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cargado</span>
         )}
         <input type="file" accept={accept} onChange={onChange} style={{ display: 'none' }} />
       </label>
@@ -307,6 +300,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [showDropdownUnidadProveedor, setShowDropdownUnidadProveedor] = useState(false);
   const [searchOperadorProveedor, setSearchOperadorProveedor] = useState('');
   const [showDropdownOperadorProveedor, setShowDropdownOperadorProveedor] = useState(false);
+  const [searchConvenio, setSearchConvenio] = useState('');
+  const [showDropdownConvenio, setShowDropdownConvenio] = useState(false);
+  const [searchConvenioProveedor, setSearchConvenioProveedor] = useState('');
+  const [showDropdownConvenioProveedor, setShowDropdownConvenioProveedor] = useState(false);
+
 
   const [formData, setFormData] = useState({
     tipoServicio: '', trafico: '', carga: '',
@@ -343,14 +341,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
   }, []);
 
-  // Aplica los docs recargados al catálogo local + actualiza sessionStorage
+  // Aplica los docs recargados al catálogo local + actualiza ambos caches
   const aplicarColeccionRecargada = useCallback((coleccion: string, docs: any[]) => {
     if (coleccion === 'empresas') setEmpresasLocal(docs);
     else if (coleccion === 'remolques') setRemolquesLocal(docs);
     else if (coleccion === 'unidades') setUnidadesLocal(docs);
     else if (coleccion === 'empleados') setEmpleadosLocalState(docs);
 
-    // Mantener sessionStorage del dashboard sincronizado
+    // Mantener sessionStorage del dashboard sincronizado (compat)
     try {
       const cacheStr = sessionStorage.getItem('roelca_catalogos_v2');
       if (cacheStr) {
@@ -361,6 +359,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         else if (coleccion === 'empleados') cache.empleados = docs;
         sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(cache));
       }
+    } catch { /* noop */ }
+
+    // El Dashboard lee de localStorage (cat_v1__<coleccion>), no de sessionStorage.
+    // Por eso el registro recién creado "no aparecía": hay que actualizar también esa clave.
+    try {
+      localStorage.setItem(`cat_v1__${coleccion}`, JSON.stringify({ data: docs, ts: Date.now() }));
     } catch { /* noop */ }
   }, []);
 
@@ -382,24 +386,31 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const cerrarCreacion = useCallback(async () => {
     if (!modalCatalogo) return;
     const { catalogo, idsPrevios, onCreado } = modalCatalogo;
+
+    // Cerramos el modal de inmediato para que el formulario hijo desaparezca al guardar.
+    setModalCatalogo(null);
+
     try {
-      const docs = await recargarColeccion(catalogo.coleccion);
+      let docs: any[] = [];
+      let nuevos: any[] = [];
+
+      // El doc recién escrito a veces tarda unos ms en reflejarse en getDocs.
+      // Reintentamos hasta 4 veces (≈1s) hasta detectar el registro nuevo.
+      for (let intento = 0; intento < 4; intento++) {
+        docs = await recargarColeccion(catalogo.coleccion);
+        nuevos = docs.filter((d: any) => !idsPrevios.has(String(d.id)));
+        if (nuevos.length > 0) break;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+
       aplicarColeccionRecargada(catalogo.coleccion, docs);
 
-      // Detectar el ID nuevo (el que no estaba antes)
-      const nuevos = docs.filter((d: any) => !idsPrevios.has(String(d.id)));
-      if (nuevos.length === 1) {
-        onCreado(String(nuevos[0].id), nuevos[0]);
-      } else if (nuevos.length > 1) {
-        // Caso raro: tomamos el último; el usuario puede ajustarlo manualmente
-        const ultimo = nuevos[nuevos.length - 1];
-        onCreado(String(ultimo.id), ultimo);
+      if (nuevos.length >= 1) {
+        const elegido = nuevos[nuevos.length - 1];
+        onCreado(String(elegido.id), elegido);
       }
-      // si nuevos.length === 0 => el usuario canceló, no hacemos nada
     } catch (e) {
       console.error('Error recargando catálogo tras crear:', e);
-    } finally {
-      setModalCatalogo(null);
     }
   }, [modalCatalogo, recargarColeccion, aplicarColeccionRecargada]);
 
@@ -428,8 +439,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const idGenerado = `${tipoOpText}_${formatTitleCase(formData.trafico)}_${formatTitleCase(formData.carga)}`;
     console.log('🔑 configId generado:', idGenerado);
     return idGenerado;
-
-    return `${tipoOpText}_${formatTitleCase(formData.trafico)}_${formatTitleCase(formData.carga)}`;
   };
 
   // ✅ NUEVO: lee la config del FORMULARIO guardada por flujo (pestanasVisibles / camposObligatorios).
@@ -691,6 +700,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       setSearchUnidadProveedor(initialData.unidadProveedorNombre || (uProv ? (uProv.numeroUnidad || uProv.numero_unidad || uProv.unidad || uProv.placas) : initialData.unidadProveedor || ''));
       const opProv = listaOpeProvLocal.find((e: any) => e.id === initialData.operadorProveedor);
       setSearchOperadorProveedor(initialData.operadorProveedorNombre || (opProv ? (opProv.nombre || opProv.nombres || opProv.nombreCompleto) : initialData.operadorProveedor || ''));
+      setSearchConvenio(initialData.convenioNombre || '');
+      setSearchConvenioProveedor(initialData.convenioProveedorNombre || '');
     }
   }, [initialData, empresas, remolques, unidades, listaEmpleadosLocal, listaUniProvLocal, listaOpeProvLocal]);
 
@@ -895,6 +906,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const sOperador = (searchOperador || '').toLowerCase();
   const sUnidadProv = (searchUnidadProveedor || '').toLowerCase();
   const sOperadorProv = (searchOperadorProveedor || '').toLowerCase();
+  const sConvenio = (searchConvenio || '').toLowerCase();
+  const sConvenioProveedor = (searchConvenioProveedor || '').toLowerCase();
 
   const resultadosOrigen = filOrigenesDestinos.filter((e:any) => (e.nombre || '').toLowerCase().includes(sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen));
   const resultadosDestino = filOrigenesDestinos.filter((e:any) => (e.nombre || '').toLowerCase().includes(sDestino) || (e.direccion || '').toLowerCase().includes(sDestino));
@@ -907,6 +920,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const resultadosOperador = listaEmpleadosLocal.filter((o:any) => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim().toLowerCase().includes(sOperador));
   const resultadosUnidadProveedor = listaUniProvLocal.filter((u:any) => String(u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || '').toLowerCase().includes(sUnidadProv));
   const resultadosOperadorProveedor = listaOpeProvLocal.filter((o:any) => String(o.nombre || o.nombres || o.nombreCompleto || '').toLowerCase().includes(sOperadorProv));
+  const resultadosConvenio = listaConveniosCliente.filter((c:any) => (c.descripcion || '').toLowerCase().includes(sConvenio));
+  const resultadosConvenioProveedor = listaConveniosProveedor.filter((c:any) => (c.tipoConvenioNombre || '').toLowerCase().includes(sConvenioProveedor));
+
 
   const tipoOpTextNormalizado = (tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '').toLowerCase();
   const isTransfer = tipoOpTextNormalizado.includes('transfer');
@@ -1150,7 +1166,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownClientePaga && searchClientePaga && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClientePaga.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = c.monedaId || c.moneda || ''; setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(c.nombre); setShowDropdownClientePaga(false); }}>
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = c.monedaId || c.moneda || ''; setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(c.nombre); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
                                     <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
                                   </div>
                                 ))}
@@ -1159,11 +1175,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                           <BotonAgregar title="Agregar nuevo Cliente (Paga)" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_PAGA },
-                            (id, reg) => { setFormData(prev => ({ ...prev, clientePaga: id, convenio: '', facturadoEnCobrar: reg.monedaId || reg.moneda || '' })); setSearchClientePaga(labelEmpresa(reg)); }
+                            (id, reg) => { setFormData(prev => ({ ...prev, clientePaga: id, convenio: '', facturadoEnCobrar: reg.monedaId || reg.moneda || '' })); setSearchClientePaga(labelEmpresa(reg)); setSearchConvenio(''); }
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Convenio (Tarifa)</label><select name="convenio" className={`form-control${claseSiFalta('convenio')}`} value={formData.convenio || ''} onChange={handleChange} required disabled={listaConveniosCliente.length === 0}><option value="">-- Seleccione un Convenio --</option>{listaConveniosCliente.map((c:any) => (<option key={c.id} value={c.id}>{c.descripcion}</option>))}</select>{listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}</div>
+                      <div className="form-group">
+                        <label className="form-label">Convenio (Tarifa)</label>
+                        <div style={{ position: 'relative' }}>
+                          <input type="text" className={`form-control${claseSiFalta('convenio')}`} placeholder="Escriba para buscar convenio..." required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio}
+                            onChange={e => { setSearchConvenio(e.target.value); setShowDropdownConvenio(true); if (formData.convenio) setFormData(prev => ({ ...prev, convenio: '' })); }}
+                            onFocus={() => setShowDropdownConvenio(true)} onBlur={() => setTimeout(() => setShowDropdownConvenio(false), 200)} />
+                          {showDropdownConvenio && (
+                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                              {resultadosConvenio.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenio.map((c:any) => (
+                                <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(c.descripcion); setShowDropdownConvenio(false); }}>
+                                  <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.descripcion}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}
+                      </div>
                       <div className="form-group">
                         <label className="form-label"># de Remolque</label>
                         <div className="roelca-lookup-row">
@@ -1270,11 +1303,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('provServicios')}`} placeholder="Escriba para buscar proveedor..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
-                            {showDropdownProvServicios && searchProvServicios && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id })); setSearchProvServicios(c.nombre); setShowDropdownProvServicios(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}
+                            {showDropdownProvServicios && searchProvServicios && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id, montoManifiesto: COSTO_MANIFIESTO_DEFAULT })); setSearchProvServicios(c.nombre); setShowDropdownProvServicios(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Proveedor (Servicios)" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_SERVICIOS },
-                            (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id })); setSearchProvServicios(labelEmpresa(reg)); }
+                            (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id, montoManifiesto: COSTO_MANIFIESTO_DEFAULT })); setSearchProvServicios(labelEmpresa(reg)); }
                           )} />
                         </div>
                       </div>
@@ -1294,21 +1327,31 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} disabled={proveedorForzado} placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
-                            {showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = p.monedaId || p.moneda || ''; setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); setSearchProvTransporte(p.nombre); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}
+                            {showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = p.monedaId || p.moneda || ''; setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); setSearchProvTransporte(p.nombre); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE },
-                            (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: reg.monedaId || reg.moneda || '' })); setSearchProvTransporte(labelEmpresa(reg)); }
+                            (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: reg.monedaId || reg.moneda || '' })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); }
                           )} />
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
                       <div className="form-group">
                         <label className="form-label">Convenio Proveedor</label>
-                        <select name="convenioProveedor" className={`form-control${claseSiFalta('convenioProveedor')}`} value={formData.convenioProveedor || ''} onChange={e => { const val = e.target.value; const conv = listaConveniosProveedor.find((c: any) => String(c.id) === val); setFormData(prev => ({ ...prev, convenioProveedor: val, monedaConvenioProv: conv ? conv.monedaBase : '', totalAPagarProv: conv ? conv.tarifaMonto : 0 })); }} disabled={listaConveniosProveedor.length === 0}>
-                          <option value="">-- Seleccionar --</option>
-                          {listaConveniosProveedor.map((c:any) => <option key={c.id} value={c.id}>{c.tipoConvenioNombre}</option>)}
-                        </select>
+                        <div style={{ position: 'relative' }}>
+                          <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Escriba para buscar convenio..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor}
+                            onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '', monedaConvenioProv: '', totalAPagarProv: 0 })); }}
+                            onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
+                          {showDropdownConvenioProveedor && (
+                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                              {resultadosConvenioProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
+                                <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
+                                  <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.tipoConvenioNombre}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
                       </div>
                       <div className="form-group"><label className="form-label">Moneda del Convenio (Base)</label><input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m: any) => m.id === formData.monedaConvenioProv)?.moneda || 'Sin Asignar'} /></div>
