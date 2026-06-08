@@ -22,8 +22,40 @@ interface FormProps {
 
 type TabType = 'general' | 'pedimento' | 'manifiesto' | 'unidad' | 'cobrar';
 
+// ✅ NUEVO: orden/listado completo de pestañas. Es el default cuando el flujo
+// no trae `pestanasVisibles` configurado (campo ausente => mostrar todas).
+const TODAS_LAS_PESTANAS: TabType[] = ['general', 'pedimento', 'manifiesto', 'unidad', 'cobrar'];
+
+// ✅ NUEVO: mapa campo -> pestaña (espejo de CAMPOS_OPERACION_COMPLETOS del Configurador).
+// Sirve para saber si un campo de `camposObligatorios` pertenece a una pestaña oculta:
+// en ese caso se ignora por completo (ni se ve ni se exige), aunque esté marcado como obligatorio.
+const CAMPO_TAB_MAP: Record<string, TabType> = {
+  tipoOperacionId: 'general', fechaServicio: 'general', fechaCita: 'general',
+  clientePaga: 'general', convenio: 'general', numeroRemolque: 'general',
+  refCliente: 'general', origen: 'general', destino: 'general', observacionesEjecutivo: 'general',
+
+  clienteMercancia: 'pedimento', descripcionMercancia: 'pedimento', cantidad: 'pedimento',
+  embalaje: 'pedimento', pesoKg: 'pedimento', numDoda: 'pedimento', fechaEmisionDoda: 'pedimento',
+  pdfCartaPorte: 'pedimento', pdfDoda: 'pedimento',
+
+  numeroEntrys: 'manifiesto', cantEntrys: 'manifiesto', pdfsEntrys: 'manifiesto',
+  numManifiesto: 'manifiesto', provServicios: 'manifiesto', montoManifiesto: 'manifiesto', pdfManifiesto: 'manifiesto',
+
+  proveedorUnidad: 'unidad', facturadoEnUnidad: 'unidad', convenioProveedor: 'unidad',
+  totalAPagarProv: 'unidad', cargosAdicionalesProv: 'unidad', unidad: 'unidad', operador: 'unidad',
+  sueldoOperador: 'unidad', sueldoExtra: 'unidad', combustible: 'unidad', combustibleExtra: 'unidad',
+  unidadProveedor: 'unidad', operadorProveedor: 'unidad', observacionesUnidad: 'unidad',
+
+  facturadoEnCobrar: 'cobrar', montoConvenioCliente: 'cobrar', cargosAdicionales: 'cobrar',
+  tipoCambioAprobado: 'cobrar', observacionesCobrar: 'cobrar',
+};
+
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
+
+// ✅ Regla: este tipo de operación obliga a un proveedor fijo
+const TIPO_OP_PROVEEDOR_FIJO = '8ec24dfe';
+const PROVEEDOR_FIJO_ID = '349123';
 
 // ✅ NUEVO: tipos de empresa por string legible (lo que FormularioEmpresa entiende para preseleccionar)
 const TIPO_EMP_CLIENTE_PAGA      = 'Cliente (Paga)';
@@ -61,6 +93,7 @@ const IconArrowRight    = (p: { size?: number }) => <svg width={p.size || 18} he
 const IconPlus          = (p: { size?: number }) => <svg width={p.size || 16} height={p.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 
 const tipoTarifarioCache = new Map<string, any>();
+const traficoCache = new Map<string, string>(); // id -> nombre (cache de sesión)
 
 // ============================================================
 // ✅ NUEVO: Botón "+" reutilizable que se coloca al lado de un input de búsqueda
@@ -100,11 +133,13 @@ const CampoArchivo = ({
   file,
   onChange,
   accept = '.pdf',
+  resaltar = false,
 }: {
   label: string;
   file: File | null | undefined;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   accept?: string;
+  resaltar?: boolean;
 }) => {
   const cargado = !!file;
   return (
@@ -119,8 +154,8 @@ const CampoArchivo = ({
           borderRadius: '8px',
           cursor: 'pointer',
           transition: 'all 0.15s ease',
-          backgroundColor: cargado ? 'rgba(63, 185, 80, 0.10)' : '#010409',
-          border: cargado ? '1px solid rgba(63, 185, 80, 0.45)' : '1px dashed #30363d',
+          backgroundColor: cargado ? 'rgba(63, 185, 80, 0.10)' : (resaltar ? 'rgba(248, 81, 73, 0.06)' : '#010409'),
+          border: cargado ? '1px solid rgba(63, 185, 80, 0.45)' : (resaltar ? '1px dashed #f85149' : '1px dashed #30363d'),
         }}
       >
         <span
@@ -182,6 +217,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [camposSiguienteStatus, setCamposSiguienteStatus] = useState<{ campo: string; etiqueta: string; cumplido: boolean }[]>([]);
   const [nombreSiguienteAuto, setNombreSiguienteAuto] = useState<string>('');
 
+  // ✅ NUEVO: configuración del FORMULARIO por flujo (config_flujos_operacion/{configId}).
+  // `null` = el flujo no trae el campo configurado (campo ausente) => aplicar default:
+  //   - pestanasVisiblesConfig === null  => mostrar TODAS las pestañas
+  //   - camposObligatoriosConfig === null => no exigir nada extra para guardar
+  // Esto es POR FLUJO (no depende del status actual ni del calculado) y es independiente
+  // de camposRequeridos por nodo (que controla el AVANCE de status, no el guardado).
+  const [pestanasVisiblesConfig, setPestanasVisiblesConfig] = useState<TabType[] | null>(null);
+  const [camposObligatoriosConfig, setCamposObligatoriosConfig] = useState<string[] | null>(null);
+
   // ✅ NUEVO: estado del modal de creación de catálogo (botón "+")
   //   - catalogo: qué formulario mostrar y con qué preselección
   //   - idsPrevios: snapshot de IDs antes de abrir, para detectar el nuevo por diff
@@ -224,6 +268,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const remolques = remolquesLocal;
   const unidades = unidadesLocal;
   const empleados = empleadosLocalState;
+
+ // ⚠️ Ajusta la clave si en catalogosCacheados se llama distinto
+  const catalogoTrafico = useMemo(() =>
+    catalogosCacheados?.catalogo_trafico
+    || catalogosCacheados?.traficos
+    || catalogosCacheados?.trafico
+    || [],
+  [catalogosCacheados]);
 
   const listaEmpleadosLocal: any[] = empleados;
   const listaUniProvLocal: any[] = unidadesProveedor;
@@ -359,6 +411,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const buildConfigId = () => {
     let tipoOpText = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || 'N/A';
+
     
     if (tipoOpText.toLowerCase() === 'logistica') {
       tipoOpText = 'Logística';
@@ -371,13 +424,65 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
     };
 
+
+    const idGenerado = `${tipoOpText}_${formatTitleCase(formData.trafico)}_${formatTitleCase(formData.carga)}`;
+    console.log('🔑 configId generado:', idGenerado);
+    return idGenerado;
+
     return `${tipoOpText}_${formatTitleCase(formData.trafico)}_${formatTitleCase(formData.carga)}`;
   };
+
+  // ✅ NUEVO: lee la config del FORMULARIO guardada por flujo (pestanasVisibles / camposObligatorios).
+  // Importante: esto es POR FLUJO (configId), NO por nodo/status — la visibilidad no depende
+  // del status actual ni del calculado, depende solo del flujo. Es independiente del cálculo
+  // de status/camposRequeridos por nodo (no se mezcla con esa lógica).
+  useEffect(() => {
+    let cancelado = false;
+    const configId = buildConfigId();
+
+    if (!configId || configId.includes('N/A') || configId === '__' || !formData.tipoOperacionId) {
+      setPestanasVisiblesConfig(null);
+      setCamposObligatoriosConfig(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'config_flujos_operacion', configId));
+        if (cancelado) return;
+        const data = snap.exists() ? (snap.data() as any) : null;
+        // Distinguimos "campo ausente" (=> null => default) de "arreglo presente" (incluso vacío),
+        // que se respeta tal cual fue configurado.
+        setPestanasVisiblesConfig(data && Array.isArray(data.pestanasVisibles) ? data.pestanasVisibles : null);
+        setCamposObligatoriosConfig(data && Array.isArray(data.camposObligatorios) ? data.camposObligatorios : null);
+      } catch {
+        if (!cancelado) {
+          setPestanasVisiblesConfig(null);
+          setCamposObligatoriosConfig(null);
+        }
+      }
+    })();
+
+    return () => { cancelado = true; };
+  }, [formData.tipoOperacionId, formData.trafico, formData.carga, tiposOperacion]);
+
+  // ✅ NUEVO: pestañas visibles según la config del flujo. Sin config (campo ausente) => todas.
+  const pestanasVisibles = useMemo<TabType[]>(
+    () => (pestanasVisiblesConfig === null ? TODAS_LAS_PESTANAS : pestanasVisiblesConfig),
+    [pestanasVisiblesConfig]
+  );
+
+  // ✅ NUEVO: si la pestaña activa quedó oculta por la config del flujo, salta a la primera visible.
+  useEffect(() => {
+    if (pestanasVisibles.length > 0 && !pestanasVisibles.includes(pestañaActiva)) {
+      setPestañaActiva(pestanasVisibles[0]);
+    }
+  }, [pestanasVisibles, pestañaActiva]);
 
   useEffect(() => {
     const timerId = setTimeout(async () => {
       const configId = buildConfigId();
-      
+
       if (!configId || configId.includes('N/A') || configId === '__' || !formData.tipoOperacionId) {
         setStatusPreview('');
         setStatusError('Para conocer el Estatus de la operación, primero selecciona el Tipo de Operación, un Cliente y un Convenio válido.');
@@ -426,6 +531,40 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return mapa[campo] || campo;
   };
 
+  // ✅ NUEVO: campos obligatorios (POR FLUJO, vía camposObligatorios) que están vacíos
+  // y por lo tanto IMPIDEN guardar. Esto es independiente de camposRequeridos por nodo
+  // (que solo controla el avance automático de status, vía calcularStatusDinamico/calcularCamposSiguienteAuto).
+  // Regla clave: un campo de una pestaña OCULTA se ignora por completo, aunque esté
+  // marcado como obligatorio — la pestaña oculta gana sobre la obligatoriedad del campo.
+  const camposObligatoriosFaltantes = useMemo(() => {
+    const lista = camposObligatoriosConfig || [];
+    if (lista.length === 0) return [] as { campo: string; etiqueta: string }[];
+
+    const esVacio = (valor: any): boolean => {
+      if (valor === undefined || valor === null) return true;
+      if (Array.isArray(valor)) return valor.length === 0 || valor.every((v: any) => !v);
+      return String(valor).trim() === '';
+    };
+
+    return lista
+      .filter(campo => {
+        const tab = CAMPO_TAB_MAP[campo];
+        // Si el campo pertenece a una pestaña que está oculta, se ignora por completo.
+        return !tab || pestanasVisibles.includes(tab);
+      })
+      .filter(campo => esVacio((formData as any)[campo]))
+      .map(campo => ({ campo, etiqueta: etiquetaCampo(campo) }));
+  }, [camposObligatoriosConfig, pestanasVisibles, formData]);
+
+  const camposObligatoriosFaltantesSet = useMemo(
+    () => new Set(camposObligatoriosFaltantes.map(f => f.campo)),
+    [camposObligatoriosFaltantes]
+  );
+
+  // Helper para agregar la clase de resaltado en rojo a un campo obligatorio vacío
+  const claseSiFalta = (campoId: string): string =>
+    camposObligatoriosFaltantesSet.has(campoId) ? ' campo-obligatorio-faltante' : '';
+
   // ✅ NUEVO: lee el flujo, encuentra el nodo actual y su siguiente nodo automático,
   // y arma la lista de campos requeridos marcando cuáles ya están cumplidos.
   const calcularCamposSiguienteAuto = async (configId: string, statusActual: string) => {
@@ -465,6 +604,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const sExt = Number(formData.sueldoExtra) || 0;
     setFormData(prev => ({ ...prev, sueldoTotal: sOp + sExt }));
   }, [formData.sueldoOperador, formData.sueldoExtra]);
+
+  // ✅ Regla: forzar proveedor fijo cuando el tipo de operación coincide
+  useEffect(() => {
+    if (formData.tipoOperacionId !== TIPO_OP_PROVEEDOR_FIJO) return;
+    if (formData.proveedorUnidad === PROVEEDOR_FIJO_ID) return; // ya está forzado
+    const prov = empresas.find((e: any) => String(e.id) === PROVEEDOR_FIJO_ID);
+    setFormData(prev => ({
+      ...prev,
+      proveedorUnidad: PROVEEDOR_FIJO_ID,
+      convenioProveedor: '',
+      facturadoEnUnidad: prov?.monedaId || prov?.moneda || prev.facturadoEnUnidad,
+    }));
+    if (prov) setSearchProvTransporte(prov.nombre || '');
+  }, [formData.tipoOperacionId, empresas]);
 
   useEffect(() => {
     const cBase = Number(formData.combustible) || 0;
@@ -622,6 +775,38 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
   }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas]);
 
+  // ✅ NUEVO: Devuelve el NOMBRE del tráfico.
+  // Orden de búsqueda para gastar el mínimo de lecturas:
+  //   1) cache de sesión  → 0 lecturas
+  //   2) catálogo en memoria → 0 lecturas
+  //   3) un solo doc de Firestore (y se cachea) → 1 lectura, una sola vez
+  //   4) si no es un ID válido, asume que ya era el nombre y lo devuelve tal cual
+  const resolverNombreTrafico = useCallback(async (movRaw: any): Promise<string> => {
+    const valor = String(movRaw || '').trim();
+    if (!valor) return 'N/A';
+
+    if (traficoCache.has(valor)) return traficoCache.get(valor)!;
+
+    const enMemoria = catalogoTrafico.find((t: any) => String(t.id) === valor);
+    if (enMemoria) {
+      const nombre = enMemoria.nombre || valor;
+      traficoCache.set(valor, nombre);
+      return nombre;
+    }
+
+    try {
+      const snap = await getDoc(doc(db, 'catalogo_trafico', valor));
+      if (snap.exists()) {
+        const nombre = snap.data().nombre || valor;
+        traficoCache.set(valor, nombre);
+        return nombre;
+      }
+    } catch { /* noop */ }
+
+    traficoCache.set(valor, valor); // ya era un nombre ("Importación", etc.)
+    return valor;
+  }, [catalogoTrafico]);
+
   useEffect(() => {
     const resolverFlujo = async () => {
       if (!formData.convenio) return;
@@ -639,12 +824,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           if (tipoSnap.exists()) { tipoData = tipoSnap.data(); tipoTarifarioCache.set(tipoOpId, tipoData); }
         }
         if (tipoData) {
-          setFormData(prev => ({ ...prev, tipoServicio: tipoData.descripcion || 'N/A', trafico: tipoData.movimiento || 'N/A', carga: tarifaObj.estado_carga || 'N/A' }));
+          const nombreTrafico = await resolverNombreTrafico(tipoData.movimiento);
+          setFormData(prev => ({
+            ...prev,
+            tipoServicio: tipoData.descripcion || 'N/A',
+            trafico: nombreTrafico,
+            carga: tarifaObj.estado_carga || 'N/A'
+          }));
         }
       } catch (error) { console.error('Error resolviendo flujo:', error); }
     };
     if (!initialData) resolverFlujo();
-  }, [formData.convenio, listaConveniosCliente, tarifas, initialData]);
+  }, [formData.convenio, listaConveniosCliente, tarifas, initialData, resolverNombreTrafico]);
 
   useEffect(() => {
     const fact = formData.facturadoEnUnidad; 
@@ -722,6 +913,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const isLogistica = tipoOpTextNormalizado.includes('logistica') || tipoOpTextNormalizado.includes('logística');
   const isFletes = tipoOpTextNormalizado.includes('fletes') || tipoOpTextNormalizado.includes('flete');
   const isRoelca = searchProvTransporte.toLowerCase().includes('roelca');
+  const proveedorForzado = formData.tipoOperacionId === TIPO_OP_PROVEEDOR_FIJO;
   const showInternalFleet = isTransfer || ((isLogistica || isFletes) && isRoelca);
   const showExternalFleet = (isLogistica || isFletes) && !isRoelca;
 
@@ -888,6 +1080,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         /* ✅ NUEVO: fila de lookup con botón + */
         .roelca-lookup-row { display: flex; gap: 8px; align-items: flex-start; }
         .roelca-lookup-row > .roelca-lookup-input { flex: 1; min-width: 0; position: relative; }
+        /* ✅ NUEVO: resalta en rojo un campo marcado como obligatorio (por flujo) que está vacío */
+        .campo-obligatorio-faltante,
+        .campo-obligatorio-faltante:focus {
+          border-color: #f85149 !important;
+          background-color: rgba(248, 81, 73, 0.06) !important;
+          box-shadow: 0 0 0 1px rgba(248, 81, 73, 0.35) !important;
+        }
         @media (max-width: 1024px) {
           .roelca-form-shell { flex-direction: column; }
           .roelca-form-right { width: 100%; border-left: none; border-top: 1px solid #1f2733; max-height: 40vh; }
@@ -908,23 +1107,33 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           </div>
 
           <div className="roelca-tabs">
-            <button type="button" className={`roelca-tab ${pestañaActiva === 'general' ? 'active' : ''}`} onClick={() => setPestañaActiva('general')}><IconBriefcase size={15} /> Información General</button>
-            <button type="button" className={`roelca-tab ${pestañaActiva === 'pedimento' ? 'active' : ''}`} onClick={() => setPestañaActiva('pedimento')}><IconFileText size={15} /> Pedimento y CT</button>
-            <button type="button" className={`roelca-tab ${pestañaActiva === 'manifiesto' ? 'active' : ''}`} onClick={() => setPestañaActiva('manifiesto')}><IconClipboard size={15} /> Entry's y Manifiestos</button>
-            <button type="button" className={`roelca-tab ${pestañaActiva === 'unidad' ? 'active' : ''}`} onClick={() => setPestañaActiva('unidad')}><IconTruck size={15} /> Unidad y Operador</button>
-            <button type="button" className={`roelca-tab ${pestañaActiva === 'cobrar' ? 'active' : ''}`} onClick={() => setPestañaActiva('cobrar')}><IconDollar size={15} /> Por Cobrar</button>
+            {pestanasVisibles.includes('general') && (
+              <button type="button" className={`roelca-tab ${pestañaActiva === 'general' ? 'active' : ''}`} onClick={() => setPestañaActiva('general')}><IconBriefcase size={15} /> Información General</button>
+            )}
+            {pestanasVisibles.includes('pedimento') && (
+              <button type="button" className={`roelca-tab ${pestañaActiva === 'pedimento' ? 'active' : ''}`} onClick={() => setPestañaActiva('pedimento')}><IconFileText size={15} /> Pedimento y CT</button>
+            )}
+            {pestanasVisibles.includes('manifiesto') && (
+              <button type="button" className={`roelca-tab ${pestañaActiva === 'manifiesto' ? 'active' : ''}`} onClick={() => setPestañaActiva('manifiesto')}><IconClipboard size={15} /> Entry's y Manifiestos</button>
+            )}
+            {pestanasVisibles.includes('unidad') && (
+              <button type="button" className={`roelca-tab ${pestañaActiva === 'unidad' ? 'active' : ''}`} onClick={() => setPestañaActiva('unidad')}><IconTruck size={15} /> Unidad y Operador</button>
+            )}
+            {pestanasVisibles.includes('cobrar') && (
+              <button type="button" className={`roelca-tab ${pestañaActiva === 'cobrar' ? 'active' : ''}`} onClick={() => setPestañaActiva('cobrar')}><IconDollar size={15} /> Por Cobrar</button>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
             <div className="roelca-scroll">
-              {pestañaActiva === 'general' && (
+              {pestañaActiva === 'general' && pestanasVisibles.includes('general') && (
                 <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconBriefcase /></div><h3 className="roelca-card-title">Tipo de Servicio y Fechas</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label orange">Tipo de Operación</label><select name="tipoOperacionId" className="form-control" value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label orange">Fecha de Servicio</label><input type="date" name="fechaServicio" className="form-control" value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
-                      {isFletes && (<div className="form-group"><label className="form-label orange">Fecha de Cita</label><input type="datetime-local" name="fechaCita" className="form-control" value={formData.fechaCita || ''} onChange={handleChange} /></div>)}
+                      <div className="form-group"><label className="form-label orange">Tipo de Operación</label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label orange">Fecha de Servicio</label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
+                      {isFletes && (<div className="form-group"><label className="form-label orange">Fecha de Cita</label><input type="datetime-local" name="fechaCita" className={`form-control${claseSiFalta('fechaCita')}`} value={formData.fechaCita || ''} onChange={handleChange} /></div>)}
                     </div>
                   </div>
 
@@ -935,7 +1144,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Cliente (Paga)</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className="form-control" placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga}
+                            <input type="text" className={`form-control${claseSiFalta('clientePaga')}`} placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga}
                               onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }}
                               onFocus={() => setShowDropdownClientePaga(true)} onBlur={() => setTimeout(() => setShowDropdownClientePaga(false), 200)} />
                             {showDropdownClientePaga && searchClientePaga && (
@@ -954,12 +1163,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Convenio (Tarifa)</label><select name="convenio" className="form-control" value={formData.convenio || ''} onChange={handleChange} required disabled={listaConveniosCliente.length === 0}><option value="">-- Seleccione un Convenio --</option>{listaConveniosCliente.map((c:any) => (<option key={c.id} value={c.id}>{c.descripcion}</option>))}</select>{listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}</div>
+                      <div className="form-group"><label className="form-label">Convenio (Tarifa)</label><select name="convenio" className={`form-control${claseSiFalta('convenio')}`} value={formData.convenio || ''} onChange={handleChange} required disabled={listaConveniosCliente.length === 0}><option value="">-- Seleccione un Convenio --</option>{listaConveniosCliente.map((c:any) => (<option key={c.id} value={c.id}>{c.descripcion}</option>))}</select>{listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}</div>
                       <div className="form-group">
                         <label className="form-label"># de Remolque</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className="form-control" placeholder="Buscar remolque..." value={searchRemolque} onChange={e => { setSearchRemolque(e.target.value); setShowDropdownRemolque(true); if (formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: '' })); }} onFocus={() => setShowDropdownRemolque(true)} onBlur={() => setTimeout(() => setShowDropdownRemolque(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('numeroRemolque')}`} placeholder="Buscar remolque..." value={searchRemolque} onChange={e => { setSearchRemolque(e.target.value); setShowDropdownRemolque(true); if (formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: '' })); }} onFocus={() => setShowDropdownRemolque(true)} onBlur={() => setTimeout(() => setShowDropdownRemolque(false), 200)} />
                             {showDropdownRemolque && searchRemolque && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosRemolque.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosRemolque.map((r:any) => (<div key={r.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(`${r.nombre || ''} ${r.placas || r.placa || ''}`.trim()); setShowDropdownRemolque(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{`${r.nombre || ''} ${r.placas || r.placa || ''}`.trim()}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Remolque" onClick={() => abrirCreacion(
@@ -968,7 +1177,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Ref Cliente</label><input type="text" name="refCliente" className="form-control" value={formData.refCliente || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Ref Cliente</label><input type="text" name="refCliente" className={`form-control${claseSiFalta('refCliente')}`} value={formData.refCliente || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
 
@@ -979,7 +1188,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label orange">Origen</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className="form-control" placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('origen')}`} placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
                             {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(o.nombre); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{o.nombre}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{o.direccion}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion(
@@ -992,7 +1201,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label orange">Destino</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className="form-control" placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('destino')}`} placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
                             {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(d.nombre); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{d.nombre}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{d.direccion}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion(
@@ -1001,12 +1210,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )} />
                         </div>
                       </div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Ejecutivo</label><input type="text" name="observacionesEjecutivo" className="form-control" value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Ejecutivo</label><input type="text" name="observacionesEjecutivo" className={`form-control${claseSiFalta('observacionesEjecutivo')}`} value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                 </>
               )}
-              {pestañaActiva === 'pedimento' && (
+              {pestañaActiva === 'pedimento' && pestanasVisibles.includes('pedimento') && (
                 <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconPackage /></div><h3 className="roelca-card-title">Cliente y Mercancía</h3></div>
@@ -1015,7 +1224,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Cliente (Mercancía)</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className="form-control" placeholder="Escriba para buscar cliente mercancía..." value={searchClienteMercancia} onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }} onFocus={() => setShowDropdownClienteMercancia(true)} onBlur={() => setTimeout(() => setShowDropdownClienteMercancia(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('clienteMercancia')}`} placeholder="Escriba para buscar cliente mercancía..." value={searchClienteMercancia} onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }} onFocus={() => setShowDropdownClienteMercancia(true)} onBlur={() => setTimeout(() => setShowDropdownClienteMercancia(false), 200)} />
                             {showDropdownClienteMercancia && searchClienteMercancia && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosClienteMercancia.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(c.nombre); setShowDropdownClienteMercancia(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion(
@@ -1024,43 +1233,43 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Descripción de la Mercancía</label><input type="text" name="descripcionMercancia" className="form-control" value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Cantidad (Enteros)</label><input type="number" step="1" name="cantidad" className="form-control" value={formData.cantidad || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className="form-control" value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{embalajes?.map((e:any) => <option key={e.id} value={e.id}>{e.clave || e.nombre}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label">Peso (Kg) Decimales</label><input type="number" step="0.01" name="pesoKg" className="form-control" value={formData.pesoKg || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Descripción de la Mercancía</label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Cantidad (Enteros)</label><input type="number" step="1" name="cantidad" className={`form-control${claseSiFalta('cantidad')}`} value={formData.cantidad || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{embalajes?.map((e:any) => <option key={e.id} value={e.id}>{e.clave || e.nombre}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label">Peso (Kg) Decimales</label><input type="number" step="0.01" name="pesoKg" className={`form-control${claseSiFalta('pesoKg')}`} value={formData.pesoKg || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Documentación (CT y DODA)</h3></div>
                     <div className="form-grid">
-                      <CampoArchivo label="PDF - Carta Porte" file={formData.pdfCartaPorte} onChange={(e) => handleFileChange(e, 'pdfCartaPorte')} />
-                      <div className="form-group"><label className="form-label"># DODA</label><input type="text" name="numDoda" className="form-control" value={formData.numDoda || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Fecha de Emisión DODA</label><input type="date" name="fechaEmisionDoda" className="form-control" value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
-                      <CampoArchivo label="PDF - DODA" file={formData.pdfDoda} onChange={(e) => handleFileChange(e, 'pdfDoda')} />
+                      <CampoArchivo label="PDF - Carta Porte" file={formData.pdfCartaPorte} onChange={(e) => handleFileChange(e, 'pdfCartaPorte')} resaltar={camposObligatoriosFaltantesSet.has('pdfCartaPorte')} />
+                      <div className="form-group"><label className="form-label"># DODA</label><input type="text" name="numDoda" className={`form-control${claseSiFalta('numDoda')}`} value={formData.numDoda || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Fecha de Emisión DODA</label><input type="date" name="fechaEmisionDoda" className={`form-control${claseSiFalta('fechaEmisionDoda')}`} value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
+                      <CampoArchivo label="PDF - DODA" file={formData.pdfDoda} onChange={(e) => handleFileChange(e, 'pdfDoda')} resaltar={camposObligatoriosFaltantesSet.has('pdfDoda')} />
                     </div>
                   </div>
                 </>
               )}
 
-              {pestañaActiva === 'manifiesto' && (
+              {pestañaActiva === 'manifiesto' && pestanasVisibles.includes('manifiesto') && (
                 <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconClipboard /></div><h3 className="roelca-card-title">Entry's</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label"># de Entry's</label><input type="text" name="numeroEntrys" className="form-control" value={formData.numeroEntrys || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Cantidad de Entry's (Max 10)</label><input type="number" max="10" min="0" name="cantEntrys" className="form-control" value={formData.cantEntrys || 0} onChange={(e) => { const val = Math.min(10, Math.max(0, parseInt(e.target.value) || 0)); setFormData(prev => ({ ...prev, cantEntrys: val, pdfsEntrys: new Array(val).fill(null) })); }} /></div>
-                      {Array.from({ length: Number(formData.cantEntrys) || 0 }).map((_, i) => (<CampoArchivo key={i} label={`PDF Entry #${i + 1}`} file={formData.pdfsEntrys?.[i]} onChange={(e) => handleFileChange(e, '', i)} />))}
+                      <div className="form-group"><label className="form-label"># de Entry's</label><input type="text" name="numeroEntrys" className={`form-control${claseSiFalta('numeroEntrys')}`} value={formData.numeroEntrys || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Cantidad de Entry's (Max 10)</label><input type="number" max="10" min="0" name="cantEntrys" className={`form-control${claseSiFalta('cantEntrys')}`} value={formData.cantEntrys || 0} onChange={(e) => { const val = Math.min(10, Math.max(0, parseInt(e.target.value) || 0)); setFormData(prev => ({ ...prev, cantEntrys: val, pdfsEntrys: new Array(val).fill(null) })); }} /></div>
+                      {Array.from({ length: Number(formData.cantEntrys) || 0 }).map((_, i) => (<CampoArchivo key={i} label={`PDF Entry #${i + 1}`} file={formData.pdfsEntrys?.[i]} onChange={(e) => handleFileChange(e, '', i)} resaltar={camposObligatoriosFaltantesSet.has('pdfsEntrys')} />))}
                     </div>
                   </div>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconReceipt /></div><h3 className="roelca-card-title">Manifiesto</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label"># Manifiesto</label><input type="text" name="numManifiesto" className="form-control" value={formData.numManifiesto || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label"># Manifiesto</label><input type="text" name="numManifiesto" className={`form-control${claseSiFalta('numManifiesto')}`} value={formData.numManifiesto || ''} onChange={handleChange} /></div>
                       <div className="form-group">
                         <label className="form-label">Proveedor de Servicios</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className="form-control" placeholder="Escriba para buscar proveedor..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('provServicios')}`} placeholder="Escriba para buscar proveedor..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
                             {showDropdownProvServicios && searchProvServicios && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id })); setSearchProvServicios(c.nombre); setShowDropdownProvServicios(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Proveedor (Servicios)" onClick={() => abrirCreacion(
@@ -1069,13 +1278,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Costo Manifiesto ($)</label><input type="number" step="0.01" name="montoManifiesto" className="form-control" value={formData.montoManifiesto || ''} onChange={handleChange} /></div>
-                      <CampoArchivo label="PDF Manifiesto" file={formData.pdfManifiesto} onChange={(e) => handleFileChange(e, 'pdfManifiesto')} />
+                      <div className="form-group"><label className="form-label">Costo Manifiesto ($)</label><input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto || ''} onChange={handleChange} /></div>
+                      <CampoArchivo label="PDF Manifiesto" file={formData.pdfManifiesto} onChange={(e) => handleFileChange(e, 'pdfManifiesto')} resaltar={camposObligatoriosFaltantesSet.has('pdfManifiesto')} />
                     </div>
                   </div>
                 </>
               )}
-              {pestañaActiva === 'unidad' && (
+              {pestañaActiva === 'unidad' && pestanasVisibles.includes('unidad') && (
                 <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Proveedor de Transporte</h3></div>
@@ -1084,7 +1293,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Proveedor de Transporte</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className="form-control" placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} disabled={proveedorForzado} placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
                             {showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = p.monedaId || p.moneda || ''; setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); setSearchProvTransporte(p.nombre); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion(
@@ -1093,10 +1302,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnUnidad" className="form-control" value={formData.facturadoEnUnidad || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
                       <div className="form-group">
                         <label className="form-label">Convenio Proveedor</label>
-                        <select name="convenioProveedor" className="form-control" value={formData.convenioProveedor || ''} onChange={e => { const val = e.target.value; const conv = listaConveniosProveedor.find((c: any) => String(c.id) === val); setFormData(prev => ({ ...prev, convenioProveedor: val, monedaConvenioProv: conv ? conv.monedaBase : '', totalAPagarProv: conv ? conv.tarifaMonto : 0 })); }} disabled={listaConveniosProveedor.length === 0}>
+                        <select name="convenioProveedor" className={`form-control${claseSiFalta('convenioProveedor')}`} value={formData.convenioProveedor || ''} onChange={e => { const val = e.target.value; const conv = listaConveniosProveedor.find((c: any) => String(c.id) === val); setFormData(prev => ({ ...prev, convenioProveedor: val, monedaConvenioProv: conv ? conv.monedaBase : '', totalAPagarProv: conv ? conv.tarifaMonto : 0 })); }} disabled={listaConveniosProveedor.length === 0}>
                           <option value="">-- Seleccionar --</option>
                           {listaConveniosProveedor.map((c:any) => <option key={c.id} value={c.id}>{c.tipoConvenioNombre}</option>)}
                         </select>
@@ -1109,8 +1318,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Monto a Pagar (Base)<span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>editable</span></label><input type="number" step="0.01" name="totalAPagarProv" className="form-control" value={formData.totalAPagarProv || ''} onChange={handleChange} title="El convenio precarga este valor, pero puedes ajustarlo manualmente" /></div>
-                      <div className="form-group"><label className="form-label">Costos Adicionales</label><input type="number" name="cargosAdicionalesProv" className="form-control" value={formData.cargosAdicionalesProv || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Monto a Pagar (Base)<span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>editable</span></label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || ''} onChange={handleChange} title="El convenio precarga este valor, pero puedes ajustarlo manualmente" /></div>
+                      <div className="form-group"><label className="form-label">Costos Adicionales</label><input type="number" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || ''} onChange={handleChange} /></div>
                       <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Costos)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalProv) || 0).toFixed(2)}</div></div>
                       <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className="form-control" readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
                       <div className="form-group"><label className="form-label">Dólares</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresProv) || 0).toFixed(2)}</div></div>
@@ -1127,7 +1336,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <label className="form-label">Unidad</label>
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
-                              <input type="text" className="form-control" placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
+                              <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
                               {showDropdownUnidad && searchUnidad && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosUnidad.map((u:any) => (<div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(u.unidad || u.nombre); setShowDropdownUnidad(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{u.unidad || u.nombre}</div></div>))}</div>)}
                             </div>
                             <BotonAgregar title="Agregar nueva Unidad" onClick={() => abrirCreacion(
@@ -1140,7 +1349,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <label className="form-label">Operador</label>
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
-                              <input type="text" className="form-control" placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
+                              <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
                               {showDropdownOperador && searchOperador && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperador.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>Sin resultados</div> : resultadosOperador.map((o:any) => { const nombreCompleto = `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim(); return (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operador: o.id })); setSearchOperador(nombreCompleto); setShowDropdownOperador(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreCompleto}</div></div>); })}</div>)}
                             </div>
                             <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion(
@@ -1149,12 +1358,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             )} />
                           </div>
                         </div>
-                        <div className="form-group"><label className="form-label">Sueldo del Operador</label><input type="number" step="0.01" name="sueldoOperador" className="form-control" value={formData.sueldoOperador || ''} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Sueldo Extra</label><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || ''} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo del Operador</label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador || ''} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo Extra</label><input type="number" step="0.01" name="sueldoExtra" className={`form-control${claseSiFalta('sueldoExtra')}`} value={formData.sueldoExtra || ''} onChange={handleChange} /></div>
                         <div className="form-group"><label className="form-label orange">Sueldo Total</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.sueldoTotal) || 0).toFixed(2)}</div></div>
                         <div className="form-group" style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d', margin: '4px 0' }} /></div>
-                        <div className="form-group"><label className="form-label">Combustible</label><input type="number" step="0.01" name="combustible" className="form-control" value={formData.combustible || ''} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Combustible Extra</label><input type="number" step="0.01" name="combustibleExtra" className="form-control" value={formData.combustibleExtra || ''} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Combustible</label><input type="number" step="0.01" name="combustible" className={`form-control${claseSiFalta('combustible')}`} value={formData.combustible || ''} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Extra</label><input type="number" step="0.01" name="combustibleExtra" className={`form-control${claseSiFalta('combustibleExtra')}`} value={formData.combustibleExtra || ''} onChange={handleChange} /></div>
                         <div className="form-group"><label className="form-label orange">Total Combustible</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>{(Number(formData.combustibleTotal) || 0).toFixed(2)}</div></div>
                       </div>
                     </div>
@@ -1166,12 +1375,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-grid">
                         <div className="form-group" style={{ position: 'relative' }}>
                           <label className="form-label" style={{ color: '#58a6ff' }}>Unidad del Proveedor</label>
-                          <input type="text" className="form-control" style={{ border: '1px solid #58a6ff' }} placeholder="Buscar unidad externa..." value={searchUnidadProveedor} onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); setFormData(prev => ({ ...prev, unidadProveedor: e.target.value })); }} onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
+                          <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} style={{ border: '1px solid #58a6ff' }} placeholder="Buscar unidad externa..." value={searchUnidadProveedor} onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); setFormData(prev => ({ ...prev, unidadProveedor: e.target.value })); }} onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
                           {showDropdownUnidadProveedor && searchUnidadProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosUnidadProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Sin resultados (Se guardará como texto)</div> : resultadosUnidadProveedor.map((u:any) => { const valorUnidad = u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || 'Sin Número'; return (<div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidadProveedor: u.id })); setSearchUnidadProveedor(valorUnidad); setShowDropdownUnidadProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{valorUnidad}</div></div>); })}</div>)}
                         </div>
                         <div className="form-group" style={{ position: 'relative', gridColumn: 'span 2' }}>
                           <label className="form-label" style={{ color: '#58a6ff' }}>Operador del Proveedor</label>
-                          <input type="text" className="form-control" style={{ border: '1px solid #58a6ff' }} placeholder="Buscar operador externo..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
+                          <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} style={{ border: '1px solid #58a6ff' }} placeholder="Buscar operador externo..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
                           {showDropdownOperadorProveedor && searchOperadorProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperadorProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Sin resultados (Se guardará como texto)</div> : resultadosOperadorProveedor.map((o:any) => { const valorNombre = o.nombre || o.nombres || o.nombreCompleto || 'Sin Nombre'; return (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(valorNombre); setShowDropdownOperadorProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{valorNombre}</div></div>); })}</div>)}
                         </div>
                       </div>
@@ -1184,21 +1393,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div style={{ color: '#8b949e', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px', fontWeight: 700 }}>Total Gastos [Sueldos + Manifiesto]</div>
                       <div style={{ color: '#f85149', fontSize: '2rem', fontWeight: 800 }}>${(Number(formData.totalGastos) || 0).toFixed(2)}</div>
                     </div>
-                    <div className="form-group"><label className="form-label">Observaciones</label><textarea name="observacionesUnidad" className="form-control" value={formData.observacionesUnidad || ''} onChange={handleChange} placeholder="Notas adicionales sobre la unidad o proveedor..." style={{ minHeight: '80px', resize: 'vertical', width: '100%', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }} /></div>
+                    <div className="form-group"><label className="form-label">Observaciones</label><textarea name="observacionesUnidad" className={`form-control${claseSiFalta('observacionesUnidad')}`} value={formData.observacionesUnidad || ''} onChange={handleChange} placeholder="Notas adicionales sobre la unidad o proveedor..." style={{ minHeight: '80px', resize: 'vertical', width: '100%', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }} /></div>
                   </div>
                 </>
               )}
-              {pestañaActiva === 'cobrar' && (
+              {pestañaActiva === 'cobrar' && pestanasVisibles.includes('cobrar') && (
                 <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Facturación al Cliente</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnCobrar" className="form-control" value={formData.facturadoEnCobrar || ''} onChange={handleChange}><option value="">-- Seleccionar Moneda --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnCobrar" className={`form-control${claseSiFalta('facturadoEnCobrar')}`} value={formData.facturadoEnCobrar || ''} onChange={handleChange}><option value="">-- Seleccionar Moneda --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
                       <div className="form-group"><label className="form-label">Moneda Convenio (Cliente)</label><input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m: any) => m.id === formData.monedaConvenioCliente)?.moneda || 'Sin Asignar'} /></div>
-                      <div className="form-group"><label className="form-label">Convenio Seleccionado (Monto Base)<span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>editable</span></label><input type="number" step="0.01" name="montoConvenioCliente" className="form-control" value={formData.montoConvenioCliente || ''} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: parseFloat(e.target.value) || 0 }))} title="El convenio precarga este valor, pero puedes ajustarlo manualmente" /></div>
-                      <div className="form-group"><label className="form-label">Cargos Adicionales</label><input type="number" name="cargosAdicionales" className="form-control" value={formData.cargosAdicionales || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Convenio Seleccionado (Monto Base)<span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>editable</span></label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente || ''} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: parseFloat(e.target.value) || 0 }))} title="El convenio precarga este valor, pero puedes ajustarlo manualmente" /></div>
+                      <div className="form-group"><label className="form-label">Cargos Adicionales</label><input type="number" name="cargosAdicionales" className={`form-control${claseSiFalta('cargosAdicionales')}`} value={formData.cargosAdicionales || ''} onChange={handleChange} /></div>
                       <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Cargos)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalCliente) || 0).toFixed(2)}</div></div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className="form-control" readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className={`form-control${claseSiFalta('tipoCambioAprobado')}`} readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
                     </div>
                   </div>
                   <div className="roelca-card">
@@ -1215,7 +1424,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </div>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconEdit /></div><h3 className="roelca-card-title">Observaciones de Cobranza</h3></div>
-                    <div className="form-group"><textarea name="observacionesCobrar" className="form-control" value={formData.observacionesCobrar || ''} onChange={handleChange} placeholder="Notas o justificaciones de cobranza..." style={{ minHeight: '100px', resize: 'vertical', width: '100%', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '10px 14px', borderRadius: '6px' }} /></div>
+                    <div className="form-group"><textarea name="observacionesCobrar" className={`form-control${claseSiFalta('observacionesCobrar')}`} value={formData.observacionesCobrar || ''} onChange={handleChange} placeholder="Notas o justificaciones de cobranza..." style={{ minHeight: '100px', resize: 'vertical', width: '100%', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '10px 14px', borderRadius: '6px' }} /></div>
                   </div>
                 </>
               )}
@@ -1245,6 +1454,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               <div className="status-error-card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.66rem', color: '#ff7b72', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '6px' }}><IconAlert size={12} /> Atención</div>
                 <div style={{ color: '#ff9b94', fontSize: '0.82rem', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>{statusError}</div>
+              </div>
+            )}
+
+            {/* ✅ NUEVO: campos obligatorios (configurados POR FLUJO) que faltan por llenar antes de poder guardar */}
+            {camposObligatoriosFaltantes.length > 0 && (
+              <div style={{ padding: '14px 16px', background: 'linear-gradient(135deg, rgba(248,81,73,0.08), rgba(248,81,73,0.02))', border: '1px solid rgba(248,81,73,0.3)', borderRadius: '10px', marginBottom: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.66rem', color: '#ff7b72', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '8px' }}>
+                  <IconAlert size={12} /> Campos obligatorios pendientes
+                </div>
+                <div style={{ fontSize: '0.74rem', color: '#8b949e', marginBottom: '10px' }}>
+                  Este flujo requiere completar los siguientes campos antes de poder guardar:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {camposObligatoriosFaltantes.map(({ campo, etiqueta }) => (
+                    <div key={campo} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
+                      <span style={{ flexShrink: 0, width: '18px', height: '18px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(248,81,73,0.15)', color: '#ff7b72', border: '1px solid rgba(248,81,73,0.4)' }}>
+                        <IconAlert size={11} />
+                      </span>
+                      <span style={{ color: '#ffb4ae', fontWeight: 500 }}>{etiqueta}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -1310,7 +1541,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           </div>
 
           <div className="roelca-form-footer">
-            <button type="button" onClick={(e) => { e.preventDefault(); (document.querySelector('.roelca-form-left form') as HTMLFormElement)?.requestSubmit(); }} className="roelca-btn-primary" disabled={cargando || !!statusError}>
+            <button type="button" onClick={(e) => { e.preventDefault(); (document.querySelector('.roelca-form-left form') as HTMLFormElement)?.requestSubmit(); }} className="roelca-btn-primary" disabled={cargando || !!statusError || camposObligatoriosFaltantes.length > 0} title={camposObligatoriosFaltantes.length > 0 ? 'Completa los campos obligatorios marcados en rojo para poder guardar' : undefined}>
               {cargando ? (<><IconRefresh size={16} /> Guardando...</>) : (<><IconSave size={16} /> {initialData ? 'Actualizar Operación' : 'Guardar Operación'}</>)}
             </button>
             <button type="button" onClick={onClose} className="roelca-btn-outline" disabled={cargando}><IconX size={15} /> Cancelar</button>

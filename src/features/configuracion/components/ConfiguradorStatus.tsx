@@ -26,6 +26,9 @@ interface FlujoGuardado {
   carga: string;
   ultimaActualizacion: string;
   flujo: ReglaStatus[];
+  // ✅ NUEVO: configuración del formulario por flujo (no por nodo)
+  pestanasVisibles?: TabType[];
+  camposObligatorios?: string[];
 }
 
 type CombinacionEdicion =
@@ -33,14 +36,34 @@ type CombinacionEdicion =
   | undefined;
 
 /* ============================================================
+   ✅ NUEVO: PESTAÑAS DEL FORMULARIO DE OPERACIONES
+   Controla, por flujo completo (Servicio + Tráfico + Carga), qué pestañas
+   se muestran en el Formulario de Operaciones y qué campos son obligatorios
+   para poder guardar. Esto es independiente de `camposRequeridos` de cada
+   nodo (que controla el AVANCE de status, no el guardado del formulario).
+============================================================ */
+type TabType = 'general' | 'pedimento' | 'manifiesto' | 'unidad' | 'cobrar';
+
+const TABS_FORMULARIO: { id: TabType; label: string }[] = [
+  { id: 'general',    label: 'General' },
+  { id: 'pedimento',  label: 'Pedimento y Carta Porte' },
+  { id: 'manifiesto', label: "Entry's y Manifiesto" },
+  { id: 'unidad',     label: 'Unidad y Operador' },
+  { id: 'cobrar',     label: 'Por Cobrar' },
+];
+
+/* ============================================================
    CATÁLOGO COMPLETO DE CAMPOS DE OPERACIÓN
    Todos los campos del FormularioOperacion, agrupados por sección.
+   Cada sección está etiquetada con la pestaña (`tab`) del formulario a la
+   que pertenece, para poder agrupar la selección de campos obligatorios.
    Estos son los que pueden marcarse como "requeridos" para que un nodo
    automático avance, o como obligatorios antes de mostrar un manual/decisión.
 ============================================================ */
-const CAMPOS_OPERACION_COMPLETOS: { seccion: string; campos: { id: string; label: string }[] }[] = [
+const CAMPOS_OPERACION_COMPLETOS: { seccion: string; tab: TabType; campos: { id: string; label: string }[] }[] = [
   {
     seccion: 'General',
+    tab: 'general',
     campos: [
       { id: 'tipoOperacionId',        label: 'Tipo de Operación' },
       { id: 'fechaServicio',          label: 'Fecha de Servicio' },
@@ -56,6 +79,7 @@ const CAMPOS_OPERACION_COMPLETOS: { seccion: string; campos: { id: string; label
   },
   {
     seccion: 'Pedimento y Carta Porte',
+    tab: 'pedimento',
     campos: [
       { id: 'clienteMercancia',     label: 'Cliente (Mercancía)' },
       { id: 'descripcionMercancia', label: 'Descripción Mercancía' },
@@ -70,6 +94,7 @@ const CAMPOS_OPERACION_COMPLETOS: { seccion: string; campos: { id: string; label
   },
   {
     seccion: "Entry's y Manifiesto",
+    tab: 'manifiesto',
     campos: [
       { id: 'numeroEntrys',     label: "# de Entry's" },
       { id: 'cantEntrys',       label: "Cantidad de Entry's" },
@@ -82,6 +107,7 @@ const CAMPOS_OPERACION_COMPLETOS: { seccion: string; campos: { id: string; label
   },
   {
     seccion: 'Unidad y Operador',
+    tab: 'unidad',
     campos: [
       { id: 'proveedorUnidad',        label: 'Proveedor de Transporte' },
       { id: 'facturadoEnUnidad',      label: 'Facturado En (Unidad)' },
@@ -101,6 +127,7 @@ const CAMPOS_OPERACION_COMPLETOS: { seccion: string; campos: { id: string; label
   },
   {
     seccion: 'Por Cobrar',
+    tab: 'cobrar',
     campos: [
       { id: 'facturadoEnCobrar',     label: 'Facturado En (Cobrar)' },
       { id: 'montoConvenioCliente',  label: 'Monto Convenio Cliente' },
@@ -128,7 +155,7 @@ const TIPO_META: Record<ReglaStatus['tipoMecanismo'], { label: string; color: st
    CONSTANTES DE LAYOUT
 ============================================================ */
 const NODE_W = 260;
-const NODE_H = 96;
+const NODE_H = 116;
 const GRID = 20;
 const SIDEBAR_W = 260;
 const INSPECTOR_W = 340;
@@ -381,6 +408,342 @@ const miniBtn: React.CSSProperties = {
 };
 
 /* ============================================================
+   ✅ NUEVO: MODAL "CONFIGURAR FORMULARIO" (POR FLUJO)
+   Define, para el flujo completo (Servicio + Tráfico + Carga):
+     - qué pestañas se muestran en el Formulario de Operaciones
+     - qué campos son obligatorios para poder guardar
+   No tiene relación con `camposRequeridos` de los nodos (eso controla el
+   avance de status; esto controla el guardado del formulario).
+============================================================ */
+const ACCENT_FORM = { color: '#8b5cf6', bg: 'rgba(139,92,246,0.10)' };
+
+const ModalConfigurarFormulario = ({
+  abierto,
+  pestanasIniciales,
+  camposObligatoriosIniciales,
+  onConfirmar,
+  onCerrar,
+}: {
+  abierto: boolean;
+  pestanasIniciales: TabType[];
+  camposObligatoriosIniciales: string[];
+  onConfirmar: (pestanas: TabType[], camposObligatorios: string[]) => void;
+  onCerrar: () => void;
+}) => {
+  const [pestanas, setPestanas] = useState<Set<TabType>>(new Set());
+  const [campos, setCampos] = useState<Set<string>>(new Set());
+  const [busqueda, setBusqueda] = useState('');
+
+  useEffect(() => {
+    if (abierto) {
+      // Si el flujo no tiene pestañas configuradas todavía, el formulario las
+      // muestra TODAS por defecto: precargamos el modal reflejando ese estado.
+      setPestanas(new Set(
+        pestanasIniciales.length > 0 ? pestanasIniciales : TABS_FORMULARIO.map(t => t.id)
+      ));
+      setCampos(new Set(camposObligatoriosIniciales));
+      setBusqueda('');
+    }
+  }, [abierto, pestanasIniciales, camposObligatoriosIniciales]);
+
+  if (!abierto) return null;
+
+  const togglePestana = (id: TabType) => {
+    setPestanas(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleCampo = (id: string) => {
+    setCampos(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const marcarSeccion = (campos_: { id: string }[]) => {
+    setCampos(prev => {
+      const next = new Set(prev);
+      campos_.forEach(c => next.add(c.id));
+      return next;
+    });
+  };
+
+  const limpiarSeccion = (campos_: { id: string }[]) => {
+    setCampos(prev => {
+      const next = new Set(prev);
+      campos_.forEach(c => next.delete(c.id));
+      return next;
+    });
+  };
+
+  const filtro = busqueda.trim().toLowerCase();
+  const seccionesFiltradas = filtro
+    ? CAMPOS_OPERACION_COMPLETOS
+        .map(s => ({
+          ...s,
+          campos: s.campos.filter(c =>
+            c.label.toLowerCase().includes(filtro) || c.id.toLowerCase().includes(filtro)
+          ),
+        }))
+        .filter(s => s.campos.length > 0)
+    : CAMPOS_OPERACION_COMPLETOS;
+
+  const sinPestanas = pestanas.size === 0;
+
+  return (
+    <div
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 3000,
+        background: 'rgba(5,7,12,0.7)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 20,
+      }}
+    >
+      <div style={{
+        width: 'min(760px, 100%)', maxHeight: '88vh',
+        background: 'linear-gradient(180deg, #11151d 0%, #0d1118 100%)',
+        border: '1px solid #232a3a', borderRadius: 14,
+        display: 'flex', flexDirection: 'column',
+        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
+        overflow: 'hidden',
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '18px 20px',
+          borderBottom: '1px solid #1c2230',
+          background: `linear-gradient(180deg, ${ACCENT_FORM.bg}, transparent)`,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 8,
+              background: ACCENT_FORM.bg, color: ACCENT_FORM.color,
+              border: `1px solid ${ACCENT_FORM.color}55`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 16, fontWeight: 700,
+            }}>⚙</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#e6ebf5', letterSpacing: -0.2 }}>
+                Configurar formulario de operaciones
+              </div>
+              <div style={{ fontSize: 12, color: '#7a8499', marginTop: 2 }}>
+                Define, para este flujo, qué pestañas se muestran y qué campos son obligatorios para guardar.
+              </div>
+            </div>
+            <button onClick={onCerrar} style={{
+              background: 'none', border: 'none', color: '#7a8499',
+              cursor: 'pointer', fontSize: 20, padding: '0 4px',
+            }} title="Cerrar (Esc)">×</button>
+          </div>
+        </div>
+
+        {/* Contenido scroll */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+
+          {/* Pestañas visibles */}
+          <div>
+            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, color: '#a9b3c7', fontWeight: 700, marginBottom: 8 }}>
+              Pestañas visibles en el formulario
+            </div>
+            <div style={{ fontSize: 11.5, color: '#7a8499', marginBottom: 10, lineHeight: 1.5 }}>
+              Marca las pestañas que debe mostrar el formulario para este flujo. Si no guardas ninguna configuración, se muestran todas por defecto.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+              {TABS_FORMULARIO.map(t => {
+                const checked = pestanas.has(t.id);
+                return (
+                  <label key={t.id} style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '9px 12px',
+                    background: checked ? ACCENT_FORM.bg : '#0f1320',
+                    border: `1px solid ${checked ? ACCENT_FORM.color + '66' : '#222a39'}`,
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    transition: 'all 120ms ease',
+                    fontSize: 12.5,
+                    color: checked ? '#e6ebf5' : '#a9b3c7',
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => togglePestana(t.id)}
+                      style={{ accentColor: ACCENT_FORM.color, flexShrink: 0 }}
+                    />
+                    <span>{t.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            {sinPestanas && (
+              <div style={{
+                marginTop: 8, fontSize: 11.5, color: '#f87171',
+                background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.3)',
+                borderRadius: 8, padding: '8px 10px',
+              }}>
+                Debes dejar al menos una pestaña visible; de lo contrario el formulario quedaría sin contenido.
+              </div>
+            )}
+          </div>
+
+          {/* Campos obligatorios */}
+          <div>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+              marginBottom: 8, flexWrap: 'wrap',
+            }}>
+              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, color: '#a9b3c7', fontWeight: 700 }}>
+                Campos obligatorios para guardar
+              </div>
+              {campos.size > 0 && (
+                <button onClick={() => setCampos(new Set())} style={{
+                  background: 'none', border: 'none',
+                  color: '#f87171', cursor: 'pointer', fontSize: 12, padding: 0,
+                }}>Limpiar todo ({campos.size})</button>
+              )}
+            </div>
+            <div style={{ fontSize: 11.5, color: '#7a8499', marginBottom: 10, lineHeight: 1.5 }}>
+              El formulario no permitirá guardar la operación si estos campos están vacíos. Si ocultas una pestaña, sus campos se ignoran aunque estén marcados aquí.
+            </div>
+
+            <input
+              autoFocus
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar campo…"
+              style={{
+                width: '100%',
+                background: '#0a0d14',
+                border: '1px solid #232a3a',
+                color: '#e6ebf5',
+                borderRadius: 8,
+                padding: '9px 12px',
+                fontSize: 13,
+                outline: 'none',
+                marginBottom: 12,
+              }}
+            />
+
+            {seccionesFiltradas.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 30, color: '#5f697d', fontSize: 13 }}>
+                No se encontraron campos.
+              </div>
+            ) : seccionesFiltradas.map(sec => {
+              const totalSec = sec.campos.length;
+              const marcadosSec = sec.campos.filter(c => campos.has(c.id)).length;
+              const tabInfo = TABS_FORMULARIO.find(t => t.id === sec.tab);
+              const pestanaOculta = !pestanas.has(sec.tab);
+              return (
+                <div key={sec.seccion} style={{ marginBottom: 16 }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    marginBottom: 8, flexWrap: 'wrap', gap: 6,
+                  }}>
+                    <div style={{
+                      fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2,
+                      color: '#a9b3c7', fontWeight: 700,
+                      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                    }}>
+                      {sec.seccion}
+                      <span style={{
+                        background: '#1a1f2b', border: '1px solid #2a3142',
+                        borderRadius: 999, padding: '1px 8px', fontSize: 10.5, color: '#7a8499',
+                        fontWeight: 600,
+                      }}>
+                        {marcadosSec}/{totalSec}
+                      </span>
+                      <span style={{
+                        background: pestanaOculta ? 'rgba(248,113,113,0.10)' : 'rgba(52,211,153,0.10)',
+                        border: `1px solid ${pestanaOculta ? 'rgba(248,113,113,0.35)' : 'rgba(52,211,153,0.35)'}`,
+                        color: pestanaOculta ? '#f87171' : '#34d399',
+                        borderRadius: 999, padding: '1px 8px', fontSize: 10, fontWeight: 600,
+                        textTransform: 'none', letterSpacing: 0,
+                      }}>
+                        Pestaña «{tabInfo?.label}» {pestanaOculta ? 'oculta' : 'visible'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => marcarSeccion(sec.campos)} style={miniBtn}>Marcar todos</button>
+                      <button onClick={() => limpiarSeccion(sec.campos)} style={miniBtn}>Limpiar</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                    {sec.campos.map(c => {
+                      const checked = campos.has(c.id);
+                      return (
+                        <label key={c.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '8px 10px',
+                          background: checked ? ACCENT_FORM.bg : '#0f1320',
+                          border: `1px solid ${checked ? ACCENT_FORM.color + '66' : '#222a39'}`,
+                          borderRadius: 8,
+                          cursor: 'pointer',
+                          transition: 'all 120ms ease',
+                          fontSize: 12.5,
+                          color: checked ? '#e6ebf5' : '#a9b3c7',
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleCampo(c.id)}
+                            style={{ accentColor: ACCENT_FORM.color, flexShrink: 0 }}
+                          />
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {c.label}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: '14px 20px',
+          borderTop: '1px solid #1c2230',
+          background: '#0a0d14',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: 12,
+        }}>
+          <div style={{ fontSize: 12, color: '#7a8499' }}>
+            <b style={{ color: '#e6ebf5' }}>{pestanas.size}</b>/{TABS_FORMULARIO.length} pestañas visibles
+            {' · '}
+            <b style={{ color: '#e6ebf5' }}>{campos.size}</b> campo{campos.size === 1 ? '' : 's'} obligatorio{campos.size === 1 ? '' : 's'}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={onCerrar} style={{
+              background: '#1a1f2b', color: '#c9d1d9',
+              border: '1px solid #2c3344', borderRadius: 8,
+              padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+            }}>Cancelar</button>
+            <button
+              disabled={sinPestanas}
+              onClick={() => onConfirmar(Array.from(pestanas), Array.from(campos))}
+              style={{
+                background: sinPestanas ? '#2c3344' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                color: '#fff', border: 'none', borderRadius: 8,
+                padding: '8px 18px', fontSize: 13, fontWeight: 600,
+                cursor: sinPestanas ? 'not-allowed' : 'pointer',
+                opacity: sinPestanas ? 0.6 : 1,
+                boxShadow: sinPestanas ? 'none' : '0 4px 12px rgba(99,102,241,0.3)',
+              }}
+            >Aplicar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
    EDITOR PRINCIPAL
 ============================================================ */
 const EditorFlujoAppSheet = ({
@@ -427,6 +790,14 @@ const EditorFlujoAppSheet = ({
 
   /* ---------- ✅ NUEVO: modal de campos requeridos ---------- */
   const [modalCamposAbierto, setModalCamposAbierto] = useState(false);
+
+  /* ---------- ✅ NUEVO: configuración del formulario por flujo ----------
+     `null` = el flujo todavía no tiene esta configuración guardada
+     (no se debe escribir el campo en el documento hasta que el usuario
+     lo configure explícitamente, para no romper flujos viejos). */
+  const [pestanasVisibles, setPestanasVisibles]     = useState<TabType[] | null>(null);
+  const [camposObligatorios, setCamposObligatorios] = useState<string[] | null>(null);
+  const [modalFormularioAbierto, setModalFormularioAbierto] = useState(false);
 
   /* ---------- ✅ NUEVO: dropdown del botón "Agregar paso" ---------- */
   const [menuAgregarAbierto, setMenuAgregarAbierto] = useState(false);
@@ -480,20 +851,33 @@ const EditorFlujoAppSheet = ({
 
   useEffect(() => {
     const cargarReglas = async () => {
-      if (!configValido) { setReglas([]); return; }
+      if (!configValido) {
+        setReglas([]);
+        setPestanasVisibles(null);
+        setCamposObligatorios(null);
+        return;
+      }
       setCargando(true);
       try {
         const docSnap = await getDoc(doc(db, 'config_flujos_operacion', configId));
         if (docSnap.exists()) {
-          const flujoData: ReglaStatus[] = (docSnap.data().flujo || [])
+          const data = docSnap.data();
+          const flujoData: ReglaStatus[] = (data.flujo || [])
             .sort((a: ReglaStatus, b: ReglaStatus) => a.orden - b.orden)
             .map((r: ReglaStatus, i: number) => ({
               ...r,
               posicion: r.posicion ?? autoPosicion(i),
             }));
           setReglas(flujoData);
+          // ✅ NUEVO: precarga config del formulario; si el flujo no la tiene
+          // guardada, se deja en `null` (el Formulario asumirá "todas las
+          // pestañas" / "sin campos extra obligatorios" por defecto).
+          setPestanasVisibles(Array.isArray(data.pestanasVisibles) ? data.pestanasVisibles : null);
+          setCamposObligatorios(Array.isArray(data.camposObligatorios) ? data.camposObligatorios : null);
         } else {
           setReglas([]);
+          setPestanasVisibles(null);
+          setCamposObligatorios(null);
         }
       } finally {
         setCargando(false);
@@ -553,7 +937,7 @@ const EditorFlujoAppSheet = ({
         return;
       }
       // No procesar atajos si hay un modal abierto (excepto Escape)
-      if (modalCamposAbierto && e.key !== 'Escape') return;
+      if ((modalCamposAbierto || modalFormularioAbierto) && e.key !== 'Escape') return;
 
       const cmd = e.ctrlKey || e.metaKey;
 
@@ -576,6 +960,7 @@ const EditorFlujoAppSheet = ({
         }
       } else if (e.key === 'Escape') {
         if (modalCamposAbierto) setModalCamposAbierto(false);
+        else if (modalFormularioAbierto) setModalFormularioAbierto(false);
         else if (menuAgregarAbierto) setMenuAgregarAbierto(false);
         else {
           setNodoSel(null);
@@ -587,7 +972,7 @@ const EditorFlujoAppSheet = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodoSel, seleccionados, reglas, modalCamposAbierto, menuAgregarAbierto]);
+  }, [nodoSel, seleccionados, reglas, modalCamposAbierto, modalFormularioAbierto, menuAgregarAbierto]);
 
   /* ============================================================
      COORDENADAS DEL MOUSE EN EL CANVAS (en unidades del mundo)
@@ -935,6 +1320,15 @@ const EditorFlujoAppSheet = ({
     setGuardando(true);
     setMensaje(null);
     try {
+      // ✅ NUEVO: solo se incluyen `pestanasVisibles` / `camposObligatorios`
+      // si el usuario ya las configuró explícitamente (no son `null`). Así
+      // los flujos viejos que nunca abrieron "Configurar formulario" se
+      // re-guardan sin esos campos, y el Formulario sigue aplicando sus
+      // valores por defecto (todas las pestañas, sin campos extra).
+      const configFormulario: Partial<Pick<FlujoGuardado, 'pestanasVisibles' | 'camposObligatorios'>> = {};
+      if (pestanasVisibles !== null) configFormulario.pestanasVisibles = pestanasVisibles;
+      if (camposObligatorios !== null) configFormulario.camposObligatorios = camposObligatorios;
+
       await setDoc(doc(db, 'config_flujos_operacion', configId), {
         configId,
         tipoServicio,
@@ -942,6 +1336,7 @@ const EditorFlujoAppSheet = ({
         carga,
         ultimaActualizacion: new Date().toISOString(),
         flujo: flujoFinal,
+        ...configFormulario,
       });
       setMensaje({ tipo: 'ok', texto: 'Flujo guardado correctamente.' });
       setTimeout(() => onVolver(), 700);
@@ -1139,6 +1534,28 @@ const EditorFlujoAppSheet = ({
               </>
             )}
           </div>
+
+          {/* ✅ NUEVO: Configuración del formulario por flujo (pestañas + campos obligatorios) */}
+          <button
+            onClick={() => setModalFormularioAbierto(true)}
+            disabled={!configValido}
+            style={{
+              ...S.configFormBtn,
+              opacity: !configValido ? 0.55 : 1,
+              cursor: !configValido ? 'not-allowed' : 'pointer',
+            }}
+            title="Configura qué pestañas se muestran y qué campos son obligatorios en el formulario de operaciones para este flujo"
+          >
+            <span style={{ fontSize: 14 }}>⚙</span>
+            Configurar formulario
+            {(pestanasVisibles !== null || camposObligatorios !== null) && (
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%',
+                background: '#a78bfa', boxShadow: '0 0 8px rgba(167,139,250,0.7)',
+                display: 'inline-block',
+              }} title="Este flujo ya tiene una configuración de formulario guardada" />
+            )}
+          </button>
 
           <button onClick={guardar} disabled={guardando || !configValido} style={{
             ...S.saveBtn,
@@ -1420,7 +1837,7 @@ const EditorFlujoAppSheet = ({
                     left: r.posicion?.x ?? 0,
                     top:  r.posicion?.y ?? 0,
                     width: NODE_W,
-                    minHeight: NODE_H,
+                    height: NODE_H,
                     background: 'linear-gradient(180deg, #1c2230 0%, #161b25 100%)',
                     border: `1.5px solid ${borderColor}`,
                     borderRadius: 14,
@@ -1448,7 +1865,11 @@ const EditorFlujoAppSheet = ({
                     borderTopRightRadius: 13,
                   }} />
 
-                  <div style={{ padding: '10px 14px 12px' }}>
+                  <div style={{
+                    height: NODE_H - 6,
+                    overflow: 'hidden',
+                    padding: '10px 14px 12px',
+                  }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                       <div style={{
                         width: 24, height: 24, borderRadius: 7,
@@ -1473,20 +1894,39 @@ const EditorFlujoAppSheet = ({
                       fontSize: 15,
                       lineHeight: 1.25,
                       letterSpacing: -0.1,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
                     }}>
                       {r.nombreStatus || 'Sin estatus asignado'}
                     </div>
 
                     {(r.camposRequeridos?.length ?? 0) > 0 && (
-                      <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                        {r.camposRequeridos.slice(0, 3).map(c => (
-                          <span key={c} style={S.tag}>
-                            {labelCampo(c)}
-                          </span>
-                        ))}
-                        {r.camposRequeridos.length > 3 && (
-                          <span style={S.tag}>+{r.camposRequeridos.length - 3}</span>
-                        )}
+                      <div style={{
+                        marginTop: 8,
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        maxWidth: '100%',
+                        background: '#11151d',
+                        border: `1px solid ${meta.color}38`,
+                        borderRadius: 999,
+                        padding: '3px 10px 3px 8px',
+                      }}>
+                        <span style={{
+                          width: 14, height: 14, borderRadius: '50%',
+                          background: meta.bg, color: meta.color,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 8.5, fontWeight: 700, flexShrink: 0,
+                        }}>{r.camposRequeridos.length}</span>
+                        <span style={{
+                          fontSize: 10.5,
+                          fontWeight: 500,
+                          color: '#8b94a9',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}>
+                          campo{r.camposRequeridos.length === 1 ? '' : 's'} requerido{r.camposRequeridos.length === 1 ? '' : 's'} para avanzar
+                        </span>
                       </div>
                     )}
                   </div>
@@ -1588,6 +2028,19 @@ const EditorFlujoAppSheet = ({
         onConfirmar={(ids) => {
           if (reglaSel) actualizarNodo(reglaSel.id, { camposRequeridos: ids });
           setModalCamposAbierto(false);
+        }}
+      />
+
+      {/* ✅ NUEVO: Modal "Configurar formulario" — config por flujo completo */}
+      <ModalConfigurarFormulario
+        abierto={modalFormularioAbierto}
+        pestanasIniciales={pestanasVisibles ?? []}
+        camposObligatoriosIniciales={camposObligatorios ?? []}
+        onCerrar={() => setModalFormularioAbierto(false)}
+        onConfirmar={(pestanas, campos) => {
+          setPestanasVisibles(pestanas);
+          setCamposObligatorios(campos);
+          setModalFormularioAbierto(false);
         }}
       />
     </div>
@@ -2097,6 +2550,17 @@ const S: Record<string, React.CSSProperties> = {
     boxShadow: '0 6px 18px rgba(99,102,241,0.32)',
     transition: 'transform 100ms ease',
   },
+  configFormBtn: {
+    background: '#1a1f2b',
+    color: '#cfc1ff',
+    border: '1px solid rgba(167,139,250,0.4)',
+    borderRadius: 10,
+    padding: '9px 16px',
+    fontWeight: 600,
+    fontSize: 13,
+    display: 'flex', alignItems: 'center', gap: 7,
+    transition: 'all 120ms ease',
+  },
   addStepBtn: {
     background: 'linear-gradient(135deg, rgba(167,139,250,0.18), rgba(99,102,241,0.18))',
     color: '#cfc1ff',
@@ -2246,15 +2710,6 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 500,
     cursor: 'pointer',
     transition: 'all 120ms ease',
-  },
-  tag: {
-    fontSize: 10.5,
-    background: '#1a1f2b',
-    border: '1px solid #2a3142',
-    color: '#8b94a9',
-    borderRadius: 999,
-    padding: '2px 8px',
-    fontWeight: 500,
   },
 };
 

@@ -161,7 +161,8 @@ body {
 .search-container { flex: 1; display: flex; justify-content: center; }
 
 .search-input {
-  width: 450px;
+  width: 100%;
+  max-width: 450px;
   background-color: #010409;
   border: 1px solid #30363d;
   color: #c9d1d9;
@@ -364,6 +365,10 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@media (max-width: 1024px) {
+  .form-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
 @media (max-width: 768px) {
   .form-grid { grid-template-columns: 1fr; }
 }
@@ -468,22 +473,6 @@ body {
   from { opacity: 0; transform: translateY(20px) scale(0.95); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-
-/* (El resto de clases como .form-grid, .form-control y .type-btn se mantienen igual) */
-.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 24px; }
-.form-group { display: flex; flex-direction: column; gap: 8px; }
-.form-label { font-size: 0.85rem; color: #8b949e; font-weight: 600; }
-.form-label.orange { color: #D84315; }
-.form-control { background-color: #010409; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 10px 14px; width: 100%; outline: none; transition: all 0.2s; }
-.form-control:focus { border-color: #D84315; box-shadow: 0 0 0 1px #D84315; }
-.type-selector { display: flex; }
-.type-btn { flex: 1; padding: 10px; background-color: #010409; color: #8b949e; border: 1px solid #30363d; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: all 0.2s; }
-.type-btn:first-child { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
-.type-btn:last-child { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
-.type-btn:hover:not(.active) { background-color: #161b22; color: #c9d1d9; }
-.type-btn.active { background-color: #161b22; color: #f0f6fc; border-color: #D84315; position: relative; z-index: 1; }
-.form-actions { display: flex; justify-content: flex-end; gap: 12px; padding-top: 24px; border-top: 1px solid #21262d; }
-
 
 /* --- Sistema de Pestañas (Tabs) --- */
 .tabs-container {
@@ -873,4 +862,118 @@ body {
 
 .breadcrumb-nav span:hover {
   color: #c9d1d9;
+}
+
+/* ============================================
+   Diseño Responsivo: Tablets y Móviles
+   ============================================ */
+
+/* El menú lateral pasa a ser un panel flotante que no empuja el contenido */
+@media (max-width: 1024px) {
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    box-shadow: 4px 0 30px rgba(0, 0, 0, 0.6);
+  }
+
+  .sidebar:not(.collapsed) {
+    width: 280px;
+  }
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 16px;
+    gap: 8px;
+  }
+
+  .topbar-right {
+    gap: 12px !important; /* el gap original viene como estilo inline en JSX */
+  }
+
+  /* La cabecera de módulo apila título y botones en lugar de comprimirlos */
+  .module-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+  }
+
+  .action-buttons {
+    width: 100%;
+  }
+
+  .action-buttons .btn {
+    flex: 1;
+    justify-content: center;
+  }
+
+  /* Filtros arriba y tabla abajo, en lugar de columnas lado a lado */
+  .content-body {
+    flex-direction: column;
+    overflow: visible;
+    padding: 0 20px 20px 20px;
+  }
+
+  .filters-sidebar {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .filter-item {
+    flex: 1 1 auto;
+    justify-content: center;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+  }
+
+  .filter-item.active {
+    border-left: none;
+    border-bottom-color: #D84315;
+  }
+
+  /* Las pestañas se desplazan horizontalmente en lugar de desbordar */
+  .tabs-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab-button {
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .type-selector {
+    flex-wrap: wrap;
+  }
+
+  .type-btn {
+    flex: 1 1 50%;
+  }
+
+  .type-btn:first-child,
+  .type-btn:last-child {
+    border-radius: 6px;
+  }
+
+  .login-card {
+    padding: 28px 20px;
+  }
+
+  /* Evita que el menú de perfil se salga de la pantalla en móviles angostos */
+  .profile-dropdown {
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .catalog-grid {
+    grid-template-columns: 1fr;
+    padding: 5px 0;
+  }
 }

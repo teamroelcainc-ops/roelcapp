@@ -7,16 +7,25 @@ import {
   writeBatch, 
   doc, 
   limit,
-  orderBy
+  orderBy,
+  where,
+  getDocs
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
+
+// ✅ NUEVO: constantes
+const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
+const STATUS_COMPLETADOS = ['f557b751', 'c2d57403'];
+const LIMITE_OPERACIONES_CLIENTE = 100;
 
 export const FacturacionClientesDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial'>('historial');
   
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
+  const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
+  const [cargandoFacturas, setCargandoFacturas] = useState(false);
   
   // Catálogos
   const [empresasList, setEmpresasList] = useState<any[]>([]);
@@ -25,8 +34,11 @@ export const FacturacionClientesDashboard = () => {
   const [filtroCliente, setFiltroCliente] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
-  // Paginación y Búsqueda
-  const [busquedaHistorial, setBusquedaHistorial] = useState('');
+  // ✅ NUEVO: buscador de cliente
+  const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
+  const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
+
+  // Paginación Historial
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
@@ -52,33 +64,149 @@ export const FacturacionClientesDashboard = () => {
     } catch { return fechaString; }
   };
 
-  // ✅ 1. CARGA DEL HISTORIAL DE FACTURAS (Lectura Mínima)
+  // ✅ 1. CARGA DE EMPRESAS (se necesita en ambas pestañas para el buscador de cliente)
   useEffect(() => {
-    const qFacturas = query(collection(db, 'facturas_clientes'), orderBy('createdAt', 'desc'), limit(400));
-    const unSubFacturas = onSnapshot(qFacturas, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      setFacturasGlobales(docs);
-    });
-    return () => unSubFacturas();
-  }, []);
-
-  // ✅ 2. LAZY LOAD DE OPERACIONES Y EMPRESAS (Solo si entras a Asignar Operaciones)
-  useEffect(() => {
-    if (activeTab !== 'operaciones') return;
-
     const unSubEmpresas = onSnapshot(collection(db, 'empresas'), (snap) => {
       setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     });
+    return () => { unSubEmpresas(); };
+  }, []);
 
-    const qOps = query(collection(db, 'operaciones'), limit(500));
-    const unSubOperaciones = onSnapshot(qOps, (snap) => {
-      const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      ops.sort((a: any, b: any) => new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime());
-      setOperacionesGlobales(ops);
-    });
+  // ✅ 2. CARGA DE FACTURAS DEL CLIENTE (sólo cuando hay cliente seleccionado).
+  //    Antes se descargaban las 400 facturas más recientes globalmente; ahora sólo del cliente.
+  //    Fallbacks:
+  //      1) where(clienteId) + orderBy(createdAt desc) + limit(100)  [requiere índice]
+  //      2) where(clienteId) + limit(100), ordena en memoria
+  useEffect(() => {
+    if (!filtroCliente) { setFacturasGlobales([]); return; }
 
-    return () => { unSubEmpresas(); unSubOperaciones(); };
-  }, [activeTab]);
+    const descargarFacturasCliente = async () => {
+      setCargandoFacturas(true);
+      try {
+        // [1] Query óptima
+        const q1 = query(
+          collection(db, 'facturas_clientes'),
+          where('clienteId', '==', filtroCliente),
+          orderBy('createdAt', 'desc'),
+          limit(100)
+        );
+        const snap = await getDocs(q1);
+        const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        setFacturasGlobales(docs);
+      } catch (e1: any) {
+        const msg1 = String(e1?.message || e1?.code || e1 || '');
+        const esIndice = msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition');
+        if (esIndice) {
+          console.warn('[Facturación Historial] Falta índice. Crea el índice:', msg1);
+          try {
+            // [2] Fallback sin orderBy
+            const q2 = query(
+              collection(db, 'facturas_clientes'),
+              where('clienteId', '==', filtroCliente),
+              limit(100)
+            );
+            const snap2 = await getDocs(q2);
+            const docs = snap2.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+            docs.sort((a: any, b: any) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+            setFacturasGlobales(docs);
+          } catch (e2: any) {
+            console.error('[Facturación Historial] Fallback falló:', e2);
+            alert(`No se pudieron cargar las facturas.\n\nDetalle: ${e2?.message || e2}`);
+          }
+        } else {
+          console.error('[Facturación Historial] Error:', e1);
+          alert(`Hubo un problema al cargar las facturas.\n\nDetalle: ${msg1}`);
+        }
+      }
+      setCargandoFacturas(false);
+    };
+
+    descargarFacturasCliente();
+  }, [filtroCliente]);
+
+  // ✅ 3. CARGA DE OPERACIONES DEL CLIENTE (cuando entra a pestaña Asignar y hay cliente)
+  //    Estrategia con fallbacks:
+  //      1) where(clientePaga) + where(status in [...]) + orderBy(fechaServicio desc) + limit(100)
+  //      2) sin orderBy si falta índice; ordenar en memoria
+  //      3) legacy: solo where(clientePaga) + limit(500), filtrar en memoria
+  useEffect(() => {
+    if (activeTab !== 'operaciones') return;
+    if (!filtroCliente) { setOperacionesGlobales([]); return; }
+
+    const descargarOperacionesCliente = async () => {
+      setCargandoOperaciones(true);
+      const filtrarLegacy = (ops: any[]) => ops.filter((op: any) =>
+        STATUS_COMPLETADOS.includes(String(op.status || '').trim())
+      );
+
+      let opsFinal: any[] = [];
+      let exito = false;
+
+      try {
+        // [1] Query óptima
+        const q1 = query(
+          collection(db, 'operaciones'),
+          where('clientePaga', '==', filtroCliente),
+          where('status', 'in', STATUS_COMPLETADOS),
+          orderBy('fechaServicio', 'desc'),
+          limit(LIMITE_OPERACIONES_CLIENTE)
+        );
+        const snap = await getDocs(q1);
+        opsFinal = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        exito = true;
+      } catch (e1: any) {
+        const msg1 = String(e1?.message || e1?.code || e1 || '');
+        const esIndice = msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition');
+        if (esIndice) {
+          console.warn('[Facturación] Query óptima falló (falta índice). Crea el índice:', msg1);
+          try {
+            // [2] Fallback sin orderBy
+            const q2 = query(
+              collection(db, 'operaciones'),
+              where('clientePaga', '==', filtroCliente),
+              where('status', 'in', STATUS_COMPLETADOS),
+              limit(LIMITE_OPERACIONES_CLIENTE * 2)
+            );
+            const snap2 = await getDocs(q2);
+            opsFinal = snap2.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+            opsFinal.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+            opsFinal = opsFinal.slice(0, LIMITE_OPERACIONES_CLIENTE);
+            exito = true;
+            console.warn('[Facturación] Usando fallback sin orderBy.');
+          } catch (e2: any) {
+            const msg2 = String(e2?.message || e2 || '');
+            console.warn('[Facturación] Fallback 1 falló, probando legacy:', msg2);
+            try {
+              // [3] Legacy: solo where cliente + limit alto, filtrar en memoria
+              const q3 = query(
+                collection(db, 'operaciones'),
+                where('clientePaga', '==', filtroCliente),
+                limit(500)
+              );
+              const snap3 = await getDocs(q3);
+              const todas = snap3.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+              opsFinal = filtrarLegacy(todas);
+              opsFinal.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+              opsFinal = opsFinal.slice(0, LIMITE_OPERACIONES_CLIENTE);
+              exito = true;
+              console.warn('[Facturación] Usando fallback legacy.');
+            } catch (e3: any) {
+              console.error('[Facturación] Todos los intentos fallaron:', e3);
+              alert(`No se pudieron cargar las operaciones del cliente.\n\nDetalle: ${e3?.message || e3}`);
+            }
+          }
+        } else {
+          console.error('[Facturación] Error inesperado:', e1);
+          alert(`Hubo un problema al cargar las operaciones.\n\nDetalle: ${msg1}`);
+        }
+      }
+
+      if (exito) setOperacionesGlobales(opsFinal);
+      setCargandoOperaciones(false);
+    };
+
+    descargarOperacionesCliente();
+  }, [filtroCliente, activeTab]);
 
   // ✅ TRADUCTOR DE CLIENTES
   const getNombreCliente = (idOrName: string) => {
@@ -87,32 +215,36 @@ export const FacturacionClientesDashboard = () => {
     return found ? (found.nombre || found.nombreCorto || idOrName) : idOrName;
   };
 
-  // ✅ FILTRADO ESTRICTO DE OPERACIONES (Solo status completados f557b751 / c2d57403 y sin factura)
-  const operacionesDisponibles = useMemo(() => {
-    return operacionesGlobales.filter(op => {
-      const statusValido = ['f557b751', 'c2d57403'].includes(op.status);
-      const noFacturada = !op.facturaClienteId && !op.facturado;
-      return statusValido && noFacturada;
-    });
-  }, [operacionesGlobales]);
+  // ✅ NUEVO: clientes filtrados para el buscador (tiposEmpresa contiene 7eec9cbb)
+  const clientesFiltradosBuscador = useMemo(() => {
+    if (!empresasList.length) return [];
 
-  // ✅ AUTO-GENERAR LISTA DE CLIENTES BASADA EN OPERACIONES Y TIPO DE EMPRESA
-  const clientesOptions = useMemo(() => {
-    const ids = operacionesDisponibles.map(op => op.clientePaga || op.clientePagaId || op.clienteId).filter(Boolean);
-    const uniqueIds = Array.from(new Set(ids));
-    
-    return uniqueIds.map(id => {
-      const empresa = empresasList.find(e => e.id === id);
-      return {
-        id: id,
-        nombre: empresa ? (empresa.nombre || empresa.nombreCorto || id) : getNombreCliente(id),
-        tiposEmpresa: empresa?.tiposEmpresa || []
-      };
-    })
-    // ⚠️ REGLA ESTRICTA: La empresa debe tener '11894dfd' en su arreglo de tiposEmpresa
-    .filter(c => Array.isArray(c.tiposEmpresa) && c.tiposEmpresa.includes('11894dfd'))
-    .sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [operacionesDisponibles, empresasList]);
+    const esClientePaga = (emp: any) => {
+      const tipos = emp?.tiposEmpresa;
+      if (Array.isArray(tipos)) return tipos.some((t: any) => String(t).trim() === ID_TIPO_CLIENTE_PAGA);
+      if (typeof tipos === 'string') return tipos.includes(ID_TIPO_CLIENTE_PAGA);
+      if (tipos && typeof tipos === 'object') return Object.values(tipos).some((v: any) => String(v).trim() === ID_TIPO_CLIENTE_PAGA);
+      return false;
+    };
+
+    const clientes = empresasList
+      .filter(esClientePaga)
+      .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
+
+    if (!textoBuscarCliente.trim()) return clientes.slice(0, 30);
+
+    const q = textoBuscarCliente.toLowerCase().trim();
+    return clientes.filter((c: any) =>
+      String(c.nombre || '').toLowerCase().includes(q) ||
+      String(c.rfc || '').toLowerCase().includes(q)
+    ).slice(0, 30);
+  }, [empresasList, textoBuscarCliente]);
+
+  const nombreClienteSeleccionado = useMemo(() => {
+    if (!filtroCliente || !empresasList.length) return '';
+    const cli = empresasList.find(e => e.id === filtroCliente);
+    return cli?.nombre || filtroCliente;
+  }, [filtroCliente, empresasList]);
 
   // ✅ EXTRAER LA MONEDA DEL CLIENTE SELECCIONADO
   const monedaFacturacion = useMemo(() => {
@@ -126,13 +258,12 @@ export const FacturacionClientesDashboard = () => {
     return idMoneda || 'No definida en catálogo';
   }, [filtroCliente, empresasList]);
 
+  // ✅ MODIFICADO: las operaciones ya vienen del cliente con status correcto.
+  //    Sólo filtramos en memoria las que aún no estén facturadas.
   const operacionesPendientes = useMemo(() => {
-    if (!filtroCliente) return []; 
-    return operacionesDisponibles.filter(op => {
-      const idCliente = op.clientePaga || op.clientePagaId || op.clienteId;
-      return idCliente === filtroCliente;
-    });
-  }, [operacionesDisponibles, filtroCliente]);
+    if (!filtroCliente) return [];
+    return operacionesGlobales.filter(op => !op.facturaClienteId && !op.facturado);
+  }, [operacionesGlobales, filtroCliente]);
 
   const toggleSeleccion = (id: string) => {
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
@@ -199,6 +330,12 @@ export const FacturacionClientesDashboard = () => {
       setSeleccionadas([]);
       setInvoiceForm('');
       setFacturaCcpForm('');
+      // Actualizar estado local para reflejar el cambio inmediatamente
+      setOperacionesGlobales(prev => prev.map(op =>
+        seleccionadas.includes(op.id) ? { ...op, facturaClienteId: nuevoId, facturaClienteInvoice: invoiceForm.trim(), facturado: true } : op
+      ));
+      // ✅ NUEVO: agregar la nueva factura al historial local (sino no aparecería hasta recargar)
+      setFacturasGlobales(prev => [{ id: nuevoId, ...data }, ...prev]);
       setActiveTab('historial');
     } catch (error) {
       console.error(error);
@@ -225,6 +362,8 @@ export const FacturacionClientesDashboard = () => {
           });
         }
         await batch.commit();
+        // ✅ NUEVO: quitar la factura del listado local sin recargar
+        setFacturasGlobales(prev => prev.filter(f => f.id !== facData.id));
       } catch (error) {
         console.error("Error al eliminar factura:", error);
         alert("Hubo un error al eliminar.");
@@ -232,15 +371,8 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ FILTRADO Y PAGINACIÓN HISTORIAL
-  const historialFiltrado = useMemo(() => {
-    const t = busquedaHistorial.toLowerCase();
-    return facturasGlobales.filter(f => 
-      (f.invoice || '').toLowerCase().includes(t) || 
-      (f.clienteNombre || '').toLowerCase().includes(t) ||
-      (f.facturaCcp || '').toLowerCase().includes(t)
-    );
-  }, [facturasGlobales, busquedaHistorial]);
+  // ✅ MODIFICADO: ya no hay búsqueda libre; las facturas vienen filtradas por cliente desde Firestore.
+  const historialFiltrado = facturasGlobales;
 
   const totalPaginas = Math.ceil(historialFiltrado.length / registrosPorPagina);
   const indexLast = paginaActual * registrosPorPagina;
@@ -286,13 +418,74 @@ export const FacturacionClientesDashboard = () => {
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
           
+          {/* ✅ MODIFICADO: buscador autocompletado en vez de select */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
-            <div style={{ flex: 1, minWidth: '300px' }}>
-              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>CLIENTE</label>
-              <select value={filtroCliente} onChange={e => { setFiltroCliente(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }}>
-                <option value="">Seleccionar Cliente con viajes pendientes...</option>
-                {clientesOptions.map((c, i) => <option key={i} value={c.id}>{c.nombre}</option>)}
-              </select>
+            <div style={{ flex: 1, minWidth: '320px', position: 'relative' }}>
+              <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>CLIENTE ★</label>
+
+              {filtroCliente ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreClienteSeleccionado}</span>
+                  <button
+                    onClick={() => { setFiltroCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); setSeleccionadas([]); }}
+                    title="Cambiar cliente"
+                    style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
+                  >✕</button>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente por nombre o RFC..."
+                    value={textoBuscarCliente}
+                    onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
+                    onFocus={() => setMostrarSugerenciasCliente(true)}
+                    onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
+                    style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+              )}
+
+              {!filtroCliente && mostrarSugerenciasCliente && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0,
+                  backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
+                  maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px',
+                  boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
+                }}>
+                  {clientesFiltradosBuscador.length === 0 ? (
+                    <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                      {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                        {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
+                      </div>
+                      {clientesFiltradosBuscador.map((cli: any) => (
+                        <div
+                          key={cli.id}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setFiltroCliente(cli.id);
+                            setTextoBuscarCliente('');
+                            setMostrarSugerenciasCliente(false);
+                            setSeleccionadas([]);
+                          }}
+                          style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                          onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                          onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
+                          {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <button 
@@ -339,8 +532,10 @@ export const FacturacionClientesDashboard = () => {
               <tbody>
                 {!filtroCliente ? (
                   <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona un Cliente en el filtro superior para ver las operaciones listas para facturar.</td></tr>
+                ) : cargandoOperaciones ? (
+                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando últimas 100 operaciones completadas del cliente...</td></tr>
                 ) : operacionesPendientes.length === 0 ? (
-                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones pendientes de facturar para este cliente.</td></tr>
+                  <tr><td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones pendientes de facturar para este cliente (las últimas 100 completadas ya están todas facturadas).</td></tr>
                 ) : (
                   operacionesPendientes.map(op => (
                     <tr key={op.id} onClick={() => toggleSeleccion(op.id)} style={{ cursor: 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
@@ -361,9 +556,77 @@ export const FacturacionClientesDashboard = () => {
 
       ) : (
         <div className="animation-fade-in">
-          <div style={{ position: 'relative', marginBottom: '20px', display: 'flex', justifyContent: 'space-between' }}>
-            <input type="text" placeholder="Buscar en historial (Invoice, Cliente, CCP)..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)} style={{ width: '100%', maxWidth: '400px', padding: '10px 16px', backgroundColor: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
-            <button title="Exportar a Excel" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+          {/* ✅ MODIFICADO: buscador de cliente en vez de búsqueda libre.
+              Las facturas se descargan ON DEMAND al elegir cliente (últimas 100). */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+            <div style={{ flex: 1, minWidth: '320px', position: 'relative' }}>
+              <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>CLIENTE ★</label>
+
+              {filtroCliente ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                  <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreClienteSeleccionado}</span>
+                  <button
+                    onClick={() => { setFiltroCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
+                    title="Cambiar cliente"
+                    style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
+                  >✕</button>
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente por nombre o RFC..."
+                    value={textoBuscarCliente}
+                    onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
+                    onFocus={() => setMostrarSugerenciasCliente(true)}
+                    onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
+                    style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+              )}
+
+              {!filtroCliente && mostrarSugerenciasCliente && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0,
+                  backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
+                  maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px',
+                  boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
+                }}>
+                  {clientesFiltradosBuscador.length === 0 ? (
+                    <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                      {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                        {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
+                      </div>
+                      {clientesFiltradosBuscador.map((cli: any) => (
+                        <div
+                          key={cli.id}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setFiltroCliente(cli.id);
+                            setTextoBuscarCliente('');
+                            setMostrarSugerenciasCliente(false);
+                          }}
+                          style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                          onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                          onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
+                          {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <button title="Exportar a Excel" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '10px 14px', borderRadius: '6px', cursor: 'pointer', height: 'fit-content' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
@@ -383,8 +646,12 @@ export const FacturacionClientesDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {registrosVisibles.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay facturas registradas.</td></tr>
+                {!filtroCliente ? (
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Selecciona un cliente para ver su historial de facturas.</td></tr>
+                ) : cargandoFacturas ? (
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Cargando últimas 100 facturas del cliente...</td></tr>
+                ) : registrosVisibles.length === 0 ? (
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este cliente no tiene facturas registradas.</td></tr>
                 ) : (
                   registrosVisibles.map(f => (
                     <tr key={f.id} style={{ borderBottom: '1px solid #21262d' }}>

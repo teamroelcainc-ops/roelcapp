@@ -23,6 +23,11 @@
 //    3. Catálogos pesados (convenios_*, empleados) mantienen TTL de 24h.
 //    4. guardarHorario NO recarga todas las operaciones (actualiza estado local).
 //    5. Botón "Forzar recarga" pide confirmación para evitar uso accidental.
+//
+// C) VISIBILIDAD DE DOCUMENTOS POR TIPO DE OPERACIÓN:
+//    Cuando tipoOperacionId coincide con una clave de DOCS_POR_TIPO, en la
+//    sección "GENERAR DOCUMENTOS" se muestran SOLO los documentos de esa lista.
+//    Para cualquier otro tipo se conserva la lógica original (evalIsFletes, etc.).
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -977,6 +982,16 @@ const OperacionesDashboard = () => {
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
+  // ── Visibilidad de documentos según tipo de operación ──
+  // Claves válidas: 'carta' | 'prueba' | 'checklist' | 'solicitud' | 'instrucciones'
+  // Si el tipo NO está en este mapa, se usa la lógica normal (evalIsFletes, etc.).
+  const evalTipoOpId = String(operacionViendo?.tipoOperacionId || '').trim();
+  const DOCS_POR_TIPO: Record<string, string[]> = {
+    '3e5b0035': ['checklist', 'solicitud'], // ← AJUSTA con los docs que quieras mostrar para este tipo
+  };
+  const docsPermitidos = DOCS_POR_TIPO[evalTipoOpId] || null; // null = comportamiento normal
+  const puedeMostrarDoc = (doc: string) => !docsPermitidos || docsPermitidos.includes(doc);
+
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
@@ -1139,12 +1154,12 @@ const OperacionesDashboard = () => {
 
       {operacionViendo && (
         <div className="modal-overlay" style={{ zIndex: 1500 }}>
-          <div className="form-card detail-card" style={{ maxWidth: '1100px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+          <div className="form-card detail-card" style={{ maxWidth: '1100px', maxHeight: '94vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
             
-            <div className="form-header" style={{ padding: '24px 32px 16px 32px', borderBottom: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+           <div className="form-header" style={{ padding: '16px 32px 0 32px', borderBottom: 'none', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
-                  <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.6rem', fontWeight: 600, letterSpacing: '-0.5px' }}>Detalle de Operación</h2>
+                 <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.5px' }}>Detalle de Operación</h2>
                   <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>
                       {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
@@ -1232,30 +1247,36 @@ const OperacionesDashboard = () => {
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderTop: '1px solid #30363d', marginTop: '4px', flexWrap: 'wrap' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '0.5px', marginRight: '8px' }}>GENERAR DOCUMENTOS:</span>
-                {evalIsFletes && (
-                  <>
-                    <button onClick={handleDescargarCartaInstrucciones} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                      Carta Instrucciones
-                    </button>
-                    <button onClick={handleDescargarPruebaEntrega} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                      Prueba Entrega
-                    </button>
-                  </>
+                {(docsPermitidos ? puedeMostrarDoc('carta') : evalIsFletes) && (
+                  <button onClick={handleDescargarCartaInstrucciones} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    Carta Instrucciones
+                  </button>
                 )}
-                <button onClick={handleDescargarCheckList} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                  Check List
-                </button>
-                <button onClick={handleDescargarSolicitudRetiro} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                  Solicitud Retiro
-                </button>
-                <button onClick={handleDescargarInstruccionesServicio} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                  Instrucciones Serv.
-                </button>
+                {(docsPermitidos ? puedeMostrarDoc('prueba') : evalIsFletes) && (
+                  <button onClick={handleDescargarPruebaEntrega} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    Prueba Entrega
+                  </button>
+                )}
+                {puedeMostrarDoc('checklist') && (
+                  <button onClick={handleDescargarCheckList} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    Check List
+                  </button>
+                )}
+                {puedeMostrarDoc('solicitud') && (
+                  <button onClick={handleDescargarSolicitudRetiro} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    Solicitud Retiro
+                  </button>
+                )}
+                {puedeMostrarDoc('instrucciones') && (
+                  <button onClick={handleDescargarInstruccionesServicio} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                    Instrucciones Serv.
+                  </button>
+                )}
               </div>
             </div>
             
@@ -1271,7 +1292,7 @@ const OperacionesDashboard = () => {
               ))}
             </div>
 
-            <div className="detail-content" style={{ padding: '24px 32px', overflowY: 'auto', flex: 1 }}>
+            <div className="detail-content" style={{ padding: '18px 32px', overflowY: 'auto', flex: 1 }}>
               
               {pestañaDetalleActiva === 'general' && (
                 <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
@@ -1567,7 +1588,7 @@ const OperacionesDashboard = () => {
               )}
             </div>
 
-            <div className="form-actions detail-actions" style={{ padding: '16px 32px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
+            <div className="form-actions detail-actions" style={{ padding: '12px 32px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
               <button onClick={() => setOperacionViendo(null)} className="btn btn-outline" style={{ padding: '10px 32px', borderRadius: '6px' }}>Cerrar Ficha</button>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore'; 
+import { collection, query, getDocs, orderBy, limit, where, startAfter, deleteDoc, doc, updateDoc } from 'firebase/firestore'; 
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
@@ -67,7 +67,22 @@ const COLUMNAS_BASE = [
   { id: 'observacionesCobrar', label: 'Obs. Cobro', visible: false }
 ];
 
-const ServiciosCompletados = () => {
+// ✅ Status considerados "Completado" — sólo los 2 IDs hex (estricto)
+const STATUS_COMPLETADOS_VALORES = ['f557b751', 'c2d57403'];
+// ID del tipo de empresa "Cliente (Paga)" para el buscador
+const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
+// ✅ NUEVO: tamaño de página para descarga incremental
+const TAMANIO_PAGINA = 100;
+// ✅ NUEVO: TTL del caché en sessionStorage (5 minutos)
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_PREFIX = 'roelca_completadas_';
+
+// ✅ NUEVO: prop opcional para conectar la edición con el formulario existente del padre.
+interface ServiciosCompletadosProps {
+  onEditar?: (operacion: any) => void;
+}
+
+const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar }) => {
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
@@ -93,72 +108,190 @@ const ServiciosCompletados = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // ✅ MODIFICADO: query específica por cliente con FALLBACK automático.
-  // Estrategia:
-  //   1) Intentamos query con where + orderBy + limit (rápida pero requiere índice compuesto).
-  //   2) Si Firestore falla por falta de índice, hacemos query sin orderBy (sólo where + limit)
-  //      —no requiere índice compuesto— y ordenamos en memoria.
-  //   3) En cualquier otro error mostramos el mensaje real al usuario.
-  const descargarOperaciones = async (clienteId: string) => {
+  // ✅ NUEVO: paginación incremental (chunks de Firestore con startAfter)
+  const [lastDocSnap, setLastDocSnap] = useState<any | null>(null);
+  const [hayMasOperaciones, setHayMasOperaciones] = useState(false);
+  const [cargandoMas, setCargandoMas] = useState(false);
+
+  // ✅ NUEVO: buscador autocompletado de cliente
+  const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
+  const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
+
+  // ✅ NUEVO: búsqueda remota por referencia cuando NO hay cliente seleccionado
+  const [resultadosRefRemota, setResultadosRefRemota] = useState<any[]>([]);
+  const [buscandoRefRemota, setBuscandoRefRemota] = useState(false);
+
+  // ✅ NUEVO: editor integrado (fallback cuando NO se pasa la prop onEditar)
+  const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
+  const [formEdicion, setFormEdicion] = useState<any>({});
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+  const [pestañaEdicionActiva, setPestañaEdicionActiva] = useState<string>('general');
+
+  // ✅ MODIFICADO: query con FILTRO DE STATUS EN FIRESTORE + CACHÉ + PAGINACIÓN.
+  //
+  // Estrategia de carga (en orden):
+  //   0) Si existe caché válido en sessionStorage (< 5 min) → usarlo (instantáneo).
+  //   1) Query óptima: where(clientePaga) + where(status, in, [...]) + orderBy + limit(100).
+  //      Trae SOLO las completadas (no descarga las demás). Requiere índice compuesto.
+  //   2) Fallback 1: misma query pero sin orderBy (índice más simple, ordena en memoria).
+  //   3) Fallback 2 (legacy): solo where(clientePaga) + limit(500), filtra todo en memoria.
+  //
+  // El conjunto descargado se cachea en sessionStorage por clienteId.
+  const descargarOperaciones = async (clienteId: string, opciones: { ignorarCache?: boolean } = {}) => {
+    // Reset paginación al cargar de cero
+    setLastDocSnap(null);
+    setHayMasOperaciones(false);
+
     if (!clienteId) {
       setOperacionesGlobales([]);
       return;
     }
+
+    // [0] Intentar caché en sessionStorage
+    if (!opciones.ignorarCache) {
+      try {
+        const cacheStr = sessionStorage.getItem(CACHE_PREFIX + clienteId);
+        if (cacheStr) {
+          const cache = JSON.parse(cacheStr);
+          if (cache && Date.now() - cache.ts < CACHE_TTL_MS && Array.isArray(cache.ops)) {
+            setOperacionesGlobales(cache.ops);
+            // Si el caché está al máximo del último chunk, asumimos que puede haber más;
+            // pero no tenemos cursor, así que el usuario verá un aviso de refrescar para paginar.
+            setHayMasOperaciones(false);
+            return;
+          }
+        }
+      } catch { /* caché corrupto: ignorar */ }
+    }
+
     setCargandoOperaciones(true);
 
-    const filtrarCompletadas = (docs: any[]) =>
-      docs.map((d: any) => ({ id: d.id, ...d.data() }))
-        .filter((op: any) => {
-          const statusId = String(op.status || '').trim();
-          const statusTexto = String(op.statusNombre || op.status || '').toLowerCase();
-          return ['f557b751', 'c2d57403'].includes(statusId) || statusTexto.includes('completado');
-        });
+    const filtrarLegacy = (ops: any[]) => ops.filter((op: any) => {
+      const statusId = String(op.status || '').trim();
+      return STATUS_COMPLETADOS_VALORES.includes(statusId);
+    });
+
+    let opsFinal: any[] = [];
+    let lastSnapFinal: any = null;
+    let hayMasFinal = false;
+    let exito = false;
 
     try {
-      // Intento 1: query óptima con orderBy
-      const queryOptima = query(
+      // [1] Query óptima: where + where + orderBy + limit
+      const q1 = query(
         collection(db, 'operaciones'),
         where('clientePaga', '==', clienteId),
+        where('status', 'in', STATUS_COMPLETADOS_VALORES),
         orderBy('fechaServicio', 'desc'),
-        limit(500)
+        limit(TAMANIO_PAGINA)
       );
-      const snap = await getDocs(queryOptima);
-      setOperacionesGlobales(filtrarCompletadas(snap.docs));
-    } catch (e: any) {
-      const msg = String(e?.message || e?.code || e || '');
-      const esErrorDeIndice = msg.toLowerCase().includes('index') || msg.toLowerCase().includes('failed-precondition');
-
-      if (esErrorDeIndice) {
-        // Mostrar el link de Firebase en consola (Firestore lo incluye en el mensaje)
-        console.warn('[ServiciosCompletados] Falta el índice compuesto. Aplicando fallback sin orderBy.');
-        console.warn('[ServiciosCompletados] Crea el índice con este link (incluido en el error original):');
-        console.warn(msg);
-
+      const snap = await getDocs(q1);
+      opsFinal = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      lastSnapFinal = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
+      hayMasFinal = snap.docs.length === TAMANIO_PAGINA;
+      exito = true;
+    } catch (e1: any) {
+      const msg1 = String(e1?.message || e1?.code || e1 || '');
+      const esIndice1 = msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition');
+      if (esIndice1) {
+        console.warn('[ServiciosCompletados] Query óptima falló (falta índice). Crea el índice con:', msg1);
         try {
-          // Intento 2: fallback sin orderBy (no requiere índice compuesto)
-          const queryFallback = query(
+          // [2] Fallback 1: where + where (sin orderBy)
+          const q2 = query(
             collection(db, 'operaciones'),
             where('clientePaga', '==', clienteId),
-            limit(500)
+            where('status', 'in', STATUS_COMPLETADOS_VALORES),
+            limit(TAMANIO_PAGINA * 3)
           );
-          const snap2 = await getDocs(queryFallback);
-          const completadas = filtrarCompletadas(snap2.docs);
-          // Ordenar en memoria por fechaServicio desc
-          completadas.sort((a: any, b: any) =>
+          const snap2 = await getDocs(q2);
+          opsFinal = snap2.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+          opsFinal.sort((a: any, b: any) =>
             String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
           );
-          setOperacionesGlobales(completadas);
+          // Sin cursor: no se puede paginar correctamente
+          lastSnapFinal = null;
+          hayMasFinal = false;
+          exito = true;
+          console.warn('[ServiciosCompletados] Usando Fallback 1 (sin orderBy). Crea el índice para mejor rendimiento.');
         } catch (e2: any) {
-          console.error('[ServiciosCompletados] Fallback también falló:', e2);
-          alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${e2?.message || e2}`);
+          const msg2 = String(e2?.message || e2 || '');
+          console.warn('[ServiciosCompletados] Fallback 1 falló, probando legacy:', msg2);
+          try {
+            // [3] Fallback 2 (legacy): solo where cliente + limit alto, filtra en memoria
+            const q3 = query(
+              collection(db, 'operaciones'),
+              where('clientePaga', '==', clienteId),
+              limit(500)
+            );
+            const snap3 = await getDocs(q3);
+            const todas = snap3.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+            opsFinal = filtrarLegacy(todas);
+            opsFinal.sort((a: any, b: any) =>
+              String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
+            );
+            lastSnapFinal = null;
+            hayMasFinal = false;
+            exito = true;
+            console.warn('[ServiciosCompletados] Usando Fallback 2 (legacy compatible).');
+          } catch (e3: any) {
+            console.error('[ServiciosCompletados] Todos los intentos fallaron:', e3);
+            alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${e3?.message || e3}`);
+          }
         }
       } else {
-        console.error('[ServiciosCompletados] Error al cargar operaciones:', e);
-        alert(`Hubo un problema al cargar las operaciones.\n\nDetalle: ${msg}\n\nRevisa la consola del navegador (F12) para más información.`);
+        console.error('[ServiciosCompletados] Error inesperado:', e1);
+        alert(`Hubo un problema al cargar las operaciones.\n\nDetalle: ${msg1}`);
       }
     }
 
+    if (exito) {
+      setOperacionesGlobales(opsFinal);
+      setLastDocSnap(lastSnapFinal);
+      setHayMasOperaciones(hayMasFinal);
+      // Guardar en caché (los snapshots NO son serializables, sólo los datos)
+      try {
+        sessionStorage.setItem(
+          CACHE_PREFIX + clienteId,
+          JSON.stringify({ ts: Date.now(), ops: opsFinal })
+        );
+      } catch { /* cuota agotada: ignorar */ }
+    }
+
     setCargandoOperaciones(false);
+  };
+
+  // ✅ NUEVO: descarga el siguiente chunk de operaciones (paginación incremental).
+  // Sólo funciona si la query óptima funcionó (necesita lastDocSnap).
+  const cargarMasOperaciones = async () => {
+    if (!filterCliente || !lastDocSnap || cargandoMas || cargandoOperaciones) return;
+    setCargandoMas(true);
+    try {
+      const qMas = query(
+        collection(db, 'operaciones'),
+        where('clientePaga', '==', filterCliente),
+        where('status', 'in', STATUS_COMPLETADOS_VALORES),
+        orderBy('fechaServicio', 'desc'),
+        startAfter(lastDocSnap),
+        limit(TAMANIO_PAGINA)
+      );
+      const snap = await getDocs(qMas);
+      const nuevas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      const setCompleto = [...operacionesGlobales, ...nuevas];
+      setOperacionesGlobales(setCompleto);
+      setLastDocSnap(snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null);
+      setHayMasOperaciones(snap.docs.length === TAMANIO_PAGINA);
+      // Actualizar caché con el conjunto acumulado
+      try {
+        sessionStorage.setItem(
+          CACHE_PREFIX + filterCliente,
+          JSON.stringify({ ts: Date.now(), ops: setCompleto })
+        );
+      } catch { /* ignorar */ }
+    } catch (e: any) {
+      console.error('[ServiciosCompletados] Error al cargar más:', e);
+      alert(`No se pudieron cargar más operaciones.\n\nDetalle: ${e?.message || e}`);
+    }
+    setCargandoMas(false);
   };
 
   const cargarCatalogosSiEsNecesario = async () => {
@@ -215,6 +348,49 @@ const ServiciosCompletados = () => {
     descargarOperaciones(filterCliente);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterCliente]);
+
+  // ✅ NUEVO: sin cliente seleccionado, buscar la referencia directo en Firestore.
+  // Se dispara con debounce de 400 ms y sólo cuando NO hay cliente.
+  useEffect(() => {
+    if (filterCliente || !busqueda.trim()) {
+      setResultadosRefRemota([]);
+      setBuscandoRefRemota(false);
+      return;
+    }
+
+    const termino = busqueda.trim();
+    let cancelado = false;
+    setBuscandoRefRemota(true);
+
+    const timer = setTimeout(async () => {
+      try {
+        // Búsqueda por prefijo del campo "ref" (asume que ref se guarda como TEXTO).
+        // Rango sobre un solo campo → NO requiere índice compuesto.
+        const qRef = query(
+          collection(db, 'operaciones'),
+          where('ref', '>=', termino),
+          where('ref', '<=', termino + '\uf8ff'),
+          limit(50)
+        );
+        const snap = await getDocs(qRef);
+        let encontradas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+
+        // Mantener sólo las COMPLETADAS (coherente con este módulo)
+        encontradas = encontradas.filter((op: any) =>
+          STATUS_COMPLETADOS_VALORES.includes(String(op.status || '').trim())
+        );
+
+        if (!cancelado) setResultadosRefRemota(encontradas);
+      } catch (e: any) {
+        console.error('[ServiciosCompletados] Error en búsqueda remota por referencia:', e);
+        if (!cancelado) setResultadosRefRemota([]);
+      } finally {
+        if (!cancelado) setBuscandoRefRemota(false);
+      }
+    }, 400);
+
+    return () => { cancelado = true; clearTimeout(timer); };
+  }, [busqueda, filterCliente]);
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filterFecha, filterRemolque, filterCliente]);
   
@@ -474,41 +650,199 @@ const ServiciosCompletados = () => {
     });
   };
 
+  // ✅ MODIFICADO: editar — si el padre pasa onEditar, delega ahí (su formulario).
+  // Si NO, abre el editor integrado de este módulo.
+  const handleEditarOperacion = (op: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!op) return;
+    if (onEditar) {
+      onEditar(op);
+      return;
+    }
+    // Abrir editor integrado: copiamos la operación al formulario
+    setOperacionEditando(op);
+    setFormEdicion({ ...op });
+    setPestañaEdicionActiva('general');
+  };
+
+  // ✅ NUEVO: actualiza un campo del formulario de edición.
+  // Recalcula los totales que la propia UI define por fórmula (subtotales, sueldo, combustible).
+  const actualizarCampoEdicion = (campo: string, valor: any) => {
+    setFormEdicion((prev: any) => {
+      const next = { ...prev, [campo]: valor };
+      const num = (v: any) => Number(v) || 0;
+
+      // Subtotal Cliente = Monto Convenio + Cargos Adicionales
+      if (campo === 'montoConvenioCliente' || campo === 'cargosAdicionales') {
+        next.subtotalCliente = num(next.montoConvenioCliente) + num(next.cargosAdicionales);
+      }
+      // Subtotal Prov = Monto Base + Cargos Adicionales Prov
+      if (campo === 'totalAPagarProv' || campo === 'cargosAdicionalesProv') {
+        next.subtotalProv = num(next.totalAPagarProv) + num(next.cargosAdicionalesProv);
+      }
+      // Sueldo Total = Sueldo Operador + Sueldo Extra
+      if (campo === 'sueldoOperador' || campo === 'sueldoExtra') {
+        next.sueldoTotal = num(next.sueldoOperador) + num(next.sueldoExtra);
+      }
+      // Combustible Total = Combustible + Combustible Extra
+      if (campo === 'combustible' || campo === 'combustibleExtra') {
+        next.combustibleTotal = num(next.combustible) + num(next.combustibleExtra);
+      }
+      return next;
+    });
+  };
+
+  // ✅ NUEVO: guardar los cambios del editor integrado en Firestore.
+  const guardarEdicion = async () => {
+    if (!operacionEditando?.id) return;
+    setGuardandoEdicion(true);
+    try {
+      // Sólo enviamos los campos editables (evitamos sobrescribir todo el documento).
+      const camposEditables = [
+        'refCliente', 'fechaServicio', 'fechaCita', 'trafico', 'observacionesEjecutivo',
+        'clienteMercanciaNombre', 'descripcionMercancia', 'cantidad', 'embalajeNombre', 'pesoKg',
+        'numDoda', 'fechaEmisionDoda',
+        'numeroEntrys', 'cantEntrys', 'numManifiesto', 'provServiciosNombre', 'montoManifiesto',
+        'totalAPagarProv', 'cargosAdicionalesProv', 'subtotalProv',
+        'sueldoOperador', 'sueldoExtra', 'sueldoTotal',
+        'combustible', 'combustibleExtra', 'combustibleTotal',
+        'unidadProveedor', 'operadorProveedor', 'observacionesUnidad',
+        'montoConvenioCliente', 'cargosAdicionales', 'subtotalCliente',
+        'tipoCambioAprobado', 'observacionesCobrar'
+      ];
+
+      const payload: any = {};
+      camposEditables.forEach((c) => {
+        if (formEdicion[c] !== undefined) payload[c] = formEdicion[c];
+      });
+
+      await updateDoc(doc(db, 'operaciones', operacionEditando.id), payload);
+
+      // Reflejar los cambios en memoria
+      const aplicar = (o: any) => (o.id === operacionEditando.id ? { ...o, ...payload } : o);
+      const nuevasGlobales = operacionesGlobales.map(aplicar);
+      setOperacionesGlobales(nuevasGlobales);
+      setResultadosRefRemota(prev => prev.map(aplicar));
+      if (operacionViendo?.id === operacionEditando.id) {
+        setOperacionViendo({ ...operacionViendo, ...payload });
+      }
+
+      // Actualizar caché del cliente
+      if (filterCliente) {
+        try {
+          sessionStorage.setItem(
+            CACHE_PREFIX + filterCliente,
+            JSON.stringify({ ts: Date.now(), ops: nuevasGlobales })
+          );
+        } catch { /* ignorar */ }
+      }
+
+      setOperacionEditando(null);
+      setFormEdicion({});
+    } catch (err: any) {
+      console.error('[ServiciosCompletados] Error al guardar la edición:', err);
+      alert(`No se pudieron guardar los cambios.\n\nDetalle: ${err?.message || err}`);
+    }
+    setGuardandoEdicion(false);
+  };
+
+  // ✅ NUEVO: eliminar — borra el documento en Firestore y limpia estado/caché.
+  const handleEliminarOperacion = async (op: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!op?.id) return;
+
+    const refTxt = op.ref || op.id?.substring(0, 6) || op.id;
+    const confirmar = window.confirm(
+      `¿Eliminar permanentemente la operación ${refTxt}?\n\nEsta acción NO se puede deshacer.`
+    );
+    if (!confirmar) return;
+
+    try {
+      await deleteDoc(doc(db, 'operaciones', op.id));
+
+      // Quitar de los estados en memoria
+      const restantes = operacionesGlobales.filter((o: any) => o.id !== op.id);
+      setOperacionesGlobales(restantes);
+      setResultadosRefRemota(prev => prev.filter((o: any) => o.id !== op.id));
+
+      // Cerrar la ficha si era la que estaba abierta
+      if (operacionViendo?.id === op.id) setOperacionViendo(null);
+
+      // Actualizar el caché del cliente con el conjunto ya filtrado
+      if (filterCliente) {
+        try {
+          sessionStorage.setItem(
+            CACHE_PREFIX + filterCliente,
+            JSON.stringify({ ts: Date.now(), ops: restantes })
+          );
+        } catch { /* cuota agotada: ignorar */ }
+      }
+    } catch (err: any) {
+      console.error('[ServiciosCompletados] Error al eliminar la operación:', err);
+      alert(`No se pudo eliminar la operación.\n\nDetalle: ${err?.message || err}`);
+    }
+  };
+
   const forzarRecarga = () => {
     sessionStorage.removeItem('roelca_catalogos_v2');
+    // ✅ NUEVO: limpiar también el caché de operaciones completadas
+    try {
+      const keys = Object.keys(sessionStorage);
+      keys.forEach(k => { if (k.startsWith(CACHE_PREFIX)) sessionStorage.removeItem(k); });
+    } catch { /* ignorar */ }
     window.location.reload();
   };
 
-  // ✅ MODIFICADO: el cliente ya está aplicado en la query a Firestore (no se vuelve a filtrar aquí).
-  // Sólo refinamos en memoria por fecha, remolque o búsqueda general.
+  // ✅ MODIFICADO: ahora soporta tres escenarios:
+  //   🅐 Con cliente → filtra en memoria lo descargado para ese cliente.
+  //   🅑 Sin cliente pero con búsqueda → usa lo que devolvió Firestore por "ref".
+  //   🅒 Sin cliente y sin búsqueda → vacío (mensaje guía).
   const operacionesFiltradas = useMemo(() => {
-    if (!filterCliente) return [];
+    // 🅐 Hay cliente → comportamiento normal (filtra en memoria lo ya descargado)
+    if (filterCliente) {
+      let filtradas = operacionesGlobales;
 
-    let filtradas = operacionesGlobales;
+      if (filterFecha) {
+        filtradas = filtradas.filter(op => String(op.fechaServicio || '').includes(filterFecha));
+      }
+      if (filterRemolque) {
+        filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
+      }
 
-    if (filterFecha) {
-      filtradas = filtradas.filter(op => String(op.fechaServicio || '').includes(filterFecha));
+      if (busqueda.trim()) {
+        const b = busqueda.toLowerCase();
+        filtradas = filtradas.filter(op => {
+          return (
+            String(op.ref || op.id || '').toLowerCase().includes(b) ||
+            String(op.fechaServicio || '').toLowerCase().includes(b) ||
+            String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
+            String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
+            String(op.trafico || '').toLowerCase().includes(b) ||
+            String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
+          );
+        });
+      }
+
+      return filtradas;
     }
-    if (filterRemolque) {
-      filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
+
+    // 🅑 SIN cliente pero con búsqueda por referencia → usamos lo que trajo Firestore
+    if (busqueda.trim() && resultadosRefRemota.length > 0) {
+      let filtradas = resultadosRefRemota;
+
+      if (filterFecha) {
+        filtradas = filtradas.filter(op => String(op.fechaServicio || '').includes(filterFecha));
+      }
+      if (filterRemolque) {
+        filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
+      }
+
+      return filtradas;
     }
 
-    if (busqueda.trim()) {
-      const b = busqueda.toLowerCase();
-      filtradas = filtradas.filter(op => {
-        return (
-          String(op.ref || op.id || '').toLowerCase().includes(b) ||
-          String(op.fechaServicio || '').toLowerCase().includes(b) ||
-          String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
-          String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
-          String(op.trafico || '').toLowerCase().includes(b) ||
-          String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
-        );
-      });
-    }
-
-    return filtradas;
-  }, [busqueda, operacionesGlobales, filterFecha, filterRemolque, filterCliente]);
+    // 🅒 Sin cliente y sin búsqueda → vacío
+    return [];
+  }, [busqueda, operacionesGlobales, filterFecha, filterRemolque, filterCliente, resultadosRefRemota]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -517,6 +851,38 @@ const ServiciosCompletados = () => {
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
+
+  // ✅ NUEVO: lista de clientes Paga (filtra empresas por tiposEmpresa que incluya 7eec9cbb)
+  const clientesFiltradosBuscador = useMemo(() => {
+    if (!catalogosGlobales.empresas) return [];
+
+    const esClientePaga = (emp: any) => {
+      const tipos = emp?.tiposEmpresa;
+      if (Array.isArray(tipos)) return tipos.some((t: any) => String(t).trim() === ID_TIPO_CLIENTE_PAGA);
+      if (typeof tipos === 'string') return tipos.includes(ID_TIPO_CLIENTE_PAGA);
+      if (tipos && typeof tipos === 'object') return Object.values(tipos).some((v: any) => String(v).trim() === ID_TIPO_CLIENTE_PAGA);
+      return false;
+    };
+
+    const clientes = catalogosGlobales.empresas
+      .filter(esClientePaga)
+      .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
+
+    if (!textoBuscarCliente.trim()) return clientes.slice(0, 30);
+
+    const q = textoBuscarCliente.toLowerCase().trim();
+    return clientes.filter((c: any) =>
+      String(c.nombre || '').toLowerCase().includes(q) ||
+      String(c.rfc || '').toLowerCase().includes(q)
+    ).slice(0, 30);
+  }, [catalogosGlobales.empresas, textoBuscarCliente]);
+
+  // ✅ NUEVO: nombre del cliente actualmente seleccionado (para mostrar el chip)
+  const nombreClienteSeleccionado = useMemo(() => {
+    if (!filterCliente || !catalogosGlobales.empresas) return '';
+    const cli = catalogosGlobales.empresas.find((e: any) => e.id === filterCliente);
+    return cli?.nombre || filterCliente;
+  }, [filterCliente, catalogosGlobales.empresas]);
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.effectAllowed = 'move';
@@ -707,14 +1073,92 @@ const ServiciosCompletados = () => {
         {/* ✅ MODIFICADO: Cliente ahora es el primer filtro y es el principal.
             Al elegir cliente se dispara la query a Firestore. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          <div style={{ flex: '1 1 260px' }}>
+          <div style={{ flex: '1 1 280px', position: 'relative' }}>
             <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA ★</label>
-            <select value={filterCliente} onChange={(e) => setFilterCliente(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }}>
-              <option value="">Seleccionar Cliente...</option>
-              {catalogosGlobales.empresas?.map((emp: any) => (
-                <option key={emp.id} value={emp.id}>{emp.nombre || emp.id}</option>
-              ))}
-            </select>
+
+            {filterCliente ? (
+              // ✅ Cliente seleccionado: mostrar chip con X para limpiar
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {nombreClienteSeleccionado}
+                </span>
+                <button
+                  onClick={() => { setFilterCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
+                  title="Cambiar cliente"
+                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              // ✅ Sin cliente: input de búsqueda con autocompletado
+              <div style={{ position: 'relative' }}>
+                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input
+                  type="text"
+                  placeholder="Buscar cliente por nombre o RFC..."
+                  value={textoBuscarCliente}
+                  onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
+                  onFocus={() => setMostrarSugerenciasCliente(true)}
+                  onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
+                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+
+            {!filterCliente && mostrarSugerenciasCliente && (
+              <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                backgroundColor: '#0d1117',
+                border: '1px solid #30363d',
+                borderRadius: '6px',
+                maxHeight: '320px',
+                overflowY: 'auto',
+                zIndex: 100,
+                marginTop: '4px',
+                boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
+              }}>
+                {clientesFiltradosBuscador.length === 0 ? (
+                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                    {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                      {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
+                    </div>
+                    {clientesFiltradosBuscador.map((cli: any) => (
+                      <div
+                        key={cli.id}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setFilterCliente(cli.id);
+                          setTextoBuscarCliente('');
+                          setMostrarSugerenciasCliente(false);
+                        }}
+                        style={{
+                          padding: '10px 12px',
+                          cursor: 'pointer',
+                          color: '#c9d1d9',
+                          fontSize: '0.88rem',
+                          borderBottom: '1px solid #21262d',
+                          transition: 'background-color 0.15s'
+                        }}
+                        onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                        onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
+                        {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ flex: '1 1 180px' }}>
@@ -738,6 +1182,12 @@ const ServiciosCompletados = () => {
               <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 36px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
             </div>
+            {/* ✅ NUEVO: aviso cuando se busca referencia sin cliente */}
+            {!filterCliente && busqueda.trim() && (
+              <div style={{ marginTop: '4px', fontSize: '0.7rem', color: '#fb923c' }}>
+                Búsqueda directa por referencia (sin cliente)
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', marginLeft: 'auto', paddingBottom: '2px' }}>
@@ -755,13 +1205,15 @@ const ServiciosCompletados = () => {
 
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            {cargandoOperaciones ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones completadas...</div>
+            {(cargandoOperaciones || buscandoRefRemota) ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
+                {buscandoRefRemota ? 'Buscando referencia...' : 'Cargando operaciones completadas...'}
+              </div>
             ) : (
               <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
-                    <th style={{ padding: '16px', width: '100px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                    <th style={{ padding: '16px', width: '150px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
                       Acciones
                     </th>
                     {columnasTabla.filter(c => c.visible).map(col => (
@@ -772,23 +1224,23 @@ const ServiciosCompletados = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {!filterCliente ? (
+                  {(!filterCliente && !busqueda.trim()) ? (
                     <tr>
                       <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e', fontWeight: '500' }}>
-                        Selecciona un cliente para ver sus servicios completados.
+                        Selecciona un cliente o escribe una referencia en el filtro general.
                       </td>
                     </tr>
                   ) : operacionesEnPantalla.length === 0 ? (
                     <tr>
                       <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
-                        Sin resultados para los filtros seleccionados.
+                        {!filterCliente ? 'No se encontró ninguna operación completada con esa referencia.' : 'Sin resultados para los filtros seleccionados.'}
                       </td>
                     </tr>
                   ) : (
                     operacionesEnPantalla.map((op: any) => (
                       <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
                         <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                          <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          <div className="actions-cell" style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                             <button 
                               type="button" 
                               title="Ver Detalles"
@@ -798,6 +1250,26 @@ const ServiciosCompletados = () => {
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </button>
+                            <button 
+                              type="button" 
+                              title="Editar"
+                              onClick={(e) => handleEditarOperacion(op, e)} 
+                              style={{ background: 'transparent', border: '1px solid #58a6ff', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(88, 166, 255, 0.1)'} 
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                            </button>
+                            <button 
+                              type="button" 
+                              title="Eliminar"
+                              onClick={(e) => handleEliminarOperacion(op, e)} 
+                              style={{ background: 'transparent', border: '1px solid #f85149', borderRadius: '4px', color: '#f85149', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(248, 81, 73, 0.1)'} 
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                             </button>
                           </div>
                         </td>
@@ -814,10 +1286,33 @@ const ServiciosCompletados = () => {
             )}
           </div>
 
-          {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
+          {operacionesFiltradas.length > 0 && !cargandoOperaciones && !buscandoRefRemota && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones completadas</div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones completadas
+                {filterCliente && hayMasOperaciones && <span style={{ color: '#fb923c', marginLeft: '8px' }}>(hay más disponibles)</span>}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {/* ✅ NUEVO: botón Cargar más (sólo aplica cuando hay cliente seleccionado) */}
+                {filterCliente && hayMasOperaciones && (
+                  <button
+                    onClick={cargarMasOperaciones}
+                    disabled={cargandoMas}
+                    style={{
+                      padding: '6px 14px',
+                      backgroundColor: cargandoMas ? '#0d1117' : '#D84315',
+                      color: cargandoMas ? '#484f58' : '#fff',
+                      border: '1px solid #D84315',
+                      borderRadius: '6px',
+                      cursor: cargandoMas ? 'not-allowed' : 'pointer',
+                      fontWeight: 'bold',
+                      fontSize: '0.85rem'
+                    }}
+                    title="Descargar el siguiente bloque de operaciones del cliente"
+                  >
+                    {cargandoMas ? 'Cargando...' : `+ Cargar más (${TAMANIO_PAGINA})`}
+                  </button>
+                )}
                 <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
                 <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
                 <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
@@ -888,6 +1383,14 @@ const ServiciosCompletados = () => {
                   <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
+                  </button>
+                  <button onClick={() => handleEditarOperacion(operacionViendo)} title="Editar Operación" style={{ ...btnSecondaryActionStyle, border: '1px solid #58a6ff', color: '#58a6ff' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    Editar
+                  </button>
+                  <button onClick={() => handleEliminarOperacion(operacionViendo)} title="Eliminar Operación" style={{ ...btnSecondaryActionStyle, border: '1px solid #f85149', color: '#f85149' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    Eliminar
                   </button>
                   <div style={{ width: '1px', height: '24px', backgroundColor: '#30363d', margin: '0 8px' }}></div>
                   <button onClick={() => setOperacionViendo(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', transition: '0.2s' }}>
@@ -1265,6 +1768,161 @@ const ServiciosCompletados = () => {
 
             <div className="form-actions detail-actions" style={{ padding: '16px 32px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
               <button onClick={() => setOperacionViendo(null)} className="btn btn-outline" style={{ padding: '10px 32px', borderRadius: '6px' }}>Cerrar Ficha</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: Editor integrado (sólo se usa si NO se pasó la prop onEditar) */}
+      {operacionEditando && (
+        <div className="modal-overlay" style={{ zIndex: 1600 }}>
+          <div className="form-card" style={{ maxWidth: '1000px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #58a6ff', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+
+            <div className="form-header" style={{ padding: '20px 28px 12px 28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem', fontWeight: 600 }}>Editar Operación</h2>
+                  <div style={{ marginTop: '6px', color: '#58a6ff', fontWeight: 'bold', fontSize: '1.05rem' }}>
+                    {operacionEditando.ref || operacionEditando.id?.substring(0,6)}
+                  </div>
+                </div>
+                <button onClick={() => { setOperacionEditando(null); setFormEdicion({}); }} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#fb923c' }}>
+                Editor rápido: los campos relacionados a catálogos (Cliente, Convenio, Origen/Destino, Remolque, Proveedor, Monedas) y las conversiones por tipo de cambio se gestionan en "Operaciones Activas".
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 28px', overflowX: 'auto', flexShrink: 0 }}>
+              {tabsDetalle.map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setPestañaEdicionActiva(tab.id)}
+                  style={{
+                    padding: '12px 16px', background: 'none', border: 'none',
+                    borderBottom: pestañaEdicionActiva === tab.id ? '2px solid #58a6ff' : '2px solid transparent',
+                    color: pestañaEdicionActiva === tab.id ? '#f0f6fc' : '#8b949e',
+                    cursor: 'pointer', fontWeight: pestañaEdicionActiva === tab.id ? '600' : 'normal',
+                    fontSize: '0.9rem', whiteSpace: 'nowrap'
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1 }}>
+              {(() => {
+                const lblStyle: any = { display: 'block', fontSize: '0.75rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '6px' };
+                const inputStyle: any = { width: '100%', padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' };
+                const roStyle: any = { ...inputStyle, backgroundColor: '#161b22', color: '#8b949e' };
+                const gridStyle: any = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' };
+
+                const campoTexto = (campo: string, label: string, span = 1, type = 'text') => (
+                  <div style={{ gridColumn: `span ${span}` }}>
+                    <label style={lblStyle}>{label}</label>
+                    <input type={type} value={formEdicion[campo] ?? ''} onChange={(e) => actualizarCampoEdicion(campo, e.target.value)} style={inputStyle} />
+                  </div>
+                );
+                const campoNum = (campo: string, label: string, span = 1) => (
+                  <div style={{ gridColumn: `span ${span}` }}>
+                    <label style={lblStyle}>{label}</label>
+                    <input type="number" step="0.01" value={formEdicion[campo] ?? ''} onChange={(e) => actualizarCampoEdicion(campo, e.target.value)} style={inputStyle} />
+                  </div>
+                );
+                const campoRO = (campo: string, label: string, span = 1) => (
+                  <div style={{ gridColumn: `span ${span}` }}>
+                    <label style={lblStyle}>{label} (calculado)</label>
+                    <input type="text" value={formatoMoneda(formEdicion[campo])} readOnly style={roStyle} />
+                  </div>
+                );
+                const campoArea = (campo: string, label: string) => (
+                  <div style={{ gridColumn: 'span 3' }}>
+                    <label style={lblStyle}>{label}</label>
+                    <textarea value={formEdicion[campo] ?? ''} onChange={(e) => actualizarCampoEdicion(campo, e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+                  </div>
+                );
+
+                if (pestañaEdicionActiva === 'general') {
+                  return (
+                    <div style={gridStyle}>
+                      {campoTexto('refCliente', 'Ref. Cliente')}
+                      {campoTexto('fechaServicio', 'Fecha de Servicio', 1, 'date')}
+                      {campoTexto('trafico', 'Tráfico')}
+                      {campoTexto('fechaCita', 'Fecha de Cita', 1, 'datetime-local')}
+                      {campoArea('observacionesEjecutivo', 'Observaciones Ejecutivo')}
+                    </div>
+                  );
+                }
+                if (pestañaEdicionActiva === 'pedimento') {
+                  return (
+                    <div style={gridStyle}>
+                      {campoTexto('clienteMercanciaNombre', 'Cliente (Mercancía)', 2)}
+                      {campoTexto('descripcionMercancia', 'Descripción Mercancía')}
+                      {campoTexto('cantidad', 'Cantidad (Enteros)')}
+                      {campoTexto('embalajeNombre', 'Embalaje')}
+                      {campoTexto('pesoKg', 'Peso (Kg)')}
+                      {campoTexto('numDoda', '# DODA')}
+                      {campoTexto('fechaEmisionDoda', 'Fecha Emisión DODA', 1, 'date')}
+                    </div>
+                  );
+                }
+                if (pestañaEdicionActiva === 'manifiestos') {
+                  return (
+                    <div style={gridStyle}>
+                      {campoTexto('numeroEntrys', "# de Entry's")}
+                      {campoTexto('cantEntrys', "Cantidad de Entry's")}
+                      {campoTexto('numManifiesto', '# Manifiesto')}
+                      {campoTexto('provServiciosNombre', 'Proveedor de Servicios', 2)}
+                      {campoNum('montoManifiesto', 'Costo Manifiesto ($)')}
+                    </div>
+                  );
+                }
+                if (pestañaEdicionActiva === 'unidad') {
+                  return (
+                    <div style={gridStyle}>
+                      {campoNum('totalAPagarProv', 'Monto a Pagar (Base)')}
+                      {campoNum('cargosAdicionalesProv', 'Costos Adicionales')}
+                      {campoRO('subtotalProv', 'Subtotal Prov.')}
+                      {campoNum('sueldoOperador', 'Sueldo Operador')}
+                      {campoNum('sueldoExtra', 'Sueldo Extra')}
+                      {campoRO('sueldoTotal', 'Sueldo Total')}
+                      {campoNum('combustible', 'Combustible')}
+                      {campoNum('combustibleExtra', 'Combustible Extra')}
+                      {campoRO('combustibleTotal', 'Total Combustible')}
+                      {campoTexto('unidadProveedor', 'Unidad Externa')}
+                      {campoTexto('operadorProveedor', 'Operador Externo', 2)}
+                      {campoArea('observacionesUnidad', 'Observaciones (Unidad / Proveedor)')}
+                    </div>
+                  );
+                }
+                if (pestañaEdicionActiva === 'cobrar') {
+                  return (
+                    <div style={gridStyle}>
+                      {campoNum('montoConvenioCliente', 'Convenio Seleccionado (Base)')}
+                      {campoNum('cargosAdicionales', 'Cargos Adicionales')}
+                      {campoRO('subtotalCliente', 'Subtotal Cliente')}
+                      {campoTexto('tipoCambioAprobado', 'Tipo de Cambio del Día')}
+                      <div></div><div></div>
+                      {campoArea('observacionesCobrar', 'Observaciones (Facturación / Cobro)')}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            <div style={{ padding: '16px 28px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
+              <button onClick={() => { setOperacionEditando(null); setFormEdicion({}); }} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }} disabled={guardandoEdicion}>Cancelar</button>
+              <button
+                onClick={guardarEdicion}
+                disabled={guardandoEdicion}
+                style={{ padding: '10px 28px', borderRadius: '6px', border: 'none', backgroundColor: guardandoEdicion ? '#0d1117' : '#238636', color: guardandoEdicion ? '#484f58' : '#fff', fontWeight: 'bold', cursor: guardandoEdicion ? 'not-allowed' : 'pointer' }}
+              >
+                {guardandoEdicion ? 'Guardando...' : 'Guardar Cambios'}
+              </button>
             </div>
           </div>
         </div>
