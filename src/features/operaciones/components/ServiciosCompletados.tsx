@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, orderBy, limit, where, startAfter, deleteDoc, doc, updateDoc } from 'firebase/firestore'; 
+import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
@@ -294,53 +294,51 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setCargandoMas(false);
   };
 
-  const cargarCatalogosSiEsNecesario = async () => {
-    if (Object.keys(catalogosGlobales).length > 0) return; 
-
-    const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
-    if (cacheCatStr) {
-      setCatalogosGlobales(JSON.parse(cacheCatStr));
-      return;
-    }
-
-    const [empSnap, opSnap, embSnap, remSnap, tarSnap, convProvSnap, convProvDetSnap, tcSnap, convCliSnap, convDetSnap, uniSnap, operSnap, statusSnap, uniProvSnap, opeProvSnap, monSnap] = await Promise.all([
-      getDocs(collection(db, 'empresas')), getDocs(collection(db, 'catalogo_tipo_operacion')),
-      getDocs(collection(db, 'catalogo_embalaje')), getDocs(collection(db, 'remolques')),
-      getDocs(collection(db, 'catalogo_tarifas_referencia')), getDocs(collection(db, 'convenios_proveedores')),
-      getDocs(collection(db, 'convenios_proveedores_detalles')), getDocs(collection(db, 'tipo_cambio')),
-      getDocs(collection(db, 'convenios_clientes')), getDocs(collection(db, 'convenios_clientes_detalles')),
-      getDocs(collection(db, 'unidades')), getDocs(collection(db, 'empleados')),
-      getDocs(collection(db, 'catalogo_status_servicio')), getDocs(collection(db, 'unidades_proveedor')),
-      getDocs(collection(db, 'proveedores_unidad')), getDocs(collection(db, 'catalogo_moneda'))
-    ]);
-
-    const catGuardados = {
-      empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      tiposOperacion: opSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      embalajes: embSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })), 
-      catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      unidades: uniSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      empleados: operSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      unidades_proveedor: uniProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoMoneda: monSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
-    };
-    
-    sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
-    setCatalogosGlobales(catGuardados);
+  // ✅ Catálogos en tiempo real vía onSnapshot: cualquier cambio hecho en otra
+  // pantalla (p.ej. tipo de cambio, convenios, empresas) se refleja aquí al
+  // instante, sin depender del caché en sessionStorage que antes podía quedar
+  // desactualizado durante toda la sesión.
+  const COLECCIONES_CATALOGOS: Record<string, string> = {
+    empresas: 'empresas',
+    tiposOperacion: 'catalogo_tipo_operacion',
+    embalajes: 'catalogo_embalaje',
+    remolques: 'remolques',
+    tarifas: 'catalogo_tarifas_referencia',
+    conveniosProv: 'convenios_proveedores',
+    catalogoConvProvDetalles: 'convenios_proveedores_detalles',
+    catalogoTC: 'tipo_cambio',
+    catalogoConvClientes: 'convenios_clientes',
+    catalogoConvDetalles: 'convenios_clientes_detalles',
+    unidades: 'unidades',
+    empleados: 'empleados',
+    statusServicio: 'catalogo_status_servicio',
+    unidades_proveedor: 'unidades_proveedor',
+    proveedores_unidad: 'proveedores_unidad',
+    catalogoMoneda: 'catalogo_moneda',
   };
 
-  // ✅ MODIFICADO: al montar solo cargamos catálogos (no operaciones).
+  const suscribirCatalogosEnVivo = () => {
+    return Object.entries(COLECCIONES_CATALOGOS).map(([alias, coleccion]) =>
+      onSnapshot(
+        collection(db, coleccion),
+        (snap) => {
+          const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+          setCatalogosGlobales((prev: any) => ({ ...prev, [alias]: data }));
+        },
+        (error) => console.error(`Error escuchando catálogo "${coleccion}":`, error)
+      )
+    );
+  };
+
+  // Se conserva como no-op para no tocar los puntos donde se invocaba antes
+  // de abrir formularios/modales: los catálogos ya quedan suscritos al montar.
+  const cargarCatalogosSiEsNecesario = async () => {};
+
+  // ✅ Al montar nos suscribimos a los catálogos en vivo.
   // Las operaciones se cargarán cuando el usuario elija un cliente.
-  useEffect(() => { 
-    cargarCatalogosSiEsNecesario();
+  useEffect(() => {
+    const unsubscribers = suscribirCatalogosEnVivo();
+    return () => unsubscribers.forEach((unsub) => unsub());
   }, []);
 
   // ✅ NUEVO: cuando cambia el cliente seleccionado, se hace la query específica.

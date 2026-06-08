@@ -1,6 +1,6 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore'; 
+import { collection, query, getDocs, onSnapshot, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 

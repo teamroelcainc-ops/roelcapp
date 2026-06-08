@@ -32,7 +32,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { FormularioOperacion } from './FormularioOperacion';
-import { collection, doc, writeBatch, query, getDocs, orderBy, limit, where, startAfter } from 'firebase/firestore'; 
+import { collection, doc, writeBatch, query, getDocs, onSnapshot, orderBy, limit, where, startAfter } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
@@ -168,75 +168,50 @@ const OperacionesDashboard = () => {
   };
 
   // =====================================================================
-  // ✅ TTL más agresivos para reducir lecturas de Firestore.
-  // Antes los catálogos se re-leían cada 6h o 24h. Como en producción casi
-  // nunca cambian, ahora los estables tienen TTL de 7 días. Si el usuario
-  // edita un catálogo, debe usar el botón "Forzar recarga" para invalidar.
+  // ✅ Catálogos en tiempo real: en lugar de leerlos una vez y cachearlos
+  // (con TTLs que hacían que cambios en otra pantalla tardaran horas/días en
+  // reflejarse aquí), nos suscribimos con onSnapshot. Cualquier alta/edición
+  // en estas colecciones —p.ej. tipo_cambio, convenios, empresas— se ve de
+  // inmediato en este formulario sin recargar la página.
+  // La suscripción se arma una sola vez (ver useEffect de montaje) y cada
+  // colección actualiza solo su alias dentro de `catalogosGlobales`.
   // =====================================================================
-  const cargarCatalogosSiEsNecesario = async () => {
-    if (Object.keys(catalogosGlobales).length > 0) return;
-
-    const DIA = 24 * 60 * 60 * 1000;
-    const SIETE_DIAS = 7 * DIA;
-
-    const mapeoColecciones: Record<string, { coleccion: string; ttl: number }> = {
-      // Catálogos estables que rara vez cambian → 7 días
-      statusServicio:            { coleccion: 'catalogo_status_servicio',       ttl: SIETE_DIAS },
-      tiposOperacion:            { coleccion: 'catalogo_tipo_operacion',        ttl: SIETE_DIAS },
-      embalajes:                 { coleccion: 'catalogo_embalaje',              ttl: SIETE_DIAS },
-      catalogoMoneda:            { coleccion: 'catalogo_moneda',                ttl: SIETE_DIAS },
-      tarifas:                   { coleccion: 'catalogo_tarifas_referencia',    ttl: SIETE_DIAS },
-      // Maestros con cambios ocasionales → 3 días
-      empresas:                  { coleccion: 'empresas',                       ttl: 3 * DIA },
-      remolques:                 { coleccion: 'remolques',                      ttl: 3 * DIA },
-      unidades:                  { coleccion: 'unidades',                       ttl: 3 * DIA },
-      empleados:                 { coleccion: 'empleados',                      ttl: 3 * DIA },
-      unidades_proveedor:        { coleccion: 'unidades_proveedor',             ttl: 3 * DIA },
-      proveedores_unidad:        { coleccion: 'proveedores_unidad',             ttl: 3 * DIA },
-      // Convenios cambian más seguido → 1 día
-      conveniosProv:             { coleccion: 'convenios_proveedores',          ttl: DIA },
-      catalogoConvProvDetalles:  { coleccion: 'convenios_proveedores_detalles', ttl: DIA },
-      catalogoConvClientes:      { coleccion: 'convenios_clientes',             ttl: DIA },
-      catalogoConvDetalles:      { coleccion: 'convenios_clientes_detalles',    ttl: DIA },
-      // TC se actualiza diariamente
-      catalogoTC:                { coleccion: 'tipo_cambio',                    ttl: 30 * 60 * 1000 },
-    };
-
-    const cargarUnCatalogo = async (alias: string, coleccion: string, ttlMs: number): Promise<[string, any[]]> => {
-      const lsKey = `cat_v1__${coleccion}`;
-      try {
-        const raw = localStorage.getItem(lsKey);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed && Array.isArray(parsed.data) && (Date.now() - parsed.ts) < ttlMs) {
-            return [alias, parsed.data];
-          }
-        }
-      } catch {}
-
-      console.warn(`[FIREBASE READ] Descargando "${coleccion}"...`);
-      const snap = await getDocs(collection(db, coleccion));
-      const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      try {
-        localStorage.setItem(lsKey, JSON.stringify({ data, ts: Date.now() }));
-      } catch (e) {
-        console.warn(`No se pudo cachear "${coleccion}":`, e);
-      }
-      return [alias, data];
-    };
-
-    try {
-      const entradas = await Promise.all(
-        Object.entries(mapeoColecciones).map(([alias, { coleccion, ttl }]) =>
-          cargarUnCatalogo(alias, coleccion, ttl)
-        )
-      );
-      const catGuardados = Object.fromEntries(entradas);
-      setCatalogosGlobales(catGuardados);
-    } catch (e) {
-      console.error('Error cargando catálogos:', e);
-    }
+  const COLECCIONES_CATALOGOS: Record<string, string> = {
+    statusServicio:            'catalogo_status_servicio',
+    tiposOperacion:            'catalogo_tipo_operacion',
+    embalajes:                 'catalogo_embalaje',
+    catalogoMoneda:            'catalogo_moneda',
+    tarifas:                   'catalogo_tarifas_referencia',
+    empresas:                  'empresas',
+    remolques:                 'remolques',
+    unidades:                  'unidades',
+    empleados:                 'empleados',
+    unidades_proveedor:        'unidades_proveedor',
+    proveedores_unidad:        'proveedores_unidad',
+    conveniosProv:             'convenios_proveedores',
+    catalogoConvProvDetalles:  'convenios_proveedores_detalles',
+    catalogoConvClientes:      'convenios_clientes',
+    catalogoConvDetalles:      'convenios_clientes_detalles',
+    catalogoTC:                'tipo_cambio',
   };
+
+  const suscribirCatalogosEnVivo = () => {
+    return Object.entries(COLECCIONES_CATALOGOS).map(([alias, coleccion]) =>
+      onSnapshot(
+        collection(db, coleccion),
+        (snap) => {
+          const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+          setCatalogosGlobales((prev: any) => ({ ...prev, [alias]: data }));
+        },
+        (error) => console.error(`Error escuchando catálogo "${coleccion}":`, error)
+      )
+    );
+  };
+
+  // Se mantiene como no-op para no tocar los puntos donde se invocaba antes
+  // de abrir formularios/modales: ahora los catálogos ya están suscritos
+  // desde el montaje del dashboard y se mantienen al día solos.
+  const cargarCatalogosSiEsNecesario = async () => {};
 
   // =====================================================================
   // ✅ DESCARGAR PÁGINA INICIAL DE OPERACIONES (limit 50 en vez de 150).
@@ -305,12 +280,13 @@ const OperacionesDashboard = () => {
     setCargandoMas(false);
   };
 
-  useEffect(() => { 
-    const init = async () => {
-      await cargarCatalogosSiEsNecesario();
-      await descargarOperaciones();
-    };
-    init();
+  useEffect(() => {
+    const unsubscribers = suscribirCatalogosEnVivo();
+    return () => unsubscribers.forEach((unsub) => unsub());
+  }, []);
+
+  useEffect(() => {
+    descargarOperaciones();
   }, []);
 
   useEffect(() => { setPaginaActual(1); }, [busqueda]);
