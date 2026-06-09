@@ -14,6 +14,18 @@ import {
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 
+// Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
+// orden:true -> la cabecera es clicable para ordenar por ese campo.
+const COLUMNAS_OPS_DIESEL_BASE = [
+  { id: 'ref',           label: 'Ref. Operación', visible: true, orden: true },
+  { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true, orden: true },
+  { id: 'unidad',        label: 'Unidad',          visible: true, orden: true },
+  { id: 'operador',      label: 'Operador',        visible: true, orden: true },
+  { id: 'origen',        label: 'Origen',          visible: true, orden: true },
+  { id: 'destino',       label: 'Destino',         visible: true, orden: true },
+  { id: 'diesel',        label: 'Diesel (Op)',     visible: true, orden: true },
+];
+
 export const ReferenciasDieselDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'referencias'>('referencias');
   
@@ -28,6 +40,17 @@ export const ReferenciasDieselDashboard = () => {
   const [filtroUnidad, setFiltroUnidad] = useState('');
   const [filtroOperador, setFiltroOperador] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
+
+  // Filtro Pendientes / Cargadas
+  const [filtroEstadoOps, setFiltroEstadoOps] = useState<'pendientes' | 'cargadas'>('pendientes');
+  // Orden de la tabla de operaciones
+  const [ordenOps, setOrdenOps] = useState<{ campo: string; dir: 'asc' | 'desc' }>({ campo: 'fechaServicio', dir: 'desc' });
+  // Configurador de columnas + rango de fechas de la tabla "Asignar Operaciones"
+  const [modalColumnasOps, setModalColumnasOps] = useState(false);
+  const [columnasOps, setColumnasOps] = useState(COLUMNAS_OPS_DIESEL_BASE.map(c => ({ ...c })));
+  const [draggedColOpsIndex, setDraggedColOpsIndex] = useState<number | null>(null);
+  const [fechaDesdeOps, setFechaDesdeOps] = useState('');
+  const [fechaHastaOps, setFechaHastaOps] = useState('');
 
   const [busquedaRef, setBusquedaRef] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
@@ -190,19 +213,136 @@ export const ReferenciasDieselDashboard = () => {
     });
   }, [proveedoresList]);
 
-  const operacionesPendientes = useMemo(() => {
-    if (!filtroUnidad) return []; 
+  // ──────────────────────────────────────────────────────────────────
+  // Operaciones de la unidad/operador (base), conteo y filtro por estado
+  // ──────────────────────────────────────────────────────────────────
+  // Base: todas las que coinciden con la unidad (y operador) seleccionados,
+  // estén o no asignadas a una referencia de diésel.
+  const operacionesBaseUnidad = useMemo(() => {
+    if (!filtroUnidad) return [];
     return operacionesGlobales.filter(op => {
       const opUnidad = getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad || '');
       const opOperador = getNombreOperador(op.operadorNombre || op.operadorId || op.operador || '');
-      const noAsignada = !op.referenciaDieselId;
-      
       const matchUnidad = opUnidad === filtroUnidad;
-      const matchOperador = filtroOperador ? opOperador === filtroOperador : true; 
-
-      return matchUnidad && matchOperador && noAsignada;
+      const matchOperador = filtroOperador ? opOperador === filtroOperador : true;
+      return matchUnidad && matchOperador;
     });
   }, [operacionesGlobales, filtroUnidad, filtroOperador, unidadesList, operadoresList]);
+
+  const esCargada = (op: any) => !!op.referenciaDieselId;
+
+  const conteoOps = useMemo(() => {
+    const pendientes = operacionesBaseUnidad.filter(op => !esCargada(op)).length;
+    const cargadas = operacionesBaseUnidad.filter(esCargada).length;
+    return { pendientes, cargadas };
+  }, [operacionesBaseUnidad]);
+
+  const valorOrdenOp = (op: any, campo: string): string | number => {
+    switch (campo) {
+      case 'ref': return String(op.ref || op.id || '').toLowerCase();
+      case 'fechaServicio': return String(op.fechaServicio || op.createdAt || '');
+      case 'unidad': return getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad).toLowerCase();
+      case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador).toLowerCase();
+      case 'origen': return String(op.origen || '').toLowerCase();
+      case 'destino': return String(op.destino || '').toLowerCase();
+      case 'diesel': return Number(op.combustibleTotal || 0);
+      default: return '';
+    }
+  };
+
+  // Rango de fechas (sobre fechaServicio). Vacío = sin límite.
+  const dentroRangoFecha = (op: any) => {
+    if (!fechaDesdeOps && !fechaHastaOps) return true;
+    const f = String(op.fechaServicio || op.createdAt || '').slice(0, 10);
+    if (!f) return false;
+    if (fechaDesdeOps && f < fechaDesdeOps) return false;
+    if (fechaHastaOps && f > fechaHastaOps) return false;
+    return true;
+  };
+
+  const operacionesMostradas = useMemo(() => {
+    if (!filtroUnidad) return [];
+    const lista = operacionesBaseUnidad.filter(op =>
+      (filtroEstadoOps === 'cargadas' ? esCargada(op) : !esCargada(op)) && dentroRangoFecha(op)
+    );
+    const dir = ordenOps.dir === 'asc' ? 1 : -1;
+    return [...lista].sort((a, b) => {
+      const va = valorOrdenOp(a, ordenOps.campo);
+      const vb = valorOrdenOp(b, ordenOps.campo);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb)) * dir;
+    });
+  }, [operacionesBaseUnidad, filtroUnidad, filtroEstadoOps, ordenOps, fechaDesdeOps, fechaHastaOps]);
+
+  const toggleOrdenOps = (campo: string) =>
+    setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
+
+  const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
+
+  // Valor textual/numérico de cada columna (para el Excel)
+  const valorCeldaOps = (op: any, key: string) => {
+    switch (key) {
+      case 'ref': return op.ref || op.id;
+      case 'fechaServicio': return formatearFechaSpanish(op.fechaServicio || op.createdAt);
+      case 'unidad': return getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad);
+      case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador);
+      case 'origen': return op.origen || '-';
+      case 'destino': return op.destino || '-';
+      case 'diesel': return Number(op.combustibleTotal || 0);
+      default: return '-';
+    }
+  };
+
+  // Celda con formato visual para la tabla
+  const renderCeldaOps = (op: any, key: string) => {
+    const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
+    switch (key) {
+      case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.ref || op.id.substring(0, 6)}</td>;
+      case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
+      case 'unidad': return <td key={key} style={tdBase}>{getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad)}</td>;
+      case 'operador': return <td key={key} style={tdBase}>{getNombreOperador(op.operadorNombre || op.operadorId || op.operador)}</td>;
+      case 'origen': return <td key={key} style={tdBase}>{op.origen || '-'}</td>;
+      case 'destino': return <td key={key} style={tdBase}>{op.destino || '-'}</td>;
+      case 'diesel': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{Number(op.combustibleTotal || 0).toFixed(2)}</td>;
+      default: return <td key={key} style={tdBase}>-</td>;
+    }
+  };
+
+  // Drag & drop / visibilidad de columnas de la tabla de operaciones
+  const handleDragStartOps = (_e: React.DragEvent, index: number) => setDraggedColOpsIndex(index);
+  const handleDragEnterOps = (index: number) => {
+    if (draggedColOpsIndex === null || draggedColOpsIndex === index) return;
+    const nuevas = [...columnasOps];
+    const movida = nuevas.splice(draggedColOpsIndex, 1)[0];
+    nuevas.splice(index, 0, movida);
+    setDraggedColOpsIndex(index);
+    setColumnasOps(nuevas);
+  };
+  const toggleColumnaVisibleOps = (index: number) => {
+    const nuevas = [...columnasOps];
+    nuevas[index].visible = !nuevas[index].visible;
+    setColumnasOps(nuevas);
+  };
+
+  // Exportar a Excel las operaciones mostradas (respeta unidad, operador,
+  // estado, rango de fechas y columnas/orden configurados).
+  const exportarExcelOps = () => {
+    if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
+    const cols = columnasOps.filter(c => c.visible);
+    if (cols.length === 0) return alert('Selecciona al menos una columna para exportar.');
+    const datos = operacionesMostradas.map(op => {
+      const fila: any = {};
+      cols.forEach(col => { fila[col.label] = valorCeldaOps(op, col.id); });
+      return fila;
+    });
+    const ws = XLSX.utils.json_to_sheet(datos);
+    const wb = XLSX.utils.book_new();
+    const etiqueta = filtroEstadoOps === 'cargadas' ? 'Cargadas' : 'Pendientes';
+    XLSX.utils.book_append_sheet(wb, ws, `Ops_${etiqueta}`);
+    const uni = (filtroUnidad || 'unidad').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+    const hoy = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `Operaciones_Diesel_${etiqueta}_${uni}_${hoy}.xlsx`);
+  };
 
   const toggleSeleccion = (id: string) => {
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
@@ -274,6 +414,10 @@ export const ReferenciasDieselDashboard = () => {
       });
 
       await batch.commit();
+      // Marcar localmente como cargadas para que salgan de "Pendientes"
+      setOperacionesGlobales(prev => prev.map(op =>
+        seleccionadas.includes(op.id) ? { ...op, referenciaDieselId: nuevoRefId, referenciaDieselConsecutivo: consecutivoFinal } : op
+      ));
       setModalAbierto(false);
       setSeleccionadas([]);
       
@@ -307,6 +451,11 @@ export const ReferenciasDieselDashboard = () => {
           });
         }
         await batch.commit();
+        // liberar localmente (vuelven a Pendientes)
+        const idsLiberadas: string[] = Array.isArray(refData.operacionesIds) ? refData.operacionesIds : [];
+        setOperacionesGlobales(prev => prev.map(op =>
+          idsLiberadas.includes(op.id) ? { ...op, referenciaDieselId: null, referenciaDieselConsecutivo: null } : op
+        ));
       } catch (error) {
         console.error("Error al eliminar referencia:", error);
         alert("Hubo un error al eliminar.");
@@ -418,6 +567,13 @@ export const ReferenciasDieselDashboard = () => {
     fontWeight: active ? 'bold' : 'normal' as any
   });
 
+  const thOrdenStyle: React.CSSProperties = { padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
+  const selectOrdenStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 10px', fontSize: '0.85rem' };
+  const btnDirStyle: React.CSSProperties = { backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
+  const dateInputStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '7px 10px', fontSize: '0.85rem', colorScheme: 'dark' };
+
+  const colsOpsVisibles = columnasOps.filter(c => c.visible).length + 1;
+
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
       <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Referencias del Diesel</h1>
@@ -459,15 +615,90 @@ export const ReferenciasDieselDashboard = () => {
               </select>
             </div>
             <button 
-              disabled={seleccionadas.length === 0} 
+              disabled={seleccionadas.length === 0 || filtroEstadoOps === 'cargadas'} 
               onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setModalAbierto(true); }}
-              style={{ padding: '10px 20px', backgroundColor: seleccionadas.length > 0 ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: seleccionadas.length > 0 ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+              style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
             >
               Generar Referencia ({seleccionadas.length})
             </button>
           </div>
 
-          {seleccionadas.length > 0 && (
+          {/* Filtros Pendientes / Cargadas + Orden */}
+          {filtroUnidad && (
+            <>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => { setFiltroEstadoOps('pendientes'); }}
+                  style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
+                    border: `1px solid ${filtroEstadoOps === 'pendientes' ? '#ef4444' : '#30363d'}`,
+                    backgroundColor: filtroEstadoOps === 'pendientes' ? 'rgba(239,68,68,0.15)' : 'transparent',
+                    color: filtroEstadoOps === 'pendientes' ? '#ef4444' : '#8b949e' }}>
+                  ● Pendientes ({conteoOps.pendientes})
+                </button>
+                <button onClick={() => { setFiltroEstadoOps('cargadas'); setSeleccionadas([]); }}
+                  style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
+                    border: `1px solid ${filtroEstadoOps === 'cargadas' ? '#10b981' : '#30363d'}`,
+                    backgroundColor: filtroEstadoOps === 'cargadas' ? 'rgba(16,185,129,0.15)' : 'transparent',
+                    color: filtroEstadoOps === 'cargadas' ? '#10b981' : '#8b949e' }}>
+                  ● Cargadas ({conteoOps.cargadas})
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
+                <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={selectOrdenStyle}>
+                  <option value="ref">Referencia</option>
+                  <option value="fechaServicio">Fecha Servicio</option>
+                  <option value="unidad">Unidad</option>
+                  <option value="operador">Operador</option>
+                  <option value="origen">Origen</option>
+                  <option value="destino">Destino</option>
+                  <option value="diesel">Diesel</option>
+                </select>
+                <button onClick={() => setOrdenOps(prev => ({ ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }))} style={btnDirStyle} title="Cambiar dirección">
+                  {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
+                </button>
+              </div>
+            </div>
+
+            {/* Rango de fechas + Configurar columnas + Exportar Excel */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>FECHA DESDE</label>
+                  <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={dateInputStyle} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>FECHA HASTA</label>
+                  <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={dateInputStyle} />
+                </div>
+                {(fechaDesdeOps || fechaHastaOps) && (
+                  <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">
+                    ✕ Limpiar fechas
+                  </button>
+                )}
+                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
+                  {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">
+                  ⚙ Configurar Columnas
+                </button>
+                <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
+                  style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
+                    cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
+                    backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
+                    color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
+                  ⬇ Exportar Excel ({filtroEstadoOps === 'cargadas' ? 'Cargadas' : 'Pendientes'})
+                </button>
+              </div>
+            </div>
+            </>
+          )}
+
+          {seleccionadas.length > 0 && filtroEstadoOps === 'pendientes' && (
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div style={{ borderRight: '1px solid #30363d' }}>
@@ -475,7 +706,6 @@ export const ReferenciasDieselDashboard = () => {
                   <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{seleccionadas.length}</span>
                 </div>
                 <div>
-                  {/* ✅ AQUÍ CAMBIÉ EL FORMATO PARA QUE MUESTRE SOLO NÚMERO DECIMAL */}
                   <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma Combustible Total</span>
                   <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenSeleccion.dieselTotal.toFixed(2)}</span>
                 </div>
@@ -496,33 +726,41 @@ export const ReferenciasDieselDashboard = () => {
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}></th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>REF. OPERACIÓN</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>FECHA SERVICIO</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>UNIDAD</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>OPERADOR</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>ORIGEN</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>DESTINO</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>DIESEL (OP)</th>
+                  {columnasOps.filter(c => c.visible).map(col => (
+                    <th key={col.id}
+                      style={col.orden ? thOrdenStyle : { padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}
+                      onClick={col.orden ? () => toggleOrdenOps(col.id) : undefined}>
+                      {col.label.toUpperCase()}{col.orden ? flechaOps(col.id) : ''}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {!filtroUnidad ? (
-                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona una Unidad en el filtro superior para buscar operaciones.</td></tr>
-                ) : operacionesPendientes.length === 0 ? (
-                  <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones pendientes para los filtros seleccionados.</td></tr>
+                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona una Unidad en el filtro superior para buscar operaciones.</td></tr>
+                ) : operacionesMostradas.length === 0 ? (
+                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
+                    {filtroEstadoOps === 'pendientes'
+                      ? 'No hay operaciones pendientes para los filtros seleccionados.'
+                      : 'No hay operaciones cargadas para los filtros seleccionados.'}
+                  </td></tr>
                 ) : (
-                  operacionesPendientes.map(op => (
-                    <tr key={op.id} onClick={() => toggleSeleccion(op.id)} style={{ cursor: 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
-                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}><input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} /></td>
-                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.ref || op.id.substring(0,6)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{getNombreOperador(op.operadorNombre || op.operadorId || op.operador)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.origen || '-'}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.destino || '-'}</td>
-                      <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{Number(op.combustibleTotal || 0).toFixed(2)}</td>
-                    </tr>
-                  ))
+                  operacionesMostradas.map(op => {
+                    const seleccionable = filtroEstadoOps === 'pendientes';
+                    return (
+                      <tr key={op.id} onClick={() => seleccionable && toggleSeleccion(op.id)}
+                        style={{ cursor: seleccionable ? 'pointer' : 'default', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
+                        <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {seleccionable ? (
+                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                          ) : (
+                            <span title={op.referenciaDieselConsecutivo || 'Cargada'} style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                          )}
+                        </td>
+                        {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id))}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -632,6 +870,32 @@ export const ReferenciasDieselDashboard = () => {
               <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas} style={{ padding: '8px 16px', cursor: (paginaActual === totalPaginas) ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Siguiente</button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ═══════════ MODAL CONFIGURAR COLUMNAS (Asignar Operaciones) ═══════════ */}
+      {modalColumnasOps && (
+        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
+              <button onClick={() => setModalColumnasOps(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '20px' }}>Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel.</p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {columnasOps.map((col, idx) => (
+                <li key={col.id} draggable onDragStart={(e) => handleDragStartOps(e, idx)} onDragEnter={() => handleDragEnterOps(idx)} onDragEnd={() => setDraggedColOpsIndex(null)} onDragOver={(e) => e.preventDefault()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColOpsIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisibleOps(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                  <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button onClick={() => setModalColumnasOps(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -759,7 +1023,6 @@ export const ReferenciasDieselDashboard = () => {
 
                 <div>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Suma de Diesel</span>
-                  {/* ✅ En la Ficha también le quitamos el formato de moneda */}
                   <span style={{ color: '#f0f6fc', fontSize: '1rem' }}>{Number(referenciaViendo.sumaDiesel || 0).toFixed(2)}</span>
                 </div>
                 <div>
