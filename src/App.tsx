@@ -33,6 +33,7 @@ import { ReferenciasDieselDashboard } from './features/diesel/components/Referen
 import { ReferenciasNominaDashboard } from './features/nominas/components/ReferenciasNominaDashboard';
 import { DeduccionesDashboard } from './features/empleados/components/DeduccionesDashboard';
 import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
+import { FacturacionProveedoresDashboard } from './features/facturacion/components/FacturacionProveedoresDashboard';
 
 import './App.css';
 
@@ -41,7 +42,7 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'referenciasDiesel' | 'referenciasNomina' | 'deducciones' | 'reportes'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasNomina' | 'deducciones' | 'reportes'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -133,7 +134,7 @@ function App() {
 
   const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
   const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes';
-  const esProveedoresActivo = moduloActivo === 'conveniosProveedores';
+  const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion';
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel';
@@ -193,6 +194,7 @@ function App() {
         {menuProveedoresAbierto && (
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosProveedores')}>Convenio de Proveedores</div>
+            <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionProveedores')}>Facturación</div>
           </div>
         )}
 
@@ -330,6 +332,7 @@ function App() {
         {moduloActivo === 'logs' && <LogsDashboard />}
         {moduloActivo === 'flujosOperacion' && <ConfiguradorStatus />}
         {moduloActivo === 'facturacionClientes' && <FacturacionClientesDashboard />}
+        {moduloActivo === 'facturacionProveedores' && <FacturacionProveedoresDashboard />}
         
       </div>
     </div>
