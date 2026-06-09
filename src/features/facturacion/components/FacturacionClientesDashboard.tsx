@@ -59,6 +59,21 @@ const COLUMNAS_FACTURA_BASE = [
   { id: 'createdAt', label: 'Registrada',  visible: false },
 ];
 
+// Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
+// orden:true -> la cabecera es clicable para ordenar por ese campo.
+const COLUMNAS_OPS_BASE = [
+  { id: 'ref',           label: 'Ref. Operación', visible: true,  orden: true },
+  { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true,  orden: true },
+  { id: 'cliente',       label: 'Cliente',         visible: true,  orden: true },
+  { id: 'cartaPorte',    label: 'Carta Porte',     visible: true,  orden: false },
+  { id: 'destino',       label: 'Destino',         visible: true,  orden: true },
+  { id: 'moneda',        label: 'Moneda',          visible: true,  orden: false },
+  { id: 'subtotal',      label: 'Subtotal',        visible: true,  orden: true },
+  { id: 'dolares',       label: 'Dólares',         visible: true,  orden: false },
+  { id: 'pesos',         label: 'Pesos',           visible: true,  orden: false },
+  { id: 'conv',          label: 'Conversión',      visible: true,  orden: true },
+];
+
 // ──────────────────────────────────────────────────────────────────────
 // Helpers de conversión (misma lógica que el formulario de Operaciones)
 // ──────────────────────────────────────────────────────────────────────
@@ -129,6 +144,12 @@ export const FacturacionClientesDashboard = () => {
   // ✅ (1) Columnas del historial
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasFactura, setColumnasFactura] = useState(COLUMNAS_FACTURA_BASE.map(c => ({ ...c })));
+  // Configurador de columnas + rango de fechas para la tabla "Asignar Operaciones"
+  const [modalColumnasOps, setModalColumnasOps] = useState(false);
+  const [columnasOps, setColumnasOps] = useState(COLUMNAS_OPS_BASE.map(c => ({ ...c })));
+  const [draggedColOpsIndex, setDraggedColOpsIndex] = useState<number | null>(null);
+  const [fechaDesdeOps, setFechaDesdeOps] = useState('');
+  const [fechaHastaOps, setFechaHastaOps] = useState('');
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
   // ✅ (4) Detalle de operación (al clicar referencia en la ficha de factura)
@@ -373,10 +394,20 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
+  // Rango de fechas (sobre fechaServicio). Vacío = sin límite.
+  const dentroRangoFecha = (op: any) => {
+    if (!fechaDesdeOps && !fechaHastaOps) return true;
+    const f = String(op.fechaServicio || op.createdAt || '').slice(0, 10);
+    if (!f) return false;
+    if (fechaDesdeOps && f < fechaDesdeOps) return false;
+    if (fechaHastaOps && f > fechaHastaOps) return false;
+    return true;
+  };
+
   const operacionesMostradas = useMemo(() => {
     if (!filtroCliente) return [];
     const lista = operacionesGlobales.filter(op =>
-      filtroEstadoOps === 'facturadas' ? esFacturada(op) : !esFacturada(op)
+      (filtroEstadoOps === 'facturadas' ? esFacturada(op) : !esFacturada(op)) && dentroRangoFecha(op)
     );
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
@@ -385,12 +416,84 @@ export const FacturacionClientesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [operacionesGlobales, filtroCliente, filtroEstadoOps, ordenOps, empresasList]);
+  }, [operacionesGlobales, filtroCliente, filtroEstadoOps, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
 
   const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
+
+  // Valor textual/numérico de cada columna (para el Excel)
+  const valorCeldaOps = (op: any, key: string, m: any) => {
+    switch (key) {
+      case 'ref': return op.numReferencia || op.referencia || op.ref || op.id;
+      case 'fechaServicio': return formatearFechaSpanish(op.fechaServicio || op.createdAt);
+      case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId);
+      case 'cartaPorte': return op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-';
+      case 'destino': return op.destinoNombre || op.destino || '-';
+      case 'moneda': return op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar);
+      case 'subtotal': return m.subtotal;
+      case 'dolares': return m.dol;
+      case 'pesos': return m.pes;
+      case 'conv': return m.conv;
+      default: return '-';
+    }
+  };
+
+  // Celda con formato visual para la tabla
+  const renderCeldaOps = (op: any, key: string, m: any) => {
+    const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
+    switch (key) {
+      case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.numReferencia || op.referencia || op.ref || op.id.substring(0, 6)}</td>;
+      case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
+      case 'cliente': return <td key={key} style={tdBase}>{getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId)}</td>;
+      case 'cartaPorte': return <td key={key} style={tdBase}>{op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-'}</td>;
+      case 'destino': return <td key={key} style={tdBase}>{op.destinoNombre || op.destino || '-'}</td>;
+      case 'moneda': return <td key={key} style={tdBase}>{op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar)}</td>;
+      case 'subtotal': return <td key={key} style={tdBase}>{formatoMoneda(m.subtotal)}</td>;
+      case 'dolares': return <td key={key} style={{ ...tdBase, color: '#10b981' }}>{formatoMoneda(m.dol)}</td>;
+      case 'pesos': return <td key={key} style={{ ...tdBase, color: '#3b82f6' }}>{formatoMoneda(m.pes)}</td>;
+      case 'conv': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.conv)}</td>;
+      default: return <td key={key} style={tdBase}>-</td>;
+    }
+  };
+
+  // Drag & drop / visibilidad de columnas de la tabla de operaciones
+  const handleDragStartOps = (_e: React.DragEvent, index: number) => setDraggedColOpsIndex(index);
+  const handleDragEnterOps = (index: number) => {
+    if (draggedColOpsIndex === null || draggedColOpsIndex === index) return;
+    const nuevas = [...columnasOps];
+    const movida = nuevas.splice(draggedColOpsIndex, 1)[0];
+    nuevas.splice(index, 0, movida);
+    setDraggedColOpsIndex(index);
+    setColumnasOps(nuevas);
+  };
+  const toggleColumnaVisibleOps = (index: number) => {
+    const nuevas = [...columnasOps];
+    nuevas[index].visible = !nuevas[index].visible;
+    setColumnasOps(nuevas);
+  };
+
+  // (3) Exportar a Excel las operaciones mostradas (respeta cliente, estado,
+  //     rango de fechas y columnas/orden configurados).
+  const exportarExcelOps = () => {
+    if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
+    const cols = columnasOps.filter(c => c.visible);
+    if (cols.length === 0) return alert('Selecciona al menos una columna para exportar.');
+    const datos = operacionesMostradas.map(op => {
+      const m = obtenerMontoOperacion(op);
+      const fila: any = {};
+      cols.forEach(col => { fila[col.label] = valorCeldaOps(op, col.id, m); });
+      return fila;
+    });
+    const ws = XLSX.utils.json_to_sheet(datos);
+    const wb = XLSX.utils.book_new();
+    const etiqueta = filtroEstadoOps === 'facturadas' ? 'Facturadas' : 'Pendientes';
+    XLSX.utils.book_append_sheet(wb, ws, `Ops_${etiqueta}`);
+    const cli = (nombreClienteSeleccionado || 'cliente').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+    const hoy = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `Operaciones_${etiqueta}_${cli}_${hoy}.xlsx`);
+  };
 
   // ──────────────────────────────────────────────────────────────────
   // Selección / resumen
@@ -660,6 +763,7 @@ export const FacturacionClientesDashboard = () => {
   const thOrdenStyle: React.CSSProperties = { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
   const selectOrdenStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 10px', fontSize: '0.85rem' };
   const btnDirStyle: React.CSSProperties = { backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
+  const dateInputStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '7px 10px', fontSize: '0.85rem', colorScheme: 'dark' };
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
@@ -721,6 +825,7 @@ export const FacturacionClientesDashboard = () => {
 
           {/* (6) Filtros Pendientes / Facturadas + (5) Orden */}
           {filtroCliente && (
+            <>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button onClick={() => { setFiltroEstadoOps('pendientes'); }}
@@ -754,6 +859,42 @@ export const FacturacionClientesDashboard = () => {
                 </button>
               </div>
             </div>
+
+            {/* (3) Rango de fechas + Configurar columnas + Exportar Excel */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'flex-end' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>FECHA DESDE</label>
+                  <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={dateInputStyle} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>FECHA HASTA</label>
+                  <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={dateInputStyle} />
+                </div>
+                {(fechaDesdeOps || fechaHastaOps) && (
+                  <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">
+                    ✕ Limpiar fechas
+                  </button>
+                )}
+                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
+                  {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}
+                </span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">
+                  ⚙ Configurar Columnas
+                </button>
+                <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
+                  style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
+                    cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
+                    backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
+                    color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
+                  ⬇ Exportar Excel ({filtroEstadoOps === 'facturadas' ? 'Facturadas' : 'Pendientes'})
+                </button>
+              </div>
+            </div>
+            </>
           )}
 
           {/* Resumen de selección */}
@@ -782,25 +923,22 @@ export const FacturacionClientesDashboard = () => {
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}></th>
-                  <th style={thOrdenStyle} onClick={() => toggleOrdenOps('ref')}>REF. OPERACIÓN{flechaOps('ref')}</th>
-                  <th style={thOrdenStyle} onClick={() => toggleOrdenOps('fechaServicio')}>FECHA SERVICIO{flechaOps('fechaServicio')}</th>
-                  <th style={thOrdenStyle} onClick={() => toggleOrdenOps('cliente')}>CLIENTE{flechaOps('cliente')}</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CARTA PORTE</th>
-                  <th style={thOrdenStyle} onClick={() => toggleOrdenOps('destino')}>DESTINO{flechaOps('destino')}</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>MONEDA</th>
-                  <th style={thOrdenStyle} onClick={() => toggleOrdenOps('subtotal')}>SUBTOTAL{flechaOps('subtotal')}</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>DÓLARES</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PESOS</th>
-                  <th style={thOrdenStyle} onClick={() => toggleOrdenOps('conv')}>CONVERSIÓN{flechaOps('conv')}</th>
+                  {columnasOps.filter(c => c.visible).map(col => (
+                    <th key={col.id}
+                      style={col.orden ? thOrdenStyle : { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}
+                      onClick={col.orden ? () => toggleOrdenOps(col.id) : undefined}>
+                      {col.label.toUpperCase()}{col.orden ? flechaOps(col.id) : ''}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {!filtroCliente ? (
-                  <tr><td colSpan={11} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona un Cliente en el filtro superior para ver las operaciones completadas.</td></tr>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona un Cliente en el filtro superior para ver las operaciones completadas.</td></tr>
                 ) : cargandoOperaciones ? (
-                  <tr><td colSpan={11} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando últimas 100 operaciones completadas del cliente...</td></tr>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando últimas 100 operaciones completadas del cliente...</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
                     {filtroEstadoOps === 'pendientes'
                       ? 'No hay operaciones pendientes de facturar para este cliente.'
                       : 'No hay operaciones facturadas para este cliente.'}
@@ -808,7 +946,6 @@ export const FacturacionClientesDashboard = () => {
                 ) : (
                   operacionesMostradas.map(op => {
                     const m = obtenerMontoOperacion(op);
-                    const facturada = esFacturada(op);
                     const seleccionable = filtroEstadoOps === 'pendientes';
                     return (
                       <tr key={op.id} onClick={() => seleccionable && toggleSeleccion(op.id)}
@@ -820,16 +957,7 @@ export const FacturacionClientesDashboard = () => {
                             <span title={op.facturaClienteInvoice || 'Facturada'} style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                           )}
                         </td>
-                        <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.numReferencia || op.referencia || op.ref || op.id.substring(0, 6)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.destinoNombre || op.destino || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatoMoneda(m.subtotal)}</td>
-                        <td style={{ padding: '16px', color: '#10b981', whiteSpace: 'nowrap' }}>{formatoMoneda(m.dol)}</td>
-                        <td style={{ padding: '16px', color: '#3b82f6', whiteSpace: 'nowrap' }}>{formatoMoneda(m.pes)}</td>
-                        <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.conv)}{facturada ? '' : ''}</td>
+                        {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
                       </tr>
                     );
                   })
@@ -980,6 +1108,32 @@ export const FacturacionClientesDashboard = () => {
             </ul>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
               <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ MODAL CONFIGURAR COLUMNAS (Asignar Operaciones) ═══════════ */}
+      {modalColumnasOps && (
+        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
+              <button onClick={() => setModalColumnasOps(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '20px' }}>Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel.</p>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+              {columnasOps.map((col, idx) => (
+                <li key={col.id} draggable onDragStart={(e) => handleDragStartOps(e, idx)} onDragEnter={() => handleDragEnterOps(idx)} onDragEnd={() => setDraggedColOpsIndex(null)} onDragOver={(e) => e.preventDefault()}
+                  style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColOpsIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisibleOps(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                  <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
+                </li>
+              ))}
+            </ul>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button onClick={() => setModalColumnasOps(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
