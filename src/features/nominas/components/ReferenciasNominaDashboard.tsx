@@ -12,8 +12,9 @@ import {
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 
-// Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
-// orden:true -> la cabecera es clicable para ordenar por ese campo.
+// Cargo que identifica a un "Operador" dentro de la colección empleados.
+const ID_CARGO_OPERADOR = 'edda3a2b';
+
 const COLUMNAS_OPS_NOMINA_BASE = [
   { id: 'ref',           label: 'Ref. Operación', visible: true, orden: true },
   { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true, orden: true },
@@ -24,42 +25,42 @@ const COLUMNAS_OPS_NOMINA_BASE = [
 ];
 
 export const ReferenciasNominaDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial'>('historial');
-  
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'prestamos'>('historial');
+
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [nominasGlobales, setNominasGlobales] = useState<any[]>([]);
-  
+
   // Catálogos
   const [operadoresList, setOperadoresList] = useState<any[]>([]);
   const [formasPagoList, setFormasPagoList] = useState<any[]>([]);
   const [bancosList, setBancosList] = useState<any[]>([]);
+  const [deduccionesList, setDeduccionesList] = useState<any[]>([]);
 
-  // Filtros Pestaña 1
+  // Filtros Pestaña 1 / Préstamos
   const [filtroOperador, setFiltroOperador] = useState('');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
+  const [textoBuscarOperador, setTextoBuscarOperador] = useState('');
+  const [mostrarSugerenciasOperador, setMostrarSugerenciasOperador] = useState(false);
 
-  // Filtro Pendientes / Asignadas
   const [filtroEstadoOps, setFiltroEstadoOps] = useState<'pendientes' | 'asignadas'>('pendientes');
-  // Orden de la tabla de operaciones
   const [ordenOps, setOrdenOps] = useState<{ campo: string; dir: 'asc' | 'desc' }>({ campo: 'fechaServicio', dir: 'desc' });
-  // Configurador de columnas de la tabla "Asignar Operaciones"
   const [modalColumnasOps, setModalColumnasOps] = useState(false);
   const [columnasOps, setColumnasOps] = useState(COLUMNAS_OPS_NOMINA_BASE.map(c => ({ ...c })));
   const [draggedColOpsIndex, setDraggedColOpsIndex] = useState<number | null>(null);
 
-  // Paginación y Búsqueda
   const [busquedaHistorial, setBusquedaHistorial] = useState('');
+  const [filtroEstadoHist, setFiltroEstadoHist] = useState<'pendientes' | 'pagadas'>('pendientes');
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
-  // Estado del Modal de Nómina
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [nominaViendo, setNominaViendo] = useState<any | null>(null);
+  const [pestanaModalNomina, setPestanaModalNomina] = useState<'general' | 'referencia' | 'deducciones' | 'totales'>('general');
 
-  // Campos del Formulario
+  // Cabecera del formulario
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0]);
   const [formaPagoSeleccionada, setFormaPagoSeleccionada] = useState('');
   const [bancoSeleccionado, setBancoSeleccionado] = useState('');
@@ -67,67 +68,60 @@ export const ReferenciasNominaDashboard = () => {
   const [consecutivoForm, setConsecutivoForm] = useState('');
   const [notaDepositos, setNotaDepositos] = useState('');
 
-  // Campos de Moneda
-  const [nomina, setNomina] = useState<number | ''>('');
-  const [diferenciaAplicable, setDiferenciaAplicable] = useState<number | ''>('');
-  const [infonavit, setInfonavit] = useState<number | ''>('');
-  const [imss, setImss] = useState<number | ''>('');
-  const [isr, setIsr] = useState<number | ''>('');
+  // EDITABLES (deducciones se precargan de la colección pero se pueden modificar)
   const [extras, setExtras] = useState<number | ''>('');
-  const [depositoGastos, setDepositoGastos] = useState<number | ''>('');
-  const [saldoPrestamo, setSaldoPrestamo] = useState<number | ''>('');
-  const [ahorro, setAhorro] = useState<number | ''>('');
-  const [ahorroAcumulado, setAhorroAcumulado] = useState<number | ''>('');
-  const [prestamo, setPrestamo] = useState<number | ''>('');
-  const [pagoPrestamo, setPagoPrestamo] = useState<number | ''>('');
-  const [vacaciones, setVacaciones] = useState<number | ''>('');
-  const [pagarAhorro, setPagarAhorro] = useState<number | ''>('');
+  const [infonavit, setInfonavit] = useState<number | ''>('');
   const [fonacot, setFonacot] = useState<number | ''>('');
+  const [imss, setImss] = useState<number | ''>('');
+  const [isr, setIsr] = useState<number | ''>('');                 // factor (ej. 0.075)
+  const [prestamoNuevo, setPrestamoNuevo] = useState<number | ''>(''); // préstamo otorgado en esta nómina
+  const [pagoPrestamo, setPagoPrestamo] = useState<number | ''>('');
+  const [depositoGastos, setDepositoGastos] = useState<number | ''>('');
   const [otrosDepositos, setOtrosDepositos] = useState<number | ''>('');
-  const [otrasDeducciones, setOtrasDeducciones] = useState<number | ''>('');
-  const [fonacotInicial, setFonacotInicial] = useState<number | ''>('');
-  const [saldo, setSaldo] = useState<number | ''>('');
-  const [masDepositos, setMasDepositos] = useState<number | ''>('');
+  const [pagarAhorro, setPagarAhorro] = useState(false);
 
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // ✅ 1. CARGA DEL HISTORIAL DE NÓMINAS (Lectura Mínima)
   useEffect(() => {
     const qNominas = query(collection(db, 'referencias_nomina'), orderBy('createdAt', 'desc'), limit(400));
     const unSubNominas = onSnapshot(qNominas, (snap) => {
-      const noms = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      setNominasGlobales(noms);
+      setNominasGlobales(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     });
     return () => unSubNominas();
   }, []);
 
-  // ✅ 2. LAZY LOAD DE OPERACIONES Y CATÁLOGOS AL ENTRAR A ASIGNAR
   useEffect(() => {
-    if (activeTab !== 'operaciones') return;
+    if (activeTab !== 'operaciones' && activeTab !== 'prestamos') return;
 
-    const unSubEmpleados = onSnapshot(collection(db, 'empleados'), (snap) => {
+    const subs: Array<() => void> = [];
+
+    // Empleados + Deducciones se necesitan en ambas pestañas (operaciones y préstamos)
+    subs.push(onSnapshot(collection(db, 'empleados'), (snap) => {
       setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
+    }));
+    subs.push(onSnapshot(collection(db, 'deducciones'), (snap) => {
+      setDeduccionesList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }));
 
-    const unSubFormas = onSnapshot(collection(db, 'catalogo_formas_pago'), (snap) => {
-      setFormasPagoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
+    if (activeTab === 'operaciones') {
+      subs.push(onSnapshot(collection(db, 'catalogo_formas_pago'), (snap) => {
+        setFormasPagoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      }));
+      subs.push(onSnapshot(collection(db, 'catalogo_bancos'), (snap) => {
+        setBancosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      }));
+      const qOps = query(collection(db, 'operaciones'), limit(500));
+      subs.push(onSnapshot(qOps, (snap) => {
+        const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        ops.sort((a: any, b: any) => new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime());
+        setOperacionesGlobales(ops);
+      }));
+    }
 
-    const unSubBancos = onSnapshot(collection(db, 'catalogo_bancos'), (snap) => {
-      setBancosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
-
-    const qOps = query(collection(db, 'operaciones'), limit(500));
-    const unSubOperaciones = onSnapshot(qOps, (snap) => {
-      const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      ops.sort((a: any, b: any) => new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime());
-      setOperacionesGlobales(ops);
-    });
-
-    return () => { unSubEmpleados(); unSubFormas(); unSubBancos(); unSubOperaciones(); };
+    return () => subs.forEach(u => u());
   }, [activeTab]);
 
   const generarConsecutivo = (fechaStr: string) => {
@@ -156,32 +150,47 @@ export const ReferenciasNominaDashboard = () => {
 
   const formatearFechaSpanish = (fechaString: string) => {
     if (!fechaString) return '-';
-    try { 
-      return new Date(fechaString + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }); 
-    } catch { return fechaString; }
+    try { return new Date(fechaString + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }); }
+    catch { return fechaString; }
   };
 
-  // ✅ FILTRO ESTRICTO DE OPERACIONES
-  const operadoresOptions = useMemo(() => {
-    const names = operadoresList.map(emp => `${emp.firstName || ''} ${emp.lastNamePaternal || ''}`.trim()).filter(Boolean);
-    return Array.from(new Set(names)).sort();
-  }, [operadoresList]);
+  const tieneCargoOperador = (emp: any) => {
+    const c = emp?.cargoId ?? emp?.cargo ?? '';
+    if (Array.isArray(c)) return c.some((x: any) => String(x).includes(ID_CARGO_OPERADOR));
+    if (c && typeof c === 'object') return Object.values(c).some((v: any) => String(v).includes(ID_CARGO_OPERADOR));
+    return String(c).includes(ID_CARGO_OPERADOR);
+  };
 
-  // ──────────────────────────────────────────────────────────────────
-  // Operaciones del operador/rango (base), conteo y filtro por estado
-  // ──────────────────────────────────────────────────────────────────
-  const filtrosCompletos = !!filtroOperador && !!fechaInicio && !!fechaFin;
+  const operadoresFiltradosBuscador = useMemo(() => {
+    const lista = operadoresList
+      .filter(tieneCargoOperador)
+      .map(e => ({ id: e.id, nombre: `${e.firstName || ''} ${e.lastNamePaternal || ''}`.trim() }))
+      .filter(o => o.nombre);
+    const unicos = Array.from(new Map(lista.map(o => [o.nombre, o])).values())
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+    if (!textoBuscarOperador.trim()) return unicos.slice(0, 30);
+    const q = textoBuscarOperador.toLowerCase().trim();
+    return unicos.filter(o => o.nombre.toLowerCase().includes(q)).slice(0, 30);
+  }, [operadoresList, textoBuscarOperador]);
 
-  // Base: todas las que coinciden con el operador y rango de fechas, estén o
-  // no asignadas a una nómina.
+  const filtrosCompletos = !!filtroOperador;
+
+  const dentroRangoFecha = (opFecha: string) => {
+    if (!fechaInicio && !fechaFin) return true;
+    const f = String(opFecha || '').slice(0, 10);
+    if (!f) return false;
+    if (fechaInicio && f < fechaInicio) return false;
+    if (fechaFin && f > fechaFin) return false;
+    return true;
+  };
+
   const operacionesBaseFiltro = useMemo(() => {
     if (!filtrosCompletos) return [];
     return operacionesGlobales.filter(op => {
       const opOperador = getNombreOperador(op.operadorNombre || op.operadorId || op.operador || '');
       const opFecha = op.fechaServicio || op.fecha || '';
       const matchOperador = opOperador === filtroOperador;
-      const matchFecha = opFecha >= fechaInicio && opFecha <= fechaFin;
-      return matchOperador && matchFecha;
+      return matchOperador && dentroRangoFecha(opFecha);
     });
   }, [operacionesGlobales, filtroOperador, fechaInicio, fechaFin, filtrosCompletos, operadoresList]);
 
@@ -221,10 +230,8 @@ export const ReferenciasNominaDashboard = () => {
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
-
   const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
-  // Valor textual/numérico de cada columna (para el Excel)
   const valorCeldaOps = (op: any, key: string) => {
     switch (key) {
       case 'ref': return op.ref || op.id;
@@ -237,7 +244,6 @@ export const ReferenciasNominaDashboard = () => {
     }
   };
 
-  // Celda con formato visual para la tabla
   const renderCeldaOps = (op: any, key: string) => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
@@ -251,7 +257,6 @@ export const ReferenciasNominaDashboard = () => {
     }
   };
 
-  // Drag & drop / visibilidad de columnas de la tabla de operaciones
   const handleDragStartOps = (_e: React.DragEvent, index: number) => setDraggedColOpsIndex(index);
   const handleDragEnterOps = (index: number) => {
     if (draggedColOpsIndex === null || draggedColOpsIndex === index) return;
@@ -267,8 +272,6 @@ export const ReferenciasNominaDashboard = () => {
     setColumnasOps(nuevas);
   };
 
-  // Exportar a Excel las operaciones mostradas (respeta operador, rango de
-  // fechas, estado y columnas/orden configurados).
   const exportarExcelOps = () => {
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
     const cols = columnasOps.filter(c => c.visible);
@@ -304,81 +307,135 @@ export const ReferenciasNominaDashboard = () => {
     return { subtotal, refs };
   }, [seleccionadas, operacionesGlobales]);
 
-  // ✅ GUARDADO DE LA NÓMINA (Desnormalizado Estricto)
+  // ── Deducciones del operador (empleadoId === operadorId) ──
+  const operadorIdSeleccionado = useMemo(() => {
+    const f = operadoresList.find(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() === filtroOperador.trim());
+    return f?.id || '';
+  }, [operadoresList, filtroOperador]);
+
+  const deduccionOperador = useMemo(() => {
+    if (!operadorIdSeleccionado) return null;
+    return deduccionesList.find(d => String(d.empleadoId) === String(operadorIdSeleccionado)) || null;
+  }, [deduccionesList, operadorIdSeleccionado]);
+
+  const dNominaFiscal     = Number(deduccionOperador?.nominaFiscal || 0);
+  const dInfonavit        = Number(deduccionOperador?.infonavit ?? deduccionOperador?.Infonavit ?? 0);
+  const dFonacot          = Number(deduccionOperador?.fonacot ?? deduccionOperador?.Fonacot ?? 0);
+  const dImss             = Number(deduccionOperador?.IMSS ?? deduccionOperador?.imss ?? 0);
+  const dIsr              = Number(deduccionOperador?.ISR ?? deduccionOperador?.isr ?? 0);   // factor (ej. 0.075)
+  const dPrestamoAcumulado = Number(deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0); // saldo acumulado actual
+  const dAhorroMonto      = Number(deduccionOperador?.ahorro || 0);
+  const dAhorroAcumulado  = Number(deduccionOperador?.ahorroAcumulado || 0);
+
+  // ── Totales calculados ──
+  const subtotalReferencias     = resumenSeleccion.subtotal;
+  const subtotalAPagarCalc      = subtotalReferencias + (Number(extras) || 0);
+  const diferenciaAplicableCalc = subtotalAPagarCalc - dNominaFiscal;
+  const isrMontoCalc            = (Number(isr) || 0) * subtotalAPagarCalc;
+  // Préstamo acumulado tras sumar el préstamo otorgado en esta nómina
+  const prestamoAcumuladoTotal  = dPrestamoAcumulado + (Number(prestamoNuevo) || 0);
+  const saldoPrestamoCalc       = prestamoAcumuladoTotal - (Number(pagoPrestamo) || 0);
+  const totalDeduccionesCalc    = (Number(infonavit) || 0) + (Number(imss) || 0) + isrMontoCalc + (Number(fonacot) || 0);
+  const totalNetoCalc           = subtotalAPagarCalc - totalDeduccionesCalc;
+  const ahorroAcumuladoNuevo    = pagarAhorro ? 0 : (dAhorroAcumulado + dAhorroMonto);
+  const totalAPagarCalc         = totalNetoCalc + (Number(depositoGastos) || 0) + (Number(otrosDepositos) || 0);
+
+  const abrirModalNomina = () => {
+    setConsecutivoForm(generarConsecutivo(fechaPago));
+    setPestanaModalNomina('general');
+    // Precarga editable desde la colección deducciones
+    setInfonavit(dInfonavit || '');
+    setFonacot(dFonacot || '');
+    setImss(dImss || '');
+    setIsr(dIsr || '');
+    setPrestamoNuevo('');
+    setPagoPrestamo('');
+    setExtras('');
+    setDepositoGastos('');
+    setOtrosDepositos('');
+    setPagarAhorro(false);
+    setModalAbierto(true);
+  };
+
   const handleGuardarNomina = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formaPagoSeleccionada || !bancoSeleccionado) {
+      setPestanaModalNomina('totales');
+      return alert('Selecciona la Forma de Pago y el Banco en la pestaña Totales.');
+    }
     setGuardando(true);
     try {
       const batch = writeBatch(db);
       const nuevoId = doc(collection(db, 'referencias_nomina')).id;
       const consecutivoFinal = generarConsecutivo(fechaPago);
 
-      const foundOp = operadoresList.find(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() === filtroOperador.trim());
-
-      // Creamos un array estático con los textos de las operaciones para no depender de la DB después
       const operacionesResumenEstable = seleccionadas.map(id => {
         const op = operacionesGlobales.find(o => o.id === id);
-        return {
-          id: id,
-          ref: op?.ref || id.substring(0,6),
-          sueldo: Number(op?.sueldoTotal || op?.sueldoOperador || 0)
-        };
+        return { id, ref: op?.ref || id.substring(0,6), sueldo: Number(op?.sueldoTotal || op?.sueldoOperador || 0) };
       });
 
       const data = {
         consecutivo: consecutivoFinal,
-        fechaPago: fechaPago,
-        fechaInicio: fechaInicio,
-        fechaFin: fechaFin,
-        operadorId: foundOp ? foundOp.id : null,
-        operadorNombre: filtroOperador, // Valor estático
-        operacionesIds: seleccionadas, // Para lógica interna
-        operacionesGuardadas: operacionesResumenEstable, // ✅ Textos estáticos listos para renderizar
-        subtotalPagar: resumenSeleccion.subtotal,
+        fechaPago, fechaInicio, fechaFin,
+        operadorId: operadorIdSeleccionado || null,
+        operadorNombre: filtroOperador,
+        deduccionId: deduccionOperador?.id || null,
+        operacionesIds: seleccionadas,
+        operacionesGuardadas: operacionesResumenEstable,
         statusPagado: statusPagado === 'Pagada',
-        
-        // Monetarios
-        nomina: Number(nomina),
-        diferenciaAplicable: Number(diferenciaAplicable),
+
+        nominaFiscal: dNominaFiscal,
+        subtotalPagar: subtotalReferencias,
+        extras: Number(extras),
+        subtotalAPagar: subtotalAPagarCalc,
+        diferenciaAplicable: diferenciaAplicableCalc,
+
         infonavit: Number(infonavit),
+        fonacot: Number(fonacot),
         imss: Number(imss),
         isr: Number(isr),
-        extras: Number(extras),
-        depositoGastos: Number(depositoGastos),
-        saldoPrestamo: Number(saldoPrestamo),
-        ahorro: Number(ahorro),
-        ahorroAcumulado: Number(ahorroAcumulado),
-        prestamo: Number(prestamo),
+        isrMonto: isrMontoCalc,
+
+        // Préstamo: otorgado en esta nómina, acumulado previo, pago y saldo resultante
+        prestamoOtorgado: Number(prestamoNuevo),
+        prestamoAcumuladoPrevio: dPrestamoAcumulado,
+        prestamoAcumulado: prestamoAcumuladoTotal,
         pagoPrestamo: Number(pagoPrestamo),
-        vacaciones: Number(vacaciones),
-        pagarAhorro: Number(pagarAhorro),
-        fonacot: Number(fonacot),
+        saldoPrestamo: saldoPrestamoCalc,
+
+        ahorro: dAhorroMonto,
+        ahorroPagado: pagarAhorro,
+        ahorroAcumulado: ahorroAcumuladoNuevo,
+
+        totalDeducciones: totalDeduccionesCalc,
+        total: totalNetoCalc,
+        depositoGastos: Number(depositoGastos),
         otrosDepositos: Number(otrosDepositos),
-        otrasDeducciones: Number(otrasDeducciones),
-        fonacotInicial: Number(fonacotInicial),
-        saldo: Number(saldo),
-        masDepositos: Number(masDepositos),
-        
-        // Catálogos estáticos
+        totalAPagar: totalAPagarCalc,
+
         formaPagoId: formaPagoSeleccionada,
         formaPagoNombre: getNombreFormaPago(formaPagoSeleccionada),
         bancoPagoId: bancoSeleccionado,
         bancoPagoNombre: getNombreBanco(bancoSeleccionado),
-        notaDepositos: notaDepositos,
+        notaDepositos,
         createdAt: new Date().toISOString()
       };
 
       batch.set(doc(db, 'referencias_nomina', nuevoId), data);
-      
-      seleccionadas.forEach(id => {
-        batch.update(doc(db, 'operaciones', id), { 
-          referenciaNominaId: nuevoId, 
-          referenciaNominaConsecutivo: consecutivoFinal 
+
+      // Actualiza la colección deducciones: nuevo saldo de préstamo y ahorro acumulado.
+      if (deduccionOperador?.id) {
+        batch.update(doc(db, 'deducciones', deduccionOperador.id), {
+          prestamo: saldoPrestamoCalc,
+          ahorroAcumulado: ahorroAcumuladoNuevo,
         });
+      }
+
+      seleccionadas.forEach(id => {
+        batch.update(doc(db, 'operaciones', id), { referenciaNominaId: nuevoId, referenciaNominaConsecutivo: consecutivoFinal });
       });
 
       await batch.commit();
-      // Marcar localmente como asignadas para que salgan de "Pendientes"
       const idsAsignadas = [...seleccionadas];
       setOperacionesGlobales(prev => prev.map(op =>
         idsAsignadas.includes(op.id) ? { ...op, referenciaNominaId: nuevoId, referenciaNominaConsecutivo: consecutivoFinal } : op
@@ -401,17 +458,12 @@ export const ReferenciasNominaDashboard = () => {
       try {
         const batch = writeBatch(db);
         batch.delete(doc(db, 'referencias_nomina', nomData.id));
-
         if (Array.isArray(nomData.operacionesIds)) {
           nomData.operacionesIds.forEach((opId: string) => {
-            batch.update(doc(db, 'operaciones', opId), {
-              referenciaNominaId: null,
-              referenciaNominaConsecutivo: null
-            });
+            batch.update(doc(db, 'operaciones', opId), { referenciaNominaId: null, referenciaNominaConsecutivo: null });
           });
         }
         await batch.commit();
-        // liberar localmente (vuelven a Pendientes)
         const idsLiberadas: string[] = Array.isArray(nomData.operacionesIds) ? nomData.operacionesIds : [];
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, referenciaNominaId: null, referenciaNominaConsecutivo: null } : op
@@ -424,30 +476,56 @@ export const ReferenciasNominaDashboard = () => {
   };
 
   const resetFormulario = () => {
-    setNomina(''); setDiferenciaAplicable(''); setInfonavit(''); setImss(''); setIsr('');
-    setExtras(''); setDepositoGastos(''); setSaldoPrestamo(''); setAhorro('');
-    setAhorroAcumulado(''); setPrestamo(''); setPagoPrestamo(''); setVacaciones('');
-    setPagarAhorro(''); setFonacot(''); setOtrosDepositos(''); setOtrasDeducciones('');
-    setFonacotInicial(''); setSaldo(''); setMasDepositos(''); setNotaDepositos('');
-    setFormaPagoSeleccionada(''); setBancoSeleccionado(''); setStatusPagado('Pendiente');
+    setExtras(''); setInfonavit(''); setFonacot(''); setImss(''); setIsr('');
+    setPrestamoNuevo(''); setPagoPrestamo(''); setDepositoGastos(''); setOtrosDepositos('');
+    setPagarAhorro(false);
+    setNotaDepositos(''); setFormaPagoSeleccionada(''); setBancoSeleccionado(''); setStatusPagado('Pendiente');
+    setPestanaModalNomina('general');
   };
 
-  // ✅ FILTRADO Y PAGINACIÓN HISTORIAL
-  const historialFiltrado = useMemo(() => {
+  const historialBusqueda = useMemo(() => {
     const t = busquedaHistorial.toLowerCase();
-    return nominasGlobales.filter(n => 
-      n.consecutivo?.toLowerCase().includes(t) || 
+    return nominasGlobales.filter(n =>
+      n.consecutivo?.toLowerCase().includes(t) ||
       (n.operadorNombre || n.operadorId || '').toLowerCase().includes(t)
     );
   }, [nominasGlobales, busquedaHistorial]);
+
+  const conteoHist = useMemo(() => {
+    const pagadas = historialBusqueda.filter(n => !!n.statusPagado).length;
+    return { pendientes: historialBusqueda.length - pagadas, pagadas };
+  }, [historialBusqueda]);
+
+  const historialFiltrado = useMemo(() =>
+    historialBusqueda.filter(n => filtroEstadoHist === 'pagadas' ? !!n.statusPagado : !n.statusPagado),
+  [historialBusqueda, filtroEstadoHist]);
 
   const totalPaginas = Math.ceil(historialFiltrado.length / registrosPorPagina);
   const indexLast = paginaActual * registrosPorPagina;
   const indexFirst = indexLast - registrosPorPagina;
   const registrosVisibles = historialFiltrado.slice(indexFirst, indexLast);
-
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
+
+  useEffect(() => { setPaginaActual(1); }, [busquedaHistorial, filtroEstadoHist]);
+
+  // Marcar una nómina como Pagada / Pendiente
+  const handleTogglePagoNomina = async (e: React.MouseEvent, nom: any) => {
+    e.stopPropagation();
+    const nuevoPagado = !nom.statusPagado;
+    const accion = nuevoPagado ? 'marcar como PAGADA' : 'regresar a PENDIENTE';
+    if (!window.confirm(`¿Deseas ${accion} la nómina ${nom.consecutivo}?`)) return;
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'referencias_nomina', nom.id), { statusPagado: nuevoPagado });
+      await batch.commit();
+      // onSnapshot refrescará la lista; actualizamos localmente por si acaso
+      setNominasGlobales(prev => prev.map(n => n.id === nom.id ? { ...n, statusPagado: nuevoPagado } : n));
+    } catch (error) {
+      console.error('Error al actualizar estatus de nómina:', error);
+      alert('No se pudo actualizar el estatus de la nómina.');
+    }
+  };
 
   const exportarCSV = () => {
     if (historialFiltrado.length === 0) return alert("No hay datos para exportar.");
@@ -457,20 +535,69 @@ export const ReferenciasNominaDashboard = () => {
       'Fecha Pago': formatearFechaSpanish(n.fechaPago),
       'Semana': `${formatearFechaSpanish(n.fechaInicio)} al ${formatearFechaSpanish(n.fechaFin)}`,
       'Status': n.statusPagado ? 'PAGADA' : 'PENDIENTE',
-      'Subtotal Ops': n.subtotalPagar,
-      'Nómina': n.nomina,
-      'Banco': n.bancoPagoNombre || n.bancoPagoId,
-      'Forma Pago': n.formaPagoNombre || n.formaPagoId,
+      'Subtotal Referencias': n.subtotalPagar,
+      'Extra': n.extras,
+      'Subtotal a Pagar': n.subtotalAPagar,
+      'Nómina Fiscal': n.nominaFiscal ?? n.nomina,
+      'Diferencia Aplicable': n.diferenciaAplicable,
+      'Infonavit': n.infonavit,
+      'Fonacot': n.fonacot,
       'IMSS': n.imss,
       'ISR': n.isr,
-      'Infonavit': n.infonavit,
+      'ISR Monto': n.isrMonto,
+      'Préstamo Otorgado': n.prestamoOtorgado,
+      'Pago Préstamo': n.pagoPrestamo,
+      'Saldo Préstamo': n.saldoPrestamo,
+      'Ahorro': n.ahorro,
+      'Ahorro Acumulado': n.ahorroAcumulado,
+      'Total Deducciones': n.totalDeducciones,
+      'Total': n.total,
+      'Depósito Gastos': n.depositoGastos,
+      'Otros Depósitos': n.otrosDepositos,
+      'Total a Pagar': n.totalAPagar,
+      'Banco': n.bancoPagoNombre || n.bancoPagoId,
+      'Forma Pago': n.formaPagoNombre || n.formaPagoId,
       'Notas': n.notaDepositos
     }));
-
     const worksheet = XLSX.utils.json_to_sheet(datosExcel);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Nominas');
     XLSX.writeFile(workbook, `Historial_Nominas_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  // ── Historial de PRÉSTAMOS por operador (derivado de las nóminas) ──
+  const historialPrestamos = useMemo(() => {
+    if (!filtroOperador) return [];
+    const movs = nominasGlobales.filter(n =>
+      (operadorIdSeleccionado && n.operadorId === operadorIdSeleccionado) ||
+      (n.operadorNombre || '') === filtroOperador
+    );
+    return [...movs].sort((a, b) => String(a.fechaPago || a.createdAt || '').localeCompare(String(b.fechaPago || b.createdAt || '')));
+  }, [nominasGlobales, filtroOperador, operadorIdSeleccionado]);
+
+  const resumenPrestamos = useMemo(() => {
+    let otorgado = 0, pagado = 0;
+    historialPrestamos.forEach(n => {
+      otorgado += Number(n.prestamoOtorgado || 0);
+      pagado += Number(n.pagoPrestamo || 0);
+    });
+    return { otorgado, pagado };
+  }, [historialPrestamos]);
+
+  const exportarPrestamosCSV = () => {
+    if (historialPrestamos.length === 0) return alert("No hay movimientos de préstamo para este operador.");
+    const datos = historialPrestamos.map(n => ({
+      'Fecha Pago': formatearFechaSpanish(n.fechaPago),
+      'Consecutivo': n.consecutivo,
+      'Préstamo Otorgado': Number(n.prestamoOtorgado || 0),
+      'Pago Préstamo': Number(n.pagoPrestamo || 0),
+      'Saldo': Number(n.saldoPrestamo ?? n.prestamo ?? 0),
+    }));
+    const ws = XLSX.utils.json_to_sheet(datos);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Prestamos');
+    const ope = (filtroOperador || 'operador').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+    XLSX.writeFile(wb, `Prestamos_${ope}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const tabStyle = (active: boolean) => ({
@@ -485,6 +612,76 @@ export const ReferenciasNominaDashboard = () => {
 
   const colsOpsVisibles = columnasOps.filter(c => c.visible).length + 1;
 
+  const tabModalStyle = (active: boolean): React.CSSProperties => ({
+    padding: '10px 18px', background: 'none', border: 'none', cursor: 'pointer',
+    color: active ? '#f0f6fc' : '#8b949e', borderBottom: active ? '2px solid #D84315' : '2px solid transparent',
+    fontWeight: active ? 'bold' : 'normal', fontSize: '0.9rem', whiteSpace: 'nowrap'
+  });
+  const labelNomStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.72rem', display: 'block', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 'bold' };
+  const inputBaseStyle: React.CSSProperties = { width: '100%', padding: '8px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px' };
+
+  const campoNumerico = (label: string, value: number | '', setter: (v: number | '') => void, step = '0.01') => (
+    <div>
+      <label style={labelNomStyle}>{label}</label>
+      <input type="number" step={step} value={value}
+        onChange={e => setter(e.target.valueAsNumber || '')}
+        style={{ ...inputBaseStyle, color: '#3fb950', fontWeight: 'bold' }} />
+    </div>
+  );
+
+  const campoTotal = (label: string, val: number, color = '#58a6ff', resaltar = false) => (
+    <div>
+      <label style={labelNomStyle}>{label}</label>
+      <div style={{ color, fontSize: '1.1rem', fontWeight: 'bold', padding: '8px 12px',
+        backgroundColor: resaltar ? 'rgba(216,67,21,0.1)' : '#0d1117',
+        borderRadius: '6px', border: `1px solid ${resaltar ? '#D84315' : '#30363d'}` }}>
+        {formatoMoneda(val)}
+      </div>
+    </div>
+  );
+
+  const gridTres: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' };
+
+  // Buscador de operador reutilizable (Asignar Operaciones / Préstamos)
+  const renderBuscadorOperador = () => (
+    <div style={{ flex: 1, minWidth: '320px', position: 'relative' }}>
+      <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>OPERADOR ★</label>
+      {filtroOperador ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filtroOperador}</span>
+          <button onClick={() => { setFiltroOperador(''); setTextoBuscarOperador(''); setMostrarSugerenciasOperador(false); setSeleccionadas([]); }} title="Cambiar operador" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+        </div>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" placeholder="Buscar operador por nombre..." value={textoBuscarOperador}
+            onChange={(e) => { setTextoBuscarOperador(e.target.value); setMostrarSugerenciasOperador(true); }}
+            onFocus={() => setMostrarSugerenciasOperador(true)} onBlur={() => setTimeout(() => setMostrarSugerenciasOperador(false), 180)}
+            style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+        </div>
+      )}
+      {!filtroOperador && mostrarSugerenciasOperador && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+          {operadoresFiltradosBuscador.length === 0 ? (
+            <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>{textoBuscarOperador.trim() ? 'Sin coincidencias' : 'No hay operadores (cargo Operador) cargados'}</div>
+          ) : (
+            <>
+              <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>{operadoresFiltradosBuscador.length} {operadoresFiltradosBuscador.length === 1 ? 'operador' : 'operadores'}{textoBuscarOperador.trim() ? '' : ' (primeros 30)'}</div>
+              {operadoresFiltradosBuscador.map((op: any) => (
+                <div key={op.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setFiltroOperador(op.nombre); setTextoBuscarOperador(''); setMostrarSugerenciasOperador(false); setSeleccionadas([]); }}
+                  style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                  onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                  <div style={{ fontWeight: '500' }}>{op.nombre}</div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
       <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Referencias de Nómina</h1>
@@ -492,38 +689,30 @@ export const ReferenciasNominaDashboard = () => {
       <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '24px' }}>
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Nóminas</button>
+        <button onClick={() => setActiveTab('prestamos')} style={tabStyle(activeTab === 'prestamos')}>Préstamos</button>
       </div>
 
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
-          
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
-            <div style={{ flex: 1, minWidth: '200px' }}>
-              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>OPERADOR</label>
-              <select value={filtroOperador} onChange={e => { setFiltroOperador(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }}>
-                <option value="">Seleccionar Operador...</option>
-                {operadoresOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
-              </select>
-            </div>
+            {renderBuscadorOperador()}
             <div>
-              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>FECHA INICIO (Rango)</label>
+              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>FECHA INICIO (Opcional)</label>
               <input type="date" value={fechaInicio} onChange={e => {setFechaInicio(e.target.value); setSeleccionadas([]);}} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
             </div>
             <div>
-              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>FECHA FIN (Rango)</label>
+              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>FECHA FIN (Opcional)</label>
               <input type="date" value={fechaFin} onChange={e => {setFechaFin(e.target.value); setSeleccionadas([]);}} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
             </div>
-
-            <button 
-              disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas'} 
-              onClick={() => { setConsecutivoForm(generarConsecutivo(fechaPago)); setModalAbierto(true); }}
+            <button
+              disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas'}
+              onClick={abrirModalNomina}
               style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
             >
               Generar Nómina ({seleccionadas.length})
             </button>
           </div>
 
-          {/* Filtros Pendientes / Asignadas + Orden + Configurar columnas + Exportar */}
           {filtrosCompletos && (
             <>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
@@ -543,7 +732,6 @@ export const ReferenciasNominaDashboard = () => {
                   ● Asignadas ({conteoOps.asignadas})
                 </button>
               </div>
-
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
                 <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={selectOrdenStyle}>
@@ -562,12 +750,10 @@ export const ReferenciasNominaDashboard = () => {
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
-                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'} · rango {formatearFechaSpanish(fechaInicio)} al {formatearFechaSpanish(fechaFin)}
+                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}
               </span>
               <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">
-                  ⚙ Configurar Columnas
-                </button>
+                <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
                 <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                   style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
                     cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
@@ -611,12 +797,10 @@ export const ReferenciasNominaDashboard = () => {
               </thead>
               <tbody>
                 {!filtrosCompletos ? (
-                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Llena todos los filtros superiores para buscar operaciones.</td></tr>
+                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona un operador para ver sus operaciones (las fechas son opcionales).</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
                   <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
-                    {filtroEstadoOps === 'pendientes'
-                      ? 'No hay operaciones pendientes en este rango.'
-                      : 'No hay operaciones asignadas a nómina en este rango.'}
+                    {filtroEstadoOps === 'pendientes' ? 'No hay operaciones pendientes para este operador.' : 'No hay operaciones asignadas a nómina para este operador.'}
                   </td></tr>
                 ) : (
                   operacionesMostradas.map(op => {
@@ -641,12 +825,29 @@ export const ReferenciasNominaDashboard = () => {
           </div>
         </div>
 
-      ) : (
+      ) : activeTab === 'historial' ? (
         <div className="animation-fade-in">
           <div style={{ position: 'relative', marginBottom: '20px', display: 'flex', justifyContent: 'space-between' }}>
             <input type="text" placeholder="Buscar en historial (Consecutivo, Operador)..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)} style={{ width: '100%', maxWidth: '400px', padding: '10px 16px', backgroundColor: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
             <button title="Exportar a Excel" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+            <button onClick={() => setFiltroEstadoHist('pendientes')}
+              style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
+                border: `1px solid ${filtroEstadoHist === 'pendientes' ? '#f59e0b' : '#30363d'}`,
+                backgroundColor: filtroEstadoHist === 'pendientes' ? 'rgba(245,158,11,0.15)' : 'transparent',
+                color: filtroEstadoHist === 'pendientes' ? '#f59e0b' : '#8b949e' }}>
+              ● Pendientes ({conteoHist.pendientes})
+            </button>
+            <button onClick={() => setFiltroEstadoHist('pagadas')}
+              style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
+                border: `1px solid ${filtroEstadoHist === 'pagadas' ? '#10b981' : '#30363d'}`,
+                backgroundColor: filtroEstadoHist === 'pagadas' ? 'rgba(16,185,129,0.15)' : 'transparent',
+                color: filtroEstadoHist === 'pagadas' ? '#10b981' : '#8b949e' }}>
+              ● Pagadas ({conteoHist.pagadas})
             </button>
           </div>
 
@@ -660,49 +861,49 @@ export const ReferenciasNominaDashboard = () => {
                   <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>OPERADOR</th>
                   <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA PAGO</th>
                   <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PERÍODO (SEMANA)</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>SUBTOTAL OPS</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>TOTAL A PAGAR</th>
                 </tr>
               </thead>
               <tbody>
                 {registrosVisibles.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay referencias de nómina registradas.</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    {filtroEstadoHist === 'pendientes' ? 'No hay nóminas pendientes de pago.' : 'No hay nóminas pagadas.'}
+                  </td></tr>
                 ) : (
                   registrosVisibles.map(r => (
                     <tr key={r.id} style={{ borderBottom: '1px solid #21262d' }}>
                       <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                          <button 
-                            title="Ver Ficha" 
-                            onClick={() => setNominaViendo(r)} 
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}
-                          >
+                          {r.statusPagado ? (
+                            <button title="Regresar a Pendiente" onClick={(e) => handleTogglePagoNomina(e, r)} style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                            </button>
+                          ) : (
+                            <button title="Marcar como Pagada" onClick={(e) => handleTogglePagoNomina(e, r)} style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </button>
+                          )}
+                          <button title="Ver Ficha" onClick={() => setNominaViendo(r)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
-                          
-                          <button 
-                            title="Eliminar Nómina" 
-                            onClick={(e) => handleEliminarNomina(e, r)} 
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}
-                          >
+                          <button title="Eliminar Nómina" onClick={(e) => handleEliminarNomina(e, r)} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                           </button>
                         </div>
                       </td>
                       <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{r.consecutivo}</td>
                       <td style={{ padding: '16px', whiteSpace: 'nowrap' }}>
-                        <span style={{ 
-                          padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', 
+                        <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold',
                           backgroundColor: r.statusPagado ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                           color: r.statusPagado ? '#10b981' : '#f59e0b',
-                          border: `1px solid ${r.statusPagado ? '#10b981' : '#f59e0b'}`
-                        }}>
+                          border: `1px solid ${r.statusPagado ? '#10b981' : '#f59e0b'}` }}>
                           {r.statusPagado ? 'PAGADA' : 'PENDIENTE'}
                         </span>
                       </td>
                       <td style={{ padding: '16px', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{r.operadorNombre || r.operadorId || '-'}</td>
                       <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaPago)}</td>
                       <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaInicio)} <br/>al {formatearFechaSpanish(r.fechaFin)}</td>
-                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(r.subtotalPagar)}</td>
+                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(r.totalAPagar != null ? r.totalAPagar : r.subtotalPagar)}</td>
                     </tr>
                   ))
                 )}
@@ -717,9 +918,74 @@ export const ReferenciasNominaDashboard = () => {
             </div>
           )}
         </div>
+
+      ) : (
+        /* ════════════════════ PRÉSTAMOS (HISTÓRICO POR OPERADOR) ════════════════════ */
+        <div className="animation-fade-in">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+            {renderBuscadorOperador()}
+            {filtroOperador && (
+              <button title="Exportar a Excel" onClick={exportarPrestamosCSV} style={{ padding: '10px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: '#1a7f37', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                ⬇ Exportar Préstamos
+              </button>
+            )}
+          </div>
+
+          {!filtroOperador ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', border: '1px solid #30363d', borderRadius: '8px', backgroundColor: '#161b22' }}>
+              Selecciona un operador para ver su historial de préstamos.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
+                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Otorgado (histórico)</span>
+                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenPrestamos.otorgado)}</span>
+                </div>
+                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Pagado (histórico)</span>
+                  <span style={{ color: '#3fb950', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenPrestamos.pagado)}</span>
+                </div>
+                <div style={{ backgroundColor: '#0d1117', border: '1px solid #f59e0b', borderRadius: '8px', padding: '16px' }}>
+                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Actual (deducciones)</span>
+                  <span style={{ color: '#f59e0b', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(dPrestamoAcumulado)}</span>
+                </div>
+              </div>
+
+              <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+                    <tr>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA PAGO</th>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CONSECUTIVO</th>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PRÉSTAMO OTORGADO</th>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PAGO PRÉSTAMO</th>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>SALDO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historialPrestamos.length === 0 ? (
+                      <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este operador no tiene movimientos de préstamo en las nóminas registradas.</td></tr>
+                    ) : (
+                      historialPrestamos.map(n => (
+                        <tr key={n.id} style={{ borderBottom: '1px solid #21262d' }}>
+                          <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(n.fechaPago)}</td>
+                          <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{n.consecutivo}</td>
+                          <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.prestamoOtorgado || 0)}</td>
+                          <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.pagoPrestamo || 0)}</td>
+                          <td style={{ padding: '16px', color: '#f59e0b', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.saldoPrestamo ?? n.prestamo ?? 0)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
       )}
 
-      {/* ═══════════ MODAL CONFIGURAR COLUMNAS (Asignar Operaciones) ═══════════ */}
+      {/* MODAL CONFIGURAR COLUMNAS */}
       {modalColumnasOps && (
         <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
@@ -745,7 +1011,7 @@ export const ReferenciasNominaDashboard = () => {
         </div>
       )}
 
-      {/* MODAL FORMULARIO */}
+      {/* MODAL GENERAR NÓMINA */}
       {modalAbierto && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(8px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
@@ -754,88 +1020,137 @@ export const ReferenciasNominaDashboard = () => {
               <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d', marginBottom: '16px' }}>
               <div>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operador Seleccionado</span>
                 <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{filtroOperador}</span>
               </div>
+              <div style={{ textAlign: 'center' }}>
+                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Referencias ({seleccionadas.length})</span>
+                <span style={{ color: '#58a6ff', fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(subtotalReferencias)}</span>
+              </div>
               <div style={{ textAlign: 'right' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Operaciones ({seleccionadas.length})</span>
-                <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
+                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total a Pagar</span>
+                <span style={{ color: '#3fb950', fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(totalAPagarCalc)}</span>
               </div>
             </div>
-            
+
+            {operadorIdSeleccionado && !deduccionOperador && (
+              <div style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.82rem' }}>
+                ⚠ No se encontró un registro en <b>deducciones</b> para este operador. Los valores se inician en cero (puedes capturarlos manualmente).
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid #30363d', marginBottom: '24px', overflowX: 'auto' }}>
+              {[
+                { id: 'general', label: 'Información General' },
+                { id: 'referencia', label: 'Referencia' },
+                { id: 'deducciones', label: 'Deducciones' },
+                { id: 'totales', label: 'Totales' },
+              ].map(t => (
+                <button key={t.id} type="button" onClick={() => setPestanaModalNomina(t.id as any)} style={tabModalStyle(pestanaModalNomina === t.id)}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
             <form onSubmit={handleGuardarNomina}>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                <div>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FECHA PAGO</label>
-                  <input type="date" required value={fechaPago} onChange={e => {setFechaPago(e.target.value); setConsecutivoForm(generarConsecutivo(e.target.value));}} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
-                </div>
-                <div>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>STATUS NÓMINA</label>
-                  <select value={statusPagado} onChange={e => setStatusPagado(e.target.value as any)} style={{ width: '100%', padding: '8px', backgroundColor: statusPagado === 'Pagada' ? 'rgba(16, 185, 129, 0.1)' : '#161b22', color: statusPagado === 'Pagada' ? '#10b981' : '#f0f6fc', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold' }}>
-                    <option value="Pendiente">Pendiente</option>
-                    <option value="Pagada">Pagada ✔</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '24px' }}>
-                <div>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FORMA DE PAGO</label>
-                  <select required value={formaPagoSeleccionada} onChange={e => setFormaPagoSeleccionada(e.target.value)} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }}>
-                    <option value="">Seleccionar...</option>
-                    {formasPagoList.map(f => <option key={f.id} value={f.id}>{f.forma_pago}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>BANCO DE PAGO</label>
-                  <select required value={bancoSeleccionado} onChange={e => setBancoSeleccionado(e.target.value)} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }}>
-                    <option value="">Seleccionar...</option>
-                    {bancosList.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <h3 style={{ color: '#58a6ff', fontSize: '1rem', borderBottom: '1px solid #30363d', paddingBottom: '8px', marginBottom: '16px' }}>Cantidades (MXN)</h3>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '24px' }}>
-                {[
-                  {label: 'NÓMINA', val: nomina, setter: setNomina},
-                  {label: 'DIFERENCIA APLIC.', val: diferenciaAplicable, setter: setDiferenciaAplicable},
-                  {label: 'INFONAVIT', val: infonavit, setter: setInfonavit},
-                  {label: 'IMSS', val: imss, setter: setImss},
-                  {label: 'ISR', val: isr, setter: setIsr},
-                  {label: 'EXTRAS', val: extras, setter: setExtras},
-                  {label: 'DEP. GASTOS', val: depositoGastos, setter: setDepositoGastos},
-                  {label: 'SALDO PREST.', val: saldoPrestamo, setter: setSaldoPrestamo},
-                  {label: 'AHORRO', val: ahorro, setter: setAhorro},
-                  {label: 'AHORRO ACUM.', val: ahorroAcumulado, setter: setAhorroAcumulado},
-                  {label: 'PRÉSTAMO', val: prestamo, setter: setPrestamo},
-                  {label: 'PAGO PRÉSTAMO', val: pagoPrestamo, setter: setPagoPrestamo},
-                  {label: 'VACACIONES', val: vacaciones, setter: setVacaciones},
-                  {label: 'PAGAR AHORRO', val: pagarAhorro, setter: setPagarAhorro},
-                  {label: 'FONACOT', val: fonacot, setter: setFonacot},
-                  {label: 'FONACOT INICIAL', val: fonacotInicial, setter: setFonacotInicial},
-                  {label: 'OTROS DEP.', val: otrosDepositos, setter: setOtrosDepositos},
-                  {label: 'OTRAS DED.', val: otrasDeducciones, setter: setOtrasDeducciones},
-                  {label: 'SALDO', val: saldo, setter: setSaldo},
-                  {label: 'MÁS DEPÓSITOS', val: masDepositos, setter: setMasDepositos},
-                ].map((campo, i) => (
-                  <div key={i}>
-                    <label style={{ color: '#8b949e', fontSize: '0.7rem', display: 'block', marginBottom: '4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{campo.label}</label>
-                    <input type="number" step="0.01" value={campo.val} onChange={e => campo.setter(e.target.valueAsNumber || '')} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#3fb950', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold' }} />
+              {pestanaModalNomina === 'general' && (
+                <div style={gridTres}>
+                  <div>
+                    <label style={labelNomStyle}>Número de Referencia</label>
+                    <input readOnly value={consecutivoForm} style={{ ...inputBaseStyle, color: '#D84315', fontFamily: 'monospace', fontWeight: 'bold' }} />
                   </div>
-                ))}
-              </div>
+                  <div>
+                    <label style={labelNomStyle}>Fecha Pago</label>
+                    <input type="date" value={fechaPago} onChange={e => { setFechaPago(e.target.value); setConsecutivoForm(generarConsecutivo(e.target.value)); }} style={{ ...inputBaseStyle, color: '#fff' }} />
+                  </div>
+                  <div>
+                    <label style={labelNomStyle}>Status Nómina</label>
+                    <select value={statusPagado} onChange={e => setStatusPagado(e.target.value as any)} style={{ ...inputBaseStyle, color: statusPagado === 'Pagada' ? '#10b981' : '#f0f6fc', backgroundColor: statusPagado === 'Pagada' ? 'rgba(16, 185, 129, 0.1)' : '#161b22', fontWeight: 'bold' }}>
+                      <option value="Pendiente">Pendiente</option>
+                      <option value="Pagada">Pagada ✔</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelNomStyle}>Operador</label>
+                    <input readOnly value={filtroOperador} style={{ ...inputBaseStyle, color: '#c9d1d9' }} />
+                  </div>
+                  {campoTotal('Nómina Fiscal', dNominaFiscal, '#c9d1d9')}
+                </div>
+              )}
 
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>NOTAS / OBSERVACIONES</label>
-                <textarea value={notaDepositos} onChange={e => setNotaDepositos(e.target.value)} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px', height: '60px' }} />
-              </div>
+              {pestanaModalNomina === 'referencia' && (
+                <div style={gridTres}>
+                  {campoTotal('Subtotal a Referencias', subtotalReferencias, '#58a6ff')}
+                  {campoNumerico('Extra', extras, setExtras)}
+                  {campoTotal('Subtotal a Pagar', subtotalAPagarCalc, '#3fb950')}
+                  {campoTotal('Diferencia Aplicable', diferenciaAplicableCalc, '#58a6ff')}
+                </div>
+              )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '20px' }}>
+              {pestanaModalNomina === 'deducciones' && (
+                <div style={gridTres}>
+                  {campoNumerico('Infonavit', infonavit, setInfonavit)}
+                  {campoNumerico('Fonacot', fonacot, setFonacot)}
+                  {campoNumerico('IMSS', imss, setImss)}
+                  {campoNumerico('ISR (factor)', isr, setIsr, '0.0001')}
+                  {campoTotal('ISR Monto', isrMontoCalc, '#f85149')}
+                  <div></div>
+                  {campoNumerico('Préstamo (esta nómina)', prestamoNuevo, setPrestamoNuevo)}
+                  {campoTotal('Préstamo Acumulado', prestamoAcumuladoTotal, '#c9d1d9')}
+                  <div></div>
+                  {campoNumerico('Pago Préstamo', pagoPrestamo, setPagoPrestamo)}
+                  {campoTotal('Saldo del Préstamo', saldoPrestamoCalc, '#f59e0b')}
+                  <div></div>
+                  {campoTotal('Ahorro (por nómina)', dAhorroMonto, '#c9d1d9')}
+                  {campoTotal('Ahorro Acumulado', dAhorroAcumulado, '#58a6ff')}
+                  <div></div>
+                  <div style={{ gridColumn: 'span 3', display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '12px 14px' }}>
+                    <input type="checkbox" checked={pagarAhorro} onChange={e => setPagarAhorro(e.target.checked)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                    <span style={{ color: '#c9d1d9', fontSize: '0.85rem' }}>
+                      Pagar ahorro acumulado al operador en esta nómina
+                      {pagarAhorro
+                        ? <b style={{ color: '#3fb950' }}> — se pagará {formatoMoneda(dAhorroAcumulado)} y el acumulado quedará en $0.00</b>
+                        : <span style={{ color: '#8b949e' }}> — si no, se suma el ahorro de la semana ({formatoMoneda(dAhorroMonto)}); acumulado nuevo: {formatoMoneda(ahorroAcumuladoNuevo)}</span>}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {pestanaModalNomina === 'totales' && (
+                <>
+                  <div style={{ ...gridTres, marginBottom: '20px' }}>
+                    {campoTotal('Total Deducciones', totalDeduccionesCalc, '#f85149')}
+                    {campoTotal('Total', totalNetoCalc, '#58a6ff')}
+                    {campoNumerico('Depósito de Gastos', depositoGastos, setDepositoGastos)}
+                    {campoNumerico('Otros Depósitos', otrosDepositos, setOtrosDepositos)}
+                    {campoTotal('Total a Pagar', totalAPagarCalc, '#3fb950', true)}
+                  </div>
+                  <div style={{ ...gridTres, marginBottom: '20px' }}>
+                    <div>
+                      <label style={labelNomStyle}>Forma de Pago</label>
+                      <select value={formaPagoSeleccionada} onChange={e => setFormaPagoSeleccionada(e.target.value)} style={{ ...inputBaseStyle, color: '#fff' }}>
+                        <option value="">Seleccionar...</option>
+                        {formasPagoList.map(f => <option key={f.id} value={f.id}>{f.forma_pago}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={labelNomStyle}>Banco</label>
+                      <select value={bancoSeleccionado} onChange={e => setBancoSeleccionado(e.target.value)} style={{ ...inputBaseStyle, color: '#fff' }}>
+                        <option value="">Seleccionar...</option>
+                        {bancosList.map(b => <option key={b.id} value={b.id}>{b.nombre}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom: '8px' }}>
+                    <label style={labelNomStyle}>Notas / Observaciones</label>
+                    <textarea value={notaDepositos} onChange={e => setNotaDepositos(e.target.value)} style={{ ...inputBaseStyle, color: '#fff', height: '60px' }} />
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '20px', marginTop: '24px' }}>
                 <button type="button" onClick={() => setModalAbierto(false)} disabled={guardando} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
                 <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : 'Confirmar Nómina'}</button>
               </div>
@@ -844,16 +1159,14 @@ export const ReferenciasNominaDashboard = () => {
         </div>
       )}
 
-      {/* ✅ MODAL FICHA NÓMINA CON OPERACIONES DESNORMALIZADAS */}
+      {/* MODAL FICHA NÓMINA */}
       {nominaViendo && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '900px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>Ficha de Nómina</h2>
               <button onClick={() => setNominaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-            
             <div style={{ padding: '24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
                 <div style={{ gridColumn: 'span 3', display: 'flex', justifyContent: 'space-between', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', alignItems: 'center' }}>
@@ -863,12 +1176,10 @@ export const ReferenciasNominaDashboard = () => {
                   </div>
                   <div style={{ textAlign: 'center' }}>
                     <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Status</span>
-                    <span style={{ 
-                        padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold', 
+                    <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold',
                         backgroundColor: nominaViendo.statusPagado ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                         color: nominaViendo.statusPagado ? '#10b981' : '#f59e0b',
-                        border: `1px solid ${nominaViendo.statusPagado ? '#10b981' : '#f59e0b'}`
-                      }}>
+                        border: `1px solid ${nominaViendo.statusPagado ? '#10b981' : '#f59e0b'}` }}>
                         {nominaViendo.statusPagado ? 'PAGADA' : 'PENDIENTE'}
                     </span>
                   </div>
@@ -895,24 +1206,34 @@ export const ReferenciasNominaDashboard = () => {
 
                 <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d' }}>
                   {[
-                    {lbl: 'SUBTOTAL OPERACIONES', val: nominaViendo.subtotalPagar},
-                    {lbl: 'NÓMINA', val: nominaViendo.nomina},
+                    {lbl: 'SUBTOTAL REFERENCIAS', val: nominaViendo.subtotalPagar},
+                    {lbl: 'EXTRA', val: nominaViendo.extras},
+                    {lbl: 'SUBTOTAL A PAGAR', val: nominaViendo.subtotalAPagar},
+                    {lbl: 'NÓMINA FISCAL', val: nominaViendo.nominaFiscal ?? nominaViendo.nomina},
                     {lbl: 'DIFERENCIA APLICABLE', val: nominaViendo.diferenciaAplicable},
-                    {lbl: 'IMSS', val: nominaViendo.imss},
-                    {lbl: 'ISR', val: nominaViendo.isr},
                     {lbl: 'INFONAVIT', val: nominaViendo.infonavit},
-                    {lbl: 'EXTRAS', val: nominaViendo.extras},
                     {lbl: 'FONACOT', val: nominaViendo.fonacot},
+                    {lbl: 'IMSS', val: nominaViendo.imss},
+                    {lbl: 'ISR MONTO', val: nominaViendo.isrMonto},
+                    {lbl: 'TOTAL DEDUCCIONES', val: nominaViendo.totalDeducciones},
+                    {lbl: 'PRÉSTAMO OTORGADO', val: nominaViendo.prestamoOtorgado},
+                    {lbl: 'PAGO PRÉSTAMO', val: nominaViendo.pagoPrestamo},
+                    {lbl: 'SALDO PRÉSTAMO', val: nominaViendo.saldoPrestamo},
                     {lbl: 'AHORRO', val: nominaViendo.ahorro},
-                    {lbl: 'PRÉSTAMO', val: nominaViendo.prestamo},
-                    {lbl: 'SALDO', val: nominaViendo.saldo},
-                    {lbl: 'VACACIONES', val: nominaViendo.vacaciones},
+                    {lbl: 'AHORRO ACUM.', val: nominaViendo.ahorroAcumulado},
+                    {lbl: 'TOTAL', val: nominaViendo.total},
+                    {lbl: 'DEP. GASTOS', val: nominaViendo.depositoGastos},
+                    {lbl: 'OTROS DEPÓSITOS', val: nominaViendo.otrosDepositos},
+                    {lbl: 'TOTAL A PAGAR', val: nominaViendo.totalAPagar},
                   ].map((it, idx) => (
                     <div key={idx}>
                       <span style={{ display: 'block', color: '#8b949e', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase' }}>{it.lbl}</span>
-                      <span style={{ color: '#58a6ff', fontSize: '0.95rem', fontWeight: 'bold' }}>{formatoMoneda(it.val)}</span>
+                      <span style={{ color: it.lbl === 'TOTAL A PAGAR' ? '#3fb950' : (it.lbl === 'TOTAL DEDUCCIONES' || it.lbl === 'ISR MONTO') ? '#f85149' : '#58a6ff', fontSize: '0.95rem', fontWeight: 'bold' }}>{formatoMoneda(it.val)}</span>
                     </div>
                   ))}
+                  {nominaViendo.ahorroPagado && (
+                    <div style={{ gridColumn: 'span 5', color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold' }}>✔ En esta nómina se pagó el ahorro acumulado al operador.</div>
+                  )}
                 </div>
 
                 <div style={{ gridColumn: 'span 3' }}>
@@ -922,38 +1243,27 @@ export const ReferenciasNominaDashboard = () => {
                   </div>
                 </div>
 
-                {/* ✅ LECTURA ESTÁTICA DE LAS OPERACIONES SIN CONSUMIR LA COLECCIÓN */}
                 <div style={{ gridColumn: 'span 3', marginTop: '16px' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
                     Operaciones Pagadas en esta Nómina ({nominaViendo.operacionesGuardadas?.length || 0})
                   </span>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                     {nominaViendo.operacionesGuardadas?.map((op: any) => (
-                      <span 
-                        key={op.id} 
-                        title={`Sueldo Original: ${formatoMoneda(op.sueldo)}`}
-                        style={{ 
-                          backgroundColor: '#21262d', border: '1px solid #58a6ff', color: '#58a6ff', 
-                          padding: '6px 14px', borderRadius: '16px', fontSize: '0.85rem', fontFamily: 'monospace',
-                          cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '6px'
-                        }}
-                      >
+                      <span key={op.id} title={`Sueldo Original: ${formatoMoneda(op.sueldo)}`}
+                        style={{ backgroundColor: '#21262d', border: '1px solid #58a6ff', color: '#58a6ff', padding: '6px 14px', borderRadius: '16px', fontSize: '0.85rem', fontFamily: 'monospace', cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         {op.ref}
                       </span>
                     )) || <span style={{ color: '#8b949e' }}>Sin detalle de operaciones.</span>}
                   </div>
                 </div>
-
               </div>
             </div>
-            
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
               <button onClick={() => setNominaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };
