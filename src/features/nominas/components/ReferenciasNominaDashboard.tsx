@@ -371,7 +371,15 @@ export const ReferenciasNominaDashboard = () => {
 
       const operacionesResumenEstable = seleccionadas.map(id => {
         const op = operacionesGlobales.find(o => o.id === id);
-        return { id, ref: op?.ref || id.substring(0,6), sueldo: Number(op?.sueldoTotal || op?.sueldoOperador || 0) };
+        return {
+          id,
+          ref: op?.ref || id.substring(0,6),
+          fecha: op?.fechaServicio || op?.fecha || '',
+          cliente: op?.clienteNombre || op?.clientePagaNombre || op?.nombreCliente || op?.clientePaga || '-',
+          tipoServicio: op?.tarifaLabel || op?.tarifarioLabel || op?.convenioNombre || op?.tipoOperacionNombre || op?.tipoServicio || '-',
+          importe: Number(op?.sueldoTotal || op?.sueldoOperador || 0),
+          sueldo: Number(op?.sueldoTotal || op?.sueldoOperador || 0)
+        };
       });
 
       const data = {
@@ -436,6 +444,8 @@ export const ReferenciasNominaDashboard = () => {
       });
 
       await batch.commit();
+      // Recibo de nómina (PDF vía impresión del navegador)
+      generarReciboNomina({ ...data, id: nuevoId });
       const idsAsignadas = [...seleccionadas];
       setOperacionesGlobales(prev => prev.map(op =>
         idsAsignadas.includes(op.id) ? { ...op, referenciaNominaId: nuevoId, referenciaNominaConsecutivo: consecutivoFinal } : op
@@ -481,6 +491,132 @@ export const ReferenciasNominaDashboard = () => {
     setPagarAhorro(false);
     setNotaDepositos(''); setFormaPagoSeleccionada(''); setBancoSeleccionado(''); setStatusPagado('Pendiente');
     setPestanaModalNomina('general');
+  };
+
+  // ── Recibo de Nómina (PDF) generado desde React vía impresión del navegador ──
+  const generarReciboNomina = (nom: any) => {
+    const m = (v: any) => '$' + (Number(v) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const esc = (s: any) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const trips = Array.isArray(nom.operacionesGuardadas) ? nom.operacionesGuardadas : [];
+    const filas = trips.map((t: any) => `
+        <tr>
+          <td>${esc(t.ref || '-')}</td>
+          <td>${t.fecha ? esc(formatearFechaSpanish(t.fecha)) : '-'}</td>
+          <td>${esc(t.cliente || '-')}</td>
+          <td>${esc(t.tipoServicio || '-')}</td>
+          <td>${m(t.importe ?? t.sueldo ?? 0)}</td>
+        </tr>`).join('');
+
+    const sueldoBase = nom.nominaFiscal ?? nom.nomina ?? 0;
+
+    const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recibo de Nómina ${esc(nom.consecutivo || '')}</title>
+<style>
+  :root { --primary:#f37021; --primary-dark:#d65a10; --accent:#002d5a; --card-bg:#fff; --text:#333; --border:#ffd8c2; }
+  @page { size: landscape; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family:'Segoe UI',Roboto,Arial,sans-serif; background:#f4f4f4; color:var(--text); margin:0; padding:10px; display:flex; justify-content:center; }
+  .receipt-container { background:var(--card-bg); width:100%; max-width:1100px; padding:25px 35px; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.05); border-top:8px solid var(--primary); }
+  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px; }
+  .header-left { display:flex; align-items:center; gap:20px; }
+  .logo-img { max-height:70px; width:auto; }
+  .brand h1 { margin:0; color:var(--primary); font-size:26px; letter-spacing:1px; line-height:1; }
+  .brand p { margin:3px 0 0; color:var(--accent); font-weight:bold; font-size:13px; }
+  .header-info { text-align:right; }
+  .header-info h2 { margin:0; color:var(--primary); font-size:20px; }
+  .header-info p { margin:2px 0; font-size:0.85em; color:#666; }
+  .summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-bottom:15px; }
+  .card { background:#fffaf7; border:1px solid var(--border); border-radius:8px; padding:12px 15px; }
+  .card h3 { margin:0 0 8px 0; font-size:1em; color:var(--primary-dark); border-bottom:2px solid var(--primary); display:inline-block; padding-bottom:2px; }
+  .row { display:flex; justify-content:space-between; margin:6px 0; font-size:0.85em; }
+  .total-row { font-weight:bold; color:#000; border-top:1px dashed var(--primary); padding-top:6px; margin-top:6px; }
+  .table-section h3 { color:var(--accent); font-size:1.1em; margin-bottom:8px; }
+  table { width:100%; border-collapse:collapse; font-size:0.8em; }
+  th { background-color:var(--primary); color:#fff; text-align:left; padding:8px; text-transform:uppercase; }
+  td { padding:6px 8px; border-bottom:1px solid #eee; }
+  tr:nth-child(even) { background-color:#fff9f5; }
+  .footer-total { margin-top:15px; display:flex; justify-content:flex-end; }
+  .total-box { background:var(--primary); color:#fff; padding:12px 30px; border-radius:8px; text-align:right; }
+  .total-box p { margin:0; font-size:0.8em; opacity:0.9; }
+  .total-box h2 { margin:2px 0 0; font-size:1.7em; }
+  @media print {
+    body { background:#fff; padding:0; }
+    .receipt-container { box-shadow:none; border-top:5px solid var(--primary); max-width:100%; }
+    .total-box { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    th { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    tr:nth-child(even){ background-color:#fff9f5 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  }
+</style></head>
+<body>
+  <div class="receipt-container">
+    <header>
+      <div class="header-left">
+        <img class="logo-img" alt="Logo" src="https://drive.google.com/uc?export=view&amp;id=1blNDWMQvvp7Xz3G7lm_whAxQw9krUOAz" onerror="this.style.display='none'">
+        <div class="brand"><h1>ROELCA</h1><p>ROELCA INC.</p></div>
+      </div>
+      <div class="header-info">
+        <h2>RECIBO DE NÓMINA</h2>
+        <p><strong>Operador:</strong> ${esc(nom.operadorNombre || '-')}</p>
+        <p><strong>Periodo:</strong> ${esc(formatearFechaSpanish(nom.fechaInicio))} al ${esc(formatearFechaSpanish(nom.fechaFin))}</p>
+        <p><strong>Fecha de Pago:</strong> ${esc(formatearFechaSpanish(nom.fechaPago))}</p>
+        <p><strong>Referencia:</strong> ${esc(nom.consecutivo || '-')}</p>
+      </div>
+    </header>
+
+    <div class="summary-grid">
+      <div class="card">
+        <h3>Percepciones</h3>
+        <div class="row"><span>Sueldo Base</span><span>${m(sueldoBase)}</span></div>
+        <div class="row"><span>Diferencia Aplicable</span><span>${m(nom.diferenciaAplicable)}</span></div>
+        <div class="row"><span>Subtotal</span><span>${m(nom.subtotalPagar)}</span></div>
+        <div class="row"><span>Extras</span><span>${m(nom.extras)}</span></div>
+        <div class="row"><span>Otros Gastos</span><span>${m(nom.depositoGastos)}</span></div>
+        <div class="row"><span>Otros Depositos</span><span>${m(nom.otrosDepositos)}</span></div>
+        <div class="row total-row"><span>Total Bruto</span><span>${m(nom.subtotalAPagar)}</span></div>
+      </div>
+      <div class="card">
+        <h3>Deducciones</h3>
+        <div class="row"><span>Retención IMSS</span><span>${m(nom.imss)}</span></div>
+        <div class="row"><span>Retención ISR</span><span>${m(nom.isrMonto)}</span></div>
+        <div class="row"><span>Infonavit</span><span>${m(nom.infonavit)}</span></div>
+        <div class="row"><span>Fonacot</span><span>${m(nom.fonacot)}</span></div>
+        <div class="row"><span>Ahorro</span><span>${m(nom.ahorro)}</span></div>
+        <div class="row"><span>Abono a Préstamo</span><span>${m(nom.pagoPrestamo)}</span></div>
+        <div class="row total-row"><span>Total Deducciones</span><span>${m(nom.totalDeducciones)}</span></div>
+      </div>
+      <div class="card">
+        <h3>Saldos Informativos</h3>
+        <div class="row"><span>Ahorro Acumulado</span><span>${m(nom.ahorroAcumulado)}</span></div>
+        <div class="row"><span>Saldo de Préstamo</span><span>${m(nom.saldoPrestamo)}</span></div>
+        <div class="row"><span>Banco</span><span>${esc(nom.bancoPagoNombre || '-')}</span></div>
+        <div class="row"><span>Forma de Pago</span><span>${esc(nom.formaPagoNombre || '-')}</span></div>
+        ${nom.ahorroPagado ? '<div class="row total-row"><span>Ahorro pagado</span><span>SÍ</span></div>' : ''}
+      </div>
+    </div>
+
+    <div class="table-section">
+      <h3>Detalle de Viajes realizados</h3>
+      <table>
+        <thead><tr><th>Referencia</th><th>Fecha</th><th>Cliente</th><th>Tipo Servicio</th><th>Importe</th></tr></thead>
+        <tbody>${filas || '<tr><td colspan="5" style="text-align:center;color:#888;">Sin operaciones registradas.</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <div class="footer-total">
+      <div class="total-box"><p>Neto a Recibir</p><h2>${m(nom.totalAPagar)}</h2></div>
+    </div>
+  </div>
+  <script>window.addEventListener('load',function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},250);});</script>
+</body></html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    document.body.appendChild(iframe);
+    const idoc = iframe.contentWindow?.document;
+    if (!idoc) { try { document.body.removeChild(iframe); } catch { /* noop */ } return; }
+    idoc.open(); idoc.write(html); idoc.close();
+    setTimeout(() => { try { document.body.removeChild(iframe); } catch { /* noop */ } }, 60000);
   };
 
   const historialBusqueda = useMemo(() => {
@@ -886,6 +1022,9 @@ export const ReferenciasNominaDashboard = () => {
                           <button title="Ver Ficha" onClick={() => setNominaViendo(r)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
+                          <button title="Recibo (PDF)" onClick={(e) => { e.stopPropagation(); generarReciboNomina(r); }} style={{ background: 'transparent', border: '1px solid #f37021', borderRadius: '4px', color: '#f37021', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                          </button>
                           <button title="Eliminar Nómina" onClick={(e) => handleEliminarNomina(e, r)} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                           </button>
@@ -1258,7 +1397,8 @@ export const ReferenciasNominaDashboard = () => {
                 </div>
               </div>
             </div>
-            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
+            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
+              <button onClick={() => generarReciboNomina(nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#f37021', cursor: 'pointer', fontWeight: 'bold' }}>Imprimir Recibo (PDF)</button>
               <button onClick={() => setNominaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
             </div>
           </div>
