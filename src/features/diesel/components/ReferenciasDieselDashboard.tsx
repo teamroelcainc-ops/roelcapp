@@ -38,7 +38,6 @@ export const ReferenciasDieselDashboard = () => {
   const [proveedoresList, setProveedoresList] = useState<any[]>([]);
 
   const [filtroUnidad, setFiltroUnidad] = useState('');
-  const [filtroOperador, setFiltroOperador] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
   // Filtro Pendientes / Cargadas
@@ -66,7 +65,8 @@ export const ReferenciasDieselDashboard = () => {
 
   const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
   const [consecutivoForm, setConsecutivoForm] = useState('');
-  const [galonesAutorizados, setGalonesAutorizados] = useState<number | ''>('');
+  // Galones Extras: editable (antes "Galones Autorizados")
+  const [galonesExtras, setGalonesExtras] = useState<number | ''>('');
   const [galonesCargados, setGalonesCargados] = useState<number | ''>('');
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState('');
   const [costoDieselDiario, setCostoDieselDiario] = useState<number>(0);
@@ -197,14 +197,6 @@ export const ReferenciasDieselDashboard = () => {
     return Array.from(new Set(names)).sort();
   }, [operacionesGlobales, unidadesList]);
 
-  const operadoresOptions = useMemo(() => {
-    const names = operadoresList
-      .filter(emp => emp.cargoId === 'edda3a2b') 
-      .map(emp => `${emp.firstName || ''} ${emp.lastNamePaternal || ''}`.trim())
-      .filter(Boolean);
-    return Array.from(new Set(names)).sort();
-  }, [operadoresList]);
-
   const proveedoresFiltrados = useMemo(() => {
     return proveedoresList.filter(p => {
       const tieneTipoEmpresa = Array.isArray(p.tiposEmpresa) && p.tiposEmpresa.includes('11894dfd');
@@ -214,20 +206,17 @@ export const ReferenciasDieselDashboard = () => {
   }, [proveedoresList]);
 
   // ──────────────────────────────────────────────────────────────────
-  // Operaciones de la unidad/operador (base), conteo y filtro por estado
+  // Operaciones de la unidad (base), conteo y filtro por estado
   // ──────────────────────────────────────────────────────────────────
-  // Base: todas las que coinciden con la unidad (y operador) seleccionados,
+  // Base: todas las que coinciden con la unidad seleccionada,
   // estén o no asignadas a una referencia de diésel.
   const operacionesBaseUnidad = useMemo(() => {
     if (!filtroUnidad) return [];
     return operacionesGlobales.filter(op => {
       const opUnidad = getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad || '');
-      const opOperador = getNombreOperador(op.operadorNombre || op.operadorId || op.operador || '');
-      const matchUnidad = opUnidad === filtroUnidad;
-      const matchOperador = filtroOperador ? opOperador === filtroOperador : true;
-      return matchUnidad && matchOperador;
+      return opUnidad === filtroUnidad;
     });
-  }, [operacionesGlobales, filtroUnidad, filtroOperador, unidadesList, operadoresList]);
+  }, [operacionesGlobales, filtroUnidad, unidadesList]);
 
   const esCargada = (op: any) => !!op.referenciaDieselId;
 
@@ -324,7 +313,7 @@ export const ReferenciasDieselDashboard = () => {
     setColumnasOps(nuevas);
   };
 
-  // Exportar a Excel las operaciones mostradas (respeta unidad, operador,
+  // Exportar a Excel las operaciones mostradas (respeta unidad,
   // estado, rango de fechas y columnas/orden configurados).
   const exportarExcelOps = () => {
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
@@ -348,6 +337,18 @@ export const ReferenciasDieselDashboard = () => {
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
+  // ── Seleccionar todo / quitar todo (solo en Pendientes) ──
+  const idsMostradas = useMemo(() => operacionesMostradas.map(o => o.id), [operacionesMostradas]);
+  const todasSeleccionadas = operacionesMostradas.length > 0 && idsMostradas.every(id => seleccionadas.includes(id));
+  const toggleSeleccionarTodas = () => {
+    if (filtroEstadoOps !== 'pendientes') return;
+    if (todasSeleccionadas) {
+      setSeleccionadas(prev => prev.filter(id => !idsMostradas.includes(id)));
+    } else {
+      setSeleccionadas(prev => Array.from(new Set([...prev, ...idsMostradas])));
+    }
+  };
+
   const resumenSeleccion = useMemo(() => {
     let dieselTotal = 0;
     const refs: string[] = [];
@@ -361,18 +362,36 @@ export const ReferenciasDieselDashboard = () => {
     return { dieselTotal, refs };
   }, [seleccionadas, operacionesGlobales]);
 
+  // Operador(es) derivados de las operaciones seleccionadas (ya no hay filtro de operador)
+  const operadoresSeleccionados = useMemo(() => {
+    const set = new Set<string>();
+    seleccionadas.forEach(id => {
+      const op = operacionesGlobales.find(o => o.id === id);
+      if (op) {
+        const nom = getNombreOperador(op.operadorNombre || op.operadorId || op.operador || '');
+        if (nom && nom !== '-') set.add(nom);
+      }
+    });
+    return Array.from(set);
+  }, [seleccionadas, operacionesGlobales, operadoresList]);
+
   // ✅ GALONES CALCULADOS = EXACTAMENTE LA SUMA DE COMBUSTIBLE DE LAS OPERACIONES (No dividido)
   const galonesCalculadosOp = resumenSeleccion.dieselTotal;
 
+  // ✅ GALONES AUTORIZADOS (NO editable) = galones cargados de las operaciones + galones extras
+  const galonesAutorizadosCalc = useMemo(() => {
+    return galonesCalculadosOp + (Number(galonesExtras) || 0);
+  }, [galonesCalculadosOp, galonesExtras]);
+
   // ✅ CÁLCULO DINÁMICO DEL STATUS
   const statusReferenciaForm = useMemo(() => {
-    const authVacio = galonesAutorizados === '' || galonesAutorizados === 0 || isNaN(galonesAutorizados as number);
+    const extraVacio = galonesExtras === '' || galonesExtras === 0 || isNaN(galonesExtras as number);
     const cargVacio = galonesCargados === '' || galonesCargados === 0 || isNaN(galonesCargados as number);
 
-    if (authVacio && cargVacio) return 'No Autorizado';
-    if (!authVacio && cargVacio) return 'Autorizado';
+    if (extraVacio && cargVacio) return 'No Autorizado';
+    if (!extraVacio && cargVacio) return 'Autorizado';
     return 'Cargado'; 
-  }, [galonesAutorizados, galonesCargados]);
+  }, [galonesExtras, galonesCargados]);
 
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -384,7 +403,14 @@ export const ReferenciasDieselDashboard = () => {
       const consecutivoFinal = generarConsecutivo(fechaForm);
 
       const foundUni = unidadesList.find(u => u.unidad === filtroUnidad || u.nombre === filtroUnidad);
-      const foundOp = operadoresList.find(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() === filtroOperador.trim());
+
+      // Operador derivado de las operaciones seleccionadas
+      const operadorRef = operadoresSeleccionados.length === 1
+        ? operadoresSeleccionados[0]
+        : (operadoresSeleccionados.length > 1 ? 'Varios' : '');
+      const foundOp = operadoresSeleccionados.length === 1
+        ? operadoresList.find(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() === operadorRef.trim())
+        : null;
 
       const data = {
         consecutivo: consecutivoFinal,
@@ -392,16 +418,17 @@ export const ReferenciasDieselDashboard = () => {
         unidadId: foundUni ? foundUni.id : null,
         unidadNombre: filtroUnidad, 
         operadorId: foundOp ? foundOp.id : null,
-        operadorNombre: filtroOperador, 
+        operadorNombre: operadorRef, 
         operacionesIds: seleccionadas,
         sumaDiesel: resumenSeleccion.dieselTotal,
         galonesCalculadosOperaciones: galonesCalculadosOp, // Guardamos la suma directa
-        galonesAutorizados: Number(galonesAutorizados),
+        galonesExtras: Number(galonesExtras) || 0,
+        galonesAutorizados: galonesAutorizadosCalc, // NO editable: operaciones + extras
         galonesCargados: Number(galonesCargados),
         proveedorId: proveedorSeleccionado,
         proveedorNombre: getNombreProveedor(proveedorSeleccionado),
         costoDiesel: costoDieselDiario,
-        totalAutorizado: Number(galonesAutorizados) * costoDieselDiario,
+        totalAutorizado: galonesAutorizadosCalc * costoDieselDiario,
         totalCargado: Number(galonesCargados) * costoDieselDiario,
         observaciones: observacionesForm,
         status: statusReferenciaForm, 
@@ -422,7 +449,7 @@ export const ReferenciasDieselDashboard = () => {
       setSeleccionadas([]);
       
       // Limpiamos los campos
-      setGalonesAutorizados('');
+      setGalonesExtras('');
       setGalonesCargados('');
       setObservacionesForm('');
       setProveedorSeleccionado('');
@@ -479,11 +506,17 @@ export const ReferenciasDieselDashboard = () => {
 
       const diferencia = combustibleNuevo - combustibleViejo;
       const nuevaSumaReferencia = Number(referenciaViendo.sumaDiesel || 0) + diferencia;
+      // Recalcular galones autorizados = nueva suma de operaciones + extras guardados
+      const extrasGuardados = Number(referenciaViendo.galonesExtras || 0);
+      const nuevosAutorizados = nuevaSumaReferencia + extrasGuardados;
+      const nuevoTotalAutorizado = nuevosAutorizados * Number(referenciaViendo.costoDiesel || 0);
 
-      // Actualiza en base de datos tanto la suma original como el cálculo (que son iguales)
+      // Actualiza en base de datos la suma original, el cálculo y los autorizados
       batch.update(doc(db, 'referencias_diesel', referenciaViendo.id), {
         sumaDiesel: nuevaSumaReferencia,
-        galonesCalculadosOperaciones: nuevaSumaReferencia 
+        galonesCalculadosOperaciones: nuevaSumaReferencia,
+        galonesAutorizados: nuevosAutorizados,
+        totalAutorizado: nuevoTotalAutorizado
       });
 
       await batch.commit();
@@ -491,7 +524,9 @@ export const ReferenciasDieselDashboard = () => {
       setReferenciaViendo({ 
         ...referenciaViendo, 
         sumaDiesel: nuevaSumaReferencia,
-        galonesCalculadosOperaciones: nuevaSumaReferencia
+        galonesCalculadosOperaciones: nuevaSumaReferencia,
+        galonesAutorizados: nuevosAutorizados,
+        totalAutorizado: nuevoTotalAutorizado
       });
       setOperacionAEditar(null);
       
@@ -547,6 +582,7 @@ export const ReferenciasDieselDashboard = () => {
       'Operador': ref.operadorNombre || getNombreOperador(ref.operadorId || ref.operador),
       'Proveedor': ref.proveedorNombre || getNombreProveedor(ref.proveedorId || ref.proveedor),
       'Suma de Diesel (Ref)': ref.sumaDiesel,
+      'Galones Extras': ref.galonesExtras,
       'Galones Autorizados': ref.galonesAutorizados,
       'Galones Cargados': ref.galonesCargados,
       'Costo Diario Diesel': ref.costoDiesel,
@@ -589,29 +625,9 @@ export const ReferenciasDieselDashboard = () => {
           <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
             <div style={{ flex: 1 }}>
               <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>UNIDAD</label>
-              <select value={filtroUnidad} onChange={e => { setFiltroUnidad(e.target.value); setFiltroOperador(''); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }}>
+              <select value={filtroUnidad} onChange={e => { setFiltroUnidad(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }}>
                 <option value="">Seleccionar Unidad...</option>
                 {unidadesOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
-              </select>
-            </div>
-            <div style={{ flex: 1 }}>
-              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>OPERADOR (Opcional)</label>
-              <select 
-                value={filtroOperador} 
-                onChange={e => { setFiltroOperador(e.target.value); setSeleccionadas([]); }} 
-                disabled={!filtroUnidad}
-                style={{ 
-                  width: '100%', 
-                  padding: '10px', 
-                  backgroundColor: !filtroUnidad ? '#21262d' : '#161b22', 
-                  color: !filtroUnidad ? '#8b949e' : '#c9d1d9', 
-                  border: '1px solid #30363d', 
-                  borderRadius: '6px',
-                  cursor: !filtroUnidad ? 'not-allowed' : 'pointer'
-                }}
-              >
-                <option value="">{!filtroUnidad ? 'Selecciona unidad primero...' : 'Todos los Operadores...'}</option>
-                {operadoresOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
               </select>
             </div>
             <button 
@@ -623,11 +639,11 @@ export const ReferenciasDieselDashboard = () => {
             </button>
           </div>
 
-          {/* Filtros Pendientes / Cargadas + Orden */}
+          {/* Filtros Pendientes / Cargadas + Seleccionar todo + Orden */}
           {filtroUnidad && (
             <>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                 <button onClick={() => { setFiltroEstadoOps('pendientes'); }}
                   style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
                     border: `1px solid ${filtroEstadoOps === 'pendientes' ? '#ef4444' : '#30363d'}`,
@@ -642,6 +658,17 @@ export const ReferenciasDieselDashboard = () => {
                     color: filtroEstadoOps === 'cargadas' ? '#10b981' : '#8b949e' }}>
                   ● Cargadas ({conteoOps.cargadas})
                 </button>
+
+                {/* ✅ Botón Seleccionar todo / Quitar todo (solo en Pendientes) */}
+                {filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
+                  <button onClick={toggleSeleccionarTodas}
+                    style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
+                      border: `1px solid ${todasSeleccionadas ? '#D84315' : '#58a6ff'}`,
+                      backgroundColor: todasSeleccionadas ? 'rgba(216,67,21,0.15)' : 'rgba(88,166,255,0.12)',
+                      color: todasSeleccionadas ? '#D84315' : '#58a6ff' }}>
+                    {todasSeleccionadas ? '☐ Quitar selección' : '☑ Seleccionar todo'}
+                  </button>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -725,7 +752,17 @@ export const ReferenciasDieselDashboard = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}></th>
+                  <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>
+                    {filtroUnidad && filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
+                      <input
+                        type="checkbox"
+                        checked={todasSeleccionadas}
+                        onChange={toggleSeleccionarTodas}
+                        title="Seleccionar todo"
+                        style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                      />
+                    )}
+                  </th>
                   {columnasOps.filter(c => c.visible).map(col => (
                     <th key={col.id}
                       style={col.orden ? thOrdenStyle : { padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}
@@ -944,18 +981,29 @@ export const ReferenciasDieselDashboard = () => {
                   </select>
                 </div>
                 <div>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>GALONES AUTORIZADOS</label>
-                  <input type="number" step="0.01" value={galonesAutorizados} onChange={e => setGalonesAutorizados(e.target.valueAsNumber || '')} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>GALONES EXTRAS</label>
+                  <input type="number" step="0.01" value={galonesExtras} onChange={e => setGalonesExtras(e.target.valueAsNumber || '')} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
                 </div>
                 <div>
                   <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>GALONES CARGADOS</label>
                   <input type="number" step="0.01" value={galonesCargados} onChange={e => setGalonesCargados(e.target.valueAsNumber || '')} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
                 </div>
+
+                {/* ✅ GALONES AUTORIZADOS (no editable) = Operaciones + Extras */}
+                <div style={{ gridColumn: 'span 2', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Galones Autorizados (no editable)</span>
+                    <span style={{ color: '#8b949e', fontSize: '0.72rem' }}>
+                      Operaciones ({galonesCalculadosOp.toFixed(2)}) + Extras ({(Number(galonesExtras) || 0).toFixed(2)})
+                    </span>
+                  </div>
+                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{galonesAutorizadosCalc.toFixed(2)} Gal.</span>
+                </div>
               </div>
 
               <div style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', marginBottom: '20px' }}>
                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><span style={{color: '#8b949e'}}>Costo Diesel ({fechaForm}):</span><span style={{color: '#fff', fontWeight: 'bold'}}>{formatoMoneda(costoDieselDiario)}</span></div>
-                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><span style={{color: '#8b949e'}}>Total Autorizado:</span><span style={{color: '#58a6ff', fontWeight: 'bold'}}>{formatoMoneda((Number(galonesAutorizados) || 0) * costoDieselDiario)}</span></div>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}><span style={{color: '#8b949e'}}>Total Autorizado:</span><span style={{color: '#58a6ff', fontWeight: 'bold'}}>{formatoMoneda(galonesAutorizadosCalc * costoDieselDiario)}</span></div>
                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{color: '#8b949e'}}>Total Cargado:</span><span style={{color: '#3fb950', fontWeight: 'bold'}}>{formatoMoneda((Number(galonesCargados) || 0) * costoDieselDiario)}</span></div>
               </div>
 
@@ -1030,13 +1078,14 @@ export const ReferenciasDieselDashboard = () => {
                   <span style={{ color: '#f0f6fc', fontSize: '1rem' }}>{formatoMoneda(referenciaViendo.costoDiesel)}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Galones Calculados</span>
-                  <span style={{ color: '#f0f6fc', fontSize: '1rem' }}>{Number(referenciaViendo.galonesCalculadosOperaciones || 0).toFixed(2)} Gal.</span>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Galones Extras</span>
+                  <span style={{ color: '#f0f6fc', fontSize: '1rem' }}>{Number(referenciaViendo.galonesExtras || 0).toFixed(2)} Gal.</span>
                 </div>
 
                 <div style={{ backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Galones Autorizados</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Number(referenciaViendo.galonesAutorizados).toFixed(2)}</span>
+                  <span style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Number(referenciaViendo.galonesAutorizados || 0).toFixed(2)}</span>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '2px' }}>Operaciones + Extras</span>
                   <span style={{ display: 'block', color: '#c9d1d9', fontSize: '0.85rem', marginTop: '4px' }}>Total: {formatoMoneda(referenciaViendo.totalAutorizado)}</span>
                 </div>
                 
@@ -1134,7 +1183,7 @@ export const ReferenciasDieselDashboard = () => {
                   />
                 </div>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginTop: '8px' }}>
-                  * Al guardar, se recalculará automáticamente la Suma de Diesel en la Referencia Maestra.
+                  * Al guardar, se recalculará automáticamente la Suma de Diesel y los Galones Autorizados en la Referencia Maestra.
                 </span>
               </div>
 

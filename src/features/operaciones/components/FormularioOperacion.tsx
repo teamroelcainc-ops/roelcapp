@@ -159,6 +159,14 @@ const CampoArchivo = ({
     }
   };
 
+  // ✅ NUEVO: quita el archivo cargado (sirve igual si se eligió con clic o arrastrando).
+  // Enviamos un evento sintético con files vacío para que el handler del padre lo limpie.
+  const quitarArchivo = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onChange({ target: { value: '', files: null } } as unknown as React.ChangeEvent<HTMLInputElement>);
+  };
+
   const fondo = arrastrando
     ? 'rgba(251, 146, 60, 0.14)'
     : cargado ? 'rgba(63, 185, 80, 0.10)' : (resaltar ? 'rgba(248, 81, 73, 0.06)' : '#010409');
@@ -182,8 +190,16 @@ const CampoArchivo = ({
         <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', fontWeight: cargado ? 600 : 400, color: arrastrando ? '#fb923c' : (cargado ? '#3fb950' : '#8b949e'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {arrastrando ? 'Suelta el archivo aquí…' : (cargado ? `✓ ${file!.name}` : 'Haz clic o arrastra un archivo aquí')}
         </span>
+        {/* ✅ NUEVO: botón para quitar el archivo cargado */}
         {cargado && !arrastrando && (
-          <span style={{ flexShrink: 0, fontSize: '0.7rem', color: '#7ee787', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cargado</span>
+          <button
+            type="button"
+            title="Quitar archivo"
+            onClick={quitarArchivo}
+            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#f85149', backgroundColor: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.35)', borderRadius: '6px', cursor: 'pointer' }}
+          >
+            <IconX size={12} /> Quitar
+          </button>
         )}
         <input type="file" accept={accept} onChange={onChange} style={{ display: 'none' }} />
       </label>
@@ -1011,6 +1027,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     } finally { setCargando(false); }
   };
 
+  // ✅ NUEVO: confirmación antes de cancelar/cerrar para no descartar la operación por error.
+  // OJO: el guardado exitoso llama a onClose() directamente (sin pasar por aquí), así que
+  // esta confirmación solo aplica a las acciones manuales de Cancelar / Cerrar.
+  const handleCancelarConfirmado = () => {
+    const ok = window.confirm('¿Seguro que deseas cancelar esta operación? Se perderán los datos que no hayas guardado.');
+    if (ok) onClose();
+  };
+
   const tipoOpNombreResumen = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '';
   const convenioNombreResumen = listaConveniosCliente.find((c: any) => c.id === formData.convenio)?.descripcion || '';
   const tcResumen = formData.tipoCambioAprobado || tipoCambioDia;
@@ -1118,7 +1142,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <button type="button" onClick={onMinimize} className="roelca-window-btn" title="Minimizar"><IconMinimize size={16} /></button>
-              <button type="button" onClick={onClose} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
+              <button type="button" onClick={handleCancelarConfirmado} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
             </div>
           </div>
 
@@ -1319,58 +1343,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               )}
               {pestañaActiva === 'unidad' && pestanasVisibles.includes('unidad') && (
                 <>
-                  <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Proveedor de Transporte</h3></div>
-                    <div className="form-grid">
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label className="form-label">Proveedor de Transporte</label>
-                        <div className="roelca-lookup-row">
-                          <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} disabled={proveedorForzado} placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
-                            {showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = p.monedaId || p.moneda || ''; setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); setSearchProvTransporte(p.nombre); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}
-                          </div>
-                          <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion(
-                            { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE },
-                            (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: reg.monedaId || reg.moneda || '' })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); }
-                          )} />
-                        </div>
-                      </div>
-                      <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
-                      <div className="form-group">
-                        <label className="form-label">Convenio Proveedor</label>
-                        <div style={{ position: 'relative' }}>
-                          <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Escriba para buscar convenio..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor}
-                            onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '', monedaConvenioProv: '', totalAPagarProv: 0 })); }}
-                            onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
-                          {showDropdownConvenioProveedor && (
-                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                              {resultadosConvenioProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
-                                <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
-                                  <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.tipoConvenioNombre}</div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                        {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
-                      </div>
-                      <div className="form-group"><label className="form-label">Moneda del Convenio (Base)</label><input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m: any) => m.id === formData.monedaConvenioProv)?.moneda || 'Sin Asignar'} /></div>
-                    </div>
-                  </div>
-
-                  <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
-                    <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Monto a Pagar (Base)<span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>editable</span></label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || ''} onChange={handleChange} title="El convenio precarga este valor, pero puedes ajustarlo manualmente" /></div>
-                      <div className="form-group"><label className="form-label">Costos Adicionales</label><input type="number" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Costos)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalProv) || 0).toFixed(2)}</div></div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className="form-control" readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
-                      <div className="form-group"><label className="form-label">Dólares</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresProv) || 0).toFixed(2)}</div></div>
-                      <div className="form-group"><label className="form-label">Pesos</label><div style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.pesosProv) || 0).toFixed(2)}</div></div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1', marginTop: '8px' }}><label className="form-label orange">Conversión Final (Contabilidad)</label><div style={{ color: '#f85149', fontSize: '1.4rem', fontWeight: 'bold', padding: '10px 14px', backgroundColor: 'rgba(248, 81, 73, 0.08)', borderRadius: '8px', border: '1px solid rgba(248, 81, 73, 0.3)', textAlign: 'center' }}>${(Number(formData.conversionProv) || 0).toFixed(2)}</div></div>
-                    </div>
-                  </div>
-
+                  {/* ✅ CAMBIO DE ORDEN: primero Unidad/Operador (con Diesel), luego Proveedor */}
                   {showInternalFleet && (
                     <div className="roelca-card">
                       <div className="roelca-card-header"><div className="roelca-card-icon"><IconUser /></div><h3 className="roelca-card-title">Unidad y Operador (Flota Interna)</h3></div>
@@ -1429,6 +1402,58 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
                     </div>
                   )}
+
+                  <div className="roelca-card">
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Proveedor de Transporte</h3></div>
+                    <div className="form-grid">
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <label className="form-label">Proveedor de Transporte</label>
+                        <div className="roelca-lookup-row">
+                          <div className="roelca-lookup-input">
+                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} disabled={proveedorForzado} placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
+                            {showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = p.monedaId || p.moneda || ''; setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); setSearchProvTransporte(p.nombre); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}
+                          </div>
+                          <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion(
+                            { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE },
+                            (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: reg.monedaId || reg.moneda || '' })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); }
+                          )} />
+                        </div>
+                      </div>
+                      <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
+                      <div className="form-group">
+                        <label className="form-label">Convenio Proveedor</label>
+                        <div style={{ position: 'relative' }}>
+                          <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Escriba para buscar convenio..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor}
+                            onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '', monedaConvenioProv: '', totalAPagarProv: 0 })); }}
+                            onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
+                          {showDropdownConvenioProveedor && (
+                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                              {resultadosConvenioProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
+                                <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
+                                  <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.tipoConvenioNombre}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
+                      </div>
+                      <div className="form-group"><label className="form-label">Moneda del Convenio (Base)</label><input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m: any) => m.id === formData.monedaConvenioProv)?.moneda || 'Sin Asignar'} /></div>
+                    </div>
+                  </div>
+
+                  <div className="roelca-card">
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
+                    <div className="form-grid">
+                      <div className="form-group"><label className="form-label">Monto a Pagar (Base)<span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>editable</span></label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || ''} onChange={handleChange} title="El convenio precarga este valor, pero puedes ajustarlo manualmente" /></div>
+                      <div className="form-group"><label className="form-label">Costos Adicionales</label><input type="number" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Costos)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalProv) || 0).toFixed(2)}</div></div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className="form-control" readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
+                      <div className="form-group"><label className="form-label">Dólares</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresProv) || 0).toFixed(2)}</div></div>
+                      <div className="form-group"><label className="form-label">Pesos</label><div style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.pesosProv) || 0).toFixed(2)}</div></div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1', marginTop: '8px' }}><label className="form-label orange">Conversión Final (Contabilidad)</label><div style={{ color: '#f85149', fontSize: '1.4rem', fontWeight: 'bold', padding: '10px 14px', backgroundColor: 'rgba(248, 81, 73, 0.08)', borderRadius: '8px', border: '1px solid rgba(248, 81, 73, 0.3)', textAlign: 'center' }}>${(Number(formData.conversionProv) || 0).toFixed(2)}</div></div>
+                    </div>
+                  </div>
 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconChart /></div><h3 className="roelca-card-title">Total y Observaciones</h3></div>
@@ -1587,7 +1612,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             <button type="button" onClick={(e) => { e.preventDefault(); (document.querySelector('.roelca-form-left form') as HTMLFormElement)?.requestSubmit(); }} className="roelca-btn-primary" disabled={cargando || !!statusError || camposObligatoriosFaltantes.length > 0} title={camposObligatoriosFaltantes.length > 0 ? 'Completa los campos obligatorios marcados en rojo para poder guardar' : undefined}>
               {cargando ? (<><IconRefresh size={16} /> Guardando...</>) : (<><IconSave size={16} /> {initialData ? 'Actualizar Operación' : 'Guardar Operación'}</>)}
             </button>
-            <button type="button" onClick={onClose} className="roelca-btn-outline" disabled={cargando}><IconX size={15} /> Cancelar</button>
+            <button type="button" onClick={handleCancelarConfirmado} className="roelca-btn-outline" disabled={cargando}><IconX size={15} /> Cancelar</button>
           </div>
         </aside>
       </div>
@@ -1598,7 +1623,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           <IconBriefcase size={16} />
           <span style={{ color: '#c9d1d9', fontSize: '0.88rem', fontWeight: 500 }}>{initialData ? `Operación ${initialData.ref || initialData.id?.substring(0,6)}` : 'Operación en curso'}</span>
           <button type="button" onClick={onRestore} className="roelca-window-btn" title="Restaurar"><IconArrowRight size={14} /></button>
-          <button type="button" onClick={onClose} className="roelca-window-btn danger" title="Cerrar"><IconX size={14} /></button>
+          <button type="button" onClick={handleCancelarConfirmado} className="roelca-window-btn danger" title="Cerrar"><IconX size={14} /></button>
         </div>
       )}
 

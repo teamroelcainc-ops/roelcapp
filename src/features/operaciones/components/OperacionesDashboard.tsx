@@ -28,6 +28,12 @@
 //    Cuando tipoOperacionId coincide con una clave de DOCS_POR_TIPO, en la
 //    sección "GENERAR DOCUMENTOS" se muestran SOLO los documentos de esa lista.
 //    Para cualquier otro tipo se conserva la lógica original (evalIsFletes, etc.).
+//
+// D) ✅ NUEVO: CONFIRMACIÓN AL CANCELAR (status de tipo "Cancelado"):
+//    Al presionar una píldora de "SIGUIENTE PASO" cuyo nombre contiene "cancel"
+//    (p.ej. "19. Cancelado"), se pide confirmación con window.confirm antes de
+//    aplicar el cambio. Evita cancelar una referencia por error. Las demás
+//    transiciones avanzan directo, sin preguntar. (Ver registrarStatusRapido.)
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -499,10 +505,29 @@ const OperacionesDashboard = () => {
   // con nombres). Antes de persistir, convertimos cada paso a {id, nombre} con
   // resolverStatus. Tanto la operación como cada entrada de bitácora quedan
   // con `status` = ID hex y `statusNombre` = nombre legible.
+  //
+  // ✅ NUEVO (confirmación al cancelar): si el status destino es de tipo
+  // "Cancelado" (su nombre contiene "cancel"), se pide confirmación con
+  // window.confirm antes de aplicar el cambio, para evitar cancelar una
+  // referencia por error. Las demás transiciones avanzan directo, sin preguntar.
   // =====================================================================
   const registrarStatusRapido = async (statusNombre: string) => {
     if (!operacionViendo || !statusNombre) return;
     if (guardandoStatusRapido) return;
+
+    // ✅ Confirmación SOLO para status de tipo "Cancelado" (su nombre contiene "cancel").
+    // Normalizamos quitando acentos y pasando a minúsculas para que también detecte
+    // variantes como "Cancelación", "CANCELADO", etc.
+    const _normalizar = (s: string) =>
+      String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (_normalizar(statusNombre).includes('cancel')) {
+      const refOp = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'esta operación';
+      const confirmado = window.confirm(
+        `¿Seguro que deseas CANCELAR la operación ${refOp}?\n\n` +
+        `Se registrará el status "${statusNombre}" y la referencia quedará cancelada.`
+      );
+      if (!confirmado) return;
+    }
 
     setGuardandoStatusRapido(statusNombre);
 

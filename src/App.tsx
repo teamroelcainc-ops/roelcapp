@@ -30,6 +30,7 @@ import { RelojChecadorModal } from './features/relojChecador/components/RelojChe
 import { HistorialChequeosDashboard } from './features/relojChecador/components/HistorialChequeosDashboard';
 import MttoDashboard from './features/gastos/components/mtto/MttoDashboard';
 import { ReferenciasDieselDashboard } from './features/diesel/components/ReferenciasDieselDashboard';
+import { ReferenciasPuentesDashboard } from './features/puentes/components/ReferenciasPuentesDashboard';
 import { ReferenciasNominaDashboard } from './features/nominas/components/ReferenciasNominaDashboard';
 import { DeduccionesDashboard } from './features/empleados/components/DeduccionesDashboard';
 import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
@@ -42,7 +43,7 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasNomina' | 'deducciones' | 'reportes'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -137,7 +138,7 @@ function App() {
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion';
-  const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel';
+  const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel' || moduloActivo === 'referenciasPuentes';
 
   return (
     <div className="app-wrapper">
@@ -173,6 +174,7 @@ function App() {
           <div className="sidebar-submenu">
             <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => setModuloActivo('mtto')}>MTTO</div>
             <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasDiesel')}>Referencias del Diesel</div>
+            <div className={`sidebar-subitem ${moduloActivo === 'referenciasPuentes' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasPuentes')}>Referencias de Puentes</div>
           </div>
         )}
 
@@ -311,6 +313,7 @@ function App() {
         {moduloActivo === 'reportes' && <ReportesDashboard />}
         {moduloActivo === 'mtto' && <MttoDashboard />} 
         {moduloActivo === 'referenciasDiesel' && <ReferenciasDieselDashboard />} 
+        {moduloActivo === 'referenciasPuentes' && <ReferenciasPuentesDashboard />} 
         {moduloActivo === 'referenciasNomina' && <ReferenciasNominaDashboard />} 
         {moduloActivo === 'deducciones' && <DeduccionesDashboard />} 
         {moduloActivo === 'empresas' && <EmpresasDashboard />}
