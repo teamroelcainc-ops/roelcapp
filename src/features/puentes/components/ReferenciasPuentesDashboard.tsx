@@ -33,6 +33,8 @@ export const ReferenciasPuentesDashboard = () => {
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
   const [operadoresList, setOperadoresList] = useState<any[]>([]);
   const [conveniosList, setConveniosList] = useState<any[]>([]);
+  const [tiposGastoList, setTiposGastoList] = useState<any[]>([]);
+  const [puenteSeleccionadoId, setPuenteSeleccionadoId] = useState('');
 
   // Filtros pestaña 1
   const [fechaInicio, setFechaInicio] = useState('');
@@ -90,6 +92,9 @@ export const ReferenciasPuentesDashboard = () => {
     }));
     subs.push(onSnapshot(collection(db, COLECCION_CONVENIOS), (snap) => {
       setConveniosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }));
+    subs.push(onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
+      setTiposGastoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     }));
     const qOps = query(collection(db, 'operaciones'), limit(500));
     subs.push(onSnapshot(qOps, (snap) => {
@@ -288,6 +293,22 @@ export const ReferenciasPuentesDashboard = () => {
     return { subtotal, refs };
   }, [seleccionadas, operacionesGlobales]);
 
+  // Puentes del catálogo de tipos de gasto (categoria_gasto = "Puente")
+  const nombrePuente = (c: any) => c?.nombre ?? c?.concepto ?? c?.tipo_gasto ?? c?.tipoGasto ?? c?.descripcion ?? c?.nombre_gasto ?? c?.id ?? '-';
+
+  const puentesCatalogo = useMemo(() =>
+    tiposGastoList
+      .filter(c => String(c.categoria_gasto ?? c.categoriaGasto ?? c.categoria ?? '').toLowerCase().includes('puente'))
+      .sort((a, b) => String(nombrePuente(a)).localeCompare(String(nombrePuente(b)), 'es', { sensitivity: 'base' })),
+  [tiposGastoList]);
+
+  const puenteSeleccionado = useMemo(
+    () => puentesCatalogo.find(p => p.id === puenteSeleccionadoId) || null,
+    [puentesCatalogo, puenteSeleccionadoId]
+  );
+  const costoPuenteUnitario = Number(puenteSeleccionado?.importe ?? 0);
+  const subtotalPuentesCalc = costoPuenteUnitario * seleccionadas.length;
+
   const generarConsecutivo = (fechaStr: string) => {
     const [year, month, day] = fechaStr.split('-');
     const prefix = `PUENTES-${day}${month}${year}-`;
@@ -304,6 +325,7 @@ export const ReferenciasPuentesDashboard = () => {
     setConsecutivoForm(generarConsecutivo(fechaPago));
     setStatusPagado('Pendiente');
     setObservacionesForm('');
+    setPuenteSeleccionadoId('');
     setModalAbierto(true);
   };
 
@@ -324,6 +346,7 @@ export const ReferenciasPuentesDashboard = () => {
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
     if (seleccionadas.length === 0) return alert('Selecciona al menos una operación.');
+    if (!puenteSeleccionadoId) return alert('Selecciona el Puente.');
     setGuardando(true);
     try {
       const batch = writeBatch(db);
@@ -341,7 +364,7 @@ export const ReferenciasPuentesDashboard = () => {
           cliente: op ? getCliente(op) : '-',
           origen: op?.origen || '-',
           destino: op?.destino || '-',
-          puente: op ? getPuente(op) : 0,
+          puente: costoPuenteUnitario,
         };
       });
 
@@ -352,7 +375,10 @@ export const ReferenciasPuentesDashboard = () => {
         traficoPredominante,
         operacionesIds: seleccionadas,
         operacionesGuardadas,
-        subtotalPuentes: resumenSeleccion.subtotal,
+        puenteId: puenteSeleccionadoId,
+        puenteNombre: nombrePuente(puenteSeleccionado),
+        puenteImporte: costoPuenteUnitario,
+        subtotalPuentes: subtotalPuentesCalc,
         statusPagado: statusPagado === 'Pagada',
         observaciones: observacionesForm,
         createdAt: new Date().toISOString(),
@@ -771,7 +797,7 @@ export const ReferenciasPuentesDashboard = () => {
               </div>
               <div style={{ textAlign: 'right' }}>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Puentes</span>
-                <span style={{ color: '#3fb950', fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
+                <span style={{ color: '#3fb950', fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(subtotalPuentesCalc)}</span>
               </div>
             </div>
 
@@ -793,6 +819,28 @@ export const ReferenciasPuentesDashboard = () => {
                   </select>
                 </div>
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', marginBottom: '20px' }}>
+                <div>
+                  <label style={labelFiltro}>Puente ★</label>
+                  <select value={puenteSeleccionadoId} onChange={e => setPuenteSeleccionadoId(e.target.value)} required style={{ ...inputFiltro, color: '#fff', cursor: 'pointer' }}>
+                    <option value="">Seleccionar puente...</option>
+                    {puentesCatalogo.map(p => (
+                      <option key={p.id} value={p.id}>{nombrePuente(p)} — {formatoMoneda(p.importe)}</option>
+                    ))}
+                  </select>
+                  {puentesCatalogo.length === 0 && (
+                    <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.72rem', marginTop: '6px' }}>No hay puentes en el catálogo (catalogo_tipos_gastos con categoria_gasto = Puente).</span>
+                  )}
+                </div>
+                <div>
+                  <label style={labelFiltro}>Costo del Puente (Importe)</label>
+                  <div style={{ color: '#3fb950', fontSize: '1rem', fontWeight: 'bold', padding: '10px 12px', backgroundColor: '#0d1117', borderRadius: '6px', border: '1px solid #30363d' }}>
+                    {formatoMoneda(costoPuenteUnitario)}
+                  </div>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '6px' }}>x {seleccionadas.length} {seleccionadas.length === 1 ? 'operación' : 'operaciones'} = {formatoMoneda(subtotalPuentesCalc)}</span>
+                </div>
+              </div>
+
               <div style={{ marginBottom: '8px' }}>
                 <label style={labelFiltro}>Observaciones</label>
                 <textarea value={observacionesForm} onChange={e => setObservacionesForm(e.target.value)} style={{ ...inputFiltro, color: '#fff', height: '60px' }} />

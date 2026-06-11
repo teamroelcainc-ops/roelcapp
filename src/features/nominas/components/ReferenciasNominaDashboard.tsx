@@ -5,6 +5,7 @@ import {
   onSnapshot, 
   query, 
   writeBatch, 
+  updateDoc,
   doc, 
   limit,
   orderBy
@@ -22,6 +23,7 @@ const COLUMNAS_OPS_NOMINA_BASE = [
   { id: 'origen',        label: 'Origen',          visible: true, orden: true },
   { id: 'destino',       label: 'Destino',         visible: true, orden: true },
   { id: 'sueldo',        label: 'Sueldo Op.',      visible: true, orden: true },
+  { id: 'sueldoExtra',   label: 'Sueldo Extra',    visible: true, orden: true },
 ];
 
 export const ReferenciasNominaDashboard = () => {
@@ -210,6 +212,7 @@ export const ReferenciasNominaDashboard = () => {
       case 'origen': return String(op.origen || '').toLowerCase();
       case 'destino': return String(op.destino || '').toLowerCase();
       case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
+      case 'sueldoExtra': return Number(op.sueldoExtra || 0);
       default: return '';
     }
   };
@@ -240,6 +243,7 @@ export const ReferenciasNominaDashboard = () => {
       case 'origen': return op.origen || '-';
       case 'destino': return op.destino || '-';
       case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
+      case 'sueldoExtra': return Number(op.sueldoExtra || 0);
       default: return '-';
     }
   };
@@ -253,6 +257,21 @@ export const ReferenciasNominaDashboard = () => {
       case 'origen': return <td key={key} style={tdBase}>{op.origen || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destino || '-'}</td>;
       case 'sueldo': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(op.sueldoTotal || op.sueldoOperador)}</td>;
+      case 'sueldoExtra': {
+        const tieneExtra = Number(op.sueldoExtra || 0) > 0;
+        return (
+          <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+            <button type="button" onClick={(e) => abrirEditorExtra(e, op)} title="Editar sueldo extra de esta operación"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem',
+                backgroundColor: tieneExtra ? 'rgba(245,158,11,0.12)' : 'transparent',
+                border: `1px solid ${tieneExtra ? '#f59e0b' : '#30363d'}`,
+                color: tieneExtra ? '#f59e0b' : '#8b949e' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+              {tieneExtra ? formatoMoneda(op.sueldoExtra) : 'Agregar'}
+            </button>
+          </td>
+        );
+      }
       default: return <td key={key} style={tdBase}>-</td>;
     }
   };
@@ -294,17 +313,58 @@ export const ReferenciasNominaDashboard = () => {
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
+  const todasMostradasSeleccionadas = operacionesMostradas.length > 0 && operacionesMostradas.every(op => seleccionadas.includes(op.id));
+  const toggleSeleccionarTodo = () => {
+    const idsMostradas = operacionesMostradas.map(o => o.id);
+    if (idsMostradas.length > 0 && idsMostradas.every(id => seleccionadas.includes(id))) {
+      setSeleccionadas(prev => prev.filter(id => !idsMostradas.includes(id)));
+    } else {
+      setSeleccionadas(prev => Array.from(new Set([...prev, ...idsMostradas])));
+    }
+  };
+
+  // ── Edición rápida del sueldo extra por operación (campo sueldoExtra en operaciones) ──
+  const [editandoExtra, setEditandoExtra] = useState<{ id: string; ref: string; valor: number | '' } | null>(null);
+  const [guardandoExtra, setGuardandoExtra] = useState(false);
+
+  const abrirEditorExtra = (e: React.MouseEvent, op: any) => {
+    e.stopPropagation();
+    setEditandoExtra({
+      id: op.id,
+      ref: op.ref || op.id.substring(0, 6),
+      valor: op.sueldoExtra != null && op.sueldoExtra !== '' ? Number(op.sueldoExtra) : '',
+    });
+  };
+
+  const guardarExtraOperacion = async () => {
+    if (!editandoExtra) return;
+    const nuevoValor = Number(editandoExtra.valor) || 0;
+    setGuardandoExtra(true);
+    try {
+      await updateDoc(doc(db, 'operaciones', editandoExtra.id), { sueldoExtra: nuevoValor });
+      setOperacionesGlobales(prev => prev.map(o => o.id === editandoExtra.id ? { ...o, sueldoExtra: nuevoValor } : o));
+      setEditandoExtra(null);
+    } catch (error) {
+      console.error('Error al guardar el sueldo extra:', error);
+      alert('No se pudo guardar el sueldo extra de la operación.');
+    } finally {
+      setGuardandoExtra(false);
+    }
+  };
+
   const resumenSeleccion = useMemo(() => {
     let subtotal = 0;
+    let subtotalExtra = 0;
     const refs: string[] = [];
     seleccionadas.forEach(id => {
       const op = operacionesGlobales.find(o => o.id === id);
       if (op) {
-        subtotal += Number(op.sueldoTotal || op.sueldoOperador || 0);
+        subtotal += Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0);
+        subtotalExtra += Number(op.sueldoExtra || 0);
         refs.push(op.ref || op.id?.substring(0,6));
       }
     });
-    return { subtotal, refs };
+    return { subtotal, subtotalExtra, refs };
   }, [seleccionadas, operacionesGlobales]);
 
   // ── Deducciones del operador (empleadoId === operadorId) ──
@@ -371,14 +431,17 @@ export const ReferenciasNominaDashboard = () => {
 
       const operacionesResumenEstable = seleccionadas.map(id => {
         const op = operacionesGlobales.find(o => o.id === id);
+        const base = Number(op?.sueldoTotal || op?.sueldoOperador || 0);
+        const extraOp = Number(op?.sueldoExtra || 0);
         return {
           id,
           ref: op?.ref || id.substring(0,6),
           fecha: op?.fechaServicio || op?.fecha || '',
           cliente: op?.clienteNombre || op?.clientePagaNombre || op?.nombreCliente || op?.clientePaga || '-',
           tipoServicio: op?.tarifaLabel || op?.tarifarioLabel || op?.convenioNombre || op?.tipoOperacionNombre || op?.tipoServicio || '-',
-          importe: Number(op?.sueldoTotal || op?.sueldoOperador || 0),
-          sueldo: Number(op?.sueldoTotal || op?.sueldoOperador || 0)
+          importe: base + extraOp,
+          sueldo: base,
+          sueldoExtra: extraOp
         };
       });
 
@@ -904,14 +967,19 @@ export const ReferenciasNominaDashboard = () => {
 
           {seleccionadas.length > 0 && filtroEstadoOps === 'pendientes' && (
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', alignItems: 'center' }}>
                 <div style={{ borderRight: '1px solid #30363d' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones Seleccionadas</span>
                   <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{seleccionadas.length}</span>
                 </div>
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Sueldo Extra (operaciones)</span>
+                  <span style={{ color: '#f59e0b', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotalExtra)}</span>
+                </div>
                 <div>
                   <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Sueldos a Pagar</span>
                   <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '2px' }}>Incluye el sueldo extra de cada operación</span>
                 </div>
               </div>
             </div>
@@ -921,7 +989,11 @@ export const ReferenciasNominaDashboard = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}></th>
+                  <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>
+                    {filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
+                      <input type="checkbox" checked={todasMostradasSeleccionadas} onChange={toggleSeleccionarTodo} title="Seleccionar todo" style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                    )}
+                  </th>
                   {columnasOps.filter(c => c.visible).map(col => (
                     <th key={col.id}
                       style={col.orden ? thOrdenStyle : { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}
@@ -1145,6 +1217,31 @@ export const ReferenciasNominaDashboard = () => {
             </ul>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
               <button onClick={() => setModalColumnasOps(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MINI MODAL: SUELDO EXTRA DE LA OPERACIÓN */}
+      {editandoExtra && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '420px', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Sueldo Extra · <span style={{ color: '#58a6ff', fontFamily: 'monospace' }}>{editandoExtra.ref}</span></h3>
+              <button onClick={() => setEditandoExtra(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: 0, marginBottom: '14px' }}>Se guarda directamente en la operación. Se sumará al sueldo de esta operación en la nómina.</p>
+            <label style={{ color: '#f59e0b', fontSize: '0.72rem', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 'bold' }}>Monto del sueldo extra</label>
+            <div style={{ position: 'relative', marginBottom: '20px' }}>
+              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold' }}>$</span>
+              <input type="number" step="0.01" autoFocus value={editandoExtra.valor} placeholder="0.00"
+                onChange={e => setEditandoExtra(prev => prev ? { ...prev, valor: e.target.valueAsNumber || '' } : prev)}
+                onKeyDown={e => { if (e.key === 'Enter') guardarExtraOperacion(); }}
+                style={{ width: '100%', padding: '12px 12px 12px 26px', backgroundColor: '#161b22', color: '#3fb950', border: '1px solid #f59e0b', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.2rem', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button type="button" onClick={() => setEditandoExtra(null)} disabled={guardandoExtra} style={{ padding: '9px 20px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button type="button" onClick={guardarExtraOperacion} disabled={guardandoExtra} style={{ padding: '9px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoExtra ? 'Guardando...' : 'Guardar Extra'}</button>
             </div>
           </div>
         </div>
