@@ -9,36 +9,26 @@
 //    documento de `catalogo_status_servicio` (no el texto). Para mostrar el
 //    nombre legible se usa el campo desnormalizado `statusNombre` o se
 //    resuelve contra el catálogo en tiempo de render.
-//    - mapaStatus + resolverStatus: helper bidireccional ID ↔ Nombre.
-//    - guardarHorario: convierte el nombre seleccionado a ID antes de persistir.
-//    - registrarStatusRapido: convierte cada paso de la cascada a ID.
-//    - useEffect cargarBotones: resuelve statusNombre si solo viene el ID
-//      (caso de horarios importados desde SQL externo).
 //
-// B) OPTIMIZACIONES DE LECTURAS:
-//    1. limit(150) → limit(50) con botón "Cargar más" (paginación real con startAfter).
-//    2. TTL de catálogos estables aumentado a 7 días (status, tipos, monedas,
-//       empresas, etc.). Cambian rara vez en producción, no tiene sentido
-//       re-leerlos cada 24h.
-//    3. Catálogos pesados (convenios_*, empleados) mantienen TTL de 24h.
-//    4. guardarHorario NO recarga todas las operaciones (actualiza estado local).
-//    5. Botón "Forzar recarga" pide confirmación para evitar uso accidental.
+// B) ✅ OPTIMIZACIÓN DE LECTURAS (NUEVO):
+//    1. Catálogos con CACHÉ LOCAL (localStorage) + TTL en vez de onSnapshot.
+//       Antes el dashboard se suscribía en vivo a 17 colecciones completas en
+//       cada apertura → leía TODOS los documentos de cada una en cada carga y
+//       agotaba la cuota gratuita de Firestore (de ahí el error y la lentitud).
+//       Ahora cada catálogo se lee UNA vez, se guarda en localStorage y NO se
+//       vuelve a leer mientras esté vigente (estables 7 días, resto 24 h).
+//       Resultado: 0 lecturas de catálogos por apertura tras la 1ª vez.
+//    2. Operaciones paginadas (limit 50) con "Cargar más" (startAfter).
+//    3. guardarHorario / registrarStatusRapido NO recargan todas las operaciones.
 //
-// C) VISIBILIDAD DE DOCUMENTOS POR TIPO DE OPERACIÓN:
-//    Cuando tipoOperacionId coincide con una clave de DOCS_POR_TIPO, en la
-//    sección "GENERAR DOCUMENTOS" se muestran SOLO los documentos de esa lista.
-//    Para cualquier otro tipo se conserva la lógica original (evalIsFletes, etc.).
+// C) VISIBILIDAD DE DOCUMENTOS POR TIPO DE OPERACIÓN (DOCS_POR_TIPO).
 //
-// D) ✅ NUEVO: CONFIRMACIÓN AL CANCELAR (status de tipo "Cancelado"):
-//    Al presionar una píldora de "SIGUIENTE PASO" cuyo nombre contiene "cancel"
-//    (p.ej. "19. Cancelado"), se pide confirmación con window.confirm antes de
-//    aplicar el cambio. Evita cancelar una referencia por error. Las demás
-//    transiciones avanzan directo, sin preguntar. (Ver registrarStatusRapido.)
+// D) CONFIRMACIÓN AL CANCELAR (status cuyo nombre contiene "cancel").
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { FormularioOperacion } from './FormularioOperacion';
-import { collection, doc, writeBatch, query, getDocs, onSnapshot, orderBy, limit, where, startAfter } from 'firebase/firestore';
+import { collection, doc, writeBatch, query, getDocs, orderBy, limit, where, startAfter } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
@@ -47,9 +37,45 @@ import * as XLSX from 'xlsx';
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
-// ✅ TAMAÑO DE PÁGINA: 50 operaciones por descarga (antes 150). El usuario puede
-// pulsar "Cargar más" si necesita ver operaciones más antiguas.
+// ✅ TAMAÑO DE PÁGINA: 50 operaciones por descarga. El usuario puede pulsar
+// "Cargar más" si necesita ver operaciones más antiguas.
 const TAMANO_PAGINA = 50;
+
+// ═══════════════════════════════════════════════════════════════════════
+// ✅ CACHÉ LOCAL DE CATÁLOGOS (minimiza lecturas de Firestore con varios usuarios)
+// Cada catálogo se lee UNA sola vez y se guarda en localStorage con timestamp.
+// Mientras esté vigente (TTL) NO se vuelve a leer de Firestore (0 lecturas).
+// ═══════════════════════════════════════════════════════════════════════
+const DIA_MS = 24 * 60 * 60 * 1000;
+const CATALOGOS_TTL_MS: Record<string, number> = {
+  // Estables (cambian rara vez) → 7 días
+  statusServicio: 7 * DIA_MS, tiposOperacion: 7 * DIA_MS, embalajes: 7 * DIA_MS,
+  catalogoMoneda: 7 * DIA_MS, tarifas: 7 * DIA_MS,
+  // Semi-estables → 24 h
+  empresas: DIA_MS, remolques: DIA_MS, unidades: DIA_MS, empleados: DIA_MS,
+  unidades_proveedor: DIA_MS, proveedores_unidad: DIA_MS,
+  conveniosProv: DIA_MS, catalogoConvProvDetalles: DIA_MS,
+  catalogoConvClientes: DIA_MS, catalogoConvDetalles: DIA_MS, catalogoTC: DIA_MS,
+};
+const TTL_DEFAULT = DIA_MS;
+const claveCacheCatalogo = (alias: string) => `cat_v1__${alias}`;
+const leerCacheCatalogo = (alias: string): { ts: number; data: any[] } | null => {
+  try {
+    const raw = localStorage.getItem(claveCacheCatalogo(alias));
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return obj && Array.isArray(obj.data) ? obj : null;
+  } catch { return null; }
+};
+const escribirCacheCatalogo = (alias: string, data: any[]) => {
+  try { localStorage.setItem(claveCacheCatalogo(alias), JSON.stringify({ ts: Date.now(), data })); } catch {}
+};
+const cacheVigente = (alias: string): boolean => {
+  const obj = leerCacheCatalogo(alias);
+  if (!obj) return false;
+  const ttl = CATALOGOS_TTL_MS[alias] ?? TTL_DEFAULT;
+  return (Date.now() - (obj.ts || 0)) < ttl;
+};
 
 const COLUMNAS_BASE = [
   { id: 'ref', label: '# Referencia', visible: true },
@@ -119,7 +145,7 @@ const OperacionesDashboard = () => {
   const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
   
-  // ✅ NUEVO: paginación real con cursor (startAfter) para evitar leer 150 ops siempre
+  // ✅ paginación real con cursor (startAfter) para evitar leer 150 ops siempre
   const [hayMasOperaciones, setHayMasOperaciones] = useState(true);
   const [cargandoMas, setCargandoMas] = useState(false);
 
@@ -149,8 +175,6 @@ const OperacionesDashboard = () => {
 
   // =====================================================================
   // ✅ Resolución bidireccional ID ↔ Nombre para `catalogo_status_servicio`.
-  // El campo `status` de operaciones/horarios ahora guarda ID hex; este helper
-  // se usa al persistir (nombre → id) y al renderizar (id → nombre).
   // =====================================================================
   const mapaStatus = useMemo(() => {
     const lista = (catalogosGlobales.statusServicio || []) as any[];
@@ -174,13 +198,7 @@ const OperacionesDashboard = () => {
   };
 
   // =====================================================================
-  // ✅ Catálogos en tiempo real: en lugar de leerlos una vez y cachearlos
-  // (con TTLs que hacían que cambios en otra pantalla tardaran horas/días en
-  // reflejarse aquí), nos suscribimos con onSnapshot. Cualquier alta/edición
-  // en estas colecciones —p.ej. tipo_cambio, convenios, empresas— se ve de
-  // inmediato en este formulario sin recargar la página.
-  // La suscripción se arma una sola vez (ver useEffect de montaje) y cada
-  // colección actualiza solo su alias dentro de `catalogosGlobales`.
+  // ✅ Mapa de colecciones de catálogos (alias → colección en Firestore).
   // =====================================================================
   const COLECCIONES_CATALOGOS: Record<string, string> = {
     statusServicio:            'catalogo_status_servicio',
@@ -201,27 +219,47 @@ const OperacionesDashboard = () => {
     catalogoTC:                'tipo_cambio',
   };
 
-  const suscribirCatalogosEnVivo = () => {
-    return Object.entries(COLECCIONES_CATALOGOS).map(([alias, coleccion]) =>
-      onSnapshot(
-        collection(db, coleccion),
-        (snap) => {
-          const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-          setCatalogosGlobales((prev: any) => ({ ...prev, [alias]: data }));
-        },
-        (error) => console.error(`Error escuchando catálogo "${coleccion}":`, error)
-      )
-    );
+  // =====================================================================
+  // ✅ Carga perezosa + caché: solo lee de Firestore los catálogos que NO
+  // estén vigentes en localStorage. Los demás se sirven desde caché (0 lecturas).
+  // =====================================================================
+  const catalogosEnVueloRef = useRef<Set<string>>(new Set());
+
+  const cargarCatalogosSiEsNecesario = async () => {
+    const pendientes = Object.entries(COLECCIONES_CATALOGOS)
+      .filter(([alias]) => !cacheVigente(alias) && !catalogosEnVueloRef.current.has(alias))
+      .map(([alias, col]) => ({ alias, col }));
+    if (pendientes.length === 0) return;
+    pendientes.forEach(p => catalogosEnVueloRef.current.add(p.alias));
+    await Promise.all(pendientes.map(async ({ alias, col }) => {
+      try {
+        const snap = await getDocs(collection(db, col));
+        const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        escribirCacheCatalogo(alias, data);
+        setCatalogosGlobales((prev: any) => ({ ...prev, [alias]: data }));
+      } catch (e) {
+        console.error(`Error cargando catálogo "${col}":`, e);
+      } finally {
+        catalogosEnVueloRef.current.delete(alias);
+      }
+    }));
   };
 
-  // Se mantiene como no-op para no tocar los puntos donde se invocaba antes
-  // de abrir formularios/modales: ahora los catálogos ya están suscritos
-  // desde el montaje del dashboard y se mantienen al día solos.
-  const cargarCatalogosSiEsNecesario = async () => {};
+  // Hidrata el estado al instante desde la caché local (0 lecturas) y luego
+  // descarga en segundo plano SOLO lo que esté vencido o falte.
+  const hidratarCatalogosDesdeCache = () => {
+    const inicial: any = {};
+    Object.keys(COLECCIONES_CATALOGOS).forEach(alias => {
+      const c = leerCacheCatalogo(alias);
+      if (c && Array.isArray(c.data)) inicial[alias] = c.data;
+    });
+    if (Object.keys(inicial).length) {
+      setCatalogosGlobales((prev: any) => ({ ...prev, ...inicial }));
+    }
+  };
 
   // =====================================================================
-  // ✅ DESCARGAR PÁGINA INICIAL DE OPERACIONES (limit 50 en vez de 150).
-  // Reduce 3× las lecturas de cada carga del módulo.
+  // ✅ DESCARGAR PÁGINA INICIAL DE OPERACIONES (limit 50).
   // =====================================================================
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
@@ -244,16 +282,22 @@ const OperacionesDashboard = () => {
 
       setOperacionesGlobales(operacionesActivas);
       setHayMasOperaciones(operacionesSnap.docs.length === TAMANO_PAGINA);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error al cargar operaciones:", e);
-      alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
+      const msg = String(e?.message || e?.code || e || '').toLowerCase();
+      if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
+        alert("⚠️ Cuota de lecturas de Firestore agotada.\n\nEl plan gratuito permite 50,000 lecturas/día y entre varias personas se agota. Se reinicia a las 2 AM (hora México).\n\nRecomendación: activa el plan Blaze en Firebase Console.");
+      } else if (msg.includes('index')) {
+        alert("Falta un índice en Firestore para esta consulta. Abre la consola del navegador (F12); el error de Firebase trae un enlace para crear el índice con un clic.");
+      } else {
+        alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
+      }
     }
     setCargandoOperaciones(false);
   };
 
   // =====================================================================
   // ✅ CARGAR MÁS OPERACIONES (paginación real con startAfter).
-  // Solo descarga 50 más cuando el usuario lo solicita explícitamente.
   // =====================================================================
   const cargarMasOperaciones = async () => {
     if (!hayMasOperaciones || cargandoMas || operacionesGlobales.length === 0) return;
@@ -287,8 +331,9 @@ const OperacionesDashboard = () => {
   };
 
   useEffect(() => {
-    const unsubscribers = suscribirCatalogosEnVivo();
-    return () => unsubscribers.forEach((unsub) => unsub());
+    hidratarCatalogosDesdeCache();   // instantáneo, 0 lecturas
+    cargarCatalogosSiEsNecesario();  // descarga en 2º plano solo lo vencido/faltante
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -297,9 +342,7 @@ const OperacionesDashboard = () => {
 
   useEffect(() => { setPaginaActual(1); }, [busqueda]);
 
-  // ✅ MODIFICADO: Antes de pedir botones a statusRules, garantizamos que la operación
-  // tenga `statusNombre` poblado. Si solo trae `status` con ID hex (caso del horario
-  // importado de SQL externo), lo resolvemos a nombre usando el catálogo.
+  // ✅ Antes de pedir botones a statusRules, garantizamos statusNombre poblado.
   useEffect(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
@@ -311,11 +354,6 @@ const OperacionesDashboard = () => {
           }
         }
         const botones = await obtenerBotonesHorarioDinamicos(op);
-        console.log('[DEBUG StatusButtons] Operación:', {
-          id: op.id, status: op.status, statusNombre: op.statusNombre,
-          tipoOperacion: op.tipoOperacionNombre, trafico: op.trafico
-        });
-        console.log('[DEBUG StatusButtons] Botones devueltos por la regla:', botones);
         setBotonesDisponibles(botones || []);
       } else {
         setBotonesDisponibles([]);
@@ -454,10 +492,7 @@ const OperacionesDashboard = () => {
   };
 
   // =====================================================================
-  // ✅ guardarHorario MODIFICADO:
-  // 1. Resuelve nombre → ID hex antes de persistir (campo `status`).
-  // 2. NO llama a descargarOperaciones() al terminar; actualiza el estado local
-  //    para evitar 50 lecturas innecesarias por cada horario retroactivo guardado.
+  // ✅ guardarHorario: resuelve nombre → ID hex y NO re-descarga operaciones.
   // =====================================================================
   const guardarHorario = async () => {
     if (!nuevoStatus || !nuevaFechaHora) return alert("Completa la fecha y el estatus.");
@@ -469,8 +504,8 @@ const OperacionesDashboard = () => {
       const horarioRef = doc(collection(db, 'horarios'));
       batch.set(horarioRef, {
         operacionId: operacionViendo.id,
-        status: statusId,                      // ✅ ID hex del catálogo
-        statusNombre: statusNombreResuelto,    // ✅ Desnormalizado por conveniencia
+        status: statusId,
+        statusNombre: statusNombreResuelto,
         fechaHora: nuevaFechaHora,
         registradoEn: new Date().toISOString()
       });
@@ -479,7 +514,6 @@ const OperacionesDashboard = () => {
 
       await batch.commit();
 
-      // ✅ Actualizar estado local en lugar de re-descargar todas las operaciones
       const operacionActualizada = {
         ...operacionViendo,
         status: statusId,
@@ -500,24 +534,12 @@ const OperacionesDashboard = () => {
   };
 
   // =====================================================================
-  // ✅ registrarStatusRapido MODIFICADO:
-  // resolverCascadaStatus devuelve nombres legibles (porque el flujo se guarda
-  // con nombres). Antes de persistir, convertimos cada paso a {id, nombre} con
-  // resolverStatus. Tanto la operación como cada entrada de bitácora quedan
-  // con `status` = ID hex y `statusNombre` = nombre legible.
-  //
-  // ✅ NUEVO (confirmación al cancelar): si el status destino es de tipo
-  // "Cancelado" (su nombre contiene "cancel"), se pide confirmación con
-  // window.confirm antes de aplicar el cambio, para evitar cancelar una
-  // referencia por error. Las demás transiciones avanzan directo, sin preguntar.
+  // ✅ registrarStatusRapido: cascada con nombres → {id, nombre}; confirma cancelaciones.
   // =====================================================================
   const registrarStatusRapido = async (statusNombre: string) => {
     if (!operacionViendo || !statusNombre) return;
     if (guardandoStatusRapido) return;
 
-    // ✅ Confirmación SOLO para status de tipo "Cancelado" (su nombre contiene "cancel").
-    // Normalizamos quitando acentos y pasando a minúsculas para que también detecte
-    // variantes como "Cancelación", "CANCELADO", etc.
     const _normalizar = (s: string) =>
       String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
     if (_normalizar(statusNombre).includes('cancel')) {
@@ -536,8 +558,6 @@ const OperacionesDashboard = () => {
     const botonesPrevios = botonesDisponibles;
 
     try {
-      // Garantizar que la operación tenga statusNombre antes de invocar la cascada
-      // (la cascada compara contra nombres del flujo, no contra IDs).
       let opParaCascada = operacionViendo;
       if (!opParaCascada.statusNombre && opParaCascada.status) {
         const r = resolverStatus(opParaCascada.status);
@@ -548,7 +568,6 @@ const OperacionesDashboard = () => {
       const cadenaResuelta = cadenaStatus.map(resolverStatus);
       const statusFinal = cadenaResuelta[cadenaResuelta.length - 1];
 
-      // Optimista
       const operacionActualizada = {
         ...operacionViendo,
         status: statusFinal.id,
@@ -576,8 +595,8 @@ const OperacionesDashboard = () => {
             const horarioRef = doc(collection(db, 'horarios'));
             batch.set(horarioRef, {
               operacionId: operacionViendo.id,
-              status: statusPaso.id,           // ✅ ID hex
-              statusNombre: statusPaso.nombre, // ✅ Nombre legible
+              status: statusPaso.id,
+              statusNombre: statusPaso.nombre,
               fechaHora: fechaHoraLocal,
               registradoEn: registradoEn,
               ordenCascada: idx,
@@ -628,8 +647,7 @@ const OperacionesDashboard = () => {
     setOperacionEditando(null);
   };
 
-  // ✅ MODIFICADO: pide confirmación antes de invalidar el caché
-  // (el botón anterior se podía pulsar accidentalmente y costaba ~1000 lecturas).
+  // ✅ Pide confirmación antes de invalidar el caché de catálogos.
   const forzarRecarga = () => {
     if (!window.confirm(
       '¿Recargar todos los catálogos desde Firestore?\n\n' +
@@ -984,13 +1002,11 @@ const OperacionesDashboard = () => {
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
   // ── Visibilidad de documentos según tipo de operación ──
-  // Claves válidas: 'carta' | 'prueba' | 'checklist' | 'solicitud' | 'instrucciones'
-  // Si el tipo NO está en este mapa, se usa la lógica normal (evalIsFletes, etc.).
   const evalTipoOpId = String(operacionViendo?.tipoOperacionId || '').trim();
   const DOCS_POR_TIPO: Record<string, string[]> = {
-    '3e5b0035': ['checklist', 'solicitud'], // ← AJUSTA con los docs que quieras mostrar para este tipo
+    '3e5b0035': ['checklist', 'solicitud'],
   };
-  const docsPermitidos = DOCS_POR_TIPO[evalTipoOpId] || null; // null = comportamiento normal
+  const docsPermitidos = DOCS_POR_TIPO[evalTipoOpId] || null;
   const puedeMostrarDoc = (doc: string) => !docsPermitidos || docsPermitidos.includes(doc);
 
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
@@ -1104,7 +1120,6 @@ const OperacionesDashboard = () => {
                 {hayMasOperaciones && <span style={{ color: '#8b949e', marginLeft: 8, fontStyle: 'italic' }}>(hay más en el servidor)</span>}
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {/* ✅ NUEVO: Botón "Cargar más" para paginación real (50 ops por descarga) */}
                 {hayMasOperaciones && (
                   <button
                     onClick={cargarMasOperaciones}
@@ -1662,7 +1677,6 @@ const OperacionesDashboard = () => {
                       historialList.map((h: any) => (
                         <tr key={h.id} style={{ borderBottom: '1px solid #21262d' }}>
                           <td style={{ padding: '16px 12px', color: '#c9d1d9' }}>{new Date(h.fechaHora).toLocaleString('es-MX')}</td>
-                          {/* ✅ Muestra el nombre legible aunque el status guardado sea un ID hex */}
                           <td style={{ padding: '16px 12px', color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre', h.statusNombre)}</td>
                         </tr>
                       ))
