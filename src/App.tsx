@@ -35,7 +35,7 @@ import { ReferenciasNominaDashboard } from './features/nominas/components/Refere
 import { DeduccionesDashboard } from './features/empleados/components/DeduccionesDashboard';
 import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
 import { FacturacionProveedoresDashboard } from './features/facturacion/components/FacturacionProveedoresDashboard';
-import { CostosAdicionalesDashboard } from './features/costosAdicionales/components/CostosAdicionalesDashboard';
+import { CostosAdicionalesDashboard } from './features/costosAdicionales/CostosAdicionalesDashboard';
 
 import './App.css';
 

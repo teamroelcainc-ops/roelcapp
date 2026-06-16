@@ -1,4 +1,4 @@
-// src/features/costosAdicionales/components/CostosAdicionalesDashboard.tsx
+// src/features/costosAdicionales/CostosAdicionalesDashboard.tsx
 //
 // Módulo para registrar COSTOS ADICIONALES (cliente y proveedor) ligados a una
 // operación, guardados en una colección aparte: `costos_adicionales`.
@@ -20,7 +20,7 @@ import {
   collection, getDocs, query, orderBy, limit, startAfter,
   doc, addDoc, deleteDoc, updateDoc, where
 } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { db } from '../../config/firebase';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -276,7 +276,7 @@ export const CostosAdicionalesDashboard = () => {
     if (!monto && monto !== 0) return alert('Captura el monto de Cargos Adicionales.');
     setGuardando(true);
     try {
-      const convNombre = conveniosDelModal.find(c => c.id === convenioSel)?.nombre || '';
+      const convNombre = conveniosDelModal.find((c: any) => c.id === convenioSel)?.nombre || '';
       const nuevo = {
         operacionId: opSeleccionada.id,
         operacionRef: opSeleccionada.ref || opSeleccionada.id?.substring(0, 6) || '',
@@ -463,7 +463,7 @@ export const CostosAdicionalesDashboard = () => {
                   <label style={labelInput}>Convenio</label>
                   <select value={convenioSel} onChange={e => setConvenioSel(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
                     <option value="">-- Seleccionar --</option>
-                    {conveniosDelModal.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                    {conveniosDelModal.map((c: any) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                   </select>
                   {conveniosDelModal.length === 0 && (
                     <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '6px' }}>
