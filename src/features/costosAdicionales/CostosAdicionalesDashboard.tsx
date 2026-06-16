@@ -69,7 +69,18 @@ const formatearFecha = (f: string) => {
   catch { return f; }
 };
 
-export const CostosAdicionalesDashboard = () => {
+interface CostosAdicionalesDashboardProps {
+  // Si se pasa una operación, el módulo abre directamente en ella (modo modal),
+  // omitiendo la lista. Sirve para invocarlo desde el formulario de operación.
+  operacionFija?: any;
+  // Botón de cierre cuando se usa como modal (vuelve al formulario).
+  onCerrar?: () => void;
+  // Avisa al padre los nuevos totales para que sincronice sus cálculos.
+  onCostosActualizados?: (cambios: { cargosAdicionales: number; cargosAdicionalesProv: number }) => void;
+}
+
+export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosActualizados }: CostosAdicionalesDashboardProps = {}) => {
+  const comoModal = !!operacionFija;
   const [operaciones, setOperaciones] = useState<any[]>([]);
   const [cargandoOps, setCargandoOps] = useState(true);
   const [hayMas, setHayMas] = useState(true);
@@ -79,7 +90,7 @@ export const CostosAdicionalesDashboard = () => {
   const [catalogos, setCatalogos] = useState<any>({});
   const enVueloRef = useRef<Set<string>>(new Set());
 
-  const [opSeleccionada, setOpSeleccionada] = useState<any | null>(null);
+  const [opSeleccionada, setOpSeleccionada] = useState<any | null>(operacionFija || null);
   const [costos, setCostos] = useState<any[]>([]);
   const [cargandoCostos, setCargandoCostos] = useState(false);
 
@@ -150,7 +161,15 @@ export const CostosAdicionalesDashboard = () => {
     setCargandoMas(false);
   };
 
-  useEffect(() => { cargarCatalogos(); descargarOperaciones(); }, []);
+  useEffect(() => {
+    cargarCatalogos();
+    if (operacionFija) {
+      cargarCostos(operacionFija); // modo modal: no descargamos la lista (0 lecturas extra)
+    } else {
+      descargarOperaciones();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Costos de la operación seleccionada ──
   const cargarCostos = async (op: any) => {
@@ -260,6 +279,7 @@ export const CostosAdicionalesDashboard = () => {
     const opActualizada = { ...op, ...cambios };
     setOpSeleccionada(opActualizada);
     setOperaciones(prev => prev.map(o => o.id === op.id ? opActualizada : o));
+    onCostosActualizados?.({ cargosAdicionales: tCliente, cargosAdicionalesProv: tProv });
   };
 
   const abrirModal = (tipo: 'cliente' | 'proveedor') => {
@@ -369,8 +389,8 @@ export const CostosAdicionalesDashboard = () => {
     );
   };
 
-  return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
+  const contenido = (
+    <div className="module-container" style={{ padding: comoModal ? '20px 24px 48px' : '24px', animation: 'fadeIn 0.3s ease' }}>
       <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Costos Adicionales</h1>
 
       {!opSeleccionada ? (
@@ -422,7 +442,7 @@ export const CostosAdicionalesDashboard = () => {
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '10px', padding: '16px 20px', marginBottom: '20px' }}>
             <div>
-              <button onClick={() => { setOpSeleccionada(null); setCostos([]); }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.82rem', padding: 0, marginBottom: '6px' }}>← Volver a la lista</button>
+              <button onClick={() => { if (comoModal) { onCerrar?.(); } else { setOpSeleccionada(null); setCostos([]); } }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.82rem', padding: 0, marginBottom: '6px' }}>{comoModal ? '✕ Cerrar y volver al formulario' : '← Volver a la lista'}</button>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                 <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.2rem', fontFamily: 'monospace' }}>{opSeleccionada.ref || opSeleccionada.id?.substring(0, 6)}</span>
                 <span style={{ color: '#c9d1d9' }}>{opSeleccionada.clienteNombre || opSeleccionada.nombreCliente || '-'}</span>
@@ -499,4 +519,14 @@ export const CostosAdicionalesDashboard = () => {
       )}
     </div>
   );
+
+  if (comoModal) {
+    // Modo modal: overlay a pantalla completa por encima del formulario de operación.
+    return (
+      <div style={{ position: 'fixed', inset: 0, backgroundColor: '#0a0d14', zIndex: 1200, overflowY: 'auto' }}>
+        {contenido}
+      </div>
+    );
+  }
+  return contenido;
 };

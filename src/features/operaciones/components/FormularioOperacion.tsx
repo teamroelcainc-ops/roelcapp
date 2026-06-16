@@ -9,6 +9,8 @@ import { FormularioEmpresa } from '../../empresas/components/FormularioEmpresa';
 import { FormularioRemolque } from '../../remolques/components/FormularioRemolque';
 import { FormularioUnidad } from '../../unidades/components/FormularioUnidad';
 import { EmployeeForm } from '../../empleados/components/EmployeeForm';
+// ✅ NUEVO: módulo de Costos Adicionales (se abre como modal enfocado en la operación)
+import { CostosAdicionalesDashboard } from '../../costosAdicionales/CostosAdicionalesDashboard';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -217,6 +219,8 @@ type CatalogoCreable =
 export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, onRestore, catalogosCacheados, onSave }: FormProps) => {
   const [pestañaActiva, setPestañaActiva] = useState<TabType>('general');
   const [cargando, setCargando] = useState(false);
+  // ✅ NUEVO: control del modal de Costos Adicionales (enfocado en esta operación)
+  const [mostrarCostosAdic, setMostrarCostosAdic] = useState(false);
 
   const [statusPreview, setStatusPreview] = useState<string>('');
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -1467,6 +1471,24 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               )}
               {pestañaActiva === 'cobrar' && pestanasVisibles.includes('cobrar') && (
                 <>
+                  {/* ✅ NUEVO: acceso a Costos Adicionales detallados de esta operación */}
+                  <div className="roelca-card">
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Costos Adicionales (Cliente y Proveedor)</h3></div>
+                    <p style={{ color: '#8b949e', fontSize: '0.85rem', margin: '0 0 14px 0' }}>
+                      Registra costos adicionales detallados por convenio para esta operación. El total se suma a los Cargos Adicionales (cliente y proveedor) y recalcula la utilidad.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setMostrarCostosAdic(true)}
+                      disabled={!initialData}
+                      title={!initialData ? 'Guarda la operación primero para poder agregar costos adicionales' : undefined}
+                      style={{ padding: '10px 16px', backgroundColor: initialData ? '#D84315' : '#21262d', color: initialData ? '#fff' : '#6e7681', border: 'none', borderRadius: '8px', cursor: initialData ? 'pointer' : 'not-allowed', fontWeight: 600 }}
+                    >
+                      + Gestionar Costos Adicionales
+                    </button>
+                    {!initialData && <div style={{ color: '#8b949e', fontSize: '0.78rem', marginTop: '8px' }}>Disponible al editar una operación ya guardada.</div>}
+                  </div>
+
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Facturación al Cliente</h3></div>
                     <div className="form-grid">
@@ -1646,6 +1668,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empleado' && (
         <EmployeeForm estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
+      )}
+
+      {/* ✅ NUEVO: Costos Adicionales de esta operación (modal enfocado) */}
+      {mostrarCostosAdic && initialData && (
+        <CostosAdicionalesDashboard
+          operacionFija={{
+            id: initialData.id,
+            ref: initialData.ref || formData.refCliente || '',
+            clientePaga: formData.clientePaga || initialData.clientePaga,
+            proveedorUnidad: formData.proveedorUnidad || initialData.proveedorUnidad,
+            clienteNombre: searchClientePaga,
+            proveedorUnidadNombre: searchProvTransporte,
+            montoConvenioCliente: Number(formData.montoConvenioCliente) || 0,
+            totalAPagarProv: Number(formData.totalAPagarProv) || 0,
+            facturadoEnCobrar: formData.facturadoEnCobrar,
+            facturadoEnUnidad: formData.facturadoEnUnidad,
+            tipoCambioAprobado: Number(formData.tipoCambioAprobado || tipoCambioDia) || 0,
+          }}
+          onCerrar={() => setMostrarCostosAdic(false)}
+          onCostosActualizados={(cambios: { cargosAdicionales: number; cargosAdicionalesProv: number }) => setFormData(prev => ({ ...prev, cargosAdicionales: cambios.cargosAdicionales, cargosAdicionalesProv: cambios.cargosAdicionalesProv }))}
+        />
       )}
 
     </div>
