@@ -36,6 +36,8 @@ import { DeduccionesDashboard } from './features/empleados/components/Deduccione
 import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
 import { FacturacionProveedoresDashboard } from './features/facturacion/components/FacturacionProveedoresDashboard';
 import { CostosAdicionalesDashboard } from './features/costosAdicionales/CostosAdicionalesDashboard';
+import ConfiguracionEmpresa from './features/configuracion/ConfiguracionEmpresa';
+import { EmpresaBrand } from './features/configuracion/EmpresaBrand';
 
 import './App.css';
 
@@ -44,7 +46,7 @@ function App() {
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [menuAbierto, setMenuAbierto] = useState(true);
@@ -138,7 +140,7 @@ function App() {
   const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes';
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
-  const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion';
+  const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion' || moduloActivo === 'datosEmpresa';
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel' || moduloActivo === 'referenciasPuentes' || moduloActivo === 'costosAdicionales';
 
   return (
@@ -148,7 +150,7 @@ function App() {
 
       <div className={`sidebar ${!menuAbierto ? 'collapsed' : ''}`}>
         <div className="sidebar-brand">
-          <span style={{ color: '#D84315', marginRight: '8px' }}>■</span> Roelca Inc.
+          <EmpresaBrand />
         </div>
 
         <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} onClick={() => setModuloActivo('operaciones')}>
@@ -247,6 +249,7 @@ function App() {
             <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => setModuloActivo('roles')}>Roles y Permisos</div>
             <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => setModuloActivo('logs')}>Historial de Actividad</div>
             <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => setModuloActivo('flujosOperacion')}>Reglas de Estatus</div>
+            <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => setModuloActivo('datosEmpresa')}>Datos de la Empresa</div>
           </div>
         )}
 
@@ -337,6 +340,7 @@ function App() {
         {moduloActivo === 'usuarios' && <UsuariosDashboard />}
         {moduloActivo === 'logs' && <LogsDashboard />}
         {moduloActivo === 'flujosOperacion' && <ConfiguradorStatus />}
+        {moduloActivo === 'datosEmpresa' && <ConfiguracionEmpresa />}
         {moduloActivo === 'facturacionClientes' && <FacturacionClientesDashboard />}
         {moduloActivo === 'facturacionProveedores' && <FacturacionProveedoresDashboard />}
         
