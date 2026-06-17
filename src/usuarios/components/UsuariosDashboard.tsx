@@ -28,7 +28,7 @@ export const UsuariosDashboard = () => {
       setUsuarios(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    const unsubRoles = onSnapshot(collection(db, 'catalogo_roles'), (snapshot) => {
+    const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
       setRolesDisponibles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
