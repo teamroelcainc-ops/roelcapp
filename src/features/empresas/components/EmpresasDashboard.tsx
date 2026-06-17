@@ -4,6 +4,7 @@ import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBat
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
 
@@ -52,7 +53,7 @@ const EmpresasDashboard = () => {
   const [empresaEditando, setEmpresaEditando] = useState<any | null>(null);
   
   const [empresaViendo, setEmpresaViendo] = useState<any | null>(null);
-  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'fiscal' | 'contacto' | 'uso'>('general');
+  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'fiscal' | 'contacto' | 'uso' | 'documentos'>('general');
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
@@ -859,6 +860,7 @@ const EmpresasDashboard = () => {
               <button type="button" onClick={() => setActiveTabDetalle('fiscal')} style={tabStyle(activeTabDetalle === 'fiscal')}>Comercial / Fiscal</button>
               <button type="button" onClick={() => setActiveTabDetalle('contacto')} style={tabStyle(activeTabDetalle === 'contacto')}>Contacto</button>
               <button type="button" onClick={() => setActiveTabDetalle('uso')} style={tabStyle(activeTabDetalle === 'uso')}>Historial de Uso</button>
+              <button type="button" onClick={() => setActiveTabDetalle('documentos')} style={tabStyle(activeTabDetalle === 'documentos')}>Documentos</button>
             </div>
 
             <div className="detail-content" style={{ padding: '24px', minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
@@ -958,6 +960,10 @@ const EmpresasDashboard = () => {
                     </>
                   )}
                 </div>
+              )}
+
+              {activeTabDetalle === 'documentos' && (
+                <DocumentosLista coleccionOrigen="empresas" registroId={empresaViendo.id ?? ''} />
               )}
 
             </div>
