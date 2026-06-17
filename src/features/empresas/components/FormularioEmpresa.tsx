@@ -4,6 +4,26 @@ import { collection, getDocs, onSnapshot, addDoc } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion'; 
 import { registrarLog } from '../../../utils/logger'; 
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+
+// Tipos de documento que se manejan para EMPRESAS / CLIENTES (edítalos a tu gusto)
+export const TIPOS_DOCUMENTO_EMPRESA = [
+  '1. Constancia de Situación Fiscal (RFC)',
+  '2. Comprobante de Domicilio',
+  '3. Acta Constitutiva',
+  '4. Poder Notarial del Representante',
+  '5. Identificación del Representante Legal',
+  '6. Cédula de Identificación Fiscal',
+  '7. Opinión de Cumplimiento (SAT)',
+  '8. Carátula Bancaria / Estado de Cuenta',
+  '9. Contrato de Servicio',
+  '10. Orden de Compra',
+  '11. Carta de Crédito',
+  '12. W-9 / W-8BEN-E (Tax ID USA)',
+  '13. Comprobante de Pago',
+  '14. Factura',
+  '15. Otro',
+];
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR MULTIPLE CON CHECKBOXES
@@ -363,6 +383,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
   const [modalDireccionAbierto, setModalDireccionAbierto] = useState(false);
   const [modalRegimenAbierto, setModalRegimenAbierto] = useState(false);
+  const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
   const [formData, setFormData] = useState({
     numCliente: '',
@@ -597,6 +618,15 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
               {estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Empresa` : 'Nueva Empresa')}
             </h2>
             <div className="header-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => { if (!initialData) { alert('Guarda la empresa primero para poder subir documentos.'); return; } setMostrarSubirDoc(true); }}
+                title={initialData ? 'Subir documentos de la empresa' : 'Guarda la empresa primero para subir documentos'}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '6px', border: 'none', backgroundColor: initialData ? '#D84315' : '#21262d', color: initialData ? '#fff' : '#6e7681', cursor: initialData ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.82rem' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                Subir Documentos
+              </button>
               {estado === 'abierto' ? (
                 <button type="button" onClick={onMinimize} className="btn-window" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>🗕</button>
               ) : (
@@ -839,6 +869,15 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
           onRestore={() => {}}
         />
       )}
+
+      <DocumentoUploadModal
+        isOpen={mostrarSubirDoc}
+        onClose={() => setMostrarSubirDoc(false)}
+        coleccionOrigen="empresas"
+        registroId={(initialData as any)?.id || ''}
+        registroNombre={formData.nombre || ''}
+        tiposDocumento={TIPOS_DOCUMENTO_EMPRESA}
+      />
     </>
   );
 };

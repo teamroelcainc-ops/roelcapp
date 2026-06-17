@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc } from 'firebase/firestore';
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
-import { FormularioEmpresa } from './FormularioEmpresa';
+import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
 
@@ -54,6 +55,7 @@ const EmpresasDashboard = () => {
   const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'fiscal' | 'contacto' | 'uso'>('general');
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
+  const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
   const [empresas, setEmpresas] = useState<any[]>([]);
   const [lastUsedMap, setLastUsedMap] = useState<Record<string, string>>({}); 
@@ -839,7 +841,17 @@ const EmpresasDashboard = () => {
                   </span>
                 )}
               </div>
-              <button onClick={() => setEmpresaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <button
+                  onClick={() => setMostrarSubirDoc(true)}
+                  title="Subir documentos de la empresa"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#D84315', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  Subir Documentos
+                </button>
+                <button onClick={() => setEmpresaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              </div>
             </div>
             
             <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px', overflowX: 'auto' }}>
@@ -995,6 +1007,18 @@ const EmpresasDashboard = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* MODAL SUBIR DOCUMENTOS (ligado a la empresa) */}
+      {empresaViendo && (
+        <DocumentoUploadModal
+          isOpen={mostrarSubirDoc}
+          onClose={() => setMostrarSubirDoc(false)}
+          coleccionOrigen="empresas"
+          registroId={empresaViendo.id ?? ''}
+          registroNombre={empresaViendo.nombre || ''}
+          tiposDocumento={TIPOS_DOCUMENTO_EMPRESA}
+        />
       )}
     </div>
   );
