@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -15,9 +16,11 @@ const firebaseConfig = {
 // Inicializar Firebase (Solo una vez)
 const app = initializeApp(firebaseConfig);
 
-// Exportar base de datos y autenticación
+// Exportar base de datos, autenticación y storage
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+// ✅ Storage ligado explícitamente a la app principal (mismo proyecto/bucket que db/auth)
+export const storage = getStorage(app);
 
 // --- ESTAS SON LAS FUNCIONES CRUD ---
 export const agregarRegistro = async (nombreColeccion: string, data: any) => {
@@ -31,9 +34,6 @@ export const actualizarRegistro = async (nombreColeccion: string, id: string, da
 export const eliminarRegistro = async (nombreColeccion: string, id: string) => {
   return await deleteDoc(doc(db, nombreColeccion, id));
 };
-
-// Agrega esto en tus importaciones al inicio si no lo tienes:
-// import { getAuth } from 'firebase/auth';
 
 // --- TRUCO PARA CREAR USUARIOS SIN CERRAR SESIÓN DEL ADMIN ---
 // Inicializamos una app secundaria con la misma configuración

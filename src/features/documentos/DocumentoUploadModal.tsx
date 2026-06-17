@@ -19,8 +19,8 @@
 
 import React, { useState } from 'react';
 import { collection, addDoc } from 'firebase/firestore';
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db } from '../../config/firebase';
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../../config/firebase';
 
 // Catálogo por defecto (genérico). Cada módulo puede pasar su propia lista por props.
 const TIPOS_DOCUMENTO_DEFAULT = [
@@ -83,7 +83,6 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
     }
     setSubiendo(true);
     try {
-      const storage = getStorage();
       const ruta = `${sanitizarRuta(coleccionOrigen)}/${carpeta}/${subcarpeta}/${Date.now()}_${sanitizarRuta(archivo.name)}`;
       const r = storageRef(storage, ruta);
       await uploadBytes(r, archivo);
