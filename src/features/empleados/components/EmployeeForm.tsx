@@ -11,7 +11,7 @@ import type { Employee } from '../../../types/empleado';
 const ROLES_DISPONIBLES = ['Administrador', 'Recursos Humanos', 'Operaciones', 'Contabilidad', 'Gerencia'];
 
 // Tipos de documento que se manejan para EMPLEADOS (edítalos a tu gusto)
-const TIPOS_DOCUMENTO_EMPLEADO = [
+export const TIPOS_DOCUMENTO_EMPLEADO = [
   '1. Acta de Nacimiento',
   '2. CURP',
   '3. RFC (Constancia de Situación Fiscal)',
@@ -111,34 +111,33 @@ const FieldConfigModal: React.FC<{
           <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.25rem', margin: 0, color: '#f0f6fc' }}>⚙️ Configuración de Campos y Accesos</h3>
           <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
         </div>
-
+        
         <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
           <p style={{ color: '#8b949e', marginBottom: '24px', fontSize: '0.9rem' }}>Define qué campos son obligatorios y qué roles de usuario tienen permiso para verlos.</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
             {fields.map(f => {
               const rolesPermitidos = fieldRoles[f.name] || ROLES_DISPONIBLES;
               return (
-                <div key={f.name} style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                  <h4 style={{ margin: '0 0 12px 0', color: '#58a6ff', fontSize: '0.95rem' }}>{f.label}</h4>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.9rem', fontWeight: 'bold' }}>
-                    <input type="checkbox" checked={requiredFields.includes(f.name)} onChange={() => toggleRequired(f.name)} style={{ width: '16px', height: '16px', accentColor: '#D84315' }} />
-                    Hacer Obligatorio
-                  </label>
-                  <div style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', borderTop: '1px solid #30363d', paddingTop: '12px' }}>Roles que pueden ver este campo:</div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                    {ROLES_DISPONIBLES.map(rol => {
-                      const hasAccess = rolesPermitidos.includes(rol);
-                      return (
-                        <label key={rol} style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', color: hasAccess ? '#c9d1d9' : '#8b949e', cursor: 'pointer', opacity: hasAccess ? 1 : 0.5 }}>
-                          <input type="checkbox" checked={hasAccess} onChange={() => toggleRole(f.name, rol)} style={{ accentColor: '#D84315' }} />
-                          {rol}
-                        </label>
-                      );
-                    })}
-                  </div>
+              <div key={f.name} style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+                <h4 style={{ margin: '0 0 12px 0', color: '#58a6ff', fontSize: '0.95rem' }}>{f.label}</h4>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                  <input type="checkbox" checked={requiredFields.includes(f.name)} onChange={() => toggleRequired(f.name)} style={{ width: '16px', height: '16px', accentColor: '#D84315' }} /> 
+                  Hacer Obligatorio
+                </label>
+                <div style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', borderTop: '1px solid #30363d', paddingTop: '12px' }}>Roles que pueden ver este campo:</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                  {ROLES_DISPONIBLES.map(rol => {
+                    const hasAccess = rolesPermitidos.includes(rol);
+                    return (
+                      <label key={rol} style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', color: hasAccess ? '#c9d1d9' : '#8b949e', cursor: 'pointer', opacity: hasAccess ? 1 : 0.5 }}>
+                        <input type="checkbox" checked={hasAccess} onChange={() => toggleRole(f.name, rol)} style={{ accentColor: '#D84315' }} /> 
+                        {rol}
+                      </label>
+                    );
+                  })}
                 </div>
-              )
-            })}
+              </div>
+            )})}
           </div>
         </div>
         <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
@@ -164,9 +163,9 @@ type TabKey = 'personales' | 'empresa' | 'operador' | 'herramientas';
 
 export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, onMinimize, onRestore }) => {
   const todayISO = new Date().toISOString().split('T')[0];
-
+  
   const estadoInicial: Employee & { fechaBaja?: string, observacionBaja?: string, observacionesEmpresa?: string } = {
-    employeeId: 'Generando...',
+    employeeId: 'Generando...', 
     activo: true, foto: '', firstName: '', lastNamePaternal: '', lastNameMaternal: '', alias: '', rfc: '', birthDate: '', mapsLink: '', addressId: '', addressLabel: '', personalPhone: '', personalEmail: '', emergencyContactName: '', emergencyContactPhone: '', cargoId: '', cargoNombre: '', departamentoId: '', departamentoNombre: '', operacionesIds: [], empresaId: '', empresaNombre: '', fechaIngreso: todayISO, fechaAltaIMSS: '', salarioDiario: 0, descuentoIMSS: 0, descuentoInfonavit: 0, gastosAsignados: 0, telefonoAsignado: '', fechaBaja: '', observacionBaja: '', observacionesEmpresa: ''
   };
 
@@ -174,19 +173,19 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
   const [cargando, setCargando] = useState(false);
   const [modalDireccionAbierto, setModalDireccionAbierto] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
-
+  
   const [pestañaActiva, setPestañaActiva] = useState<TabKey>('personales');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-
+  
   const [requiredFields, setRequiredFields] = useState<string[]>([]);
   const [fieldRoles, setFieldRoles] = useState<Record<string, string[]>>({});
-  const currentUserRole = 'Administrador';
+  const currentUserRole = 'Administrador'; 
 
-  const [direccionesDB, setDireccionesDB] = useState<{ id: string, label: string }[]>([]);
-  const [cargosDB, setCargosDB] = useState<{ id: string, label: string }[]>([]);
-  const [departamentosDB, setDepartamentosDB] = useState<{ id: string, label: string }[]>([]);
-  const [operacionesDB, setOperacionesDB] = useState<{ id: string, label: string }[]>([]);
-  const [empresasDB, setEmpresasDB] = useState<{ id: string, label: string }[]>([]);
+  const [direccionesDB, setDireccionesDB] = useState<{id: string, label: string}[]>([]);
+  const [cargosDB, setCargosDB] = useState<{id: string, label: string}[]>([]);
+  const [departamentosDB, setDepartamentosDB] = useState<{id: string, label: string}[]>([]);
+  const [operacionesDB, setOperacionesDB] = useState<{id: string, label: string}[]>([]);
+  const [empresasDB, setEmpresasDB] = useState<{id: string, label: string}[]>([]);
 
   const configuracionCampos = [
     { name: 'activo', label: 'Estado (Activo/Baja)' },
@@ -245,7 +244,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
   const isReq = (fieldName: string) => requiredFields.includes(fieldName);
   const isVis = (fieldName: string) => {
     const rolesAutorizados = fieldRoles[fieldName];
-    if (!rolesAutorizados || rolesAutorizados.length === 0) return true;
+    if (!rolesAutorizados || rolesAutorizados.length === 0) return true; 
     return rolesAutorizados.includes(currentUserRole);
   };
 
@@ -255,7 +254,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
       try {
         const q = query(collection(db, 'empleados'), orderBy('employeeId', 'desc'), limit(1));
         const snap = await getDocs(q);
-
+        
         let nuevoNumero = 1;
         if (!snap.empty) {
           const ultimoId = snap.docs[0].data().employeeId || '';
@@ -264,7 +263,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
             nuevoNumero = parseInt(match[1], 10) + 1;
           }
         }
-
+        
         const nuevoCodigo = `Col-${String(nuevoNumero).padStart(3, '0')}`;
         setFormData((prev: any) => ({ ...prev, employeeId: nuevoCodigo }));
       } catch (error) {
@@ -272,7 +271,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
         setFormData((prev: any) => ({ ...prev, employeeId: 'Col-001' }));
       }
     };
-
+    
     generarConsecutivo();
   }, [initialData]);
 
@@ -294,19 +293,19 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
         ]);
 
         // Cargo sí muestra su nombre_puesto (como lo solicitaste en la imagen de Firebase anterior)
-        setCargosDB(cargosSnap.docs.map(d => ({
-          id: d.id,
-          label: d.data().nombre_puesto || d.data().nombre || d.id
+        setCargosDB(cargosSnap.docs.map(d => ({ 
+          id: d.id, 
+          label: d.data().nombre_puesto || d.data().nombre || d.id 
         })));
-
+        
         // ✅ CORRECCIÓN: Departamento vuelve a mostrar el nombre
-        setDepartamentosDB(deptosSnap.docs.map(d => ({
-          id: d.id,
-          label: d.data().nombre || d.data().departamento || d.id
+        setDepartamentosDB(deptosSnap.docs.map(d => ({ 
+          id: d.id, 
+          label: d.data().nombre || d.data().departamento || d.id 
         })));
-
+        
         setOperacionesDB(opSnap.docs.map(d => ({ id: d.id, label: d.data().tipo_operacion || d.id })));
-
+        
         // ✅ CORRECCIÓN: Empresa vuelve a mostrar la Razón Social / Nombre
         const empresasFiltradas = empSnap.docs
           .filter(doc => {
@@ -315,11 +314,11 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
             if (typeof tipos === 'string') return tipos.includes('f21b15a4');
             return false;
           })
-          .map(d => ({
-            id: d.id,
-            label: d.data().nombre || d.data().razonSocial || d.id
+          .map(d => ({ 
+            id: d.id, 
+            label: d.data().nombre || d.data().razonSocial || d.id 
           }));
-
+          
         setEmpresasDB(empresasFiltradas);
 
       } catch (e) { console.error("Error catálogos:", e); }
@@ -327,7 +326,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     cargarCatalogos();
   }, []);
 
-  useEffect(() => {
+  useEffect(() => { 
     if (initialData) {
       setFormData({
         ...initialData,
@@ -338,9 +337,9 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value, type } = e.target;
-    setFormData((prev: any) => ({
-      ...prev,
-      [name]: type === 'number' ? (parseFloat(value) || 0) : (name === 'rfc' ? value.toUpperCase() : value)
+    setFormData((prev: any) => ({ 
+      ...prev, 
+      [name]: type === 'number' ? (parseFloat(value) || 0) : (name === 'rfc' ? value.toUpperCase() : value) 
     }));
   };
 
@@ -360,7 +359,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+    
     if (!formData.employeeId || formData.employeeId.trim() === '' || formData.employeeId === 'Generando...') {
       return alert('⛔ El Número de Empleado (Ej. Col-001) es estrictamente necesario.');
     }
@@ -377,10 +376,10 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
         }
       }
     }
-
+    
     setCargando(true);
     try {
-      await guardarEmpleadoConTransaccion(formData);
+      await guardarEmpleadoConTransaccion(formData); 
       alert('Operación exitosa.');
       onClose();
     } catch (error) {
@@ -406,7 +405,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
 
       <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`} style={{ backdropFilter: 'blur(4px)', zIndex: 1000 }}>
         <div className="form-card" style={{ maxWidth: '1100px', width: '100%', borderRadius: '12px', border: '1px solid #30363d', backgroundColor: '#0d1117', display: 'flex', flexDirection: 'column', maxHeight: '95vh' }}>
-
+          
           <div className="form-header" style={{ padding: '20px 24px', borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
             <h2 style={{ fontSize: '1.25rem', fontWeight: '500', margin: 0, color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '12px' }}>
               {estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Empleado` : 'Alta de Empleado')}
@@ -444,11 +443,11 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
 
           <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', overflowY: 'auto', flex: 1 }}>
             <form id="employeeForm" onSubmit={handleSubmit}>
-
+              
               {/* ✅ PESTAÑA 1 */}
               {pestañaActiva === 'personales' && (
                 <div style={{ animation: 'fadeIn 0.2s ease' }}>
-
+                  
                   {isVis('activo') && (
                     <div style={{ gridColumn: '1 / -1', backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', border: formData.activo ? '1px solid #30363d' : '1px solid #f85149', marginBottom: '24px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -468,7 +467,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                           )}
                         </div>
                       </div>
-
+                      
                       {!formData.activo && (
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #30363d' }}>
                           <div className="form-group">
@@ -485,17 +484,17 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                   )}
 
                   <div className="strict-3-col-grid">
-
+                    
                     <div className="form-group">
                       <label className="form-label orange"># de Empleado (Editable)</label>
-                      <input
-                        type="text"
+                      <input 
+                        type="text" 
                         name="employeeId"
-                        className="form-control"
-                        value={formData.employeeId}
+                        className="form-control" 
+                        value={formData.employeeId} 
                         onChange={handleChange}
                         required
-                        style={{ backgroundColor: '#010409', color: '#58a6ff', fontWeight: 'bold', border: '1px solid #3b82f6' }}
+                        style={{ backgroundColor: '#010409', color: '#58a6ff', fontWeight: 'bold', border: '1px solid #3b82f6' }} 
                       />
                     </div>
 
@@ -507,24 +506,24 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                     {isVis('birthDate') && <div className="form-group"><label className="form-label">Fecha de Nacimiento {isReq('birthDate') && '*'}</label><input type="date" name="birthDate" className="form-control" value={formData.birthDate} onChange={handleChange} required={isReq('birthDate')} /></div>}
                     {isVis('personalPhone') && <div className="form-group"><label className="form-label">Teléfono Personal {isReq('personalPhone') && '*'}</label><input type="tel" name="personalPhone" className="form-control" value={formData.personalPhone} onChange={handleChange} required={isReq('personalPhone')} /></div>}
                     {isVis('personalEmail') && <div className="form-group"><label className="form-label">Correo Personal {isReq('personalEmail') && '*'}</label><input type="email" name="personalEmail" className="form-control" value={formData.personalEmail} onChange={handleChange} required={isReq('personalEmail')} /></div>}
-
+                    
                     {isVis('addressId') && (
-                      <div className="form-group" style={{ gridColumn: '1 / -1', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                        <label className="form-label" style={{ color: '#58a6ff' }}>Dirección Exacta {isReq('addressId') && '*'}</label>
-                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                          <div style={{ flex: '1 1 300px' }}>
-                            <SearchableSelect options={direccionesDB} value={formData.addressId} onChange={(id, label) => setFormData((prev: any) => ({ ...prev, addressId: id, addressLabel: label }))} required={isReq('addressId')} />
-                          </div>
-                          <button type="button" className="btn btn-outline" onClick={() => setModalDireccionAbierto(true)}>+ Nueva</button>
-                          <button type="button" className="btn btn-primary" onClick={abrirGoogleMaps} style={{ backgroundColor: '#2ea043', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                            Maps
-                          </button>
+                    <div className="form-group" style={{ gridColumn: '1 / -1', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+                      <label className="form-label" style={{ color: '#58a6ff' }}>Dirección Exacta {isReq('addressId') && '*'}</label>
+                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1 1 300px' }}>
+                          <SearchableSelect options={direccionesDB} value={formData.addressId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, addressId: id, addressLabel: label }))} required={isReq('addressId')} />
                         </div>
+                        <button type="button" className="btn btn-outline" onClick={() => setModalDireccionAbierto(true)}>+ Nueva</button>
+                        <button type="button" className="btn btn-primary" onClick={abrirGoogleMaps} style={{ backgroundColor: '#2ea043', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                          Maps
+                        </button>
                       </div>
+                    </div>
                     )}
                     {isVis('mapsLink') && <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Enlace Google Maps {isReq('mapsLink') && '*'}</label><input type="url" name="mapsLink" className="form-control" value={formData.mapsLink} onChange={handleChange} placeholder="https://maps.google.com/..." required={isReq('mapsLink')} /></div>}
-
+                    
                     {isVis('emergencyContactName') && <><div className="form-group" style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d' }} /></div><div className="form-group"><label className="form-label" style={{ color: '#ff7b72' }}>Contacto de Emergencia {isReq('emergencyContactName') && '*'}</label><input type="text" name="emergencyContactName" className="form-control" value={formData.emergencyContactName} onChange={handleChange} required={isReq('emergencyContactName')} /></div></>}
                     {isVis('emergencyContactPhone') && <div className="form-group"><label className="form-label" style={{ color: '#ff7b72' }}>Teléfono Emergencia {isReq('emergencyContactPhone') && '*'}</label><input type="tel" name="emergencyContactPhone" className="form-control" value={formData.emergencyContactPhone} onChange={handleChange} required={isReq('emergencyContactPhone')} /></div>}
                   </div>
@@ -535,32 +534,32 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
               {pestañaActiva === 'empresa' && (
                 <div style={{ animation: 'fadeIn 0.2s ease' }}>
                   <div className="strict-3-col-grid">
-                    {isVis('empresaId') && <div className="form-group"><label className="form-label">Empresa {isReq('empresaId') && '*'}</label><SearchableSelect options={empresasDB} value={formData.empresaId} onChange={(id, label) => setFormData((prev: any) => ({ ...prev, empresaId: id, empresaNombre: label }))} required={isReq('empresaId')} /></div>}
-                    {isVis('cargoId') && <div className="form-group"><label className="form-label">Cargo {isReq('cargoId') && '*'}</label><SearchableSelect options={cargosDB} value={formData.cargoId} onChange={(id, label) => setFormData((prev: any) => ({ ...prev, cargoId: id, cargoNombre: label }))} required={isReq('cargoId')} /></div>}
-                    {isVis('departamentoId') && <div className="form-group"><label className="form-label">Departamento {isReq('departamentoId') && '*'}</label><SearchableSelect options={departamentosDB} value={formData.departamentoId} onChange={(id, label) => setFormData((prev: any) => ({ ...prev, departamentoId: id, departamentoNombre: label }))} required={isReq('departamentoId')} /></div>}
-
+                    {isVis('empresaId') && <div className="form-group"><label className="form-label">Empresa {isReq('empresaId') && '*'}</label><SearchableSelect options={empresasDB} value={formData.empresaId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, empresaId: id, empresaNombre: label }))} required={isReq('empresaId')} /></div>}
+                    {isVis('cargoId') && <div className="form-group"><label className="form-label">Cargo {isReq('cargoId') && '*'}</label><SearchableSelect options={cargosDB} value={formData.cargoId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, cargoId: id, cargoNombre: label }))} required={isReq('cargoId')} /></div>}
+                    {isVis('departamentoId') && <div className="form-group"><label className="form-label">Departamento {isReq('departamentoId') && '*'}</label><SearchableSelect options={departamentosDB} value={formData.departamentoId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, departamentoId: id, departamentoNombre: label }))} required={isReq('departamentoId')} /></div>}
+                    
                     {isVis('operacionesIds') && (
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label className="form-label">Operaciones Autorizadas {isReq('operacionesIds') && '*'}</label>
-                        <MultiSelect options={operacionesDB} selectedIds={formData.operacionesIds} onChange={(ids) => setFormData((prev: any) => ({ ...prev, operacionesIds: ids }))} required={isReq('operacionesIds')} />
-                      </div>
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label className="form-label">Operaciones Autorizadas {isReq('operacionesIds') && '*'}</label>
+                      <MultiSelect options={operacionesDB} selectedIds={formData.operacionesIds} onChange={(ids) => setFormData((prev:any) => ({ ...prev, operacionesIds: ids }))} required={isReq('operacionesIds')} />
+                    </div>
                     )}
-
+                    
                     {isVis('fechaIngreso') && <div className="form-group"><label className="form-label">Fecha de Ingreso {isReq('fechaIngreso') && '*'}</label><input type="date" name="fechaIngreso" className="form-control" value={formData.fechaIngreso} onChange={handleChange} required={isReq('fechaIngreso')} /></div>}
                     {isVis('fechaAltaIMSS') && <div className="form-group"><label className="form-label">Fecha Alta IMSS {isReq('fechaAltaIMSS') && '*'}</label><input type="date" name="fechaAltaIMSS" className="form-control" value={formData.fechaAltaIMSS} onChange={handleChange} required={isReq('fechaAltaIMSS')} /></div>}
-
+                    
                     {isVis('salarioDiario') && <><div className="form-group" style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d' }} /></div><div className="form-group"><label className="form-label">Salario Diario Integrado ($) {isReq('salarioDiario') && '*'}</label><input type="number" name="salarioDiario" className="form-control" value={formData.salarioDiario} onChange={handleChange} required={isReq('salarioDiario')} /></div></>}
                     {isVis('descuentoIMSS') && <div className="form-group"><label className="form-label">Descuento IMSS ($) {isReq('descuentoIMSS') && '*'}</label><input type="number" name="descuentoIMSS" className="form-control" value={formData.descuentoIMSS} onChange={handleChange} required={isReq('descuentoIMSS')} /></div>}
                     {isVis('descuentoInfonavit') && <div className="form-group"><label className="form-label">Descuento INFONAVIT ($) {isReq('descuentoInfonavit') && '*'}</label><input type="number" name="descuentoInfonavit" className="form-control" value={formData.descuentoInfonavit} onChange={handleChange} required={isReq('descuentoInfonavit')} /></div>}
-
+                    
                     {isVis('observacionesEmpresa') && (
                       <div className="form-group" style={{ gridColumn: '1 / -1', marginTop: '16px' }}>
                         <label className="form-label text-gray-400">Observaciones {isReq('observacionesEmpresa') && '*'}</label>
-                        <textarea
-                          name="observacionesEmpresa"
-                          className="form-control"
-                          value={formData.observacionesEmpresa}
-                          onChange={handleChange}
+                        <textarea 
+                          name="observacionesEmpresa" 
+                          className="form-control" 
+                          value={formData.observacionesEmpresa} 
+                          onChange={handleChange} 
                           required={isReq('observacionesEmpresa')}
                           placeholder="Añade notas o comentarios relevantes sobre el alta de este empleado..."
                           style={{ minHeight: '80px', resize: 'vertical', width: '100%', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }}
@@ -576,10 +575,10 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                 <div style={{ animation: 'fadeIn 0.2s ease' }}>
                   <div className="strict-3-col-grid">
                     {isVis('gastosAsignados') ? (
-                      <div className="form-group">
-                        <label className="form-label">Gastos Asignados ($) {isReq('gastosAsignados') && '*'}</label>
-                        <input type="number" name="gastosAsignados" className="form-control" value={formData.gastosAsignados} onChange={handleChange} required={isReq('gastosAsignados')} />
-                      </div>
+                    <div className="form-group">
+                      <label className="form-label">Gastos Asignados ($) {isReq('gastosAsignados') && '*'}</label>
+                      <input type="number" name="gastosAsignados" className="form-control" value={formData.gastosAsignados} onChange={handleChange} required={isReq('gastosAsignados')} />
+                    </div>
                     ) : <div style={{ color: '#8b949e', gridColumn: '1 / -1' }}>No tienes permiso para ver esta información.</div>}
                   </div>
                 </div>
@@ -590,10 +589,10 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                 <div style={{ animation: 'fadeIn 0.2s ease' }}>
                   <div className="strict-3-col-grid">
                     {isVis('telefonoAsignado') ? (
-                      <div className="form-group">
-                        <label className="form-label">Teléfono Asignado (Flota) {isReq('telefonoAsignado') && '*'}</label>
-                        <input type="tel" name="telefonoAsignado" className="form-control" value={formData.telefonoAsignado} onChange={handleChange} required={isReq('telefonoAsignado')} />
-                      </div>
+                    <div className="form-group">
+                      <label className="form-label">Teléfono Asignado (Flota) {isReq('telefonoAsignado') && '*'}</label>
+                      <input type="tel" name="telefonoAsignado" className="form-control" value={formData.telefonoAsignado} onChange={handleChange} required={isReq('telefonoAsignado')} />
+                    </div>
                     ) : <div style={{ color: '#8b949e', gridColumn: '1 / -1' }}>No tienes permiso para ver esta información.</div>}
                   </div>
                 </div>

@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase';
-import { EmployeeForm } from './EmployeeForm';
+import { EmployeeForm, TIPOS_DOCUMENTO_EMPLEADO } from './EmployeeForm';
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { HerramientasEmpleado } from './HerramientasEmpleado'; 
 import type { Employee } from '../../../types/empleado';
 import * as XLSX from 'xlsx';
@@ -29,6 +30,7 @@ export const EmpleadosDashboard = () => {
   
   const [empleadoViendo, setEmpleadoViendo] = useState<Employee | null>(null);
   const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'empresa' | 'herramientas'>('general');
+  const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
@@ -290,7 +292,17 @@ export const EmpleadosDashboard = () => {
           <div className="form-card detail-card" style={{ maxWidth: '850px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', overflow: 'hidden' }}>
             <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.25rem' }}>Ficha: {empleadoViendo.firstName}</h2>
-              <button onClick={() => setEmpleadoViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <button
+                  onClick={() => setMostrarSubirDoc(true)}
+                  title="Subir documentos del empleado"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#D84315', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  Subir Documentos
+                </button>
+                <button onClick={() => setEmpleadoViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+              </div>
             </div>
             <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px' }}>
               <button type="button" onClick={() => setActiveTabDetalle('general')} style={tabStyle(activeTabDetalle === 'general')}>Datos Personales</button>
@@ -320,6 +332,16 @@ export const EmpleadosDashboard = () => {
             </div>
           </div>
         </div>
+      )}
+      {empleadoViendo && (
+        <DocumentoUploadModal
+          isOpen={mostrarSubirDoc}
+          onClose={() => setMostrarSubirDoc(false)}
+          coleccionOrigen="empleados"
+          registroId={empleadoViendo.id ?? ''}
+          registroNombre={`${empleadoViendo.firstName || ''} ${empleadoViendo.lastNamePaternal || ''} ${empleadoViendo.lastNameMaternal || ''}`.replace(/\s+/g, ' ').trim()}
+          tiposDocumento={TIPOS_DOCUMENTO_EMPLEADO}
+        />
       )}
     </div>
   );
