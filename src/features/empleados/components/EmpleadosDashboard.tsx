@@ -3,6 +3,7 @@ import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase';
 import { EmployeeForm, TIPOS_DOCUMENTO_EMPLEADO } from './EmployeeForm';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { HerramientasEmpleado } from './HerramientasEmpleado'; 
 import type { Employee } from '../../../types/empleado';
 import * as XLSX from 'xlsx';
@@ -29,7 +30,7 @@ export const EmpleadosDashboard = () => {
   const [empleadoEditando, setEmpleadoEditando] = useState<Employee | null>(null);
   
   const [empleadoViendo, setEmpleadoViendo] = useState<Employee | null>(null);
-  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'empresa' | 'herramientas'>('general');
+  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'empresa' | 'herramientas' | 'documentos'>('general');
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
   const [paginaActual, setPaginaActual] = useState(1);
@@ -308,6 +309,7 @@ export const EmpleadosDashboard = () => {
               <button type="button" onClick={() => setActiveTabDetalle('general')} style={tabStyle(activeTabDetalle === 'general')}>Datos Personales</button>
               <button type="button" onClick={() => setActiveTabDetalle('empresa')} style={tabStyle(activeTabDetalle === 'empresa')}>Alta en Empresa</button>
               <button type="button" onClick={() => setActiveTabDetalle('herramientas')} style={tabStyle(activeTabDetalle === 'herramientas')}>Herramientas / Operativa</button>
+              <button type="button" onClick={() => setActiveTabDetalle('documentos')} style={tabStyle(activeTabDetalle === 'documentos')}>Documentos</button>
             </div>
             <div className="detail-content" style={{ padding: '24px', minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
               {activeTabDetalle === 'general' && (
@@ -326,6 +328,9 @@ export const EmpleadosDashboard = () => {
               {activeTabDetalle === 'herramientas' && (
                  <HerramientasEmpleado empleadoId={empleadoViendo.id ?? ''} />
               )}
+              {activeTabDetalle === 'documentos' && (
+                 <DocumentosLista coleccionOrigen="empleados" registroId={empleadoViendo.id ?? ''} />
+              )}
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#0d1117' }}>
               <button onClick={() => setEmpleadoViendo(null)} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar Ficha</button>
@@ -341,6 +346,7 @@ export const EmpleadosDashboard = () => {
           registroId={empleadoViendo.id ?? ''}
           registroNombre={`${empleadoViendo.firstName || ''} ${empleadoViendo.lastNamePaternal || ''} ${empleadoViendo.lastNameMaternal || ''}`.replace(/\s+/g, ' ').trim()}
           tiposDocumento={TIPOS_DOCUMENTO_EMPLEADO}
+          onUploaded={() => setActiveTabDetalle('documentos')}
         />
       )}
     </div>

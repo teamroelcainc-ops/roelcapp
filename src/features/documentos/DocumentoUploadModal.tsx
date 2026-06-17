@@ -18,7 +18,7 @@
 //   <DocumentoUploadModal coleccionOrigen="clientes"  registroId={cli.id} registroNombre="ACME SA de CV" ... />
 
 import React, { useState } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
 
@@ -64,6 +64,8 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
 
   const carpeta = sanitizarRuta(registroNombre) || sanitizarRuta(registroId) || 'sin_nombre';
   const subcarpeta = nombreSubcarpetaDoc(tipoDoc);
+  const extPreview = archivo ? (archivo.name.lastIndexOf('.') >= 0 ? archivo.name.slice(archivo.name.lastIndexOf('.')) : '') : '';
+  const nombreFinalPreview = `${subcarpeta}${extPreview}`;
 
   const labelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.9rem' };
   const inputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' };
@@ -83,20 +85,28 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
     }
     setSubiendo(true);
     try {
-      const ruta = `${sanitizarRuta(coleccionOrigen)}/${carpeta}/${subcarpeta}/${Date.now()}_${sanitizarRuta(archivo.name)}`;
+      // El nombre del archivo se reescribe con el TIPO de documento (conservando la extensión)
+      const punto = archivo.name.lastIndexOf('.');
+      const extension = punto >= 0 ? archivo.name.slice(punto) : '';
+      const nombreFinal = `${subcarpeta}${extension}`;
+
+      const ruta = `${sanitizarRuta(coleccionOrigen)}/${carpeta}/${subcarpeta}/${nombreFinal}`;
       const r = storageRef(storage, ruta);
-      await uploadBytes(r, archivo);
+      await uploadBytes(r, archivo, archivo.type ? { contentType: archivo.type } : undefined);
       const url = await getDownloadURL(r);
 
+      // Un documento por (registro + tipo): si se vuelve a subir el mismo tipo, se reemplaza
+      const docId = sanitizarRuta(`${coleccionOrigen}__${registroId}__${subcarpeta}`).replace(/\s+/g, '_');
+
       // Colección UNIFICADA "documentos" + liga al registro de origen
-      await addDoc(collection(db, 'documentos'), {
+      await setDoc(doc(db, 'documentos', docId), {
         coleccionOrigen,
         registroId,
         registroNombre: registroNombre || '',
         tipoDocumento: tipoDoc,
         carpeta,
         subcarpeta,
-        nombreArchivo: archivo.name,
+        nombreArchivo: nombreFinal,
         path: ruta,
         url,
         vence,
@@ -104,7 +114,7 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
         fechaVencimiento: vence ? fechaVencimiento : '',
         observaciones: observaciones || '',
         createdAt: new Date().toISOString(),
-      });
+      }, { merge: true });
 
       alert('Documento subido correctamente.');
       setArchivo(null);
@@ -131,7 +141,7 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
 
         <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={{ fontSize: '0.75rem', color: '#6e7681', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '10px 12px' }}>
-            Se guardará en: <span style={{ color: '#8b949e' }}>{sanitizarRuta(coleccionOrigen)} / {carpeta} / {subcarpeta} /</span>
+            Se guardará en: <span style={{ color: '#8b949e' }}>{sanitizarRuta(coleccionOrigen)} / {carpeta} / {subcarpeta} / {nombreFinalPreview}</span>
             <span style={{ color: '#6e7681' }}> · ligado a {coleccionOrigen} ({registroId || '—'})</span>
           </div>
 
