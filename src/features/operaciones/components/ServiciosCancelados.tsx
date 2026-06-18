@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
-import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf, cargarLogoDataUrl } from '../../../utils/pdfGenerator'; 
+import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 // ✅ NUEVO: visor y subida de documentos ligados a la operación
 import { TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
@@ -151,21 +151,13 @@ const ServiciosCancelados = () => {
     descargarOperaciones();
   }, []);
 
-  // ✅ NUEVO: precarga el logo de la empresa y lo registra para que todos los
-  // documentos PDF generados desde este módulo lo incluyan.
-  // Prioridad: logoBase64 (sin CORS) -> precargar la URL -> nada.
+  // ✅ Logo para los PDF: si en la config hay un logo en base64 (data:...), úsalo;
+  // si no, dejamos el global vacío para que el generador use el logo INCRUSTADO por
+  // defecto. NO leemos la URL de Storage, para no provocar errores de CORS.
   useEffect(() => {
     const b64 = empresaConfig?.logoBase64;
-    if (b64) { setLogoPdf(b64); return; }
-    const url = empresaConfig?.logoUrl;
-    if (!url) { setLogoPdf(''); return; }
-    let cancelado = false;
-    cargarLogoDataUrl(url).then(x => {
-      if (cancelado) return;
-      setLogoPdf(x || url);
-    });
-    return () => { cancelado = true; };
-  }, [empresaConfig?.logoBase64, empresaConfig?.logoUrl]);
+    setLogoPdf(b64 && b64.startsWith('data:') ? b64 : '');
+  }, [empresaConfig?.logoBase64]);
 
   useEffect(() => {
     setPaginaActual(1);

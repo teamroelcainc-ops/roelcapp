@@ -12,6 +12,10 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
+// ✅ NUEVO: el recibo de nómina ahora se genera como los demás documentos (html2pdf)
+import html2pdf from 'html2pdf.js';
+import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
+import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 
 // Cargo que identifica a un "Operador" dentro de la colección empleados.
 const ID_CARGO_OPERADOR = 'edda3a2b';
@@ -27,6 +31,9 @@ const COLUMNAS_OPS_NOMINA_BASE = [
 ];
 
 export const ReferenciasNominaDashboard = () => {
+  // ✅ NUEVO: configuración de empresa (para el logo del recibo)
+  const { config: empresaConfig } = useEmpresaConfig();
+
   const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'prestamos'>('historial');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
@@ -37,6 +44,8 @@ export const ReferenciasNominaDashboard = () => {
   const [formasPagoList, setFormasPagoList] = useState<any[]>([]);
   const [bancosList, setBancosList] = useState<any[]>([]);
   const [deduccionesList, setDeduccionesList] = useState<any[]>([]);
+  // ✅ NUEVO: catálogo de empresas (clientePaga -> empresas/{id}.nombre)
+  const [empresasList, setEmpresasList] = useState<any[]>([]);
 
   // Filtros Pestaña 1 / Préstamos
   const [filtroOperador, setFiltroOperador] = useState('');
@@ -115,6 +124,10 @@ export const ReferenciasNominaDashboard = () => {
       subs.push(onSnapshot(collection(db, 'catalogo_bancos'), (snap) => {
         setBancosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
       }));
+      // ✅ NUEVO: empresas, para resolver el nombre del cliente que paga (clientePaga).
+      subs.push(onSnapshot(collection(db, 'empresas'), (snap) => {
+        setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      }));
       const qOps = query(collection(db, 'operaciones'), limit(500));
       subs.push(onSnapshot(qOps, (snap) => {
         const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
@@ -149,6 +162,11 @@ export const ReferenciasNominaDashboard = () => {
 
   const getNombreBanco = (id: string) => bancosList.find(b => b.id === id)?.nombre || id;
   const getNombreFormaPago = (id: string) => formasPagoList.find(f => f.id === id)?.forma_pago || id;
+  // ✅ NUEVO: resuelve el nombre del cliente que paga desde la colección empresas.
+  const getNombreEmpresa = (id: string) => {
+    if (!id) return '';
+    return empresasList.find(e => e.id === id)?.nombre || '';
+  };
 
   const formatearFechaSpanish = (fechaString: string) => {
     if (!fechaString) return '-';
@@ -437,7 +455,8 @@ export const ReferenciasNominaDashboard = () => {
           id,
           ref: op?.ref || id.substring(0,6),
           fecha: op?.fechaServicio || op?.fecha || '',
-          cliente: op?.clienteNombre || op?.clientePagaNombre || op?.nombreCliente || op?.clientePaga || '-',
+          cliente: getNombreEmpresa(op?.clientePaga)
+            || op?.clienteNombre || op?.clientePagaNombre || op?.nombreCliente || '-',
           tipoServicio: op?.tarifaLabel || op?.tarifarioLabel || op?.convenioNombre || op?.tipoOperacionNombre || op?.tipoServicio || '-',
           importe: base + extraOp,
           sueldo: base,
@@ -572,50 +591,45 @@ export const ReferenciasNominaDashboard = () => {
 
     const sueldoBase = nom.nominaFiscal ?? nom.nomina ?? 0;
 
-    const html = `<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Recibo de Nómina ${esc(nom.consecutivo || '')}</title>
+    // ✅ Logo: usa el de la config si está en base64; si no, el logo incrustado por defecto.
+    const logoSrc = (empresaConfig?.logoBase64 && empresaConfig.logoBase64.startsWith('data:'))
+      ? empresaConfig.logoBase64
+      : LOGO_DEFAULT;
+
+    // HTML del recibo. Estilos scopeados a #recibo-nomina-root para no afectar
+    // la página mientras el elemento temporal está montado en el DOM.
+    const htmlTemplate = `
 <style>
-  :root { --primary:#f37021; --primary-dark:#d65a10; --accent:#002d5a; --card-bg:#fff; --text:#333; --border:#ffd8c2; }
-  @page { size: landscape; margin: 10mm; }
-  * { box-sizing: border-box; }
-  body { font-family:'Segoe UI',Roboto,Arial,sans-serif; background:#f4f4f4; color:var(--text); margin:0; padding:10px; display:flex; justify-content:center; }
-  .receipt-container { background:var(--card-bg); width:100%; max-width:1100px; padding:25px 35px; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.05); border-top:8px solid var(--primary); }
-  header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px; }
-  .header-left { display:flex; align-items:center; gap:20px; }
-  .logo-img { max-height:70px; width:auto; }
-  .brand h1 { margin:0; color:var(--primary); font-size:26px; letter-spacing:1px; line-height:1; }
-  .brand p { margin:3px 0 0; color:var(--accent); font-weight:bold; font-size:13px; }
-  .header-info { text-align:right; }
-  .header-info h2 { margin:0; color:var(--primary); font-size:20px; }
-  .header-info p { margin:2px 0; font-size:0.85em; color:#666; }
-  .summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-bottom:15px; }
-  .card { background:#fffaf7; border:1px solid var(--border); border-radius:8px; padding:12px 15px; }
-  .card h3 { margin:0 0 8px 0; font-size:1em; color:var(--primary-dark); border-bottom:2px solid var(--primary); display:inline-block; padding-bottom:2px; }
-  .row { display:flex; justify-content:space-between; margin:6px 0; font-size:0.85em; }
-  .total-row { font-weight:bold; color:#000; border-top:1px dashed var(--primary); padding-top:6px; margin-top:6px; }
-  .table-section h3 { color:var(--accent); font-size:1.1em; margin-bottom:8px; }
-  table { width:100%; border-collapse:collapse; font-size:0.8em; }
-  th { background-color:var(--primary); color:#fff; text-align:left; padding:8px; text-transform:uppercase; }
-  td { padding:6px 8px; border-bottom:1px solid #eee; }
-  tr:nth-child(even) { background-color:#fff9f5; }
-  .footer-total { margin-top:15px; display:flex; justify-content:flex-end; }
-  .total-box { background:var(--primary); color:#fff; padding:12px 30px; border-radius:8px; text-align:right; }
-  .total-box p { margin:0; font-size:0.8em; opacity:0.9; }
-  .total-box h2 { margin:2px 0 0; font-size:1.7em; }
-  @media print {
-    body { background:#fff; padding:0; }
-    .receipt-container { box-shadow:none; border-top:5px solid var(--primary); max-width:100%; }
-    .total-box { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    th { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-    tr:nth-child(even){ background-color:#fff9f5 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  }
-</style></head>
-<body>
+  #recibo-nomina-root { background:#fff; color:#333; font-family:'Segoe UI',Roboto,Arial,sans-serif; width:1040px; box-sizing:border-box; }
+  #recibo-nomina-root * { box-sizing:border-box; }
+  #recibo-nomina-root .receipt-container { background:#fff; width:100%; padding:25px 35px; border-top:8px solid #f37021; }
+  #recibo-nomina-root header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px; }
+  #recibo-nomina-root .header-left { display:flex; align-items:center; gap:20px; }
+  #recibo-nomina-root .logo-img { max-height:70px; width:auto; }
+  #recibo-nomina-root .brand h1 { margin:0; color:#f37021; font-size:26px; letter-spacing:1px; line-height:1; }
+  #recibo-nomina-root .brand p { margin:3px 0 0; color:#002d5a; font-weight:bold; font-size:13px; }
+  #recibo-nomina-root .header-info { text-align:right; }
+  #recibo-nomina-root .header-info h2 { margin:0; color:#f37021; font-size:20px; }
+  #recibo-nomina-root .header-info p { margin:2px 0; font-size:0.85em; color:#666; }
+  #recibo-nomina-root .summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-bottom:15px; }
+  #recibo-nomina-root .card { background:#fffaf7; border:1px solid #ffd8c2; border-radius:8px; padding:12px 15px; }
+  #recibo-nomina-root .card h3 { margin:0 0 8px 0; font-size:1em; color:#d65a10; border-bottom:2px solid #f37021; display:inline-block; padding-bottom:2px; }
+  #recibo-nomina-root .row { display:flex; justify-content:space-between; margin:6px 0; font-size:0.85em; }
+  #recibo-nomina-root .total-row { font-weight:bold; color:#000; border-top:1px dashed #f37021; padding-top:6px; margin-top:6px; }
+  #recibo-nomina-root .table-section h3 { color:#002d5a; font-size:1.1em; margin-bottom:8px; }
+  #recibo-nomina-root table { width:100%; border-collapse:collapse; font-size:0.8em; }
+  #recibo-nomina-root th { background-color:#f37021; color:#fff; text-align:left; padding:8px; text-transform:uppercase; }
+  #recibo-nomina-root td { padding:6px 8px; border-bottom:1px solid #eee; }
+  #recibo-nomina-root tr:nth-child(even) { background-color:#fff9f5; }
+  #recibo-nomina-root .footer-total { margin-top:15px; display:flex; justify-content:flex-end; }
+  #recibo-nomina-root .total-box { background:#f37021; color:#fff; padding:12px 30px; border-radius:8px; text-align:right; }
+  #recibo-nomina-root .total-box p { margin:0; font-size:0.8em; opacity:0.9; }
+  #recibo-nomina-root .total-box h2 { margin:2px 0 0; font-size:1.7em; }
+</style>
   <div class="receipt-container">
     <header>
       <div class="header-left">
-        <img class="logo-img" alt="Logo" src="https://drive.google.com/uc?export=view&amp;id=1blNDWMQvvp7Xz3G7lm_whAxQw9krUOAz" onerror="this.style.display='none'">
+        <img class="logo-img" alt="Logo" src="${logoSrc}" onerror="this.style.display='none'">
         <div class="brand"><h1>ROELCA</h1><p>ROELCA INC.</p></div>
       </div>
       <div class="header-info">
@@ -669,17 +683,37 @@ export const ReferenciasNominaDashboard = () => {
     <div class="footer-total">
       <div class="total-box"><p>Neto a Recibir</p><h2>${m(nom.totalAPagar)}</h2></div>
     </div>
-  </div>
-  <script>window.addEventListener('load',function(){setTimeout(function(){try{window.focus();window.print();}catch(e){}},250);});</script>
-</body></html>`;
+  </div>`;
 
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
-    document.body.appendChild(iframe);
-    const idoc = iframe.contentWindow?.document;
-    if (!idoc) { try { document.body.removeChild(iframe); } catch { /* noop */ } return; }
-    idoc.open(); idoc.write(html); idoc.close();
-    setTimeout(() => { try { document.body.removeChild(iframe); } catch { /* noop */ } }, 60000);
+    // Igual que los 5 documentos de Operaciones: div temporal + html2pdf().save()
+    const elementoTemporal = document.createElement('div');
+    elementoTemporal.id = 'recibo-nomina-root';
+    elementoTemporal.innerHTML = htmlTemplate;
+    document.body.appendChild(elementoTemporal);
+
+    const filename = `Recibo_Nomina_${String(nom.consecutivo || 'recibo').replace(/\W/g, '_')}.pdf`;
+
+    const opt = {
+      margin:       0.2,
+      filename:     filename,
+      image:        { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true, windowWidth: 1040 },
+      jsPDF:        { unit: 'in' as const, format: 'letter', orientation: 'landscape' as const }
+    };
+
+    // Esperar a que el logo (y cualquier imagen) terminen de decodificar antes de
+    // "fotografiar" el HTML; si no, html2canvas omitiría el logo.
+    (async () => {
+      const _imgs = Array.from(elementoTemporal.querySelectorAll('img')) as HTMLImageElement[];
+      await Promise.all(_imgs.map(im => (im.complete && im.naturalWidth > 0)
+        ? Promise.resolve()
+        : new Promise<void>(res => { im.onload = () => res(); im.onerror = () => res(); })));
+      try {
+        await html2pdf().set(opt).from(elementoTemporal).save();
+      } finally {
+        if (elementoTemporal.parentNode) document.body.removeChild(elementoTemporal);
+      }
+    })();
   };
 
   const historialBusqueda = useMemo(() => {
@@ -1495,7 +1529,7 @@ export const ReferenciasNominaDashboard = () => {
               </div>
             </div>
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
-              <button onClick={() => generarReciboNomina(nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#f37021', cursor: 'pointer', fontWeight: 'bold' }}>Imprimir Recibo (PDF)</button>
+              <button onClick={() => generarReciboNomina(nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#f37021', cursor: 'pointer', fontWeight: 'bold' }}>Descargar Recibo (PDF)</button>
               <button onClick={() => setNominaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
             </div>
           </div>

@@ -1,9 +1,14 @@
 // src/features/auth/components/Login.tsx
-import React, { useState } from 'react';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import React, { useState, useEffect } from 'react';
+import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, updateDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
+// ✅ NUEVO: logo de la empresa (mismo base64 que usan los PDF) para mostrarlo en el login.
+import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+
+// Clave de localStorage para recordar el último correo que inició sesión en ESTA computadora.
+const LS_ULTIMO_CORREO = 'roelca_ultimo_correo';
 
 interface LoginProps {
   onLoginSuccess: () => void;
@@ -13,11 +18,24 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [mensaje, setMensaje] = useState(''); // ✅ NUEVO: mensajes de éxito (ej. reset enviado)
   const [loading, setLoading] = useState(false);
+  const [enviandoReset, setEnviandoReset] = useState(false); // ✅ NUEVO
+
+  // ✅ NUEVO: al abrir el login, precargamos el último correo guardado en esta computadora.
+  useEffect(() => {
+    try {
+      const ultimo = localStorage.getItem(LS_ULTIMO_CORREO);
+      if (ultimo) setEmail(ultimo);
+    } catch {
+      // localStorage puede no estar disponible (modo privado, etc.); lo ignoramos.
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setMensaje('');
     setLoading(true);
 
     try {
@@ -77,6 +95,9 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         ultimoAcceso: new Date().toISOString()
       });
 
+      // ✅ NUEVO: recordamos este correo en la computadora para la próxima vez.
+      try { localStorage.setItem(LS_ULTIMO_CORREO, email); } catch { /* ignore */ }
+
       await registrarLog('Sesión', 'Inicio de Sesión', 'El usuario ingresó exitosamente al sistema.');
 
       onLoginSuccess();
@@ -92,19 +113,61 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  // ✅ NUEVO: Envía el correo de recuperación de contraseña (Firebase) al email escrito.
+  const handleResetPassword = async () => {
+    setError('');
+    setMensaje('');
+
+    const correo = email.trim();
+    if (!correo) {
+      setError('Escribe tu correo electrónico arriba para enviarte el enlace de recuperación.');
+      return;
+    }
+
+    setEnviandoReset(true);
+    try {
+      await sendPasswordResetEmail(auth, correo);
+      await registrarLog('Sesión', 'Recuperación de Contraseña', `Se solicitó restablecer la contraseña para ${correo}.`);
+      setMensaje(`Te enviamos un enlace de recuperación a ${correo}. Revisa tu bandeja de entrada (y la carpeta de spam).`);
+    } catch (err: any) {
+      console.error(err);
+      const code = err?.code || '';
+      if (code === 'auth/invalid-email') {
+        setError('El correo electrónico no tiene un formato válido.');
+      } else if (code === 'auth/user-not-found') {
+        // Por seguridad mostramos un mensaje neutro (no confirmamos si el correo existe o no).
+        setMensaje(`Si ${correo} está registrado, te enviamos un enlace de recuperación. Revisa tu bandeja de entrada.`);
+      } else {
+        setError('No se pudo enviar el correo de recuperación. Intenta de nuevo en unos minutos.');
+      }
+    } finally {
+      setEnviandoReset(false);
+    }
+  };
+
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', display: 'flex', backgroundColor: '#010409', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
       <div className="form-card" style={{ maxWidth: '400px', width: '100%', padding: '40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
         
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{ fontSize: '2.5rem', color: '#D84315', marginBottom: '16px' }}>■</div>
-          <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', margin: '0 0 8px 0', fontWeight: '500' }}>Roelca Inc.</h1>
+          {/* ✅ NUEVO: Logo de la empresa */}
+          <img
+            src={LOGO_DEFAULT}
+            alt="Roelca Inc."
+            style={{ maxWidth: '120px', height: 'auto', marginBottom: '16px' }}
+          />
           <p style={{ color: '#8b949e', margin: 0, fontSize: '0.9rem' }}>Ingresa tus credenciales para acceder al sistema</p>
         </div>
 
         {error && (
           <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#ef4444', padding: '16px', borderRadius: '6px', marginBottom: '20px', fontSize: '0.85rem', textAlign: 'center', lineHeight: '1.5', fontWeight: '500' }}>
             {error}
+          </div>
+        )}
+
+        {mensaje && (
+          <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#10b981', padding: '16px', borderRadius: '6px', marginBottom: '20px', fontSize: '0.85rem', textAlign: 'center', lineHeight: '1.5', fontWeight: '500' }}>
+            {mensaje}
           </div>
         )}
 
@@ -122,7 +185,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             />
           </div>
 
-          <div className="form-group" style={{ marginBottom: '32px' }}>
+          <div className="form-group" style={{ marginBottom: '8px' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.85rem', marginBottom: '8px' }}>Contraseña</label>
             <input 
               type="password" 
@@ -133,6 +196,18 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               required 
               style={{ width: '100%', padding: '12px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px' }}
             />
+          </div>
+
+          {/* ✅ NUEVO: "¿Olvidaste tu contraseña?" debajo del campo de contraseña */}
+          <div style={{ textAlign: 'right', marginBottom: '24px' }}>
+            <button
+              type="button"
+              onClick={handleResetPassword}
+              disabled={enviandoReset}
+              style={{ background: 'none', border: 'none', color: '#58a6ff', fontSize: '0.8rem', cursor: enviandoReset ? 'not-allowed' : 'pointer', padding: 0, textDecoration: 'underline', opacity: enviandoReset ? 0.7 : 1 }}
+            >
+              {enviandoReset ? 'Enviando enlace...' : '¿Olvidaste tu contraseña?'}
+            </button>
           </div>
 
           <button 
