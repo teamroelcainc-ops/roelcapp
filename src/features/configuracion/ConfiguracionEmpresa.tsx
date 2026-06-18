@@ -3,6 +3,11 @@
 // Pantalla para editar los DATOS DE LA EMPRESA: logo, nombre, RFC, dirección,
 // teléfonos, email, etc. Guarda en Firestore (configuracion/empresa) y el logo
 // en Firebase Storage. El menú lateral lee estos datos vía <EmpresaBrand />.
+//
+// ✅ Al subir el logo se guarda TAMBIÉN como base64 (logoBase64) dentro del
+//    documento de Firestore. Así la app y los PDFs usan el mismo logo SIN
+//    depender de CORS de Storage (html2pdf "tinta" el canvas con imágenes de
+//    otro dominio y las bloquea; el base64 evita ese problema por completo).
 
 import React, { useState, useEffect, useRef } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
@@ -13,6 +18,38 @@ import type { EmpresaConfig } from './useEmpresaConfig';
 
 const sanitizarRuta = (s: string) =>
   String(s || '').trim().replace(/[\/\\:*?"<>|#]+/g, '').replace(/\s+/g, '_').trim();
+
+// ✅ Convierte un archivo LOCAL de imagen a dataURL base64, redimensionándolo a un
+// máximo razonable para no inflar el documento de Firestore (límite ~1 MB por doc).
+// Como el archivo es local (no viene de otro dominio), NO hay problema de CORS.
+const fileToLogoBase64 = (file: File, maxDim = 400): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const escala = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * escala);
+        height = Math.round(height * escala);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('No se pudo crear el contexto del canvas')); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      // PNG conserva transparencia; si saliera muy pesado, caemos a JPEG.
+      let dataUrl = canvas.toDataURL('image/png');
+      if (dataUrl.length > 700000) {
+        dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      }
+      resolve(dataUrl);
+    };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
 
 const ConfiguracionEmpresa = () => {
   const { config, cargando } = useEmpresaConfig();
@@ -40,7 +77,7 @@ const ConfiguracionEmpresa = () => {
     if (file) setPreviewLocal(URL.createObjectURL(file));
   };
 
-  const logoMostrado = previewLocal || form.logoUrl || '';
+  const logoMostrado = previewLocal || form.logoBase64 || form.logoUrl || '';
 
   const handleGuardar = async () => {
     if (!form.nombre || !form.nombre.trim()) {
@@ -51,8 +88,9 @@ const ConfiguracionEmpresa = () => {
     try {
       let logoUrl = form.logoUrl || '';
       let logoPath = form.logoPath || '';
+      let logoBase64 = form.logoBase64 || '';
 
-      // Si se eligió un nuevo logo, súbelo a Storage
+      // Si se eligió un nuevo logo, súbelo a Storage Y conviértelo a base64.
       if (archivoLogo) {
         const ruta = `configuracion/logo_${Date.now()}_${sanitizarRuta(archivoLogo.name)}`;
         const r = storageRef(storage, ruta);
@@ -64,6 +102,14 @@ const ConfiguracionEmpresa = () => {
           try { await deleteObject(storageRef(storage, logoPath)); } catch (e) { console.warn('No se pudo borrar el logo anterior:', e); }
         }
         logoPath = ruta;
+
+        // ✅ Generar el base64 (lo usan la app y los PDFs sin CORS)
+        try {
+          logoBase64 = await fileToLogoBase64(archivoLogo);
+        } catch (e) {
+          console.warn('No se pudo generar el logo en base64:', e);
+          logoBase64 = '';
+        }
       }
 
       const datos: EmpresaConfig = {
@@ -77,6 +123,7 @@ const ConfiguracionEmpresa = () => {
         notas: form.notas || '',
         logoUrl,
         logoPath,
+        logoBase64,
       };
 
       await setDoc(doc(db, CONFIG_EMPRESA_COL, CONFIG_EMPRESA_DOC), datos, { merge: true });
@@ -115,7 +162,7 @@ const ConfiguracionEmpresa = () => {
               </div>
               <div style={{ flex: 1, minWidth: '220px' }}>
                 <div style={{ color: '#f0f6fc', fontWeight: 600, marginBottom: '4px' }}>Logo de la empresa</div>
-                <div style={{ color: '#8b949e', fontSize: '0.82rem', marginBottom: '10px' }}>Aparecerá en el menú, junto al nombre. Recomendado: imagen cuadrada (PNG/JPG).</div>
+                <div style={{ color: '#8b949e', fontSize: '0.82rem', marginBottom: '10px' }}>Aparecerá en el menú y en los documentos PDF. Recomendado: imagen cuadrada (PNG/JPG).</div>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                   {logoMostrado ? 'Cambiar logo' : 'Subir logo'}

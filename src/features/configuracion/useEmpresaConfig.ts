@@ -5,7 +5,7 @@
 //
 // Uso:
 //   const { config, cargando } = useEmpresaConfig();
-//   config?.nombre, config?.logoUrl, config?.direccion, ...
+//   config?.nombre, config?.logoUrl, config?.logoBase64, config?.direccion, ...
 
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -18,6 +18,10 @@ export interface EmpresaConfig {
   nombre?: string;
   logoUrl?: string;
   logoPath?: string;
+  // ✅ NUEVO: el logo embebido como dataURL base64. Se guarda al subir el logo y
+  // se usa tanto en la app como en los PDF, evitando problemas de CORS al "tintar"
+  // el canvas (html2pdf) con una imagen de otro dominio (Firebase Storage).
+  logoBase64?: string;
   rfc?: string;
   direccion?: string;
   telefono?: string;

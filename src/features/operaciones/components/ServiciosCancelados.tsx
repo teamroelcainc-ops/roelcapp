@@ -151,18 +151,21 @@ const ServiciosCancelados = () => {
     descargarOperaciones();
   }, []);
 
-  // ✅ NUEVO: precarga el logo de la empresa (a base64) y lo registra para que
-  // todos los documentos PDF generados desde este módulo lo incluyan.
+  // ✅ NUEVO: precarga el logo de la empresa y lo registra para que todos los
+  // documentos PDF generados desde este módulo lo incluyan.
+  // Prioridad: logoBase64 (sin CORS) -> precargar la URL -> nada.
   useEffect(() => {
+    const b64 = empresaConfig?.logoBase64;
+    if (b64) { setLogoPdf(b64); return; }
     const url = empresaConfig?.logoUrl;
     if (!url) { setLogoPdf(''); return; }
     let cancelado = false;
-    cargarLogoDataUrl(url).then(b64 => {
+    cargarLogoDataUrl(url).then(x => {
       if (cancelado) return;
-      setLogoPdf(b64 || url);
+      setLogoPdf(x || url);
     });
     return () => { cancelado = true; };
-  }, [empresaConfig?.logoUrl]);
+  }, [empresaConfig?.logoBase64, empresaConfig?.logoUrl]);
 
   useEffect(() => {
     setPaginaActual(1);

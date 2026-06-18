@@ -22,12 +22,15 @@ interface EmpresaBrandProps {
 export const EmpresaBrand: React.FC<EmpresaBrandProps> = ({ soloLogo = false, tamanoLogo = 26, colorNombre = '#f0f6fc' }) => {
   const { config } = useEmpresaConfig();
   const nombre = config?.nombre || 'Roelca Inc.';
+  // ✅ Preferimos el logo en base64 (misma fuente que usan los PDF); si no hay,
+  // caemos a la URL de Storage.
+  const logoSrc = config?.logoBase64 || config?.logoUrl || '';
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
-      {config?.logoUrl ? (
+      {logoSrc ? (
         <img
-          src={config.logoUrl}
+          src={logoSrc}
           alt={nombre}
           style={{ width: `${tamanoLogo}px`, height: `${tamanoLogo}px`, borderRadius: '6px', objectFit: 'cover', flexShrink: 0 }}
         />
