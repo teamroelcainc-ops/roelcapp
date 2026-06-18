@@ -2,19 +2,37 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, orderBy, limit, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
-import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
+import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf, cargarLogoDataUrl } from '../../../utils/pdfGenerator'; 
+// ✅ NUEVO: visor y subida de documentos ligados a la operación
+import { TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
+import { DocumentosLista } from '../../documentos/DocumentosLista';
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+// ✅ NUEVO: logo + nombre de la empresa (lee de la configuración)
+import { EmpresaBrand } from '../../configuracion/EmpresaBrand';
+import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
+// ID hex del status "Cancelado" en catalogo_status_servicio
+const STATUS_CANCELADO_ID = '7607f692';
+
 const ServiciosCancelados = () => {
+  // ✅ NUEVO: logo de la empresa para los PDFs generados desde este módulo
+  const { config: empresaConfig } = useEmpresaConfig();
+
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  // ✅ NUEVO: mensaje de error real de carga (distinto a "no hay canceladas")
+  const [errorCarga, setErrorCarga] = useState<string | null>(null);
 
   const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'historial'>('cerrado');
   const [historialList, setHistorialList] = useState<any[]>([]);
   const [cargandoHorarios, setCargandoHorarios] = useState(false);
+  // ✅ NUEVO: control del visor de documentos y del modal de subida
+  const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
+  const [mostrarSubirDocOp, setMostrarSubirDocOp] = useState(false);
   
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
@@ -26,26 +44,54 @@ const ServiciosCancelados = () => {
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
   // ✅ 1. CARGA RÁPIDA: Solo trae operaciones canceladas (Desnormalizado)
+  //    Robusto: si falta el índice compuesto (status + fechaServicio), hace
+  //    fallback a una consulta simple (solo where) y ordena del lado del cliente.
+  //    Si no hay canceladas, NO lanza error: deja la lista vacía y la UI lo informa.
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
+    setErrorCarga(null);
     try {
-      const queryOperacionesCanceladas = query(
-        collection(db, 'operaciones'), 
-        where('status', '==', '7607f692'), 
-        orderBy('fechaServicio', 'desc'), 
-        limit(150)
-      );
+      let docs: any[] = [];
 
-      const operacionesSnap = await getDocs(queryOperacionesCanceladas);
-      console.log(`[FIREBASE READ] Descargadas ${operacionesSnap.docs.length} operaciones canceladas.`);
+      try {
+        // Consulta ideal (requiere índice compuesto status + fechaServicio desc)
+        const queryIdeal = query(
+          collection(db, 'operaciones'),
+          where('status', '==', STATUS_CANCELADO_ID),
+          orderBy('fechaServicio', 'desc'),
+          limit(150)
+        );
+        const snap = await getDocs(queryIdeal);
+        docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      } catch (errIndex: any) {
+        const msg = String(errIndex?.message || errIndex?.code || '').toLowerCase();
+        // Si Firestore se queja por falta de índice, reintentamos sin orderBy.
+        if (msg.includes('index') || msg.includes('failed-precondition')) {
+          console.warn('[ServiciosCancelados] Falta índice compuesto; usando consulta simple + orden en cliente.');
+          const querySimple = query(
+            collection(db, 'operaciones'),
+            where('status', '==', STATUS_CANCELADO_ID),
+            limit(150)
+          );
+          const snap = await getDocs(querySimple);
+          docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+          docs.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+        } else {
+          throw errIndex;
+        }
+      }
 
-      const operacionesCanceladas = operacionesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-
-      setOperacionesGlobales(operacionesCanceladas);
-
-    } catch (e) {
+      console.log(`[FIREBASE READ] Descargadas ${docs.length} operaciones canceladas.`);
+      setOperacionesGlobales(docs);
+    } catch (e: any) {
       console.error("Error al cargar operaciones canceladas:", e);
-      alert("Hubo un problema al cargar las operaciones. Verifica tu conexión.");
+      setOperacionesGlobales([]);
+      const msg = String(e?.message || e?.code || e || '').toLowerCase();
+      if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
+        setErrorCarga('Se agotó la cuota de lecturas de Firestore. Se reinicia a las 2 AM (hora México). Considera activar el plan Blaze.');
+      } else {
+        setErrorCarga('Hubo un problema al cargar las operaciones canceladas. Verifica tu conexión e inténtalo de nuevo.');
+      }
     }
     setCargandoOperaciones(false);
   };
@@ -104,6 +150,19 @@ const ServiciosCancelados = () => {
   useEffect(() => {
     descargarOperaciones();
   }, []);
+
+  // ✅ NUEVO: precarga el logo de la empresa (a base64) y lo registra para que
+  // todos los documentos PDF generados desde este módulo lo incluyan.
+  useEffect(() => {
+    const url = empresaConfig?.logoUrl;
+    if (!url) { setLogoPdf(''); return; }
+    let cancelado = false;
+    cargarLogoDataUrl(url).then(b64 => {
+      if (cancelado) return;
+      setLogoPdf(b64 || url);
+    });
+    return () => { cancelado = true; };
+  }, [empresaConfig?.logoUrl]);
 
   useEffect(() => {
     setPaginaActual(1);
@@ -389,10 +448,19 @@ const ServiciosCancelados = () => {
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
+  // ✅ Referencia legible de la operación en curso (carpeta de Storage)
+  const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
+
+  // ✅ Estado vacío real: terminó de cargar, sin error y sin canceladas
+  const sinCanceladas = !cargandoOperaciones && !errorCarga && operacionesGlobales.length === 0;
+
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
      <div style={{ width: '100%', margin: '0 auto' }}>
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: '0 0 24px 0', fontWeight: 'bold' }}>🚫 Servicios Cancelados</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
+          <EmpresaBrand tamanoLogo={36} />
+          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: 0, fontWeight: 'bold' }}>🚫 Servicios Cancelados</h1>
+        </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
           <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
             <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '10px', borderRadius: '6px' }}><option>Filtro: Todo</option></select>
@@ -413,12 +481,28 @@ const ServiciosCancelados = () => {
           </div>
         </div>
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
+          {cargandoOperaciones ? (
+            <div style={{ border: '1px solid #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones canceladas...</div>
+          ) : errorCarga ? (
+            <div style={{ border: '1px solid rgba(248,81,73,0.4)', backgroundColor: 'rgba(248,81,73,0.06)', borderRadius: '8px', padding: '40px 24px', textAlign: 'center' }}>
+              <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</div>
+              <div style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.05rem', marginBottom: '8px' }}>No se pudieron cargar las operaciones</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem', maxWidth: '520px', margin: '0 auto 16px' }}>{errorCarga}</div>
+              <button onClick={descargarOperaciones} style={{ padding: '8px 18px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Reintentar</button>
+            </div>
+          ) : sinCanceladas ? (
+            <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
+              <div style={{ fontSize: '2.4rem', marginBottom: '10px' }}>📭</div>
+              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>No existen servicios cancelados</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Cuando una operación se marque como cancelada aparecerá aquí.</div>
+            </div>
+          ) : (
+          <>
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            {cargandoOperaciones ? (<div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones...</div>) : (
               <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
-                    <th style={{ padding: '16px', width: '100px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                    <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Ref</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Tipo de Operación</th>
@@ -432,12 +516,11 @@ const ServiciosCancelados = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {operacionesEnPantalla.length === 0 ? (<tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>) : (
+                  {operacionesEnPantalla.length === 0 ? (<tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados para tu búsqueda.</td></tr>) : (
                     operacionesEnPantalla.map((op: any) => (
                       <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
                         <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
                           <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            {/* Único botón: Ver Detalles */}
                             <button 
                               type="button" 
                               title="Ver Detalles"
@@ -447,6 +530,16 @@ const ServiciosCancelados = () => {
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </button>
+                            <button 
+                              type="button" 
+                              title="Ver Documentos"
+                              onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setMostrarDocumentos(true); }}
+                              style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
                             </button>
                           </div>
                         </td>
@@ -465,9 +558,8 @@ const ServiciosCancelados = () => {
                   )}
                 </tbody>
               </table>
-            )}
           </div>
-          {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
+          {operacionesFiltradas.length > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones canceladas</div>
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -490,6 +582,8 @@ const ServiciosCancelados = () => {
                 </button>
               </div>
             </div>
+          )}
+          </>
           )}
         </div>
       </div>
@@ -521,6 +615,7 @@ const ServiciosCancelados = () => {
                   📄 Instrucciones
                 </button>
 
+                <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ background: '#21262d', border: '1px solid rgba(251, 146, 60, 0.4)', color: '#fb923c', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>📎 Documentos</button>
                 <button onClick={verHistorial} style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>📋 Bitácora</button>
                 <button onClick={() => setOperacionViendo(null)} className="btn-window close" style={{ padding: '6px', borderRadius: '50%' }}>✕</button>
               </div>
@@ -648,6 +743,52 @@ const ServiciosCancelados = () => {
           </div>
         </div>
       )}
+
+      {/* ✅ NUEVO: Visor de documentos de la operación cancelada */}
+      {mostrarDocumentos && operacionViendo && (
+        <div className="modal-overlay" style={{ zIndex: 2100 }}>
+          <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Documentos de la Operación</h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#8b949e' }}>
+                  Referencia: <span style={{ color: '#fb923c', fontWeight: 600 }}>{refOperacionViendo}</span>
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSubirDocOp(true)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  Subir Documento
+                </button>
+                <button onClick={() => setMostrarDocumentos(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1 }} title="Cerrar">✕</button>
+              </div>
+            </div>
+            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+              <DocumentosLista coleccionOrigen="operaciones" registroId={operacionViendo.id} />
+            </div>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', textAlign: 'right', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
+              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: Subida de documentos ligada a la operación */}
+      {operacionViendo && (
+        <DocumentoUploadModal
+          isOpen={mostrarSubirDocOp && !!operacionViendo}
+          onClose={() => setMostrarSubirDocOp(false)}
+          coleccionOrigen="operaciones"
+          registroId={operacionViendo.id}
+          registroNombre={refOperacionViendo}
+          tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
+        />
+      )}
+
       {modalHorarios === 'historial' && (
         <div className="modal-overlay" style={{ zIndex: 2000 }}>
           <div className="form-card" style={{ maxWidth: '650px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>

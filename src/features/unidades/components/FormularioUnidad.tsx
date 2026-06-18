@@ -3,6 +3,25 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import type { UnidadRecord } from '../../../types/unidad'; // ✅ RUTA CORREGIDA
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal'; // ✅ Modal reutilizable de documentos
+
+// ✅ Tipos de documento sugeridos para Unidades Propias.
+// Puedes editarlos libremente o, más adelante, leerlos del catálogo "Tipo de Archivo" (módulo Unidad).
+export const TIPOS_DOCUMENTO_UNIDAD = [
+  '1. Tarjeta de Circulación',
+  '2. Factura de la Unidad',
+  '3. Póliza de Seguro',
+  '4. Permiso SCT (Federal)',
+  '5. Verificación Físico-Mecánica',
+  '6. Constancia de Peso y Dimensiones',
+  '7. Calcomanía / Engomado',
+  '8. Alta / Baja de Placas',
+  '9. Contrato de Arrendamiento',
+  '10. Pedimento de Importación',
+  '11. TAG / AVI',
+  '12. Expedición HAZMAT',
+  '13. Otro',
+];
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -120,6 +139,7 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
 
   const [tiposUnidad, setTiposUnidad] = useState<{id: string, label: string}[]>([]);
   const [cargando, setCargando] = useState(false);
+  const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false); // ✅ Modal de documentos
 
   useEffect(() => {
     const cargarCatalogos = async () => {
@@ -180,12 +200,38 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
     }
   };
 
+  // ✅ id del registro para ligar documentos (solo existe cuando la unidad ya fue guardada)
+  const unidadId = (initialData as any)?.id || '';
+  const unidadNombre = formData.unidad || formData.placas || formData.serie || 'Unidad';
+
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
       <div className="form-card" style={{ maxWidth: '1000px', backgroundColor: '#0d1117', border: '1px solid #30363d' }}>
         <div className="form-header" style={{ borderBottom: '1px solid #30363d' }}>
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Unidad: ${formData.unidad}` : 'Nueva Unidad Propia')}</h2>
-          <div className="header-actions">
+          <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* ✅ Botón Subir Documentos (solo visible con el formulario abierto) */}
+            {estado === 'abierto' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (!unidadId) { alert('Guarda la unidad primero para poder adjuntarle documentos.'); return; }
+                  setMostrarSubirDoc(true);
+                }}
+                title={unidadId ? 'Subir documentos de esta unidad' : 'Guarda la unidad primero'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  backgroundColor: unidadId ? 'rgba(216, 67, 21, 0.15)' : '#21262d',
+                  border: `1px solid ${unidadId ? '#D84315' : '#30363d'}`,
+                  color: unidadId ? '#fb923c' : '#6e7681',
+                  padding: '6px 12px', borderRadius: '6px',
+                  cursor: unidadId ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.82rem'
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                Subir Documentos
+              </button>
+            )}
             {estado === 'abierto' ? (
               <button type="button" onClick={onMinimize} className="btn-window">🗕</button>
             ) : (
@@ -354,6 +400,16 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
           </form>
         </div>
       </div>
+
+      {/* ✅ Modal reutilizable para subir documentos ligados a esta unidad */}
+      <DocumentoUploadModal
+        isOpen={mostrarSubirDoc}
+        onClose={() => setMostrarSubirDoc(false)}
+        coleccionOrigen="unidades"
+        registroId={unidadId}
+        registroNombre={unidadNombre}
+        tiposDocumento={TIPOS_DOCUMENTO_UNIDAD}
+      />
     </div>
   );
 };

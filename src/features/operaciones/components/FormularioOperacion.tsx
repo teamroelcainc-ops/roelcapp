@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { doc, getDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
-import { db } from '../../../config/firebase';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc } from 'firebase/firestore';
+import { db, storage } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
 import { calcularStatusDinamico } from '../config/statusRules';
+// ✅ NUEVO: subida de documentos por campo (Storage) + modal genérico "otros documentos"
+import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 
 // ✅ NUEVO: formularios de catálogo reutilizados por los botones "+"
 import { FormularioEmpresa } from '../../empresas/components/FormularioEmpresa';
@@ -68,6 +71,69 @@ const TIPO_EMP_CLIENTE_MERCANCIA = 'Cliente (Mercancía)';
 const TIPO_EMP_ORIGEN_DESTINO    = 'Origen / Destino';
 const TIPO_EMP_PROV_TRANSPORTE   = 'Proveedor (Transporte)';
 const TIPO_EMP_PROV_SERVICIOS    = 'Proveedor (Servicios)';
+
+// ✅ NUEVO: tipos sugeridos para el botón genérico "Subir Documentos" de la operación.
+// El tipo elegido se usa como nombre de subcarpeta (operaciones/<Ref>/<tipo>/archivo).
+export const TIPOS_DOCUMENTO_OPERACION = [
+  'Otros documentos',
+  'Factura',
+  'Comprobante de Pago',
+  'Evidencia de Entrega (POD)',
+  'Carta Porte',
+  'DODA',
+  'Manifiesto',
+  "Entry's",
+  'Otro',
+];
+
+// Quita caracteres no válidos para rutas de Storage (mismo criterio que DocumentoUploadModal)
+const sanitizarRutaOp = (s: string) =>
+  String(s || '').trim().replace(/[\/\\:*?"<>|#]+/g, '').replace(/\s+/g, ' ').trim();
+
+// Referencia legible de la operación (carpeta raíz dentro de "operaciones/")
+const referenciaDeOperacion = (idOp: string, ref?: string): string =>
+  (ref && String(ref).trim()) || (idOp ? String(idOp).substring(0, 6) : 'Operacion');
+
+// ✅ NUEVO: sube UN archivo de la operación a Storage en una carpeta con el nombre del campo
+// y lo registra en la colección unificada "documentos" (mismo formato que DocumentoUploadModal).
+// Estructura: operaciones / <Referencia> / <NombreCampo> / <archivo>
+const subirDocumentoOperacion = async (
+  file: File,
+  idOp: string,
+  refOp: string,
+  campoLabel: string,
+  sufijoUnico?: string,
+) => {
+  const carpeta = sanitizarRutaOp(refOp) || sanitizarRutaOp(idOp) || 'sin_referencia';
+  const subcarpeta = sanitizarRutaOp(campoLabel) || 'otros documentos';
+  const nombreBase = sufijoUnico ? `${subcarpeta} ${sufijoUnico}` : subcarpeta;
+  const punto = file.name.lastIndexOf('.');
+  const extension = punto >= 0 ? file.name.slice(punto) : '';
+  const nombreFinal = `${nombreBase}${extension}`;
+  const ruta = `operaciones/${carpeta}/${subcarpeta}/${nombreFinal}`;
+
+  const r = storageRef(storage, ruta);
+  await uploadBytes(r, file, file.type ? { contentType: file.type } : undefined);
+  const url = await getDownloadURL(r);
+
+  const docId = sanitizarRutaOp(`operaciones__${idOp}__${nombreBase}`).replace(/\s+/g, '_');
+  await setDoc(doc(db, 'documentos', docId), {
+    coleccionOrigen: 'operaciones',
+    registroId: idOp,
+    registroNombre: refOp,
+    tipoDocumento: sufijoUnico ? `${campoLabel} ${sufijoUnico}` : campoLabel,
+    carpeta,
+    subcarpeta,
+    nombreArchivo: nombreFinal,
+    path: ruta,
+    url,
+    vence: false,
+    fechaExpedicion: '',
+    fechaVencimiento: '',
+    observaciones: '',
+    createdAt: new Date().toISOString(),
+  }, { merge: true });
+};
 
 
 // ============================================================
@@ -221,6 +287,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [cargando, setCargando] = useState(false);
   // ✅ NUEVO: control del modal de Costos Adicionales (enfocado en esta operación)
   const [mostrarCostosAdic, setMostrarCostosAdic] = useState(false);
+  // ✅ NUEVO: control del modal genérico "Subir Documentos" (otros documentos)
+  const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
   const [statusPreview, setStatusPreview] = useState<string>('');
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -231,18 +299,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [nombreSiguienteAuto, setNombreSiguienteAuto] = useState<string>('');
 
   // ✅ NUEVO: configuración del FORMULARIO por flujo (config_flujos_operacion/{configId}).
-  // `null` = el flujo no trae el campo configurado (campo ausente) => aplicar default:
-  //   - pestanasVisiblesConfig === null  => mostrar TODAS las pestañas
-  //   - camposObligatoriosConfig === null => no exigir nada extra para guardar
-  // Esto es POR FLUJO (no depende del status actual ni del calculado) y es independiente
-  // de camposRequeridos por nodo (que controla el AVANCE de status, no el guardado).
   const [pestanasVisiblesConfig, setPestanasVisiblesConfig] = useState<TabType[] | null>(null);
   const [camposObligatoriosConfig, setCamposObligatoriosConfig] = useState<string[] | null>(null);
 
   // ✅ NUEVO: estado del modal de creación de catálogo (botón "+")
-  //   - catalogo: qué formulario mostrar y con qué preselección
-  //   - idsPrevios: snapshot de IDs antes de abrir, para detectar el nuevo por diff
-  //   - onCreado: callback que autoselecciona el registro recién creado
   const [modalCatalogo, setModalCatalogo] = useState<{
     catalogo: CatalogoCreable;
     idsPrevios: Set<string>;
@@ -381,8 +441,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       }
     } catch { /* noop */ }
 
-    // El Dashboard lee de localStorage (cat_v1__<coleccion>), no de sessionStorage.
-    // Por eso el registro recién creado "no aparecía": hay que actualizar también esa clave.
     try {
       localStorage.setItem(`cat_v1__${coleccion}`, JSON.stringify({ data: docs, ts: Date.now() }));
     } catch { /* noop */ }
@@ -407,15 +465,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!modalCatalogo) return;
     const { catalogo, idsPrevios, onCreado } = modalCatalogo;
 
-    // Cerramos el modal de inmediato para que el formulario hijo desaparezca al guardar.
     setModalCatalogo(null);
 
     try {
       let docs: any[] = [];
       let nuevos: any[] = [];
 
-      // El doc recién escrito a veces tarda unos ms en reflejarse en getDocs.
-      // Reintentamos hasta 4 veces (≈1s) hasta detectar el registro nuevo.
       for (let intento = 0; intento < 4; intento++) {
         docs = await recargarColeccion(catalogo.coleccion);
         nuevos = docs.filter((d: any) => !idsPrevios.has(String(d.id)));
@@ -461,10 +516,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return idGenerado;
   };
 
-  // ✅ NUEVO: lee la config del FORMULARIO guardada por flujo (pestanasVisibles / camposObligatorios).
-  // Importante: esto es POR FLUJO (configId), NO por nodo/status — la visibilidad no depende
-  // del status actual ni del calculado, depende solo del flujo. Es independiente del cálculo
-  // de status/camposRequeridos por nodo (no se mezcla con esa lógica).
   useEffect(() => {
     let cancelado = false;
     const configId = buildConfigId();
@@ -480,8 +531,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         const snap = await getDoc(doc(db, 'config_flujos_operacion', configId));
         if (cancelado) return;
         const data = snap.exists() ? (snap.data() as any) : null;
-        // Distinguimos "campo ausente" (=> null => default) de "arreglo presente" (incluso vacío),
-        // que se respeta tal cual fue configurado.
         setPestanasVisiblesConfig(data && Array.isArray(data.pestanasVisibles) ? data.pestanasVisibles : null);
         setCamposObligatoriosConfig(data && Array.isArray(data.camposObligatorios) ? data.camposObligatorios : null);
       } catch {
@@ -495,13 +544,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return () => { cancelado = true; };
   }, [formData.tipoOperacionId, formData.trafico, formData.carga, tiposOperacion]);
 
-  // ✅ NUEVO: pestañas visibles según la config del flujo. Sin config (campo ausente) => todas.
   const pestanasVisibles = useMemo<TabType[]>(
     () => (pestanasVisiblesConfig === null ? TODAS_LAS_PESTANAS : pestanasVisiblesConfig),
     [pestanasVisiblesConfig]
   );
 
-  // ✅ NUEVO: si la pestaña activa quedó oculta por la config del flujo, salta a la primera visible.
   useEffect(() => {
     if (pestanasVisibles.length > 0 && !pestanasVisibles.includes(pestañaActiva)) {
       setPestañaActiva(pestanasVisibles[0]);
@@ -526,7 +573,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         setStatusPreview(statusObj?.descripcion || statusObj?.nombre || statusCalculado);
         setStatusError(null);
 
-        // ✅ NUEVO: calcular qué campos faltan para el SIGUIENTE nodo automático.
         await calcularCamposSiguienteAuto(configId, statusCalculado);
       } catch (error: any) {
         setStatusPreview('');
@@ -540,7 +586,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return () => clearTimeout(timerId);
   }, [formData, initialData, tiposOperacion, statusServicio]);
 
-  // ✅ NUEVO: etiquetas legibles para los nombres de campo del flujo
   const etiquetaCampo = (campo: string): string => {
     const mapa: Record<string, string> = {
       clientePaga: 'Cliente (Paga)', convenio: 'Convenio', numeroRemolque: '# de Remolque',
@@ -560,11 +605,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return mapa[campo] || campo;
   };
 
-  // ✅ NUEVO: campos obligatorios (POR FLUJO, vía camposObligatorios) que están vacíos
-  // y por lo tanto IMPIDEN guardar. Esto es independiente de camposRequeridos por nodo
-  // (que solo controla el avance automático de status, vía calcularStatusDinamico/calcularCamposSiguienteAuto).
-  // Regla clave: un campo de una pestaña OCULTA se ignora por completo, aunque esté
-  // marcado como obligatorio — la pestaña oculta gana sobre la obligatoriedad del campo.
   const camposObligatoriosFaltantes = useMemo(() => {
     const lista = camposObligatoriosConfig || [];
     if (lista.length === 0) return [] as { campo: string; etiqueta: string }[];
@@ -578,7 +618,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return lista
       .filter(campo => {
         const tab = CAMPO_TAB_MAP[campo];
-        // Si el campo pertenece a una pestaña que está oculta, se ignora por completo.
         return !tab || pestanasVisibles.includes(tab);
       })
       .filter(campo => esVacio((formData as any)[campo]))
@@ -590,12 +629,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     [camposObligatoriosFaltantes]
   );
 
-  // Helper para agregar la clase de resaltado en rojo a un campo obligatorio vacío
   const claseSiFalta = (campoId: string): string =>
     camposObligatoriosFaltantesSet.has(campoId) ? ' campo-obligatorio-faltante' : '';
 
-  // ✅ NUEVO: lee el flujo, encuentra el nodo actual y su siguiente nodo automático,
-  // y arma la lista de campos requeridos marcando cuáles ya están cumplidos.
   const calcularCamposSiguienteAuto = async (configId: string, statusActual: string) => {
     try {
       const snap = await getDoc(doc(db, 'config_flujos_operacion', configId));
@@ -634,10 +670,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setFormData(prev => ({ ...prev, sueldoTotal: sOp + sExt }));
   }, [formData.sueldoOperador, formData.sueldoExtra]);
 
-  // ✅ Regla: forzar proveedor fijo cuando el tipo de operación coincide
   useEffect(() => {
     if (formData.tipoOperacionId !== TIPO_OP_PROVEEDOR_FIJO) return;
-    if (formData.proveedorUnidad === PROVEEDOR_FIJO_ID) return; // ya está forzado
+    if (formData.proveedorUnidad === PROVEEDOR_FIJO_ID) return;
     const prov = empresas.find((e: any) => String(e.id) === PROVEEDOR_FIJO_ID);
     setFormData(prev => ({
       ...prev,
@@ -806,12 +841,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
   }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas]);
 
-  // ✅ NUEVO: Devuelve el NOMBRE del tráfico.
-  // Orden de búsqueda para gastar el mínimo de lecturas:
-  //   1) cache de sesión  → 0 lecturas
-  //   2) catálogo en memoria → 0 lecturas
-  //   3) un solo doc de Firestore (y se cachea) → 1 lectura, una sola vez
-  //   4) si no es un ID válido, asume que ya era el nombre y lo devuelve tal cual
   const resolverNombreTrafico = useCallback(async (movRaw: any): Promise<string> => {
     const valor = String(movRaw || '').trim();
     if (!valor) return 'N/A';
@@ -834,7 +863,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       }
     } catch { /* noop */ }
 
-    traficoCache.set(valor, valor); // ya era un nombre ("Importación", etc.)
+    traficoCache.set(valor, valor);
     return valor;
   }, [catalogoTrafico]);
 
@@ -1011,19 +1040,39 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       };
 
       Object.keys(operacionData).forEach(key => { if (operacionData[key] === undefined) delete operacionData[key]; });
-      
+
+      // ✅ NUEVO: guardamos la operación y obtenemos id + referencia para ligar los documentos
+      let idGuardado = '';
+      let refGuardado = '';
       if (initialData) {
         await updateDoc(doc(db, 'operaciones', String(initialData.id)), operacionData);
-        alert(`Operación actualizada correctamente.`);
+        idGuardado = String(initialData.id);
+        refGuardado = referenciaDeOperacion(idGuardado, (initialData as any).ref || operacionData.ref);
         if (onSave) onSave({ id: initialData.id, ...operacionData });
       } else {
         const resultado = await guardarOperacionSegura(operacionData);
-        alert('Operación guardada exitosamente');
-        if (onSave) {
-          const nuevoId = (typeof resultado === 'object' && resultado?.id) ? resultado.id : Date.now().toString();
-          onSave({ id: nuevoId, ...operacionData });
-        }
+        const nuevoId = (typeof resultado === 'object' && resultado?.id) ? resultado.id : Date.now().toString();
+        idGuardado = String(nuevoId);
+        refGuardado = referenciaDeOperacion(idGuardado, (resultado as any)?.ref || operacionData.ref);
+        if (onSave) onSave({ id: nuevoId, ...operacionData });
       }
+
+      // ✅ NUEVO: subir a Storage los PDFs cargados por campo, en carpetas con el nombre del campo.
+      // Estructura: operaciones / <Referencia> / <NombreCampo> / <archivo>
+      const archivosPorCampo: { file: File; campo: string; sufijo?: string }[] = [];
+      if (pdfCartaPorte) archivosPorCampo.push({ file: pdfCartaPorte, campo: 'Carta Porte' });
+      if (pdfDoda) archivosPorCampo.push({ file: pdfDoda, campo: 'DODA' });
+      if (pdfManifiesto) archivosPorCampo.push({ file: pdfManifiesto, campo: 'Manifiesto' });
+      (pdfsEntrys || []).forEach((f: File | null, i: number) => { if (f) archivosPorCampo.push({ file: f, campo: "Entry's", sufijo: String(i + 1) }); });
+
+      let subidos = 0;
+      for (const a of archivosPorCampo) {
+        try { await subirDocumentoOperacion(a.file, idGuardado, refGuardado, a.campo, a.sufijo); subidos++; }
+        catch (err) { console.error('Error subiendo documento de operación:', a.campo, err); }
+      }
+
+      const resumenDocs = archivosPorCampo.length > 0 ? `\n\nDocumentos subidos a "${refGuardado}": ${subidos}/${archivosPorCampo.length}` : '';
+      alert(`Operación ${initialData ? 'actualizada' : 'guardada'} correctamente.${resumenDocs}`);
       onClose();
     } catch (error: any) {
       console.error('Error al guardar operación:', error);
@@ -1031,9 +1080,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     } finally { setCargando(false); }
   };
 
-  // ✅ NUEVO: confirmación antes de cancelar/cerrar para no descartar la operación por error.
-  // OJO: el guardado exitoso llama a onClose() directamente (sin pasar por aquí), así que
-  // esta confirmación solo aplica a las acciones manuales de Cancelar / Cerrar.
   const handleCancelarConfirmado = () => {
     const ok = window.confirm('¿Seguro que deseas cancelar esta operación? Se perderán los datos que no hayas guardado.');
     if (ok) onClose();
@@ -1045,6 +1091,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtFecha = (f: string) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return f; } };
 
+  // ✅ NUEVO: id y referencia de la operación para el modal "Subir Documentos"
+  const idOperacion = (initialData as any)?.id || '';
+  const referenciaOperacion = referenciaDeOperacion(idOperacion, (initialData as any)?.ref);
+
   if (!catalogosCacheados || !catalogosCacheados.empresas) return <div className={`modal-overlay`}><div className="form-card" style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando catálogos de Roelca...</div></div>;
 
   return (
@@ -1052,14 +1102,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}
       style={
         estado === 'minimizado'
-          // Minimizado: el overlay NO debe cubrir la pantalla ni capturar clics,
-          // así la pildorita inferior derecha recibe los eventos.
           ? { padding: 0, background: 'transparent', pointerEvents: 'none' }
           : { padding: 0 }
       }
     >
       <style>{`
-        /* ✅ PANTALLA COMPLETA: el shell ocupa todo el viewport, sin bordes ni radios */
         .roelca-form-shell {
           width: 100vw;
           height: 100vh;
@@ -1121,10 +1168,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         .status-badge-error { display: inline-flex; align-items: center; gap: 4px; padding: 5px 11px; border-radius: 20px; background-color: rgba(248, 81, 73, 0.1); color: #f85149; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; border: 1px solid rgba(248, 81, 73, 0.25); }
         .status-preview-card { padding: 14px 16px; background: linear-gradient(135deg, rgba(63, 185, 80, 0.06), rgba(63, 185, 80, 0.02)); border: 1px solid rgba(63, 185, 80, 0.25); border-radius: 10px; margin-bottom: 14px; }
         .status-error-card { padding: 14px 16px; background: linear-gradient(135deg, rgba(248, 81, 73, 0.06), rgba(248, 81, 73, 0.02)); border: 1px solid rgba(248, 81, 73, 0.25); border-radius: 10px; margin-bottom: 14px; }
-        /* ✅ NUEVO: fila de lookup con botón + */
         .roelca-lookup-row { display: flex; gap: 8px; align-items: flex-start; }
         .roelca-lookup-row > .roelca-lookup-input { flex: 1; min-width: 0; position: relative; }
-        /* ✅ NUEVO: resalta en rojo un campo marcado como obligatorio (por flujo) que está vacío */
         .campo-obligatorio-faltante,
         .campo-obligatorio-faltante:focus {
           border-color: #f85149 !important;
@@ -1145,6 +1190,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               <p>{initialData ? 'Modifica los datos y guarda los cambios' : 'Completa el formulario para registrar una nueva operación'}</p>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => { if (!idOperacion) { alert('Guarda la operación primero para poder adjuntarle documentos.'); return; } setMostrarSubirDoc(true); }}
+                className="roelca-window-btn"
+                title={idOperacion ? 'Subir documentos de la operación' : 'Guarda la operación primero'}
+                style={{ width: 'auto', padding: '0 12px', gap: '6px', color: idOperacion ? '#fb923c' : '#6e7681', borderColor: idOperacion ? 'rgba(251,146,60,0.4)' : '#2d333b' }}
+              >
+                <IconFileText size={15} /> <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Documentos</span>
+              </button>
               <button type="button" onClick={onMinimize} className="roelca-window-btn" title="Minimizar"><IconMinimize size={16} /></button>
               <button type="button" onClick={handleCancelarConfirmado} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
             </div>
@@ -1230,7 +1284,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('numeroRemolque')}`} placeholder="Buscar remolque..." value={searchRemolque} onChange={e => { setSearchRemolque(e.target.value); setShowDropdownRemolque(true); if (formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: '' })); }} onFocus={() => setShowDropdownRemolque(true)} onBlur={() => setTimeout(() => setShowDropdownRemolque(false), 200)} />
-                            {showDropdownRemolque && searchRemolque && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosRemolque.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosRemolque.map((r:any) => (<div key={r.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(`${r.nombre || ''} ${r.placas || r.placa || ''}`.trim()); setShowDropdownRemolque(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{`${r.nombre || ''} ${r.placas || r.placa || ''}`.trim()}</div></div>))}</div>)}
+                            {showDropdownRemolque && searchRemolque && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosRemolque.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosRemolque.map((r:any) => (<div key={r.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(labelRemolque(r)); setShowDropdownRemolque(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelRemolque(r)}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Remolque" onClick={() => abrirCreacion(
                             { tipo: 'remolque', coleccion: 'remolques' },
@@ -1339,7 +1393,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Costo Manifiesto ($)</label><input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Costo Manifiesto ($)</label><input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto} onChange={handleChange} /></div>
                       <CampoArchivo label="PDF Manifiesto" file={formData.pdfManifiesto} onChange={(e) => handleFileChange(e, 'pdfManifiesto')} resaltar={camposObligatoriosFaltantesSet.has('pdfManifiesto')} />
                     </div>
                   </div>
@@ -1347,7 +1401,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               )}
               {pestañaActiva === 'unidad' && pestanasVisibles.includes('unidad') && (
                 <>
-                  {/* ✅ CAMBIO DE ORDEN: primero Unidad/Operador (con Diesel), luego Proveedor */}
                   {showInternalFleet && (
                     <div className="roelca-card">
                       <div className="roelca-card-header"><div className="roelca-card-icon"><IconUser /></div><h3 className="roelca-card-title">Unidad y Operador (Flota Interna)</h3></div>
@@ -1477,7 +1530,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               )}
               {pestañaActiva === 'cobrar' && pestanasVisibles.includes('cobrar') && (
                 <>
-                  {/* ✅ NUEVO: acceso a Costos Adicionales detallados de esta operación */}
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Costos Adicionales (Cliente y Proveedor)</h3></div>
                     <p style={{ color: '#8b949e', fontSize: '0.85rem', margin: '0 0 14px 0' }}>
@@ -1487,7 +1539,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       type="button"
                       onClick={() => setMostrarCostosAdic(true)}
                       disabled={!initialData}
-                      title={!initialData ? 'Guarda la operación primero para poder agregar costos adicionales' : undefined}
+                      title={!initialData ? 'Guarda la operación primero para agregar costos adicionales' : undefined}
                       style={{ padding: '10px 16px', backgroundColor: initialData ? '#D84315' : '#21262d', color: initialData ? '#fff' : '#6e7681', border: 'none', borderRadius: '8px', cursor: initialData ? 'pointer' : 'not-allowed', fontWeight: 600 }}
                     >
                       + Gestionar Costos Adicionales
@@ -1559,7 +1611,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               </div>
             )}
 
-            {/* ✅ NUEVO: campos obligatorios (configurados POR FLUJO) que faltan por llenar antes de poder guardar */}
             {camposObligatoriosFaltantes.length > 0 && (
               <div style={{ padding: '14px 16px', background: 'linear-gradient(135deg, rgba(248,81,73,0.08), rgba(248,81,73,0.02))', border: '1px solid rgba(248,81,73,0.3)', borderRadius: '10px', marginBottom: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.66rem', color: '#ff7b72', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '8px' }}>
@@ -1574,14 +1625,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <span style={{ flexShrink: 0, width: '18px', height: '18px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(248,81,73,0.15)', color: '#ff7b72', border: '1px solid rgba(248,81,73,0.4)' }}>
                         <IconAlert size={11} />
                       </span>
-                      <span style={{ color: '#ffb4ae', fontWeight: 500 }}>{etiqueta}</span>
+                      <span style={{ color: '#ff7b72', fontWeight: 500 }}>{etiqueta}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            {/* ✅ NUEVO: campos necesarios para avanzar al siguiente status automático */}
             {!statusError && camposSiguienteStatus.length > 0 && (
               <div style={{ padding: '14px 16px', background: 'linear-gradient(135deg, rgba(251,146,60,0.06), rgba(251,146,60,0.02))', border: '1px solid rgba(251,146,60,0.25)', borderRadius: '10px', marginBottom: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.66rem', color: '#fb923c', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '4px' }}>
@@ -1661,7 +1711,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         </div>
       )}
 
-      {/* ✅ NUEVO: Modal de creación de catálogo (botón "+") */}
+      {/* Modal de creación de catálogo (botón "+") */}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empresa' && (
         <FormularioEmpresa
           estado="abierto"
@@ -1682,7 +1732,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         <EmployeeForm estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
       )}
 
-      {/* ✅ NUEVO: Costos Adicionales de esta operación (modal enfocado) */}
+      {/* Costos Adicionales de esta operación (modal enfocado) */}
       {mostrarCostosAdic && initialData && (
         <CostosAdicionalesDashboard
           operacionFija={{
@@ -1702,6 +1752,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           onCostosActualizados={(cambios: { cargosAdicionales: number; cargosAdicionalesProv: number }) => setFormData(prev => ({ ...prev, cargosAdicionales: cambios.cargosAdicionales, cargosAdicionalesProv: cambios.cargosAdicionalesProv }))}
         />
       )}
+
+      {/* Subir documentos "otros documentos" de la operación */}
+      <DocumentoUploadModal
+        isOpen={mostrarSubirDoc && !!idOperacion}
+        onClose={() => setMostrarSubirDoc(false)}
+        coleccionOrigen="operaciones"
+        registroId={idOperacion}
+        registroNombre={referenciaOperacion}
+        tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
+      />
 
     </div>
   );

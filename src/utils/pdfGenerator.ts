@@ -2,6 +2,57 @@
 import html2pdf from 'html2pdf.js';
 
 // ============================================================================
+// LOGO DE LA EMPRESA PARA LOS PDF
+// ----------------------------------------------------------------------------
+// El logo se toma de la configuración de la empresa (useEmpresaConfig -> config.logoUrl).
+// Para que html2pdf/html2canvas lo dibuje de forma confiable (sin problemas de
+// CORS al "tintar" el canvas), se incrusta como dataURL (base64).
+//
+// Flujo:
+//   1) En cada módulo que genera PDFs (OperacionesDashboard, ServiciosCancelados,
+//      ServiciosCompletados) se precarga el logo una sola vez con cargarLogoDataUrl()
+//      y se registra con setLogoPdf(base64).
+//   2) Cada generador usa, por orden de prioridad:
+//        datos.logoBase64  ->  LOGO_PDF_GLOBAL  ->  '' (sin logo, sin recuadro roto)
+// ============================================================================
+
+let LOGO_PDF_GLOBAL = '';
+
+/** Registra el logo (idealmente un dataURL base64) que usarán todos los PDF. */
+export const setLogoPdf = (logo?: string | null) => {
+  LOGO_PDF_GLOBAL = logo || '';
+};
+
+/** Devuelve el logo actualmente registrado (por si algún módulo lo necesita). */
+export const getLogoPdf = () => LOGO_PDF_GLOBAL;
+
+/**
+ * Descarga la URL del logo y la convierte a dataURL (base64) para incrustarlo
+ * en el PDF. Devuelve null si no hay URL o si falla la carga (para caer al
+ * respaldo: no dibujar logo en lugar de mostrar un recuadro roto).
+ */
+export async function cargarLogoDataUrl(logoUrl?: string | null): Promise<string | null> {
+  if (!logoUrl) return null;
+  try {
+    const resp = await fetch(logoUrl, { mode: 'cors' });
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.warn('No se pudo precargar el logo para el PDF:', e);
+    return null;
+  }
+}
+
+/** Resuelve el logo a usar en un documento concreto. */
+const resolverLogo = (logoBase64?: string) => logoBase64 || LOGO_PDF_GLOBAL || '';
+
+// ============================================================================
 // 1. SOLICITUD DE RETIRO
 // ============================================================================
 export interface DatosSolicitudRetiro {
@@ -23,17 +74,19 @@ export const generarSolicitudRetiroPDF = (datos: DatosSolicitudRetiro) => {
   const fechaActual = new Date().toLocaleDateString('es-ES', opcionesFecha);
   const fechaOficial = `Nuevo Laredo, Tamaulipas, México a ${fechaActual}`;
 
-  const logoSrc = datos.logoBase64 || ''; 
+  const logoSrc = resolverLogo(datos.logoBase64);
+  const logoWatermark = logoSrc
+    ? `<div style="position: absolute; top: 55%; left: 50%; transform: translate(-50%, -50%); opacity: 0.12; z-index: 1;"><img src="${logoSrc}" style="width: 550px; height: auto;" /></div>`
+    : '';
+  const logoHeader = logoSrc
+    ? `<div style="position: absolute; top: 20px; left: 25px; width: 120px;"><img src="${logoSrc}" style="width: 100%;" /></div>`
+    : '';
 
   const htmlTemplate = `
     <div style="width: 100%; height: 100%; position: relative; font-family: Arial, sans-serif; font-size: 12px; color: #000; padding: 20px; box-sizing: border-box; background-color: #fff;">
-      <div style="position: absolute; top: 55%; left: 50%; transform: translate(-50%, -50%); opacity: 0.12; z-index: 1;">
-        <img src="${logoSrc}" style="width: 550px; height: auto;" />
-      </div>
+      ${logoWatermark}
       <div style="width: 100%; max-width: 750px; margin: 0 auto; border: 1px solid #ccc; padding: 35px; position: relative; z-index: 10; box-sizing: border-box;">
-        <div style="position: absolute; top: 20px; left: 25px; width: 120px;">
-          <img src="${logoSrc}" style="width: 100%;" />
-        </div>
+        ${logoHeader}
         <div style="text-align: center; margin-bottom: 25px;">
           <div style="font-size: 24px; font-weight: bold; color: #0070C0; text-transform: uppercase; margin-bottom: 5px;">SOLICITUD DE RETIRO</div>
           <div style="font-size: 18px; font-weight: bold; color: #0070C0;">ROELCAINC SA DE CV</div>
@@ -122,6 +175,7 @@ export interface DatosInstruccionesServicio {
   clienteMercancia: string;
   destinoNombre: string;
   destinoDireccion: string;
+  logoBase64?: string;
 }
 
 export const generarInstruccionesServicioPDF = (datos: DatosInstruccionesServicio) => {
@@ -134,8 +188,14 @@ export const generarInstruccionesServicioPDF = (datos: DatosInstruccionesServici
     fechaFormateada = dateObj.toLocaleDateString('es-ES', opcionesFecha);
   }
 
+  const logoSrc = resolverLogo(datos.logoBase64);
+  const logoHeader = logoSrc
+    ? `<div style="text-align: left; margin-bottom: 8px;"><img src="${logoSrc}" style="max-width: 130px; height: auto;" /></div>`
+    : '';
+
   const htmlTemplate = `
     <div style="width: 100%; max-width: 800px; margin: 0 auto; font-family: Arial, sans-serif; font-size: 16px; color: #000; background-color: #fff; padding: 20px; box-sizing: border-box;">
+      ${logoHeader}
       <div style="text-align: center; font-size: 18px; font-weight: bold; color: #F37021; padding: 10px 0; margin-bottom: 10px;">
         INSTRUCCIONES DEL SERVICIO
       </div>
@@ -261,11 +321,14 @@ export const generarCheckListPDF = (datos: DatosCheckList) => {
     fechaFormateada = dateObj.toLocaleDateString('es-ES', opcionesFecha);
   }
 
-  const logoSrc = datos.logoBase64 || ''; 
+  const logoSrc = resolverLogo(datos.logoBase64);
+  const logoHeader = logoSrc
+    ? `<img src="${logoSrc}" style="position: absolute; top: 15px; left: 20px; max-height: 90px; width: 110px;" />`
+    : '';
 
   const htmlTemplate = `
     <div style="width: 100%; max-width: 800px; margin: 0 auto; border: 1px solid #ccc; padding: 20px; position: relative; font-family: Arial, sans-serif; font-size: 14px; color: #000; line-height: 1.15; background-color: #fff; box-sizing: border-box;">
-      <img src="${logoSrc}" style="position: absolute; top: 15px; left: 20px; max-height: 90px; width: 110px;" />
+      ${logoHeader}
       
       <div style="text-align: right; margin-bottom: 2px;">
         <span style="border: 1px solid #000; padding: 2px 10px; background-color: #f0f0f0; font-weight: bold; font-size: 13px; display: inline-block; min-width: 40px; text-align: center;">${datos.consecutivo}</span>
@@ -372,7 +435,10 @@ export const generarPruebaEntregaPDF = (datos: DatosPruebaEntrega) => {
   const opcionesFechaActual: Intl.DateTimeFormatOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
   const fechaGeneracion = new Date().toLocaleDateString('es-ES', opcionesFechaActual);
 
-  const logoSrc = datos.logoBase64 || 'https://drive.google.com/uc?export=view&id=1blNDWMQvvp7Xz3G7lm_whAxQw9krUOAz';
+  const logoSrc = resolverLogo(datos.logoBase64);
+  const logoHeader = logoSrc
+    ? `<img src="${logoSrc}" style="max-width: 120px; height: auto; display: block; margin-bottom: 2px;" />`
+    : '';
 
   const htmlTemplate = `
     <div style="width: 100%; max-width: 750px; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; font-size: 8.5pt; color: #333; line-height: 1.2; background-color: #fff; box-sizing: border-box; padding: 20px;">
@@ -380,7 +446,7 @@ export const generarPruebaEntregaPDF = (datos: DatosPruebaEntrega) => {
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
         <tr>
           <td style="width: 25%; text-align: left; vertical-align: middle;">
-            <img src="${logoSrc}" style="max-width: 120px; height: auto; display: block; margin-bottom: 2px;" />
+            ${logoHeader}
             <span style="color: #f39c12; font-weight: bold; font-size: 10pt; display: block;">LOGISTICA</span>
             <span style="color: #f39c12; font-size: 8pt;">www.roelca.com</span>
           </td>
@@ -595,7 +661,10 @@ export interface DatosCartaInstrucciones {
 }
 
 export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => {
-  const logoSrc = datos.logoBase64 || 'https://drive.google.com/uc?export=view&id=1blNDWMQvvp7Xz3G7lm_whAxQw9krUOAz';
+  const logoSrc = resolverLogo(datos.logoBase64);
+  const logoHeader = logoSrc
+    ? `<img src="${logoSrc}" style="max-width: 110px; height: auto; display: block;" />`
+    : '';
 
   const htmlTemplate = `
     <div style="width: 100%; max-width: 750px; margin: 0 auto; font-family: Arial, Helvetica, sans-serif; font-size: 8pt; color: #333; line-height: 1.1; background-color: #fff; box-sizing: border-box; padding: 20px;">
@@ -603,7 +672,7 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 5px;">
         <tr>
           <td style="width:30%; text-align: left;">
-            <img src="${logoSrc}" style="max-width: 110px; height: auto; display: block;" />
+            ${logoHeader}
             <span style="color: #f39c12; font-weight: bold; font-size: 10pt; display: block; margin-top: 2px;">LOGISTICA</span>
             <span style="color: #f39c12; font-size: 7pt;">www.roelca.com</span>
           </td>

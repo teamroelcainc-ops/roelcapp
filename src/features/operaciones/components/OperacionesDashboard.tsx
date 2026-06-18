@@ -27,12 +27,18 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { FormularioOperacion } from './FormularioOperacion';
+import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 import { collection, doc, writeBatch, query, getDocs, orderBy, limit, where, startAfter } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
-import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
+import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf, cargarLogoDataUrl } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
+// ✅ NUEVO: visor y subida de documentos ligados a la operación
+import { DocumentosLista } from '../../documentos/DocumentosLista';
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+// ✅ NUEVO: logo + nombre de la empresa (lee de la configuración)
+import { EmpresaBrand } from '../../configuracion/EmpresaBrand';
+import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -138,6 +144,9 @@ const COLUMNAS_BASE = [
 ];
 
 const OperacionesDashboard = () => {
+  // ✅ NUEVO: logo de la empresa para los PDFs generados desde este módulo
+  const { config: empresaConfig } = useEmpresaConfig();
+
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
   
@@ -150,6 +159,9 @@ const OperacionesDashboard = () => {
   const [cargandoMas, setCargandoMas] = useState(false);
 
   const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'registrar' | 'historial'>('cerrado');
+  // ✅ NUEVO: control del visor de documentos y del modal de subida
+  const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
+  const [mostrarSubirDocOp, setMostrarSubirDocOp] = useState(false);
   const [historialList, setHistorialList] = useState<any[]>([]);
   const [cargandoHorarios, setCargandoHorarios] = useState(false);
   const [nuevoStatus, setNuevoStatus] = useState('');
@@ -339,6 +351,19 @@ const OperacionesDashboard = () => {
   useEffect(() => {
     descargarOperaciones();
   }, []);
+
+  // ✅ NUEVO: precarga el logo de la empresa (a base64) y lo registra para que
+  // todos los documentos PDF generados desde este módulo lo incluyan.
+  useEffect(() => {
+    const url = empresaConfig?.logoUrl;
+    if (!url) { setLogoPdf(''); return; }
+    let cancelado = false;
+    cargarLogoDataUrl(url).then(b64 => {
+      if (cancelado) return;
+      setLogoPdf(b64 || url); // base64 si se pudo; si no, la URL directa como respaldo
+    });
+    return () => { cancelado = true; };
+  }, [empresaConfig?.logoUrl]);
 
   useEffect(() => { setPaginaActual(1); }, [busqueda]);
 
@@ -1009,6 +1034,9 @@ const OperacionesDashboard = () => {
   const docsPermitidos = DOCS_POR_TIPO[evalTipoOpId] || null;
   const puedeMostrarDoc = (doc: string) => !docsPermitidos || docsPermitidos.includes(doc);
 
+  // ✅ Referencia legible de la operación en curso (para carpeta de Storage)
+  const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
+
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
@@ -1026,9 +1054,12 @@ const OperacionesDashboard = () => {
       )}
 
      <div style={{ width: '100%', margin: '0 auto' }}>
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
-          Operaciones Activas
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
+          <EmpresaBrand tamanoLogo={36} />
+          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: 0, fontWeight: 'bold' }}>
+            Operaciones Activas
+          </h1>
+        </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
           <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
@@ -1090,6 +1121,13 @@ const OperacionesDashboard = () => {
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} 
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            </button>
+                            <button type="button" title="Ver Documentos"
+                              onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setMostrarDocumentos(true); }}
+                              style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
                             </button>
                             <button type="button" title="Eliminar Operación"
                               onClick={(e) => { e.stopPropagation(); eliminarOperacion(op.id); }} 
@@ -1186,6 +1224,10 @@ const OperacionesDashboard = () => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ ...btnSecondaryActionStyle, color: '#fb923c', borderColor: 'rgba(251, 146, 60, 0.4)' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                    Documentos
+                  </button>
                   <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
@@ -1609,6 +1651,51 @@ const OperacionesDashboard = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ✅ NUEVO: Visor de documentos de la operación */}
+      {mostrarDocumentos && operacionViendo && (
+        <div className="modal-overlay" style={{ zIndex: 2100 }}>
+          <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Documentos de la Operación</h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#8b949e' }}>
+                  Referencia: <span style={{ color: '#fb923c', fontWeight: 600 }}>{refOperacionViendo}</span>
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSubirDocOp(true)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  Subir Documento
+                </button>
+                <button onClick={() => setMostrarDocumentos(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1 }} title="Cerrar">✕</button>
+              </div>
+            </div>
+            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+              <DocumentosLista coleccionOrigen="operaciones" registroId={operacionViendo.id} />
+            </div>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', textAlign: 'right', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
+              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: Subida de documentos ligada a la operación */}
+      {operacionViendo && (
+        <DocumentoUploadModal
+          isOpen={mostrarSubirDocOp && !!operacionViendo}
+          onClose={() => setMostrarSubirDocOp(false)}
+          coleccionOrigen="operaciones"
+          registroId={operacionViendo.id}
+          registroNombre={refOperacionViendo}
+          tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
+        />
       )}
 
       {/* Modal de registro retroactivo */}

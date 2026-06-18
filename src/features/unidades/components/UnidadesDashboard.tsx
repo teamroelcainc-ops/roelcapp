@@ -2,7 +2,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
-import { FormularioUnidad } from './FormularioUnidad';
+import { FormularioUnidad, TIPOS_DOCUMENTO_UNIDAD } from './FormularioUnidad';
+import { DocumentosLista } from '../../documentos/DocumentosLista';
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import type { UnidadRecord } from '../../../types/unidad'; 
 import * as XLSX from 'xlsx';
 
@@ -39,6 +41,10 @@ export const UnidadesDashboard: React.FC = () => {
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
+
+  // ✅ ESTADOS PARA DOCUMENTOS DE LA UNIDAD
+  const [unidadDocumentos, setUnidadDocumentos] = useState<UnidadRecord | null>(null); // unidad cuyos documentos se ven
+  const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false); // modal de subida dentro del visor
 
   // Suscripción en tiempo real a Firebase
   useEffect(() => {
@@ -192,6 +198,9 @@ export const UnidadesDashboard: React.FC = () => {
     XLSX.writeFile(workbook, `Unidades_Propias_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  // ✅ nombre legible de la unidad en el visor de documentos
+  const nombreUnidadDoc = unidadDocumentos ? (unidadDocumentos.unidad || unidadDocumentos.placas || unidadDocumentos.serie || 'Unidad') : '';
+
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
       
@@ -280,7 +289,7 @@ export const UnidadesDashboard: React.FC = () => {
             <table className="data-table" style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
-                  <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                  <th style={{ padding: '16px', width: '150px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
                     Acciones
                   </th>
                   {columnasTabla.filter(c => c.visible).map(col => (
@@ -320,6 +329,19 @@ export const UnidadesDashboard: React.FC = () => {
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
+
+                          {/* ✅ Ver Documentos de la unidad */}
+                          <button 
+                            className="btn-small" 
+                            title="Ver Documentos"
+                            onClick={(e) => { e.stopPropagation(); setUnidadDocumentos(reg); }}
+                            style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
+                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                          </button>
+
                           <button 
                             className="btn-small btn-danger" 
                             title="Eliminar Unidad"
@@ -409,6 +431,41 @@ export const UnidadesDashboard: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ✅ MODAL VISOR DE DOCUMENTOS DE LA UNIDAD */}
+      {unidadDocumentos && (
+        <div className="modal-overlay" style={{ zIndex: 2100, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', padding: '20px' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '900px', maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.2rem' }}>Documentos — <span style={{ color: '#58a6ff' }}>{nombreUnidadDoc}</span></h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSubirDoc(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  Subir Documento
+                </button>
+                <button onClick={() => { setUnidadDocumentos(null); setMostrarSubirDoc(false); }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem' }}>✕</button>
+              </div>
+            </div>
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+              <DocumentosLista coleccionOrigen="unidades" registroId={unidadDocumentos.id ?? ''} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL SUBIR DOCUMENTO (dentro del visor) */}
+      <DocumentoUploadModal
+        isOpen={mostrarSubirDoc && !!unidadDocumentos}
+        onClose={() => setMostrarSubirDoc(false)}
+        coleccionOrigen="unidades"
+        registroId={unidadDocumentos?.id ?? ''}
+        registroNombre={nombreUnidadDoc}
+        tiposDocumento={TIPOS_DOCUMENTO_UNIDAD}
+      />
 
     </div>
   );
