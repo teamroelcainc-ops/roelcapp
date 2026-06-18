@@ -977,3 +977,79 @@ body {
     padding: 5px 0;
   }
 }
+
+
+/* ============================================================================
+   ICONOS DEL MENÚ LATERAL  (pegar al FINAL de tu App.css)
+   ----------------------------------------------------------------------------
+   Maneja el layout de icono + texto y el comportamiento del menú colapsado
+   (solo iconos). No reemplaza tus estilos: los complementa.
+   ============================================================================ */
+
+/* Icono + texto en línea */
+.sidebar-item,
+.sidebar-subitem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-item-with-icon {
+  justify-content: flex-start; /* anula el space-between para que el chevron use margin-left:auto */
+}
+
+.sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: inherit;
+}
+
+.sidebar-subitem .sidebar-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.85;
+}
+.sidebar-subitem .sidebar-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sidebar-label {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  opacity: 0.8;
+}
+
+/* ===== MENÚ COLAPSADO: solo iconos centrados ===== */
+.sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .sidebar-chevron {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-item,
+.sidebar.collapsed .sidebar-subitem {
+  justify-content: center;
+  gap: 0;
+}
+
+/* Los submenús no se muestran colapsados (al hacer clic en un grupo, el menú
+   se vuelve a abrir automáticamente desde el código). */
+.sidebar.collapsed .sidebar-submenu {
+  display: none;
+}
+
+/* Evita que la marca/logo se desborde cuando el menú está angosto */
+.sidebar.collapsed .sidebar-brand {
+  overflow: hidden;
+}
