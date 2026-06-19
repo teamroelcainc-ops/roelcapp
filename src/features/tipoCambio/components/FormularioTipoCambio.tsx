@@ -1,6 +1,7 @@
 // src/features/tipoCambio/components/FormularioTipoCambio.tsx
 import React, { useState, useEffect } from 'react';
-import { agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 
 interface FormProps {
@@ -12,6 +13,22 @@ interface FormProps {
   onRestore: () => void;
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// ✅ NUEVO (config de campos obligatorios, COMPARTIDA por todos los usuarios)
+// Se guarda en Firestore: config_campos_obligatorios/tipo_cambio
+// ──────────────────────────────────────────────────────────────────────
+const FORM_ID = 'tipo_cambio';
+const CAMPOS_CONFIGURABLES: { key: string; label: string }[] = [
+  { key: 'fecha', label: 'Fecha' },
+  { key: 'tcDof', label: 'T.C. DOF' },
+];
+const OBLIGATORIOS_DEFAULT: Record<string, boolean> = { fecha: true, tcDof: true };
+
+const esVacioValor = (v: any): boolean => {
+  if (v === undefined || v === null) return true;
+  return String(v).trim() === '';
+};
+
 export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, onMinimize, onRestore }: FormProps) => {
   const [formData, setFormData] = useState({
     dia: '', 
@@ -21,63 +38,54 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
     tipoTendencia: 'igual'
   });
 
-  const [cargandoApi, setCargandoApi] = useState(false);
+  // ✅ NUEVO: configuración de campos obligatorios (compartida)
+  const [obligatorios, setObligatorios] = useState<Record<string, boolean>>(OBLIGATORIOS_DEFAULT);
+  const [modalConfig, setModalConfig] = useState(false);
+  const [guardandoConfig, setGuardandoConfig] = useState(false);
+
+  const esOblig = (campo: string) => !!obligatorios[campo];
+
+  // Carga la config compartida al montar (1 lectura)
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'config_campos_obligatorios', FORM_ID));
+        if (activo && snap.exists() && snap.data().obligatorios) {
+          setObligatorios({ ...OBLIGATORIOS_DEFAULT, ...(snap.data().obligatorios as Record<string, boolean>) });
+        }
+      } catch (e) {
+        console.error('Error cargando configuración de campos obligatorios:', e);
+      }
+    })();
+    return () => { activo = false; };
+  }, []);
+
+  const guardarConfigObligatorios = async () => {
+    setGuardandoConfig(true);
+    try {
+      await setDoc(
+        doc(db, 'config_campos_obligatorios', FORM_ID),
+        { obligatorios, updatedAt: new Date().toISOString() },
+        { merge: true }
+      );
+      setModalConfig(false);
+    } catch (e) {
+      console.error('Error guardando configuración:', e);
+      alert('No se pudo guardar la configuración. Revisa tu conexión.');
+    } finally {
+      setGuardandoConfig(false);
+    }
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // ✅ FUNCIÓN ACTUALIZADA: Ahora recibe una fecha y consulta ese día específico
-  const obtenerTipoCambioBanxico = async (fechaConsulta?: string) => {
-    const token = import.meta.env.VITE_BANXICO_TOKEN;
-    if (!token) {
-      alert('⚠️ No se encontró el token de Banxico. Revisa tu archivo .env');
-      return;
-    }
-
-    // Si no se le pasa una fecha por parámetro, usa la del formulario actual
-    const fechaABuscar = fechaConsulta || formData.fecha;
-
-    if (!fechaABuscar) return;
-
-    setCargandoApi(true);
-    try {
-      // Usamos el endpoint con rango de fechas: /datos/{fechaInicial}/{fechaFinal}
-      const url = `https://www.banxico.org.mx/SieAPIRest/service/v1/series/SF43718/datos/${fechaABuscar}/${fechaABuscar}?token=${token}`;
-      const response = await fetch(url);
-      
-      if (!response.ok) throw new Error('Error en la respuesta de Banxico');
-
-      const data = await response.json();
-      
-      if (data.bmx && data.bmx.series && data.bmx.series[0].datos && data.bmx.series[0].datos.length > 0) {
-        const valorActual = data.bmx.series[0].datos[0].dato;
-        setFormData(prev => ({ ...prev, tcDof: valorActual, fecha: fechaABuscar }));
-      } else {
-        alert(`Banxico no tiene un tipo de cambio registrado para la fecha ${fechaABuscar}. Es probable que sea fin de semana o día festivo.`);
-        setFormData(prev => ({ ...prev, tcDof: '', fecha: fechaABuscar }));
-      }
-    } catch (error) {
-      console.error("Error obteniendo datos de Banxico:", error);
-      alert('Error de conexión con Banxico. Puede que el servicio esté temporalmente caído o la fecha sea inválida.');
-    } finally {
-      setCargandoApi(false);
-    }
-  };
-
-  // ✅ AL CAMBIAR LA FECHA MANUALMENTE DISPARAMOS LA BÚSQUEDA AUTOMÁTICA
-  const handleFechaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const nuevaFecha = e.target.value;
-    setFormData(prev => ({ ...prev, fecha: nuevaFecha }));
-    obtenerTipoCambioBanxico(nuevaFecha);
-  };
-
   useEffect(() => {
     if (initialData) {
       setFormData(prev => ({ ...prev, ...initialData }));
-    } else {
-      obtenerTipoCambioBanxico(formData.fecha);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData]);
@@ -122,13 +130,19 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ✅ Validación según la configuración compartida de campos obligatorios
+    const faltantes = CAMPOS_CONFIGURABLES.filter(c => esOblig(c.key) && esVacioValor((formData as any)[c.key]));
+    if (faltantes.length > 0) {
+      alert('Faltan campos obligatorios:\n\n• ' + faltantes.map(c => c.label).join('\n• '));
+      return;
+    }
+
     try {
       if (initialData && initialData.id) {
-        // 1. MODO EDICIÓN
         await actualizarRegistro('tipo_cambio', initialData.id, formData);
         await registrarLog('Tipo de Cambio', 'Edición', `Actualizó el T.C. del día ${formData.fecha} a ${formData.tcDof}`);
       } else {
-        // 2. MODO CREACIÓN
         await agregarRegistro('tipo_cambio', formData);
         await registrarLog('Tipo de Cambio', 'Creación', `Agregó el T.C. del día ${formData.fecha} (${formData.tcDof})`);
       }
@@ -145,6 +159,16 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
         <div className="form-header">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Tipo de Cambio` : 'Nuevo Tipo de Cambio')}</h2>
           <div className="header-actions">
+            {/* ✅ NUEVO: botón de configuración de campos obligatorios */}
+            <button
+              type="button"
+              onClick={() => setModalConfig(true)}
+              className="btn-window"
+              title="Configurar campos obligatorios"
+              style={{ fontSize: '0.95rem' }}
+            >
+              ⚙
+            </button>
             {estado === 'abierto' ? <button type="button" onClick={onMinimize} className="btn-window">🗕</button> : <button type="button" onClick={onRestore} className="btn-window restore">🗖</button>}
             <button type="button" onClick={onClose} className="btn-window close">✕</button>
           </div>
@@ -160,38 +184,28 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
               </div>
 
               <div className="form-group">
-                <label className="form-label">Fecha *</label>
+                <label className="form-label">Fecha {esOblig('fecha') ? '*' : ''}</label>
                 <input 
                   type="date" 
                   name="fecha" 
                   className="form-control" 
                   value={formData.fecha} 
-                  onChange={handleFechaChange} // ✅ ASIGNADO EL NUEVO EVENTO AQUÍ
-                  required 
+                  onChange={handleChange}
+                  required={esOblig('fecha')}
                 />
               </div>
 
               <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <label className="form-label" style={{ marginBottom: 0 }}>T.C. DOF *</label>
-                  <button 
-                    type="button" 
-                    onClick={() => obtenerTipoCambioBanxico()} // Llama a la función usando la fecha del form
-                    disabled={cargandoApi} 
-                    style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.8rem', cursor: 'pointer', padding: 0 }}
-                  >
-                    {cargandoApi ? 'Consultando...' : '🔄 Obtener de Banxico'}
-                  </button>
-                </div>
+                <label className="form-label">T.C. DOF {esOblig('tcDof') ? '*' : ''}</label>
                 <input 
                   type="number" 
                   step="0.0001" 
                   name="tcDof" 
                   className="form-control" 
-                  placeholder={cargandoApi ? "Obteniendo datos..." : "Ej: 17.7962"} 
+                  placeholder="Ej: 17.7962" 
                   value={formData.tcDof} 
                   onChange={handleChange} 
-                  required 
+                  required={esOblig('tcDof')}
                 />
               </div>
 
@@ -213,11 +227,45 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
             <div className="form-actions" style={{ marginTop: '24px' }}>
               <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
-              <button type="submit" className="btn btn-primary" disabled={cargandoApi}>{initialData ? 'Guardar Cambios' : 'Guardar'}</button>
+              <button type="submit" className="btn btn-primary">{initialData ? 'Guardar Cambios' : 'Guardar'}</button>
             </div>
           </form>
         </div>
       </div>
+
+      {/* ✅ NUEVO: Modal de configuración de campos obligatorios (compartido) */}
+      {modalConfig && (
+        <div className="modal-overlay" style={{ zIndex: 3000, position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="form-card" style={{ maxWidth: '460px', width: '95%', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Campos obligatorios</h3>
+              <button type="button" onClick={() => setModalConfig(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: 0, marginBottom: '16px' }}>
+              Marca qué campos serán obligatorios al guardar. Esta configuración se guarda y aplica para <b>todos los usuarios</b>.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {CAMPOS_CONFIGURABLES.map(c => (
+                <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={esOblig(c.key)}
+                    onChange={() => setObligatorios(prev => ({ ...prev, [c.key]: !prev[c.key] }))}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <span style={{ color: esOblig(c.key) ? '#f0f6fc' : '#8b949e', fontWeight: esOblig(c.key) ? 600 : 400 }}>{c.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="form-actions" style={{ marginTop: '22px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" onClick={() => setModalConfig(false)} className="btn btn-outline" disabled={guardandoConfig}>Cancelar</button>
+              <button type="button" onClick={guardarConfigObligatorios} className="btn btn-primary" disabled={guardandoConfig} style={{ backgroundColor: '#D84315', border: 'none' }}>
+                {guardandoConfig ? 'Guardando...' : 'Guardar configuración'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

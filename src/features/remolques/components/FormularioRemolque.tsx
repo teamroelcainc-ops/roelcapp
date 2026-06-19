@@ -1,8 +1,34 @@
 // src/features/remolques/components/FormularioRemolque.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import type { RemolqueRecord } from '../../../types/remolque'; // ✅ RUTA CORREGIDA
+
+// ──────────────────────────────────────────────────────────────────────
+// ✅ NUEVO (config de campos obligatorios, COMPARTIDA por todos los usuarios)
+// Se guarda en Firestore: config_campos_obligatorios/remolques
+// ──────────────────────────────────────────────────────────────────────
+const FORM_ID = 'remolques';
+const CAMPOS_CONFIGURABLES: { key: string; label: string }[] = [
+  { key: 'nombre', label: 'Nombre del Remolque' },
+  { key: 'propietarioId', label: 'Propietario' },
+  { key: 'tipoId', label: 'Tipo de Remolque' },
+  { key: 'placas', label: 'Placas' },
+  { key: 'serie', label: 'Número de Serie' },
+  { key: 'marca', label: 'Marca' },
+  { key: 'anio', label: 'Año' },
+  { key: 'paisId', label: 'País' },
+  { key: 'estadoId', label: 'Estado / Entidad' },
+];
+const OBLIGATORIOS_DEFAULT: Record<string, boolean> = {
+  nombre: true, propietarioId: true, tipoId: true, placas: true, serie: true,
+  marca: false, anio: true, paisId: true, estadoId: true,
+};
+
+const esVacioValor = (v: any): boolean => {
+  if (v === undefined || v === null) return true;
+  return String(v).trim() === '';
+};
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -113,6 +139,46 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
   const [paisesCatalogo, setPaisesCatalogo] = useState<{id: string, label: string}[]>([]);
   const [empresasPropietarias, setEmpresasPropietarias] = useState<{id: string, label: string}[]>([]);
 
+  // ✅ NUEVO: configuración de campos obligatorios (compartida)
+  const [obligatorios, setObligatorios] = useState<Record<string, boolean>>(OBLIGATORIOS_DEFAULT);
+  const [modalConfig, setModalConfig] = useState(false);
+  const [guardandoConfig, setGuardandoConfig] = useState(false);
+
+  const esOblig = (campo: string) => !!obligatorios[campo];
+
+  // Carga la config compartida al montar (1 lectura)
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'config_campos_obligatorios', FORM_ID));
+        if (activo && snap.exists() && snap.data().obligatorios) {
+          setObligatorios({ ...OBLIGATORIOS_DEFAULT, ...(snap.data().obligatorios as Record<string, boolean>) });
+        }
+      } catch (e) {
+        console.error('Error cargando configuración de campos obligatorios:', e);
+      }
+    })();
+    return () => { activo = false; };
+  }, []);
+
+  const guardarConfigObligatorios = async () => {
+    setGuardandoConfig(true);
+    try {
+      await setDoc(
+        doc(db, 'config_campos_obligatorios', FORM_ID),
+        { obligatorios, updatedAt: new Date().toISOString() },
+        { merge: true }
+      );
+      setModalConfig(false);
+    } catch (e) {
+      console.error('Error guardando configuración:', e);
+      alert('No se pudo guardar la configuración. Revisa tu conexión.');
+    } finally {
+      setGuardandoConfig(false);
+    }
+  };
+
   // Cargar todos los catálogos al montar el componente
   useEffect(() => {
     const cargarCatalogos = async () => {
@@ -186,8 +252,11 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.tipoId || !formData.propietarioId || !formData.estadoId || !formData.paisId) {
-      alert("Por favor, asegúrate de llenar todos los campos de búsqueda obligatorios (Tipo, Propietario, Estado, País).");
+
+    // ✅ Validación según la configuración compartida de campos obligatorios
+    const faltantes = CAMPOS_CONFIGURABLES.filter(c => esOblig(c.key) && esVacioValor((formData as any)[c.key]));
+    if (faltantes.length > 0) {
+      alert('Faltan campos obligatorios:\n\n• ' + faltantes.map(c => c.label).join('\n• '));
       return;
     }
 
@@ -213,6 +282,8 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
         <div className="form-header" style={{ borderBottom: '1px solid #30363d' }}>
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Remolque: ${formData.nombre}` : 'Nuevo Remolque')}</h2>
           <div className="header-actions">
+            {/* ✅ NUEVO: botón de configuración de campos obligatorios */}
+            <button type="button" onClick={() => setModalConfig(true)} className="btn-window" title="Configurar campos obligatorios" style={{ fontSize: '0.95rem' }}>⚙</button>
             {estado === 'abierto' ? (
               <button type="button" onClick={onMinimize} className="btn-window">🗕</button>
             ) : (
@@ -229,71 +300,71 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
               
               <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                <label className="form-label">Nombre del Remolque (Identificador) *</label>
-                <input type="text" name="nombre" className="form-control" value={formData.nombre} onChange={handleTextChange} required style={{ backgroundColor: '#010409', color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }} placeholder="Ej. R-105" />
+                <label className="form-label">Nombre del Remolque (Identificador) {esOblig('nombre') ? '*' : ''}</label>
+                <input type="text" name="nombre" className="form-control" value={formData.nombre} onChange={handleTextChange} required={esOblig('nombre')} style={{ backgroundColor: '#010409', color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }} placeholder="Ej. R-105" />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Propietario *</label>
+                <label className="form-label">Propietario {esOblig('propietarioId') ? '*' : ''}</label>
                 <SearchableSelect 
                   options={empresasPropietarias}
                   value={formData.propietarioId}
                   onChange={(id, label) => setFormData((prev: RemolqueRecord) => ({ ...prev, propietarioId: id, propietarioNombre: label }))}
                   placeholder="Buscar Propietario..."
-                  required
+                  required={esOblig('propietarioId')}
                 />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Tipo de Remolque *</label>
+                <label className="form-label">Tipo de Remolque {esOblig('tipoId') ? '*' : ''}</label>
                 <SearchableSelect 
                   options={tiposRemolque}
                   value={formData.tipoId}
                   onChange={(id, label) => setFormData((prev: RemolqueRecord) => ({ ...prev, tipoId: id, tipoNombre: label }))}
                   placeholder="Buscar Tipo..."
-                  required
+                  required={esOblig('tipoId')}
                 />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Placas *</label>
-                <input type="text" name="placas" className="form-control" value={formData.placas} onChange={handleTextChange} required style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <label className="form-label">Placas {esOblig('placas') ? '*' : ''}</label>
+                <input type="text" name="placas" className="form-control" value={formData.placas} onChange={handleTextChange} required={esOblig('placas')} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Número de Serie *</label>
-                <input type="text" name="serie" className="form-control" value={formData.serie} onChange={handleTextChange} required style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <label className="form-label">Número de Serie {esOblig('serie') ? '*' : ''}</label>
+                <input type="text" name="serie" className="form-control" value={formData.serie} onChange={handleTextChange} required={esOblig('serie')} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Marca</label>
-                <input type="text" name="marca" className="form-control" value={formData.marca} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <label className="form-label">Marca {esOblig('marca') ? '*' : ''}</label>
+                <input type="text" name="marca" className="form-control" value={formData.marca} onChange={handleTextChange} required={esOblig('marca')} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Año *</label>
-                <input type="number" name="anio" className="form-control" value={formData.anio} onChange={handleNumberChange} required min="1950" max="2100" style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <label className="form-label">Año {esOblig('anio') ? '*' : ''}</label>
+                <input type="number" name="anio" className="form-control" value={formData.anio} onChange={handleNumberChange} required={esOblig('anio')} min="1950" max="2100" style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
               </div>
 
               <div className="form-group">
-                <label className="form-label">País *</label>
+                <label className="form-label">País {esOblig('paisId') ? '*' : ''}</label>
                 <SearchableSelect 
                   options={paisesCatalogo}
                   value={formData.paisId}
                   onChange={(id, label) => setFormData((prev: RemolqueRecord) => ({ ...prev, paisId: id, paisNombre: label }))}
                   placeholder="Buscar País..."
-                  required
+                  required={esOblig('paisId')}
                 />
               </div>
 
               <div className="form-group">
-                <label className="form-label">Estado / Entidad *</label>
+                <label className="form-label">Estado / Entidad {esOblig('estadoId') ? '*' : ''}</label>
                 <SearchableSelect 
                   options={estadosCatalogo}
                   value={formData.estadoId}
                   onChange={(id, label) => setFormData((prev: RemolqueRecord) => ({ ...prev, estadoId: id, estadoNombre: label }))}
                   placeholder="Buscar Estado..."
-                  required
+                  required={esOblig('estadoId')}
                 />
               </div>
 
@@ -308,6 +379,40 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
           </form>
         </div>
       </div>
+
+      {/* ✅ NUEVO: Modal de configuración de campos obligatorios (compartido) */}
+      {modalConfig && (
+        <div className="modal-overlay" style={{ zIndex: 3000, position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="form-card" style={{ maxWidth: '520px', width: '95%', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Campos obligatorios</h3>
+              <button type="button" onClick={() => setModalConfig(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: 0, marginBottom: '16px' }}>
+              Marca qué campos serán obligatorios al guardar. Esta configuración se guarda y aplica para <b>todos los usuarios</b>.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+              {CAMPOS_CONFIGURABLES.map(c => (
+                <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={esOblig(c.key)}
+                    onChange={() => setObligatorios(prev => ({ ...prev, [c.key]: !prev[c.key] }))}
+                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                  />
+                  <span style={{ color: esOblig(c.key) ? '#f0f6fc' : '#8b949e', fontWeight: esOblig(c.key) ? 600 : 400, fontSize: '0.85rem' }}>{c.label}</span>
+                </label>
+              ))}
+            </div>
+            <div className="form-actions" style={{ marginTop: '22px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" onClick={() => setModalConfig(false)} className="btn btn-outline" disabled={guardandoConfig}>Cancelar</button>
+              <button type="button" onClick={guardarConfigObligatorios} className="btn btn-primary" disabled={guardandoConfig} style={{ backgroundColor: '#D84315', border: 'none' }}>
+                {guardandoConfig ? 'Guardando...' : 'Guardar configuración'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
