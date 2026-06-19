@@ -185,19 +185,19 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
       // 1. Catálogo de Tipos de Remolque
       try {
         const snapTipos = await getDocs(collection(db, 'catalogo_tipo_remolque'));
-        setTiposRemolque(snapTipos.docs.map(doc => ({ id: doc.id, label: doc.data().nombre || doc.data().descripcion || `Tipo (${doc.id.substring(0,4)})` })));
+        setTiposRemolque(snapTipos.docs.map(d => ({ id: d.id, label: d.data().nombre || d.data().descripcion || `Tipo (${d.id.substring(0,4)})` })));
       } catch (error) { console.error("Error al cargar tipos de remolque", error); }
 
       // 2. Catálogo de Estados
       try {
         const snapEstados = await getDocs(collection(db, 'catalogo_estados'));
-        setEstadosCatalogo(snapEstados.docs.map(doc => ({ id: doc.id, label: doc.data().estado || doc.data().nombre || `Estado (${doc.id.substring(0,4)})` })));
+        setEstadosCatalogo(snapEstados.docs.map(d => ({ id: d.id, label: d.data().estado || d.data().nombre || `Estado (${d.id.substring(0,4)})` })));
       } catch (error) { console.error("Error al cargar estados", error); }
 
       // 3. Catálogo de Países
       try {
         const snapPaises = await getDocs(collection(db, 'catalogo_paises'));
-        setPaisesCatalogo(snapPaises.docs.map(doc => ({ id: doc.id, label: doc.data().nombre || doc.data().pais || `País (${doc.id.substring(0,4)})` })));
+        setPaisesCatalogo(snapPaises.docs.map(d => ({ id: d.id, label: d.data().nombre || d.data().pais || `País (${d.id.substring(0,4)})` })));
       } catch (error) { console.error("Error al cargar países", error); }
 
       // 4. Catálogo de Empresas Propietarias (Escáner Universal filtrando por 5d92b3a2)
@@ -209,7 +209,7 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
           try {
             const snap = await getDocs(collection(db, nombreCol));
             if (!snap.empty) {
-              const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+              const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
               todasLasEmpresas = [...todasLasEmpresas, ...docs];
             }
           } catch (e) { /* Ignorar si no existe */ }
