@@ -1,0 +1,13 @@
+# Cloudflare _headers — colócalo en la carpeta de salida del build (dist/).
+# Si usas Vite, ponlo en public/_headers para que se copie a dist/ en cada build.
+
+# El index.html NUNCA se cachea: así el navegador siempre recibe los hashes
+# de chunk actuales y no intenta pedir un RemolquesDashboard-<hashViejo>.js.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+
+# Los assets con hash en el nombre (immutables) se cachean a largo plazo.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

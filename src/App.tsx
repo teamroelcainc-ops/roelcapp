@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc, collection, onSnapshot } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger'; 
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // ── Estáticos: críticos o siempre presentes (login, marca y modales). ──
 import { Login } from './features/auth/components/Login';
@@ -19,37 +20,37 @@ import { EmpresaBrand } from './features/configuracion/EmpresaBrand';
 //   • export default  → lazy(() => import('...'))
 //   • export const X  → lazy(() => import('...').then(m => ({ default: m.X })))
 // ============================================================================
-const OperacionesDashboard = lazy(() => import('./features/operaciones/components/OperacionesDashboard'));
-const ServiciosCompletados = lazy(() => import('./features/operaciones/components/ServiciosCompletados'));
-const ServiciosCancelados = lazy(() => import('./features/operaciones/components/ServiciosCancelados'));
-const ReportesDashboard = lazy(() => import('./features/reportes/components/ReportesDashboard'));
-const EmpresasDashboard = lazy(() => import('./features/empresas/components/EmpresasDashboard'));
-const ContactosDashboard = lazy(() => import('./features/contactos/components/ContactosDashboard').then(m => ({ default: m.ContactosDashboard })));
-const TipoCambioDashboard = lazy(() => import('./features/tipoCambio/components/TipoCambioDashboard').then(m => ({ default: m.TipoCambioDashboard })));
-const CatalogosDashboard = lazy(() => import('./features/catalogos/components/CatalogosDashboard'));
-const CombustibleDashboard = lazy(() => import('./features/combustible/components/CombustibleDashboard').then(m => ({ default: m.CombustibleDashboard })));
-const ProveedoresUnidadDashboard = lazy(() => import('./features/proveedoresUnidad/components/ProveedoresUnidadDashboard'));
-const UnidadesProveedorDashboard = lazy(() => import('./features/unidadesProveedor/components/UnidadesProveedorDashboard').then(m => ({ default: m.UnidadesProveedorDashboard })));
-const UnidadesDashboard = lazy(() => import('./features/unidades/components/UnidadesDashboard'));
-const RemolquesDashboard = lazy(() => import('./features/remolques/components/RemolquesDashboard'));
-const ConveniosClientesDashboard = lazy(() => import('./features/conveniosClientes/components/ConveniosClientesDashboard'));
-const ConveniosProveedoresDashboard = lazy(() => import('./features/conveniosProveedores/components/ConveniosProveedoresDashboard').then(m => ({ default: m.ConveniosProveedoresDashboard })));
-const DireccionesDashboard = lazy(() => import('./features/direcciones/components/DireccionesDashboard').then(m => ({ default: m.DireccionesDashboard })));
-const EmpleadosDashboard = lazy(() => import('./features/empleados/components/EmpleadosDashboard').then(m => ({ default: m.EmpleadosDashboard })));
-const RolesDashboard = lazy(() => import('./usuarios/components/RolesDashboard').then(m => ({ default: m.RolesDashboard })));
-const UsuariosDashboard = lazy(() => import('./usuarios/components/UsuariosDashboard').then(m => ({ default: m.UsuariosDashboard })));
-const LogsDashboard = lazy(() => import('./features/configuracion/components/LogsDashboard').then(m => ({ default: m.LogsDashboard })));
-const ConfiguradorStatus = lazy(() => import('./features/configuracion/components/ConfiguradorStatus').then(m => ({ default: m.ConfiguradorStatus })));
-const HistorialChequeosDashboard = lazy(() => import('./features/relojChecador/components/HistorialChequeosDashboard').then(m => ({ default: m.HistorialChequeosDashboard })));
-const MttoDashboard = lazy(() => import('./features/gastos/components/mtto/MttoDashboard'));
-const ReferenciasDieselDashboard = lazy(() => import('./features/diesel/components/ReferenciasDieselDashboard').then(m => ({ default: m.ReferenciasDieselDashboard })));
-const ReferenciasPuentesDashboard = lazy(() => import('./features/puentes/components/ReferenciasPuentesDashboard').then(m => ({ default: m.ReferenciasPuentesDashboard })));
-const ReferenciasNominaDashboard = lazy(() => import('./features/nominas/components/ReferenciasNominaDashboard').then(m => ({ default: m.ReferenciasNominaDashboard })));
-const DeduccionesDashboard = lazy(() => import('./features/empleados/components/DeduccionesDashboard').then(m => ({ default: m.DeduccionesDashboard })));
-const FacturacionClientesDashboard = lazy(() => import('./features/facturacion/components/FacturacionClientesDashboard').then(m => ({ default: m.FacturacionClientesDashboard })));
-const FacturacionProveedoresDashboard = lazy(() => import('./features/facturacion/components/FacturacionProveedoresDashboard').then(m => ({ default: m.FacturacionProveedoresDashboard })));
-const CostosAdicionalesDashboard = lazy(() => import('./features/costosAdicionales/CostosAdicionalesDashboard').then(m => ({ default: m.CostosAdicionalesDashboard })));
-const ConfiguracionEmpresa = lazy(() => import('./features/configuracion/ConfiguracionEmpresa'));
+const OperacionesDashboard = lazyWithRetry(() => import('./features/operaciones/components/OperacionesDashboard'), 'OperacionesDashboard');
+const ServiciosCompletados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCompletados'), 'ServiciosCompletados');
+const ServiciosCancelados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCancelados'), 'ServiciosCancelados');
+const ReportesDashboard = lazyWithRetry(() => import('./features/reportes/components/ReportesDashboard'), 'ReportesDashboard');
+const EmpresasDashboard = lazyWithRetry(() => import('./features/empresas/components/EmpresasDashboard'), 'EmpresasDashboard');
+const ContactosDashboard = lazyWithRetry(() => import('./features/contactos/components/ContactosDashboard').then(m => ({ default: m.ContactosDashboard })), 'ContactosDashboard');
+const TipoCambioDashboard = lazyWithRetry(() => import('./features/tipoCambio/components/TipoCambioDashboard').then(m => ({ default: m.TipoCambioDashboard })), 'TipoCambioDashboard');
+const CatalogosDashboard = lazyWithRetry(() => import('./features/catalogos/components/CatalogosDashboard'), 'CatalogosDashboard');
+const CombustibleDashboard = lazyWithRetry(() => import('./features/combustible/components/CombustibleDashboard').then(m => ({ default: m.CombustibleDashboard })), 'CombustibleDashboard');
+const ProveedoresUnidadDashboard = lazyWithRetry(() => import('./features/proveedoresUnidad/components/ProveedoresUnidadDashboard'), 'ProveedoresUnidadDashboard');
+const UnidadesProveedorDashboard = lazyWithRetry(() => import('./features/unidadesProveedor/components/UnidadesProveedorDashboard').then(m => ({ default: m.UnidadesProveedorDashboard })), 'UnidadesProveedorDashboard');
+const UnidadesDashboard = lazyWithRetry(() => import('./features/unidades/components/UnidadesDashboard'), 'UnidadesDashboard');
+const RemolquesDashboard = lazyWithRetry(() => import('./features/remolques/components/RemolquesDashboard'), 'RemolquesDashboard');
+const ConveniosClientesDashboard = lazyWithRetry(() => import('./features/conveniosClientes/components/ConveniosClientesDashboard'), 'ConveniosClientesDashboard');
+const ConveniosProveedoresDashboard = lazyWithRetry(() => import('./features/conveniosProveedores/components/ConveniosProveedoresDashboard').then(m => ({ default: m.ConveniosProveedoresDashboard })), 'ConveniosProveedoresDashboard');
+const DireccionesDashboard = lazyWithRetry(() => import('./features/direcciones/components/DireccionesDashboard').then(m => ({ default: m.DireccionesDashboard })), 'DireccionesDashboard');
+const EmpleadosDashboard = lazyWithRetry(() => import('./features/empleados/components/EmpleadosDashboard').then(m => ({ default: m.EmpleadosDashboard })), 'EmpleadosDashboard');
+const RolesDashboard = lazyWithRetry(() => import('./usuarios/components/RolesDashboard').then(m => ({ default: m.RolesDashboard })), 'RolesDashboard');
+const UsuariosDashboard = lazyWithRetry(() => import('./usuarios/components/UsuariosDashboard').then(m => ({ default: m.UsuariosDashboard })), 'UsuariosDashboard');
+const LogsDashboard = lazyWithRetry(() => import('./features/configuracion/components/LogsDashboard').then(m => ({ default: m.LogsDashboard })), 'LogsDashboard');
+const ConfiguradorStatus = lazyWithRetry(() => import('./features/configuracion/components/ConfiguradorStatus').then(m => ({ default: m.ConfiguradorStatus })), 'ConfiguradorStatus');
+const HistorialChequeosDashboard = lazyWithRetry(() => import('./features/relojChecador/components/HistorialChequeosDashboard').then(m => ({ default: m.HistorialChequeosDashboard })), 'HistorialChequeosDashboard');
+const MttoDashboard = lazyWithRetry(() => import('./features/gastos/components/mtto/MttoDashboard'), 'MttoDashboard');
+const ReferenciasDieselDashboard = lazyWithRetry(() => import('./features/diesel/components/ReferenciasDieselDashboard').then(m => ({ default: m.ReferenciasDieselDashboard })), 'ReferenciasDieselDashboard');
+const ReferenciasPuentesDashboard = lazyWithRetry(() => import('./features/puentes/components/ReferenciasPuentesDashboard').then(m => ({ default: m.ReferenciasPuentesDashboard })), 'ReferenciasPuentesDashboard');
+const ReferenciasNominaDashboard = lazyWithRetry(() => import('./features/nominas/components/ReferenciasNominaDashboard').then(m => ({ default: m.ReferenciasNominaDashboard })), 'ReferenciasNominaDashboard');
+const DeduccionesDashboard = lazyWithRetry(() => import('./features/empleados/components/DeduccionesDashboard').then(m => ({ default: m.DeduccionesDashboard })), 'DeduccionesDashboard');
+const FacturacionClientesDashboard = lazyWithRetry(() => import('./features/facturacion/components/FacturacionClientesDashboard').then(m => ({ default: m.FacturacionClientesDashboard })), 'FacturacionClientesDashboard');
+const FacturacionProveedoresDashboard = lazyWithRetry(() => import('./features/facturacion/components/FacturacionProveedoresDashboard').then(m => ({ default: m.FacturacionProveedoresDashboard })), 'FacturacionProveedoresDashboard');
+const CostosAdicionalesDashboard = lazyWithRetry(() => import('./features/costosAdicionales/CostosAdicionalesDashboard').then(m => ({ default: m.CostosAdicionalesDashboard })), 'CostosAdicionalesDashboard');
+const ConfiguracionEmpresa = lazyWithRetry(() => import('./features/configuracion/ConfiguracionEmpresa'), 'ConfiguracionEmpresa');
 
 import './App.css';
 
@@ -212,8 +213,7 @@ const ICON: Record<string, React.ReactNode> = {
 const CargandoModulo = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', height: 'calc(100vh - 160px)', color: '#8b949e' }}>
     <span style={{ width: 18, height: 18, border: '2px solid #30363d', borderTopColor: '#D84315', borderRadius: '50%', display: 'inline-block', animation: 'spinRoelca 0.7s linear infinite' }} />
-    Cargando módulo…
-    <style>{`@keyframes spinRoelca { to { transform: rotate(360deg); } }`}</style>
+    Cargando módulo…<style>{`@keyframes spinRoelca { to { transform: rotate(360deg); } }`}</style>
   </div>
 );
 
@@ -428,8 +428,7 @@ function App() {
         {verGastos && (
           <>
             <div className={`sidebar-item sidebar-item-with-icon ${esGastosActivo && !menuGastosAbierto ? 'active' : ''}`} title="Gastos" onClick={() => toggleGrupo(setMenuGastosAbierto)}>
-              <span className="sidebar-icon">{ICON.gastos}</span>
-              <span className="sidebar-label">Gastos</span>
+              <span className="sidebar-icon">{ICON.gastos}</span><span className="sidebar-label">Gastos</span>
               <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuGastosAbierto ? '▼' : '▶'}</span>
             </div>
             {menuGastosAbierto && (
