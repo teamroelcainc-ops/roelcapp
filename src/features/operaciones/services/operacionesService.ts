@@ -1,14 +1,25 @@
 // src/features/operaciones/services/operacionesService.ts
+//
+// Guarda una operación de forma SEGURA generando una referencia única.
+//
+// CAMBIO CLAVE (solicitado): el consecutivo ahora es IRREPETIBLE POR DÍA.
+//   · Antes: un único contador global `counters/operaciones` (el número no
+//     reiniciaba por día).
+//   · Ahora: un contador por día `counters/operaciones_<DDMMYY>`. La
+//     `runTransaction` de Firestore es atómica y reintenta si hay conflicto,
+//     así que aunque varias personas guarden EXACTAMENTE al mismo tiempo,
+//     cada una obtiene un número distinto. Nunca se repite.
+//
+// Formato de referencia: <PREFIJO>-<DDMMYY>-<NNN>  (ej. TR-160626-001)
+
 import { doc, runTransaction, collection } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import { generarReferencia } from '../../../utils/generarReferencia';
+import { generarReferencia, fechaDDMMYY } from '../../../utils/generarReferencia';
 
-// ✅ Caché en memoria del tipo de operación durante la sesión.
-// Como el tipo_operacion casi nunca cambia, no tiene sentido leerlo en cada guardado.
-// Esto reduce 1 lectura por cada operación guardada después de la primera del mismo tipo.
+// Caché de sesión del tipo de operación (evita releer el catálogo en cada guardado).
 const tipoOperacionCache = new Map<string, { clave?: string; acronimo?: string; tipo_operacion?: string }>();
 
-// ✅ Helper: detectar si el error es por cuota agotada y dar mensaje claro al usuario.
+// Detecta si el error es por cuota de Firestore agotada (mensaje claro al usuario).
 const esErrorDeCuota = (error: any): boolean => {
   const msg = String(error?.message || error?.code || error || '').toLowerCase();
   return msg.includes('resource-exhausted')
@@ -18,47 +29,41 @@ const esErrorDeCuota = (error: any): boolean => {
 };
 
 export const guardarOperacionSegura = async (operacionData: any) => {
-  const counterRef = doc(db, 'counters', 'operaciones');
+  // ✅ Contador POR DÍA: la llave incluye la fecha (DDMMYY) del momento de guardar.
+  const ddmmyy = fechaDDMMYY();
+  const counterRef = doc(db, 'counters', `operaciones_${ddmmyy}`);
   const nuevaOperacionRef = doc(collection(db, 'operaciones'));
 
-  // ✅ Si ya tenemos el tipo de operación en caché, lo usamos sin tocar Firestore.
-  // Esto evita la lectura del catálogo_tipo_operacion en la transacción cuando sea posible.
+  // Si ya tenemos el tipo de operación en caché, evitamos leer el catálogo.
   const tipoIdEnOperacion = operacionData.tipoOperacionId;
   const tipoCacheado = tipoIdEnOperacion ? tipoOperacionCache.get(tipoIdEnOperacion) : null;
 
   try {
-    let referenciaFinal: string = '';
+    let referenciaFinal = '';
 
     await runTransaction(db, async (transaction) => {
-      // ==========================================
-      // FASE 1: LECTURAS (lo menos posible)
-      // ==========================================
+      // ===== FASE 1: LECTURAS =====
       const counterDoc = await transaction.get(counterRef);
 
-      // Solo leemos el catálogo si no está en caché Y tenemos un id de tipo
       let tipoSnap = null;
       if (tipoIdEnOperacion && !tipoCacheado) {
         const tipoRef = doc(db, 'catalogo_tipo_operacion', tipoIdEnOperacion);
         tipoSnap = await transaction.get(tipoRef);
       }
 
-      // ==========================================
-      // FASE 2: PROCESAMIENTO EN MEMORIA
-      // ==========================================
+      // ===== FASE 2: PROCESAMIENTO EN MEMORIA =====
+      // Consecutivo del día: si el doc del día no existe, empieza en 1.
       let nuevoCorrelativo = 1;
       if (counterDoc.exists()) {
         nuevoCorrelativo = (counterDoc.data().count || 0) + 1;
       }
 
-      let prefijoOperacion = "OP"; // Fallback por defecto
-
+      let prefijoOperacion = 'OP'; // Fallback
       if (tipoCacheado) {
-        // Caché hit: usamos la versión guardada en memoria
-        prefijoOperacion = tipoCacheado.clave || tipoCacheado.acronimo || tipoCacheado.tipo_operacion || "OP";
+        prefijoOperacion = tipoCacheado.clave || tipoCacheado.acronimo || tipoCacheado.tipo_operacion || 'OP';
       } else if (tipoSnap && tipoSnap.exists()) {
         const dataTipo = tipoSnap.data();
-        prefijoOperacion = dataTipo.clave || dataTipo.acronimo || dataTipo.tipo_operacion || "OP";
-        // Guardamos en caché para los siguientes guardados de la sesión
+        prefijoOperacion = dataTipo.clave || dataTipo.acronimo || dataTipo.tipo_operacion || 'OP';
         if (tipoIdEnOperacion) {
           tipoOperacionCache.set(tipoIdEnOperacion, {
             clave: dataTipo.clave,
@@ -72,14 +77,12 @@ export const guardarOperacionSegura = async (operacionData: any) => {
         prefijoOperacion = operacionData.tipoOperacionNombre;
       }
 
-      // Generamos el ID único
-      referenciaFinal = generarReferencia(prefijoOperacion as any, nuevoCorrelativo);
+      // Referencia con fecha del día y consecutivo del día.
+      referenciaFinal = generarReferencia(prefijoOperacion as any, nuevoCorrelativo, ddmmyy);
 
-      // ==========================================
-      // FASE 3: ESCRITURAS
-      // ==========================================
+      // ===== FASE 3: ESCRITURAS =====
       if (!counterDoc.exists()) {
-        transaction.set(counterRef, { count: 1 });
+        transaction.set(counterRef, { count: 1, fecha: ddmmyy });
       } else {
         transaction.update(counterRef, { count: nuevoCorrelativo });
       }
@@ -91,16 +94,14 @@ export const guardarOperacionSegura = async (operacionData: any) => {
       });
     });
 
-    // ✅ Devolvemos info útil del guardado (no solo true) por si el caller la quiere
     return {
       success: true,
       id: nuevaOperacionRef.id,
       ref: referenciaFinal,
     };
   } catch (error: any) {
-    console.error("Transacción fallida: ", error);
+    console.error('Transacción fallida: ', error);
 
-    // ✅ Si el error es por cuota, lanzamos un mensaje específico y entendible
     if (esErrorDeCuota(error)) {
       const horaActual = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City' });
       throw new Error(
@@ -113,13 +114,9 @@ export const guardarOperacionSegura = async (operacionData: any) => {
       );
     }
 
-    // Otros errores: los relanzamos tal cual
     throw error;
   }
 };
 
-// ✅ Helper exportado para limpiar el caché si hace falta (por ejemplo al cerrar sesión
-// o si el usuario edita el catálogo de tipos de operación).
-export const limpiarCacheTiposOperacion = () => {
-  tipoOperacionCache.clear();
-};
+// Limpia la caché de tipos de operación (p. ej. al cerrar sesión o editar el catálogo).
+export const limpiarCacheTipoOperacion = () => tipoOperacionCache.clear();

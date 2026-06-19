@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc } from 'firebase/firestore';
-import { db, storage } from '../../../config/firebase';
+import { db, storage, auth } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
 import { calcularStatusDinamico } from '../config/statusRules';
 // ✅ NUEVO: subida de documentos por campo (Storage) + modal genérico "otros documentos"
@@ -290,6 +290,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ NUEVO: control del modal genérico "Subir Documentos" (otros documentos)
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
+  // ✅ NUEVO (punto 3): ¿es administrador? Solo admin puede editar la referencia.
+  const [esAdmin, setEsAdmin] = useState(false);
+  // ✅ NUEVO (punto 3): referencia editable. En alta se genera al guardar (servicio).
+  const [referencia, setReferencia] = useState('');
+
   const [statusPreview, setStatusPreview] = useState<string>('');
   const [statusError, setStatusError] = useState<string | null>(null);
 
@@ -336,21 +341,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   // ============================================================
   // ✅ NUEVO: REFRESCO EN VIVO AL ABRIR EL FORMULARIO
-  // ------------------------------------------------------------
-  // Problema que resuelve: cuando agregas un registro en OTRA pantalla
-  // (un cliente, un convenio, una tarifa, etc.) el formulario lo recibe vía
-  // `catalogosCacheados`, que viene de la caché con TTL (24h–7d). Por eso antes
-  // tardaba en aparecer o había que cerrar y reabrir el formulario.
-  //
-  // Ahora, al montar, se traen de Firestore las colecciones que el usuario edita
-  // con más frecuencia y se actualiza el estado local Y la caché de localStorage
-  // (clave `cat_v1__<alias>`, la misma que usa OperacionesDashboard). Resultado:
-  // los registros nuevos aparecen de inmediato, sin cerrar/reabrir ni esperar TTL.
-  //
-  // Nota de costo: esto hace ~9 lecturas de colección al abrir el formulario.
-  // Es un intercambio consciente (frescura > ahorro) mientras hay pruebas con
-  // gerencia. Si luego quieres bajar lecturas, se puede limitar a empresas y
-  // convenios, o usar un botón de "refrescar" manual.
+  // (trae de Firestore las colecciones más editadas y refresca estado + caché)
   // ============================================================
   useEffect(() => {
     let activo = true;
@@ -381,6 +372,25 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ NUEVO (punto 3): detecta admin leyendo usuarios/{uid}. Acceso total si no
+  // hay sesión/doc (modo Bypass) o si sus roles incluyen ADMIN.
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      try {
+        const u = auth.currentUser;
+        if (!u) { if (activo) setEsAdmin(true); return; }
+        const snap = await getDoc(doc(db, 'usuarios', u.uid));
+        if (!activo) return;
+        if (!snap.exists()) { setEsAdmin(true); return; }
+        const data = snap.data() as any;
+        const roles: string[] = Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : []);
+        setEsAdmin(roles.some((r) => String(r).toUpperCase().includes('ADMIN')));
+      } catch { if (activo) setEsAdmin(false); }
+    })();
+    return () => { activo = false; };
+  }, []);
+
   const {
     tiposOperacion = [],
     embalajes = [],
@@ -392,8 +402,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   } = catalogosCacheados || {};
 
   // ✅ Usamos los catálogos LOCALES (mutables) en lugar de los del cache directo.
-  //    tarifas y convenios también son locales para que el refresco en vivo y la
-  //    creación con "+" se reflejen sin cerrar/reabrir el formulario.
   const empresas = empresasLocal;
   const remolques = remolquesLocal;
   const unidades = unidadesLocal;
@@ -416,6 +424,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const listaUniProvLocal: any[] = unidadesProveedor;
   const listaOpeProvLocal: any[] = proveedoresUnidad;
   const listaMonedasLocal: any[] = catalogoMoneda;
+
+  // ✅ NUEVO (punto 1): resuelve la moneda guardada en la empresa (campo `moneda`)
+  // al ID del catálogo de monedas, para asignarla a facturadoEnCobrar /
+  // facturadoEnUnidad (los <select> usan el ID de la moneda como value).
+  const resolverMonedaIdDeEmpresa = (emp: any): string => {
+    if (!emp) return '';
+    const raw = String(emp.moneda ?? emp.monedaId ?? emp.monedaRef ?? '').trim();
+    if (!raw) return '';
+    // ¿ya es un ID válido del catálogo?
+    if (listaMonedasLocal.some((m: any) => String(m.id) === raw)) return raw;
+    // intentar por texto (USD / MXN / Dólares / Pesos…)
+    const up = raw.toUpperCase();
+    const porTexto = listaMonedasLocal.find((m: any) => {
+      const nom = String(m.moneda || '').toUpperCase();
+      return nom === up || (!!nom && (nom.includes(up) || up.includes(nom)));
+    });
+    if (porTexto) return String(porTexto.id);
+    if (up.includes('USD') || up.includes('DOLAR') || up.includes('DÓLAR') || up === 'US') return ID_USD;
+    if (up.includes('MXN') || up.includes('PESO') || up === 'MX') return ID_MXN;
+    return '';
+  };
 
   const [tipoCambioDia, setTipoCambioDia] = useState<number | null>(null);
   const [buscandoTC, setBuscandoTC] = useState(false);
@@ -474,23 +503,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   });
 
   // ============================================================
-  // ✅ NUEVO: Lógica de los botones "+" (crear catálogo inline)
+  // ✅ Lógica de los botones "+" (crear catálogo inline)
   // ============================================================
-
-  // Recarga una colección desde Firestore y devuelve los docs
   const recargarColeccion = useCallback(async (coleccion: string) => {
     const snap = await getDocs(collection(db, coleccion));
     return snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
   }, []);
 
-  // Aplica los docs recargados al catálogo local + actualiza ambos caches
   const aplicarColeccionRecargada = useCallback((coleccion: string, docs: any[]) => {
     if (coleccion === 'empresas') setEmpresasLocal(docs);
     else if (coleccion === 'remolques') setRemolquesLocal(docs);
     else if (coleccion === 'unidades') setUnidadesLocal(docs);
     else if (coleccion === 'empleados') setEmpleadosLocalState(docs);
 
-    // Mantener sessionStorage del dashboard sincronizado (compat)
     try {
       const cacheStr = sessionStorage.getItem('roelca_catalogos_v2');
       if (cacheStr) {
@@ -508,7 +533,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     } catch { /* noop */ }
   }, []);
 
-  // Abre el modal de creación tomando snapshot de IDs actuales
   const abrirCreacion = useCallback((
     catalogo: CatalogoCreable,
     onCreado: (nuevoId: string, registro: any) => void
@@ -522,7 +546,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setModalCatalogo({ catalogo, idsPrevios, onCreado });
   }, [empresasLocal, remolquesLocal, unidadesLocal, empleadosLocalState]);
 
-  // Cierra el modal. Si hubo creación, recarga y detecta el nuevo por diff de IDs.
   const cerrarCreacion = useCallback(async () => {
     if (!modalCatalogo) return;
     const { catalogo, idsPrevios, onCreado } = modalCatalogo;
@@ -551,7 +574,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   }, [modalCatalogo, recargarColeccion, aplicarColeccionRecargada]);
 
-  // Helpers de etiqueta para autoseleccionar mostrando el nombre correcto
   const labelEmpresa = (e: any) => e?.nombre || e?.empresa || e?.razonSocial || '';
   const labelRemolque = (r: any) => `${r?.nombre || ''} ${r?.placas || r?.placa || ''}`.trim();
   const labelUnidad = (u: any) => u?.unidad || u?.nombre || '';
@@ -739,7 +761,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       ...prev,
       proveedorUnidad: PROVEEDOR_FIJO_ID,
       convenioProveedor: '',
-      facturadoEnUnidad: prov?.monedaId || prov?.moneda || prev.facturadoEnUnidad,
+      // ✅ CORREGIDO (punto 1): moneda del proveedor desde su campo `moneda`.
+      facturadoEnUnidad: resolverMonedaIdDeEmpresa(prov) || prev.facturadoEnUnidad,
     }));
     if (prov) setSearchProvTransporte(prov.nombre || '');
   }, [formData.tipoOperacionId, empresas]);
@@ -818,6 +841,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       setSearchOperadorProveedor(initialData.operadorProveedorNombre || (opProv ? (opProv.nombre || opProv.nombres || opProv.nombreCompleto) : initialData.operadorProveedor || ''));
       setSearchConvenio(initialData.convenioNombre || '');
       setSearchConvenioProveedor(initialData.convenioProveedorNombre || '');
+      // ✅ NUEVO (punto 3): precarga la referencia existente para que el admin pueda editarla.
+      setReferencia(initialData.ref || (initialData as any).referencia || '');
     }
   }, [initialData, empresas, remolques, unidades, listaEmpleadosLocal, listaUniProvLocal, listaOpeProvLocal]);
 
@@ -861,12 +886,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const maestroIds = new Set(maestros.map((m: any) => String(m.id).trim()));
     const detallesAsociados = catalogoConvDetalles.filter((d: any) => maestroIds.has(String(d.convenioId).trim()));
     return detallesAsociados.map((d: any) => {
-      // ✅ CORREGIDO: ampliamos los nombres de campo posibles para el ID de la tarifa
-      //    (distintas tablas guardan la referencia con nombres diferentes).
       const tarifaId = d.tipoConvenioId || d.tipo_convenio_id || d.tipoConvenio || d.tipo_convenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
       const maestroAsociado = maestros.find((m: any) => String(m.id).trim() === String(d.convenioId).trim());
-      // ✅ CORREGIDO: más campos de nombre como respaldo antes de caer en "Tarifa (id)".
       const nombreTarifa = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || tObj?.tipo;
       const nombreFinal = d.tipoConvenioNombre || nombreTarifa || (tarifaId ? `Tarifa (${tarifaId})` : 'Sin Asignar');
       return {
@@ -915,6 +937,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const enMemoria = catalogoTrafico.find((t: any) => String(t.id) === valor);
     if (enMemoria) {
       const nombre = enMemoria.nombre || valor;
+
       traficoCache.set(valor, nombre);
       return nombre;
     }
@@ -1003,12 +1026,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  // ✅ CORREGIDO (petición explícita): Cliente (Paga) muestra TODAS las empresas
-  //    con el tipo 7eec9cbb, SIN exigir status 'Activa'. Los demás filtros de
-  //    empresa conservan el status 'Activa' (avísame si quieres quitarlo también).
+  // ✅ Cliente (Paga): TODAS las empresas tipo 7eec9cbb (sin exigir 'Activa').
   const filClientesPaga = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb')) || [], [empresas]);
   const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('51246232') && e.status === 'Activa') || [], [empresas]);
-  const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd') && e.status === 'Activa') || [], [empresas]);
+  // ✅ CORREGIDO (punto 4): Proveedor de Servicios = TODAS las empresas tipo
+  //    11894dfd, SIN exigir status 'Activa'.
+  const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd')) || [], [empresas]);
   const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('6e7af5ab') && e.status === 'Activa') || [], [empresas]);
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('ca21ab07') && e.status === 'Activa') || [], [empresas]);
 
@@ -1108,13 +1131,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       Object.keys(operacionData).forEach(key => { if (operacionData[key] === undefined) delete operacionData[key]; });
 
-      // ✅ NUEVO: guardamos la operación y obtenemos id + referencia para ligar los documentos
+      // ✅ NUEVO (punto 3): si es admin y editó la referencia de una operación
+      // existente, se guarda la referencia corregida.
+      if (initialData && esAdmin && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
+        operacionData.ref = referencia.trim();
+      }
+
+      // ✅ guardamos la operación y obtenemos id + referencia para ligar los documentos
       let idGuardado = '';
       let refGuardado = '';
       if (initialData) {
         await updateDoc(doc(db, 'operaciones', String(initialData.id)), operacionData);
         idGuardado = String(initialData.id);
-        refGuardado = referenciaDeOperacion(idGuardado, (initialData as any).ref || operacionData.ref);
+        refGuardado = referenciaDeOperacion(idGuardado, operacionData.ref || (initialData as any).ref);
         if (onSave) onSave({ id: initialData.id, ...operacionData });
       } else {
         const resultado = await guardarOperacionSegura(operacionData);
@@ -1124,8 +1153,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         if (onSave) onSave({ id: nuevoId, ...operacionData });
       }
 
-      // ✅ NUEVO: subir a Storage los PDFs cargados por campo, en carpetas con el nombre del campo.
-      // Estructura: operaciones / <Referencia> / <NombreCampo> / <archivo>
+      // ✅ subir a Storage los PDFs cargados por campo, en carpetas con el nombre del campo.
       const archivosPorCampo: { file: File; campo: string; sufijo?: string }[] = [];
       if (pdfCartaPorte) archivosPorCampo.push({ file: pdfCartaPorte, campo: 'Carta Porte' });
       if (pdfDoda) archivosPorCampo.push({ file: pdfDoda, campo: 'DODA' });
@@ -1158,7 +1186,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtFecha = (f: string) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return f; } };
 
-  // ✅ NUEVO: id y referencia de la operación para el modal "Subir Documentos"
+  // ✅ id y referencia de la operación para el modal "Subir Documentos"
   const idOperacion = (initialData as any)?.id || '';
   const referenciaOperacion = referenciaDeOperacion(idOperacion, (initialData as any)?.ref);
 
@@ -1223,6 +1251,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         .roelca-utility-box { margin-top: 10px; padding: 16px 18px; background: linear-gradient(135deg, rgba(63, 185, 80, 0.08), rgba(63, 185, 80, 0.02)); border: 1px solid rgba(63, 185, 80, 0.3); border-radius: 10px; }
         .roelca-utility-box.negative { background: linear-gradient(135deg, rgba(248, 81, 73, 0.08), rgba(248, 81, 73, 0.02)); border-color: rgba(248, 81, 73, 0.3); }
         .roelca-utility-label { font-size: 0.68rem; color: #7d8590; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+
         .roelca-utility-value { font-size: 1.75rem; font-weight: 700; line-height: 1.1; color: #3fb950; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
         .roelca-utility-box.negative .roelca-utility-value { color: #f85149; }
         .roelca-form-footer { padding: 20px; border-top: 1px solid #1f2733; background-color: #0d1117; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
@@ -1296,6 +1325,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconBriefcase /></div><h3 className="roelca-card-title">Tipo de Servicio y Fechas</h3></div>
                     <div className="form-grid">
+                      {/* ✅ NUEVO (punto 3): Referencia. En alta se genera al guardar; en edición solo admin puede corregirla. */}
+                      <div className="form-group">
+                        <label className="form-label orange">Referencia</label>
+                        {initialData ? (
+                          <input type="text" name="referencia" className="form-control" value={referencia}
+                            onChange={(e) => setReferencia(e.target.value)} readOnly={!esAdmin}
+                            title={esAdmin ? 'Como administrador puedes corregir la referencia' : 'Solo un administrador puede editar la referencia'}
+                            style={esAdmin ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }} />
+                        ) : (
+                          <input type="text" className="form-control" value="Se generará al guardar" readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                        )}
+                        <small style={{ color: initialData ? (esAdmin ? '#fb923c' : '#8b949e') : '#8b949e' }}>
+                          {initialData ? (esAdmin ? 'Editable por administrador en caso de error.' : 'Solo un administrador puede editarla.') : 'Formato: TR/LO/FL-DDMMYY-### (consecutivo único del día).'}
+                        </small>
+                      </div>
                       <div className="form-group"><label className="form-label orange">Tipo de Operación</label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
                       <div className="form-group"><label className="form-label orange">Fecha de Servicio</label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
                       {isFletes && (<div className="form-group"><label className="form-label orange">Fecha de Cita</label><input type="datetime-local" name="fechaCita" className={`form-control${claseSiFalta('fechaCita')}`} value={formData.fechaCita || ''} onChange={handleChange} /></div>)}
@@ -1315,7 +1359,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownClientePaga && searchClientePaga && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClientePaga.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = c.monedaId || c.moneda || ''; setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(c.nombre); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(c.nombre); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
                                     <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
                                   </div>
                                 ))}
@@ -1324,7 +1368,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                           <BotonAgregar title="Agregar nuevo Cliente (Paga)" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_PAGA },
-                            (id, reg) => { setFormData(prev => ({ ...prev, clientePaga: id, convenio: '', facturadoEnCobrar: reg.monedaId || reg.moneda || '' })); setSearchClientePaga(labelEmpresa(reg)); setSearchConvenio(''); }
+                            (id, reg) => { setFormData(prev => ({ ...prev, clientePaga: id, convenio: '', facturadoEnCobrar: resolverMonedaIdDeEmpresa(reg) })); setSearchClientePaga(labelEmpresa(reg)); setSearchConvenio(''); }
                           )} />
                         </div>
                       </div>
@@ -1521,7 +1565,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <label className="form-label" style={{ color: '#58a6ff' }}>Operador del Proveedor</label>
                           <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} style={{ border: '1px solid #58a6ff' }} placeholder="Buscar operador externo..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
                           {showDropdownOperadorProveedor && searchOperadorProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperadorProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Sin resultados (Se guardará como texto)</div> : resultadosOperadorProveedor.map((o:any) => { const valorNombre = o.nombre || o.nombres || o.nombreCompleto || 'Sin Nombre'; return (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(valorNombre); setShowDropdownOperadorProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{valorNombre}</div></div>); })}</div>)}
-                        </div>
+
+                          </div>
                       </div>
                     </div>
                   )}
@@ -1534,11 +1579,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} disabled={proveedorForzado} placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
-                            {showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = p.monedaId || p.moneda || ''; setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); setSearchProvTransporte(p.nombre); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}
+                            {showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(p); setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); setSearchProvTransporte(p.nombre); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE },
-                            (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: reg.monedaId || reg.moneda || '' })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); }
+                            (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: resolverMonedaIdDeEmpresa(reg) })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); }
                           )} />
                         </div>
                       </div>
