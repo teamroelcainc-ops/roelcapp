@@ -1,9 +1,38 @@
 // src/usuarios/components/UsuariosDashboard.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, secondaryAuth } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger'; 
+
+// Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
+// para que la foto pese pocos KB y quepa sin problema en el documento de Firestore.
+const procesarImagen = (file: File, maxLado = 256): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        if (width > height) {
+          if (width > maxLado) { height = Math.round((height * maxLado) / width); width = maxLado; }
+        } else {
+          if (height > maxLado) { width = Math.round((width * maxLado) / height); height = maxLado; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('No se pudo procesar la imagen.'));
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => reject(new Error('Archivo de imagen no válido.'));
+      img.src = reader.result as string;
+    };
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    reader.readAsDataURL(file);
+  });
 
 export const UsuariosDashboard = () => {
   const [usuarios, setUsuarios] = useState<any[]>([]);
@@ -16,6 +45,8 @@ export const UsuariosDashboard = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rolesAsignados, setRolesAsignados] = useState<string[]>([]);
+  const [fotoPerfil, setFotoPerfil] = useState<string>(''); // ✅ NUEVO
+  const fileRef = useRef<HTMLInputElement>(null);            // ✅ NUEVO
 
   // NUEVOS ESTADOS PARA EL HISTORIAL DE SESIONES
   const [historialAbierto, setHistorialAbierto] = useState(false);
@@ -68,12 +99,14 @@ export const UsuariosDashboard = () => {
       setEmail(user.email || '');
       setPassword(''); 
       setRolesAsignados(user.roles || []);
+      setFotoPerfil(user.fotoPerfil || ''); // ✅ NUEVO
     } else {
       setUsuarioActual(null);
       setNombre('');
       setEmail('');
       setPassword('');
       setRolesAsignados([]);
+      setFotoPerfil(''); // ✅ NUEVO
     }
     setModalAbierto(true);
   };
@@ -89,6 +122,26 @@ export const UsuariosDashboard = () => {
     );
   };
 
+  // ✅ NUEVO: elegir y procesar la imagen de perfil
+  const elegirFoto = () => fileRef.current?.click();
+
+  const onArchivoFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Selecciona un archivo de imagen (JPG, PNG, etc.).');
+      return;
+    }
+    try {
+      const dataUrl = await procesarImagen(file);
+      setFotoPerfil(dataUrl);
+    } catch (err: any) {
+      alert(err?.message || 'No se pudo procesar la imagen.');
+    } finally {
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   const handleGuardar = async (e: React.FormEvent) => {
     e.preventDefault();
     setCargando(true);
@@ -97,6 +150,7 @@ export const UsuariosDashboard = () => {
         await setDoc(doc(db, 'usuarios', usuarioActual.id), {
           nombre: nombre.toUpperCase(),
           roles: rolesAsignados,
+          fotoPerfil: fotoPerfil || '', // ✅ NUEVO
           fechaActualizacion: new Date().toISOString()
         }, { merge: true });
         
@@ -116,6 +170,7 @@ export const UsuariosDashboard = () => {
           email: email.toLowerCase(),
           nombre: nombre.toUpperCase(),
           roles: rolesAsignados,
+          fotoPerfil: fotoPerfil || '', // ✅ NUEVO
           fechaCreacion: new Date().toISOString(),
           activo: true,
           isOnline: false,
@@ -159,6 +214,8 @@ export const UsuariosDashboard = () => {
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
   };
+
+  const inicialesDe = (user: any) => (user?.nombre ? user.nombre.substring(0, 2).toUpperCase() : 'US');
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
@@ -210,7 +267,16 @@ export const UsuariosDashboard = () => {
                     )}
                   </td>
 
-                  <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '600' }}>{user.nombre}</td>
+                  <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '600' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#D84315', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold', overflow: 'hidden', flexShrink: 0 }}>
+                        {user.fotoPerfil
+                          ? <img src={user.fotoPerfil} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : inicialesDe(user)}
+                      </div>
+                      {user.nombre}
+                    </div>
+                  </td>
                   <td style={{ padding: '16px', color: '#8b949e' }}>{user.email}</td>
                   <td style={{ padding: '16px', color: '#c9d1d9' }}>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -240,6 +306,25 @@ export const UsuariosDashboard = () => {
             </div>
             
             <form onSubmit={handleGuardar} style={{ padding: '24px' }}>
+              {/* ✅ NUEVO: Foto de perfil */}
+              <div className="form-group" style={{ marginBottom: '24px' }}>
+                <label style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block', marginBottom: '12px' }}>Foto de Perfil</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#D84315', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold', overflow: 'hidden', flexShrink: 0, border: '2px solid #30363d' }}>
+                    {fotoPerfil
+                      ? <img src={fotoPerfil} alt="Perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : (nombre ? nombre.substring(0, 2).toUpperCase() : 'US')}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input ref={fileRef} type="file" accept="image/*" onChange={onArchivoFoto} style={{ display: 'none' }} />
+                    <button type="button" onClick={elegirFoto} style={{ padding: '8px 14px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>Elegir imagen</button>
+                    {fotoPerfil && (
+                      <button type="button" onClick={() => setFotoPerfil('')} style={{ padding: '8px 14px', background: 'none', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>Quitar</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
                 <div className="form-group">
                   <label style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block', marginBottom: '8px' }}>Nombre Completo *</label>

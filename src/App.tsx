@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, updateDoc, getDoc } from 'firebase/firestore'; 
+import { doc, updateDoc, getDoc, collection, onSnapshot } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger'; 
 
@@ -24,6 +24,7 @@ import { DireccionesDashboard } from './features/direcciones/components/Direccio
 import { EmpleadosDashboard } from './features/empleados/components/EmpleadosDashboard';
 import { RolesDashboard } from './usuarios/components/RolesDashboard';
 import { UsuariosDashboard } from './usuarios/components/UsuariosDashboard';
+import { MiPerfil } from './usuarios/components/MiPerfil';
 import { LogsDashboard } from './features/configuracion/components/LogsDashboard';
 import { ConfiguradorStatus } from './features/configuracion/components/ConfiguradorStatus';
 import { RelojChecadorModal } from './features/relojChecador/components/RelojChecadorModal';
@@ -42,8 +43,48 @@ import { EmpresaBrand } from './features/configuracion/EmpresaBrand';
 import './App.css';
 
 // ============================================================================
+// Mapa: etiqueta del módulo (como se guarda en el rol) -> clave interna (moduloActivo).
+// Debe coincidir con las etiquetas usadas en RolesDashboard (GRUPOS_MODULOS).
+// El orden define también la prioridad al elegir el primer módulo permitido.
+// ============================================================================
+const MODULOS_A_CLAVE: Record<string, string> = {
+  'Operaciones Activas': 'operaciones',
+  'Servicios Completados': 'serviciosCompletados',
+  'Servicios Cancelados': 'serviciosCancelados',
+  'Reportes': 'reportes',
+  'MTTO': 'mtto',
+  'Referencias del Diesel': 'referenciasDiesel',
+  'Referencias de Puentes': 'referenciasPuentes',
+  'Costos Adicionales': 'costosAdicionales',
+  'Convenio de Clientes': 'conveniosClientes',
+  'Facturación de Clientes': 'facturacionClientes',
+  'Convenio de Proveedores': 'conveniosProveedores',
+  'Facturación de Proveedores': 'facturacionProveedores',
+  'Colaboradores': 'colaboradores',
+  'Historial de Chequeo': 'historialAsistencia',
+  'Nómina': 'referenciasNomina',
+  'Deducciones': 'deducciones',
+  'Empresas': 'empresas',
+  'Contactos': 'contactos',
+  'Direcciones': 'direcciones',
+  'Tipo de Cambio': 'tipoCambio',
+  'Combustible': 'combustible',
+  'Unidades Propias': 'unidades',
+  'Remolques': 'remolques',
+  'Proveedores de Unidad': 'proveedoresUnidad',
+  'Unidades del Proveedor': 'unidadesProveedor',
+  'Catálogos': 'catalogos',
+  'Usuarios': 'usuarios',
+  'Roles y Permisos': 'roles',
+  'Historial de Actividad': 'logs',
+  'Reglas de Estatus': 'flujosOperacion',
+  'Datos de la Empresa': 'datosEmpresa',
+};
+
+const ORDEN_CLAVES = Object.values(MODULOS_A_CLAVE);
+
+// ============================================================================
 // Iconos del menú lateral (estilo lucide/feather: trazo, currentColor)
-// Se reutilizan referencias para iconos repetidos (truck, droplet, etc.).
 // ============================================================================
 const Ico = ({ children }: { children: React.ReactNode }) => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -75,7 +116,6 @@ const iPackage = (
 );
 
 const ICON: Record<string, React.ReactNode> = {
-  // Items principales
   operaciones: iTruck,
   serviciosCompletados: (
     <Ico><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></Ico>
@@ -89,8 +129,6 @@ const ICON: Record<string, React.ReactNode> = {
   catalogos: (
     <Ico><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></Ico>
   ),
-
-  // Grupos
   gastos: iDollar,
   clientes: iUsers,
   proveedores: iPackage,
@@ -103,8 +141,6 @@ const ICON: Record<string, React.ReactNode> = {
   configuracion: (
     <Ico><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" /></Ico>
   ),
-
-  // Subitems Gastos
   mtto: (
     <Ico><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" /></Ico>
   ),
@@ -115,14 +151,10 @@ const ICON: Record<string, React.ReactNode> = {
   costosAdicionales: (
     <Ico><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></Ico>
   ),
-
-  // Subitems Clientes / Proveedores
   conveniosClientes: iFileText,
   facturacionClientes: iCard,
   conveniosProveedores: iFileText,
   facturacionProveedores: iCard,
-
-  // Subitems Empleados
   colaboradores: iUsers,
   historialAsistencia: (
     <Ico><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></Ico>
@@ -131,8 +163,6 @@ const ICON: Record<string, React.ReactNode> = {
   deducciones: (
     <Ico><circle cx="12" cy="12" r="10" /><line x1="8" y1="12" x2="16" y2="12" /></Ico>
   ),
-
-  // Subitems Bases de Datos
   empresas: (
     <Ico><rect x="2" y="7" width="20" height="14" rx="2" ry="2" /><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /></Ico>
   ),
@@ -152,8 +182,6 @@ const ICON: Record<string, React.ReactNode> = {
   ),
   proveedoresUnidad: iPackage,
   unidadesProveedor: iTruck,
-
-  // Subitems Configuración
   usuarios: iUsers,
   roles: (
     <Ico><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></Ico>
@@ -173,10 +201,12 @@ function App() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
+  const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
+  const [miPerfilAbierto, setMiPerfilAbierto] = useState(false); // modal "Mi Perfil"
   const [menuAbierto, setMenuAbierto] = useState(true);
   
   const [menuBasesDatosAbierto, setMenuBasesDatosAbierto] = useState(false);
@@ -188,8 +218,6 @@ function App() {
 
   const [modalChecadorAbierto, setModalChecadorAbierto] = useState(false);
 
-  // ✅ NUEVO: si el menú está colapsado y se hace clic en un grupo, lo abrimos
-  // primero para que el submenú quede visible (mejor UX en modo iconos).
   const toggleGrupo = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     if (!menuAbierto) setMenuAbierto(true);
     setter(prev => !prev);
@@ -211,6 +239,15 @@ function App() {
     });
     return () => unsubscribe();
   }, []);
+
+  // Catálogo de roles (para saber qué módulos puede ver el usuario)
+  useEffect(() => {
+    if (!estaAutenticado) return;
+    const unsub = onSnapshot(collection(db, 'roles'), (snap) => {
+      setRolesCatalogo(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    });
+    return () => unsub();
+  }, [estaAutenticado]);
 
   const handleCerrarSesion = async (motivo: 'manual' | 'inactividad' = 'manual') => {
     if (auth.currentUser) {
@@ -263,6 +300,36 @@ function App() {
   const rolesExentosChequeo = ['Admin', 'Gerencia', 'Sistemas'];
   const debeChecar = usuarioActualDB && !rolesExentosChequeo.includes(usuarioActualDB.rol);
 
+  // ── PERMISOS: claves de módulos que el usuario puede ver ──
+  // Acceso total si: entró por Bypass (sin doc) o tiene un rol llamado ADMIN.
+  const accesoTotal = !usuarioActualDB || (usuarioActualDB.roles || []).some((r: string) => String(r).toUpperCase() === 'ADMIN');
+
+  const clavesPermitidas = useMemo(() => {
+    if (accesoTotal) return new Set<string>(ORDEN_CLAVES);
+    const rolesUsuario: string[] = usuarioActualDB?.roles || [];
+    const etiquetas = new Set<string>();
+    rolesCatalogo.forEach((rol: any) => {
+      if (rolesUsuario.includes(rol.nombre)) {
+        (rol.modulosPermitidos || []).forEach((m: string) => etiquetas.add(m));
+      }
+    });
+    const claves = new Set<string>();
+    etiquetas.forEach((et) => { const k = MODULOS_A_CLAVE[et]; if (k) claves.add(k); });
+    return claves;
+  }, [accesoTotal, usuarioActualDB, rolesCatalogo]);
+
+  const puede = (clave: string) => clavesPermitidas.has(clave);
+
+  // Si el módulo activo no está permitido, saltar al primer módulo permitido.
+  useEffect(() => {
+    if (accesoTotal) return;
+    if (clavesPermitidas.size === 0) return;
+    if (!clavesPermitidas.has(moduloActivo)) {
+      const primera = ORDEN_CLAVES.find(k => clavesPermitidas.has(k));
+      if (primera) setModuloActivo(primera as any);
+    }
+  }, [clavesPermitidas, accesoTotal, moduloActivo]);
+
   if (cargandoAuth) {
     return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#010409', color: '#8b949e' }}>Cargando Roelca Inc...</div>;
   }
@@ -278,125 +345,181 @@ function App() {
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion' || moduloActivo === 'datosEmpresa';
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel' || moduloActivo === 'referenciasPuentes' || moduloActivo === 'costosAdicionales';
 
+  // Visibilidad de cada grupo: se muestra si al menos un hijo está permitido.
+  const verGastos = puede('mtto') || puede('referenciasDiesel') || puede('referenciasPuentes') || puede('costosAdicionales');
+  const verClientes = puede('conveniosClientes') || puede('facturacionClientes');
+  const verProveedores = puede('conveniosProveedores') || puede('facturacionProveedores');
+  const verEmpleados = puede('colaboradores') || puede('historialAsistencia') || puede('referenciasNomina') || puede('deducciones');
+  const verBasesDatos = puede('empresas') || puede('contactos') || puede('direcciones') || puede('tipoCambio') || puede('combustible') || puede('unidades') || puede('remolques') || puede('proveedoresUnidad') || puede('unidadesProveedor');
+  const verConfiguracion = puede('usuarios') || puede('roles') || puede('logs') || puede('flujosOperacion') || puede('datosEmpresa');
+
+  const sinModulos = !accesoTotal && clavesPermitidas.size === 0;
+
+  // Avatar (foto si existe; si no, iniciales)
+  const inicialesUsuario = usuarioActualDB?.nombre ? usuarioActualDB.nombre.substring(0, 2).toUpperCase() : 'JM';
+  const fotoUsuario = usuarioActualDB?.fotoPerfil || '';
+
   return (
     <div className="app-wrapper">
       
       <RelojChecadorModal isOpen={modalChecadorAbierto} onClose={() => setModalChecadorAbierto(false)} usuario={usuarioActualDB} />
+
+      {miPerfilAbierto && usuarioActualDB && (
+        <MiPerfil
+          usuario={usuarioActualDB}
+          onClose={() => setMiPerfilAbierto(false)}
+          onActualizado={(u) => setUsuarioActualDB(u)}
+        />
+      )}
 
       <div className={`sidebar ${!menuAbierto ? 'collapsed' : ''}`}>
         <div className="sidebar-brand">
           <EmpresaBrand />
         </div>
 
-        <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} title="Operaciones Activas" onClick={() => setModuloActivo('operaciones')}>
-          <span className="sidebar-icon">{ICON.operaciones}</span>
-          <span className="sidebar-label">Operaciones Activas</span>
-        </div>
-        
-        <div className={`sidebar-item ${moduloActivo === 'serviciosCompletados' ? 'active' : ''}`} title="Servicios Completados" onClick={() => setModuloActivo('serviciosCompletados')}>
-          <span className="sidebar-icon">{ICON.serviciosCompletados}</span>
-          <span className="sidebar-label">Servicios Completados</span>
-        </div>
-
-        <div className={`sidebar-item ${moduloActivo === 'serviciosCancelados' ? 'active' : ''}`} title="Servicios Cancelados" onClick={() => setModuloActivo('serviciosCancelados')}>
-          <span className="sidebar-icon">{ICON.serviciosCancelados}</span>
-          <span className="sidebar-label">Servicios Cancelados</span>
-        </div>
-
-        <div className={`sidebar-item ${moduloActivo === 'reportes' ? 'active' : ''}`} title="Reportes" onClick={() => setModuloActivo('reportes')}>
-          <span className="sidebar-icon">{ICON.reportes}</span>
-          <span className="sidebar-label">Reportes</span>
-        </div>
-
-        <div className={`sidebar-item sidebar-item-with-icon ${esGastosActivo && !menuGastosAbierto ? 'active' : ''}`} title="Gastos" onClick={() => toggleGrupo(setMenuGastosAbierto)}>
-          <span className="sidebar-icon">{ICON.gastos}</span>
-          <span className="sidebar-label">Gastos</span>
-          <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuGastosAbierto ? '▼' : '▶'}</span>
-        </div>
-        {menuGastosAbierto && (
-          <div className="sidebar-submenu">
-            <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => setModuloActivo('mtto')}><span className="sidebar-icon">{ICON.mtto}</span><span className="sidebar-label">MTTO</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasDiesel')}><span className="sidebar-icon">{ICON.referenciasDiesel}</span><span className="sidebar-label">Referencias del Diesel</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'referenciasPuentes' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasPuentes')}><span className="sidebar-icon">{ICON.referenciasPuentes}</span><span className="sidebar-label">Referencias de Puentes</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'costosAdicionales' ? 'active' : ''}`} onClick={() => setModuloActivo('costosAdicionales')}><span className="sidebar-icon">{ICON.costosAdicionales}</span><span className="sidebar-label">Costos Adicionales</span></div>
+        {puede('operaciones') && (
+          <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} title="Operaciones Activas" onClick={() => setModuloActivo('operaciones')}>
+            <span className="sidebar-icon">{ICON.operaciones}</span>
+            <span className="sidebar-label">Operaciones Activas</span>
           </div>
         )}
 
-        <div className={`sidebar-item sidebar-item-with-icon ${esClientesActivo && !menuClientesAbierto ? 'active' : ''}`} title="Clientes" onClick={() => toggleGrupo(setMenuClientesAbierto)}>
-          <span className="sidebar-icon">{ICON.clientes}</span>
-          <span className="sidebar-label">Clientes</span>
-          <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuClientesAbierto ? '▼' : '▶'}</span>
-        </div>
-        {menuClientesAbierto && (
-          <div className="sidebar-submenu">
-            <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">Convenio de Clientes</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">Facturación</span></div>
+        {puede('serviciosCompletados') && (
+          <div className={`sidebar-item ${moduloActivo === 'serviciosCompletados' ? 'active' : ''}`} title="Servicios Completados" onClick={() => setModuloActivo('serviciosCompletados')}>
+            <span className="sidebar-icon">{ICON.serviciosCompletados}</span>
+            <span className="sidebar-label">Servicios Completados</span>
           </div>
         )}
 
-        <div className={`sidebar-item sidebar-item-with-icon ${esProveedoresActivo && !menuProveedoresAbierto ? 'active' : ''}`} title="Proveedores" onClick={() => toggleGrupo(setMenuProveedoresAbierto)}>
-          <span className="sidebar-icon">{ICON.proveedores}</span>
-          <span className="sidebar-label">Proveedores</span>
-          <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuProveedoresAbierto ? '▼' : '▶'}</span>
-        </div>
-        {menuProveedoresAbierto && (
-          <div className="sidebar-submenu">
-            <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">Convenio de Proveedores</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">Facturación</span></div>
+        {puede('serviciosCancelados') && (
+          <div className={`sidebar-item ${moduloActivo === 'serviciosCancelados' ? 'active' : ''}`} title="Servicios Cancelados" onClick={() => setModuloActivo('serviciosCancelados')}>
+            <span className="sidebar-icon">{ICON.serviciosCancelados}</span>
+            <span className="sidebar-label">Servicios Cancelados</span>
           </div>
         )}
 
-        <div className={`sidebar-item sidebar-item-with-icon ${esEmpleadosActivo && !menuEmpleadosAbierto ? 'active' : ''}`} title="Empleados" onClick={() => toggleGrupo(setMenuEmpleadosAbierto)}>
-          <span className="sidebar-icon">{ICON.empleados}</span>
-          <span className="sidebar-label">Empleados</span>
-          <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuEmpleadosAbierto ? '▼' : '▶'}</span>
-        </div>
-        {menuEmpleadosAbierto && (
-          <div className="sidebar-submenu">
-            <div className={`sidebar-subitem ${moduloActivo === 'colaboradores' ? 'active' : ''}`} onClick={() => setModuloActivo('colaboradores')}><span className="sidebar-icon">{ICON.colaboradores}</span><span className="sidebar-label">Colaboradores</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'historialAsistencia' ? 'active' : ''}`} onClick={() => setModuloActivo('historialAsistencia')}><span className="sidebar-icon">{ICON.historialAsistencia}</span><span className="sidebar-label">Historial de Chequeo</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'referenciasNomina' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasNomina')}><span className="sidebar-icon">{ICON.referenciasNomina}</span><span className="sidebar-label">Nómina</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'deducciones' ? 'active' : ''}`} onClick={() => setModuloActivo('deducciones')}><span className="sidebar-icon">{ICON.deducciones}</span><span className="sidebar-label">Deducciones</span></div>
+        {puede('reportes') && (
+          <div className={`sidebar-item ${moduloActivo === 'reportes' ? 'active' : ''}`} title="Reportes" onClick={() => setModuloActivo('reportes')}>
+            <span className="sidebar-icon">{ICON.reportes}</span>
+            <span className="sidebar-label">Reportes</span>
           </div>
         )}
 
-        <div className={`sidebar-item sidebar-item-with-icon ${esBaseDeDatosActiva && !menuBasesDatosAbierto ? 'active' : ''}`} title="Bases de Datos" onClick={() => toggleGrupo(setMenuBasesDatosAbierto)}>
-          <span className="sidebar-icon">{ICON.basesDatos}</span>
-          <span className="sidebar-label">Bases de Datos</span>
-          <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuBasesDatosAbierto ? '▼' : '▶'}</span>
-        </div>
-        {menuBasesDatosAbierto && (
-          <div className="sidebar-submenu">
-            <div className={`sidebar-subitem ${moduloActivo === 'empresas' ? 'active' : ''}`} onClick={() => setModuloActivo('empresas')}><span className="sidebar-icon">{ICON.empresas}</span><span className="sidebar-label">Empresas</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'contactos' ? 'active' : ''}`} onClick={() => setModuloActivo('contactos')}><span className="sidebar-icon">{ICON.contactos}</span><span className="sidebar-label">Contactos</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'direcciones' ? 'active' : ''}`} onClick={() => setModuloActivo('direcciones')}><span className="sidebar-icon">{ICON.direcciones}</span><span className="sidebar-label">Direcciones</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'tipoCambio' ? 'active' : ''}`} onClick={() => setModuloActivo('tipoCambio')}><span className="sidebar-icon">{ICON.tipoCambio}</span><span className="sidebar-label">Tipo de Cambio</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'combustible' ? 'active' : ''}`} onClick={() => setModuloActivo('combustible')}><span className="sidebar-icon">{ICON.combustible}</span><span className="sidebar-label">Combustible</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'unidades' ? 'active' : ''}`} onClick={() => setModuloActivo('unidades')}><span className="sidebar-icon">{ICON.unidades}</span><span className="sidebar-label">Unidades Propias</span></div> 
-            <div className={`sidebar-subitem ${moduloActivo === 'remolques' ? 'active' : ''}`} onClick={() => setModuloActivo('remolques')}><span className="sidebar-icon">{ICON.remolques}</span><span className="sidebar-label">Remolques</span></div> 
-            <div className={`sidebar-subitem ${moduloActivo === 'proveedoresUnidad' ? 'active' : ''}`} onClick={() => setModuloActivo('proveedoresUnidad')}><span className="sidebar-icon">{ICON.proveedoresUnidad}</span><span className="sidebar-label">Proveedores de Unidad</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'unidadesProveedor' ? 'active' : ''}`} onClick={() => setModuloActivo('unidadesProveedor')}><span className="sidebar-icon">{ICON.unidadesProveedor}</span><span className="sidebar-label">Unidades del Proveedor</span></div>
+        {verGastos && (
+          <>
+            <div className={`sidebar-item sidebar-item-with-icon ${esGastosActivo && !menuGastosAbierto ? 'active' : ''}`} title="Gastos" onClick={() => toggleGrupo(setMenuGastosAbierto)}>
+              <span className="sidebar-icon">{ICON.gastos}</span>
+              <span className="sidebar-label">Gastos</span>
+              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuGastosAbierto ? '▼' : '▶'}</span>
+            </div>
+            {menuGastosAbierto && (
+              <div className="sidebar-submenu">
+                {puede('mtto') && <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => setModuloActivo('mtto')}><span className="sidebar-icon">{ICON.mtto}</span><span className="sidebar-label">MTTO</span></div>}
+                {puede('referenciasDiesel') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasDiesel')}><span className="sidebar-icon">{ICON.referenciasDiesel}</span><span className="sidebar-label">Referencias del Diesel</span></div>}
+                {puede('referenciasPuentes') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasPuentes' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasPuentes')}><span className="sidebar-icon">{ICON.referenciasPuentes}</span><span className="sidebar-label">Referencias de Puentes</span></div>}
+                {puede('costosAdicionales') && <div className={`sidebar-subitem ${moduloActivo === 'costosAdicionales' ? 'active' : ''}`} onClick={() => setModuloActivo('costosAdicionales')}><span className="sidebar-icon">{ICON.costosAdicionales}</span><span className="sidebar-label">Costos Adicionales</span></div>}
+              </div>
+            )}
+          </>
+        )}
+
+        {verClientes && (
+          <>
+            <div className={`sidebar-item sidebar-item-with-icon ${esClientesActivo && !menuClientesAbierto ? 'active' : ''}`} title="Clientes" onClick={() => toggleGrupo(setMenuClientesAbierto)}>
+              <span className="sidebar-icon">{ICON.clientes}</span>
+              <span className="sidebar-label">Clientes</span>
+              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuClientesAbierto ? '▼' : '▶'}</span>
+            </div>
+            {menuClientesAbierto && (
+              <div className="sidebar-submenu">
+                {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">Convenio de Clientes</span></div>}
+                {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">Facturación</span></div>}
+              </div>
+            )}
+          </>
+        )}
+
+        {verProveedores && (
+          <>
+            <div className={`sidebar-item sidebar-item-with-icon ${esProveedoresActivo && !menuProveedoresAbierto ? 'active' : ''}`} title="Proveedores" onClick={() => toggleGrupo(setMenuProveedoresAbierto)}>
+              <span className="sidebar-icon">{ICON.proveedores}</span>
+              <span className="sidebar-label">Proveedores</span>
+              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuProveedoresAbierto ? '▼' : '▶'}</span>
+            </div>
+            {menuProveedoresAbierto && (
+              <div className="sidebar-submenu">
+                {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">Convenio de Proveedores</span></div>}
+                {puede('facturacionProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">Facturación</span></div>}
+              </div>
+            )}
+          </>
+        )}
+
+        {verEmpleados && (
+          <>
+            <div className={`sidebar-item sidebar-item-with-icon ${esEmpleadosActivo && !menuEmpleadosAbierto ? 'active' : ''}`} title="Empleados" onClick={() => toggleGrupo(setMenuEmpleadosAbierto)}>
+              <span className="sidebar-icon">{ICON.empleados}</span>
+              <span className="sidebar-label">Empleados</span>
+              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuEmpleadosAbierto ? '▼' : '▶'}</span>
+            </div>
+            {menuEmpleadosAbierto && (
+              <div className="sidebar-submenu">
+                {puede('colaboradores') && <div className={`sidebar-subitem ${moduloActivo === 'colaboradores' ? 'active' : ''}`} onClick={() => setModuloActivo('colaboradores')}><span className="sidebar-icon">{ICON.colaboradores}</span><span className="sidebar-label">Colaboradores</span></div>}
+                {puede('historialAsistencia') && <div className={`sidebar-subitem ${moduloActivo === 'historialAsistencia' ? 'active' : ''}`} onClick={() => setModuloActivo('historialAsistencia')}><span className="sidebar-icon">{ICON.historialAsistencia}</span><span className="sidebar-label">Historial de Chequeo</span></div>}
+                {puede('referenciasNomina') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasNomina' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasNomina')}><span className="sidebar-icon">{ICON.referenciasNomina}</span><span className="sidebar-label">Nómina</span></div>}
+                {puede('deducciones') && <div className={`sidebar-subitem ${moduloActivo === 'deducciones' ? 'active' : ''}`} onClick={() => setModuloActivo('deducciones')}><span className="sidebar-icon">{ICON.deducciones}</span><span className="sidebar-label">Deducciones</span></div>}
+              </div>
+            )}
+          </>
+        )}
+
+        {verBasesDatos && (
+          <>
+            <div className={`sidebar-item sidebar-item-with-icon ${esBaseDeDatosActiva && !menuBasesDatosAbierto ? 'active' : ''}`} title="Bases de Datos" onClick={() => toggleGrupo(setMenuBasesDatosAbierto)}>
+              <span className="sidebar-icon">{ICON.basesDatos}</span>
+              <span className="sidebar-label">Bases de Datos</span>
+              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuBasesDatosAbierto ? '▼' : '▶'}</span>
+            </div>
+            {menuBasesDatosAbierto && (
+              <div className="sidebar-submenu">
+                {puede('empresas') && <div className={`sidebar-subitem ${moduloActivo === 'empresas' ? 'active' : ''}`} onClick={() => setModuloActivo('empresas')}><span className="sidebar-icon">{ICON.empresas}</span><span className="sidebar-label">Empresas</span></div>}
+                {puede('contactos') && <div className={`sidebar-subitem ${moduloActivo === 'contactos' ? 'active' : ''}`} onClick={() => setModuloActivo('contactos')}><span className="sidebar-icon">{ICON.contactos}</span><span className="sidebar-label">Contactos</span></div>}
+                {puede('direcciones') && <div className={`sidebar-subitem ${moduloActivo === 'direcciones' ? 'active' : ''}`} onClick={() => setModuloActivo('direcciones')}><span className="sidebar-icon">{ICON.direcciones}</span><span className="sidebar-label">Direcciones</span></div>}
+                {puede('tipoCambio') && <div className={`sidebar-subitem ${moduloActivo === 'tipoCambio' ? 'active' : ''}`} onClick={() => setModuloActivo('tipoCambio')}><span className="sidebar-icon">{ICON.tipoCambio}</span><span className="sidebar-label">Tipo de Cambio</span></div>}
+                {puede('combustible') && <div className={`sidebar-subitem ${moduloActivo === 'combustible' ? 'active' : ''}`} onClick={() => setModuloActivo('combustible')}><span className="sidebar-icon">{ICON.combustible}</span><span className="sidebar-label">Combustible</span></div>}
+                {puede('unidades') && <div className={`sidebar-subitem ${moduloActivo === 'unidades' ? 'active' : ''}`} onClick={() => setModuloActivo('unidades')}><span className="sidebar-icon">{ICON.unidades}</span><span className="sidebar-label">Unidades Propias</span></div>}
+                {puede('remolques') && <div className={`sidebar-subitem ${moduloActivo === 'remolques' ? 'active' : ''}`} onClick={() => setModuloActivo('remolques')}><span className="sidebar-icon">{ICON.remolques}</span><span className="sidebar-label">Remolques</span></div>}
+                {puede('proveedoresUnidad') && <div className={`sidebar-subitem ${moduloActivo === 'proveedoresUnidad' ? 'active' : ''}`} onClick={() => setModuloActivo('proveedoresUnidad')}><span className="sidebar-icon">{ICON.proveedoresUnidad}</span><span className="sidebar-label">Proveedores de Unidad</span></div>}
+                {puede('unidadesProveedor') && <div className={`sidebar-subitem ${moduloActivo === 'unidadesProveedor' ? 'active' : ''}`} onClick={() => setModuloActivo('unidadesProveedor')}><span className="sidebar-icon">{ICON.unidadesProveedor}</span><span className="sidebar-label">Unidades del Proveedor</span></div>}
+              </div>
+            )}
+          </>
+        )}
+
+        {puede('catalogos') && (
+          <div className={`sidebar-item ${moduloActivo === 'catalogos' ? 'active' : ''}`} title="Catálogos" onClick={() => setModuloActivo('catalogos')}>
+            <span className="sidebar-icon">{ICON.catalogos}</span>
+            <span className="sidebar-label">Catálogos</span>
           </div>
         )}
 
-        <div className={`sidebar-item ${moduloActivo === 'catalogos' ? 'active' : ''}`} title="Catálogos" onClick={() => setModuloActivo('catalogos')}>
-          <span className="sidebar-icon">{ICON.catalogos}</span>
-          <span className="sidebar-label">Catálogos</span>
-        </div>
-
-        <div className={`sidebar-item sidebar-item-with-icon ${esConfiguracionActivo && !menuConfiguracionAbierto ? 'active' : ''}`} title="Configuración" onClick={() => toggleGrupo(setMenuConfiguracionAbierto)}>
-          <span className="sidebar-icon">{ICON.configuracion}</span>
-          <span className="sidebar-label">Configuración</span>
-          <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuConfiguracionAbierto ? '▼' : '▶'}</span>
-        </div>
-        {menuConfiguracionAbierto && (
-          <div className="sidebar-submenu">
-            <div className={`sidebar-subitem ${moduloActivo === 'usuarios' ? 'active' : ''}`} onClick={() => setModuloActivo('usuarios')}><span className="sidebar-icon">{ICON.usuarios}</span><span className="sidebar-label">Usuarios</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => setModuloActivo('roles')}><span className="sidebar-icon">{ICON.roles}</span><span className="sidebar-label">Roles y Permisos</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => setModuloActivo('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => setModuloActivo('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>
-            <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => setModuloActivo('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>
-          </div>
+        {verConfiguracion && (
+          <>
+            <div className={`sidebar-item sidebar-item-with-icon ${esConfiguracionActivo && !menuConfiguracionAbierto ? 'active' : ''}`} title="Configuración" onClick={() => toggleGrupo(setMenuConfiguracionAbierto)}>
+              <span className="sidebar-icon">{ICON.configuracion}</span>
+              <span className="sidebar-label">Configuración</span>
+              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuConfiguracionAbierto ? '▼' : '▶'}</span>
+            </div>
+            {menuConfiguracionAbierto && (
+              <div className="sidebar-submenu">
+                {puede('usuarios') && <div className={`sidebar-subitem ${moduloActivo === 'usuarios' ? 'active' : ''}`} onClick={() => setModuloActivo('usuarios')}><span className="sidebar-icon">{ICON.usuarios}</span><span className="sidebar-label">Usuarios</span></div>}
+                {puede('roles') && <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => setModuloActivo('roles')}><span className="sidebar-icon">{ICON.roles}</span><span className="sidebar-label">Roles y Permisos</span></div>}
+                {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => setModuloActivo('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>}
+                {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => setModuloActivo('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>}
+                {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => setModuloActivo('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>}
+              </div>
+            )}
+          </>
         )}
 
         <div className="sidebar-footer">
@@ -426,24 +549,27 @@ function App() {
               </button>
             )}
             
-            <div className="avatar" style={{ cursor: 'pointer', backgroundColor: '#D84315', color: 'white', border: 'none' }} onClick={() => setPerfilAbierto(!perfilAbierto)}>
-              {usuarioActualDB?.nombre ? usuarioActualDB.nombre.substring(0,2).toUpperCase() : 'JM'}
+            <div className="avatar" style={{ cursor: 'pointer', backgroundColor: '#D84315', color: 'white', border: 'none', overflow: 'hidden' }} onClick={() => setPerfilAbierto(!perfilAbierto)}>
+              {fotoUsuario
+                ? <img src={fotoUsuario} alt="Perfil" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                : inicialesUsuario}
             </div>
 
             {perfilAbierto && (
               <div className="profile-dropdown">
                 <div className="profile-header-info">
-                  <div className="profile-avatar-large" style={{ backgroundColor: '#D84315', color: 'white' }}>
-                    {usuarioActualDB?.nombre ? usuarioActualDB.nombre.substring(0,2).toUpperCase() : 'JM'}
+                  <div className="profile-avatar-large" style={{ backgroundColor: '#D84315', color: 'white', overflow: 'hidden' }}>
+                    {fotoUsuario
+                      ? <img src={fotoUsuario} alt="Perfil" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                      : inicialesUsuario}
                   </div>
                   <div className="profile-text">
                     <span className="profile-name">{usuarioActualDB?.nombre || 'Usuario'}</span>
-                    <span className="profile-role">{usuarioActualDB?.rol || 'Rol'}</span>
+                    <span className="profile-role">{(usuarioActualDB?.roles && usuarioActualDB.roles.join(', ')) || usuarioActualDB?.rol || 'Rol'}</span>
                   </div>
                 </div>
                 <div className="profile-actions">
-                  <button className="btn-profile">Actualizar Foto de Perfil</button>
-                  <button className="btn-profile">Configuración</button>
+                  <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setMiPerfilAbierto(true); }}>Mi Perfil (Foto y Contraseña)</button>
                   <button className="btn-profile logout" onClick={() => handleCerrarSesion('manual')}>Cerrar Sesión</button>
                 </div>
               </div>
@@ -451,37 +577,47 @@ function App() {
           </div>
         </div>
 
-        {moduloActivo === 'operaciones' && <OperacionesDashboard />}
-        {moduloActivo === 'serviciosCompletados' && <ServiciosCompletados />}
-        {moduloActivo === 'serviciosCancelados' && <ServiciosCancelados />}
-        {moduloActivo === 'reportes' && <ReportesDashboard />}
-        {moduloActivo === 'mtto' && <MttoDashboard />} 
-        {moduloActivo === 'referenciasDiesel' && <ReferenciasDieselDashboard />} 
-        {moduloActivo === 'referenciasPuentes' && <ReferenciasPuentesDashboard />} 
-        {moduloActivo === 'costosAdicionales' && <CostosAdicionalesDashboard />} 
-        {moduloActivo === 'referenciasNomina' && <ReferenciasNominaDashboard />} 
-        {moduloActivo === 'deducciones' && <DeduccionesDashboard />} 
-        {moduloActivo === 'empresas' && <EmpresasDashboard />}
-        {moduloActivo === 'contactos' && <ContactosDashboard />}
-        {moduloActivo === 'direcciones' && <DireccionesDashboard />}
-        {moduloActivo === 'tipoCambio' && <TipoCambioDashboard />}
-        {moduloActivo === 'combustible' && <CombustibleDashboard />}
-        {moduloActivo === 'unidades' && <UnidadesDashboard />} 
-        {moduloActivo === 'remolques' && <RemolquesDashboard />} 
-        {moduloActivo === 'proveedoresUnidad' && <ProveedoresUnidadDashboard />}
-        {moduloActivo === 'unidadesProveedor' && <UnidadesProveedorDashboard />}
-        {moduloActivo === 'conveniosClientes' && <ConveniosClientesDashboard />}
-        {moduloActivo === 'conveniosProveedores' && <ConveniosProveedoresDashboard />}
-        {moduloActivo === 'catalogos' && <CatalogosDashboard />}
-        {moduloActivo === 'colaboradores' && <EmpleadosDashboard />}
-        {moduloActivo === 'historialAsistencia' && <HistorialChequeosDashboard usuarioActual={usuarioActualDB} />}
-        {moduloActivo === 'roles' && <RolesDashboard />}
-        {moduloActivo === 'usuarios' && <UsuariosDashboard />}
-        {moduloActivo === 'logs' && <LogsDashboard />}
-        {moduloActivo === 'flujosOperacion' && <ConfiguradorStatus />}
-        {moduloActivo === 'datosEmpresa' && <ConfiguracionEmpresa />}
-        {moduloActivo === 'facturacionClientes' && <FacturacionClientesDashboard />}
-        {moduloActivo === 'facturacionProveedores' && <FacturacionProveedoresDashboard />}
+        {sinModulos ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 120px)', color: '#8b949e', textAlign: 'center', padding: '24px' }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🔒</div>
+            <h2 style={{ color: '#f0f6fc', margin: '0 0 8px 0' }}>Sin módulos asignados</h2>
+            <p style={{ maxWidth: '420px' }}>Tu usuario no tiene módulos habilitados todavía. Contacta al administrador para que te asigne un rol con acceso.</p>
+          </div>
+        ) : (
+          <>
+            {moduloActivo === 'operaciones' && puede('operaciones') && <OperacionesDashboard />}
+            {moduloActivo === 'serviciosCompletados' && puede('serviciosCompletados') && <ServiciosCompletados />}
+            {moduloActivo === 'serviciosCancelados' && puede('serviciosCancelados') && <ServiciosCancelados />}
+            {moduloActivo === 'reportes' && puede('reportes') && <ReportesDashboard />}
+            {moduloActivo === 'mtto' && puede('mtto') && <MttoDashboard />} 
+            {moduloActivo === 'referenciasDiesel' && puede('referenciasDiesel') && <ReferenciasDieselDashboard />} 
+            {moduloActivo === 'referenciasPuentes' && puede('referenciasPuentes') && <ReferenciasPuentesDashboard />} 
+            {moduloActivo === 'costosAdicionales' && puede('costosAdicionales') && <CostosAdicionalesDashboard />} 
+            {moduloActivo === 'referenciasNomina' && puede('referenciasNomina') && <ReferenciasNominaDashboard />} 
+            {moduloActivo === 'deducciones' && puede('deducciones') && <DeduccionesDashboard />} 
+            {moduloActivo === 'empresas' && puede('empresas') && <EmpresasDashboard />}
+            {moduloActivo === 'contactos' && puede('contactos') && <ContactosDashboard />}
+            {moduloActivo === 'direcciones' && puede('direcciones') && <DireccionesDashboard />}
+            {moduloActivo === 'tipoCambio' && puede('tipoCambio') && <TipoCambioDashboard />}
+            {moduloActivo === 'combustible' && puede('combustible') && <CombustibleDashboard />}
+            {moduloActivo === 'unidades' && puede('unidades') && <UnidadesDashboard />} 
+            {moduloActivo === 'remolques' && puede('remolques') && <RemolquesDashboard />} 
+            {moduloActivo === 'proveedoresUnidad' && puede('proveedoresUnidad') && <ProveedoresUnidadDashboard />}
+            {moduloActivo === 'unidadesProveedor' && puede('unidadesProveedor') && <UnidadesProveedorDashboard />}
+            {moduloActivo === 'conveniosClientes' && puede('conveniosClientes') && <ConveniosClientesDashboard />}
+            {moduloActivo === 'conveniosProveedores' && puede('conveniosProveedores') && <ConveniosProveedoresDashboard />}
+            {moduloActivo === 'catalogos' && puede('catalogos') && <CatalogosDashboard />}
+            {moduloActivo === 'colaboradores' && puede('colaboradores') && <EmpleadosDashboard />}
+            {moduloActivo === 'historialAsistencia' && puede('historialAsistencia') && <HistorialChequeosDashboard usuarioActual={usuarioActualDB} />}
+            {moduloActivo === 'roles' && puede('roles') && <RolesDashboard />}
+            {moduloActivo === 'usuarios' && puede('usuarios') && <UsuariosDashboard />}
+            {moduloActivo === 'logs' && puede('logs') && <LogsDashboard />}
+            {moduloActivo === 'flujosOperacion' && puede('flujosOperacion') && <ConfiguradorStatus />}
+            {moduloActivo === 'datosEmpresa' && puede('datosEmpresa') && <ConfiguracionEmpresa />}
+            {moduloActivo === 'facturacionClientes' && puede('facturacionClientes') && <FacturacionClientesDashboard />}
+            {moduloActivo === 'facturacionProveedores' && puede('facturacionProveedores') && <FacturacionProveedoresDashboard />}
+          </>
+        )}
         
       </div>
     </div>
