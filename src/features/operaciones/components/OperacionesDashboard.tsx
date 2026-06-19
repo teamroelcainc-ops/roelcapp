@@ -21,10 +21,12 @@
 //    2. Operaciones paginadas (limit 50) con "Cargar más" (startAfter).
 //    3. guardarHorario / registrarStatusRapido NO recargan todas las operaciones.
 //
-// B2) ✅ CARGA POST-LOGIN MÁS RÁPIDA (NUEVO):
-//    La descarga de catálogos pendientes se DIFIERE a requestIdleCallback
-//    (respaldo setTimeout) para no competir con la carga de la tabla de
-//    operaciones, que es lo primero que ve el usuario al iniciar sesión.
+// B2) ✅ CARGA DE NOMBRES (CATÁLOGOS):
+//    Al montar se hidrata desde caché (0 lecturas si está vigente) y se cargan
+//    de inmediato los catálogos faltantes/vencidos. Esto es obligatorio para que
+//    los campos relacionados (Tipo de Operación, Status, Convenios, etc.) se
+//    muestren por NOMBRE y no por ID. La velocidad post-login se gana sobre todo
+//    en App.tsx con carga diferida (React.lazy) de cada módulo.
 //
 // C) VISIBILIDAD DE DOCUMENTOS POR TIPO DE OPERACIÓN (DOCS_POR_TIPO).
 //
@@ -348,22 +350,15 @@ const OperacionesDashboard = () => {
   };
 
   useEffect(() => {
-    // 1) Pinta los nombres al instante desde la caché local (0 lecturas).
+    // 1) Pinta los nombres al instante desde la caché local (0 lecturas si está vigente).
     hidratarCatalogosDesdeCache();
 
-    // 2) La descarga de catálogos pendientes se DIFIERE hasta que el navegador
-    //    esté libre, para no competir con la carga de la tabla de operaciones
-    //    (que es lo primero que ve el usuario al iniciar sesión).
-    const pedirIdle = (cb: () => void): any => {
-      const ric = (window as any).requestIdleCallback;
-      return typeof ric === 'function' ? ric(cb, { timeout: 3000 }) : setTimeout(cb, 1200);
-    };
-    const cancelarIdle = (id: any) => {
-      const cic = (window as any).cancelIdleCallback;
-      if (typeof cic === 'function') cic(id); else clearTimeout(id);
-    };
-    const idleId = pedirIdle(() => { cargarCatalogosSiEsNecesario(); });
-    return () => cancelarIdle(idleId);
+    // 2) Carga DE INMEDIATO los catálogos faltantes o vencidos. Los campos
+    //    relacionados (Tipo de Operación, Status, Convenios, etc.) se muestran
+    //    por NOMBRE resolviéndolos contra el catálogo; si la carga se difiere,
+    //    la tabla mostraría el ID en lugar del nombre. Por eso NO se difiere.
+    //    Con caché vigente esto NO genera lecturas (solo trae lo que falta).
+    cargarCatalogosSiEsNecesario();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
