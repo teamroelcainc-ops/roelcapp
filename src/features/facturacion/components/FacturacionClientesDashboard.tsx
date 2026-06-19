@@ -1,30 +1,27 @@
 // src/features/facturacion/components/FacturacionClientesDashboard.tsx
 //
 // ═══════════════════════════════════════════════════════════════════════
-// CAMBIOS APLICADOS EN ESTA VERSIÓN
+// CAMBIOS EN ESTA VERSIÓN (solicitados)
 // ═══════════════════════════════════════════════════════════════════════
-// 1) Exportar a Excel con SELECTOR + ORDEN de columnas (modal "Configurar
-//    columnas") para el Historial de Facturas. Lo configurado se refleja
-//    tanto en la tabla como en el archivo exportado.
-// 2) Conversión idéntica a la del formulario de Operaciones (lógica USD/MXN):
-//    subtotal = montoConvenioCliente + cargosAdicionales
-//      · USD  -> dólares = subtotal ; conversión = subtotal * TC
-//      · MXN  -> pesos   = subtotal ; conversión = subtotal
-//    Se prefieren los valores ya guardados; si faltan, se recalculan.
-//    El total de la factura ahora suma la CONVERSIÓN.
-// 3) Una operación ya facturada NO aparece en "Asignar Operaciones"
-//    (vista por defecto = Pendientes).
-// 4) En la ficha de la factura, al clicar una referencia se abre el DETALLE
-//    completo de la operación (mismas pestañas que OperacionesDashboard).
-// 5) Control para ORDENAR en ambas pestañas (botón de dirección + cabeceras
-//    clicables).
-// 6) Botones para filtrar Pendientes (rojo) / Facturadas (verde).
+// 1) FILTRO PRINCIPAL = RANGO DE FECHAS (Desde / Hasta). Los registros solo
+//    se cargan/aparecen cuando AMBAS fechas están puestas. El CLIENTE es
+//    OPCIONAL (solo acota el resultado). Aplica a las dos pestañas.
+// 2) "Asignar Operaciones" muestra SOLO operaciones NO facturadas (las que no
+//    están en el Historial). Se determina con la bandera de la propia
+//    operación (facturado / facturaClienteId), sin leer la colección de
+//    facturas → cero lecturas extra.
+// 3) LECTURAS MÍNIMAS:
+//    · Empresas: caché local (cat_v1__empresas) primero; getDocs UNA vez solo
+//      si la caché está vacía. Se elimina el onSnapshot permanente.
+//    · Operaciones y facturas: solo se consultan con ambas fechas puestas,
+//      acotadas por el rango + un límite. Nada de cargas amplias por defecto.
+// (Se conservan: conversión USD/MXN, exportación a Excel con columnas
+//  configurables, ficha de factura y detalle de operación.)
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   collection,
-  onSnapshot,
   query,
   writeBatch,
   doc,
@@ -42,12 +39,25 @@ import * as XLSX from 'xlsx';
 // ──────────────────────────────────────────────────────────────────────
 const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
 const STATUS_COMPLETADOS = ['f557b751', 'c2d57403'];
-const LIMITE_OPERACIONES_CLIENTE = 100;
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
+// Límites para acotar lecturas (ajustables).
+const LIMITE_OPS_RANGO = 400;
+const LIMITE_FACTURAS = 200;
+
+// ✅ Lee un catálogo desde la caché local (cat_v1__<alias>) que mantienen
+// OperacionesDashboard / FormularioOperacion. Evita lecturas de Firestore.
+const leerCacheLocal = (alias: string): any[] | null => {
+  try {
+    const raw = localStorage.getItem(`cat_v1__${alias}`);
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return obj && Array.isArray(obj.data) ? obj.data : null;
+  } catch { return null; }
+};
+
 // Columnas configurables del Historial de Facturas (tabla + Excel).
-// El campo `id` se usa para resolver el valor; `label` es el encabezado.
 const COLUMNAS_FACTURA_BASE = [
   { id: 'invoice',   label: 'Invoice',     visible: true },
   { id: 'fecha',     label: 'Fecha',       visible: true },
@@ -60,7 +70,6 @@ const COLUMNAS_FACTURA_BASE = [
 ];
 
 // Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
-// orden:true -> la cabecera es clicable para ordenar por ese campo.
 const COLUMNAS_OPS_BASE = [
   { id: 'ref',           label: 'Ref. Operación', visible: true,  orden: true },
   { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true,  orden: true },
@@ -87,12 +96,10 @@ const calcularConversionCliente = (op: any) => {
   const esPeso = fact === ID_MXN || nombreMoneda.includes('MXN');
   if (esDolar) { dol = subtotal; pes = 0; conv = subtotal * tc; }
   else if (esPeso) { dol = 0; pes = subtotal; conv = subtotal; }
-  else { conv = subtotal; } // moneda sin determinar: deja la conversión = subtotal
+  else { conv = subtotal; }
   return { subtotal, dol, pes, conv };
 };
 
-// Prefiere los valores ya calculados/guardados por el formulario; si no
-// existen, recalcula con la misma fórmula.
 const obtenerMontoOperacion = (op: any) => {
   const convGuardada = Number(op.conversionCliente);
   if (!isNaN(convGuardada) && convGuardada > 0) {
@@ -107,7 +114,7 @@ const obtenerMontoOperacion = (op: any) => {
 };
 
 export const FacturacionClientesDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial'>('historial');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial'>('operaciones');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
@@ -117,14 +124,15 @@ export const FacturacionClientesDashboard = () => {
   // Catálogos
   const [empresasList, setEmpresasList] = useState<any[]>([]);
 
-  // Filtros / selección
+  // ✅ (1) Filtro principal: rango de fechas (obligatorio). Cliente opcional.
+  const [fechaDesdeOps, setFechaDesdeOps] = useState('');
+  const [fechaHastaOps, setFechaHastaOps] = useState('');
   const [filtroCliente, setFiltroCliente] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
-  // ✅ (6) Filtro Pendientes / Facturadas
-  const [filtroEstadoOps, setFiltroEstadoOps] = useState<'pendientes' | 'facturadas'>('pendientes');
+  const ambasFechas = !!(fechaDesdeOps && fechaHastaOps);
 
-  // ✅ (5) Orden
+  // Orden
   const [ordenOps, setOrdenOps] = useState<{ campo: string; dir: 'asc' | 'desc' }>({ campo: 'fechaServicio', dir: 'desc' });
   const [ordenFac, setOrdenFac] = useState<{ campo: string; dir: 'asc' | 'desc' }>({ campo: 'fecha', dir: 'desc' });
 
@@ -141,18 +149,16 @@ export const FacturacionClientesDashboard = () => {
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
 
-  // ✅ (1) Columnas del historial
+  // Columnas del historial
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasFactura, setColumnasFactura] = useState(COLUMNAS_FACTURA_BASE.map(c => ({ ...c })));
-  // Configurador de columnas + rango de fechas para la tabla "Asignar Operaciones"
+  // Columnas de "Asignar Operaciones"
   const [modalColumnasOps, setModalColumnasOps] = useState(false);
   const [columnasOps, setColumnasOps] = useState(COLUMNAS_OPS_BASE.map(c => ({ ...c })));
   const [draggedColOpsIndex, setDraggedColOpsIndex] = useState<number | null>(null);
-  const [fechaDesdeOps, setFechaDesdeOps] = useState('');
-  const [fechaHastaOps, setFechaHastaOps] = useState('');
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // ✅ (4) Detalle de operación (al clicar referencia en la ficha de factura)
+  // Detalle de operación
   const [operacionDetalle, setOperacionDetalle] = useState<any | null>(null);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
@@ -192,47 +198,59 @@ export const FacturacionClientesDashboard = () => {
   };
 
   // ──────────────────────────────────────────────────────────────────
-  // 1. Carga de empresas (buscador de cliente en ambas pestañas)
+  // ✅ (3) Empresas: caché-primero, getDocs UNA vez si falta. Sin onSnapshot.
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const unSubEmpresas = onSnapshot(collection(db, 'empresas'), (snap) => {
-      setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    });
-    return () => { unSubEmpresas(); };
+    const cache = leerCacheLocal('empresas');
+    if (cache && cache.length) { setEmpresasList(cache); return; }
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'empresas'));
+        if (!activo) return;
+        const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+        setEmpresasList(docs);
+        try { localStorage.setItem('cat_v1__empresas', JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
+      } catch (e) { console.error('Error cargando empresas:', e); }
+    })();
+    return () => { activo = false; };
   }, []);
 
   // ──────────────────────────────────────────────────────────────────
-  // 2. Carga de FACTURAS del cliente (on demand)
+  // ✅ (1)(3) FACTURAS por RANGO DE FECHAS (cliente opcional). Solo en la
+  //    pestaña historial y solo con ambas fechas. Acotado por límite.
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!filtroCliente) { setFacturasGlobales([]); return; }
+    if (activeTab !== 'historial') return;
+    if (!ambasFechas) { setFacturasGlobales([]); return; }
 
-    const descargarFacturasCliente = async () => {
+    const descargar = async () => {
       setCargandoFacturas(true);
+      const filtrarMem = (fs: any[]) => fs.filter(f => (!filtroCliente || String(f.clienteId || '') === filtroCliente));
       try {
-        const q1 = query(
-          collection(db, 'facturas_clientes'),
-          where('clienteId', '==', filtroCliente),
-          orderBy('createdAt', 'desc'),
-          limit(100)
-        );
-        const snap = await getDocs(q1);
+        const cons: any[] = [
+          where('fecha', '>=', fechaDesdeOps),
+          where('fecha', '<=', fechaHastaOps),
+          orderBy('fecha', 'desc'),
+          limit(LIMITE_FACTURAS),
+        ];
+        if (filtroCliente) cons.unshift(where('clienteId', '==', filtroCliente));
+        const snap = await getDocs(query(collection(db, 'facturas_clientes'), ...cons));
         setFacturasGlobales(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
       } catch (e1: any) {
         const msg1 = String(e1?.message || e1?.code || e1 || '');
         const esIndice = msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition');
         if (esIndice) {
-          console.warn('[Facturación Historial] Falta índice. Crea el índice:', msg1);
+          console.warn('[Facturación Historial] Falta índice. Fallback en memoria. Detalle:', msg1);
           try {
-            const q2 = query(
+            const snap2 = await getDocs(query(
               collection(db, 'facturas_clientes'),
-              where('clienteId', '==', filtroCliente),
-              limit(100)
-            );
-            const snap2 = await getDocs(q2);
-            const docs = snap2.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-            docs.sort((a: any, b: any) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-            setFacturasGlobales(docs);
+              where('fecha', '>=', fechaDesdeOps),
+              where('fecha', '<=', fechaHastaOps),
+              orderBy('fecha', 'desc'),
+              limit(LIMITE_FACTURAS),
+            ));
+            setFacturasGlobales(filtrarMem(snap2.docs.map(d => ({ id: d.id, ...(d.data() as any) }))));
           } catch (e2: any) {
             console.error('[Facturación Historial] Fallback falló:', e2);
             alert(`No se pudieron cargar las facturas.\n\nDetalle: ${e2?.message || e2}`);
@@ -245,73 +263,62 @@ export const FacturacionClientesDashboard = () => {
       setCargandoFacturas(false);
     };
 
-    descargarFacturasCliente();
-  }, [filtroCliente]);
+    descargar();
+  }, [fechaDesdeOps, fechaHastaOps, filtroCliente, activeTab, ambasFechas]);
 
   // ──────────────────────────────────────────────────────────────────
-  // 3. Carga de OPERACIONES del cliente (completadas) — on demand
-  //    Nota: NO filtramos las facturadas aquí; el filtro Pendientes/Facturadas
-  //    se aplica en memoria (ver `operacionesMostradas`).
+  // ✅ (1)(3) OPERACIONES por RANGO DE FECHAS + status completado (cliente
+  //    opcional). Solo en la pestaña operaciones y solo con ambas fechas.
+  //    El filtro "no facturadas" se aplica en memoria (ver operacionesMostradas).
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
-    if (!filtroCliente) { setOperacionesGlobales([]); return; }
+    if (!ambasFechas) { setOperacionesGlobales([]); return; }
 
-    const descargarOperacionesCliente = async () => {
+    const descargar = async () => {
       setCargandoOperaciones(true);
-      const filtrarLegacy = (ops: any[]) => ops.filter((op: any) =>
-        STATUS_COMPLETADOS.includes(String(op.status || '').trim())
+
+      const filtrarMem = (ops: any[]) => ops.filter(op =>
+        STATUS_COMPLETADOS.includes(String(op.status || '').trim()) &&
+        (!filtroCliente || String(op.clientePaga || op.clienteId || '') === filtroCliente)
       );
 
       let opsFinal: any[] = [];
       let exito = false;
 
       try {
-        const q1 = query(
-          collection(db, 'operaciones'),
-          where('clientePaga', '==', filtroCliente),
+        const cons: any[] = [
           where('status', 'in', STATUS_COMPLETADOS),
+          where('fechaServicio', '>=', fechaDesdeOps),
+          where('fechaServicio', '<=', fechaHastaOps),
           orderBy('fechaServicio', 'desc'),
-          limit(LIMITE_OPERACIONES_CLIENTE)
-        );
-        const snap = await getDocs(q1);
+          limit(LIMITE_OPS_RANGO),
+        ];
+        if (filtroCliente) cons.unshift(where('clientePaga', '==', filtroCliente));
+        const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
         opsFinal = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
         exito = true;
       } catch (e1: any) {
         const msg1 = String(e1?.message || e1?.code || e1 || '');
         const esIndice = msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition');
         if (esIndice) {
-          console.warn('[Facturación] Query óptima falló (falta índice). Crea el índice:', msg1);
+          console.warn('[Facturación] Falta índice (status+fecha). Fallback por rango de fecha. Detalle:', msg1);
           try {
-            const q2 = query(
+            // Sin índice compuesto: rango por fecha (índice automático) y se
+            // filtra status/cliente en memoria.
+            const snap2 = await getDocs(query(
               collection(db, 'operaciones'),
-              where('clientePaga', '==', filtroCliente),
-              where('status', 'in', STATUS_COMPLETADOS),
-              limit(LIMITE_OPERACIONES_CLIENTE * 2)
-            );
-            const snap2 = await getDocs(q2);
-            opsFinal = snap2.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-            opsFinal.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
-            opsFinal = opsFinal.slice(0, LIMITE_OPERACIONES_CLIENTE);
+              where('fechaServicio', '>=', fechaDesdeOps),
+              where('fechaServicio', '<=', fechaHastaOps),
+              orderBy('fechaServicio', 'desc'),
+              limit(LIMITE_OPS_RANGO * 2),
+            ));
+            const todas = snap2.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+            opsFinal = filtrarMem(todas).slice(0, LIMITE_OPS_RANGO);
             exito = true;
           } catch (e2: any) {
-            console.warn('[Facturación] Fallback 1 falló, probando legacy:', String(e2?.message || e2 || ''));
-            try {
-              const q3 = query(
-                collection(db, 'operaciones'),
-                where('clientePaga', '==', filtroCliente),
-                limit(500)
-              );
-              const snap3 = await getDocs(q3);
-              const todas = snap3.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-              opsFinal = filtrarLegacy(todas);
-              opsFinal.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
-              opsFinal = opsFinal.slice(0, LIMITE_OPERACIONES_CLIENTE);
-              exito = true;
-            } catch (e3: any) {
-              console.error('[Facturación] Todos los intentos fallaron:', e3);
-              alert(`No se pudieron cargar las operaciones del cliente.\n\nDetalle: ${e3?.message || e3}`);
-            }
+            console.error('[Facturación] Fallback falló:', e2);
+            alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${e2?.message || e2}`);
           }
         } else {
           console.error('[Facturación] Error inesperado:', e1);
@@ -323,8 +330,8 @@ export const FacturacionClientesDashboard = () => {
       setCargandoOperaciones(false);
     };
 
-    descargarOperacionesCliente();
-  }, [filtroCliente, activeTab]);
+    descargar();
+  }, [fechaDesdeOps, fechaHastaOps, filtroCliente, activeTab, ambasFechas]);
 
   // ──────────────────────────────────────────────────────────────────
   // Traductor de clientes / buscador
@@ -356,31 +363,61 @@ export const FacturacionClientesDashboard = () => {
   }, [empresasList, textoBuscarCliente]);
 
   const nombreClienteSeleccionado = useMemo(() => {
-    if (!filtroCliente || !empresasList.length) return '';
+    if (!filtroCliente || !empresasList.length) return filtroCliente || '';
     const cli = empresasList.find(e => e.id === filtroCliente);
     return cli?.nombre || filtroCliente;
   }, [filtroCliente, empresasList]);
 
+  // ──────────────────────────────────────────────────────────────────
+  // (2) "No facturada" = la operación no está ligada a ninguna factura.
+  // ──────────────────────────────────────────────────────────────────
+  const esFacturada = (op: any) => !!op.facturaClienteId || !!op.facturado;
+
+  // Cliente efectivo para la factura: el del filtro, o —si no hay filtro— el
+  // único cliente compartido por las operaciones seleccionadas.
+  const clienteFacturaId = useMemo(() => {
+    if (filtroCliente) return filtroCliente;
+    const ids = new Set<string>();
+    seleccionadas.forEach(id => {
+      const op = operacionesGlobales.find(o => o.id === id);
+      const c = op?.clientePaga || op?.clienteId;
+      if (c) ids.add(String(c));
+    });
+    return ids.size === 1 ? [...ids][0] : '';
+  }, [filtroCliente, seleccionadas, operacionesGlobales]);
+
+  const seleccionMultiCliente = useMemo(() => {
+    if (filtroCliente) return false;
+    const ids = new Set<string>();
+    seleccionadas.forEach(id => {
+      const op = operacionesGlobales.find(o => o.id === id);
+      const c = op?.clientePaga || op?.clienteId;
+      if (c) ids.add(String(c));
+    });
+    return ids.size > 1;
+  }, [filtroCliente, seleccionadas, operacionesGlobales]);
+
+  const nombreClienteFactura = useMemo(() => {
+    if (!clienteFacturaId) return '';
+    const porCatalogo = getNombreCliente(clienteFacturaId);
+    if (porCatalogo && porCatalogo !== clienteFacturaId) return porCatalogo;
+    const op = operacionesGlobales.find(o => String(o.clientePaga || o.clienteId || '') === clienteFacturaId);
+    return op?.clienteNombre || op?.nombreCliente || clienteFacturaId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteFacturaId, empresasList, operacionesGlobales]);
+
   const monedaFacturacion = useMemo(() => {
-    if (!filtroCliente) return '-';
-    const empresa = empresasList.find(e => e.id === filtroCliente);
-    if (!empresa) return '-';
+    if (!clienteFacturaId) return '-';
+    const empresa = empresasList.find(e => e.id === clienteFacturaId);
+    if (!empresa) {
+      const op = operacionesGlobales.find(o => String(o.clientePaga || o.clienteId || '') === clienteFacturaId);
+      return op?.monedaCobroNombre || '-';
+    }
     const idMoneda = empresa.monedaRef || empresa.moneda;
     if (idMoneda === ID_MXN) return 'MXN';
     if (idMoneda === ID_USD) return 'USD';
     return idMoneda || 'No definida en catálogo';
-  }, [filtroCliente, empresasList]);
-
-  // ──────────────────────────────────────────────────────────────────
-  // (3)+(6) Operaciones filtradas por estado y (5) ordenadas
-  // ──────────────────────────────────────────────────────────────────
-  const esFacturada = (op: any) => !!op.facturaClienteId || !!op.facturado;
-
-  const conteoOps = useMemo(() => {
-    const pendientes = operacionesGlobales.filter(op => !esFacturada(op)).length;
-    const facturadas = operacionesGlobales.filter(esFacturada).length;
-    return { pendientes, facturadas };
-  }, [operacionesGlobales]);
+  }, [clienteFacturaId, empresasList, operacionesGlobales]);
 
   const valorOrdenOp = (op: any, campo: string): string | number => {
     switch (campo) {
@@ -394,7 +431,7 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // Rango de fechas (sobre fechaServicio). Vacío = sin límite.
+  // Rango de fechas en memoria (respaldo; la consulta ya viene acotada).
   const dentroRangoFecha = (op: any) => {
     if (!fechaDesdeOps && !fechaHastaOps) return true;
     const f = String(op.fechaServicio || op.createdAt || '').slice(0, 10);
@@ -404,11 +441,10 @@ export const FacturacionClientesDashboard = () => {
     return true;
   };
 
+  // ✅ (2) Solo NO facturadas, dentro del rango. Ordenadas.
   const operacionesMostradas = useMemo(() => {
-    if (!filtroCliente) return [];
-    const lista = operacionesGlobales.filter(op =>
-      (filtroEstadoOps === 'facturadas' ? esFacturada(op) : !esFacturada(op)) && dentroRangoFecha(op)
-    );
+    if (!ambasFechas) return [];
+    const lista = operacionesGlobales.filter(op => !esFacturada(op) && dentroRangoFecha(op));
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
       const va = valorOrdenOp(a, ordenOps.campo);
@@ -416,14 +452,14 @@ export const FacturacionClientesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [operacionesGlobales, filtroCliente, filtroEstadoOps, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
 
   const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
-  // Valor textual/numérico de cada columna (para el Excel)
   const valorCeldaOps = (op: any, key: string, m: any) => {
     switch (key) {
       case 'ref': return op.numReferencia || op.referencia || op.ref || op.id;
@@ -440,7 +476,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // Celda con formato visual para la tabla
   const renderCeldaOps = (op: any, key: string, m: any) => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
@@ -458,7 +493,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // Drag & drop / visibilidad de columnas de la tabla de operaciones
   const handleDragStartOps = (_e: React.DragEvent, index: number) => setDraggedColOpsIndex(index);
   const handleDragEnterOps = (index: number) => {
     if (draggedColOpsIndex === null || draggedColOpsIndex === index) return;
@@ -474,8 +508,6 @@ export const FacturacionClientesDashboard = () => {
     setColumnasOps(nuevas);
   };
 
-  // (3) Exportar a Excel las operaciones mostradas (respeta cliente, estado,
-  //     rango de fechas y columnas/orden configurados).
   const exportarExcelOps = () => {
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
     const cols = columnasOps.filter(c => c.visible);
@@ -488,11 +520,9 @@ export const FacturacionClientesDashboard = () => {
     });
     const ws = XLSX.utils.json_to_sheet(datos);
     const wb = XLSX.utils.book_new();
-    const etiqueta = filtroEstadoOps === 'facturadas' ? 'Facturadas' : 'Pendientes';
-    XLSX.utils.book_append_sheet(wb, ws, `Ops_${etiqueta}`);
-    const cli = (nombreClienteSeleccionado || 'cliente').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
-    const hoy = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(wb, `Operaciones_${etiqueta}_${cli}_${hoy}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, 'Ops_Por_Facturar');
+    const cli = (filtroCliente ? (nombreClienteSeleccionado || 'cliente') : 'todos').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+    XLSX.writeFile(wb, `Operaciones_PorFacturar_${cli}_${fechaDesdeOps}_a_${fechaHastaOps}.xlsx`);
   };
 
   // ──────────────────────────────────────────────────────────────────
@@ -508,7 +538,7 @@ export const FacturacionClientesDashboard = () => {
     seleccionadas.forEach(id => {
       const op = operacionesGlobales.find(o => o.id === id);
       if (op) {
-        subtotal += obtenerMontoOperacion(op).conv; // (2) suma la conversión
+        subtotal += obtenerMontoOperacion(op).conv;
         refs.push(op.numReferencia || op.referencia || op.ref || op.id?.substring(0, 6));
       }
     });
@@ -516,14 +546,18 @@ export const FacturacionClientesDashboard = () => {
   }, [seleccionadas, operacionesGlobales]);
 
   // ──────────────────────────────────────────────────────────────────
-  // Guardado de factura
+  // Guardado de factura (cliente derivado; valida un solo cliente)
   // ──────────────────────────────────────────────────────────────────
   const handleGuardarFactura = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceForm.trim()) return alert('El # de Invoice es obligatorio.');
+    if (seleccionMultiCliente || !clienteFacturaId) {
+      return alert('Las operaciones seleccionadas deben ser de un mismo cliente. Selecciona un cliente en el filtro o elige operaciones de un solo cliente.');
+    }
     setGuardando(true);
     try {
       const batch = writeBatch(db);
+
       const nuevoId = doc(collection(db, 'facturas_clientes')).id;
 
       const operacionesResumenEstable = seleccionadas.map(id => {
@@ -532,8 +566,8 @@ export const FacturacionClientesDashboard = () => {
         return {
           id,
           ref: op?.numReferencia || op?.referencia || op?.ref || id.substring(0, 6),
-          monto: montos.conv,            // (2) conversión
-          subtotalBase: montos.subtotal, // referencia adicional
+          monto: montos.conv,
+          subtotalBase: montos.subtotal,
         };
       });
 
@@ -541,8 +575,8 @@ export const FacturacionClientesDashboard = () => {
         invoice: invoiceForm.trim(),
         fecha: fechaForm,
         facturaCcp: facturaCcpForm.trim(),
-        clienteId: filtroCliente,
-        clienteNombre: getNombreCliente(filtroCliente),
+        clienteId: clienteFacturaId,
+        clienteNombre: nombreClienteFactura || getNombreCliente(clienteFacturaId),
         monedaFacturacion,
         operacionesIds: seleccionadas,
         operacionesGuardadas: operacionesResumenEstable,
@@ -561,12 +595,13 @@ export const FacturacionClientesDashboard = () => {
 
       await batch.commit();
       setModalAbierto(false);
+      const idsFacturadas = [...seleccionadas];
       setSeleccionadas([]);
       setInvoiceForm('');
       setFacturaCcpForm('');
-      // (3) marcar localmente como facturadas para que salgan de "Pendientes"
+      // (2) marcar localmente como facturadas para que salgan de la lista
       setOperacionesGlobales(prev => prev.map(op =>
-        seleccionadas.includes(op.id) ? { ...op, facturaClienteId: nuevoId, facturaClienteInvoice: invoiceForm.trim(), facturado: true } : op
+        idsFacturadas.includes(op.id) ? { ...op, facturaClienteId: nuevoId, facturaClienteInvoice: invoiceForm.trim(), facturado: true } : op
       ));
       setFacturasGlobales(prev => [{ id: nuevoId, ...data }, ...prev]);
       setActiveTab('historial');
@@ -595,7 +630,6 @@ export const FacturacionClientesDashboard = () => {
         }
         await batch.commit();
         setFacturasGlobales(prev => prev.filter(f => f.id !== facData.id));
-        // liberar localmente las operaciones (vuelven a Pendientes)
         const idsLiberadas: string[] = Array.isArray(facData.operacionesIds) ? facData.operacionesIds : [];
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, facturaClienteId: null, facturaClienteInvoice: null, facturado: false } : op
@@ -608,7 +642,7 @@ export const FacturacionClientesDashboard = () => {
   };
 
   // ──────────────────────────────────────────────────────────────────
-  // (5) Historial: orden + paginación
+  // Historial: orden + paginación
   // ──────────────────────────────────────────────────────────────────
   const valorOrdenFac = (f: any, campo: string): string | number => {
     switch (campo) {
@@ -646,10 +680,10 @@ export const FacturacionClientesDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
 
-  useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac]);
+  useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeOps, fechaHastaOps]);
 
   // ──────────────────────────────────────────────────────────────────
-  // (1) Columnas configurables — valor por columna + export
+  // Columnas configurables — valor por columna + export
   // ──────────────────────────────────────────────────────────────────
   const valorCeldaFactura = (f: any, colId: string): any => {
     switch (colId) {
@@ -696,7 +730,6 @@ export const FacturacionClientesDashboard = () => {
     XLSX.writeFile(workbook, `Facturas_Clientes_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // Drag & drop / visibilidad de columnas
   const handleDragStart = (_e: React.DragEvent, index: number) => setDraggedColIndex(index);
   const handleDragEnter = (index: number) => {
     if (draggedColIndex === null || draggedColIndex === index) return;
@@ -713,7 +746,7 @@ export const FacturacionClientesDashboard = () => {
   };
 
   // ──────────────────────────────────────────────────────────────────
-  // (4) Detalle de operación
+  // Detalle de operación
   // ──────────────────────────────────────────────────────────────────
   const verDetalleOperacion = async (opId: string) => {
     if (!opId) return;
@@ -733,12 +766,11 @@ export const FacturacionClientesDashboard = () => {
     setCargandoDetalle(false);
   };
 
-  // Banderas para el detalle (mismas reglas que OperacionesDashboard)
   const det = operacionDetalle;
   const evalTipoOpText = String(det?.tipoOperacionNombre || det?.tipoOperacionId || '').toLowerCase();
-  const evalIsTransfer = evalTipoOpText.includes('transfer');
   const evalIsFletes = evalTipoOpText.includes('fletes') || evalTipoOpText.includes('flete');
   const evalIsLogistica = evalTipoOpText.includes('logistica') || evalTipoOpText.includes('logística');
+  const evalIsTransfer = evalTipoOpText.includes('transfer');
   const evalIsRoelca = String(det?.proveedorUnidadNombre || det?.proveedorUnidad || '').toLowerCase().includes('roelca');
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
@@ -763,7 +795,48 @@ export const FacturacionClientesDashboard = () => {
   const thOrdenStyle: React.CSSProperties = { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
   const selectOrdenStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 10px', fontSize: '0.85rem' };
   const btnDirStyle: React.CSSProperties = { backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
-  const dateInputStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '7px 10px', fontSize: '0.85rem', colorScheme: 'dark' };
+  const dateInputStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '9px 10px', fontSize: '0.9rem', colorScheme: 'dark' };
+
+  // Buscador de cliente reutilizable (opcional) para la barra de filtro
+  const BuscadorCliente = () => (
+    <div style={{ flex: 1, minWidth: '280px', position: 'relative' }}>
+      <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>CLIENTE (opcional)</label>
+      {filtroCliente ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreClienteSeleccionado}</span>
+          <button onClick={() => { setFiltroCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); setSeleccionadas([]); }} title="Quitar cliente" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+        </div>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" placeholder="Buscar cliente por nombre o RFC (opcional)..." value={textoBuscarCliente}
+            onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
+            onFocus={() => setMostrarSugerenciasCliente(true)} onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
+            style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+        </div>
+      )}
+      {!filtroCliente && mostrarSugerenciasCliente && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+          {clientesFiltradosBuscador.length === 0 ? (
+            <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>{textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}</div>
+          ) : (
+            <>
+              <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>{clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}</div>
+              {clientesFiltradosBuscador.map((cli: any) => (
+                <div key={cli.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setFiltroCliente(cli.id); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); setSeleccionadas([]); }}
+                  style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                  onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                  <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
+                  {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
@@ -774,143 +847,96 @@ export const FacturacionClientesDashboard = () => {
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
       </div>
 
-      {/* ════════════════════ ASIGNAR OPERACIONES ════════════════════ */}
-      {activeTab === 'operaciones' ? (
+      {/* ════════ FILTRO PRINCIPAL: RANGO DE FECHAS (obligatorio) + CLIENTE (opcional) ════════ */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE ★</label>
+          <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={dateInputStyle} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA ★</label>
+          <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={dateInputStyle} />
+        </div>
+        {(fechaDesdeOps || fechaHastaOps) && (
+          <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
+        )}
+        <BuscadorCliente />
+      </div>
+
+      {/* Aviso: ambas fechas obligatorias */}
+      {!ambasFechas ? (
+        <div style={{ padding: '48px 24px', textAlign: 'center', color: '#8b949e', backgroundColor: '#0d1117', border: '1px dashed #30363d', borderRadius: '8px' }}>
+          <div style={{ fontSize: '1.05rem', color: '#c9d1d9', marginBottom: '6px' }}>Selecciona <b style={{ color: '#D84315' }}>Fecha Desde</b> y <b style={{ color: '#D84315' }}>Fecha Hasta</b></div>
+          <div style={{ fontSize: '0.9rem' }}>
+            {activeTab === 'operaciones'
+              ? 'Las operaciones por facturar aparecerán al definir ambas fechas. El cliente es opcional.'
+              : 'El historial de facturas aparecerá al definir ambas fechas. El cliente es opcional.'}
+          </div>
+        </div>
+      ) : activeTab === 'operaciones' ? (
+        /* ════════════════════ ASIGNAR OPERACIONES ════════════════════ */
         <div className="animation-fade-in">
-          {/* Buscador de cliente */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
-            <div style={{ flex: 1, minWidth: '320px', position: 'relative' }}>
-              <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>CLIENTE ★</label>
-              {filtroCliente ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                  <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreClienteSeleccionado}</span>
-                  <button onClick={() => { setFiltroCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); setSeleccionadas([]); }} title="Cambiar cliente" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}>✕</button>
-                </div>
-              ) : (
-                <div style={{ position: 'relative' }}>
-                  <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                  <input type="text" placeholder="Buscar cliente por nombre o RFC..." value={textoBuscarCliente}
-                    onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
-                    onFocus={() => setMostrarSugerenciasCliente(true)} onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
-                    style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
-                </div>
-              )}
-              {!filtroCliente && mostrarSugerenciasCliente && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
-                  {clientesFiltradosBuscador.length === 0 ? (
-                    <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>{textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}</div>
-                  ) : (
-                    <>
-                      <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>{clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}</div>
-                      {clientesFiltradosBuscador.map((cli: any) => (
-                        <div key={cli.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setFiltroCliente(cli.id); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); setSeleccionadas([]); }}
-                          style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
-                          onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                          <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
-                          {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
+          {/* Controles: orden + conteo + columnas + exportar + generar */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
+              <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={selectOrdenStyle}>
+                <option value="ref">Referencia</option>
+                <option value="fechaServicio">Fecha Servicio</option>
+                <option value="cliente">Cliente</option>
+                <option value="destino">Destino</option>
+                <option value="subtotal">Subtotal</option>
+                <option value="conv">Conversión</option>
+              </select>
+              <button onClick={() => setOrdenOps(prev => ({ ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }))} style={btnDirStyle} title="Cambiar dirección">
+                {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
+              </button>
+              <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
+                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación por facturar' : 'operaciones por facturar'}
+              </span>
             </div>
 
-            <button disabled={seleccionadas.length === 0 || filtroEstadoOps === 'facturadas'} onClick={() => setModalAbierto(true)}
-              style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'facturadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'facturadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-              Generar Factura ({seleccionadas.length})
-            </button>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
+              <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
+                style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
+                  cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
+                  backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
+                  color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
+                ⬇ Exportar Excel
+              </button>
+              <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => setModalAbierto(true)}
+                style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                Generar Factura ({seleccionadas.length})
+              </button>
+            </div>
           </div>
 
-          {/* (6) Filtros Pendientes / Facturadas + (5) Orden */}
-          {filtroCliente && (
-            <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => { setFiltroEstadoOps('pendientes'); }}
-                  style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
-                    border: `1px solid ${filtroEstadoOps === 'pendientes' ? '#ef4444' : '#30363d'}`,
-                    backgroundColor: filtroEstadoOps === 'pendientes' ? 'rgba(239,68,68,0.15)' : 'transparent',
-                    color: filtroEstadoOps === 'pendientes' ? '#ef4444' : '#8b949e' }}>
-                  ● Pendientes ({conteoOps.pendientes})
-                </button>
-                <button onClick={() => { setFiltroEstadoOps('facturadas'); setSeleccionadas([]); }}
-                  style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
-                    border: `1px solid ${filtroEstadoOps === 'facturadas' ? '#10b981' : '#30363d'}`,
-                    backgroundColor: filtroEstadoOps === 'facturadas' ? 'rgba(16,185,129,0.15)' : 'transparent',
-                    color: filtroEstadoOps === 'facturadas' ? '#10b981' : '#8b949e' }}>
-                  ● Facturadas ({conteoOps.facturadas})
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
-                <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={selectOrdenStyle}>
-                  <option value="ref">Referencia</option>
-                  <option value="fechaServicio">Fecha Servicio</option>
-                  <option value="cliente">Cliente</option>
-                  <option value="destino">Destino</option>
-                  <option value="subtotal">Subtotal</option>
-                  <option value="conv">Conversión</option>
-                </select>
-                <button onClick={() => setOrdenOps(prev => ({ ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }))} style={btnDirStyle} title="Cambiar dirección">
-                  {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
-                </button>
-              </div>
+          {/* Aviso multi-cliente */}
+          {seleccionMultiCliente && (
+            <div style={{ backgroundColor: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.4)', color: '#ff7b72', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.85rem' }}>
+              Seleccionaste operaciones de <b>distintos clientes</b>. Una factura debe ser de un solo cliente: usa el filtro de cliente o selecciona operaciones del mismo cliente.
             </div>
-
-            {/* (3) Rango de fechas + Configurar columnas + Exportar Excel */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'flex-end' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>FECHA DESDE</label>
-                  <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={dateInputStyle} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>FECHA HASTA</label>
-                  <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={dateInputStyle} />
-                </div>
-                {(fechaDesdeOps || fechaHastaOps) && (
-                  <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">
-                    ✕ Limpiar fechas
-                  </button>
-                )}
-                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
-                  {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}
-                </span>
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">
-                  ⚙ Configurar Columnas
-                </button>
-                <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
-                  style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
-                    cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
-                    backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
-                    color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
-                  ⬇ Exportar Excel ({filtroEstadoOps === 'facturadas' ? 'Facturadas' : 'Pendientes'})
-                </button>
-              </div>
-            </div>
-            </>
           )}
 
           {/* Resumen de selección */}
-          {seleccionadas.length > 0 && filtroEstadoOps === 'pendientes' && (
+          {seleccionadas.length > 0 && !seleccionMultiCliente && (
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
                 <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones Seleccionadas</span>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Seleccionadas</span>
                   <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{seleccionadas.length}</span>
                 </div>
                 <div style={{ borderRight: '1px solid #30363d' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Conversión Estimada</span>
                   <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
                 </div>
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Cliente</span>
+                  <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{nombreClienteFactura || '—'}</span>
+                </div>
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Moneda del Cliente</span>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Moneda</span>
                   <span style={{ color: '#D84315', fontSize: '1.8rem', fontWeight: 'bold' }}>{monedaFacturacion}</span>
                 </div>
               </div>
@@ -933,29 +959,18 @@ export const FacturacionClientesDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {!filtroCliente ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona un Cliente en el filtro superior para ver las operaciones completadas.</td></tr>
-                ) : cargandoOperaciones ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando últimas 100 operaciones completadas del cliente...</td></tr>
+                {cargandoOperaciones ? (
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones completadas del rango...</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
-                    {filtroEstadoOps === 'pendientes'
-                      ? 'No hay operaciones pendientes de facturar para este cliente.'
-                      : 'No hay operaciones facturadas para este cliente.'}
-                  </td></tr>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones por facturar en este rango de fechas{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
                 ) : (
                   operacionesMostradas.map(op => {
                     const m = obtenerMontoOperacion(op);
-                    const seleccionable = filtroEstadoOps === 'pendientes';
                     return (
-                      <tr key={op.id} onClick={() => seleccionable && toggleSeleccion(op.id)}
-                        style={{ cursor: seleccionable ? 'pointer' : 'default', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
+                      <tr key={op.id} onClick={() => toggleSeleccion(op.id)}
+                        style={{ cursor: 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
                         <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {seleccionable ? (
-                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
-                          ) : (
-                            <span title={op.facturaClienteInvoice || 'Facturada'} style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                          )}
+                          <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
                       </tr>
@@ -970,46 +985,7 @@ export const FacturacionClientesDashboard = () => {
       ) : (
         /* ════════════════════ HISTORIAL DE FACTURAS ════════════════════ */
         <div className="animation-fade-in">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
-            <div style={{ flex: 1, minWidth: '320px', position: 'relative' }}>
-              <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>CLIENTE ★</label>
-              {filtroCliente ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                  <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreClienteSeleccionado}</span>
-                  <button onClick={() => { setFiltroCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }} title="Cambiar cliente" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}>✕</button>
-                </div>
-              ) : (
-                <div style={{ position: 'relative' }}>
-                  <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                  <input type="text" placeholder="Buscar cliente por nombre o RFC..." value={textoBuscarCliente}
-                    onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
-                    onFocus={() => setMostrarSugerenciasCliente(true)} onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
-                    style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
-                </div>
-              )}
-              {!filtroCliente && mostrarSugerenciasCliente && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
-                  {clientesFiltradosBuscador.length === 0 ? (
-                    <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>{textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}</div>
-                  ) : (
-                    <>
-                      <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>{clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}</div>
-                      {clientesFiltradosBuscador.map((cli: any) => (
-                        <div key={cli.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setFiltroCliente(cli.id); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
-                          style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
-                          onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                          <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
-                          {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
-                        </div>
-                      ))}
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* (5) Orden del historial */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
               <select value={ordenFac.campo} onChange={(e) => setOrdenFac(prev => ({ ...prev, campo: e.target.value }))} style={selectOrdenStyle}>
@@ -1023,20 +999,15 @@ export const FacturacionClientesDashboard = () => {
               <button onClick={() => setOrdenFac(prev => ({ ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }))} style={btnDirStyle} title="Cambiar dirección">
                 {ordenFac.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
               </button>
+              <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
             </div>
-
-            {/* (1) Configurar columnas */}
-            <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '10px 14px', borderRadius: '6px', cursor: 'pointer', height: 'fit-content', gap: '6px' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-            </button>
-
-            {/* (1) Exportar Excel (columnas configurables) */}
-            <button title="Exportar a Excel" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '10px 14px', borderRadius: '6px', cursor: 'pointer', height: 'fit-content' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
+              <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>⬇ Exportar Excel</button>
+            </div>
           </div>
 
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', backgroundColor: '#161b22' }}>
+          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
@@ -1049,12 +1020,10 @@ export const FacturacionClientesDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {!filtroCliente ? (
-                  <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Selecciona un cliente para ver su historial de facturas.</td></tr>
-                ) : cargandoFacturas ? (
-                  <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Cargando últimas 100 facturas del cliente...</td></tr>
+                {cargandoFacturas ? (
+                  <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Cargando facturas del rango...</td></tr>
                 ) : registrosVisibles.length === 0 ? (
-                  <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este cliente no tiene facturas registradas.</td></tr>
+                  <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay facturas en este rango de fechas{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
                 ) : (
                   registrosVisibles.map(f => (
                     <tr key={f.id} style={{ borderBottom: '1px solid #21262d' }}>
@@ -1087,7 +1056,7 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ (1) MODAL CONFIGURAR COLUMNAS ════════════════════ */}
+      {/* ════════════════════ MODAL CONFIGURAR COLUMNAS (Historial) ════════════════════ */}
       {modalColumnas && (
         <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
@@ -1147,10 +1116,11 @@ export const FacturacionClientesDashboard = () => {
               <h2 style={{ color: '#f0f6fc', margin: 0 }}>Generar Factura</h2>
               <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d', marginBottom: '24px' }}>
               <div>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Cliente</span>
-                <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{getNombreCliente(filtroCliente)}</span>
+                <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{nombreClienteFactura || getNombreCliente(clienteFacturaId)}</span>
               </div>
               <div style={{ textAlign: 'center', borderLeft: '1px solid #30363d', borderRight: '1px solid #30363d', padding: '0 20px' }}>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Moneda Cliente</span>
@@ -1224,7 +1194,6 @@ export const FacturacionClientesDashboard = () => {
 
                 <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
 
-                {/* ✅ (4) Referencias clicables -> abren el detalle de la operación */}
                 <div style={{ gridColumn: 'span 3', marginTop: '8px' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
                     Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0}) — haz clic para ver el detalle
@@ -1250,7 +1219,7 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ (4) MODAL DETALLE DE OPERACIÓN ════════════════════ */}
+      {/* ════════════════════ MODAL DETALLE DE OPERACIÓN ════════════════════ */}
       {(operacionDetalle || cargandoDetalle) && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1800, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
           <div className="form-card detail-card" style={{ width: '1100px', maxWidth: '100%', maxHeight: '94vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
@@ -1283,7 +1252,6 @@ export const FacturacionClientesDashboard = () => {
                 </div>
 
                 <div className="detail-content" style={{ padding: '18px 32px', overflowY: 'auto', flex: 1 }}>
-                  {/* GENERAL */}
                   {pestañaDetalleActiva === 'general' && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Operación</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.tipoOperacionNombre || det.tipoOperacionId || '-'}</span></div>
@@ -1302,7 +1270,6 @@ export const FacturacionClientesDashboard = () => {
                     </div>
                   )}
 
-                  {/* PEDIMENTO */}
                   {pestañaDetalleActiva === 'pedimento' && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                       <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Mercancía)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.clienteMercanciaNombre || det.clienteMercancia || '-'}</span></div>
@@ -1317,7 +1284,6 @@ export const FacturacionClientesDashboard = () => {
                     </div>
                   )}
 
-                  {/* MANIFIESTOS */}
                   {pestañaDetalleActiva === 'manifiestos' && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Entry's</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.numeroEntrys)}</span></div>
@@ -1329,7 +1295,6 @@ export const FacturacionClientesDashboard = () => {
                     </div>
                   )}
 
-                  {/* UNIDAD */}
                   {pestañaDetalleActiva === 'unidad' && (
                     <div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
@@ -1391,7 +1356,6 @@ export const FacturacionClientesDashboard = () => {
                     </div>
                   )}
 
-                  {/* COBRAR */}
                   {pestañaDetalleActiva === 'cobrar' && (
                     <div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
