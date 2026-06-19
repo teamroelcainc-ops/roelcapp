@@ -314,33 +314,95 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [remolquesLocal, setRemolquesLocal] = useState<any[]>(catalogosCacheados?.remolques || []);
   const [unidadesLocal, setUnidadesLocal] = useState<any[]>(catalogosCacheados?.unidades || []);
   const [empleadosLocalState, setEmpleadosLocalState] = useState<any[]>(catalogosCacheados?.empleados || []);
+  // ✅ NUEVO: tarifas y convenios también como estado local mutable, para poder
+  //    refrescarlos en vivo (ver efecto de refresco al montar) sin cerrar/reabrir.
+  const [tarifasLocal, setTarifasLocal] = useState<any[]>(catalogosCacheados?.tarifas || []);
+  const [convClientesLocal, setConvClientesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvClientes || []);
+  const [convDetallesLocal, setConvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvDetalles || []);
+  const [convProvLocal, setConvProvLocal] = useState<any[]>(catalogosCacheados?.conveniosProv || []);
+  const [convProvDetallesLocal, setConvProvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvProvDetalles || []);
 
   // Mantener sincronizados si el cache global cambia
   useEffect(() => { setEmpresasLocal(catalogosCacheados?.empresas || []); }, [catalogosCacheados?.empresas]);
   useEffect(() => { setRemolquesLocal(catalogosCacheados?.remolques || []); }, [catalogosCacheados?.remolques]);
   useEffect(() => { setUnidadesLocal(catalogosCacheados?.unidades || []); }, [catalogosCacheados?.unidades]);
   useEffect(() => { setEmpleadosLocalState(catalogosCacheados?.empleados || []); }, [catalogosCacheados?.empleados]);
+  // ✅ NUEVO: sincronía de tarifas y convenios cuando el cache global cambia
+  useEffect(() => { setTarifasLocal(catalogosCacheados?.tarifas || []); }, [catalogosCacheados?.tarifas]);
+  useEffect(() => { setConvClientesLocal(catalogosCacheados?.catalogoConvClientes || []); }, [catalogosCacheados?.catalogoConvClientes]);
+  useEffect(() => { setConvDetallesLocal(catalogosCacheados?.catalogoConvDetalles || []); }, [catalogosCacheados?.catalogoConvDetalles]);
+  useEffect(() => { setConvProvLocal(catalogosCacheados?.conveniosProv || []); }, [catalogosCacheados?.conveniosProv]);
+  useEffect(() => { setConvProvDetallesLocal(catalogosCacheados?.catalogoConvProvDetalles || []); }, [catalogosCacheados?.catalogoConvProvDetalles]);
+
+  // ============================================================
+  // ✅ NUEVO: REFRESCO EN VIVO AL ABRIR EL FORMULARIO
+  // ------------------------------------------------------------
+  // Problema que resuelve: cuando agregas un registro en OTRA pantalla
+  // (un cliente, un convenio, una tarifa, etc.) el formulario lo recibe vía
+  // `catalogosCacheados`, que viene de la caché con TTL (24h–7d). Por eso antes
+  // tardaba en aparecer o había que cerrar y reabrir el formulario.
+  //
+  // Ahora, al montar, se traen de Firestore las colecciones que el usuario edita
+  // con más frecuencia y se actualiza el estado local Y la caché de localStorage
+  // (clave `cat_v1__<alias>`, la misma que usa OperacionesDashboard). Resultado:
+  // los registros nuevos aparecen de inmediato, sin cerrar/reabrir ni esperar TTL.
+  //
+  // Nota de costo: esto hace ~9 lecturas de colección al abrir el formulario.
+  // Es un intercambio consciente (frescura > ahorro) mientras hay pruebas con
+  // gerencia. Si luego quieres bajar lecturas, se puede limitar a empresas y
+  // convenios, o usar un botón de "refrescar" manual.
+  // ============================================================
+  useEffect(() => {
+    let activo = true;
+    const fuentes: { alias: string; coleccion: string; setter: (d: any[]) => void }[] = [
+      { alias: 'empresas',                 coleccion: 'empresas',                       setter: setEmpresasLocal },
+      { alias: 'remolques',                coleccion: 'remolques',                      setter: setRemolquesLocal },
+      { alias: 'unidades',                 coleccion: 'unidades',                       setter: setUnidadesLocal },
+      { alias: 'empleados',                coleccion: 'empleados',                      setter: setEmpleadosLocalState },
+      { alias: 'tarifas',                  coleccion: 'catalogo_tarifas_referencia',    setter: setTarifasLocal },
+      { alias: 'catalogoConvClientes',     coleccion: 'convenios_clientes',             setter: setConvClientesLocal },
+      { alias: 'catalogoConvDetalles',     coleccion: 'convenios_clientes_detalles',    setter: setConvDetallesLocal },
+      { alias: 'conveniosProv',            coleccion: 'convenios_proveedores',          setter: setConvProvLocal },
+      { alias: 'catalogoConvProvDetalles', coleccion: 'convenios_proveedores_detalles', setter: setConvProvDetallesLocal },
+    ];
+    (async () => {await Promise.all(fuentes.map(async ({ alias, coleccion, setter }) => {
+        try {
+          const snap = await getDocs(collection(db, coleccion));
+          const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+          if (!activo) return;
+          setter(docs);
+          try { localStorage.setItem(`cat_v1__${alias}`, JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
+        } catch (e) {
+          console.error(`Error refrescando catálogo "${coleccion}":`, e);
+        }
+      }));
+    })();
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const {
     tiposOperacion = [],
     embalajes = [],
-    tarifas = [],
-    conveniosProv = [],
     catalogoTC = [],
-    catalogoConvProvDetalles = [],
-    catalogoConvClientes = [],
-    catalogoConvDetalles = [],
     statusServicio = [],
     catalogoMoneda = [],
     unidadesProveedor = catalogosCacheados?.unidades_proveedor || [],
     proveedoresUnidad = catalogosCacheados?.proveedores_unidad || []
   } = catalogosCacheados || {};
 
-  // ✅ Usamos los catálogos LOCALES (mutables) en lugar de los del cache directo
+  // ✅ Usamos los catálogos LOCALES (mutables) en lugar de los del cache directo.
+  //    tarifas y convenios también son locales para que el refresco en vivo y la
+  //    creación con "+" se reflejen sin cerrar/reabrir el formulario.
   const empresas = empresasLocal;
   const remolques = remolquesLocal;
   const unidades = unidadesLocal;
   const empleados = empleadosLocalState;
+  const tarifas = tarifasLocal;
+  const conveniosProv = convProvLocal;
+  const catalogoConvProvDetalles = convProvDetallesLocal;
+  const catalogoConvClientes = convClientesLocal;
+  const catalogoConvDetalles = convDetallesLocal;
 
  // ⚠️ Ajusta la clave si en catalogosCacheados se llama distinto
   const catalogoTrafico = useMemo(() =>
@@ -670,8 +732,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setFormData(prev => ({ ...prev, sueldoTotal: sOp + sExt }));
   }, [formData.sueldoOperador, formData.sueldoExtra]);
 
-  useEffect(() => {
-    if (formData.tipoOperacionId !== TIPO_OP_PROVEEDOR_FIJO) return;
+  useEffect(() => {if (formData.tipoOperacionId !== TIPO_OP_PROVEEDOR_FIJO) return;
     if (formData.proveedorUnidad === PROVEEDOR_FIJO_ID) return;
     const prov = empresas.find((e: any) => String(e.id) === PROVEEDOR_FIJO_ID);
     setFormData(prev => ({
@@ -800,10 +861,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const maestroIds = new Set(maestros.map((m: any) => String(m.id).trim()));
     const detallesAsociados = catalogoConvDetalles.filter((d: any) => maestroIds.has(String(d.convenioId).trim()));
     return detallesAsociados.map((d: any) => {
-      const tarifaId = d.tipoConvenioId || d.tipo_convenio_id || d.tipoConvenio || d['TIPO DE CONVENIO'];
+      // ✅ CORREGIDO: ampliamos los nombres de campo posibles para el ID de la tarifa
+      //    (distintas tablas guardan la referencia con nombres diferentes).
+      const tarifaId = d.tipoConvenioId || d.tipo_convenio_id || d.tipoConvenio || d.tipo_convenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
       const maestroAsociado = maestros.find((m: any) => String(m.id).trim() === String(d.convenioId).trim());
-      const nombreFinal = d.tipoConvenioNombre || tObj?.descripcion || tObj?.nombre || (tarifaId ? `Tarifa (${tarifaId})` : 'Sin Asignar');
+      // ✅ CORREGIDO: más campos de nombre como respaldo antes de caer en "Tarifa (id)".
+      const nombreTarifa = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || tObj?.tipo;
+      const nombreFinal = d.tipoConvenioNombre || nombreTarifa || (tarifaId ? `Tarifa (${tarifaId})` : 'Sin Asignar');
       return {
         id: d.id, tarifaBaseId: tarifaId, descripcion: nombreFinal,
         monedaMaestro: d.moneda || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
@@ -832,7 +897,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const tarifaId = d.tipoConvenioId || d.tipo_convenio || d.tarifaId || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
       const maestroParent = maestrosAsociados.find((m: any) => String(m.id).trim() === String(d.convenioId).trim());
-      const nombreFinal = tObj?.descripcion || tObj?.nombre || d.tipoConvenioNombre || 'Concepto sin nombre';
+      const nombreFinal = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || d.tipoConvenioNombre || 'Concepto sin nombre';
       return {
         id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
         monedaBase: maestroParent?.monedaId || maestroParent?.moneda || d.moneda || ID_USD,
@@ -938,7 +1003,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  const filClientesPaga = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb') && e.status === 'Activa') || [], [empresas]);
+  // ✅ CORREGIDO (petición explícita): Cliente (Paga) muestra TODAS las empresas
+  //    con el tipo 7eec9cbb, SIN exigir status 'Activa'. Los demás filtros de
+  //    empresa conservan el status 'Activa' (avísame si quieres quitarlo también).
+  const filClientesPaga = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb')) || [], [empresas]);
   const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('51246232') && e.status === 'Activa') || [], [empresas]);
   const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd') && e.status === 'Activa') || [], [empresas]);
   const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('6e7af5ab') && e.status === 'Activa') || [], [empresas]);
@@ -1031,8 +1099,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         statusNombre: statusObj?.descripcion || statusObj?.nombre || statusCalculado || 'Pendiente',
         tienePdfDoda: !!pdfDoda, cantPdfsEntrys: (pdfsEntrys || []).filter(Boolean).length,
         clienteNombre: searchClientePaga || '', origenNombre: searchOrigen || '',
-        destinoNombre: searchDestino || '', remolqueNombre: searchRemolque || '',
-        clienteMercanciaNombre: searchClienteMercancia || '', provServiciosNombre: searchProvServicios || '',
+        destinoNombre: searchDestino || '', remolqueNombre: searchRemolque || '',clienteMercanciaNombre: searchClienteMercancia || '', provServiciosNombre: searchProvServicios || '',
         proveedorUnidadNombre: searchProvTransporte || '', unidadNombre: searchUnidad || '',
         operadorNombre: searchOperador || '', tipoOperacionNombre: tipoOpObj?.tipo_operacion || '',
         monedaCobroNombre: monedaCobroObj?.moneda || '', monedaUnidadNombre: monedaUnidadObj?.moneda || '',
@@ -1399,8 +1466,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </div>
                 </>
               )}
-              {pestañaActiva === 'unidad' && pestanasVisibles.includes('unidad') && (
-                <>
+              {pestañaActiva === 'unidad' && pestanasVisibles.includes('unidad') && (<>
                   {showInternalFleet && (
                     <div className="roelca-card">
                       <div className="roelca-card-header"><div className="roelca-card-icon"><IconUser /></div><h3 className="roelca-card-title">Unidad y Operador (Flota Interna)</h3></div>
