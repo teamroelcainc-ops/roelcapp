@@ -1,44 +1,55 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc, collection, onSnapshot } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger'; 
 
+// ── Estáticos: críticos o siempre presentes (login, marca y modales). ──
 import { Login } from './features/auth/components/Login';
-import OperacionesDashboard from './features/operaciones/components/OperacionesDashboard';
-import ServiciosCompletados from './features/operaciones/components/ServiciosCompletados';
-import ServiciosCancelados from './features/operaciones/components/ServiciosCancelados';
-import ReportesDashboard from './features/reportes/components/ReportesDashboard';
-import EmpresasDashboard from './features/empresas/components/EmpresasDashboard';
-import { ContactosDashboard } from './features/contactos/components/ContactosDashboard';
-import { TipoCambioDashboard } from './features/tipoCambio/components/TipoCambioDashboard';
-import CatalogosDashboard from './features/catalogos/components/CatalogosDashboard';
-import { CombustibleDashboard } from './features/combustible/components/CombustibleDashboard';
-import ProveedoresUnidadDashboard from './features/proveedoresUnidad/components/ProveedoresUnidadDashboard';
-import { UnidadesProveedorDashboard } from './features/unidadesProveedor/components/UnidadesProveedorDashboard';
-import UnidadesDashboard from './features/unidades/components/UnidadesDashboard'; 
-import RemolquesDashboard from './features/remolques/components/RemolquesDashboard'; 
-import ConveniosClientesDashboard from './features/conveniosClientes/components/ConveniosClientesDashboard';
-import { ConveniosProveedoresDashboard } from './features/conveniosProveedores/components/ConveniosProveedoresDashboard';
-import { DireccionesDashboard } from './features/direcciones/components/DireccionesDashboard';
-import { EmpleadosDashboard } from './features/empleados/components/EmpleadosDashboard';
-import { RolesDashboard } from './usuarios/components/RolesDashboard';
-import { UsuariosDashboard } from './usuarios/components/UsuariosDashboard';
 import { MiPerfil } from './usuarios/components/MiPerfil';
-import { LogsDashboard } from './features/configuracion/components/LogsDashboard';
-import { ConfiguradorStatus } from './features/configuracion/components/ConfiguradorStatus';
 import { RelojChecadorModal } from './features/relojChecador/components/RelojChecadorModal';
-import { HistorialChequeosDashboard } from './features/relojChecador/components/HistorialChequeosDashboard';
-import MttoDashboard from './features/gastos/components/mtto/MttoDashboard';
-import { ReferenciasDieselDashboard } from './features/diesel/components/ReferenciasDieselDashboard';
-import { ReferenciasPuentesDashboard } from './features/puentes/components/ReferenciasPuentesDashboard';
-import { ReferenciasNominaDashboard } from './features/nominas/components/ReferenciasNominaDashboard';
-import { DeduccionesDashboard } from './features/empleados/components/DeduccionesDashboard';
-import { FacturacionClientesDashboard } from './features/facturacion/components/FacturacionClientesDashboard';
-import { FacturacionProveedoresDashboard } from './features/facturacion/components/FacturacionProveedoresDashboard';
-import { CostosAdicionalesDashboard } from './features/costosAdicionales/CostosAdicionalesDashboard';
-import ConfiguracionEmpresa from './features/configuracion/ConfiguracionEmpresa';
 import { EmpresaBrand } from './features/configuracion/EmpresaBrand';
+
+// ============================================================================
+// ✅ CARGA DIFERIDA (code-splitting). Antes los ~30 dashboards se importaban de
+// forma estática, así que al iniciar sesión el navegador descargaba y parseaba
+// TODO el código antes de mostrar nada. Con React.lazy, el código de cada módulo
+// se descarga SOLO cuando el usuario lo abre → la primera pantalla carga mucho
+// más rápido.
+//   • export default  → lazy(() => import('...'))
+//   • export const X  → lazy(() => import('...').then(m => ({ default: m.X })))
+// ============================================================================
+const OperacionesDashboard = lazy(() => import('./features/operaciones/components/OperacionesDashboard'));
+const ServiciosCompletados = lazy(() => import('./features/operaciones/components/ServiciosCompletados'));
+const ServiciosCancelados = lazy(() => import('./features/operaciones/components/ServiciosCancelados'));
+const ReportesDashboard = lazy(() => import('./features/reportes/components/ReportesDashboard'));
+const EmpresasDashboard = lazy(() => import('./features/empresas/components/EmpresasDashboard'));
+const ContactosDashboard = lazy(() => import('./features/contactos/components/ContactosDashboard').then(m => ({ default: m.ContactosDashboard })));
+const TipoCambioDashboard = lazy(() => import('./features/tipoCambio/components/TipoCambioDashboard').then(m => ({ default: m.TipoCambioDashboard })));
+const CatalogosDashboard = lazy(() => import('./features/catalogos/components/CatalogosDashboard'));
+const CombustibleDashboard = lazy(() => import('./features/combustible/components/CombustibleDashboard').then(m => ({ default: m.CombustibleDashboard })));
+const ProveedoresUnidadDashboard = lazy(() => import('./features/proveedoresUnidad/components/ProveedoresUnidadDashboard'));
+const UnidadesProveedorDashboard = lazy(() => import('./features/unidadesProveedor/components/UnidadesProveedorDashboard').then(m => ({ default: m.UnidadesProveedorDashboard })));
+const UnidadesDashboard = lazy(() => import('./features/unidades/components/UnidadesDashboard'));
+const RemolquesDashboard = lazy(() => import('./features/remolques/components/RemolquesDashboard'));
+const ConveniosClientesDashboard = lazy(() => import('./features/conveniosClientes/components/ConveniosClientesDashboard'));
+const ConveniosProveedoresDashboard = lazy(() => import('./features/conveniosProveedores/components/ConveniosProveedoresDashboard').then(m => ({ default: m.ConveniosProveedoresDashboard })));
+const DireccionesDashboard = lazy(() => import('./features/direcciones/components/DireccionesDashboard').then(m => ({ default: m.DireccionesDashboard })));
+const EmpleadosDashboard = lazy(() => import('./features/empleados/components/EmpleadosDashboard').then(m => ({ default: m.EmpleadosDashboard })));
+const RolesDashboard = lazy(() => import('./usuarios/components/RolesDashboard').then(m => ({ default: m.RolesDashboard })));
+const UsuariosDashboard = lazy(() => import('./usuarios/components/UsuariosDashboard').then(m => ({ default: m.UsuariosDashboard })));
+const LogsDashboard = lazy(() => import('./features/configuracion/components/LogsDashboard').then(m => ({ default: m.LogsDashboard })));
+const ConfiguradorStatus = lazy(() => import('./features/configuracion/components/ConfiguradorStatus').then(m => ({ default: m.ConfiguradorStatus })));
+const HistorialChequeosDashboard = lazy(() => import('./features/relojChecador/components/HistorialChequeosDashboard').then(m => ({ default: m.HistorialChequeosDashboard })));
+const MttoDashboard = lazy(() => import('./features/gastos/components/mtto/MttoDashboard'));
+const ReferenciasDieselDashboard = lazy(() => import('./features/diesel/components/ReferenciasDieselDashboard').then(m => ({ default: m.ReferenciasDieselDashboard })));
+const ReferenciasPuentesDashboard = lazy(() => import('./features/puentes/components/ReferenciasPuentesDashboard').then(m => ({ default: m.ReferenciasPuentesDashboard })));
+const ReferenciasNominaDashboard = lazy(() => import('./features/nominas/components/ReferenciasNominaDashboard').then(m => ({ default: m.ReferenciasNominaDashboard })));
+const DeduccionesDashboard = lazy(() => import('./features/empleados/components/DeduccionesDashboard').then(m => ({ default: m.DeduccionesDashboard })));
+const FacturacionClientesDashboard = lazy(() => import('./features/facturacion/components/FacturacionClientesDashboard').then(m => ({ default: m.FacturacionClientesDashboard })));
+const FacturacionProveedoresDashboard = lazy(() => import('./features/facturacion/components/FacturacionProveedoresDashboard').then(m => ({ default: m.FacturacionProveedoresDashboard })));
+const CostosAdicionalesDashboard = lazy(() => import('./features/costosAdicionales/CostosAdicionalesDashboard').then(m => ({ default: m.CostosAdicionalesDashboard })));
+const ConfiguracionEmpresa = lazy(() => import('./features/configuracion/ConfiguracionEmpresa'));
 
 import './App.css';
 
@@ -196,6 +207,15 @@ const ICON: Record<string, React.ReactNode> = {
     <Ico><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></Ico>
   ),
 };
+
+// Indicador mientras se descarga el chunk de un módulo (carga diferida).
+const CargandoModulo = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', height: 'calc(100vh - 160px)', color: '#8b949e' }}>
+    <span style={{ width: 18, height: 18, border: '2px solid #30363d', borderTopColor: '#D84315', borderRadius: '50%', display: 'inline-block', animation: 'spinRoelca 0.7s linear infinite' }} />
+    Cargando módulo…
+    <style>{`@keyframes spinRoelca { to { transform: rotate(360deg); } }`}</style>
+  </div>
+);
 
 function App() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -584,7 +604,7 @@ function App() {
             <p style={{ maxWidth: '420px' }}>Tu usuario no tiene módulos habilitados todavía. Contacta al administrador para que te asigne un rol con acceso.</p>
           </div>
         ) : (
-          <>
+          <Suspense fallback={<CargandoModulo />}>
             {moduloActivo === 'operaciones' && puede('operaciones') && <OperacionesDashboard />}
             {moduloActivo === 'serviciosCompletados' && puede('serviciosCompletados') && <ServiciosCompletados />}
             {moduloActivo === 'serviciosCancelados' && puede('serviciosCancelados') && <ServiciosCancelados />}
@@ -616,7 +636,7 @@ function App() {
             {moduloActivo === 'datosEmpresa' && puede('datosEmpresa') && <ConfiguracionEmpresa />}
             {moduloActivo === 'facturacionClientes' && puede('facturacionClientes') && <FacturacionClientesDashboard />}
             {moduloActivo === 'facturacionProveedores' && puede('facturacionProveedores') && <FacturacionProveedoresDashboard />}
-          </>
+          </Suspense>
         )}
         
       </div>

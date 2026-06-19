@@ -10,7 +10,7 @@
 //    nombre legible se usa el campo desnormalizado `statusNombre` o se
 //    resuelve contra el catálogo en tiempo de render.
 //
-// B) ✅ OPTIMIZACIÓN DE LECTURAS (NUEVO):
+// B) ✅ OPTIMIZACIÓN DE LECTURAS:
 //    1. Catálogos con CACHÉ LOCAL (localStorage) + TTL en vez de onSnapshot.
 //       Antes el dashboard se suscribía en vivo a 17 colecciones completas en
 //       cada apertura → leía TODOS los documentos de cada una en cada carga y
@@ -20,6 +20,11 @@
 //       Resultado: 0 lecturas de catálogos por apertura tras la 1ª vez.
 //    2. Operaciones paginadas (limit 50) con "Cargar más" (startAfter).
 //    3. guardarHorario / registrarStatusRapido NO recargan todas las operaciones.
+//
+// B2) ✅ CARGA POST-LOGIN MÁS RÁPIDA (NUEVO):
+//    La descarga de catálogos pendientes se DIFIERE a requestIdleCallback
+//    (respaldo setTimeout) para no competir con la carga de la tabla de
+//    operaciones, que es lo primero que ve el usuario al iniciar sesión.
 //
 // C) VISIBILIDAD DE DOCUMENTOS POR TIPO DE OPERACIÓN (DOCS_POR_TIPO).
 //
@@ -343,13 +348,28 @@ const OperacionesDashboard = () => {
   };
 
   useEffect(() => {
-    hidratarCatalogosDesdeCache();   // instantáneo, 0 lecturas
-    cargarCatalogosSiEsNecesario();  // descarga en 2º plano solo lo vencido/faltante
+    // 1) Pinta los nombres al instante desde la caché local (0 lecturas).
+    hidratarCatalogosDesdeCache();
+
+    // 2) La descarga de catálogos pendientes se DIFIERE hasta que el navegador
+    //    esté libre, para no competir con la carga de la tabla de operaciones
+    //    (que es lo primero que ve el usuario al iniciar sesión).
+    const pedirIdle = (cb: () => void): any => {
+      const ric = (window as any).requestIdleCallback;
+      return typeof ric === 'function' ? ric(cb, { timeout: 3000 }) : setTimeout(cb, 1200);
+    };
+    const cancelarIdle = (id: any) => {
+      const cic = (window as any).cancelIdleCallback;
+      if (typeof cic === 'function') cic(id); else clearTimeout(id);
+    };
+    const idleId = pedirIdle(() => { cargarCatalogosSiEsNecesario(); });
+    return () => cancelarIdle(idleId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     descargarOperaciones();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ✅ Logo para los PDF: si en la config hay un logo en base64 (data:...), úsalo;
