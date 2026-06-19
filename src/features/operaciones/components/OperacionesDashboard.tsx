@@ -712,10 +712,10 @@ const OperacionesDashboard = () => {
       bodegaNombre: origen,
       tipoMovimiento: operacionViendo.trafico || 'N/A',
       remolqueNombre: operacionViendo.remolquePlaca || operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
-      remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
+      remolquePlacas: operacionViendo.remolquePlacas || operacionViendo.remolquePlaca || (remolqueObj ? (remolqueObj.placas || remolqueObj.placa || 'N/A') : 'N/A'),
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
-      unidadPlacas: unidadObj ? (unidadObj.placa || 'N/A') : 'N/A',
+      unidadPlacas: operacionViendo.unidadPlacas || operacionViendo.unidadPlaca || (unidadObj ? (unidadObj.placas || unidadObj.placa || 'N/A') : 'N/A'),
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
@@ -738,7 +738,7 @@ const OperacionesDashboard = () => {
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
       remolqueNombre: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
-      remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
+      remolquePlacas: operacionViendo.remolquePlacas || operacionViendo.remolquePlaca || (remolqueObj ? (remolqueObj.placas || remolqueObj.placa || 'N/A') : 'N/A'),
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
@@ -759,7 +759,7 @@ const OperacionesDashboard = () => {
     const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
     const uniNombre = operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal);
-    const uniPlacas = unidadObj ? (unidadObj.placa || 'N/A') : 'N/A';
+    const uniPlacas = operacionViendo.unidadPlacas || operacionViendo.unidadPlaca || (unidadObj ? (unidadObj.placas || unidadObj.placa || 'N/A') : 'N/A');
 
     generarCheckListPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
