@@ -4,6 +4,24 @@ import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, addD
 import { db } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
 
+// ============================================================================
+// Módulos del sistema, agrupados igual que el menú lateral (App.tsx).
+// Incluye TODOS los items del menú y de los submenús, con las MISMAS etiquetas
+// que se muestran en el sidebar (para que el filtrado por permisos coincida).
+// ============================================================================
+const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
+  { grupo: 'General', modulos: ['Operaciones Activas', 'Servicios Completados', 'Servicios Cancelados', 'Reportes', 'Catálogos'] },
+  { grupo: 'Gastos', modulos: ['MTTO', 'Referencias del Diesel', 'Referencias de Puentes', 'Costos Adicionales'] },
+  { grupo: 'Clientes', modulos: ['Convenio de Clientes', 'Facturación de Clientes'] },
+  { grupo: 'Proveedores', modulos: ['Convenio de Proveedores', 'Facturación de Proveedores'] },
+  { grupo: 'Empleados', modulos: ['Colaboradores', 'Historial de Chequeo', 'Nómina', 'Deducciones'] },
+  { grupo: 'Bases de Datos', modulos: ['Empresas', 'Contactos', 'Direcciones', 'Tipo de Cambio', 'Combustible', 'Unidades Propias', 'Remolques', 'Proveedores de Unidad', 'Unidades del Proveedor'] },
+  { grupo: 'Configuración', modulos: ['Usuarios', 'Roles y Permisos', 'Historial de Actividad', 'Reglas de Estatus', 'Datos de la Empresa'] },
+];
+
+// Lista plana con todos los módulos (útil para "Seleccionar todo").
+const TODOS_LOS_MODULOS = GRUPOS_MODULOS.flatMap(g => g.modulos);
+
 export const RolesDashboard: React.FC = () => {
   const [roles, setRoles] = useState<any[]>([]);
   const [ipOficial, setIpOficial] = useState('');
@@ -16,12 +34,6 @@ export const RolesDashboard: React.FC = () => {
   const [nombreRol, setNombreRol] = useState('');
   const [modulos, setModulos] = useState<string[]>([]);
   const [cargandoRol, setCargandoRol] = useState(false);
-
-  const listaModulos = [
-    'Operaciones', 'Proveedores', 'Empresas (Bases de Datos)', 'Catálogos',
-    'Usuarios y Roles', 'Clientes', 'Direcciones (Bases de Datos)', 'Empleados',
-    'Historial de Actividad'
-  ];
 
   useEffect(() => {
     // Suscripción a Roles
@@ -85,6 +97,21 @@ export const RolesDashboard: React.FC = () => {
     setModulos(prev => prev.includes(mod) ? prev.filter(m => m !== mod) : [...prev, mod]);
   };
 
+  // ✅ NUEVO: marca / desmarca todos los módulos de un grupo de una sola vez.
+  const toggleGrupoModulos = (mods: string[]) => {
+    setModulos(prev => {
+      const todos = mods.every(m => prev.includes(m));
+      if (todos) return prev.filter(m => !mods.includes(m));
+      return Array.from(new Set([...prev, ...mods]));
+    });
+  };
+
+  // ✅ NUEVO: seleccionar / quitar TODOS los módulos del sistema.
+  const toggleTodos = () => {
+    const todos = TODOS_LOS_MODULOS.every(m => modulos.includes(m));
+    setModulos(todos ? [] : [...TODOS_LOS_MODULOS]);
+  };
+
   const guardarRol = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nombreRol.trim()) return alert("El nombre del rol es obligatorio");
@@ -122,6 +149,8 @@ export const RolesDashboard: React.FC = () => {
       }
     }
   };
+
+  const todosSeleccionados = TODOS_LOS_MODULOS.every(m => modulos.includes(m));
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
@@ -206,10 +235,10 @@ export const RolesDashboard: React.FC = () => {
         </table>
       </div>
 
-      {/* MODAL DE EDICIÓN DE ROL (Limpio, sin checkbox de red) */}
+      {/* MODAL DE EDICIÓN DE ROL */}
       {modalAbierto && (
         <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-          <div className="form-card" style={{ maxWidth: '500px', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
+          <div className="form-card" style={{ maxWidth: '600px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
             <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ fontSize: '1.25rem', color: '#f0f6fc', margin: 0, fontWeight: '500' }}>
                 {rolEditando ? 'Editar Rol' : 'Nuevo Rol'}
@@ -231,19 +260,54 @@ export const RolesDashboard: React.FC = () => {
               </div>
 
               <div className="form-group" style={{ marginBottom: '0' }}>
-                <label className="form-label" style={{ color: '#8b949e', marginBottom: '12px' }}>Selecciona los módulos a los que tendrá acceso:</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                  {listaModulos.map(mod => (
-                    <label key={mod} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c9d1d9', cursor: 'pointer', fontSize: '0.9rem' }}>
-                      <input 
-                        type="checkbox" 
-                        checked={modulos.includes(mod)} 
-                        onChange={() => toggleModulo(mod)} 
-                        style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
-                      />
-                      {mod}
-                    </label>
-                  ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <label className="form-label" style={{ color: '#8b949e', margin: 0 }}>Selecciona los módulos a los que tendrá acceso:</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#58a6ff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
+                    <input
+                      type="checkbox"
+                      checked={todosSeleccionados}
+                      onChange={toggleTodos}
+                      style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                    Seleccionar todo
+                  </label>
+                </div>
+
+                <div style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', maxHeight: '45vh', overflowY: 'auto' }}>
+                  {GRUPOS_MODULOS.map(g => {
+                    const todosGrupo = g.modulos.every(m => modulos.includes(m));
+                    const algunosGrupo = g.modulos.some(m => modulos.includes(m));
+                    return (
+                      <div key={g.grupo} style={{ marginBottom: '18px' }}>
+                        {/* Encabezado del grupo (equivale al item del MENÚ) */}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '10px', borderBottom: '1px solid #30363d', paddingBottom: '8px' }}>
+                          <input
+                            type="checkbox"
+                            checked={todosGrupo}
+                            ref={el => { if (el) el.indeterminate = !todosGrupo && algunosGrupo; }}
+                            onChange={() => toggleGrupoModulos(g.modulos)}
+                            style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
+                          />
+                          <span style={{ color: '#f0f6fc', fontWeight: 600, fontSize: '0.9rem' }}>{g.grupo}</span>
+                        </label>
+
+                        {/* Módulos del grupo (equivalen a los items del SUBMENÚ) */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', paddingLeft: '24px' }}>
+                          {g.modulos.map(mod => (
+                            <label key={mod} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c9d1d9', cursor: 'pointer', fontSize: '0.88rem' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={modulos.includes(mod)} 
+                                onChange={() => toggleModulo(mod)} 
+                                style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
+                              />
+                              {mod}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
