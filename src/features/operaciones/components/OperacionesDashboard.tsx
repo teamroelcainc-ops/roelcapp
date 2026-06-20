@@ -31,6 +31,12 @@
 // C) VISIBILIDAD DE DOCUMENTOS POR TIPO DE OPERACIÓN (DOCS_POR_TIPO).
 //
 // D) CONFIRMACIÓN AL CANCELAR (status cuyo nombre contiene "cancel").
+//
+// E) ✅ CORRECCIÓN REMOLQUE EN PDF (Solicitud de Retiro e Instrucciones del
+//    Servicio): el "# de Remolque" ahora trae SOLO el campo `nombre` del
+//    remolque (p. ej. "106") y "Placas" trae SOLO el campo `placa`
+//    (p. ej. "78UK4W"). Antes el nombre llegaba combinado ("106 78UK4W") y
+//    las placas salían en N/A.
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -711,8 +717,10 @@ const OperacionesDashboard = () => {
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
       tipoMovimiento: operacionViendo.trafico || 'N/A',
-      remolqueNombre: operacionViendo.remolquePlaca || operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
-      remolquePlacas: operacionViendo.remolquePlacas || operacionViendo.remolquePlaca || (remolqueObj ? (remolqueObj.placas || remolqueObj.placa || 'N/A') : 'N/A'),
+      // ✅ # de Remolque = SOLO el campo "nombre" del remolque (p. ej. "106").
+      remolqueNombre: (remolqueObj?.nombre) || operacionViendo.remolqueNombre || operacionViendo.numeroRemolque || 'N/A',
+      // ✅ Núm. de Placas = SOLO el campo "placa" del remolque (p. ej. "78UK4W").
+      remolquePlacas: (remolqueObj?.placa) || (remolqueObj?.placas) || operacionViendo.remolquePlaca || operacionViendo.remolquePlacas || 'N/A',
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       unidadPlacas: operacionViendo.unidadPlacas || operacionViendo.unidadPlaca || (unidadObj ? (unidadObj.placas || unidadObj.placa || 'N/A') : 'N/A'),
@@ -737,8 +745,10 @@ const OperacionesDashboard = () => {
       fecha: operacionViendo.fechaServicio || '',
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
-      remolqueNombre: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
-      remolquePlacas: operacionViendo.remolquePlacas || operacionViendo.remolquePlaca || (remolqueObj ? (remolqueObj.placas || remolqueObj.placa || 'N/A') : 'N/A'),
+      // ✅ # de Remolque = SOLO el campo "nombre" del remolque (p. ej. "106").
+      remolqueNombre: (remolqueObj?.nombre) || operacionViendo.remolqueNombre || operacionViendo.numeroRemolque || 'N/A',
+      // ✅ Placas = SOLO el campo "placa" del remolque (p. ej. "78UK4W").
+      remolquePlacas: (remolqueObj?.placa) || (remolqueObj?.placas) || operacionViendo.remolquePlaca || operacionViendo.remolquePlacas || 'N/A',
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
@@ -1066,8 +1076,7 @@ const OperacionesDashboard = () => {
      <div style={{ width: '100%', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
           <EmpresaBrand tamanoLogo={36} />
-          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: 0, fontWeight: 'bold' }}>
-            Operaciones Activas
+          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: 0, fontWeight: 'bold' }}>Operaciones Activas
           </h1>
         </div>
 
@@ -1389,8 +1398,7 @@ const OperacionesDashboard = () => {
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span>
-                  </div>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span></div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Ref Cliente</span>
                     <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.refCliente)}</span>
