@@ -33,10 +33,12 @@
 // D) CONFIRMACIÓN AL CANCELAR (status cuyo nombre contiene "cancel").
 //
 // E) ✅ CORRECCIÓN REMOLQUE EN PDF (Solicitud de Retiro e Instrucciones del
-//    Servicio): el "# de Remolque" ahora trae SOLO el campo `nombre` del
-//    remolque (p. ej. "106") y "Placas" trae SOLO el campo `placa`
-//    (p. ej. "78UK4W"). Antes el nombre llegaba combinado ("106 78UK4W") y
-//    las placas salían en N/A.
+//    Servicio): el "# de Remolque" trae SOLO el nombre (p. ej. "106") y
+//    "Placas" trae SOLO la placa (p. ej. "78UK4W"). La resolución es ROBUSTA
+//    (helper resolverRemolqueParaPDF): busca el remolque por id, por nombre, o
+//    por el string combinado, y como último recurso PARTE la cadena
+//    "106 78UK4W". Antes el find por id fallaba y todo caía al valor combinado
+//    (nombre = "106 78UK4W", placas = N/A).
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -509,6 +511,49 @@ const OperacionesDashboard = () => {
     if (!monto) return '$ 0.00';
     return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
+
+  // =====================================================================
+  // ✅ RESOLUCIÓN ROBUSTA DEL REMOLQUE PARA LOS PDF.
+  // Devuelve { nombre, placa } SEPARADOS, sin importar cómo esté guardada
+  // la referencia en la operación. Cubre estos casos:
+  //   1) numeroRemolque = ID del documento de `remolques`  → match por id.
+  //   2) numeroRemolque = nombre del remolque (p. ej. "106") → match por nombre.
+  //   3) No hay match en el catálogo pero remolqueNombre viene combinado
+  //      ("106 78UK4W")  → se parte: 1er token = nombre, resto = placa.
+  // Esto corrige el caso donde el `find` por id fallaba y todo caía al valor
+  // combinado de respaldo (mostrando "106 78UK4W" en el nombre y N/A en placas).
+  // =====================================================================
+  const resolverRemolqueParaPDF = (): { nombre: string; placa: string } => {
+    const lista: any[] = Array.isArray(catalogosGlobales.remolques) ? catalogosGlobales.remolques : [];
+    const ref = operacionViendo?.numeroRemolque;
+    const combinado = String(operacionViendo?.remolqueNombre || ref || '').trim();
+    const primerToken = combinado.split(/\s+/)[0] || '';
+
+    // 1) por id
+    let obj = ref ? lista.find((r: any) => String(r.id).trim() === String(ref).trim()) : undefined;
+    // 2) por nombre exacto (ref) o por el primer token del valor combinado
+    if (!obj && ref) obj = lista.find((r: any) => String(r.nombre || '').trim() === String(ref).trim());
+    if (!obj && primerToken) obj = lista.find((r: any) => String(r.nombre || '').trim() === primerToken);
+    // 3) por coincidencia del string completo "nombre placa"
+    if (!obj && combinado) {
+      obj = lista.find((r: any) => `${r.nombre || ''} ${r.placas || r.placa || ''}`.trim() === combinado);
+    }
+
+    let nombre = obj?.nombre ? String(obj.nombre).trim() : '';
+    let placa = (obj?.placa || obj?.placas) ? String(obj?.placa || obj?.placas).trim() : '';
+
+    // 4) Último recurso: partir la cadena combinada cuando no hubo match.
+    if (!nombre || !placa) {
+      const partes = combinado.split(/\s+/).filter(Boolean);
+      if (!nombre) nombre = partes[0] || '';
+      if (!placa && partes.length > 1) placa = partes.slice(1).join(' ');
+    }
+
+    // Otros respaldos directos de la operación para placas.
+    if (!placa) placa = String(operacionViendo?.remolquePlaca || operacionViendo?.remolquePlacas || '').trim();
+
+    return { nombre: nombre || 'N/A', placa: placa || 'N/A' };
+  };
   
   const abrirRegistroHorario = () => {
     const now = new Date();
@@ -710,17 +755,16 @@ const OperacionesDashboard = () => {
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const remolqueRes = resolverRemolqueParaPDF();
     const unidadProvVal = operacionViendo.unidadProveedor ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
       tipoMovimiento: operacionViendo.trafico || 'N/A',
-      // ✅ # de Remolque = SOLO el campo "nombre" del remolque (p. ej. "106").
-      remolqueNombre: (remolqueObj?.nombre) || operacionViendo.remolqueNombre || operacionViendo.numeroRemolque || 'N/A',
-      // ✅ Núm. de Placas = SOLO el campo "placa" del remolque (p. ej. "78UK4W").
-      remolquePlacas: (remolqueObj?.placa) || (remolqueObj?.placas) || operacionViendo.remolquePlaca || operacionViendo.remolquePlacas || 'N/A',
+      // ✅ # de Remolque = SOLO el nombre (p. ej. "106"); Placas = SOLO la placa (p. ej. "78UK4W").
+      remolqueNombre: remolqueRes.nombre,
+      remolquePlacas: remolqueRes.placa,
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       unidadPlacas: operacionViendo.unidadPlacas || operacionViendo.unidadPlaca || (unidadObj ? (unidadObj.placas || unidadObj.placa || 'N/A') : 'N/A'),
@@ -736,7 +780,7 @@ const OperacionesDashboard = () => {
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
-    const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
+    const remolqueRes = resolverRemolqueParaPDF();
     const unidadProvVal = operacionViendo.unidadProveedor ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
@@ -745,10 +789,9 @@ const OperacionesDashboard = () => {
       fecha: operacionViendo.fechaServicio || '',
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
-      // ✅ # de Remolque = SOLO el campo "nombre" del remolque (p. ej. "106").
-      remolqueNombre: (remolqueObj?.nombre) || operacionViendo.remolqueNombre || operacionViendo.numeroRemolque || 'N/A',
-      // ✅ Placas = SOLO el campo "placa" del remolque (p. ej. "78UK4W").
-      remolquePlacas: (remolqueObj?.placa) || (remolqueObj?.placas) || operacionViendo.remolquePlaca || operacionViendo.remolquePlacas || 'N/A',
+      // ✅ # de Remolque = SOLO el nombre (p. ej. "106"); Placas = SOLO la placa (p. ej. "78UK4W").
+      remolqueNombre: remolqueRes.nombre,
+      remolquePlacas: remolqueRes.placa,
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
@@ -1058,7 +1101,7 @@ const OperacionesDashboard = () => {
   const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
 
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
-  const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
+  const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
@@ -1076,7 +1119,8 @@ const OperacionesDashboard = () => {
      <div style={{ width: '100%', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
           <EmpresaBrand tamanoLogo={36} />
-          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: 0, fontWeight: 'bold' }}>Operaciones Activas
+          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: 0, fontWeight: 'bold' }}>
+            Operaciones Activas
           </h1>
         </div>
 
@@ -1398,7 +1442,8 @@ const OperacionesDashboard = () => {
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span></div>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span>
+                  </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Ref Cliente</span>
                     <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.refCliente)}</span>
