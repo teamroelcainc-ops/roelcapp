@@ -290,8 +290,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ NUEVO: control del modal genérico "Subir Documentos" (otros documentos)
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
-  // ✅ NUEVO (punto 3): ¿es administrador? Solo admin puede editar la referencia.
-  const [esAdmin, setEsAdmin] = useState(false);
+  // ✅ ¿Puede editar la Referencia? Es ADMIN (acceso total / Bypass) o alguno de
+  //    sus roles tiene el permiso "Editar Referencia" (configurable en Roles).
+  const [puedeEditarRef, setPuedeEditarRef] = useState(false);
   // ✅ NUEVO (punto 3): referencia editable. En alta se genera al guardar (servicio).
   const [referencia, setReferencia] = useState('');
 
@@ -372,21 +373,40 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ NUEVO (punto 3): detecta admin leyendo usuarios/{uid}. Acceso total si no
-  // hay sesión/doc (modo Bypass) o si sus roles incluyen ADMIN.
+  // ✅ Detecta si el usuario puede editar la Referencia leyendo usuarios/{uid}.
+  //    Acceso total (modo Bypass) si no hay sesión/doc. Puede editar si:
+  //      1) alguno de sus roles es ADMIN, o
+  //      2) alguno de sus roles tiene el permiso "Editar Referencia"
+  //         (modulosPermitidos en la colección 'roles').
   useEffect(() => {
     let activo = true;
+    const norm = (s: any) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
     (async () => {
       try {
         const u = auth.currentUser;
-        if (!u) { if (activo) setEsAdmin(true); return; }
+        if (!u) { if (activo) setPuedeEditarRef(true); return; }           // sin sesión → Bypass
         const snap = await getDoc(doc(db, 'usuarios', u.uid));
         if (!activo) return;
-        if (!snap.exists()) { setEsAdmin(true); return; }
+        if (!snap.exists()) { setPuedeEditarRef(true); return; }            // sin doc de usuario → Bypass
         const data = snap.data() as any;
-        const roles: string[] = Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : []);
-        setEsAdmin(roles.some((r) => String(r).toUpperCase().includes('ADMIN')));
-      } catch { if (activo) setEsAdmin(false); }
+        const rolesUsuario: string[] = Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : []);
+        const rolesSet = new Set(rolesUsuario.map(norm));
+
+        // 1) ADMIN siempre puede editar la referencia.
+        if ([...rolesSet].some((r) => r.includes('ADMIN'))) { setPuedeEditarRef(true); return; }
+
+        // 2) ¿Alguno de los roles del usuario tiene el permiso "Editar Referencia"?
+        const rolesSnap = await getDocs(collection(db, 'roles'));
+        if (!activo) return;
+        const permitido = rolesSnap.docs.some((d: any) => {
+          const rd = d.data() || {};
+          const esDelUsuario = rolesSet.has(norm(rd.nombre)) || rolesSet.has(norm(d.id));
+          if (!esDelUsuario) return false;
+          const mods: string[] = Array.isArray(rd.modulosPermitidos) ? rd.modulosPermitidos : [];
+          return mods.some((m) => norm(m).includes('EDITAR REF'));
+        });
+        if (activo) setPuedeEditarRef(permitido);
+      } catch { if (activo) setPuedeEditarRef(false); }
     })();
     return () => { activo = false; };
   }, []);
@@ -937,7 +957,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const enMemoria = catalogoTrafico.find((t: any) => String(t.id) === valor);
     if (enMemoria) {
       const nombre = enMemoria.nombre || valor;
-
       traficoCache.set(valor, nombre);
       return nombre;
     }
@@ -1133,7 +1152,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       // ✅ NUEVO (punto 3): si es admin y editó la referencia de una operación
       // existente, se guarda la referencia corregida.
-      if (initialData && esAdmin && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
+      if (initialData && puedeEditarRef && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
         operacionData.ref = referencia.trim();
       }
 
@@ -1251,7 +1270,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         .roelca-utility-box { margin-top: 10px; padding: 16px 18px; background: linear-gradient(135deg, rgba(63, 185, 80, 0.08), rgba(63, 185, 80, 0.02)); border: 1px solid rgba(63, 185, 80, 0.3); border-radius: 10px; }
         .roelca-utility-box.negative { background: linear-gradient(135deg, rgba(248, 81, 73, 0.08), rgba(248, 81, 73, 0.02)); border-color: rgba(248, 81, 73, 0.3); }
         .roelca-utility-label { font-size: 0.68rem; color: #7d8590; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
-
         .roelca-utility-value { font-size: 1.75rem; font-weight: 700; line-height: 1.1; color: #3fb950; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; }
         .roelca-utility-box.negative .roelca-utility-value { color: #f85149; }
         .roelca-form-footer { padding: 20px; border-top: 1px solid #1f2733; background-color: #0d1117; display: flex; flex-direction: column; gap: 10px; flex-shrink: 0; }
@@ -1330,14 +1348,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label orange">Referencia</label>
                         {initialData ? (
                           <input type="text" name="referencia" className="form-control" value={referencia}
-                            onChange={(e) => setReferencia(e.target.value)} readOnly={!esAdmin}
-                            title={esAdmin ? 'Como administrador puedes corregir la referencia' : 'Solo un administrador puede editar la referencia'}
-                            style={esAdmin ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }} />
+                            onChange={(e) => setReferencia(e.target.value)} readOnly={!puedeEditarRef}
+                            title={puedeEditarRef ? 'Tienes permiso para corregir la referencia' : 'No tienes permiso para editar la referencia'}
+                            style={puedeEditarRef ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }} />
                         ) : (
                           <input type="text" className="form-control" value="Se generará al guardar" readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                         )}
-                        <small style={{ color: initialData ? (esAdmin ? '#fb923c' : '#8b949e') : '#8b949e' }}>
-                          {initialData ? (esAdmin ? 'Editable por administrador en caso de error.' : 'Solo un administrador puede editarla.') : 'Formato: TR/LO/FL-DDMMYY-### (consecutivo único del día).'}
+                        <small style={{ color: initialData ? (puedeEditarRef ? '#fb923c' : '#8b949e') : '#8b949e' }}>
+                          {initialData ? (puedeEditarRef ? 'Editable (Admin o permiso "Editar Referencia").' : 'No tienes permiso para editarla.') : 'Formato: TR/LO/FL-DDMMYY-### (consecutivo único del día).'}
                         </small>
                       </div>
                       <div className="form-group"><label className="form-label orange">Tipo de Operación</label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
@@ -1565,8 +1583,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <label className="form-label" style={{ color: '#58a6ff' }}>Operador del Proveedor</label>
                           <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} style={{ border: '1px solid #58a6ff' }} placeholder="Buscar operador externo..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
                           {showDropdownOperadorProveedor && searchOperadorProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperadorProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Sin resultados (Se guardará como texto)</div> : resultadosOperadorProveedor.map((o:any) => { const valorNombre = o.nombre || o.nombres || o.nombreCompleto || 'Sin Nombre'; return (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(valorNombre); setShowDropdownOperadorProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{valorNombre}</div></div>); })}</div>)}
-
-                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
