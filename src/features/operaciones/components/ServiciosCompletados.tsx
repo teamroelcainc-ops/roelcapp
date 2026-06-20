@@ -94,7 +94,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
 
-  const [filterFecha, setFilterFecha] = useState('');
+  // ✅ MODIFICADO: el filtro PRINCIPAL ahora es el rango de fechas (inicio/fin).
+  const [filterFechaInicio, setFilterFechaInicio] = useState('');
+  const [filterFechaFin, setFilterFechaFin] = useState('');
   const [filterRemolque, setFilterRemolque] = useState('');
   const [filterCliente, setFilterCliente] = useState('');
 
@@ -117,46 +119,53 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
   const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
 
-  // ✅ NUEVO: búsqueda remota por referencia cuando NO hay cliente seleccionado
-  const [resultadosRefRemota, setResultadosRefRemota] = useState<any[]>([]);
-  const [buscandoRefRemota, setBuscandoRefRemota] = useState(false);
-
   // ✅ NUEVO: editor integrado (fallback cuando NO se pasa la prop onEditar)
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
   const [formEdicion, setFormEdicion] = useState<any>({});
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [pestañaEdicionActiva, setPestañaEdicionActiva] = useState<string>('general');
 
-  // ✅ MODIFICADO: query con FILTRO DE STATUS EN FIRESTORE + CACHÉ + PAGINACIÓN.
+  // ✅ NUEVO: clave de caché basada en el RANGO DE FECHAS + cliente (opcional).
+  const claveCacheActual = () =>
+    CACHE_PREFIX + `${filterFechaInicio}_${filterFechaFin}_${filterCliente || 'all'}`;
+
+  // ✅ MODIFICADO: el filtro PRINCIPAL ahora es el RANGO DE FECHAS (inicio y fin).
+  // El cliente es OPCIONAL (si se elige, se agrega como filtro dentro de la query).
   //
   // Estrategia de carga (en orden):
-  //   0) Si existe caché válido en sessionStorage (< 5 min) → usarlo (instantáneo).
-  //   1) Query óptima: where(clientePaga) + where(status, in, [...]) + orderBy + limit(100).
-  //      Trae SOLO las completadas (no descarga las demás). Requiere índice compuesto.
-  //   2) Fallback 1: misma query pero sin orderBy (índice más simple, ordena en memoria).
-  //   3) Fallback 2 (legacy): solo where(clientePaga) + limit(500), filtra todo en memoria.
-  //
-  // El conjunto descargado se cachea en sessionStorage por clienteId.
-  const descargarOperaciones = async (clienteId: string, opciones: { ignorarCache?: boolean } = {}) => {
+  //   0) Caché válido en sessionStorage (< 5 min) por rango+cliente → usarlo.
+  //   1) Query óptima: where(status, in, [...]) [+ where(clientePaga)] +
+  //      where(fechaServicio >= inicio) + where(fechaServicio <= fin) +
+  //      orderBy(fechaServicio) + limit(100). Requiere índice compuesto.
+  //   2) Fallback 1: misma query SIN orderBy (ordena en memoria).
+  //   3) Fallback 2: SOLO rango de fechaServicio + limit(500) (un solo campo,
+  //      no requiere índice compuesto) y filtra status/cliente en memoria.
+  const descargarOperaciones = async (
+    fechaInicio: string,
+    fechaFin: string,
+    clienteId: string,
+    opciones: { ignorarCache?: boolean } = {}
+  ) => {
     // Reset paginación al cargar de cero
     setLastDocSnap(null);
     setHayMasOperaciones(false);
 
-    if (!clienteId) {
+    // Sin rango de fechas completo no se descarga nada (es el filtro principal)
+    if (!fechaInicio || !fechaFin) {
       setOperacionesGlobales([]);
       return;
     }
 
+    const cacheKey = CACHE_PREFIX + `${fechaInicio}_${fechaFin}_${clienteId || 'all'}`;
+
     // [0] Intentar caché en sessionStorage
     if (!opciones.ignorarCache) {
       try {
-        const cacheStr = sessionStorage.getItem(CACHE_PREFIX + clienteId);
+        const cacheStr = sessionStorage.getItem(cacheKey);
         if (cacheStr) {
           const cache = JSON.parse(cacheStr);
           if (cache && Date.now() - cache.ts < CACHE_TTL_MS && Array.isArray(cache.ops)) {
             setOperacionesGlobales(cache.ops);
-            // Si el caché está al máximo del último chunk, asumimos que puede haber más;
-            // pero no tenemos cursor, así que el usuario verá un aviso de refrescar para paginar.
             setHayMasOperaciones(false);
             return;
           }
@@ -166,9 +175,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
     setCargandoOperaciones(true);
 
+    // Límite superior inclusivo aunque fechaServicio traiga hora (ej. "2026-06-20T10:30")
+    const finInclusivo = fechaFin + '\uf8ff';
+
     const filtrarLegacy = (ops: any[]) => ops.filter((op: any) => {
-      const statusId = String(op.status || '').trim();
-      return STATUS_COMPLETADOS_VALORES.includes(statusId);
+      const statusOk = STATUS_COMPLETADOS_VALORES.includes(String(op.status || '').trim());
+      const clienteOk = !clienteId || String(op.clientePaga || op.clienteId || '') === clienteId;
+      const f = String(op.fechaServicio || '');
+      const fechaOk = f >= fechaInicio && f <= finInclusivo;
+      return statusOk && clienteOk && fechaOk;
     });
 
     let opsFinal: any[] = [];
@@ -177,14 +192,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     let exito = false;
 
     try {
-      // [1] Query óptima: where + where + orderBy + limit
-      const q1 = query(
-        collection(db, 'operaciones'),
-        where('clientePaga', '==', clienteId),
-        where('status', 'in', STATUS_COMPLETADOS_VALORES),
-        orderBy('fechaServicio', 'desc'),
-        limit(TAMANIO_PAGINA)
-      );
+      // [1] Query óptima: status(in) [+ cliente] + rango fechaServicio + orderBy + limit
+      const constraints1: any[] = [where('status', 'in', STATUS_COMPLETADOS_VALORES)];
+      if (clienteId) constraints1.push(where('clientePaga', '==', clienteId));
+      constraints1.push(where('fechaServicio', '>=', fechaInicio));
+      constraints1.push(where('fechaServicio', '<=', finInclusivo));
+      constraints1.push(orderBy('fechaServicio', 'desc'));
+      constraints1.push(limit(TAMANIO_PAGINA));
+
+      const q1 = query(collection(db, 'operaciones'), ...constraints1);
       const snap = await getDocs(q1);
       opsFinal = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       lastSnapFinal = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
@@ -196,13 +212,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       if (esIndice1) {
         console.warn('[ServiciosCompletados] Query óptima falló (falta índice). Crea el índice con:', msg1);
         try {
-          // [2] Fallback 1: where + where (sin orderBy)
-          const q2 = query(
-            collection(db, 'operaciones'),
-            where('clientePaga', '==', clienteId),
-            where('status', 'in', STATUS_COMPLETADOS_VALORES),
-            limit(TAMANIO_PAGINA * 3)
-          );
+          // [2] Fallback 1: misma query SIN orderBy (ordena en memoria)
+          const constraints2: any[] = [where('status', 'in', STATUS_COMPLETADOS_VALORES)];
+          if (clienteId) constraints2.push(where('clientePaga', '==', clienteId));
+          constraints2.push(where('fechaServicio', '>=', fechaInicio));
+          constraints2.push(where('fechaServicio', '<=', finInclusivo));
+          constraints2.push(limit(TAMANIO_PAGINA * 3));
+
+          const q2 = query(collection(db, 'operaciones'), ...constraints2);
           const snap2 = await getDocs(q2);
           opsFinal = snap2.docs.map((d: any) => ({ id: d.id, ...d.data() }));
           opsFinal.sort((a: any, b: any) =>
@@ -217,10 +234,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           const msg2 = String(e2?.message || e2 || '');
           console.warn('[ServiciosCompletados] Fallback 1 falló, probando legacy:', msg2);
           try {
-            // [3] Fallback 2 (legacy): solo where cliente + limit alto, filtra en memoria
+            // [3] Fallback 2: SOLO rango de fechaServicio (un campo → sin índice compuesto)
             const q3 = query(
               collection(db, 'operaciones'),
-              where('clientePaga', '==', clienteId),
+              where('fechaServicio', '>=', fechaInicio),
+              where('fechaServicio', '<=', finInclusivo),
               limit(500)
             );
             const snap3 = await getDocs(q3);
@@ -232,7 +250,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             lastSnapFinal = null;
             hayMasFinal = false;
             exito = true;
-            console.warn('[ServiciosCompletados] Usando Fallback 2 (legacy compatible).');
+            console.warn('[ServiciosCompletados] Usando Fallback 2 (rango simple, filtra en memoria).');
           } catch (e3: any) {
             console.error('[ServiciosCompletados] Todos los intentos fallaron:', e3);
             alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${e3?.message || e3}`);
@@ -250,10 +268,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       setHayMasOperaciones(hayMasFinal);
       // Guardar en caché (los snapshots NO son serializables, sólo los datos)
       try {
-        sessionStorage.setItem(
-          CACHE_PREFIX + clienteId,
-          JSON.stringify({ ts: Date.now(), ops: opsFinal })
-        );
+        sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), ops: opsFinal }));
       } catch { /* cuota agotada: ignorar */ }
     }
 
@@ -263,17 +278,19 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: descarga el siguiente chunk de operaciones (paginación incremental).
   // Sólo funciona si la query óptima funcionó (necesita lastDocSnap).
   const cargarMasOperaciones = async () => {
-    if (!filterCliente || !lastDocSnap || cargandoMas || cargandoOperaciones) return;
+    if (!filterFechaInicio || !filterFechaFin || !lastDocSnap || cargandoMas || cargandoOperaciones) return;
     setCargandoMas(true);
     try {
-      const qMas = query(
-        collection(db, 'operaciones'),
-        where('clientePaga', '==', filterCliente),
-        where('status', 'in', STATUS_COMPLETADOS_VALORES),
-        orderBy('fechaServicio', 'desc'),
-        startAfter(lastDocSnap),
-        limit(TAMANIO_PAGINA)
-      );
+      const finInclusivo = filterFechaFin + '\uf8ff';
+      const constraints: any[] = [where('status', 'in', STATUS_COMPLETADOS_VALORES)];
+      if (filterCliente) constraints.push(where('clientePaga', '==', filterCliente));
+      constraints.push(where('fechaServicio', '>=', filterFechaInicio));
+      constraints.push(where('fechaServicio', '<=', finInclusivo));
+      constraints.push(orderBy('fechaServicio', 'desc'));
+      constraints.push(startAfter(lastDocSnap));
+      constraints.push(limit(TAMANIO_PAGINA));
+
+      const qMas = query(collection(db, 'operaciones'), ...constraints);
       const snap = await getDocs(qMas);
       const nuevas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       const setCompleto = [...operacionesGlobales, ...nuevas];
@@ -283,7 +300,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       // Actualizar caché con el conjunto acumulado
       try {
         sessionStorage.setItem(
-          CACHE_PREFIX + filterCliente,
+          claveCacheActual(),
           JSON.stringify({ ts: Date.now(), ops: setCompleto })
         );
       } catch { /* ignorar */ }
@@ -341,56 +358,21 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return () => unsubscribers.forEach((unsub) => unsub());
   }, []);
 
-  // ✅ NUEVO: cuando cambia el cliente seleccionado, se hace la query específica.
+  // ✅ NUEVO: el RANGO DE FECHAS (inicio + fin) es el filtro PRINCIPAL.
+  // Cuando ambas fechas están definidas se ejecuta la query (cliente opcional incluido).
+  // Si falta alguna fecha, se limpia la tabla.
   useEffect(() => {
-    descargarOperaciones(filterCliente);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterCliente]);
-
-  // ✅ NUEVO: sin cliente seleccionado, buscar la referencia directo en Firestore.
-  // Se dispara con debounce de 400 ms y sólo cuando NO hay cliente.
-  useEffect(() => {
-    if (filterCliente || !busqueda.trim()) {
-      setResultadosRefRemota([]);
-      setBuscandoRefRemota(false);
-      return;
+    if (filterFechaInicio && filterFechaFin) {
+      descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
+    } else {
+      setOperacionesGlobales([]);
+      setLastDocSnap(null);
+      setHayMasOperaciones(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterFechaInicio, filterFechaFin, filterCliente]);
 
-    const termino = busqueda.trim();
-    let cancelado = false;
-    setBuscandoRefRemota(true);
-
-    const timer = setTimeout(async () => {
-      try {
-        // Búsqueda por prefijo del campo "ref" (asume que ref se guarda como TEXTO).
-        // Rango sobre un solo campo → NO requiere índice compuesto.
-        const qRef = query(
-          collection(db, 'operaciones'),
-          where('ref', '>=', termino),
-          where('ref', '<=', termino + '\uf8ff'),
-          limit(50)
-        );
-        const snap = await getDocs(qRef);
-        let encontradas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-
-        // Mantener sólo las COMPLETADAS (coherente con este módulo)
-        encontradas = encontradas.filter((op: any) =>
-          STATUS_COMPLETADOS_VALORES.includes(String(op.status || '').trim())
-        );
-
-        if (!cancelado) setResultadosRefRemota(encontradas);
-      } catch (e: any) {
-        console.error('[ServiciosCompletados] Error en búsqueda remota por referencia:', e);
-        if (!cancelado) setResultadosRefRemota([]);
-      } finally {
-        if (!cancelado) setBuscandoRefRemota(false);
-      }
-    }, 400);
-
-    return () => { cancelado = true; clearTimeout(timer); };
-  }, [busqueda, filterCliente]);
-
-  useEffect(() => { setPaginaActual(1); }, [busqueda, filterFecha, filterRemolque, filterCliente]);
+  useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
   
   const mostrarDato = (text: any) => (text && text !== '' ? text : '-');
   
@@ -720,16 +702,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       const aplicar = (o: any) => (o.id === operacionEditando.id ? { ...o, ...payload } : o);
       const nuevasGlobales = operacionesGlobales.map(aplicar);
       setOperacionesGlobales(nuevasGlobales);
-      setResultadosRefRemota(prev => prev.map(aplicar));
       if (operacionViendo?.id === operacionEditando.id) {
         setOperacionViendo({ ...operacionViendo, ...payload });
       }
 
-      // Actualizar caché del cliente
-      if (filterCliente) {
+      // Actualizar caché (clave por rango de fechas + cliente)
+      if (filterFechaInicio && filterFechaFin) {
         try {
           sessionStorage.setItem(
-            CACHE_PREFIX + filterCliente,
+            claveCacheActual(),
             JSON.stringify({ ts: Date.now(), ops: nuevasGlobales })
           );
         } catch { /* ignorar */ }
@@ -761,16 +742,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       // Quitar de los estados en memoria
       const restantes = operacionesGlobales.filter((o: any) => o.id !== op.id);
       setOperacionesGlobales(restantes);
-      setResultadosRefRemota(prev => prev.filter((o: any) => o.id !== op.id));
 
       // Cerrar la ficha si era la que estaba abierta
       if (operacionViendo?.id === op.id) setOperacionViendo(null);
 
-      // Actualizar el caché del cliente con el conjunto ya filtrado
-      if (filterCliente) {
+      // Actualizar el caché (clave por rango de fechas + cliente)
+      if (filterFechaInicio && filterFechaFin) {
         try {
           sessionStorage.setItem(
-            CACHE_PREFIX + filterCliente,
+            claveCacheActual(),
             JSON.stringify({ ts: Date.now(), ops: restantes })
           );
         } catch { /* cuota agotada: ignorar */ }
@@ -791,56 +771,40 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     window.location.reload();
   };
 
-  // ✅ MODIFICADO: ahora soporta tres escenarios:
-  //   🅐 Con cliente → filtra en memoria lo descargado para ese cliente.
-  //   🅑 Sin cliente pero con búsqueda → usa lo que devolvió Firestore por "ref".
-  //   🅒 Sin cliente y sin búsqueda → vacío (mensaje guía).
+  // ✅ MODIFICADO: el filtro PRINCIPAL es el rango de fechas.
+  //   • Sin rango completo (inicio + fin) → vacío (mensaje guía).
+  //   • Con rango → parte de lo descargado y aplica filtros OPCIONALES en memoria
+  //     (cliente defensivo, remolque y búsqueda general).
   const operacionesFiltradas = useMemo(() => {
-    // 🅐 Hay cliente → comportamiento normal (filtra en memoria lo ya descargado)
+    if (!filterFechaInicio || !filterFechaFin) return [];
+
+    let filtradas = operacionesGlobales;
+
+    // Cliente (opcional) — defensivo, por si el fallback no lo filtró en la query
     if (filterCliente) {
-      let filtradas = operacionesGlobales;
-
-      if (filterFecha) {
-        filtradas = filtradas.filter(op => String(op.fechaServicio || '').includes(filterFecha));
-      }
-      if (filterRemolque) {
-        filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
-      }
-
-      if (busqueda.trim()) {
-        const b = busqueda.toLowerCase();
-        filtradas = filtradas.filter(op => {
-          return (
-            String(op.ref || op.id || '').toLowerCase().includes(b) ||
-            String(op.fechaServicio || '').toLowerCase().includes(b) ||
-            String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
-            String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
-            String(op.trafico || '').toLowerCase().includes(b) ||
-            String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
-          );
-        });
-      }
-
-      return filtradas;
+      filtradas = filtradas.filter(op => String(op.clientePaga || op.clienteId || '') === filterCliente);
     }
 
-    // 🅑 SIN cliente pero con búsqueda por referencia → usamos lo que trajo Firestore
-    if (busqueda.trim() && resultadosRefRemota.length > 0) {
-      let filtradas = resultadosRefRemota;
-
-      if (filterFecha) {
-        filtradas = filtradas.filter(op => String(op.fechaServicio || '').includes(filterFecha));
-      }
-      if (filterRemolque) {
-        filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
-      }
-
-      return filtradas;
+    if (filterRemolque) {
+      filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
     }
 
-    // 🅒 Sin cliente y sin búsqueda → vacío
-    return [];
-  }, [busqueda, operacionesGlobales, filterFecha, filterRemolque, filterCliente, resultadosRefRemota]);
+    if (busqueda.trim()) {
+      const b = busqueda.toLowerCase();
+      filtradas = filtradas.filter(op => {
+        return (
+          String(op.ref || op.id || '').toLowerCase().includes(b) ||
+          String(op.fechaServicio || '').toLowerCase().includes(b) ||
+          String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
+          String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
+          String(op.trafico || '').toLowerCase().includes(b) ||
+          String(op.statusNombre || op.status || '').toLowerCase().includes(b)
+        );
+      });
+    }
+
+    return filtradas;
+  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -1068,11 +1032,24 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           ✓ Servicios Completados
         </h1>
 
-        {/* ✅ MODIFICADO: Cliente ahora es el primer filtro y es el principal.
-            Al elegir cliente se dispara la query a Firestore. */}
+        {/* ✅ MODIFICADO: el filtro PRINCIPAL ahora es el RANGO DE FECHAS
+            (Fecha Inicio + Fecha Fin). Cliente, Remolque y el filtro general
+            son OPCIONALES. La query se dispara cuando ambas fechas están puestas. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+          {/* ✅ PRINCIPAL: Fecha Inicio */}
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO ★</label>
+            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
+          </div>
+
+          {/* ✅ PRINCIPAL: Fecha Fin */}
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN ★</label>
+            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
+          </div>
+
           <div style={{ flex: '1 1 280px', position: 'relative' }}>
-            <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA ★</label>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
 
             {filterCliente ? (
               // ✅ Cliente seleccionado: mostrar chip con X para limpiar
@@ -1119,8 +1096,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 zIndex: 100,
                 marginTop: '4px',
                 boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
-              }}>
-                {clientesFiltradosBuscador.length === 0 ? (
+              }}>{clientesFiltradosBuscador.length === 0 ? (
                   <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
                     {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
                   </div>
@@ -1159,13 +1135,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
           </div>
 
-          <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA</label>
-            <input type="date" value={filterFecha} onChange={(e) => setFilterFecha(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
-          </div>
-
           <div style={{ flex: '1 1 200px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE</label>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE (opcional)</label>
             <select value={filterRemolque} onChange={(e) => setFilterRemolque(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
               <option value="">Seleccionar Remolque...</option>
               {catalogosGlobales.remolques?.map((rem: any) => (
@@ -1175,17 +1146,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
 
           <div style={{ flex: '1 1 200px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL</label>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
             <div style={{ position: 'relative' }}>
               <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 36px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
             </div>
-            {/* ✅ NUEVO: aviso cuando se busca referencia sin cliente */}
-            {!filterCliente && busqueda.trim() && (
-              <div style={{ marginTop: '4px', fontSize: '0.7rem', color: '#fb923c' }}>
-                Búsqueda directa por referencia (sin cliente)
-              </div>
-            )}
           </div>
 
           <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', marginLeft: 'auto', paddingBottom: '2px' }}>
@@ -1203,9 +1168,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            {(cargandoOperaciones || buscandoRefRemota) ? (
+            {cargandoOperaciones ? (
               <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
-                {buscandoRefRemota ? 'Buscando referencia...' : 'Cargando operaciones completadas...'}
+                Cargando operaciones completadas...
               </div>
             ) : (
               <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
@@ -1222,16 +1187,16 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   </tr>
                 </thead>
                 <tbody>
-                  {(!filterCliente && !busqueda.trim()) ? (
+                  {(!filterFechaInicio || !filterFechaFin) ? (
                     <tr>
                       <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e', fontWeight: '500' }}>
-                        Selecciona un cliente o escribe una referencia en el filtro general.
+                        Selecciona <strong style={{ color: '#10b981' }}>Fecha Inicio</strong> y <strong style={{ color: '#10b981' }}>Fecha Fin</strong> para buscar las operaciones completadas.
                       </td>
                     </tr>
                   ) : operacionesEnPantalla.length === 0 ? (
                     <tr>
                       <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
-                        {!filterCliente ? 'No se encontró ninguna operación completada con esa referencia.' : 'Sin resultados para los filtros seleccionados.'}
+                        Sin resultados para el rango de fechas y los filtros seleccionados.
                       </td>
                     </tr>
                   ) : (
@@ -1284,15 +1249,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
           </div>
 
-          {operacionesFiltradas.length > 0 && !cargandoOperaciones && !buscandoRefRemota && (
+          {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones completadas
-                {filterCliente && hayMasOperaciones && <span style={{ color: '#fb923c', marginLeft: '8px' }}>(hay más disponibles)</span>}
+                {hayMasOperaciones && <span style={{ color: '#fb923c', marginLeft: '8px' }}>(hay más disponibles)</span>}
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {/* ✅ NUEVO: botón Cargar más (sólo aplica cuando hay cliente seleccionado) */}
-                {filterCliente && hayMasOperaciones && (
+                {/* ✅ NUEVO: botón Cargar más (paginación por rango de fechas) */}
+                {hayMasOperaciones && (
                   <button
                     onClick={cargarMasOperaciones}
                     disabled={cargandoMas}
@@ -1306,7 +1271,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       fontWeight: 'bold',
                       fontSize: '0.85rem'
                     }}
-                    title="Descargar el siguiente bloque de operaciones del cliente"
+                    title="Descargar el siguiente bloque de operaciones del rango"
                   >
                     {cargandoMas ? 'Cargando...' : `+ Cargar más (${TAMANIO_PAGINA})`}
                   </button>
@@ -1523,7 +1488,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad (Enteros)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantidad)}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500',fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantidad)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Embalaje</span>
