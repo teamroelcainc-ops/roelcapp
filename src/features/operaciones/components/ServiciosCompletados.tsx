@@ -1,8 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
+// ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
+import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
+// ✅ NUEVO: visor y subida de documentos ligados a la operación
+import { DocumentosLista } from '../../documentos/DocumentosLista';
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import { TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -87,9 +93,20 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
 
-  const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'historial'>('cerrado');
+  const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'registrar' | 'historial'>('cerrado');
   const [historialList, setHistorialList] = useState<any[]>([]);
   const [cargandoHorarios, setCargandoHorarios] = useState(false);
+
+  // ✅ NUEVO: edición de horario/status (igual que Operaciones Activas)
+  const [nuevoStatus, setNuevoStatus] = useState('');
+  const [nuevaFechaHora, setNuevaFechaHora] = useState('');
+  const [botonesDisponibles, setBotonesDisponibles] = useState<string[]>([]);
+  const [guardandoStatusRapido, setGuardandoStatusRapido] = useState<string | null>(null);
+  const [ultimoStatusGuardado, setUltimoStatusGuardado] = useState<string | null>(null);
+
+  // ✅ NUEVO: visor/subida de documentos de la operación
+  const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
+  const [mostrarSubirDocOp, setMostrarSubirDocOp] = useState(false);
   
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
@@ -124,6 +141,28 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [formEdicion, setFormEdicion] = useState<any>({});
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [pestañaEdicionActiva, setPestañaEdicionActiva] = useState<string>('general');
+
+  // ✅ NUEVO: resolución bidireccional ID ↔ Nombre de catalogo_status_servicio.
+  const mapaStatus = useMemo(() => {
+    const lista = (catalogosGlobales.statusServicio || []) as any[];
+    const porId: Record<string, { id: string; nombre: string }> = {};
+    const porNombre: Record<string, { id: string; nombre: string }> = {};
+    lista.forEach((s: any) => {
+      const entry = { id: String(s.id || ''), nombre: String(s.nombre || s.id || '') };
+      if (entry.id) porId[entry.id] = entry;
+      if (entry.nombre) porNombre[entry.nombre.trim().toLowerCase()] = entry;
+    });
+    return { porId, porNombre };
+  }, [catalogosGlobales.statusServicio]);
+
+  const resolverStatus = (valor: string | null | undefined): { id: string; nombre: string } => {
+    if (!valor) return { id: '', nombre: '' };
+    const v = String(valor).trim();
+    if (mapaStatus.porId[v]) return mapaStatus.porId[v];
+    const porNom = mapaStatus.porNombre[v.toLowerCase()];
+    if (porNom) return porNom;
+    return { id: v, nombre: v };
+  };
 
   // ✅ NUEVO: clave de caché basada en el RANGO DE FECHAS + cliente (opcional).
   const claveCacheActual = () =>
@@ -373,7 +412,26 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   }, [filterFechaInicio, filterFechaFin, filterCliente]);
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
-  
+
+  // ✅ NUEVO: cargar los botones de "Siguiente Paso" para la operación abierta.
+  useEffect(() => {
+    const cargarBotones = async () => {
+      if (operacionViendo) {
+        let op = operacionViendo;
+        if (!op.statusNombre && op.status) {
+          const resuelto = resolverStatus(op.status);
+          if (resuelto.nombre && resuelto.nombre !== resuelto.id) op = { ...op, statusNombre: resuelto.nombre };
+        }
+        const botones = await obtenerBotonesHorarioDinamicos(op);
+        setBotonesDisponibles(botones || []);
+      } else {
+        setBotonesDisponibles([]);
+      }
+    };
+    cargarBotones();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionViendo, mapaStatus]);
+
   const mostrarDato = (text: any) => (text && text !== '' ? text : '-');
   
   const formatearFechaHora = (isoString: string | undefined | null) => {
@@ -465,6 +523,134 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       console.error(e);
     }
     setCargandoHorarios(false);
+  };
+
+  // ✅ NUEVO: abrir el modal de registro retroactivo (fecha/hora personalizada)
+  const abrirRegistroHorario = () => {
+    const now = new Date();
+    const tzOffset = now.getTimezoneOffset() * 60000;
+    const localISOTime = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+    setNuevaFechaHora(localISOTime);
+    setNuevoStatus(botonesDisponibles[0] || '');
+    setModalHorarios('registrar');
+  };
+
+  // ✅ NUEVO: refleja el cambio de status en memoria + caché (clave por rango+cliente).
+  const aplicarStatusEnMemoria = (opId: string, statusId: string, statusNombre: string) => {
+    setOperacionesGlobales(prev => {
+      const next = prev.map((o: any) => (o.id === opId ? { ...o, status: statusId, statusNombre } : o));
+      if (filterFechaInicio && filterFechaFin) {
+        try { sessionStorage.setItem(claveCacheActual(), JSON.stringify({ ts: Date.now(), ops: next })); } catch { /* ignorar */ }
+      }
+      return next;
+    });
+    setOperacionViendo((prev: any) => (prev && prev.id === opId ? { ...prev, status: statusId, statusNombre } : prev));
+  };
+
+  // ✅ NUEVO: guardar movimiento retroactivo (resuelve nombre → ID hex).
+  const guardarHorario = async () => {
+    if (!operacionViendo) return;
+    if (!nuevoStatus || !nuevaFechaHora) return alert('Completa la fecha y el estatus.');
+    setCargandoHorarios(true);
+    try {
+      const { id: statusId, nombre: statusNombreResuelto } = resolverStatus(nuevoStatus);
+      const batch = writeBatch(db);
+      const horarioRef = doc(collection(db, 'horarios'));
+      batch.set(horarioRef, {
+        operacionId: operacionViendo.id,
+        status: statusId,
+        statusNombre: statusNombreResuelto,
+        fechaHora: nuevaFechaHora,
+        registradoEn: new Date().toISOString()
+      });
+      const opRef = doc(db, 'operaciones', String(operacionViendo.id));
+      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
+      await batch.commit();
+
+      aplicarStatusEnMemoria(operacionViendo.id, statusId, statusNombreResuelto);
+      alert('Horario registrado y Estatus actualizado.');
+      setModalHorarios('cerrado');
+    } catch (e) {
+      console.error('[ServiciosCompletados] Error guardarHorario:', e);
+      alert('Error al actualizar la base de datos.');
+    }
+    setCargandoHorarios(false);
+  };
+
+  // ✅ NUEVO: registrar status rápido (con cascada) — igual que Operaciones Activas.
+  const registrarStatusRapido = async (statusNombre: string) => {
+    if (!operacionViendo || !statusNombre) return;
+    if (guardandoStatusRapido) return;
+
+    const _normalizar = (s: string) =>
+      String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (_normalizar(statusNombre).includes('cancel')) {
+      const refOp = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'esta operación';
+      const confirmado = window.confirm(
+        `¿Seguro que deseas CANCELAR la operación ${refOp}?\n\n` +
+        `Se registrará el status "${statusNombre}" y la referencia quedará cancelada.`
+      );
+      if (!confirmado) return;
+    }
+
+    setGuardandoStatusRapido(statusNombre);
+
+    const operacionPrevia = operacionViendo;
+    const operacionesPrevias = operacionesGlobales;
+    const botonesPrevios = botonesDisponibles;
+
+    try {
+      let opParaCascada = operacionViendo;
+      if (!opParaCascada.statusNombre && opParaCascada.status) {
+        const r = resolverStatus(opParaCascada.status);
+        opParaCascada = { ...opParaCascada, statusNombre: r.nombre };
+      }
+
+      const cadenaStatus = await resolverCascadaStatus(statusNombre, opParaCascada);
+      const cadenaResuelta = cadenaStatus.map(resolverStatus);
+      const statusFinal = cadenaResuelta[cadenaResuelta.length - 1];
+
+      // Optimista: refleja en pantalla de inmediato
+      aplicarStatusEnMemoria(operacionViendo.id, statusFinal.id, statusFinal.nombre);
+
+      obtenerBotonesHorarioDinamicos({ ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre })
+        .then(botones => setBotonesDisponibles(botones || []))
+        .catch(() => {});
+
+      const now = new Date();
+      const tzOffset = now.getTimezoneOffset() * 60000;
+      const fechaHoraLocal = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+      const registradoEn = new Date().toISOString();
+
+      const batch = writeBatch(db);
+      cadenaResuelta.forEach((statusPaso, idx) => {
+        const horarioRef = doc(collection(db, 'horarios'));
+        batch.set(horarioRef, {
+          operacionId: operacionViendo.id,
+          status: statusPaso.id,
+          statusNombre: statusPaso.nombre,
+          fechaHora: fechaHoraLocal,
+          registradoEn,
+          ordenCascada: idx,
+          esAutomatico: idx > 0,
+        });
+      });
+      const opRef = doc(db, 'operaciones', String(operacionViendo.id));
+      batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre });
+      await batch.commit();
+
+      setGuardandoStatusRapido(null);
+      setUltimoStatusGuardado(statusNombre);
+      setTimeout(() => setUltimoStatusGuardado(null), 1500);
+    } catch (e: any) {
+      console.error('[ServiciosCompletados] Error al registrar status:', e);
+      // Revertir el cambio optimista
+      setOperacionViendo(operacionPrevia);
+      setOperacionesGlobales(operacionesPrevias);
+      setBotonesDisponibles(botonesPrevios);
+      setGuardandoStatusRapido(null);
+      alert('Error al guardar el status. Se revirtió el cambio.');
+    }
   };
 
   const handleDescSolicitudRetiro = async () => {
@@ -1022,6 +1208,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
+  // ✅ Referencia legible de la operación en curso (carpeta de Storage de documentos)
+  const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
+
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
@@ -1096,7 +1285,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 zIndex: 100,
                 marginTop: '4px',
                 boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
-              }}>{clientesFiltradosBuscador.length === 0 ? (
+              }}>
+                {clientesFiltradosBuscador.length === 0 ? (
                   <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
                     {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
                   </div>
@@ -1337,12 +1527,21 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.6rem', fontWeight: 600, letterSpacing: '-0.5px' }}>
                     Detalle de Operación Completada
                   </h2>
-                  <div style={{ marginTop: '8px', color: '#10b981', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>
-                    {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
+                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>
+                      {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
+                    </span>
+                    <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>
+                      {mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}
+                    </span>
                   </div>
                 </div>
                 
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ ...btnSecondaryActionStyle, color: '#fb923c', borderColor: 'rgba(251, 146, 60, 0.4)' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                    Documentos
+                  </button>
                   <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
@@ -1360,6 +1559,71 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 </div>
+              </div>
+
+              {/* ✅ NUEVO: SIGUIENTE PASO — editar status/horario igual que Operaciones Activas */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 0 10px 0', borderTop: '1px solid #30363d', flexWrap: 'wrap' }}>
+                <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>SIGUIENTE PASO</span>
+                {botonesDisponibles.length > 0 ? (
+                  <>
+                    {botonesDisponibles.map((botonStr: string) => {
+                      const esExitoso = ultimoStatusGuardado === botonStr;
+                      return (
+                        <button key={botonStr} onClick={() => registrarStatusRapido(botonStr)} disabled={guardandoStatusRapido !== null} className="status-pill"
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
+                            background: esExitoso ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                            color: '#fff', cursor: guardandoStatusRapido && !esExitoso ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                            boxShadow: esExitoso ? '0 4px 14px rgba(16, 185, 129, 0.4)' : '0 4px 14px rgba(234, 88, 12, 0.35)',
+                            transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                            opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden' }}
+                          title={`Marcar como: ${botonStr}`}>
+                          <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {esExitoso ? (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pop 0.3s ease-out' }}>
+                                <polyline points="20 6 9 17 4 12"></polyline>
+                              </svg>
+                            ) : (
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                              </svg>
+                            )}
+                          </span>
+                          <span style={{ whiteSpace: 'nowrap' }}>{botonStr}</span>
+                        </button>
+                      );
+                    })}
+                    <button onClick={abrirRegistroHorario} className="status-circle-btn"
+                      style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#8b949e',
+                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0 }}
+                      title="Registrar con fecha/hora distinta (retroactivo)">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                      </svg>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ color: '#8b949e', fontSize: '0.85rem', fontStyle: 'italic', marginRight: '8px' }}>
+                      No hay transiciones automáticas configuradas.
+                    </span>
+                    <button onClick={abrirRegistroHorario} className="status-pill"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
+                        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
+                        boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)', transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                      title="Registrar status manualmente">
+                      <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <line x1="12" y1="5" x2="12" y2="19"></line>
+                          <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                      </span>
+                      Registrar Status
+                    </button>
+                  </>
+                )}
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderTop: '1px solid #30363d', marginTop: '4px', flexWrap: 'wrap' }}>
@@ -1488,7 +1752,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad (Enteros)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500',fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantidad)}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantidad)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Embalaje</span>
@@ -1930,6 +2194,113 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
         </div>
       )}
+
+      {/* ✅ NUEVO: Registro retroactivo de movimiento (fecha/hora personalizada) */}
+      {modalHorarios === 'registrar' && (
+        <div className="modal-overlay" style={{ zIndex: 2000 }}>
+          <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
+            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '20px 24px' }}>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f0f6fc' }}>Registrar Movimiento (Fecha Personalizada)</h2>
+              <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
+            </div>
+            <div style={{ padding: '24px' }}>
+              <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
+                Usa este formulario solo si necesitas registrar un movimiento con una fecha y hora distinta a la actual.
+              </p>
+              <div className="form-group">
+                <label className="form-label" style={{ color: '#8b949e' }}>Fecha y Hora</label>
+                <input type="datetime-local" className="form-control" value={nuevaFechaHora} onChange={e => setNuevaFechaHora(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ color: '#8b949e' }}>Estatus / Hito</label>
+                <select className="form-control" value={nuevoStatus} onChange={e => setNuevoStatus(e.target.value)}>
+                  <option value="">-- Selecciona un status --</option>
+                  {botonesDisponibles.length > 0 ? (
+                    botonesDisponibles.map((botonStr: string) => (
+                      <option key={botonStr} value={botonStr}>{botonStr}</option>
+                    ))
+                  ) : (
+                    (catalogosGlobales.statusServicio || [])
+                      .filter((s: any) => s.nombre)
+                      .map((s: any) => (
+                        <option key={s.id} value={s.nombre}>{s.nombre}</option>
+                      ))
+                  )}
+                </select>
+              </div>
+              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary" style={{ width: '100%', marginTop: '24px', padding: '12px', borderRadius: '6px', fontWeight: 'bold' }}>
+                {cargandoHorarios ? 'Actualizando...' : 'Guardar y Actualizar Operación'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: Visor de documentos de la operación */}
+      {mostrarDocumentos && operacionViendo && (
+        <div className="modal-overlay" style={{ zIndex: 2100 }}>
+          <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Documentos de la Operación</h2>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#8b949e' }}>
+                  Referencia: <span style={{ color: '#fb923c', fontWeight: 600 }}>{refOperacionViendo}</span>
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSubirDocOp(true)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  Subir Documento
+                </button>
+                <button onClick={() => setMostrarDocumentos(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1 }} title="Cerrar">✕</button>
+              </div>
+            </div>
+            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+              <DocumentosLista coleccionOrigen="operaciones" registroId={operacionViendo.id} />
+            </div>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', textAlign: 'right', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
+              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: Subida de documentos ligada a la operación */}
+      {operacionViendo && (
+        <DocumentoUploadModal
+          isOpen={mostrarSubirDocOp && !!operacionViendo}
+          onClose={() => setMostrarSubirDocOp(false)}
+          coleccionOrigen="operaciones"
+          registroId={operacionViendo.id}
+          registroNombre={refOperacionViendo}
+          tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
+        />
+      )}
+
+      <style>{`
+        @keyframes pop {
+          0%   { transform: scale(0); opacity: 0; }
+          60%  { transform: scale(1.3); opacity: 1; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        .status-pill { transform: translateY(0); }
+        .status-pill:not(:disabled):hover {
+          transform: translateY(-2px);
+          filter: brightness(1.08);
+          box-shadow: 0 8px 20px rgba(234, 88, 12, 0.5) !important;
+        }
+        .status-pill:not(:disabled):active { transform: translateY(0); filter: brightness(0.95); }
+        .status-circle-btn:hover {
+          background: #30363d !important;
+          color: #ea580c !important;
+          border-color: #ea580c !important;
+          transform: scale(1.08);
+        }
+      `}</style>
 
     </div>
   );
