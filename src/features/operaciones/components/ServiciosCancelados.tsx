@@ -18,13 +18,17 @@ const ID_MXN = 'f95d8894';
 
 // ID hex del status "Cancelado" en catalogo_status_servicio
 const STATUS_CANCELADO_ID = '7607f692';
+// ID del tipo de empresa "Cliente (Paga)" para el buscador de clientes
+const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
+// Tamaño de la consulta a Firestore por rango de fechas
+const TAMANIO_PAGINA = 150;
 
 const ServiciosCancelados = () => {
   // ✅ NUEVO: logo de la empresa para los PDFs generados desde este módulo
   const { config: empresaConfig } = useEmpresaConfig();
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
-  const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
+  const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
   // ✅ NUEVO: mensaje de error real de carga (distinto a "no hay canceladas")
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
@@ -45,11 +49,16 @@ const ServiciosCancelados = () => {
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
 
-  // ✅ NUEVO: filtros opcionales (se aplican en memoria sobre las canceladas cargadas)
+  // ✅ MODIFICADO: el filtro PRINCIPAL ahora es el RANGO DE FECHAS (inicio/fin).
+  //    Cliente (ID, vía buscador) y Remolque (ID, vía selector) son opcionales.
   const [filterFechaInicio, setFilterFechaInicio] = useState('');
   const [filterFechaFin, setFilterFechaFin] = useState('');
   const [filterCliente, setFilterCliente] = useState('');
   const [filterRemolque, setFilterRemolque] = useState('');
+
+  // ✅ NUEVO: buscador autocompletado de cliente (igual que Servicios Completados)
+  const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
+  const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
 
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
@@ -83,35 +92,71 @@ const ServiciosCancelados = () => {
   //    Robusto: si falta el índice compuesto (status + fechaServicio), hace
   //    fallback a una consulta simple (solo where) y ordena del lado del cliente.
   //    Si no hay canceladas, NO lanza error: deja la lista vacía y la UI lo informa.
-  const descargarOperaciones = async () => {
+  const descargarOperaciones = async (fechaInicio: string, fechaFin: string, clienteId: string) => {
+    // Sin rango de fechas completo no se descarga nada (es el filtro principal)
+    if (!fechaInicio || !fechaFin) {
+      setOperacionesGlobales([]);
+      return;
+    }
+
     setCargandoOperaciones(true);
     setErrorCarga(null);
+
+    // Límite superior inclusivo aunque fechaServicio traiga hora
+    const finInclusivo = fechaFin + '\uf8ff';
+
+    const filtrarLegacy = (ops: any[]) => ops.filter((op: any) => {
+      const statusOk = String(op.status || '').trim() === STATUS_CANCELADO_ID;
+      const clienteOk = !clienteId || String(op.clientePaga || op.clienteId || '') === clienteId;
+      const f = String(op.fechaServicio || '');
+      const fechaOk = f >= fechaInicio && f <= finInclusivo;
+      return statusOk && clienteOk && fechaOk;
+    });
+
     try {
       let docs: any[] = [];
 
       try {
-        // Consulta ideal (requiere índice compuesto status + fechaServicio desc)
-        const queryIdeal = query(
-          collection(db, 'operaciones'),
-          where('status', '==', STATUS_CANCELADO_ID),
-          orderBy('fechaServicio', 'desc'),
-          limit(150)
-        );
-        const snap = await getDocs(queryIdeal);
+        // [1] Consulta ideal: status + [cliente] + rango fechaServicio + orderBy + limit
+        const constraints1: any[] = [where('status', '==', STATUS_CANCELADO_ID)];
+        if (clienteId) constraints1.push(where('clientePaga', '==', clienteId));
+        constraints1.push(where('fechaServicio', '>=', fechaInicio));
+        constraints1.push(where('fechaServicio', '<=', finInclusivo));
+        constraints1.push(orderBy('fechaServicio', 'desc'));
+        constraints1.push(limit(TAMANIO_PAGINA));
+
+        const q1 = query(collection(db, 'operaciones'), ...constraints1);
+        const snap = await getDocs(q1);
         docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       } catch (errIndex: any) {
         const msg = String(errIndex?.message || errIndex?.code || '').toLowerCase();
-        // Si Firestore se queja por falta de índice, reintentamos sin orderBy.
         if (msg.includes('index') || msg.includes('failed-precondition')) {
-          console.warn('[ServiciosCancelados] Falta índice compuesto; usando consulta simple + orden en cliente.');
-          const querySimple = query(
-            collection(db, 'operaciones'),
-            where('status', '==', STATUS_CANCELADO_ID),
-            limit(150)
-          );
-          const snap = await getDocs(querySimple);
-          docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-          docs.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+          console.warn('[ServiciosCancelados] Falta índice compuesto; usando fallback + orden en cliente.');
+          try {
+            // [2] Misma consulta SIN orderBy (ordena en memoria)
+            const constraints2: any[] = [where('status', '==', STATUS_CANCELADO_ID)];
+            if (clienteId) constraints2.push(where('clientePaga', '==', clienteId));
+            constraints2.push(where('fechaServicio', '>=', fechaInicio));
+            constraints2.push(where('fechaServicio', '<=', finInclusivo));
+            constraints2.push(limit(TAMANIO_PAGINA * 2));
+
+            const q2 = query(collection(db, 'operaciones'), ...constraints2);
+            const snap2 = await getDocs(q2);
+            docs = snap2.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+            docs.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+          } catch (err2: any) {
+            // [3] Solo rango de fechaServicio (un campo) y filtra en memoria
+            const q3 = query(
+              collection(db, 'operaciones'),
+              where('fechaServicio', '>=', fechaInicio),
+              where('fechaServicio', '<=', finInclusivo),
+              limit(500)
+            );
+            const snap3 = await getDocs(q3);
+            const todas = snap3.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+            docs = filtrarLegacy(todas);
+            docs.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+          }
         } else {
           throw errIndex;
         }
@@ -183,9 +228,24 @@ const ServiciosCancelados = () => {
     setCatalogosGlobales(catGuardados);
   };
 
+  // ✅ Al montar: cargamos los catálogos (para poblar el buscador de Cliente y el
+  //    selector de Remolque). Las operaciones se cargan al elegir el rango de fechas.
   useEffect(() => {
-    descargarOperaciones();
+    cargarCatalogosSiEsNecesario();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ El RANGO DE FECHAS (inicio + fin) es el filtro PRINCIPAL. Cuando ambas fechas
+  //    están definidas se ejecuta la consulta (cliente opcional incluido).
+  useEffect(() => {
+    if (filterFechaInicio && filterFechaFin) {
+      descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
+    } else {
+      setOperacionesGlobales([]);
+      setErrorCarga(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterFechaInicio, filterFechaFin, filterCliente]);
 
   // ✅ Logo para los PDF: si en la config hay un logo en base64 (data:...), úsalo;
   // si no, dejamos el global vacío para que el generador use el logo INCRUSTADO por
@@ -236,18 +296,64 @@ const ServiciosCancelados = () => {
 
   // ✅ Función robusta para leer del catálogo si existe, o usar el dato desnormalizado
   const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
-    if (valorDesnormalizado) return valorDesnormalizado; // Prioridad al valor estático de la operación
+    // Usar el valor desnormalizado solo si existe y NO es igual al propio ID
+    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) {
+      if (!(catalogo === 'statusServicio' && valorDesnormalizado.length > 30)) {
+        return valorDesnormalizado;
+      }
+    }
     if (!id) return '-';
     if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
-    
-    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => item.id === id);
+
+    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => String(item.id).trim() === String(id).trim() || String(item.nombre).trim() === String(id).trim());
     if (!elementoEncontrado) return id;
 
     if (catalogo === 'empleados') {
-      return elementoEncontrado.firstName ? `${elementoEncontrado.firstName} ${elementoEncontrado.lastNamePaternal || ''}`.trim() : elementoEncontrado.nombre || id;
+      return `${elementoEncontrado.firstName || ''} ${elementoEncontrado.lastNamePaternal || ''}`.trim() || elementoEncontrado.nombre || id;
+    }
+    if (catalogo === 'remolques') {
+      return `${elementoEncontrado.nombre || ''} ${elementoEncontrado.placas || elementoEncontrado.placa || ''}`.trim() || id;
+    }
+    if (catalogo === 'unidades') {
+      return elementoEncontrado.unidad || elementoEncontrado.nombre || id;
+    }
+    if (catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') {
+      return elementoEncontrado.moneda || id;
+    }
+    if (catalogo === 'statusServicio') {
+      return elementoEncontrado.nombre || id;
+    }
+    if (catalogo === 'tiposOperacion') {
+      return elementoEncontrado.tipo_operacion || id;
     }
 
     return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || elementoEncontrado.descripcion || elementoEncontrado.placa || id;
+  };
+
+  // ✅ NUEVO: resuelve el nombre del convenio de cliente (detalle → tarifa)
+  const obtenerNombreConvenioCliente = (id: string, valorDesnormalizado?: string) => {
+    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
+    if (!id) return '-';
+    const detalle = catalogosGlobales.catalogoConvDetalles?.find((d: any) => String(d.id).trim() === String(id).trim());
+    if (detalle) {
+      const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio_id || detalle.tipoConvenio || detalle.tipo_convenio || detalle['TIPO DE CONVENIO'];
+      const tObj = catalogosGlobales.tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
+      return tObj?.descripcion || tObj?.nombre || id;
+    }
+    return id;
+  };
+
+  // ✅ NUEVO: resuelve el nombre del convenio de proveedor (detalle → tarifa)
+  const obtenerNombreConvenioProv = (id: string, valorDesnormalizado?: string) => {
+    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
+    if (!id) return '-';
+    const detalle = catalogosGlobales.catalogoConvProvDetalles?.find((d: any) => String(d.id).trim() === String(id).trim());
+    if (detalle) {
+      const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio || detalle.tarifaId || detalle['TIPO DE CONVENIO'];
+      const tObj = catalogosGlobales.tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
+      return tObj?.descripcion || tObj?.nombre || detalle.tipoConvenioNombre || id;
+    }
+    return id;
   };
 
   const formatoMoneda = (monto: any) => {
@@ -401,8 +507,7 @@ const ServiciosCancelados = () => {
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
-    const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
+    const unidadProvVal = operacionViendo.unidadProveedor? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
       ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
@@ -435,7 +540,8 @@ const ServiciosCancelados = () => {
 
     generarInstruccionesServicioPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'N/A',
-      fecha: operacionViendo.fechaServicio || '',unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
+      fecha: operacionViendo.fechaServicio || '',
+      unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
       remolqueNombre: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
       remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
@@ -560,30 +666,52 @@ const ServiciosCancelados = () => {
     window.location.reload();
   };
 
-  // ✅ FILTRO BASADO EN TEXTOS DESNORMALIZADOS + filtros opcionales (fecha/cliente/remolque)
+  // ✅ NUEVO: lista de clientes "Paga" para el buscador (empresas con tipo 7eec9cbb)
+  const clientesFiltradosBuscador = useMemo(() => {
+    if (!catalogosGlobales.empresas) return [];
+    const esClientePaga = (emp: any) => {
+      const tipos = emp?.tiposEmpresa;
+      if (Array.isArray(tipos)) return tipos.some((t: any) => String(t).trim() === ID_TIPO_CLIENTE_PAGA);
+      if (typeof tipos === 'string') return tipos.includes(ID_TIPO_CLIENTE_PAGA);
+      if (tipos && typeof tipos === 'object') return Object.values(tipos).some((v: any) => String(v).trim() === ID_TIPO_CLIENTE_PAGA);
+      return false;
+    };
+    const clientes = catalogosGlobales.empresas
+      .filter(esClientePaga)
+      .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
+    if (!textoBuscarCliente.trim()) return clientes.slice(0, 30);
+    const q = textoBuscarCliente.toLowerCase().trim();
+    return clientes.filter((c: any) =>
+      String(c.nombre || '').toLowerCase().includes(q) ||
+      String(c.rfc || '').toLowerCase().includes(q)
+    ).slice(0, 30);
+  }, [catalogosGlobales.empresas, textoBuscarCliente]);
+
+  const nombreClienteSeleccionado = useMemo(() => {
+    if (!filterCliente || !catalogosGlobales.empresas) return '';
+    const cli = catalogosGlobales.empresas.find((e: any) => e.id === filterCliente);
+    return cli?.nombre || filterCliente;
+  }, [filterCliente, catalogosGlobales.empresas]);
+
+  // ✅ MODIFICADO: el filtro PRINCIPAL es el rango de fechas.
+  //   • Sin rango completo (inicio + fin) → vacío (mensaje guía).
+  //   • Con rango → parte de lo descargado y aplica filtros OPCIONALES en memoria
+  //     (cliente defensivo, remolque por ID y búsqueda general).
   const operacionesFiltradas = useMemo(() => {
+    if (!filterFechaInicio || !filterFechaFin) return [];
+
     const b = busqueda.toLowerCase();
-    const fi = filterFechaInicio;
-    const ff = filterFechaFin ? filterFechaFin + '\uf8ff' : '';
-    const cli = filterCliente.toLowerCase().trim();
-    const rem = filterRemolque.toLowerCase().trim();
 
     return operacionesGlobales.filter(op => {
-      // Rango de fechas (opcional) sobre fechaServicio
-      const f = String(op.fechaServicio || '');
-      if (fi && f < fi) return false;
-      if (ff && f > ff) return false;
+      // Cliente (opcional) — defensivo por si el fallback no lo filtró en la query
+      if (filterCliente && String(op.clientePaga || op.clienteId || '') !== filterCliente) return false;
 
-      // Cliente (opcional) — sobre los nombres desnormalizados
-      if (cli) {
-        const c = `${op.clienteNombre || ''} ${op.nombreCliente || ''} ${op.clientePaga || ''}`.toLowerCase();
-        if (!c.includes(cli)) return false;
-      }
-
-      // Remolque (opcional)
-      if (rem) {
-        const r = `${op.remolqueNombre || ''} ${op.numeroRemolque || ''} ${op.remolquePlaca || ''}`.toLowerCase();
-        if (!r.includes(rem)) return false;
+      // Remolque (opcional) — por ID o por nombre desnormalizado
+      if (filterRemolque) {
+        const coincideRem =
+          String(op.numeroRemolque || '') === filterRemolque ||
+          String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase());
+        if (!coincideRem) return false;
       }
 
       // Búsqueda general (opcional)
@@ -617,14 +745,14 @@ const ServiciosCancelados = () => {
     const lineas = operacionesFiltradas.map(op => [
       `"${op.ref || op.id?.substring(0,6) || ''}"`, 
       `"${op.fechaServicio || ''}"`, 
-      `"${op.tipoOperacionNombre || op.tipoOperacionId || ''}"`, 
-      `"${op.statusNombre || op.status || ''}"`, 
-      `"${op.convenioNombre || op.convenio || ''}"`, 
-      `"${op.remolquePlaca || op.numeroRemolque || ''}"`, 
-      `"${op.proveedorUnidadNombre || op.proveedorUnidad || ''}"`, 
-      `"${op.unidadNombre || op.unidad || ''}"`, 
-      `"${op.clienteNombre || op.nombreCliente || ''}"`, 
-      `"${op.convenioProveedorNombre || op.convenioProveedor || ''}"`, 
+      `"${mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}"`, 
+      `"${mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}"`, 
+      `"${obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}"`, 
+      `"${mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}"`, 
+      `"${mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}"`, 
+      `"${mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}"`, 
+      `"${mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}"`, 
+      `"${obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}"`, 
       `"${formatoMoneda(op.cargosAdicionales)}"`, 
       `"${formatoMoneda(op.subtotalCliente)}"`
     ].join(','));
@@ -653,9 +781,6 @@ const ServiciosCancelados = () => {
   // ✅ Referencia legible de la operación en curso (carpeta de Storage)
   const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
 
-  // ✅ Estado vacío real: terminó de cargar, sin error y sin canceladas
-  const sinCanceladas = !cargandoOperaciones && !errorCarga && operacionesGlobales.length === 0;
-
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
      <div style={{ width: '100%', margin: '0 auto' }}>
@@ -663,34 +788,104 @@ const ServiciosCancelados = () => {
           <EmpresaBrand tamanoLogo={36} />
           <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: 0, fontWeight: 'bold' }}>🚫 Servicios Cancelados</h1>
         </div>
+        {/* ✅ Barra de filtros estilo "Servicios Completados" (en rojo).
+            Filtro PRINCIPAL: rango de fechas. Cliente y Remolque son opcionales. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          <div style={{ flex: '1 1 160px' }}>
-            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO</label>
-            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ flex: '1 1 160px' }}>
-            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN</label>
-            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ flex: '1 1 200px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE</label>
-            <input type="text" placeholder="Filtrar por cliente..." value={filterCliente} onChange={(e) => setFilterCliente(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
-          </div>
+          {/* PRINCIPAL: Fecha Inicio */}
           <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE</label>
-            <input type="text" placeholder="Filtrar por remolque..." value={filterRemolque} onChange={(e) => setFilterRemolque(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO ★</label>
+            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
           </div>
-          <div style={{ flex: '2 1 220px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>BÚSQUEDA GENERAL</label>
+
+          {/* PRINCIPAL: Fecha Fin */}
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN ★</label>
+            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+          </div>
+
+          {/* OPCIONAL: Cliente que paga (buscador con autocompletado) */}
+          <div style={{ flex: '1 1 280px', position: 'relative' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
+
+            {filterCliente ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {nombreClienteSeleccionado}
+                </span>
+                <button
+                  onClick={() => { setFilterCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
+                  title="Cambiar cliente"
+                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div style={{ position: 'relative' }}>
+                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#ef4444' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input
+                  type="text"
+                  placeholder="Buscar cliente por nombre o RFC..."
+                  value={textoBuscarCliente}
+                  onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
+                  onFocus={() => setMostrarSugerenciasCliente(true)}
+                  onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
+                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+
+            {!filterCliente && mostrarSugerenciasCliente && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+                {clientesFiltradosBuscador.length === 0 ? (
+                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                    {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                      {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
+                    </div>
+                    {clientesFiltradosBuscador.map((cli: any) => (
+                      <div
+                        key={cli.id}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setFilterCliente(cli.id); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
+                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                        onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                        onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
+                        {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* OPCIONAL: Remolque (selector) */}
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE (opcional)</label>
+            <select value={filterRemolque} onChange={(e) => setFilterRemolque(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}><option value="">Seleccionar Remolque...</option>
+              {catalogosGlobales.remolques?.map((rem: any) => (
+                <option key={rem.id} value={rem.id}>{`${rem.nombre || ''} ${rem.placas || rem.placa || ''}`.trim()}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* OPCIONAL: Filtro general */}
+          <div style={{ flex: '1 1 200px' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
             <div style={{ position: 'relative' }}>
-              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Ref, Status, Tipo..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 36px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 36px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', paddingBottom: '2px' }}>
-            <button className="btn btn-outline" onClick={() => { setFilterFechaInicio(''); setFilterFechaFin(''); setFilterCliente(''); setFilterRemolque(''); setBusqueda(''); }} title="Limpiar filtros" style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', padding: '10px 12px', borderRadius: '6px', cursor: 'pointer' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
+
+          <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', marginLeft: 'auto', paddingBottom: '2px' }}>
             <button className="btn btn-outline" onClick={forzarRecarga} title="Recargar Catálogos" style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', padding: '10px 12px', borderRadius: '6px', cursor: 'pointer' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
             </button>
@@ -700,20 +895,28 @@ const ServiciosCancelados = () => {
           </div>
         </div>
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          {cargandoOperaciones ? (
+          {(!filterFechaInicio || !filterFechaFin) ? (
+            <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
+              <div style={{ fontSize: '2.4rem', marginBottom: '10px' }}>🗓️</div>
+              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>
+                Selecciona <span style={{ color: '#ef4444' }}>Fecha Inicio</span> y <span style={{ color: '#ef4444' }}>Fecha Fin</span>
+              </div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Define el rango de fechas para buscar las operaciones canceladas.</div>
+            </div>
+          ) : cargandoOperaciones ? (
             <div style={{ border: '1px solid #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones canceladas...</div>
           ) : errorCarga ? (
             <div style={{ border: '1px solid rgba(248,81,73,0.4)', backgroundColor: 'rgba(248,81,73,0.06)', borderRadius: '8px', padding: '40px 24px', textAlign: 'center' }}>
               <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</div>
               <div style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.05rem', marginBottom: '8px' }}>No se pudieron cargar las operaciones</div>
               <div style={{ color: '#8b949e', fontSize: '0.9rem', maxWidth: '520px', margin: '0 auto 16px' }}>{errorCarga}</div>
-              <button onClick={descargarOperaciones} style={{ padding: '8px 18px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Reintentar</button>
+              <button onClick={() => descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente)} style={{ padding: '8px 18px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Reintentar</button>
             </div>
-          ) : sinCanceladas ? (
+          ) : operacionesGlobales.length === 0 ? (
             <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
               <div style={{ fontSize: '2.4rem', marginBottom: '10px' }}>📭</div>
-              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>No existen servicios cancelados</div>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Cuando una operación se marque como cancelada aparecerá aquí.</div>
+              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>Sin resultados</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>No hay operaciones canceladas en el rango y los filtros seleccionados.</div>
             </div>
           ) : (
           <>
@@ -721,7 +924,8 @@ const ServiciosCancelados = () => {
               <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
-                    <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th><th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Ref</th>
+                    <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Ref</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Tipo de Operación</th>
                     <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Status</th>
@@ -763,13 +967,13 @@ const ServiciosCancelados = () => {
                         </td>
                         <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0,6)}</td>
                         <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.tipoOperacionNombre || op.tipoOperacionId || '-'}</td>
-                        <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{op.statusNombre || op.status || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.convenioNombre || op.convenio || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.remolquePlaca || op.numeroRemolque || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.proveedorUnidadNombre || op.proveedorUnidad || '-'}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.unidadNombre || op.unidad || '-'}</td>
-                        <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{op.clienteNombre || op.nombreCliente || op.clientePaga || '-'}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</td>
+                        <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</td>
+                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</td>
+                        <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</td>
                         <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.subtotalCliente)}</td>
                       </tr>
                     ))
@@ -913,22 +1117,22 @@ const ServiciosCancelados = () => {
             </div>
             <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
               {pestañaDetalleActiva === 'general' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Tipo</span><span>{operacionViendo.tipoOperacionNombre || operacionViendo.tipoOperacionId || '-'}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{color: '#ef4444'}}>{operacionViendo.statusNombre || operacionViendo.status || '-'}</span></span></div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}><div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Tipo</span><span>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{color: '#ef4444'}}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span></div>
                   {evalIsFletes && (<div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Paga)</span><span>{mostrarDato(operacionViendo.clienteNombre || operacionViendo.nombreCliente || operacionViendo.clientePaga)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio (Tarifa)</span><span>{operacionViendo.convenioNombre || operacionViendo.convenio || '-'}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># de Remolque</span><span>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Paga)</span><span>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio (Tarifa)</span><span>{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># de Remolque</span><span>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre)}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Ref Cliente</span><span>{mostrarDato(operacionViendo.refCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Origen</span><span>{operacionViendo.origenNombre || operacionViendo.origen || '-'}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Destino</span><span>{operacionViendo.destinoNombre || operacionViendo.destino || '-'}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Origen</span><span>{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Destino</span><span>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span></div>
                   <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Observaciones Ejecutivo</span><div style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>{mostrarDato(operacionViendo.observacionesEjecutivo)}</div></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'pedimento' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}><div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Mercancía)</span><span>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span></div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                  <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Mercancía)</span><span>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Descripción de la Mercancía</span><span>{mostrarDato(operacionViendo.descripcionMercancia)}</span></div>
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cantidad</span><span>{mostrarDato(operacionViendo.cantidad)}</span></div>
@@ -951,11 +1155,11 @@ const ServiciosCancelados = () => {
               )}
               {pestañaDetalleActiva === 'unidad' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{operacionViendo.proveedorUnidadNombre || operacionViendo.proveedorUnidad || '-'}</span></div>
+                  <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span></div>
                   <div style={{ gridColumn: 'span 3', backgroundColor: '#161b22', padding: '20px', borderRadius: '12px', border: '1px solid #30363d' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio Proveedor</span><span>{operacionViendo.convenioProveedorNombre || operacionViendo.convenioProveedor || '-'}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio Proveedor</span><span>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Moneda Base</span><span>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span></div>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
@@ -972,8 +1176,8 @@ const ServiciosCancelados = () => {
                   {showDetailInternalFleet && (
                     <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                       <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0' }}>Flota Operativa (Roelca)</h4></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Unidad Asignada</span><span>{operacionViendo.unidadNombre || operacionViendo.unidad || '-'}</span></div>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Operador Asignado</span><span>{operacionViendo.operadorNombre || operacionViendo.operador || '-'}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span></div>
+                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Operador Asignado</span><span>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span></div>
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Sueldo Operador</span><span>{formatoMoneda(operacionViendo.sueldoOperador)}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Sueldo Extra</span><span>{formatoMoneda(operacionViendo.sueldoExtra)}</span></div>
