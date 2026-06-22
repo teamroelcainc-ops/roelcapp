@@ -24,6 +24,7 @@ const COLUMNAS_OPS_DIESEL_BASE = [
   { id: 'origen',        label: 'Origen',          visible: true, orden: true },
   { id: 'destino',       label: 'Destino',         visible: true, orden: true },
   { id: 'diesel',        label: 'Diesel (Op)',     visible: true, orden: true },
+  { id: 'refDiesel',     label: 'Ref. Diesel',     visible: true, orden: true },
 ];
 
 export const ReferenciasDieselDashboard = () => {
@@ -189,13 +190,13 @@ export const ReferenciasDieselDashboard = () => {
     catch { return fechaString; }
   };
 
+  // ✅ TODAS las unidades del catálogo, sin excepción (no depende de las operaciones).
   const unidadesOptions = useMemo(() => {
-    const names = operacionesGlobales
-      .filter(op => !op.referenciaDieselId)
-      .map(op => getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad))
-      .filter(n => n && n !== '-');
-    return Array.from(new Set(names)).sort();
-  }, [operacionesGlobales, unidadesList]);
+    const names = unidadesList
+      .map(u => String(u.unidad || u.nombre || u.numeroEconomico || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [unidadesList]);
 
   const proveedoresFiltrados = useMemo(() => {
     return proveedoresList.filter(p => {
@@ -218,13 +219,42 @@ export const ReferenciasDieselDashboard = () => {
     });
   }, [operacionesGlobales, filtroUnidad, unidadesList]);
 
-  const esCargada = (op: any) => !!op.referenciaDieselId;
+  // ✅ Set con TODOS los ids de operaciones que ya están dentro de alguna
+  // referencia del historial (operacionesIds).
+  const idsCargadasSet = useMemo(() => {
+    const s = new Set<string>();
+    referenciasGlobales.forEach(r => {
+      if (Array.isArray(r.operacionesIds)) r.operacionesIds.forEach((id: string) => s.add(id));
+    });
+    return s;
+  }, [referenciasGlobales]);
+
+  // ✅ Mapa: id de operación → consecutivo de la referencia donde se cargó.
+  const refDieselPorOpId = useMemo(() => {
+    const m: Record<string, string> = {};
+    referenciasGlobales.forEach(r => {
+      if (Array.isArray(r.operacionesIds)) {
+        r.operacionesIds.forEach((id: string) => { if (!m[id]) m[id] = r.consecutivo; });
+      }
+    });
+    return m;
+  }, [referenciasGlobales]);
+
+  // Extrae el número final de un consecutivo (para ordenar por referencia).
+  const consecutivoNum = (str: string) => {
+    const mm = String(str || '').match(/(\d+)\s*$/);
+    return mm ? parseInt(mm[1], 10) : 0;
+  };
+
+  // ✅ "Cargada" = está en el historial de referencias (por id o por referenciaDieselId).
+  //    "Pendiente" = NO está en el historial.
+  const esCargada = (op: any) => !!op.referenciaDieselId || idsCargadasSet.has(op.id);
 
   const conteoOps = useMemo(() => {
     const pendientes = operacionesBaseUnidad.filter(op => !esCargada(op)).length;
     const cargadas = operacionesBaseUnidad.filter(esCargada).length;
     return { pendientes, cargadas };
-  }, [operacionesBaseUnidad]);
+  }, [operacionesBaseUnidad, idsCargadasSet]);
 
   const valorOrdenOp = (op: any, campo: string): string | number => {
     switch (campo) {
@@ -235,6 +265,7 @@ export const ReferenciasDieselDashboard = () => {
       case 'origen': return String(op.origen || '').toLowerCase();
       case 'destino': return String(op.destino || '').toLowerCase();
       case 'diesel': return Number(op.combustibleTotal || 0);
+      case 'refDiesel': return String(op.referenciaDieselConsecutivo || refDieselPorOpId[op.id] || '').toLowerCase();
       default: return '';
     }
   };
@@ -258,10 +289,14 @@ export const ReferenciasDieselDashboard = () => {
     return [...lista].sort((a, b) => {
       const va = valorOrdenOp(a, ordenOps.campo);
       const vb = valorOrdenOp(b, ordenOps.campo);
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-      return String(va).localeCompare(String(vb)) * dir;
+      let cmp: number;
+      if (typeof va === 'number' && typeof vb === 'number') cmp = (va - vb) * dir;
+      else cmp = String(va).localeCompare(String(vb)) * dir;
+      if (cmp !== 0) return cmp;
+      // ✅ Desempate: por número de referencia de la operación, del más nuevo al más viejo.
+      return consecutivoNum(b.ref) - consecutivoNum(a.ref);
     });
-  }, [operacionesBaseUnidad, filtroUnidad, filtroEstadoOps, ordenOps, fechaDesdeOps, fechaHastaOps]);
+  }, [operacionesBaseUnidad, filtroUnidad, filtroEstadoOps, ordenOps, fechaDesdeOps, fechaHastaOps, idsCargadasSet]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -278,6 +313,7 @@ export const ReferenciasDieselDashboard = () => {
       case 'origen': return op.origen || '-';
       case 'destino': return op.destino || '-';
       case 'diesel': return Number(op.combustibleTotal || 0);
+      case 'refDiesel': return op.referenciaDieselConsecutivo || refDieselPorOpId[op.id] || '-';
       default: return '-';
     }
   };
@@ -293,6 +329,10 @@ export const ReferenciasDieselDashboard = () => {
       case 'origen': return <td key={key} style={tdBase}>{op.origen || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destino || '-'}</td>;
       case 'diesel': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{Number(op.combustibleTotal || 0).toFixed(2)}</td>;
+      case 'refDiesel': {
+        const cons = op.referenciaDieselConsecutivo || refDieselPorOpId[op.id] || '';
+        return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap', fontFamily: 'monospace', fontWeight: 'bold', color: cons ? '#10b981' : '#8b949e' }}>{cons || '-'}</td>;
+      }
       default: return <td key={key} style={tdBase}>-</td>;
     }
   };
@@ -384,8 +424,7 @@ export const ReferenciasDieselDashboard = () => {
   }, [galonesCalculadosOp, galonesExtras]);
 
   // ✅ CÁLCULO DINÁMICO DEL STATUS
-  const statusReferenciaForm = useMemo(() => {
-    const extraVacio = galonesExtras === '' || galonesExtras === 0 || isNaN(galonesExtras as number);
+  const statusReferenciaForm = useMemo(() => {const extraVacio = galonesExtras === '' || galonesExtras === 0 || isNaN(galonesExtras as number);
     const cargVacio = galonesCargados === '' || galonesCargados === 0 || isNaN(galonesCargados as number);
 
     if (extraVacio && cargVacio) return 'No Autorizado';
@@ -540,7 +579,7 @@ export const ReferenciasDieselDashboard = () => {
 
   const referenciasFiltradas = useMemo(() => {
     const t = busquedaRef.toLowerCase();
-    return referenciasGlobales.filter(r => {
+    const lista = referenciasGlobales.filter(r => {
       const nombreUni = r.unidadNombre || getNombreUnidad(r.unidadId || r.unidad);
       const nombreOpe = r.operadorNombre || getNombreOperador(r.operadorId || r.operador);
       const nombreProv = r.proveedorNombre || getNombreProveedor(r.proveedorId || r.proveedor);
@@ -551,6 +590,13 @@ export const ReferenciasDieselDashboard = () => {
         nombreProv.toLowerCase().includes(t) ||
         (r.status || '').toLowerCase().includes(t)
       );
+    });
+    // ✅ Orden: fecha (desc) y luego consecutivo (desc). Del más nuevo al más viejo.
+    return [...lista].sort((a, b) => {
+      const fa = String(a.fecha || '');
+      const fb = String(b.fecha || '');
+      if (fa !== fb) return fb.localeCompare(fa);
+      return consecutivoNum(b.consecutivo) - consecutivoNum(a.consecutivo);
     });
   }, [referenciasGlobales, busquedaRef, unidadesList, operadoresList, proveedoresList]);
 
@@ -734,8 +780,7 @@ export const ReferenciasDieselDashboard = () => {
                 </div>
                 <div>
                   <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma Combustible Total</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenSeleccion.dieselTotal.toFixed(2)}</span>
-                </div>
+                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenSeleccion.dieselTotal.toFixed(2)}</span></div>
               </div>
               <div style={{ borderTop: '1px dashed #30363d', paddingTop: '16px' }}>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Operaciones incluidas:</span>
@@ -962,8 +1007,7 @@ export const ReferenciasDieselDashboard = () => {
                 </span>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Galones Calculados (Operaciones)</span>
-                <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{galonesCalculadosOp.toFixed(2)} Gal.</span>
+                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Galones Calculados (Operaciones)</span><span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{galonesCalculadosOp.toFixed(2)} Gal.</span>
               </div>
             </div>
             
