@@ -9,7 +9,9 @@ import {
   writeBatch, 
   doc, 
   limit,
-  orderBy
+  orderBy,
+  getDoc,
+  updateDoc
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -63,6 +65,11 @@ export const ReferenciasDieselDashboard = () => {
   const [operacionAEditar, setOperacionAEditar] = useState<any | null>(null);
   const [editCombustibleOp, setEditCombustibleOp] = useState<number | ''>('');
   const [guardandoEdicionOp, setGuardandoEdicionOp] = useState(false);
+
+  // ✅ Edición del registro completo de la referencia (modal)
+  const [editandoRef, setEditandoRef] = useState<any | null>(null);
+  const [formEditRef, setFormEditRef] = useState<any>({ fecha: '', proveedorId: '', galonesExtras: '', galonesCargados: '', costoDiesel: '', observaciones: '' });
+  const [guardandoEdicionRef, setGuardandoEdicionRef] = useState(false);
 
   const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
   const [consecutivoForm, setConsecutivoForm] = useState('');
@@ -147,6 +154,41 @@ export const ReferenciasDieselDashboard = () => {
     };
     fetchCosto();
   }, [fechaForm, proveedorSeleccionado, activeTab]);
+
+  // ✅ Al abrir la Ficha de una referencia, garantizamos tener en memoria las
+  // operaciones que incluye (aunque estemos en "Historial de Referencias",
+  // donde las operaciones no se cargan de forma masiva). Así los chips de
+  // "Operaciones Incluidas" sí son clicables y abren su formulario de edición.
+  useEffect(() => {
+    if (!referenciaViendo || !Array.isArray(referenciaViendo.operacionesIds) || referenciaViendo.operacionesIds.length === 0) return;
+    const idsFaltantes = referenciaViendo.operacionesIds.filter(
+      (id: string) => !operacionesGlobales.some(o => o.id === id)
+    );
+    if (idsFaltantes.length === 0) return;
+
+    let cancelado = false;
+    (async () => {
+      try {
+        const snaps = await Promise.all(
+          idsFaltantes.map((id: string) => getDoc(doc(db, 'operaciones', id)))
+        );
+        if (cancelado) return;
+        const nuevas = snaps
+          .filter(snap => snap.exists())
+          .map(snap => ({ id: snap.id, ...(snap.data() as any) }));
+        if (nuevas.length > 0) {
+          setOperacionesGlobales(prev => {
+            const existentes = new Set(prev.map(o => o.id));
+            return [...prev, ...nuevas.filter(n => !existentes.has(n.id))];
+          });
+        }
+      } catch (error) {
+        console.error('Error cargando las operaciones de la referencia:', error);
+      }
+    })();
+
+    return () => { cancelado = true; };
+  }, [referenciaViendo]);
 
   const generarConsecutivo = (fechaStr: string) => {
     const [year, month, day] = fechaStr.split('-');
@@ -424,7 +466,8 @@ export const ReferenciasDieselDashboard = () => {
   }, [galonesCalculadosOp, galonesExtras]);
 
   // ✅ CÁLCULO DINÁMICO DEL STATUS
-  const statusReferenciaForm = useMemo(() => {const extraVacio = galonesExtras === '' || galonesExtras === 0 || isNaN(galonesExtras as number);
+  const statusReferenciaForm = useMemo(() => {
+    const extraVacio = galonesExtras === '' || galonesExtras === 0 || isNaN(galonesExtras as number);
     const cargVacio = galonesCargados === '' || galonesCargados === 0 || isNaN(galonesCargados as number);
 
     if (extraVacio && cargVacio) return 'No Autorizado';
@@ -560,6 +603,11 @@ export const ReferenciasDieselDashboard = () => {
 
       await batch.commit();
 
+      // Reflejar el nuevo combustible en memoria para que el chip se actualice.
+      setOperacionesGlobales(prev => prev.map(o =>
+        o.id === operacionAEditar.id ? { ...o, combustibleTotal: combustibleNuevo } : o
+      ));
+
       setReferenciaViendo({ 
         ...referenciaViendo, 
         sumaDiesel: nuevaSumaReferencia,
@@ -574,6 +622,66 @@ export const ReferenciasDieselDashboard = () => {
       alert("Hubo un error al guardar la modificación.");
     } finally {
       setGuardandoEdicionOp(false);
+    }
+  };
+
+  // ✅ Abre el modal de edición precargando los datos de la referencia.
+  const abrirEdicionRef = (r: any) => {
+    setFormEditRef({
+      fecha: r.fecha || '',
+      proveedorId: r.proveedorId || '',
+      galonesExtras: (r.galonesExtras === undefined || r.galonesExtras === null) ? '' : Number(r.galonesExtras),
+      galonesCargados: (r.galonesCargados === undefined || r.galonesCargados === null) ? '' : Number(r.galonesCargados),
+      costoDiesel: (r.costoDiesel === undefined || r.costoDiesel === null) ? '' : Number(r.costoDiesel),
+      observaciones: r.observaciones || ''
+    });
+    setEditandoRef(r);
+  };
+
+  // ✅ Guarda los cambios del registro y recalcula autorizados/totales/status.
+  const handleGuardarEdicionRef = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editandoRef) return;
+    setGuardandoEdicionRef(true);
+    try {
+      const sumaDiesel = Number(editandoRef.sumaDiesel || 0);
+      const extras = Number(formEditRef.galonesExtras) || 0;
+      const cargados = Number(formEditRef.galonesCargados) || 0;
+      const costo = Number(formEditRef.costoDiesel) || 0;
+      const autorizados = sumaDiesel + extras;
+
+      // Mismo criterio que al crear la referencia.
+      const extraVacio = !extras;
+      const cargVacio = !cargados;
+      let status = 'Cargado';
+      if (extraVacio && cargVacio) status = 'No Autorizado';
+      else if (!extraVacio && cargVacio) status = 'Autorizado';
+
+      const updates: any = {
+        fecha: formEditRef.fecha,
+        proveedorId: formEditRef.proveedorId,
+        proveedorNombre: getNombreProveedor(formEditRef.proveedorId),
+        galonesExtras: extras,
+        galonesCargados: cargados,
+        costoDiesel: costo,
+        galonesAutorizados: autorizados,
+        totalAutorizado: autorizados * costo,
+        totalCargado: cargados * costo,
+        observaciones: formEditRef.observaciones,
+        status
+      };
+
+      await updateDoc(doc(db, 'referencias_diesel', editandoRef.id), updates);
+
+      // Reflejar en memoria (lista + ficha abierta).
+      setReferenciasGlobales(prev => prev.map(r => r.id === editandoRef.id ? { ...r, ...updates } : r));
+      setReferenciaViendo(prev => (prev && prev.id === editandoRef.id) ? { ...prev, ...updates } : prev);
+      setEditandoRef(null);
+    } catch (error) {
+      console.error('Error al editar la referencia:', error);
+      alert('No se pudo guardar la edición. Revisa tu conexión.');
+    } finally {
+      setGuardandoEdicionRef(false);
     }
   };
 
@@ -780,7 +888,8 @@ export const ReferenciasDieselDashboard = () => {
                 </div>
                 <div>
                   <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma Combustible Total</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenSeleccion.dieselTotal.toFixed(2)}</span></div>
+                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenSeleccion.dieselTotal.toFixed(2)}</span>
+                </div>
               </div>
               <div style={{ borderTop: '1px dashed #30363d', paddingTop: '16px' }}>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Operaciones incluidas:</span>
@@ -1007,7 +1116,8 @@ export const ReferenciasDieselDashboard = () => {
                 </span>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Galones Calculados (Operaciones)</span><span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{galonesCalculadosOp.toFixed(2)} Gal.</span>
+                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Galones Calculados (Operaciones)</span>
+                <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{galonesCalculadosOp.toFixed(2)} Gal.</span>
               </div>
             </div>
             
@@ -1071,7 +1181,13 @@ export const ReferenciasDieselDashboard = () => {
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>Ficha de Referencia Diesel</h2>
-              <button onClick={() => setReferenciaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button onClick={() => abrirEdicionRef(referenciaViendo)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                  Editar
+                </button>
+                <button onClick={() => setReferenciaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              </div>
             </div>
             
             <div style={{ padding: '24px' }}>
@@ -1179,6 +1295,69 @@ export const ReferenciasDieselDashboard = () => {
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
               <button onClick={() => setReferenciaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDITAR REFERENCIA (datos del registro) */}
+      {editandoRef && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #D84315', borderRadius: '12px', width: '100%', maxWidth: '600px', padding: '24px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.7)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems: 'center' }}>
+              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Editar Referencia: <span style={{ color: '#D84315', fontFamily: 'monospace' }}>{editandoRef.consecutivo}</span></h2>
+              <button onClick={() => setEditandoRef(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicionRef}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FECHA</label>
+                  <input type="date" value={formEditRef.fecha} onChange={e => setFormEditRef({ ...formEditRef, fecha: e.target.value })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px', colorScheme: 'dark' }} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>PROVEEDOR</label>
+                  <select value={formEditRef.proveedorId} onChange={e => setFormEditRef({ ...formEditRef, proveedorId: e.target.value })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }}>
+                    <option value="">Seleccionar...</option>
+                    {proveedoresFiltrados.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>GALONES EXTRAS</label>
+                  <input type="number" step="0.01" value={formEditRef.galonesExtras} onChange={e => setFormEditRef({ ...formEditRef, galonesExtras: e.target.valueAsNumber || '' })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>GALONES CARGADOS</label>
+                  <input type="number" step="0.01" value={formEditRef.galonesCargados} onChange={e => setFormEditRef({ ...formEditRef, galonesCargados: e.target.valueAsNumber || '' })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>COSTO DIARIO DIESEL</label>
+                  <input type="number" step="0.01" value={formEditRef.costoDiesel} onChange={e => setFormEditRef({ ...formEditRef, costoDiesel: e.target.valueAsNumber || '' })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                  <span style={{ color: '#8b949e', fontSize: '0.72rem', marginBottom: '4px' }}>Galones Autorizados (automático)</span>
+                  <span style={{ color: '#58a6ff', fontSize: '1.15rem', fontWeight: 'bold' }}>
+                    {(Number(editandoRef.sumaDiesel || 0) + (Number(formEditRef.galonesExtras) || 0)).toFixed(2)} Gal.
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>OBSERVACIONES</label>
+                <textarea value={formEditRef.observaciones} onChange={e => setFormEditRef({ ...formEditRef, observaciones: e.target.value })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px', height: '70px' }} />
+              </div>
+
+              <div style={{ backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: '#8b949e' }}>Suma de Diesel (operaciones, no editable):</span>
+                  <span style={{ color: '#fff', fontWeight: 'bold' }}>{Number(editandoRef.sumaDiesel || 0).toFixed(2)}</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button type="button" onClick={() => setEditandoRef(null)} disabled={guardandoEdicionRef} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+                <button type="submit" disabled={guardandoEdicionRef} style={{ padding: '8px 24px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoEdicionRef ? 'Guardando...' : 'Guardar Cambios'}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
