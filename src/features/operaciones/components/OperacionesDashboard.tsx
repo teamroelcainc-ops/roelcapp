@@ -26,7 +26,10 @@ const CATALOGOS_TTL_MS: Record<string, number> = {
   catalogoConvClientes: DIA_MS, catalogoConvDetalles: DIA_MS, catalogoTC: DIA_MS,
 };
 const TTL_DEFAULT = DIA_MS;
-const claveCacheCatalogo = (alias: string) => `cat_v1__${alias}`;
+// ✅ v2: se sube la versión de la clave para INVALIDAR cualquier caché vieja
+// (incluidas las que quedaron VACÍAS cuando un bloqueador cortó la llamada a
+// Firestore). Con v2, las cachés v1 dañadas se ignoran y todo se baja de nuevo.
+const claveCacheCatalogo = (alias: string) => `cat_v2__${alias}`;
 const leerCacheCatalogo = (alias: string): { ts: number; data: any[] } | null => {
   try {
     const raw = localStorage.getItem(claveCacheCatalogo(alias));
@@ -35,12 +38,19 @@ const leerCacheCatalogo = (alias: string): { ts: number; data: any[] } | null =>
     return obj && Array.isArray(obj.data) ? obj : null;
   } catch { return null; }
 };
+// ✅ NO guardar un catálogo VACÍO. Si una descarga vuelve con 0 documentos
+// (p. ej. la bloqueó una extensión), NO se cachea, para que se reintente en la
+// siguiente carga en lugar de quedarse pegado mostrando IDs para siempre.
 const escribirCacheCatalogo = (alias: string, data: any[]) => {
-  try { localStorage.setItem(claveCacheCatalogo(alias), JSON.stringify({ ts: Date.now(), data })); } catch {}
+  try {
+    if (!Array.isArray(data) || data.length === 0) return;
+    localStorage.setItem(claveCacheCatalogo(alias), JSON.stringify({ ts: Date.now(), data }));
+  } catch {}
 };
+// ✅ Una caché VACÍA NO se considera vigente → fuerza re-descarga.
 const cacheVigente = (alias: string): boolean => {
   const obj = leerCacheCatalogo(alias);
-  if (!obj) return false;
+  if (!obj || !Array.isArray(obj.data) || obj.data.length === 0) return false;
   const ttl = CATALOGOS_TTL_MS[alias] ?? TTL_DEFAULT;
   return (Date.now() - (obj.ts || 0)) < ttl;
 };
@@ -284,6 +294,21 @@ const OperacionesDashboard = () => {
   };
 
   useEffect(() => {
+    // 0) ✅ LIMPIEZA AUTOMÁTICA: borra cachés viejas (v1) y cualquier caché que
+    //    haya quedado VACÍA (0 docs) por un bloqueo previo de Firestore. Así el
+    //    estado atascado (Tipo/Status mostrando ID) se cura solo al cargar.
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('cat_v1__')) { localStorage.removeItem(k); return; }
+        if (k.startsWith('cat_v2__')) {
+          try {
+            const obj = JSON.parse(localStorage.getItem(k) || '{}');
+            if (!obj || !Array.isArray(obj.data) || obj.data.length === 0) localStorage.removeItem(k);
+          } catch { localStorage.removeItem(k); }
+        }
+      });
+    } catch {}
+
     hidratarCatalogosDesdeCache();
     cargarCatalogosSiEsNecesario();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -457,7 +482,58 @@ const OperacionesDashboard = () => {
 
     return { nombre: nombre || 'N/A', placa: placa || 'N/A' };
   };
-  
+
+  // =====================================================================
+  // ✅ RESOLUCIÓN ROBUSTA DE LA UNIDAD (TRACTOR) PARA LOS PDF.
+  // Devuelve { nombre, placa } sin imprimir nunca "undefined". El nombre de la
+  // unidad en el catálogo `unidades` está en el campo `unidad` (no en
+  // `numeroEconomico`/`nombre`), por eso antes salía undefined. Aquí se prueban
+  // todos los campos posibles y, si es flota externa, se busca en
+  // `unidades_proveedor`. Como último recurso usa el valor desnormalizado.
+  // =====================================================================
+  const resolverUnidadParaPDF = (): { nombre: string; placa: string } => {
+    const refUnidad = operacionViendo?.unidad;
+    const listaU: any[] = Array.isArray(catalogosGlobales.unidades) ? catalogosGlobales.unidades : [];
+    const uObj = refUnidad ? listaU.find((u: any) => String(u.id).trim() === String(refUnidad).trim()) : undefined;
+
+    let nombre = String(
+      operacionViendo?.unidadNombre ||
+      (uObj ? (uObj.unidad || uObj.numeroEconomico || uObj.numeroUnidad || uObj.nombre || uObj.economico) : '') ||
+      ''
+    ).trim();
+    let placa = String(
+      operacionViendo?.unidadPlacas ||
+      operacionViendo?.unidadPlaca ||
+      (uObj ? (uObj.placas || uObj.placa) : '') ||
+      ''
+    ).trim();
+
+    // Flota externa: si no hubo unidad propia, intenta con unidades_proveedor.
+    if (!nombre && operacionViendo?.unidadProveedor) {
+      const listaP: any[] = Array.isArray(catalogosGlobales.unidades_proveedor) ? catalogosGlobales.unidades_proveedor : [];
+      const pObj = listaP.find((u: any) => String(u.id).trim() === String(operacionViendo.unidadProveedor).trim());
+      if (pObj) {
+        nombre = String(pObj.numeroUnidad || pObj.numeroEconomico || pObj.unidad || pObj.nombre || '').trim();
+        if (!placa) placa = String(pObj.placas || pObj.placa || '').trim();
+      }
+    }
+
+    return { nombre: nombre || 'N/A', placa: placa || 'N/A' };
+  };
+
+  // ✅ Nombre del operador para PDF, sin "undefined".
+  const resolverOperadorParaPDF = (): string => {
+    if (operacionViendo?.operadorNombre) return String(operacionViendo.operadorNombre).trim();
+    const mapeado = mostrarDatoMapeado(operacionViendo?.operador, 'empleados');
+    if (mapeado && mapeado !== '-' && mapeado !== operacionViendo?.operador) return String(mapeado).trim();
+    if (operacionViendo?.operadorProveedor) {
+      const listaP: any[] = Array.isArray(catalogosGlobales.proveedores_unidad) ? catalogosGlobales.proveedores_unidad : [];
+      const oObj = listaP.find((o: any) => String(o.id).trim() === String(operacionViendo.operadorProveedor).trim());
+      if (oObj) return String(oObj.nombre || oObj.firstName || '').trim() || 'N/A';
+    }
+    return 'N/A';
+  };
+
   const abrirRegistroHorario = () => {
     const now = new Date();
     const tzOffset = now.getTimezoneOffset() * 60000;
@@ -597,8 +673,7 @@ const OperacionesDashboard = () => {
 
           setGuardandoStatusRapido(null);
           setUltimoStatusGuardado(statusNombre);
-          setTimeout(() => setUltimoStatusGuardado(null), 1500);
-        } catch (e: any) {
+          setTimeout(() => setUltimoStatusGuardado(null), 1500);} catch (e: any) {
           console.error("Error al registrar status:", e);
           setOperacionViendo(operacionPrevia);
           setOperacionesGlobales(operacionesPrevias);
@@ -638,7 +713,7 @@ const OperacionesDashboard = () => {
     )) return;
     try {
       Object.keys(localStorage)
-        .filter(k => k.startsWith('cat_v1__') || k.startsWith('flujo_v1__'))
+        .filter(k => k.startsWith('cat_v1__') || k.startsWith('cat_v2__') || k.startsWith('flujo_v1__'))
         .forEach(k => localStorage.removeItem(k));
     } catch {}
     sessionStorage.removeItem('roelca_catalogos_v2');
@@ -650,10 +725,9 @@ const OperacionesDashboard = () => {
     if (!operacionViendo) return;
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueRes = resolverRemolqueParaPDF();
-    const unidadProvVal = operacionViendo.unidadProveedor ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
-    const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+    const unidadRes = resolverUnidadParaPDF();
+    const operadorRes = resolverOperadorParaPDF();
 
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
@@ -661,9 +735,9 @@ const OperacionesDashboard = () => {
       remolqueNombre: remolqueRes.nombre,
       remolquePlacas: remolqueRes.placa,
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
-      unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
-      unidadPlacas: operacionViendo.unidadPlacas || operacionViendo.unidadPlaca || (unidadObj ? (unidadObj.placas || unidadObj.placa || 'N/A') : 'N/A'),
-      empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
+      unidadNombre: unidadRes.nombre,
+      unidadPlacas: unidadRes.placa,
+      empleadoNombre: operadorRes,
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
     });
@@ -671,18 +745,18 @@ const OperacionesDashboard = () => {
 
   const handleDescargarInstruccionesServicio = async () => {
     await cargarCatalogosSiEsNecesario();
-    if (!operacionViendo) return;const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
+    if (!operacionViendo) return;
+    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueRes = resolverRemolqueParaPDF();
-    const unidadProvVal = operacionViendo.unidadProveedor ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
-    const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+    const unidadRes = resolverUnidadParaPDF();
+    const operadorRes = resolverOperadorParaPDF();
 
     generarInstruccionesServicioPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'N/A',
       fecha: operacionViendo.fechaServicio || '',
-      unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
-      empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
+      unidadNombre: unidadRes.nombre,
+      empleadoNombre: operadorRes,
       remolqueNombre: remolqueRes.nombre,
       remolquePlacas: remolqueRes.placa,
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
@@ -699,13 +773,11 @@ const OperacionesDashboard = () => {
     if (!operacionViendo) return;
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
-    const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-    const unidadProvVal = operacionViendo.unidadProveedor ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
-    const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
-    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
-    const uniNombre = operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal);
-    const uniPlacas = operacionViendo.unidadPlacas || operacionViendo.unidadPlaca || (unidadObj ? (unidadObj.placas || unidadObj.placa || 'N/A') : 'N/A');
+    const unidadRes = resolverUnidadParaPDF();
+    const empNombre = resolverOperadorParaPDF();
+    const uniNombre = unidadRes.nombre;
+    const uniPlacas = unidadRes.placa;
 
     generarCheckListPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
@@ -733,8 +805,7 @@ const OperacionesDashboard = () => {
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-    const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
-    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
+    const empNombre = resolverOperadorParaPDF();
 
     generarPruebaEntregaPDF({
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
@@ -763,8 +834,7 @@ const OperacionesDashboard = () => {
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
-    const operadorProvVal = operacionViendo.operadorProveedor ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
-    const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
+    const empNombre = resolverOperadorParaPDF();
 
     generarCartaInstruccionesPDF({
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
@@ -1031,10 +1101,10 @@ const OperacionesDashboard = () => {
             <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
-            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos (pide confirmación)">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
+            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos (pide confirmación)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
             </button>
-            <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button className="btn btn-primary" onClick={handleNuevo} style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', gap: '6px' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -1344,10 +1414,10 @@ const OperacionesDashboard = () => {
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Destino</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span>
-                  </div>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span></div>
                   <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones Ejecutivo</span><div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
+                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones Ejecutivo</span>
+                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
                       {mostrarDato(operacionViendo.observacionesEjecutivo)}
                     </div>
                   </div>
