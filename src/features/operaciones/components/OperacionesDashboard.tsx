@@ -1,46 +1,4 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
-//
-// ═══════════════════════════════════════════════════════════════════════
-// CAMBIOS APLICADOS EN ESTA VERSIÓN
-// ═══════════════════════════════════════════════════════════════════════
-//
-// A) STATUS COMO ID HEX:
-//    El campo `status` de horarios y operaciones ahora guarda el ID hex del
-//    documento de `catalogo_status_servicio` (no el texto). Para mostrar el
-//    nombre legible se usa el campo desnormalizado `statusNombre` o se
-//    resuelve contra el catálogo en tiempo de render.
-//
-// B) ✅ OPTIMIZACIÓN DE LECTURAS:
-//    1. Catálogos con CACHÉ LOCAL (localStorage) + TTL en vez de onSnapshot.
-//       Antes el dashboard se suscribía en vivo a 17 colecciones completas en
-//       cada apertura → leía TODOS los documentos de cada una en cada carga y
-//       agotaba la cuota gratuita de Firestore (de ahí el error y la lentitud).
-//       Ahora cada catálogo se lee UNA vez, se guarda en localStorage y NO se
-//       vuelve a leer mientras esté vigente (estables 7 días, resto 24 h).
-//       Resultado: 0 lecturas de catálogos por apertura tras la 1ª vez.
-//    2. Operaciones paginadas (limit 50) con "Cargar más" (startAfter).
-//    3. guardarHorario / registrarStatusRapido NO recargan todas las operaciones.
-//
-// B2) ✅ CARGA DE NOMBRES (CATÁLOGOS):
-//    Al montar se hidrata desde caché (0 lecturas si está vigente) y se cargan
-//    de inmediato los catálogos faltantes/vencidos. Esto es obligatorio para que
-//    los campos relacionados (Tipo de Operación, Status, Convenios, etc.) se
-//    muestren por NOMBRE y no por ID. La velocidad post-login se gana sobre todo
-//    en App.tsx con carga diferida (React.lazy) de cada módulo.
-//
-// C) VISIBILIDAD DE DOCUMENTOS POR TIPO DE OPERACIÓN (DOCS_POR_TIPO).
-//
-// D) CONFIRMACIÓN AL CANCELAR (status cuyo nombre contiene "cancel").
-//
-// E) ✅ CORRECCIÓN REMOLQUE EN PDF (Solicitud de Retiro e Instrucciones del
-//    Servicio): el "# de Remolque" trae SOLO el nombre (p. ej. "106") y
-//    "Placas" trae SOLO la placa (p. ej. "78UK4W"). La resolución es ROBUSTA
-//    (helper resolverRemolqueParaPDF): busca el remolque por id, por nombre, o
-//    por el string combinado, y como último recurso PARTE la cadena
-//    "106 78UK4W". Antes el find por id fallaba y todo caía al valor combinado
-//    (nombre = "106 78UK4W", placas = N/A).
-// ═══════════════════════════════════════════════════════════════════════
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 import { collection, doc, writeBatch, query, getDocs, orderBy, limit, where, startAfter } from 'firebase/firestore';
@@ -48,31 +6,20 @@ import { db, eliminarRegistro } from '../../../config/firebase';
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
-// ✅ NUEVO: visor y subida de documentos ligados a la operación
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
-// ✅ NUEVO: logo + nombre de la empresa (lee de la configuración)
 import { EmpresaBrand } from '../../configuracion/EmpresaBrand';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
-// ✅ TAMAÑO DE PÁGINA: 50 operaciones por descarga. El usuario puede pulsar
-// "Cargar más" si necesita ver operaciones más antiguas.
 const TAMANO_PAGINA = 50;
 
-// ═══════════════════════════════════════════════════════════════════════
-// ✅ CACHÉ LOCAL DE CATÁLOGOS (minimiza lecturas de Firestore con varios usuarios)
-// Cada catálogo se lee UNA sola vez y se guarda en localStorage con timestamp.
-// Mientras esté vigente (TTL) NO se vuelve a leer de Firestore (0 lecturas).
-// ═══════════════════════════════════════════════════════════════════════
 const DIA_MS = 24 * 60 * 60 * 1000;
 const CATALOGOS_TTL_MS: Record<string, number> = {
-  // Estables (cambian rara vez) → 7 días
   statusServicio: 7 * DIA_MS, tiposOperacion: 7 * DIA_MS, embalajes: 7 * DIA_MS,
   catalogoMoneda: 7 * DIA_MS, tarifas: 7 * DIA_MS,
-  // Semi-estables → 24 h
   empresas: DIA_MS, remolques: DIA_MS, unidades: DIA_MS, empleados: DIA_MS,
   unidades_proveedor: DIA_MS, proveedores_unidad: DIA_MS,
   conveniosProv: DIA_MS, catalogoConvProvDetalles: DIA_MS,
@@ -159,7 +106,6 @@ const COLUMNAS_BASE = [
 ];
 
 const OperacionesDashboard = () => {
-  // ✅ NUEVO: logo de la empresa para los PDFs generados desde este módulo
   const { config: empresaConfig } = useEmpresaConfig();
 
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
@@ -169,12 +115,10 @@ const OperacionesDashboard = () => {
   const [cargandoOperaciones, setCargandoOperaciones] = useState(true);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
   
-  // ✅ paginación real con cursor (startAfter) para evitar leer 150 ops siempre
   const [hayMasOperaciones, setHayMasOperaciones] = useState(true);
   const [cargandoMas, setCargandoMas] = useState(false);
 
   const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'registrar' | 'historial'>('cerrado');
-  // ✅ NUEVO: control del visor de documentos y del modal de subida
   const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
   const [mostrarSubirDocOp, setMostrarSubirDocOp] = useState(false);
   const [historialList, setHistorialList] = useState<any[]>([]);
@@ -200,9 +144,6 @@ const OperacionesDashboard = () => {
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // =====================================================================
-  // ✅ Resolución bidireccional ID ↔ Nombre para `catalogo_status_servicio`.
-  // =====================================================================
   const mapaStatus = useMemo(() => {
     const lista = (catalogosGlobales.statusServicio || []) as any[];
     const porId: Record<string, { id: string; nombre: string }> = {};
@@ -224,9 +165,6 @@ const OperacionesDashboard = () => {
     return { id: v, nombre: v };
   };
 
-  // =====================================================================
-  // ✅ Mapa de colecciones de catálogos (alias → colección en Firestore).
-  // =====================================================================
   const COLECCIONES_CATALOGOS: Record<string, string> = {
     statusServicio:            'catalogo_status_servicio',
     tiposOperacion:            'catalogo_tipo_operacion',
@@ -246,10 +184,6 @@ const OperacionesDashboard = () => {
     catalogoTC:                'tipo_cambio',
   };
 
-  // =====================================================================
-  // ✅ Carga perezosa + caché: solo lee de Firestore los catálogos que NO
-  // estén vigentes en localStorage. Los demás se sirven desde caché (0 lecturas).
-  // =====================================================================
   const catalogosEnVueloRef = useRef<Set<string>>(new Set());
 
   const cargarCatalogosSiEsNecesario = async () => {
@@ -272,8 +206,6 @@ const OperacionesDashboard = () => {
     }));
   };
 
-  // Hidrata el estado al instante desde la caché local (0 lecturas) y luego
-  // descarga en segundo plano SOLO lo que esté vencido o falte.
   const hidratarCatalogosDesdeCache = () => {
     const inicial: any = {};
     Object.keys(COLECCIONES_CATALOGOS).forEach(alias => {
@@ -285,9 +217,6 @@ const OperacionesDashboard = () => {
     }
   };
 
-  // =====================================================================
-  // ✅ DESCARGAR PÁGINA INICIAL DE OPERACIONES (limit 50).
-  // =====================================================================
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     try {
@@ -323,9 +252,6 @@ const OperacionesDashboard = () => {
     setCargandoOperaciones(false);
   };
 
-  // =====================================================================
-  // ✅ CARGAR MÁS OPERACIONES (paginación real con startAfter).
-  // =====================================================================
   const cargarMasOperaciones = async () => {
     if (!hayMasOperaciones || cargandoMas || operacionesGlobales.length === 0) return;
     setCargandoMas(true);
@@ -358,14 +284,7 @@ const OperacionesDashboard = () => {
   };
 
   useEffect(() => {
-    // 1) Pinta los nombres al instante desde la caché local (0 lecturas si está vigente).
     hidratarCatalogosDesdeCache();
-
-    // 2) Carga DE INMEDIATO los catálogos faltantes o vencidos. Los campos
-    //    relacionados (Tipo de Operación, Status, Convenios, etc.) se muestran
-    //    por NOMBRE resolviéndolos contra el catálogo; si la carga se difiere,
-    //    la tabla mostraría el ID en lugar del nombre. Por eso NO se difiere.
-    //    Con caché vigente esto NO genera lecturas (solo trae lo que falta).
     cargarCatalogosSiEsNecesario();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -375,9 +294,6 @@ const OperacionesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Logo para los PDF: si en la config hay un logo en base64 (data:...), úsalo;
-  // si no, dejamos el global vacío para que el generador use el logo INCRUSTADO por
-  // defecto. NO leemos la URL de Storage, para no provocar errores de CORS.
   useEffect(() => {
     const b64 = empresaConfig?.logoBase64;
     setLogoPdf(b64 && b64.startsWith('data:') ? b64 : '');
@@ -385,7 +301,6 @@ const OperacionesDashboard = () => {
 
   useEffect(() => { setPaginaActual(1); }, [busqueda]);
 
-  // ✅ Antes de pedir botones a statusRules, garantizamos statusNombre poblado.
   useEffect(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
@@ -447,7 +362,7 @@ const OperacionesDashboard = () => {
   };
 
   const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-') {
+    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) {
       if (catalogo === 'statusServicio' && valorDesnormalizado.length > 30) {
         // Fallback
       } else {
@@ -458,11 +373,15 @@ const OperacionesDashboard = () => {
     if (!id) return '-';
     if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
     
-    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => item.id === id || item.nombre === id);
+    const objetivo = String(id).trim().toLowerCase();
+    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => {
+      const candidatos = [item.id, item.nombre, item.codigo, item.clave, item.uuid, item.uid, item._id, item.tipo_operacion];
+      return candidatos.some((c: any) => c != null && String(c).trim().toLowerCase() === objetivo);
+    });
     if (!elementoEncontrado) return id;
 
     if (catalogo === 'empleados') {
-      return `${elementoEncontrado.firstName || ''} ${elementoEncontrado.lastNamePaternal || ''}`.trim() || id;
+      return `${elementoEncontrado.firstName || ''} ${elementoEncontrado.lastNamePaternal || ''}`.trim() || elementoEncontrado.nombre || id;
     }
     if (catalogo === 'remolques') {
       return `${elementoEncontrado.nombre || ''} ${elementoEncontrado.placas || elementoEncontrado.placa || ''}`.trim() || id;
@@ -477,16 +396,16 @@ const OperacionesDashboard = () => {
       return elementoEncontrado.nombre || id;
     }
     if (catalogo === 'tiposOperacion') {
-      return elementoEncontrado.tipo_operacion || id;
+      return elementoEncontrado.tipo_operacion || elementoEncontrado.nombre || elementoEncontrado.descripcion || elementoEncontrado.tipoOperacion || elementoEncontrado.tipo || id;
     }
 
-    return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || id;
+    return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || elementoEncontrado.descripcion || id;
   };
 
   const obtenerNombreConvenioCliente = (id: string, valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-') return valorDesnormalizado;
+    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
     if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvDetalles?.find((d:any) => d.id === id);
+    const detalle = catalogosGlobales.catalogoConvDetalles?.find((d:any) => String(d.id).trim() === String(id).trim());
     if (detalle) {
         const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio_id || detalle.tipoConvenio || detalle.tipo_convenio || detalle['TIPO DE CONVENIO'];
         const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
@@ -496,9 +415,9 @@ const OperacionesDashboard = () => {
   };
 
   const obtenerNombreConvenioProv = (id: string, valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-') return valorDesnormalizado;
+    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
     if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvProvDetalles?.find((d:any) => d.id === id);
+    const detalle = catalogosGlobales.catalogoConvProvDetalles?.find((d:any) => String(d.id).trim() === String(id).trim());
     if (detalle) {
         const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio || detalle.tarifaId || detalle['TIPO DE CONVENIO'];
         const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
@@ -512,29 +431,15 @@ const OperacionesDashboard = () => {
     return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // =====================================================================
-  // ✅ RESOLUCIÓN ROBUSTA DEL REMOLQUE PARA LOS PDF.
-  // Devuelve { nombre, placa } SEPARADOS, sin importar cómo esté guardada
-  // la referencia en la operación. Cubre estos casos:
-  //   1) numeroRemolque = ID del documento de `remolques`  → match por id.
-  //   2) numeroRemolque = nombre del remolque (p. ej. "106") → match por nombre.
-  //   3) No hay match en el catálogo pero remolqueNombre viene combinado
-  //      ("106 78UK4W")  → se parte: 1er token = nombre, resto = placa.
-  // Esto corrige el caso donde el `find` por id fallaba y todo caía al valor
-  // combinado de respaldo (mostrando "106 78UK4W" en el nombre y N/A en placas).
-  // =====================================================================
   const resolverRemolqueParaPDF = (): { nombre: string; placa: string } => {
     const lista: any[] = Array.isArray(catalogosGlobales.remolques) ? catalogosGlobales.remolques : [];
     const ref = operacionViendo?.numeroRemolque;
     const combinado = String(operacionViendo?.remolqueNombre || ref || '').trim();
     const primerToken = combinado.split(/\s+/)[0] || '';
 
-    // 1) por id
     let obj = ref ? lista.find((r: any) => String(r.id).trim() === String(ref).trim()) : undefined;
-    // 2) por nombre exacto (ref) o por el primer token del valor combinado
     if (!obj && ref) obj = lista.find((r: any) => String(r.nombre || '').trim() === String(ref).trim());
     if (!obj && primerToken) obj = lista.find((r: any) => String(r.nombre || '').trim() === primerToken);
-    // 3) por coincidencia del string completo "nombre placa"
     if (!obj && combinado) {
       obj = lista.find((r: any) => `${r.nombre || ''} ${r.placas || r.placa || ''}`.trim() === combinado);
     }
@@ -542,14 +447,12 @@ const OperacionesDashboard = () => {
     let nombre = obj?.nombre ? String(obj.nombre).trim() : '';
     let placa = (obj?.placa || obj?.placas) ? String(obj?.placa || obj?.placas).trim() : '';
 
-    // 4) Último recurso: partir la cadena combinada cuando no hubo match.
     if (!nombre || !placa) {
       const partes = combinado.split(/\s+/).filter(Boolean);
       if (!nombre) nombre = partes[0] || '';
       if (!placa && partes.length > 1) placa = partes.slice(1).join(' ');
     }
 
-    // Otros respaldos directos de la operación para placas.
     if (!placa) placa = String(operacionViendo?.remolquePlaca || operacionViendo?.remolquePlacas || '').trim();
 
     return { nombre: nombre || 'N/A', placa: placa || 'N/A' };
@@ -577,9 +480,6 @@ const OperacionesDashboard = () => {
     setCargandoHorarios(false);
   };
 
-  // =====================================================================
-  // ✅ guardarHorario: resuelve nombre → ID hex y NO re-descarga operaciones.
-  // =====================================================================
   const guardarHorario = async () => {
     if (!nuevoStatus || !nuevaFechaHora) return alert("Completa la fecha y el estatus.");
     setCargandoHorarios(true);
@@ -619,9 +519,6 @@ const OperacionesDashboard = () => {
     setCargandoHorarios(false);
   };
 
-  // =====================================================================
-  // ✅ registrarStatusRapido: cascada con nombres → {id, nombre}; confirma cancelaciones.
-  // =====================================================================
   const registrarStatusRapido = async (statusNombre: string) => {
     if (!operacionViendo || !statusNombre) return;
     if (guardandoStatusRapido) return;
@@ -733,7 +630,6 @@ const OperacionesDashboard = () => {
     setOperacionEditando(null);
   };
 
-  // ✅ Pide confirmación antes de invalidar el caché de catálogos.
   const forzarRecarga = () => {
     if (!window.confirm(
       '¿Recargar todos los catálogos desde Firestore?\n\n' +
@@ -762,7 +658,6 @@ const OperacionesDashboard = () => {
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
       tipoMovimiento: operacionViendo.trafico || 'N/A',
-      // ✅ # de Remolque = SOLO el nombre (p. ej. "106"); Placas = SOLO la placa (p. ej. "78UK4W").
       remolqueNombre: remolqueRes.nombre,
       remolquePlacas: remolqueRes.placa,
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
@@ -776,8 +671,7 @@ const OperacionesDashboard = () => {
 
   const handleDescargarInstruccionesServicio = async () => {
     await cargarCatalogosSiEsNecesario();
-    if (!operacionViendo) return;
-    const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
+    if (!operacionViendo) return;const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueRes = resolverRemolqueParaPDF();
@@ -789,7 +683,6 @@ const OperacionesDashboard = () => {
       fecha: operacionViendo.fechaServicio || '',
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
-      // ✅ # de Remolque = SOLO el nombre (p. ej. "106"); Placas = SOLO la placa (p. ej. "78UK4W").
       remolqueNombre: remolqueRes.nombre,
       remolquePlacas: remolqueRes.placa,
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
@@ -981,7 +874,7 @@ const OperacionesDashboard = () => {
       case 'clienteMercancia': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre)}</span>;
       case 'descripcionMercancia': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.descripcionMercancia)}</span>;
       case 'cantidad': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.cantidad)}</span>;
-      case 'embalaje': return <span style={{ color: '#c9d1d9' }}>{op.embalajeNombre || op.embalaje || '-'}</span>;
+      case 'embalaje': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.embalaje, 'embalajes', 'nombre', op.embalajeNombre)}</span>;
       case 'pesoKg': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.pesoKg)}</span>;
       case 'numDoda': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.numDoda)}</span>;
       case 'fechaEmisionDoda': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.fechaEmisionDoda)}</span>;
@@ -1052,7 +945,7 @@ const OperacionesDashboard = () => {
           case 'clienteMercancia': val = mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre); break;
           case 'descripcionMercancia': val = op.descripcionMercancia || ''; break;
           case 'cantidad': val = op.cantidad || ''; break;
-          case 'embalaje': val = op.embalajeNombre || op.embalaje || ''; break;
+          case 'embalaje': val = mostrarDatoMapeado(op.embalaje, 'embalajes', 'nombre', op.embalajeNombre); break;
           case 'pesoKg': val = op.pesoKg || ''; break;
           case 'numDoda': val = op.numDoda || ''; break;
           case 'fechaEmisionDoda': val = op.fechaEmisionDoda || ''; break;
@@ -1080,7 +973,7 @@ const OperacionesDashboard = () => {
 
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
 
-  const evalTipoOpText = String(operacionViendo?.tipoOperacionNombre || operacionViendo?.tipoOperacionId || '').toLowerCase();
+  const evalTipoOpText = String(operacionViendo?.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo?.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo?.tipoOperacionNombre) || '').toLowerCase();
   const evalIsTransfer = evalTipoOpText.includes('transfer');
   const evalIsFletes = evalTipoOpText.includes('fletes') || evalTipoOpText.includes('flete');
   const evalIsLogistica = evalTipoOpText.includes('logistica') || evalTipoOpText.includes('logística');
@@ -1089,7 +982,6 @@ const OperacionesDashboard = () => {
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
-  // ── Visibilidad de documentos según tipo de operación ──
   const evalTipoOpId = String(operacionViendo?.tipoOperacionId || '').trim();
   const DOCS_POR_TIPO: Record<string, string[]> = {
     '3e5b0035': ['checklist', 'solicitud'],
@@ -1097,7 +989,6 @@ const OperacionesDashboard = () => {
   const docsPermitidos = DOCS_POR_TIPO[evalTipoOpId] || null;
   const puedeMostrarDoc = (doc: string) => !docsPermitidos || docsPermitidos.includes(doc);
 
-  // ✅ Referencia legible de la operación en curso (para carpeta de Storage)
   const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
 
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
@@ -1143,8 +1034,7 @@ const OperacionesDashboard = () => {
             <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos (pide confirmación)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
             </button>
-            <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button className="btn btn-primary" onClick={handleNuevo} style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', gap: '6px' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -1419,7 +1309,7 @@ const OperacionesDashboard = () => {
                 <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Operación</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.tipoOperacionNombre || operacionViendo.tipoOperacionId || '-'}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Servicio / Status</span>
@@ -1434,15 +1324,15 @@ const OperacionesDashboard = () => {
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Paga)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.clienteNombre || operacionViendo.nombreCliente || operacionViendo.clientePaga)}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio (Tarifa)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.convenioNombre || operacionViendo.convenio || '-'}</span> 
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span> 
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.remolquePlaca || operacionViendo.numeroRemolque || '-'}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Ref Cliente</span>
@@ -1450,15 +1340,14 @@ const OperacionesDashboard = () => {
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Origen</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.origenNombre || operacionViendo.origen || '-'}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Destino</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.destinoNombre || operacionViendo.destino || '-'}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span>
                   </div>
                   <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones Ejecutivo</span>
-                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
+                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones Ejecutivo</span><div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
                       {mostrarDato(operacionViendo.observacionesEjecutivo)}
                     </div>
                   </div>
@@ -1469,7 +1358,7 @@ const OperacionesDashboard = () => {
                 <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
                   <div style={{ gridColumn: 'span 2' }}>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Mercancía)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas', 'nombre', operacionViendo.clienteMercanciaNombre)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descripción de la Mercancía</span>
@@ -1482,7 +1371,7 @@ const OperacionesDashboard = () => {
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Embalaje</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.embalajeNombre || operacionViendo.embalaje || '-'}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.embalaje, 'embalajes', 'nombre', operacionViendo.embalajeNombre)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Peso (Kg) Decimales</span>
@@ -1517,7 +1406,7 @@ const OperacionesDashboard = () => {
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Servicios</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.provServiciosNombre || operacionViendo.provServicios || '-'}</span>
+                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.provServicios, 'empresas', 'nombre', operacionViendo.provServiciosNombre)}</span>
                   </div>
                   <div>
                     <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Costo Manifiesto ($)</span>
@@ -1531,7 +1420,7 @@ const OperacionesDashboard = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
                     <div style={{ gridColumn: 'span 3' }}>
                       <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Transporte</span>
-                      <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{operacionViendo.proveedorUnidadNombre || operacionViendo.proveedorUnidad || '-'}</span>
+                      <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span>
                     </div>
                   </div>
 
@@ -1543,7 +1432,7 @@ const OperacionesDashboard = () => {
                       </div>
                       <div>
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Proveedor</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.convenioProveedorNombre || operacionViendo.convenioProveedor || '-'}</span>
+                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span>
                       </div>
                       <div>
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Moneda del Convenio (Base)</span>
@@ -1585,11 +1474,11 @@ const OperacionesDashboard = () => {
                       <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0 0 8px 0' }}>Flota Operativa (Roelca)</h4></div>
                       <div>
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Asignada</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.unidadNombre || operacionViendo.unidad || '-'}</span>
+                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span>
                       </div>
                       <div style={{ gridColumn: 'span 2' }}>
                         <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operador Asignado</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{operacionViendo.operadorNombre || operacionViendo.operador || '-'}</span>
+                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span>
                       </div>
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
                       <div>
@@ -1716,7 +1605,6 @@ const OperacionesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: Visor de documentos de la operación */}
       {mostrarDocumentos && operacionViendo && (
         <div className="modal-overlay" style={{ zIndex: 2100 }}>
           <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
@@ -1749,7 +1637,6 @@ const OperacionesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: Subida de documentos ligada a la operación */}
       {operacionViendo && (
         <DocumentoUploadModal
           isOpen={mostrarSubirDocOp && !!operacionViendo}
@@ -1761,7 +1648,6 @@ const OperacionesDashboard = () => {
         />
       )}
 
-      {/* Modal de registro retroactivo */}
       {modalHorarios === 'registrar' && (
         <div className="modal-overlay" style={{ zIndex: 2000 }}>
           <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
