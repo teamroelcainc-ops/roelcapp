@@ -673,11 +673,11 @@ const OperacionesDashboard = () => {
 
           setGuardandoStatusRapido(null);
           setUltimoStatusGuardado(statusNombre);
-          setTimeout(() => setUltimoStatusGuardado(null), 1500);} catch (e: any) {
+          setTimeout(() => setUltimoStatusGuardado(null), 1500);
+        } catch (e: any) {
           console.error("Error al registrar status:", e);
           setOperacionViendo(operacionPrevia);
-          setOperacionesGlobales(operacionesPrevias);
-          setBotonesDisponibles(botonesPrevios);
+          setOperacionesGlobales(operacionesPrevias);setBotonesDisponibles(botonesPrevios);
           setGuardandoStatusRapido(null);
 
           const msg = String(e?.message || e?.code || e || '').toLowerCase();
@@ -857,9 +857,16 @@ const OperacionesDashboard = () => {
     });
   };
 
+  // ✅ Consecutivo de la referencia: toma los últimos dígitos de "TR-220626-003" → 3.
+  const obtenerConsecutivoRef = (op: any): number => {
+    const ref = String(op?.ref || '');
+    const m = ref.match(/(\d+)\s*$/);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+
   const operacionesFiltradas = useMemo(() => {
     const b = busqueda.toLowerCase();
-    return operacionesGlobales.filter(op => {
+    const filtradas = operacionesGlobales.filter(op => {
       return (
         String(op.ref || op.id || '').toLowerCase().includes(b) ||
         String(op.fechaServicio || '').toLowerCase().includes(b) ||
@@ -868,6 +875,15 @@ const OperacionesDashboard = () => {
         String(op.trafico || '').toLowerCase().includes(b) ||
         String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
       );
+    });
+
+    // ✅ Orden: primero por FECHA (desc), y dentro de la misma fecha por el
+    //    CONSECUTIVO de la referencia (desc). Del más nuevo al más antiguo.
+    return filtradas.sort((a: any, b2: any) => {
+      const fa = String(a.fechaServicio || '');
+      const fb = String(b2.fechaServicio || '');
+      if (fa !== fb) return fb.localeCompare(fa); // fecha YYYY-MM-DD desc
+      return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a); // consecutivo desc
     });
   }, [busqueda, operacionesGlobales]);
 
@@ -1099,9 +1115,9 @@ const OperacionesDashboard = () => {
           </div>
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
             <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-            </button>
-            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos (pide confirmación)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>
+            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos (pide confirmación)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
             </button>
             <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
