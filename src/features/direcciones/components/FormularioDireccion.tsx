@@ -187,7 +187,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
   };
 
   return (
-    <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`} style={{ backdropFilter: 'blur(4px)' }}>
+    <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`} style={{ backdropFilter: 'blur(4px)', zIndex: 2200 }}>
       <div className="form-card" style={{ maxWidth: '800px', width: '100%', borderRadius: '12px', border: '1px solid #444', backgroundColor: '#0d1117' }}>
         <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#f0f6fc', fontWeight: '500' }}>
