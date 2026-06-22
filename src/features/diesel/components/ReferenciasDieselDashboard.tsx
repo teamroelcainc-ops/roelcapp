@@ -630,6 +630,7 @@ export const ReferenciasDieselDashboard = () => {
     setFormEditRef({
       fecha: r.fecha || '',
       proveedorId: r.proveedorId || '',
+      operadorId: r.operadorId || (r.operadorNombre ? '__actual__' : ''),
       galonesExtras: (r.galonesExtras === undefined || r.galonesExtras === null) ? '' : Number(r.galonesExtras),
       galonesCargados: (r.galonesCargados === undefined || r.galonesCargados === null) ? '' : Number(r.galonesCargados),
       costoDiesel: (r.costoDiesel === undefined || r.costoDiesel === null) ? '' : Number(r.costoDiesel),
@@ -657,10 +658,27 @@ export const ReferenciasDieselDashboard = () => {
       if (extraVacio && cargVacio) status = 'No Autorizado';
       else if (!extraVacio && cargVacio) status = 'Autorizado';
 
+      // Operador: '' = sin asignar, '__actual__' = conservar el actual, o un id de empleado.
+      let operadorIdFinal: string | null;
+      let operadorNombreFinal: string;
+      if (formEditRef.operadorId === '__actual__') {
+        operadorIdFinal = editandoRef.operadorId || null;
+        operadorNombreFinal = editandoRef.operadorNombre || '';
+      } else if (formEditRef.operadorId) {
+        const emp = operadoresList.find(o => o.id === formEditRef.operadorId);
+        operadorIdFinal = emp ? emp.id : null;
+        operadorNombreFinal = emp ? `${emp.firstName || ''} ${emp.lastNamePaternal || ''}`.trim() : '';
+      } else {
+        operadorIdFinal = null;
+        operadorNombreFinal = '';
+      }
+
       const updates: any = {
         fecha: formEditRef.fecha,
         proveedorId: formEditRef.proveedorId,
         proveedorNombre: getNombreProveedor(formEditRef.proveedorId),
+        operadorId: operadorIdFinal,
+        operadorNombre: operadorNombreFinal,
         galonesExtras: extras,
         galonesCargados: cargados,
         costoDiesel: costo,
@@ -674,8 +692,8 @@ export const ReferenciasDieselDashboard = () => {
       await updateDoc(doc(db, 'referencias_diesel', editandoRef.id), updates);
 
       // Reflejar en memoria (lista + ficha abierta).
-      setReferenciasGlobales(prev => prev.map(r => r.id === editandoRef.id ? { ...r, ...updates } : r));
-      setReferenciaViendo(prev => (prev && prev.id === editandoRef.id) ? { ...prev, ...updates } : prev);
+      setReferenciasGlobales((prev: any[]) => prev.map((r: any) => r.id === editandoRef.id ? { ...r, ...updates } : r));
+      setReferenciaViendo((prev: any) => (prev && prev.id === editandoRef.id) ? { ...prev, ...updates } : prev);
       setEditandoRef(null);
     } catch (error) {
       console.error('Error al editar la referencia:', error);
@@ -1319,6 +1337,18 @@ export const ReferenciasDieselDashboard = () => {
                   <select value={formEditRef.proveedorId} onChange={e => setFormEditRef({ ...formEditRef, proveedorId: e.target.value })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }}>
                     <option value="">Seleccionar...</option>
                     {proveedoresFiltrados.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>OPERADOR</label>
+                  <select value={formEditRef.operadorId} onChange={e => setFormEditRef({ ...formEditRef, operadorId: e.target.value })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }}>
+                    <option value="">Sin asignar</option>
+                    {formEditRef.operadorId === '__actual__' && (
+                      <option value="__actual__">{editandoRef.operadorNombre} (actual)</option>
+                    )}
+                    {[...operadoresList].sort((a, b) => `${a.firstName || ''} ${a.lastNamePaternal || ''}`.localeCompare(`${b.firstName || ''} ${b.lastNamePaternal || ''}`)).map(o => (
+                      <option key={o.id} value={o.id}>{`${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim()}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
