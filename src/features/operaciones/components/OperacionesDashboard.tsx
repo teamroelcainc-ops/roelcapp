@@ -864,18 +864,82 @@ const OperacionesDashboard = () => {
     return m ? parseInt(m[1], 10) : 0;
   };
 
+  // ✅ Texto "buscable" de cada columna. Devuelve EXACTAMENTE lo que se ve en la
+  //    tabla (incluyendo lo que se resuelve por catálogo: cliente, convenio,
+  //    unidad, operador, remolque, monedas, etc.). Se usa para que el buscador
+  //    encuentre por CUALQUIER columna de la tabla, no solo por unas pocas.
+  const valorTextoColumna = (op: any, colId: string): string => {
+    switch (colId) {
+      case 'ref': return String(op.ref || op.id?.substring(0, 6) || '');
+      case 'fechaServicio': return String(op.fechaServicio || '');
+      case 'fechaCita': return formatearFechaHora(op.fechaCita);
+      case 'tipoOperacion': return String(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre));
+      case 'status': return String(mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre));
+      case 'trafico': return String(op.trafico || '');
+      case 'cliente': return String(mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente));
+      case 'convenioTarifa': return String(obtenerNombreConvenioCliente(op.convenio, op.convenioNombre));
+      case 'refCliente': return String(op.refCliente || '');
+      case 'facturadoEnCobrar': return String(mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre));
+      case 'montoConvenioCliente': return String(op.montoConvenioCliente ?? '');
+      case 'cargosAdicionales': return String(op.cargosAdicionales ?? '');
+      case 'subtotal': return String(op.subtotalCliente ?? '');
+      case 'tipoCambioAprobado': return String(op.tipoCambioAprobado ?? '');
+      case 'dolaresCliente': return String(op.dolaresCliente ?? '');
+      case 'pesosCliente': return String(op.pesosCliente ?? '');
+      case 'conversionCliente': return String(op.conversionCliente ?? '');
+      case 'origen': return String(mostrarDatoMapeado(op.origen, 'empresas', 'nombre', op.origenNombre));
+      case 'destino': return String(mostrarDatoMapeado(op.destino, 'empresas', 'nombre', op.destinoNombre));
+      case 'remolque': return String(mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre));
+      case 'proveedor': return String(mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre));
+      case 'unidadProveedor': return String(op.unidadProveedor || '');
+      case 'operadorProveedor': return String(op.operadorProveedor || '');
+      case 'convenioProv': return String(obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre));
+      case 'facturadoEnUnidad': return String(mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre));
+      case 'monedaConvenioProv': return String(mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre));
+      case 'totalAPagarProv': return String(op.totalAPagarProv ?? '');
+      case 'cargosAdicionalesProv': return String(op.cargosAdicionalesProv ?? '');
+      case 'subtotalProv': return String(op.subtotalProv ?? '');
+      case 'dolaresProv': return String(op.dolaresProv ?? '');
+      case 'pesosProv': return String(op.pesosProv ?? '');
+      case 'conversionProv': return String(op.conversionProv ?? '');
+      case 'unidad': return String(mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre));
+      case 'operador': return String(mostrarDatoMapeado(op.operador, 'empleados', 'nombre', op.operadorNombre));
+      case 'sueldoOperador': return String(op.sueldoOperador ?? '');
+      case 'sueldoExtra': return String(op.sueldoExtra ?? '');
+      case 'sueldoTotal': return String(op.sueldoTotal ?? '');
+      case 'combustible': return String(op.combustible ?? '');
+      case 'combustibleExtra': return String(op.combustibleExtra ?? '');
+      case 'combustibleTotal': return String(op.combustibleTotal ?? '');
+      case 'clienteMercancia': return String(mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre));
+      case 'descripcionMercancia': return String(op.descripcionMercancia || '');
+      case 'cantidad': return String(op.cantidad ?? '');
+      case 'embalaje': return String(mostrarDatoMapeado(op.embalaje, 'embalajes', 'nombre', op.embalajeNombre));
+      case 'pesoKg': return String(op.pesoKg ?? '');
+      case 'numDoda': return String(op.numDoda || '');
+      case 'fechaEmisionDoda': return String(op.fechaEmisionDoda || '');
+      case 'numeroEntrys': return String(op.numeroEntrys || '');
+      case 'cantEntrys': return String(op.cantEntrys ?? '');
+      case 'numManifiesto': return String(op.numManifiesto || '');
+      case 'provServicios': return String(mostrarDatoMapeado(op.provServicios, 'empresas', 'nombre', op.provServiciosNombre));
+      case 'montoManifiesto': return String(op.montoManifiesto ?? '');
+      case 'totalGastos': return String(op.totalGastos ?? '');
+      case 'utilidadEstimada': return String(op.utilidadEstimada ?? '');
+      case 'observacionesEjecutivo': return String(op.observacionesEjecutivo || '');
+      case 'observacionesUnidad': return String(op.observacionesUnidad || '');
+      case 'observacionesCobrar': return String(op.observacionesCobrar || '');
+      default: return '';
+    }
+  };
+
   const operacionesFiltradas = useMemo(() => {
-    const b = busqueda.toLowerCase();
-    const filtradas = operacionesGlobales.filter(op => {
-      return (
-        String(op.ref || op.id || '').toLowerCase().includes(b) ||
-        String(op.fechaServicio || '').toLowerCase().includes(b) ||
-        String(op.clienteNombre || op.nombreCliente || '').toLowerCase().includes(b) ||
-        String(op.tipoOperacionNombre || op.tipoServicio || '').toLowerCase().includes(b) ||
-        String(op.trafico || '').toLowerCase().includes(b) ||
-        String(op.statusNombre || op.status || '').toLowerCase().includes(b) 
-      );
-    });
+    const b = busqueda.trim().toLowerCase();
+    // ✅ Ahora el buscador filtra por TODAS las columnas de la tabla (visibles u
+    //    ocultas), comparando contra el texto que realmente se muestra.
+    const filtradas = !b
+      ? [...operacionesGlobales]
+      : operacionesGlobales.filter(op =>
+          columnasTabla.some(col => valorTextoColumna(op, col.id).toLowerCase().includes(b))
+        );
 
     // ✅ Orden: primero por FECHA (desc), y dentro de la misma fecha por el
     //    CONSECUTIVO de la referencia (desc). Del más nuevo al más antiguo.
@@ -885,7 +949,7 @@ const OperacionesDashboard = () => {
       if (fa !== fb) return fb.localeCompare(fa); // fecha YYYY-MM-DD desc
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a); // consecutivo desc
     });
-  }, [busqueda, operacionesGlobales]);
+  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -1110,7 +1174,7 @@ const OperacionesDashboard = () => {
           <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'center' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
               <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Buscar por Ref, Cliente, Status..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }} />
+              <input type="text" placeholder="Buscar en todas las columnas..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }} />
             </div>
           </div>
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
