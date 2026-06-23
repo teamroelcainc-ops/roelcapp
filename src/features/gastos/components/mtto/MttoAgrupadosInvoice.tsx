@@ -149,17 +149,34 @@ const MttoAgrupadosInvoice = () => {
     return `${dUTC.getDate()} de ${meses[dUTC.getMonth()]} de ${dUTC.getFullYear()}`;
   };
 
+  // ✅ ESCAPA CARACTERES HTML PARA EVITAR QUE EL CONTENIDO ROMPA EL DOCUMENTO
+  const escaparHTML = (texto: any) => {
+    return String(texto)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  // ✅ RESPETA LOS SALTOS DE LÍNEA DE LA DESCRIPCIÓN EN EL PDF (\n -> <br>)
+  const formatearTextoMultilinea = (texto: any) => {
+    if (texto === undefined || texto === null || String(texto).trim() === '') return '-';
+    return escaparHTML(texto).replace(/\r\n|\r|\n/g, '<br>');
+  };
+
   const handleGenerarDocumento = (grupo: GrupoInvoice) => {
     let filasHTML = '';
     
     grupo.gastos.forEach(g => {
       const fechaFmt = formatearFechaEspañol(g.fecha);
+      const descripcionFmt = formatearTextoMultilinea(g.descripcion || g.descripcionGeneral);
       filasHTML += `
         <tr>
           <td class="text-center">${g.numeroGasto || '-'}</td>
           <td class="text-center" style="text-transform: capitalize;">${fechaFmt}</td>
           <td class="text-center">${g.unidadId || '-'}</td>
-          <td>${g.descripcion || g.descripcionGeneral || '-'}</td>
+          <td class="col-desc">${descripcionFmt}</td>
           <td class="text-right">${formatoMoneda(g.total)}</td>
         </tr>
       `;
@@ -209,6 +226,8 @@ const MttoAgrupadosInvoice = () => {
           .report-table th { background-color: #E6E6E6 !important; padding: 8px 5px; text-align: center; font-weight: bold; font-size: 12px; }
           .report-table td { padding: 6px 8px; vertical-align: top; }
           .col-ref { width: 14%; } .col-fecha { width: 15%; } .col-tractor { width: 12%; } .col-servicio { width: 41%; } .col-subtotal { width: 18%; }
+          /* ✅ La descripción respeta saltos de línea y ajusta palabras largas */
+          .col-desc { white-space: pre-line; word-break: break-word; overflow-wrap: anywhere; }
           .text-center { text-align: center; } .text-left { text-align: left; } .text-right { text-align: right; }
           .amount-box { display: flex; justify-content: space-between; width: 100%; font-weight: bold; }
           .spacer-row td { height: 60px; border-bottom: none !important; }

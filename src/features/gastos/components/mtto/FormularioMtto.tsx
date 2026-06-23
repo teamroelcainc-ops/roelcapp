@@ -459,9 +459,18 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
                 )}
               </div>
 
-              <div className="form-group">
+              {/* ✅ DESCRIPCIÓN GENERAL: AHORA ADMITE SALTOS DE LÍNEA (TEXTAREA) */}
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                 <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Descripción General {configuracion.requeridos.descripcion && <RequeridoMark />}</label>
-                <input type="text" name="descripcion" required={configuracion.requeridos.descripcion} value={formData.descripcion} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <textarea
+                  name="descripcion"
+                  required={configuracion.requeridos.descripcion}
+                  value={formData.descripcion}
+                  onChange={handleChange}
+                  rows={4}
+                  placeholder="Escribe la descripción. Presiona Enter para agregar saltos de línea..."
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', minHeight: '90px', resize: 'vertical', fontFamily: 'inherit', fontSize: '0.9rem', lineHeight: '1.5', boxSizing: 'border-box' }}
+                />
               </div>
             </div>
           )}
