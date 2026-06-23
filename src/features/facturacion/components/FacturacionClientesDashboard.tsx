@@ -3,18 +3,31 @@
 // ═══════════════════════════════════════════════════════════════════════
 // CAMBIOS EN ESTA VERSIÓN (solicitados)
 // ═══════════════════════════════════════════════════════════════════════
-// 1) FILTRO PRINCIPAL = RANGO DE FECHAS (Desde / Hasta). Los registros solo
-//    se cargan/aparecen cuando AMBAS fechas están puestas. El CLIENTE es
-//    OPCIONAL (solo acota el resultado). Aplica a las dos pestañas.
-// 2) "Asignar Operaciones" muestra SOLO operaciones NO facturadas (las que no
-//    están en el Historial). Se determina con la bandera de la propia
-//    operación (facturado / facturaClienteId), sin leer la colección de
-//    facturas → cero lecturas extra.
-// 3) LECTURAS MÍNIMAS:
-//    · Empresas: caché local (cat_v1__empresas) primero; getDocs UNA vez solo
-//      si la caché está vacía. Se elimina el onSnapshot permanente.
-//    · Operaciones y facturas: solo se consultan con ambas fechas puestas,
-//      acotadas por el rango + un límite. Nada de cargas amplias por defecto.
+// A) CONFIGURACIÓN DE COLUMNAS COMPARTIDA (global para todos los usuarios):
+//    · Al pulsar "Guardar para todos" en cualquiera de los dos modales de
+//      "Configurar Columnas" (Asignar Operaciones e Historial de Facturas),
+//      la selección + el ORDEN se guardan en Firestore:
+//          config_columnas/facturacion_clientes_ops
+//          config_columnas/facturacion_clientes_historial
+//    · Al abrir el módulo, esa configuración se lee una sola vez y se aplica
+//      para TODOS los usuarios que vean la vista.
+//    · Solo se persiste { id, visible } + orden; el resto de metadatos
+//      (sourceField, tipo, grupo…) siempre se toma del código (BASE), así las
+//      columnas nuevas que se agreguen en el futuro siguen apareciendo.
+//
+// B) MOSTRAR NOMBRES EN LUGAR DE IDs:
+//    · Se construye un mapa id→nombre con TODOS los catálogos ya cacheados
+//      (cat_v1__* y, como respaldo, roelca_catalogos_v2) + empresas + monedas.
+//      Cero lecturas extra a Firestore.
+//    · Cuando una operación vieja solo guardó el ID (status, convenio, origen,
+//      embalaje, proveedor, unidad, operador, cliente-mercancía, etc.), se
+//      muestra el NOMBRE resuelto tanto en la tabla, como en el Excel y en la
+//      ficha de detalle de la operación.
+//
+// (Cambios anteriores que se conservan)
+// 1) FILTRO PRINCIPAL = RANGO DE FECHAS (Desde / Hasta). Cliente OPCIONAL.
+// 2) "Asignar Operaciones" muestra SOLO operaciones NO facturadas.
+// 3) LECTURAS MÍNIMAS (caché-primero para empresas, consultas acotadas).
 // (Se conservan: conversión USD/MXN, exportación a Excel con columnas
 //  configurables, ficha de factura y detalle de operación.)
 // ═══════════════════════════════════════════════════════════════════════
@@ -30,6 +43,7 @@ import {
   where,
   getDocs,
   getDoc,
+  setDoc,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -45,6 +59,11 @@ const ID_MXN = 'f95d8894';
 // Límites para acotar lecturas (ajustables).
 const LIMITE_OPS_RANGO = 400;
 
+// ✅ (A) Documento(s) de configuración de columnas COMPARTIDA en Firestore.
+const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
+const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops';
+const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial';
+
 // ✅ Lee un catálogo desde la caché local (cat_v1__<alias>) que mantienen
 // OperacionesDashboard / FormularioOperacion. Evita lecturas de Firestore.
 const leerCacheLocal = (alias: string): any[] | null => {
@@ -54,6 +73,74 @@ const leerCacheLocal = (alias: string): any[] | null => {
     const obj = JSON.parse(raw);
     return obj && Array.isArray(obj.data) ? obj.data : null;
   } catch { return null; }
+};
+
+// ──────────────────────────────────────────────────────────────────────
+// ✅ (B) Mapa id→nombre con TODOS los catálogos cacheados. Cero lecturas a
+//     Firestore: usa únicamente lo que ya guardaron otros dashboards. Sirve
+//     para mostrar el NOMBRE cuando un registro viejo solo tiene el ID.
+// ──────────────────────────────────────────────────────────────────────
+const construirMapaCatalogos = (): Record<string, string> => {
+  const mapa: Record<string, string> = {};
+  const tomarNombre = (item: any): string | null => {
+    if (!item || item.id === undefined || item.id === null) return null;
+    const n = item.nombre ?? item.nombreCorto ?? item.label ?? item.descripcion ?? item.name ?? item.titulo;
+    return (n !== undefined && n !== null && String(n) !== '') ? String(n) : null;
+  };
+  // Catálogos estándar cat_v1__<alias>
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || key.indexOf('cat_v1__') !== 0) continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      try {
+        const obj = JSON.parse(raw);
+        const arr = obj && Array.isArray(obj.data) ? obj.data : (Array.isArray(obj) ? obj : null);
+        if (!arr) continue;
+        arr.forEach((item: any) => {
+          const n = tomarNombre(item);
+          if (n) mapa[String(item.id)] = n;
+        });
+      } catch { /* catálogo corrupto: ignorar */ }
+    }
+  } catch { /* localStorage no disponible */ }
+  // Respaldo: roelca_catalogos_v2 (forma desconocida → con guardas defensivas)
+  try {
+    const rawV2 = localStorage.getItem('roelca_catalogos_v2');
+    if (rawV2) {
+      const obj = JSON.parse(rawV2);
+      Object.values(obj || {}).forEach((val: any) => {
+        const arr = Array.isArray(val) ? val : (val && Array.isArray(val.data) ? val.data : null);
+        if (!arr) return;
+        arr.forEach((item: any) => {
+          const n = tomarNombre(item);
+          if (n && !mapa[String(item.id)]) mapa[String(item.id)] = n;
+        });
+      });
+    }
+  } catch { /* noop */ }
+  return mapa;
+};
+
+// ✅ (A) Reconstruye las columnas a partir de la BASE (código) aplicando el
+//     orden + visibilidad guardados. Garantiza que columnas nuevas del código
+//     que no estaban guardadas sigan apareciendo (al final).
+const aplicarConfigColumnasGuardada = (base: any[], guardadas: any): any[] => {
+  if (!Array.isArray(guardadas) || guardadas.length === 0) return base.map((c: any) => ({ ...c }));
+  const baseById = new Map<string, any>(base.map((c: any) => [c.id, c]));
+  const resultado: any[] = [];
+  const usados = new Set<string>();
+  guardadas.forEach((g: any) => {
+    const def = baseById.get(g?.id);
+    if (def && !usados.has(g.id)) {
+      resultado.push({ ...def, visible: !!g.visible });
+      usados.add(g.id);
+    }
+  });
+  // Columnas nuevas (agregadas en código) que no estaban guardadas → al final
+  base.forEach((c: any) => { if (!usados.has(c.id)) resultado.push({ ...c }); });
+  return resultado;
 };
 
 // Columnas configurables del Historial de Facturas (tabla + Excel).
@@ -283,6 +370,9 @@ export const FacturacionClientesDashboard = () => {
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
 
+  // ✅ (A) Estado de guardado de la configuración de columnas (compartida)
+  const [guardandoCols, setGuardandoCols] = useState(false);
+
   // Columnas del historial
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasFactura, setColumnasFactura] = useState(COLUMNAS_FACTURA_BASE.map(c => ({ ...c })));
@@ -334,6 +424,39 @@ export const FacturacionClientesDashboard = () => {
   };
 
   // ──────────────────────────────────────────────────────────────────
+  // ✅ (B) Resolución de NOMBRE a partir de un ID (catálogos cacheados)
+  // ──────────────────────────────────────────────────────────────────
+  const mapaCatalogos = useMemo(() => {
+    const m = construirMapaCatalogos();
+    // Empresas ya cargadas (clientes, proveedores, etc.)
+    empresasList.forEach((e: any) => {
+      if (e?.id) m[String(e.id)] = e.nombre || e.nombreCorto || m[String(e.id)] || String(e.id);
+    });
+    // Monedas conocidas
+    m[ID_USD] = 'USD';
+    m[ID_MXN] = 'MXN';
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresasList]);
+
+  // Devuelve el nombre si el valor es un ID conocido; si no, el valor tal cual.
+  const resolverNombre = (val: any): any => {
+    if (val === '' || val === null || val === undefined) return val;
+    return mapaCatalogos[String(val)] || val;
+  };
+
+  // Primer candidato con valor, resolviendo ID→nombre. '-' si todos vacíos.
+  const txt = (...cands: any[]): string => {
+    for (const c of cands) {
+      if (c !== undefined && c !== null && c !== '') {
+        const r = resolverNombre(c);
+        return (r === undefined || r === null || r === '') ? '-' : String(r);
+      }
+    }
+    return '-';
+  };
+
+  // ──────────────────────────────────────────────────────────────────
   // ✅ (3) Empresas: caché-primero, getDocs UNA vez si falta. Sin onSnapshot.
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -351,6 +474,73 @@ export const FacturacionClientesDashboard = () => {
     })();
     return () => { activo = false; };
   }, []);
+
+  // ──────────────────────────────────────────────────────────────────
+  // ✅ (A) Cargar configuración de columnas COMPARTIDA (una sola lectura por
+  //     documento al montar). Si existe, se aplica para todos los usuarios.
+  // ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      try {
+        const [snapOps, snapHist] = await Promise.all([
+          getDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_OPS)),
+          getDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_HISTORIAL)),
+        ]);
+        if (!activo) return;
+        if (snapOps.exists()) {
+          const data = snapOps.data() as any;
+          setColumnasOps(aplicarConfigColumnasGuardada(COLUMNAS_OPS_BASE, data?.columnas));
+        }
+        if (snapHist.exists()) {
+          const data = snapHist.data() as any;
+          setColumnasFactura(aplicarConfigColumnasGuardada(COLUMNAS_FACTURA_BASE, data?.columnas));
+        }
+      } catch (e) {
+        console.error('Error cargando configuración de columnas (compartida):', e);
+      }
+    })();
+    return () => { activo = false; };
+  }, []);
+
+  // ✅ (A) Guardar configuración de columnas de "Asignar Operaciones" para
+  //     TODOS los usuarios (Firestore).
+  const guardarConfigColumnasOps = async () => {
+    setGuardandoCols(true);
+    try {
+      const payload = columnasOps.map(c => ({ id: c.id, visible: !!c.visible }));
+      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_OPS), {
+        columnas: payload,
+        updatedAt: new Date().toISOString(),
+      });
+      setModalColumnasOps(false);
+      setBusquedaColOps('');
+    } catch (e) {
+      console.error('Error guardando columnas (operaciones):', e);
+      alert('No se pudo guardar la configuración de columnas para todos los usuarios.\nRevisa tus permisos de escritura en Firestore (colección config_columnas).');
+    } finally {
+      setGuardandoCols(false);
+    }
+  };
+
+  // ✅ (A) Guardar configuración de columnas del "Historial de Facturas" para
+  //     TODOS los usuarios (Firestore).
+  const guardarConfigColumnasHistorial = async () => {
+    setGuardandoCols(true);
+    try {
+      const payload = columnasFactura.map(c => ({ id: c.id, visible: !!c.visible }));
+      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_HISTORIAL), {
+        columnas: payload,
+        updatedAt: new Date().toISOString(),
+      });
+      setModalColumnas(false);
+    } catch (e) {
+      console.error('Error guardando columnas (historial):', e);
+      alert('No se pudo guardar la configuración de columnas para todos los usuarios.\nRevisa tus permisos de escritura en Firestore (colección config_columnas).');
+    } finally {
+      setGuardandoCols(false);
+    }
+  };
 
   // ──────────────────────────────────────────────────────────────────
   // ✅ HISTORIAL DE FACTURAS: carga TODAS al entrar a la pestaña historial,
@@ -471,7 +661,10 @@ export const FacturacionClientesDashboard = () => {
   const getNombreCliente = (idOrName: string) => {
     if (!idOrName) return '-';
     const found = empresasList.find(e => e.id === idOrName || e.nombre === idOrName || e.nombreCorto === idOrName);
-    return found ? (found.nombre || found.nombreCorto || idOrName) : idOrName;
+    if (found) return found.nombre || found.nombreCorto || idOrName;
+    // ✅ (B) Fallback: otros catálogos cacheados (para datos viejos con ID).
+    const porCatalogo = mapaCatalogos[String(idOrName)];
+    return porCatalogo || idOrName;
   };
 
   const clientesFiltradosBuscador = useMemo(() => {
@@ -574,7 +767,8 @@ export const FacturacionClientesDashboard = () => {
       case 'fecha':     return formatearFechaSpanish(String(val));
       case 'fechaHora': return formatearFechaHora(String(val));
       case 'moneda':    return mostrarMoneda(String(val));
-      default:          return String(val);
+      // ✅ (B) texto: si el valor es un ID conocido, mostrar el NOMBRE.
+      default:          return String(resolverNombre(val));
     }
   };
 
@@ -590,7 +784,8 @@ export const FacturacionClientesDashboard = () => {
         const col = columnasOps.find(c => c.id === campo);
         const raw = valorGenericoOp(op, col);
         if (col?.tipo === 'monto' || col?.tipo === 'numero') return Number(raw) || 0;
-        return String(raw || '').toLowerCase();
+        // ✅ (B) ordenar por NOMBRE resuelto cuando es texto/ID.
+        return String(resolverNombre(raw) || '').toLowerCase();
       }
     }
   };
@@ -617,7 +812,7 @@ export const FacturacionClientesDashboard = () => {
       return String(va).localeCompare(String(vb)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps]);
+  }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -1385,7 +1580,7 @@ export const FacturacionClientesDashboard = () => {
               <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
               <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '20px' }}>Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel.</p>
+            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '20px' }}>Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel. <b style={{ color: '#58a6ff' }}>Esta configuración se guarda y se aplica para todos los usuarios.</b></p>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
               {columnasFactura.map((col, idx) => (
                 <li key={col.id} draggable onDragStart={(e) => handleDragStart(e, idx)} onDragEnter={() => handleDragEnter(idx)} onDragEnd={() => setDraggedColIndex(null)} onDragOver={(e) => e.preventDefault()}
@@ -1397,7 +1592,7 @@ export const FacturacionClientesDashboard = () => {
               ))}
             </ul>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+              <button onClick={guardarConfigColumnasHistorial} disabled={guardandoCols} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: guardandoCols ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoCols ? 0.7 : 1 }}>{guardandoCols ? 'Guardando...' : 'Guardar para todos'}</button>
             </div>
           </div>
         </div>
@@ -1429,7 +1624,7 @@ export const FacturacionClientesDashboard = () => {
               <button onClick={() => setColumnasOps(COLUMNAS_OPS_BASE.map(c => ({ ...c })))} style={{ ...btnDirStyle, color: '#D84315' }} title="Restablecer al estado por defecto">Restablecer</button>
             </div>
             <p style={{ color: '#8b949e', fontSize: '0.8rem', marginBottom: '14px' }}>
-              Arrastra para reordenar. Marca las que quieras ver en la tabla y en el Excel. El grupo entre paréntesis indica de qué pestaña del detalle viene el campo.
+              Arrastra para reordenar. Marca las que quieras ver en la tabla y en el Excel. El grupo entre paréntesis indica de qué pestaña del detalle viene el campo. <b style={{ color: '#58a6ff' }}>Esta configuración se guarda y se aplica para todos los usuarios.</b>
             </p>
 
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
@@ -1456,7 +1651,7 @@ export const FacturacionClientesDashboard = () => {
             </ul>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => { setModalColumnasOps(false); setBusquedaColOps(''); }} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+              <button onClick={guardarConfigColumnasOps} disabled={guardandoCols} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: guardandoCols ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoCols ? 0.7 : 1 }}>{guardandoCols ? 'Guardando...' : 'Guardar para todos'}</button>
             </div>
           </div>
         </div>
@@ -1535,7 +1730,7 @@ export const FacturacionClientesDashboard = () => {
                 </div>
                 <div>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Cliente Facturado</span>
-                  <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{facturaViendo.clienteNombre || '-'}</span>
+                  <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{facturaViendo.clienteNombre || getNombreCliente(facturaViendo.clienteId) || '-'}</span>
                 </div>
                 <div>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Factura CCP</span>
@@ -1587,7 +1782,7 @@ export const FacturacionClientesDashboard = () => {
                       <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.5px' }}>Detalle de Operación</h2>
                       <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>{det.ref || det.id?.substring(0, 6)}</span>
-                        <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>{det.statusNombre || det.status || '-'}</span>
+                        <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>{txt(det.statusNombre, det.status)}</span>
                       </div>
                     </div>
                     <button onClick={() => setOperacionDetalle(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
@@ -1608,29 +1803,29 @@ export const FacturacionClientesDashboard = () => {
                 <div className="detail-content" style={{ padding: '18px 32px', overflowY: 'auto', flex: 1 }}>
                   {pestañaDetalleActiva === 'general' && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Operación</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.tipoOperacionNombre || det.tipoOperacionId || '-'}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Servicio / Status</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.fechaServicio)} <span style={{ color: '#30363d', margin: '0 8px' }}>|</span> <span style={{ color: '#10b981', fontWeight: 'bold' }}>{det.statusNombre || det.status || '-'}</span></span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Operación</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.tipoOperacionNombre, det.tipoOperacionId)}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Servicio / Status</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.fechaServicio)} <span style={{ color: '#30363d', margin: '0 8px' }}>|</span> <span style={{ color: '#10b981', fontWeight: 'bold' }}>{txt(det.statusNombre, det.status)}</span></span></div>
                       {evalIsFletes ? (
                         <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Cita</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatearFechaHora(det.fechaCita)}</span></div>
                       ) : (<div></div>)}
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Paga)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.clienteNombre || det.nombreCliente || det.clientePaga)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio (Tarifa)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.convenioNombre || det.convenio || '-'}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.remolqueNombre || det.remolquePlaca || det.numeroRemolque || '-'}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Paga)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.clienteNombre, det.nombreCliente, det.clientePaga)}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio (Tarifa)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.convenioNombre, det.convenio)}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.remolqueNombre, det.remolquePlaca, det.numeroRemolque)}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Ref Cliente</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.refCliente)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Origen</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.origenNombre || det.origen || '-'}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Destino</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.destinoNombre || det.destino || '-'}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Origen</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.origenNombre, det.origen)}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Destino</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.destinoNombre, det.destino)}</span></div>
                       <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones Ejecutivo</span><div style={{ color: '#c9d1d9', fontWeight: 500, backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>{mostrarDato(det.observacionesEjecutivo)}</div></div>
                     </div>
                   )}
 
                   {pestañaDetalleActiva === 'pedimento' && (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Mercancía)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.clienteMercanciaNombre || det.clienteMercancia || '-'}</span></div>
+                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Mercancía)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.clienteMercanciaNombre, det.clienteMercancia)}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descripción de la Mercancía</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.descripcionMercancia)}</span></div>
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad (Enteros)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.cantidad)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Embalaje</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.embalajeNombre || det.embalaje || '-'}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Embalaje</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.embalajeNombre, det.embalaje)}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Peso (Kg)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.pesoKg)}</span></div>
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># DODA</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.numDoda)}</span></div>
@@ -1644,7 +1839,7 @@ export const FacturacionClientesDashboard = () => {
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad de Entry's</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.cantEntrys)}</span></div>
                       <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># Manifiesto</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.numManifiesto)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Servicios</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.provServiciosNombre || det.provServicios || '-'}</span></div>
+                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Servicios</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.provServiciosNombre, det.provServicios)}</span></div>
                       <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Costo Manifiesto ($)</span><span style={{ color: '#c9d1d9', fontWeight: 'bold', fontSize: '1.05rem' }}>{formatoMoneda(det.montoManifiesto)}</span></div>
                     </div>
                   )}
@@ -1652,12 +1847,12 @@ export const FacturacionClientesDashboard = () => {
                   {pestañaDetalleActiva === 'unidad' && (
                     <div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                        <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{det.proveedorUnidadNombre || det.proveedorUnidad || '-'}</span></div>
+                        <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{txt(det.proveedorUnidadNombre, det.proveedorUnidad)}</span></div>
                       </div>
                       <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '24px' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
                           <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Facturado En:</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Proveedor</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.convenioProveedorNombre || det.convenioProveedor || '-'}</span></div>
+                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Proveedor</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.convenioProveedorNombre, det.convenioProveedor)}</span></div>
                           <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Moneda del Convenio (Base)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarMoneda(det.monedaConvenioProv)}</span></div>
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d', marginBottom: '16px' }}>
@@ -1675,8 +1870,8 @@ export const FacturacionClientesDashboard = () => {
                       {showDetailInternalFleet && (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
                           <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0 0 8px 0' }}>Flota Operativa (Roelca)</h4></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Asignada</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.unidadNombre || det.unidad || '-'}</span></div>
-                          <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operador Asignado</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.operadorNombre || det.operador || '-'}</span></div>
+                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Asignada</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.unidadNombre, det.unidad)}</span></div>
+                          <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operador Asignado</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.operadorNombre, det.operador)}</span></div>
                           <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
                           <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo del Operador</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.sueldoOperador)}</span></div>
                           <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo Extra</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.sueldoExtra)}</span></div>
