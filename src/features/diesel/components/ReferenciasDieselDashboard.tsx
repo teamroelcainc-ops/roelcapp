@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
+import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
 
 // Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
 // orden:true -> la cabecera es clicable para ordenar por ese campo.
@@ -29,6 +30,11 @@ const COLUMNAS_OPS_DIESEL_BASE = [
   { id: 'refDiesel',     label: 'Ref. Diesel',     visible: true, orden: true },
 ];
 
+// Colección de catálogo de donde se resuelven los nombres de Origen/Destino.
+// Los campos op.origen / op.destino guardan un ID; aquí buscamos su nombre.
+// Si tus orígenes/destinos viven en otra colección, cambia solo este valor.
+const COLECCION_LUGARES = 'destinos';
+
 export const ReferenciasDieselDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'referencias'>('referencias');
   
@@ -39,6 +45,8 @@ export const ReferenciasDieselDashboard = () => {
   const [unidadesList, setUnidadesList] = useState<any[]>([]);
   const [operadoresList, setOperadoresList] = useState<any[]>([]);
   const [proveedoresList, setProveedoresList] = useState<any[]>([]);
+  // Catálogo de lugares (orígenes/destinos) para resolver IDs a nombres.
+  const [lugaresList, setLugaresList] = useState<any[]>([]);
 
   const [filtroUnidad, setFiltroUnidad] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
@@ -110,7 +118,11 @@ export const ReferenciasDieselDashboard = () => {
       setProveedoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     });
 
-    return () => { unSubReferencias(); unSubUnidades(); unSubEmpleados(); unSubEmpresas(); };
+    const unSubLugares = onSnapshot(collection(db, COLECCION_LUGARES), (snap) => {
+      setLugaresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    });
+
+    return () => { unSubReferencias(); unSubUnidades(); unSubEmpleados(); unSubEmpresas(); unSubLugares(); };
   }, []);
 
   // ✅ 2. LAZY LOAD DE OPERACIONES
@@ -224,6 +236,60 @@ export const ReferenciasDieselDashboard = () => {
     return found ? found.nombre : idOrName;
   };
 
+  // ✅ Dirección del proveedor para el PDF de Instrucciones del Servicio.
+  // La empresa puede guardar la dirección de varias formas, así que probamos
+  // los campos más comunes (texto plano, objeto o arreglo de direcciones).
+  const getDireccionProveedor = (idOrName: string): string => {
+    if (!idOrName) return '';
+    const found = proveedoresList.find(p => p.id === idOrName || p.nombre === idOrName);
+    if (!found) return '';
+    const candidatos = [found.direccion, found.domicilio, found.direccionFiscal, found.direccionCompleta, found.calle];
+    const directa = candidatos.find((c: any) => typeof c === 'string' && c.trim());
+    if (directa) return String(directa).trim();
+    if (Array.isArray(found.direcciones) && found.direcciones.length > 0) {
+      const d = found.direcciones[0];
+      if (typeof d === 'string') return d;
+      if (d && typeof d === 'object') return d.label || d.direccion || d.nombre || '';
+    }
+    return '';
+  };
+
+  // ✅ Resuelve el ID de un Origen/Destino a su nombre legible.
+  // Busca primero en el catálogo de lugares y, como respaldo, en empresas
+  // (por si origen/destino apuntan a una empresa/cliente). Si no lo encuentra,
+  // devuelve el valor original tal cual (puede ser un nombre ya legible).
+  const getNombreLugar = (idOrName: string): string => {
+    if (!idOrName) return '-';
+    const fuente = lugaresList.find(l => l.id === idOrName) || proveedoresList.find(p => p.id === idOrName);
+    if (!fuente) return idOrName;
+    const nombre =
+      fuente.nombre ||
+      fuente.label ||
+      fuente.nombreComercial ||
+      fuente.razonSocial ||
+      [fuente.ciudad, fuente.estado].filter(Boolean).join(', ') ||
+      fuente.direccion ||
+      idOrName;
+    return String(nombre);
+  };
+
+  // ✅ Construye los datos para el PDF "Instrucciones del Servicio" (Diesel).
+  const construirDatosInstrucciones = (r: any) => ({
+    referencia: r.consecutivo || '',
+    fecha: r.fecha || '',
+    unidadNombre: getNombreUnidad(r.unidadNombre || r.unidadId || r.unidad),
+    operadorNombre: getNombreOperador(r.operadorNombre || r.operadorId || r.operador),
+    proveedorNombre: r.proveedorNombre || getNombreProveedor(r.proveedorId || r.proveedor),
+    proveedorDireccion: getDireccionProveedor(r.proveedorId || r.proveedor),
+    galonesAutorizados: r.galonesAutorizados || 0,
+  });
+
+  // ✅ Genera/descarga el PDF desde la tabla (evita seleccionar la fila).
+  const handleGenerarInstrucciones = (e: React.MouseEvent, r: any) => {
+    e.stopPropagation();
+    generarInstruccionesDieselPDF(construirDatosInstrucciones(r));
+  };
+
   const formatearFechaSpanish = (fechaString: string) => {
     if (!fechaString) return '-';
     try { 
@@ -304,8 +370,8 @@ export const ReferenciasDieselDashboard = () => {
       case 'fechaServicio': return String(op.fechaServicio || op.createdAt || '');
       case 'unidad': return getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad).toLowerCase();
       case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador).toLowerCase();
-      case 'origen': return String(op.origen || '').toLowerCase();
-      case 'destino': return String(op.destino || '').toLowerCase();
+      case 'origen': return getNombreLugar(op.origen).toLowerCase();
+      case 'destino': return getNombreLugar(op.destino).toLowerCase();
       case 'diesel': return Number(op.combustibleTotal || 0);
       case 'refDiesel': return String(op.referenciaDieselConsecutivo || refDieselPorOpId[op.id] || '').toLowerCase();
       default: return '';
@@ -338,7 +404,7 @@ export const ReferenciasDieselDashboard = () => {
       // ✅ Desempate: por número de referencia de la operación, del más nuevo al más viejo.
       return consecutivoNum(b.ref) - consecutivoNum(a.ref);
     });
-  }, [operacionesBaseUnidad, filtroUnidad, filtroEstadoOps, ordenOps, fechaDesdeOps, fechaHastaOps, idsCargadasSet]);
+  }, [operacionesBaseUnidad, filtroUnidad, filtroEstadoOps, ordenOps, fechaDesdeOps, fechaHastaOps, idsCargadasSet, lugaresList, proveedoresList]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -352,8 +418,8 @@ export const ReferenciasDieselDashboard = () => {
       case 'fechaServicio': return formatearFechaSpanish(op.fechaServicio || op.createdAt);
       case 'unidad': return getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad);
       case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador);
-      case 'origen': return op.origen || '-';
-      case 'destino': return op.destino || '-';
+      case 'origen': return getNombreLugar(op.origen);
+      case 'destino': return getNombreLugar(op.destino);
       case 'diesel': return Number(op.combustibleTotal || 0);
       case 'refDiesel': return op.referenciaDieselConsecutivo || refDieselPorOpId[op.id] || '-';
       default: return '-';
@@ -368,8 +434,8 @@ export const ReferenciasDieselDashboard = () => {
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
       case 'unidad': return <td key={key} style={tdBase}>{getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad)}</td>;
       case 'operador': return <td key={key} style={tdBase}>{getNombreOperador(op.operadorNombre || op.operadorId || op.operador)}</td>;
-      case 'origen': return <td key={key} style={tdBase}>{op.origen || '-'}</td>;
-      case 'destino': return <td key={key} style={tdBase}>{op.destino || '-'}</td>;
+      case 'origen': return <td key={key} style={tdBase}>{getNombreLugar(op.origen)}</td>;
+      case 'destino': return <td key={key} style={tdBase}>{getNombreLugar(op.destino)}</td>;
       case 'diesel': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{Number(op.combustibleTotal || 0).toFixed(2)}</td>;
       case 'refDiesel': {
         const cons = op.referenciaDieselConsecutivo || refDieselPorOpId[op.id] || '';
@@ -1029,6 +1095,16 @@ export const ReferenciasDieselDashboard = () => {
                       <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                           <button 
+                            title="Generar Instrucciones de Servicio (PDF)" 
+                            onClick={(e) => handleGenerarInstrucciones(e, r)} 
+                            style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: 'pointer', padding: '6px', display: 'flex', transition: 'all 0.2s' }}
+                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'}
+                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                          </button>
+
+                          <button 
                             title="Editar/Ver Ficha" 
                             onClick={() => setReferenciaViendo(r)} 
                             style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', transition: 'all 0.2s' }}
@@ -1200,6 +1276,10 @@ export const ReferenciasDieselDashboard = () => {
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>Ficha de Referencia Diesel</h2>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <button onClick={() => generarInstruccionesDieselPDF(construirDatosInstrucciones(referenciaViendo))} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                  Instrucciones
+                </button>
                 <button onClick={() => abrirEdicionRef(referenciaViendo)} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                   Editar
@@ -1411,11 +1491,11 @@ export const ReferenciasDieselDashboard = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ORIGEN</span>
-                <span style={{ color: '#c9d1d9' }}>{operacionAEditar.origen || '-'}</span>
+                <span style={{ color: '#c9d1d9' }}>{getNombreLugar(operacionAEditar.origen)}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>DESTINO</span>
-                <span style={{ color: '#c9d1d9' }}>{operacionAEditar.destino || '-'}</span>
+                <span style={{ color: '#c9d1d9' }}>{getNombreLugar(operacionAEditar.destino)}</span>
               </div>
             </div>
 
