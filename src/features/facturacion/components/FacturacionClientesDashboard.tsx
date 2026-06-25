@@ -399,9 +399,13 @@ export const FacturacionClientesDashboard = () => {
   // ✅ (1) Filtro principal: rango de fechas (obligatorio). Cliente opcional.
   const [fechaDesdeOps, setFechaDesdeOps] = useState('');
   const [fechaHastaOps, setFechaHastaOps] = useState('');
-  // ✅ Fechas del HISTORIAL: independientes de "Asignar Operaciones" (opcionales).
-  const [fechaDesdeHist, setFechaDesdeHist] = useState('');
-  const [fechaHastaHist, setFechaHastaHist] = useState('');
+  // ✅ Fechas del HISTORIAL: independientes de "Asignar Operaciones". Por
+  //    defecto = HOY (para no listar miles de facturas al entrar).
+  const hoyISO = new Date().toISOString().split('T')[0];
+  const [fechaDesdeHist, setFechaDesdeHist] = useState(hoyISO);
+  const [fechaHastaHist, setFechaHastaHist] = useState(hoyISO);
+  // ✅ Búsqueda por # de remolque / referencia en "Asignar Operaciones".
+  const [textoBuscarRemolqueOps, setTextoBuscarRemolqueOps] = useState('');
   // ✅ Mostrar también las ya facturadas en "Asignar Operaciones" (por defecto NO).
   const [mostrarFacturadas, setMostrarFacturadas] = useState(false);
   // ✅ Bandera: se alcanzó el tope de lectura de operaciones del rango.
@@ -570,8 +574,14 @@ export const FacturacionClientesDashboard = () => {
     // 1) localStorage primero: persistencia local instantánea (sobrevive al refresco).
     const aplicarOps = (guardadas: any) => {
       let cols = aplicarConfigColumnasGuardada(COLUMNAS_OPS_BASE, guardadas);
-      const teniaFactura = Array.isArray(guardadas) && guardadas.some((g: any) => g?.id === 'factura');
-      if (!teniaFactura) cols = moverIdAlInicio(cols, 'factura');
+      // La columna "# Factura" siempre debe estar presente, visible y al frente
+      // (es clave para saber dónde se facturó cada operación).
+      if (!cols.some((c: any) => c.id === 'factura')) {
+        const base = COLUMNAS_OPS_BASE.find((c: any) => c.id === 'factura');
+        if (base) cols = [{ ...base, visible: true }, ...cols];
+      }
+      cols = cols.map((c: any) => c.id === 'factura' ? { ...c, visible: true } : c);
+      cols = moverIdAlInicio(cols, 'factura');
       return cols;
     };
     const aplicarHist = (guardadas: any) => {
@@ -962,7 +972,16 @@ export const FacturacionClientesDashboard = () => {
     if (!ambasFechas) return [];
     // Por defecto solo las PENDIENTES (no facturadas). Con el toggle se incluyen
     // también las ya facturadas (que no son seleccionables).
-    const lista = operacionesGlobales.filter(op => dentroRangoFecha(op) && (mostrarFacturadas || !esFacturada(op)));
+    const q = textoBuscarRemolqueOps.trim().toLowerCase();
+    const coincide = (op: any) => {
+      if (!q) return true;
+      const campos = [
+        op.remolqueNombre, op.remolquePlaca, op.numeroRemolque, op.remolque,
+        op.numReferencia, op.referencia, op.ref, invoiceDeOp(op), op.refCliente,
+      ];
+      return campos.some(v => String(v ?? '').toLowerCase().includes(q));
+    };
+    const lista = operacionesGlobales.filter(op => dentroRangoFecha(op) && (mostrarFacturadas || !esFacturada(op)) && coincide(op));
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
       const va = valorOrdenOp(a, ordenOps.campo);
@@ -971,7 +990,7 @@ export const FacturacionClientesDashboard = () => {
       return String(va).localeCompare(String(vb)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, mostrarFacturadas]);
+  }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, mostrarFacturadas, textoBuscarRemolqueOps, facturasGlobales]);
 
   // ✅ Conteos sobre TODO el rango cargado (no depende del toggle de visibilidad).
   const resumenOps = useMemo(() => {
@@ -1125,6 +1144,14 @@ export const FacturacionClientesDashboard = () => {
   // ✅ Abrir / guardar costo adicional al cliente en una operación seleccionada.
   const abrirModalCostoAdic = () => {
     setCostoAdicOpId(seleccionadas.length > 0 ? seleccionadas[0] : '');
+    setCostoAdicMonto('');
+    setCostoAdicConcepto('');
+    setModalCostoAdic(true);
+  };
+
+  // ✅ Abrir el costo adicional directamente para UNA operación (botón en la fila).
+  const abrirCostoAdicParaOp = (opId: string) => {
+    setCostoAdicOpId(opId);
     setCostoAdicMonto('');
     setCostoAdicConcepto('');
     setModalCostoAdic(true);
@@ -1405,7 +1432,9 @@ export const FacturacionClientesDashboard = () => {
     const coincideFechas = (f: any) => {
       if (!fechaDesdeHist && !fechaHastaHist) return true;
       const fc = String(f.fecha || '').slice(0, 10);
-      if (!fc) return true; // sin fecha → no la ocultamos por el filtro de fechas
+      // Con filtro de fechas activo, las facturas SIN fecha (importadas) se
+      // ocultan; se ven al limpiar el filtro de fechas.
+      if (!fc) return false;
       if (fechaDesdeHist && fc < fechaDesdeHist) return false;
       if (fechaHastaHist && fc > fechaHastaHist) return false;
       return true;
@@ -1488,21 +1517,26 @@ export const FacturacionClientesDashboard = () => {
   const registrosVisibles = historialOrdenado.slice(indexFirst, indexLast);
 
   // ✅ Resolver bajo demanda la info real (ref TR, remolque, moneda) de las
-  //    operaciones de las facturas visibles, en lotes por documentId (máx 30).
+  //    operaciones de las facturas visibles + la ficha abierta, en lotes por
+  //    documentId (máx 30). NOTA: los IDs legacy son cortos (ej. "0025a7f3"),
+  //    por eso NO exigimos longitud mínima, solo que no parezca un TR (guion).
   useEffect(() => {
-    if (activeTab !== 'historial' || registrosVisibles.length === 0) return;
+    const fuentes: any[] = activeTab === 'historial' ? [...registrosVisibles] : [];
+    if (facturaViendo) fuentes.push(facturaViendo);
+    if (fuentes.length === 0) return;
     const faltantes = new Set<string>();
-    registrosVisibles.forEach((f: any) => {
-      (Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => {
-        const id = String(op?.id || '');
-        // solo si parece un ID (sin "TR-"/guion) y aún no lo tenemos resuelto
-        if (id && !opInfoMap[id] && !/[-\s]/.test(id) && id.length >= 12) faltantes.add(id);
-      });
+    const considerar = (id: string) => {
+      const k = String(id || '');
+      if (k && !opInfoMap[k] && !/[-\s]/.test(k) && k.length >= 4) faltantes.add(k);
+    };
+    fuentes.forEach((f: any) => {
+      (Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => considerar(String(op?.id || '')));
+      (Array.isArray(f.operacionesIds) ? f.operacionesIds : []).forEach((id: any) => considerar(String(id || '')));
     });
     if (faltantes.size === 0) return;
     let activo = true;
     (async () => {
-      const ids = Array.from(faltantes).slice(0, 120); // tope de seguridad por render
+      const ids = Array.from(faltantes).slice(0, 150); // tope de seguridad por render
       const nuevos: Record<string, any> = {};
       for (let i = 0; i < ids.length; i += 30) {
         const chunk = ids.slice(i, i + 30);
@@ -1523,7 +1557,7 @@ export const FacturacionClientesDashboard = () => {
     })();
     return () => { activo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registrosVisibles, activeTab]);
+  }, [registrosVisibles, facturaViendo, activeTab]);
 
   // Ref real de una operación guardada en factura (resuelta o tal cual).
   const refDeOp = (op: any): string => {
@@ -1762,6 +1796,18 @@ export const FacturacionClientesDashboard = () => {
           {(fechaDesdeOps || fechaHastaOps) && (
             <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
           )}
+          <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}># REMOLQUE / REFERENCIA (opcional)</label>
+            <div style={{ position: 'relative' }}>
+              <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" placeholder="Buscar por # remolque o referencia..." value={textoBuscarRemolqueOps}
+                onChange={(e) => setTextoBuscarRemolqueOps(e.target.value)}
+                style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+              {textoBuscarRemolqueOps && (
+                <button onClick={() => setTextoBuscarRemolqueOps('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+              )}
+            </div>
+          </div>
           <BuscadorCliente />
         </div>
       ) : (
@@ -1794,6 +1840,9 @@ export const FacturacionClientesDashboard = () => {
             <button onClick={() => { setFechaDesdeHist(''); setFechaHastaHist(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
           )}
           <BuscadorCliente />
+          <div style={{ flexBasis: '100%', color: '#6e7681', fontSize: '0.75rem' }}>
+            Por defecto se muestran las facturas de <b style={{ color: '#8b949e' }}>hoy</b>. Las facturas importadas sin fecha se ven al <b style={{ color: '#8b949e' }}>limpiar fechas</b>.
+          </div>
         </div>
       )}
 
@@ -1908,13 +1957,14 @@ export const FacturacionClientesDashboard = () => {
                       {col.label.toUpperCase()}{col.orden ? flechaOps(col.id) : ''}
                     </th>
                   ))}
+                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>COSTO ADIC.</th>
                 </tr>
               </thead>
               <tbody>
                 {cargandoOperaciones ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones completadas del rango...</td></tr>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones completadas del rango...</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones completadas en este rango de fechas{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones completadas en este rango de fechas{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
                 ) : (
                   operacionesMostradas.map(op => {
                     const m = obtenerMontoOperacion(op);
@@ -1930,6 +1980,14 @@ export const FacturacionClientesDashboard = () => {
                           )}
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
+                        <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }}
+                            title="Agregar costo adicional a esta operación"
+                            style={{ backgroundColor: 'transparent', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                            ＋ Costo
+                          </button>
+                        </td>
                       </tr>
                     );
                   })
@@ -2136,13 +2194,13 @@ export const FacturacionClientesDashboard = () => {
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>OPERACIÓN (seleccionadas)</label>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>OPERACIÓN</label>
                 <select value={costoAdicOpId} onChange={e => setCostoAdicOpId(e.target.value)}
                   style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box' }}>
                   <option value="">-- Selecciona una operación --</option>
-                  {seleccionadas.map(id => {
+                  {Array.from(new Set([costoAdicOpId, ...seleccionadas].filter(Boolean))).map(id => {
                     const o = operacionesGlobales.find(x => x.id === id);
-                    const ref = o?.numReferencia || o?.referencia || o?.ref || id.substring(0, 6);
+                    const ref = o?.numReferencia || o?.referencia || o?.ref || String(id).substring(0, 6);
                     return <option key={id} value={id}>{ref}</option>;
                   })}
                 </select>
