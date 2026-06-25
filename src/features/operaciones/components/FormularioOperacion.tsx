@@ -948,6 +948,100 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
   }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas]);
 
+  // ============================================================
+  // ✅ NUEVO: Sincronía Convenio (Tarifa) Cliente  ↔  Convenio Proveedor
+  // ------------------------------------------------------------
+  // Aunque el convenio del cliente se captura en convenios_clientes_detalles y el
+  // del proveedor en convenios_proveedores_detalles, AMBOS referencian la misma
+  // colección base `catalogo_tarifas_referencia` a través de `tarifaBaseId`.
+  // Por eso "que sean el mismo convenio" significa: MISMA tarifa base.
+  //
+  //   1) Al colocar el Convenio (Tarifa) del cliente se autoselecciona el Convenio
+  //      Proveedor que tenga la MISMA tarifa base (si el proveedor ya está elegido).
+  //   2) Si el proveedor NO tiene un convenio con esa misma tarifa, se marca un
+  //      error (que bloquea el guardado) indicando que se debe AGREGAR ese convenio.
+  // ============================================================
+
+  // Aviso/validación: { mensaje, bloquea } o null. Se muestra en el campo y en el panel lateral.
+  const convenioProvAviso = useMemo<{ mensaje: string; bloquea: boolean } | null>(() => {
+    // La regla solo aplica si la pestaña de Unidad/Proveedor está visible.
+    if (!pestanasVisibles.includes('unidad')) return null;
+    if (!formData.convenio) return null;
+
+    const convCliente = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
+    if (!convCliente) return null;
+    const tarifaCliente = String(convCliente.tarifaBaseId ?? '').trim();
+    if (!tarifaCliente) return null;
+
+    const hayProveedor = !!(formData.proveedorUnidad || searchProvTransporte);
+    if (!hayProveedor) {
+      return {
+        mensaje: 'Selecciona el Proveedor de Transporte para asignarle automáticamente el mismo convenio (tarifa) que el cliente.',
+        bloquea: false,
+      };
+    }
+
+    const existeMatch = listaConveniosProveedor.some(
+      (c: any) => String(c.tarifaBaseId ?? '').trim() === tarifaCliente
+    );
+    if (!existeMatch) {
+      return {
+        mensaje: `El proveedor de transporte no tiene un convenio con la misma tarifa que el cliente ("${convCliente.descripcion}"). Debes AGREGAR ese convenio al proveedor para poder continuar.`,
+        bloquea: true,
+      };
+    }
+
+    const convProvSel = listaConveniosProveedor.find((c: any) => c.id === formData.convenioProveedor);
+    if (convProvSel && String(convProvSel.tarifaBaseId ?? '').trim() !== tarifaCliente) {
+      return {
+        mensaje: 'El Convenio Proveedor seleccionado no coincide con la tarifa del cliente. Ambos deben ser el mismo convenio (tarifa).',
+        bloquea: true,
+      };
+    }
+    return null;
+  }, [pestanasVisibles, formData.convenio, formData.convenioProveedor, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor]);
+
+  // Autoselección del Convenio Proveedor con la MISMA tarifa base que el cliente.
+  useEffect(() => {
+    if (!pestanasVisibles.includes('unidad')) return;
+    if (!formData.convenio) return;
+
+    const convCliente = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
+    if (!convCliente) return;
+    const tarifaCliente = String(convCliente.tarifaBaseId ?? '').trim();
+    if (!tarifaCliente) return;
+
+    // Necesitamos un proveedor seleccionado para tener sus convenios disponibles.
+    if (!(formData.proveedorUnidad || searchProvTransporte)) return;
+
+    // Si el convenio del proveedor YA coincide por tarifa base, no tocamos nada
+    // (evita pisar montos ajustados manualmente, p. ej. al editar una operación).
+    const convProvActual = listaConveniosProveedor.find((c: any) => c.id === formData.convenioProveedor);
+    if (convProvActual && String(convProvActual.tarifaBaseId ?? '').trim() === tarifaCliente) return;
+
+    const convProvMatch = listaConveniosProveedor.find(
+      (c: any) => String(c.tarifaBaseId ?? '').trim() === tarifaCliente
+    );
+
+    if (convProvMatch) {
+      setFormData(prev => ({
+        ...prev,
+        convenioProveedor: convProvMatch.id,
+        monedaConvenioProv: convProvMatch.monedaBase,
+        totalAPagarProv: convProvMatch.tarifaMonto,
+      }));
+      setSearchConvenioProveedor(convProvMatch.tipoConvenioNombre);
+    } else if (!initialData && formData.convenioProveedor) {
+      // En alta: si el convenio previo del proveedor ya no coincide con la tarifa
+      // del cliente y no hay uno equivalente, lo limpiamos (evita mostrar uno incorrecto).
+      setFormData(prev => ({ ...prev, convenioProveedor: '', monedaConvenioProv: '', totalAPagarProv: 0 }));
+      setSearchConvenioProveedor('');
+    }
+    // No incluimos formData.convenioProveedor en deps a propósito: solo autollenamos
+    // cuando cambia el convenio del cliente o el proveedor, no en ediciones manuales.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pestanasVisibles, formData.convenio, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor, initialData]);
+
   const resolverNombreTrafico = useCallback(async (movRaw: any): Promise<string> => {
     const valor = String(movRaw || '').trim();
     if (!valor) return 'N/A';
@@ -1094,6 +1188,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // ✅ NUEVO: bloquea el guardado si el Convenio Proveedor no es el mismo (misma tarifa)
+    // que el Convenio (Tarifa) del cliente. Lleva al usuario a la pestaña de Unidad.
+    if (convenioProvAviso?.bloquea) {
+      alert(convenioProvAviso.mensaje);
+      if (pestanasVisibles.includes('unidad')) setPestañaActiva('unidad');
+      return;
+    }
     setCargando(true);
     try {
       const configId = buildConfigId();
@@ -1528,88 +1629,42 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </div>
                 </>
               )}
-              {pestañaActiva === 'unidad' && pestanasVisibles.includes('unidad') && (<>
-                  {showInternalFleet && (
-                    <div className="roelca-card">
-                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconUser /></div><h3 className="roelca-card-title">Unidad y Operador (Flota Interna)</h3></div>
-                      <div className="form-grid">
-                        <div className="form-group">
-                          <label className="form-label">Unidad</label>
-                          <div className="roelca-lookup-row">
-                            <div className="roelca-lookup-input">
-                              <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
-                              {showDropdownUnidad && searchUnidad && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosUnidad.map((u:any) => (<div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(u.unidad || u.nombre); setShowDropdownUnidad(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{u.unidad || u.nombre}</div></div>))}</div>)}
-                            </div>
-                            <BotonAgregar title="Agregar nueva Unidad" onClick={() => abrirCreacion(
-                              { tipo: 'unidad', coleccion: 'unidades' },
-                              (id, reg) => { setFormData(prev => ({ ...prev, unidad: id })); setSearchUnidad(labelUnidad(reg)); }
-                            )} />
-                          </div>
-                        </div>
-                        <div className="form-group">
-                          <label className="form-label">Operador</label>
-                          <div className="roelca-lookup-row">
-                            <div className="roelca-lookup-input">
-                              <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
-                              {showDropdownOperador && searchOperador && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperador.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>Sin resultados</div> : resultadosOperador.map((o:any) => { const nombreCompleto = `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim(); return (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operador: o.id })); setSearchOperador(nombreCompleto); setShowDropdownOperador(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreCompleto}</div></div>); })}</div>)}
-                            </div>
-                            <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion(
-                              { tipo: 'empleado', coleccion: 'empleados' },
-                              (id, reg) => { setFormData(prev => ({ ...prev, operador: id })); setSearchOperador(labelEmpleado(reg)); }
-                            )} />
-                          </div>
-                        </div>
-                        <div className="form-group"><label className="form-label">Sueldo del Operador</label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador || ''} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Sueldo Extra</label><input type="number" step="0.01" name="sueldoExtra" className={`form-control${claseSiFalta('sueldoExtra')}`} value={formData.sueldoExtra || ''} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label orange">Sueldo Total</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.sueldoTotal) || 0).toFixed(2)}</div></div>
-                        <div className="form-group" style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d', margin: '4px 0' }} /></div>
-                        <div className="form-group"><label className="form-label">Combustible</label><input type="number" step="0.01" name="combustible" className={`form-control${claseSiFalta('combustible')}`} value={formData.combustible || ''} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Combustible Extra</label><input type="number" step="0.01" name="combustibleExtra" className={`form-control${claseSiFalta('combustibleExtra')}`} value={formData.combustibleExtra || ''} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label orange">Total Combustible</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>{(Number(formData.combustibleTotal) || 0).toFixed(2)}</div></div>
-                      </div>
-                    </div>
-                  )}
 
-                  {showExternalFleet && (
-                    <div className="roelca-card">
-                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconUsers /></div><h3 className="roelca-card-title">Unidad y Operador (Flota Externa)</h3></div>
-                      <div className="form-grid">
-                        <div className="form-group" style={{ position: 'relative' }}>
-                          <label className="form-label" style={{ color: '#58a6ff' }}>Unidad del Proveedor</label>
-                          <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} style={{ border: '1px solid #58a6ff' }} placeholder="Buscar unidad externa..." value={searchUnidadProveedor} onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); setFormData(prev => ({ ...prev, unidadProveedor: e.target.value })); }} onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
-                          {showDropdownUnidadProveedor && searchUnidadProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosUnidadProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Sin resultados (Se guardará como texto)</div> : resultadosUnidadProveedor.map((u:any) => { const valorUnidad = u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || 'Sin Número'; return (<div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidadProveedor: u.id })); setSearchUnidadProveedor(valorUnidad); setShowDropdownUnidadProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{valorUnidad}</div></div>); })}</div>)}
-                        </div>
-                        <div className="form-group" style={{ position: 'relative', gridColumn: 'span 2' }}>
-                          <label className="form-label" style={{ color: '#58a6ff' }}>Operador del Proveedor</label>
-                          <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} style={{ border: '1px solid #58a6ff' }} placeholder="Buscar operador externo..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
-                          {showDropdownOperadorProveedor && searchOperadorProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperadorProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Sin resultados (Se guardará como texto)</div> : resultadosOperadorProveedor.map((o:any) => { const valorNombre = o.nombre || o.nombres || o.nombreCompleto || 'Sin Nombre'; return (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(valorNombre); setShowDropdownOperadorProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{valorNombre}</div></div>); })}</div>)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
+              {pestañaActiva === 'unidad' && pestanasVisibles.includes('unidad') && (
+                <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Proveedor de Transporte</h3></div>
                     <div className="form-grid">
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label className="form-label">Proveedor de Transporte</label>
+                      <div className="form-group">
+                        <label className="form-label orange">Proveedor de Transporte</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} disabled={proveedorForzado} placeholder="Escriba para buscar proveedor de transporte..." value={searchProvTransporte} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
-                            {showDropdownProvTransporte && searchProvTransporte && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((p:any) => (<div key={p.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(p); setFormData(prev => ({ ...prev, proveedorUnidad: p.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault })); setSearchProvTransporte(p.nombre); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div></div>))}</div>)}
+                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Escriba para buscar proveedor..." disabled={proveedorForzado} value={searchProvTransporte}
+                              onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }}
+                              onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
+                            {showDropdownProvTransporte && searchProvTransporte && !proveedorForzado && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                                {resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((c:any) => (
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, proveedorUnidad: c.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault || prev.facturadoEnUnidad })); setSearchProvTransporte(c.nombre); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion(
-                            { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE },
-                            (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: resolverMonedaIdDeEmpresa(reg) })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); }
-                          )} />
+                          {!proveedorForzado && (
+                            <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion(
+                              { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE },
+                              (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: resolverMonedaIdDeEmpresa(reg) || prev.facturadoEnUnidad })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); }
+                            )} />
+                          )}
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
                       <div className="form-group">
                         <label className="form-label">Convenio Proveedor</label>
                         <div style={{ position: 'relative' }}>
                           <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Escriba para buscar convenio..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor}
-                            onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '', monedaConvenioProv: '', totalAPagarProv: 0 })); }}
+                            onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '' })); }}
                             onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
                           {showDropdownConvenioProveedor && (
                             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
@@ -1622,275 +1677,318 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )}
                         </div>
                         {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
+                        {/* ✅ NUEVO: aviso de sincronía con el Convenio (Tarifa) del cliente */}
+                        {convenioProvAviso && (
+                          <small style={{ display: 'block', marginTop: '4px', color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c', fontWeight: 600, lineHeight: 1.35 }}>
+                            {convenioProvAviso.bloquea ? '⛔ ' : 'ℹ️ '}{convenioProvAviso.mensaje}
+                          </small>
+                        )}
                       </div>
-                      <div className="form-group"><label className="form-label">Moneda del Convenio (Base)</label><input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m: any) => m.id === formData.monedaConvenioProv)?.moneda || 'Sin Asignar'} /></div>
+                      <div className="form-group">
+                        <label className="form-label">Facturado En</label>
+                        <select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}>
+                          <option value="">-- Seleccionar --</option>
+                          {listaMonedasLocal.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Moneda del Convenio</label>
+                        <input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m:any) => m.id === formData.monedaConvenioProv)?.moneda || ''} style={{ opacity: 0.7 }} />
+                      </div>
                     </div>
                   </div>
+
+                  {showInternalFleet && (
+                    <div className="roelca-card">
+                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconUser /></div><h3 className="roelca-card-title">Unidad y Operador (Flota Roelca)</h3></div>
+                      <div className="form-grid">
+                        <div className="form-group">
+                          <label className="form-label">Unidad</label>
+                          <div className="roelca-lookup-row">
+                            <div className="roelca-lookup-input">
+                              <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
+                              {showDropdownUnidad && searchUnidad && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosUnidad.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosUnidad.map((u:any) => (<div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(labelUnidad(u)); setShowDropdownUnidad(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelUnidad(u)}</div></div>))}</div>)}
+                            </div>
+                            <BotonAgregar title="Agregar nueva Unidad" onClick={() => abrirCreacion(
+                              { tipo: 'unidad', coleccion: 'unidades' },
+                              (id, reg) => { setFormData(prev => ({ ...prev, unidad: id })); setSearchUnidad(labelUnidad(reg)); }
+                            )} />
+                          </div>
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Operador</label>
+                          <div className="roelca-lookup-row">
+                            <div className="roelca-lookup-input">
+                              <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
+                              {showDropdownOperador && searchOperador && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperador.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosOperador.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operador: o.id })); setSearchOperador(labelEmpleado(o)); setShowDropdownOperador(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelEmpleado(o)}</div></div>))}</div>)}
+                            </div>
+                            <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion(
+                              { tipo: 'empleado', coleccion: 'empleados' },
+                              (id, reg) => { setFormData(prev => ({ ...prev, operador: id })); setSearchOperador(labelEmpleado(reg)); }
+                            )} />
+                          </div>
+                        </div>
+                        <div className="form-group"><label className="form-label">Sueldo Operador ($)</label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo Extra ($)</label><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Combustible ($)</label><input type="number" step="0.01" name="combustible" className={`form-control${claseSiFalta('combustible')}`} value={formData.combustible} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Extra ($)</label><input type="number" step="0.01" name="combustibleExtra" className="form-control" value={formData.combustibleExtra} onChange={handleChange} /></div>
+                      </div>
+                    </div>
+                  )}
+
+                  {showExternalFleet && (
+                    <div className="roelca-card">
+                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconUsers /></div><h3 className="roelca-card-title">Unidad y Operador del Proveedor</h3></div>
+                      <div className="form-grid">
+                        <div className="form-group">
+                          <label className="form-label">Unidad del Proveedor</label>
+                          <div style={{ position: 'relative' }}>
+                            <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} placeholder="Buscar unidad del proveedor..." value={searchUnidadProveedor} onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); if (formData.unidadProveedor) setFormData(prev => ({ ...prev, unidadProveedor: '' })); }} onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
+                            {showDropdownUnidadProveedor && searchUnidadProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosUnidadProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosUnidadProveedor.map((u:any) => { const etiqueta = String(u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || ''); return (<div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidadProveedor: u.id })); setSearchUnidadProveedor(etiqueta); setShowDropdownUnidadProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{etiqueta}</div></div>); })}</div>)}
+                          </div>
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Operador del Proveedor</label>
+                          <div style={{ position: 'relative' }}>
+                            <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} placeholder="Buscar operador del proveedor..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); if (formData.operadorProveedor) setFormData(prev => ({ ...prev, operadorProveedor: '' })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
+                            {showDropdownOperadorProveedor && searchOperadorProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperadorProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosOperadorProveedor.map((o:any) => { const etiqueta = String(o.nombre || o.nombres || o.nombreCompleto || ''); return (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(etiqueta); setShowDropdownOperadorProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{etiqueta}</div></div>); })}</div>)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Monto a Pagar (Base)<span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>editable</span></label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || ''} onChange={handleChange} title="El convenio precarga este valor, pero puedes ajustarlo manualmente" /></div>
-                      <div className="form-group">
-                        <label className="form-label">Costos Adicionales <span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>desde modal</span></label>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <div style={{ flex: 1, minWidth: 0, color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d', overflow: 'hidden', textOverflow: 'ellipsis' }}>${(Number(formData.cargosAdicionalesProv) || 0).toFixed(2)}</div>
-                          <button type="button" onClick={() => setMostrarCostosAdic(true)} disabled={!initialData} title={!initialData ? 'Guarda la operación primero para agregar costos adicionales' : 'Agregar / gestionar costos adicionales del proveedor'} style={{ flexShrink: 0, padding: '8px 12px', backgroundColor: initialData ? '#D84315' : '#21262d', color: initialData ? '#fff' : '#6e7681', border: 'none', borderRadius: '6px', cursor: initialData ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap' }}>Gestionar</button>
-                        </div>
-                      </div>
-                      <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Costos)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalProv) || 0).toFixed(2)}</div></div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className="form-control" readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
-                      <div className="form-group"><label className="form-label">Dólares</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresProv) || 0).toFixed(2)}</div></div>
-                      <div className="form-group"><label className="form-label">Pesos</label><div style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.pesosProv) || 0).toFixed(2)}</div></div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1', marginTop: '8px' }}><label className="form-label orange">Conversión Final (Contabilidad)</label><div style={{ color: '#f85149', fontSize: '1.4rem', fontWeight: 'bold', padding: '10px 14px', backgroundColor: 'rgba(248, 81, 73, 0.08)', borderRadius: '8px', border: '1px solid rgba(248, 81, 73, 0.3)', textAlign: 'center' }}>${(Number(formData.conversionProv) || 0).toFixed(2)}</div></div>
+                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor ($)</label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Cargos Adicionales ($)</label><input type="number" step="0.01" name="cargosAdicionalesProv" className="form-control" value={formData.cargosAdicionalesProv} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Subtotal Proveedor</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.subtotalProv)} style={{ opacity: 0.7 }} /></div>
+                      <div className="form-group"><label className="form-label">Conversión (MXN)</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.conversionProv)} style={{ opacity: 0.7 }} /></div>
                     </div>
                   </div>
 
                   <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconChart /></div><h3 className="roelca-card-title">Total y Observaciones</h3></div>
-                    <div style={{ backgroundColor: 'rgba(248, 81, 73, 0.08)', border: '1px solid rgba(248, 81, 73, 0.3)', padding: '20px', borderRadius: '8px', textAlign: 'center', marginBottom: '16px' }}>
-                      <div style={{ color: '#8b949e', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px', fontWeight: 700 }}>Total Gastos [Sueldos + Manifiesto]</div>
-                      <div style={{ color: '#f85149', fontSize: '2rem', fontWeight: 800 }}>${(Number(formData.totalGastos) || 0).toFixed(2)}</div>
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Total y Observaciones</h3></div>
+                    <div className="form-grid">
+                      <div className="form-group"><label className="form-label">Total de Gastos</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.totalGastos)} style={{ opacity: 0.7 }} /></div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones de Unidad</label><textarea name="observacionesUnidad" className="form-control" rows={2} value={formData.observacionesUnidad || ''} onChange={handleChange} /></div>
                     </div>
-                    <div className="form-group"><label className="form-label">Observaciones</label><textarea name="observacionesUnidad" className={`form-control${claseSiFalta('observacionesUnidad')}`} value={formData.observacionesUnidad || ''} onChange={handleChange} placeholder="Notas adicionales sobre la unidad o proveedor..." style={{ minHeight: '80px', resize: 'vertical', width: '100%', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }} /></div>
                   </div>
                 </>
               )}
+
               {pestañaActiva === 'cobrar' && pestanasVisibles.includes('cobrar') && (
                 <>
                   <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Costos Adicionales (Cliente y Proveedor)</h3></div>
-                    <p style={{ color: '#8b949e', fontSize: '0.85rem', margin: '0 0 14px 0' }}>
-                      Registra costos adicionales detallados por convenio para esta operación. El total se suma a los Cargos Adicionales (cliente y proveedor) y recalcula la utilidad.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setMostrarCostosAdic(true)}
-                      disabled={!initialData}
-                      title={!initialData ? 'Guarda la operación primero para agregar costos adicionales' : undefined}
-                      style={{ padding: '10px 16px', backgroundColor: initialData ? '#D84315' : '#21262d', color: initialData ? '#fff' : '#6e7681', border: 'none', borderRadius: '8px', cursor: initialData ? 'pointer' : 'not-allowed', fontWeight: 600 }}
-                    >
-                      + Gestionar Costos Adicionales
-                    </button>
-                    {!initialData && <div style={{ color: '#8b949e', fontSize: '0.78rem', marginTop: '8px' }}>Disponible al editar una operación ya guardada.</div>}
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconReceipt /></div><h3 className="roelca-card-title">Costos Adicionales</h3></div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#8b949e' }}>Administra los costos adicionales ligados a esta operación.</p>
+                      <button type="button" className="roelca-btn-outline" style={{ width: 'auto' }} onClick={() => { if (!initialData) { alert('Guarda la operación primero para registrar costos adicionales.'); return; } setMostrarCostosAdic(true); }}>
+                        <IconPlus size={15} /> Abrir Costos Adicionales
+                      </button>
+                    </div>
                   </div>
 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Facturación al Cliente</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Facturado En:</label><select name="facturadoEnCobrar" className={`form-control${claseSiFalta('facturadoEnCobrar')}`} value={formData.facturadoEnCobrar || ''} onChange={handleChange}><option value="">-- Seleccionar Moneda --</option>{listaMonedasLocal.map((m: any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label">Moneda Convenio (Cliente)</label><input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m: any) => m.id === formData.monedaConvenioCliente)?.moneda || 'Sin Asignar'} /></div>
-                      <div className="form-group"><label className="form-label">Convenio Seleccionado (Monto Base)<span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>editable</span></label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente || ''} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: parseFloat(e.target.value) || 0 }))} title="El convenio precarga este valor, pero puedes ajustarlo manualmente" /></div>
                       <div className="form-group">
-                        <label className="form-label">Cargos Adicionales <span style={{ color: '#fb923c', fontSize: '0.7rem', marginLeft: '6px', fontWeight: 400 }}>desde modal</span></label>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          <div style={{ flex: 1, minWidth: 0, color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d', overflow: 'hidden', textOverflow: 'ellipsis' }}>${(Number(formData.cargosAdicionales) || 0).toFixed(2)}</div>
-                          <button type="button" onClick={() => setMostrarCostosAdic(true)} disabled={!initialData} title={!initialData ? 'Guarda la operación primero para agregar costos adicionales' : 'Agregar / gestionar costos adicionales del cliente'} style={{ flexShrink: 0, padding: '8px 12px', backgroundColor: initialData ? '#D84315' : '#21262d', color: initialData ? '#fff' : '#6e7681', border: 'none', borderRadius: '6px', cursor: initialData ? 'pointer' : 'not-allowed', fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap' }}>Gestionar</button>
-                        </div>
+                        <label className="form-label">Facturado En</label>
+                        <select name="facturadoEnCobrar" className={`form-control${claseSiFalta('facturadoEnCobrar')}`} value={formData.facturadoEnCobrar || ''} onChange={handleChange}>
+                          <option value="">-- Seleccionar --</option>
+                          {listaMonedasLocal.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
+                        </select>
                       </div>
-                      <div className="form-group"><label className="form-label orange">Subtotal (Convenio + Cargos)</label><div style={{ color: '#f0f6fc', fontSize: '1.2rem', fontWeight: 'bold', padding: '8px 12px', backgroundColor: '#161b22', borderRadius: '6px', border: '1px solid #30363d' }}>${(Number(formData.subtotalCliente) || 0).toFixed(2)}</div></div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio del Día</label><input type="text" className={`form-control${claseSiFalta('tipoCambioAprobado')}`} readOnly value={formData.tipoCambioAprobado || tipoCambioDia || 'No encontrado'} /></div>
+                      <div className="form-group"><label className="form-label">Monto Convenio Cliente ($)</label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Cargos Adicionales ($)</label><input type="number" step="0.01" name="cargosAdicionales" className="form-control" value={formData.cargosAdicionales} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Subtotal Cliente</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.subtotalCliente)} style={{ opacity: 0.7 }} /></div>
                     </div>
                   </div>
+
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTrendingUp /></div><h3 className="roelca-card-title">Conversión e Ingreso</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Dólares (Cliente)</label><div style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.dolaresCliente) || 0).toFixed(2)}</div></div>
-                      <div className="form-group"><label className="form-label">Pesos (Cliente)</label><div style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>${(Number(formData.pesosCliente) || 0).toFixed(2)}</div></div>
-                      <div className="form-group"><label className="form-label orange">Conversión Final (Ingreso)</label><div style={{ color: '#f85149', fontSize: '1.2rem', fontWeight: 'bold', border: '1px solid #f85149', padding: '4px 8px', borderRadius: '4px' }}>${(Number(formData.conversionCliente) || 0).toFixed(2)}</div></div>
-                    </div>
-                    <div style={{ backgroundColor: 'rgba(63, 185, 80, 0.08)', border: '1px solid rgba(63, 185, 80, 0.3)', padding: '20px', borderRadius: '8px', textAlign: 'center', marginTop: '20px' }}>
-                      <div style={{ color: '#8b949e', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px', fontWeight: 700 }}>UTILIDAD ESTIMADA DE LA OPERACIÓN</div>
-                      <div style={{ color: '#3fb950', fontSize: '2rem', fontWeight: 800 }}>${(Number(formData.utilidadEstimada) || 0).toFixed(2)}</div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado</label><input type="number" step="0.0001" name="tipoCambioAprobado" className={`form-control${claseSiFalta('tipoCambioAprobado')}`} value={formData.tipoCambioAprobado} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN)</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.conversionCliente)} style={{ opacity: 0.7 }} /></div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                        <label className="form-label">Utilidad Estimada</label>
+                        <div className={`roelca-utility-box ${formData.utilidadEstimada < 0 ? 'negative' : ''}`}>
+                          <div className="roelca-utility-label">Utilidad Estimada (MXN)</div>
+                          <div className="roelca-utility-value">{fmtMoney(formData.utilidadEstimada)}</div>
+                        </div>
+                      </div>
                     </div>
                   </div>
+
                   <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconEdit /></div><h3 className="roelca-card-title">Observaciones de Cobranza</h3></div>
-                    <div className="form-group"><textarea name="observacionesCobrar" className={`form-control${claseSiFalta('observacionesCobrar')}`} value={formData.observacionesCobrar || ''} onChange={handleChange} placeholder="Notas o justificaciones de cobranza..." style={{ minHeight: '100px', resize: 'vertical', width: '100%', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '10px 14px', borderRadius: '6px' }} /></div>
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Observaciones de Cobranza</h3></div>
+                    <div className="form-grid">
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones de Cobranza</label><textarea name="observacionesCobrar" className="form-control" rows={3} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
+                    </div>
                   </div>
                 </>
               )}
-
             </div>
           </form>
         </div>
 
-        {/* ===================== SIDEBAR DERECHO ===================== */}
         <aside className="roelca-form-right">
-          <div style={{ padding: '22px 20px', flex: 1, overflowY: 'auto' }}>
-            <div style={{ marginBottom: '22px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '6px' }}>
-                <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#f0f6fc', letterSpacing: '-0.2px' }}>Resumen Operación</h2>
-                {statusError ? (<span className="status-badge-error"><IconAlert size={11} /> Atención</span>) : (<span className="status-badge-ok"><IconCheck size={11} /> Listo</span>)}
-              </div>
-              <p style={{ margin: 0, fontSize: '0.78rem', color: '#7d8590', fontWeight: 400 }}>{initialData ? 'Editando registro existente' : 'Vista previa antes de guardar'}</p>
+          <div className="roelca-form-header" style={{ borderBottom: '1px solid #1f2733' }}>
+            <div>
+              <h2 style={{ fontSize: '1.1rem' }}>Resumen</h2>
+              <p>Estatus y validaciones en vivo</p>
             </div>
+            {statusError
+              ? <span className="status-badge-error"><IconAlert size={12} /> Revisar</span>
+              : <span className="status-badge-ok"><IconCheck size={12} /> OK</span>}
+          </div>
 
+          <div className="roelca-scroll" style={{ padding: '18px 20px' }}>
             {!statusError && statusPreview && (
               <div className="status-preview-card">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.66rem', color: '#7ee787', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '6px' }}><IconArrowRight size={12} /> Próximo Estatus</div>
-                <div style={{ color: '#e6edf3', fontWeight: 600, fontSize: '0.92rem' }}>{statusPreview}</div>
+                <div className="roelca-sidebar-label" style={{ marginBottom: '6px' }}>Estatus calculado</div>
+                <div className="roelca-sidebar-value" style={{ color: '#3fb950' }}>{statusPreview}</div>
               </div>
             )}
+
             {statusError && (
               <div className="status-error-card">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.66rem', color: '#ff7b72', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '6px' }}><IconAlert size={12} /> Atención</div>
-                <div style={{ color: '#ff9b94', fontSize: '0.82rem', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>{statusError}</div>
+                <div className="roelca-sidebar-label" style={{ marginBottom: '6px', color: '#f85149' }}><IconAlert size={13} /> No se puede avanzar</div>
+                <div className="roelca-sidebar-value" style={{ color: '#f85149', fontWeight: 500 }}>{statusError}</div>
+              </div>
+            )}
+
+            {/* ✅ NUEVO: aviso de sincronía Convenio (Tarifa) Cliente ↔ Convenio Proveedor */}
+            {convenioProvAviso && (
+              <div className={convenioProvAviso.bloquea ? 'status-error-card' : 'status-preview-card'} style={convenioProvAviso.bloquea ? undefined : { background: 'linear-gradient(135deg, rgba(251, 146, 60, 0.08), rgba(251, 146, 60, 0.02))', border: '1px solid rgba(251, 146, 60, 0.3)' }}>
+                <div className="roelca-sidebar-label" style={{ marginBottom: '6px', color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c' }}>
+                  <IconAlert size={13} /> {convenioProvAviso.bloquea ? 'Convenio Proveedor requerido' : 'Convenio Proveedor'}
+                </div>
+                <div className="roelca-sidebar-value" style={{ color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c', fontWeight: 500 }}>{convenioProvAviso.mensaje}</div>
               </div>
             )}
 
             {camposObligatoriosFaltantes.length > 0 && (
-              <div style={{ padding: '14px 16px', background: 'linear-gradient(135deg, rgba(248,81,73,0.08), rgba(248,81,73,0.02))', border: '1px solid rgba(248,81,73,0.3)', borderRadius: '10px', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.66rem', color: '#ff7b72', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '8px' }}>
-                  <IconAlert size={12} /> Campos obligatorios pendientes
-                </div>
-                <div style={{ fontSize: '0.74rem', color: '#8b949e', marginBottom: '10px' }}>
-                  Este flujo requiere completar los siguientes campos antes de poder guardar:
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {camposObligatoriosFaltantes.map(({ campo, etiqueta }) => (
-                    <div key={campo} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
-                      <span style={{ flexShrink: 0, width: '18px', height: '18px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(248,81,73,0.15)', color: '#ff7b72', border: '1px solid rgba(248,81,73,0.4)' }}>
-                        <IconAlert size={11} />
-                      </span>
-                      <span style={{ color: '#ff7b72', fontWeight: 500 }}>{etiqueta}</span>
-                    </div>
-                  ))}
-                </div>
+              <div className="roelca-sidebar-section" style={{ borderColor: 'rgba(248, 81, 73, 0.3)' }}>
+                <div className="roelca-sidebar-label" style={{ color: '#f85149' }}><IconAlert size={13} /> Campos obligatorios faltantes</div>
+                {camposObligatoriosFaltantes.map((c) => (
+                  <div key={c.campo} className="roelca-route-line" style={{ color: '#f85149' }}><IconX size={12} /> {c.etiqueta}</div>
+                ))}
               </div>
             )}
 
-            {!statusError && camposSiguienteStatus.length > 0 && (
-              <div style={{ padding: '14px 16px', background: 'linear-gradient(135deg, rgba(251,146,60,0.06), rgba(251,146,60,0.02))', border: '1px solid rgba(251,146,60,0.25)', borderRadius: '10px', marginBottom: '14px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.66rem', color: '#fb923c', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: '4px' }}>
-                  <IconAlert size={12} /> Campos para avanzar
-                </div>
-                {nombreSiguienteAuto && (
-                  <div style={{ fontSize: '0.74rem', color: '#8b949e', marginBottom: '10px' }}>
-                    Para pasar automáticamente a <span style={{ color: '#e6edf3', fontWeight: 600 }}>{nombreSiguienteAuto}</span>:
+            {camposSiguienteStatus.length > 0 && (
+              <div className="roelca-sidebar-section">
+                <div className="roelca-sidebar-label"><IconArrowRight size={13} /> Para avanzar a "{nombreSiguienteAuto}"</div>
+                {camposSiguienteStatus.map((c) => (
+                  <div key={c.campo} className="roelca-route-line" style={{ color: c.cumplido ? '#3fb950' : '#8b949e' }}>
+                    {c.cumplido ? <IconCheck size={12} /> : <IconArrowRight size={12} />} {c.etiqueta}
                   </div>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  {camposSiguienteStatus.map(({ campo, etiqueta, cumplido }) => (
-                    <div key={campo} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.82rem' }}>
-                      <span style={{ flexShrink: 0, width: '18px', height: '18px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: cumplido ? '#238636' : '#21262d', color: cumplido ? '#fff' : '#6e7681', border: cumplido ? 'none' : '1px solid #30363d' }}>
-                        {cumplido ? <IconCheck size={12} /> : null}
-                      </span>
-                      <span style={{ color: cumplido ? '#7d8590' : '#e6edf3', textDecoration: cumplido ? 'line-through' : 'none', fontWeight: cumplido ? 400 : 500 }}>{etiqueta}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {!statusError && statusPreview && camposSiguienteStatus.length === 0 && nombreSiguienteAuto === '' && (
-              <div style={{ padding: '10px 14px', fontSize: '0.78rem', color: '#7d8590', marginBottom: '14px' }}>
-                El siguiente avance depende de un registro manual de horario (no de campos del formulario).
+                ))}
               </div>
             )}
 
             <div className="roelca-sidebar-section">
-              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconUser size={14} /></span>Cliente y Ruta</div>
-              <div className={searchClientePaga ? 'roelca-sidebar-value' : 'roelca-sidebar-muted'}>{searchClientePaga || 'Sin cliente asignado'}</div>
-              {(searchOrigen || searchDestino) && (<div className="roelca-route-line"><IconMapPin size={12} /><span style={{ color: '#c9d1d9' }}>{searchOrigen || '—'}</span><IconArrowRight size={12} /><span style={{ color: '#c9d1d9' }}>{searchDestino || '—'}</span></div>)}
+              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconUsers size={13} /></span> Cliente y Ruta</div>
+              <div className="roelca-sidebar-value">{searchClientePaga || <span className="roelca-sidebar-muted">Sin cliente</span>}</div>
+              <div className="roelca-route-line"><IconMapPin size={12} /> {searchOrigen || '—'} <IconArrowRight size={12} /> {searchDestino || '—'}</div>
             </div>
 
             <div className="roelca-sidebar-section">
-              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconBriefcase size={14} /></span>Servicio</div>
-              <div className={tipoOpNombreResumen ? 'roelca-sidebar-value' : 'roelca-sidebar-muted'}>{tipoOpNombreResumen || 'Sin tipo de operación'}</div>
-              {convenioNombreResumen && (<div className="roelca-sidebar-secondary">{convenioNombreResumen}</div>)}
-              {(formData.trafico || formData.carga) && (<div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>{formData.trafico && <span className="roelca-chip">{formData.trafico}</span>}{formData.carga && <span className="roelca-chip">{formData.carga}</span>}</div>)}
+              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconBriefcase size={13} /></span> Servicio</div>
+              <div className="roelca-sidebar-value">{tipoOpNombreResumen || <span className="roelca-sidebar-muted">Sin tipo</span>}</div>
+              {convenioNombreResumen && <div className="roelca-sidebar-secondary">{convenioNombreResumen}</div>}
             </div>
 
             <div className="roelca-sidebar-section">
-              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconCalendar size={14} /></span>Fechas</div>
-              <div className="roelca-money-row"><span className="lbl">Servicio</span><span className="val">{formData.fechaServicio ? fmtFecha(formData.fechaServicio) : '—'}</span></div>
-              {isFletes && (<div className="roelca-money-row"><span className="lbl">Cita</span><span className="val">{formData.fechaCita ? fmtFecha(formData.fechaCita) : '—'}</span></div>)}
+              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconCalendar size={13} /></span> Fechas</div>
+              <div className="roelca-sidebar-value">{fmtFecha(formData.fechaServicio) || <span className="roelca-sidebar-muted">Sin fecha</span>}</div>
+              {formData.fechaCita && <div className="roelca-sidebar-secondary">Cita: {fmtFecha(formData.fechaCita)}</div>}
             </div>
 
             <div className="roelca-sidebar-section">
-              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconRefresh size={14} /></span>Tipo de Cambio</div>
-              {tcResumen ? (<div className="roelca-sidebar-value" style={{ fontSize: '1.35rem', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.3px' }}>${Number(tcResumen).toFixed(4)}</div>) : (<div className="roelca-sidebar-muted">Sin TC para esta fecha</div>)}
+              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconRefresh size={13} /></span> Tipo de Cambio</div>
+              <div className="roelca-sidebar-value">{tcResumen ? `$${tcResumen}` : <span className="roelca-sidebar-muted">Sin registro</span>}</div>
             </div>
 
             <div className="roelca-sidebar-section">
-              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconDollar size={14} /></span>Financiero</div>
-              <div className="roelca-money-row"><span className="lbl">Subtotal Proveedor</span><span className="val" style={{ color: '#f85149', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(Number(formData.conversionProv) || Number(formData.subtotalProv))}</span></div>
-              <div className="roelca-money-row"><span className="lbl">Subtotal Cobrar</span><span className="val" style={{ color: '#3fb950', fontVariantNumeric: 'tabular-nums' }}>{fmtMoney(Number(formData.conversionCliente) || Number(formData.subtotalCliente))}</span></div>
-              <div className={`roelca-utility-box ${Number(formData.utilidadEstimada) < 0 ? 'negative' : ''}`}><div className="roelca-utility-label">Utilidad Estimada</div><div className="roelca-utility-value">{fmtMoney(Number(formData.utilidadEstimada))}</div></div>
+              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconChart size={13} /></span> Financiero</div>
+              <div className="roelca-money-row"><span className="lbl">Subtotal Cliente</span><span className="val">{fmtMoney(formData.subtotalCliente)}</span></div>
+              <div className="roelca-money-row"><span className="lbl">Pago Proveedor</span><span className="val">{fmtMoney(formData.subtotalProv)}</span></div>
+              <div className={`roelca-utility-box ${formData.utilidadEstimada < 0 ? 'negative' : ''}`}>
+                <div className="roelca-utility-label">Utilidad Estimada (MXN)</div>
+                <div className="roelca-utility-value">{fmtMoney(formData.utilidadEstimada)}</div>
+              </div>
             </div>
           </div>
 
           <div className="roelca-form-footer">
-            <button type="button" onClick={(e) => { e.preventDefault(); (document.querySelector('.roelca-form-left form') as HTMLFormElement)?.requestSubmit(); }} className="roelca-btn-primary" disabled={cargando || !!statusError || camposObligatoriosFaltantes.length > 0} title={camposObligatoriosFaltantes.length > 0 ? 'Completa los campos obligatorios marcados en rojo para poder guardar' : undefined}>
-              {cargando ? (<><IconRefresh size={16} /> Guardando...</>) : (<><IconSave size={16} /> {initialData ? 'Actualizar Operación' : 'Guardar Operación'}</>)}
+            <button
+              type="button"
+              className="roelca-btn-primary"
+              disabled={cargando || !!statusError || !!convenioProvAviso?.bloquea}
+              title={
+                statusError
+                  ? 'Corrige el estatus antes de guardar'
+                  : convenioProvAviso?.bloquea
+                    ? convenioProvAviso.mensaje
+                    : (initialData ? 'Guardar cambios' : 'Guardar operación')
+              }
+              onClick={() => (document.querySelector('.roelca-form-left form') as HTMLFormElement)?.requestSubmit()}
+            >
+              {cargando ? 'Guardando...' : (<><IconSave size={16} /> {initialData ? 'Guardar Cambios' : 'Guardar Operación'}</>)}
             </button>
-            <button type="button" onClick={handleCancelarConfirmado} className="roelca-btn-outline" disabled={cargando}><IconX size={15} /> Cancelar</button>
+            <button type="button" className="roelca-btn-outline" onClick={handleCancelarConfirmado}><IconX size={15} /> Cancelar</button>
           </div>
         </aside>
       </div>
 
-      {/* Vista minimizada (pildorita) */}
       {estado === 'minimizado' && (
-        <div style={{ position: 'fixed', bottom: '20px', right: '20px', padding: '12px 18px', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '12px', boxShadow: '0 10px 20px rgba(0,0,0,0.4)', zIndex: 1100, pointerEvents: 'auto' }}>
-          <IconBriefcase size={16} />
-          <span style={{ color: '#c9d1d9', fontSize: '0.88rem', fontWeight: 500 }}>{initialData ? `Operación ${initialData.ref || initialData.id?.substring(0,6)}` : 'Operación en curso'}</span>
-          <button type="button" onClick={onRestore} className="roelca-window-btn" title="Restaurar"><IconArrowRight size={14} /></button>
-          <button type="button" onClick={handleCancelarConfirmado} className="roelca-window-btn danger" title="Cerrar"><IconX size={14} /></button>
+        <div
+          onClick={onRestore}
+          style={{ position: 'fixed', bottom: '20px', right: '20px', display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 18px', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '10px', cursor: 'pointer', pointerEvents: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 9999 }}
+        >
+          <span className="roelca-sidebar-icon"><IconEdit size={14} /></span>
+          <span style={{ color: '#e6edf3', fontWeight: 600, fontSize: '0.88rem' }}>{initialData ? `Operación ${initialData.ref || ''}` : 'Nueva Operación'}</span>
+          <IconArrowRight size={14} />
         </div>
       )}
 
-      {/* Modal de creación de catálogo (botón "+") */}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empresa' && (
         <FormularioEmpresa
-          estado="abierto"
-          registros={empresasLocal}
-          initialData={{ tiposEmpresa: [modalCatalogo.catalogo.tipoEmpresaPreseleccionado] }}
+          tipoPreseleccionado={modalCatalogo.catalogo.tipoEmpresaPreseleccionado}
           onClose={cerrarCreacion}
-          onMinimize={() => {}}
-          onRestore={() => {}}
+          onGuardar={cerrarCreacion}
         />
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'remolque' && (
-        <FormularioRemolque estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
+        <FormularioRemolque onClose={cerrarCreacion} onGuardar={cerrarCreacion} />
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'unidad' && (
-        <FormularioUnidad estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
+        <FormularioUnidad onClose={cerrarCreacion} onGuardar={cerrarCreacion} />
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empleado' && (
-        <EmployeeForm estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
+        <EmployeeForm onClose={cerrarCreacion} onGuardar={cerrarCreacion} />
       )}
 
-      {/* Costos Adicionales de esta operación (modal enfocado) */}
       {mostrarCostosAdic && initialData && (
         <CostosAdicionalesDashboard
-          operacionFija={{
-            id: initialData.id,
-            ref: initialData.ref || formData.refCliente || '',
-            clientePaga: formData.clientePaga || initialData.clientePaga,
-            proveedorUnidad: formData.proveedorUnidad || initialData.proveedorUnidad,
-            clienteNombre: searchClientePaga,
-            proveedorUnidadNombre: searchProvTransporte,
-            montoConvenioCliente: Number(formData.montoConvenioCliente) || 0,
-            totalAPagarProv: Number(formData.totalAPagarProv) || 0,
-            facturadoEnCobrar: formData.facturadoEnCobrar,
-            facturadoEnUnidad: formData.facturadoEnUnidad,
-            tipoCambioAprobado: Number(formData.tipoCambioAprobado || tipoCambioDia) || 0,
-          }}
-          onCerrar={() => setMostrarCostosAdic(false)}
-          onCostosActualizados={(cambios: { cargosAdicionales: number; cargosAdicionalesProv: number }) => setFormData(prev => ({ ...prev, cargosAdicionales: cambios.cargosAdicionales, cargosAdicionalesProv: cambios.cargosAdicionalesProv }))}
+          operacionId={String((initialData as any).id)}
+          referencia={referenciaOperacion}
+          onClose={() => setMostrarCostosAdic(false)}
         />
       )}
 
-      {/* Subir documentos "otros documentos" de la operación */}
-      <DocumentoUploadModal
-        isOpen={mostrarSubirDoc && !!idOperacion}
-        onClose={() => setMostrarSubirDoc(false)}
-        coleccionOrigen="operaciones"
-        registroId={idOperacion}
-        registroNombre={referenciaOperacion}
-        tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
-      />
-
+      {mostrarSubirDoc && (
+        <DocumentoUploadModal
+          coleccionOrigen="operaciones"
+          registroId={String(idOperacion)}
+          registroNombre={referenciaOperacion}
+          tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
+          onClose={() => setMostrarSubirDoc(false)}
+        />
+      )}
     </div>
   );
 };
