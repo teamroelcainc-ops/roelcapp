@@ -58,6 +58,10 @@ const CAMPO_TAB_MAP: Record<string, TabType> = {
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
+// ✅ NUEVO: en `tarifas_gastos_incluidos`, el gasto que representa el SUELDO del operador.
+// Al elegir el Convenio (Tarifa) se autollena "Sueldo Operador ($)" con el `monto` de ese gasto.
+const ID_GASTO_SUELDO = '25b772d3';
+
 // ✅ Regla: este tipo de operación obliga a un proveedor fijo
 const TIPO_OP_PROVEEDOR_FIJO = '8ec24dfe';
 const PROVEEDOR_FIJO_ID = '349123';
@@ -327,6 +331,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [convDetallesLocal, setConvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvDetalles || []);
   const [convProvLocal, setConvProvLocal] = useState<any[]>(catalogosCacheados?.conveniosProv || []);
   const [convProvDetallesLocal, setConvProvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvProvDetalles || []);
+  // ✅ NUEVO: gastos incluidos y rendimiento por tarifa (para autollenar Sueldo y Combustible al elegir convenio).
+  const [gastosIncluidosLocal, setGastosIncluidosLocal] = useState<any[]>(catalogosCacheados?.tarifasGastosIncluidos || []);
+  const [rendimientoLocal, setRendimientoLocal] = useState<any[]>(catalogosCacheados?.tarifasRendimiento || []);
 
   // Mantener sincronizados si el cache global cambia
   useEffect(() => { setEmpresasLocal(catalogosCacheados?.empresas || []); }, [catalogosCacheados?.empresas]);
@@ -356,6 +363,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       { alias: 'catalogoConvDetalles',     coleccion: 'convenios_clientes_detalles',    setter: setConvDetallesLocal },
       { alias: 'conveniosProv',            coleccion: 'convenios_proveedores',          setter: setConvProvLocal },
       { alias: 'catalogoConvProvDetalles', coleccion: 'convenios_proveedores_detalles', setter: setConvProvDetallesLocal },
+      { alias: 'tarifasGastosIncluidos',   coleccion: 'tarifas_gastos_incluidos',       setter: setGastosIncluidosLocal },
+      { alias: 'tarifasRendimiento',       coleccion: 'tarifas_rendimiento',            setter: setRendimientoLocal },
     ];
     (async () => {await Promise.all(fuentes.map(async ({ alias, coleccion, setter }) => {
         try {
@@ -1097,6 +1106,48 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     };
     if (!initialData) resolverFlujo();
   }, [formData.convenio, listaConveniosCliente, tarifas, initialData, resolverNombreTrafico]);
+
+  // ============================================================
+  // ✅ NUEVO: al elegir el Convenio (Tarifa) autollena Sueldo Operador y Combustible.
+  // ------------------------------------------------------------
+  // Usando el `tarifaBaseId` del convenio (ID en `catalogo_tarifas_referencia`):
+  //   • Sueldo Operador  → `tarifas_gastos_incluidos`, registro de esa tarifa con
+  //     gasto === ID_GASTO_SUELDO ('25b772d3'); se toma su campo `monto`.
+  //   • Combustible      → `tarifas_rendimiento`, registro de esa tarifa; campo `Quantity`.
+  // Solo en ALTA (!initialData), para no pisar valores ya guardados/ajustados al editar.
+  // ============================================================
+  useEffect(() => {
+    if (initialData) return;
+    if (!formData.convenio) return;
+
+    const convCliente = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
+    if (!convCliente) return;
+    const tarifaBase = String(convCliente.tarifaBaseId ?? '').trim();
+    if (!tarifaBase) return;
+
+    // Sueldo: tarifas_gastos_incluidos -> tarifa_referencia_id === tarifaBase && gasto === ID_GASTO_SUELDO
+    const filaSueldo = gastosIncluidosLocal.find((g: any) => {
+      const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.tarifaId ?? '').trim();
+      const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
+      return ref === tarifaBase && gastoId === ID_GASTO_SUELDO;
+    });
+    const sueldo = filaSueldo ? Number(filaSueldo.monto ?? filaSueldo.importe ?? filaSueldo.cantidad ?? filaSueldo.valor ?? 0) : null;
+
+    // Combustible: tarifas_rendimiento -> ID_SERVICES === tarifaBase ; campo Quantity
+    const filaRend = rendimientoLocal.find((r: any) => {
+      const ref = String(r.ID_SERVICES ?? r.id_services ?? r.idServices ?? r.tarifa_referencia_id ?? r.tarifaId ?? '').trim();
+      return ref === tarifaBase;
+    });
+    const combustible = filaRend ? Number(filaRend.Quantity ?? filaRend.quantity ?? filaRend.QUANTITY ?? filaRend.cantidad ?? 0) : null;
+
+    if ((sueldo === null || isNaN(sueldo)) && (combustible === null || isNaN(combustible))) return;
+
+    setFormData(prev => ({
+      ...prev,
+      ...(sueldo !== null && !isNaN(sueldo) ? { sueldoOperador: sueldo } : {}),
+      ...(combustible !== null && !isNaN(combustible) ? { combustible } : {}),
+    }));
+  }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData]);
 
   useEffect(() => {
     const fact = formData.facturadoEnUnidad; 
