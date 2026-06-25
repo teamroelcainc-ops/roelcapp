@@ -19,6 +19,11 @@ const COLUMNAS_BASE = [
   { id: 'fechaCita', label: 'Fecha Cita', visible: false },
   { id: 'tipoOperacion', label: 'Tipo de Operación', visible: true },
   { id: 'status', label: 'Status', visible: true },
+  // ✅ NUEVO: conexiones con los demás módulos (vienen desnormalizadas en la operación)
+  { id: 'refDiesel', label: 'Ref. Diesel', visible: true },
+  { id: 'refNomina', label: 'Ref. Nómina', visible: true },
+  { id: 'invoiceCliente', label: 'Invoice Cliente', visible: true },
+  { id: 'invoiceProveedor', label: 'Invoice Proveedor', visible: true },
   { id: 'trafico', label: 'Tráfico', visible: false },
   { id: 'cliente', label: 'Cliente (Paga)', visible: true },
   { id: 'convenioTarifa', label: 'Convenio Cliente (Tarifa)', visible: true },
@@ -163,6 +168,33 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     if (porNom) return porNom;
     return { id: v, nombre: v };
   };
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // ✅ NUEVO: helpers de status y de CONEXIONES con los demás módulos.
+  //   Las conexiones (diésel, nómina, factura cliente/proveedor) ya vienen
+  //   desnormalizadas en el propio documento de la operación cuando se asignan
+  //   en sus módulos, así que NO requieren lecturas extra a Firestore:
+  //     · Diésel    → referenciaDieselConsecutivo / referenciaDieselId
+  //     · Nómina    → referenciaNominaConsecutivo / referenciaNominaId
+  //     · Cliente   → facturaClienteInvoice / facturaClienteId / facturado
+  //     · Proveedor → facturaProveedorFolio / facturaProveedorId / facturadoProveedor
+  // ───────────────────────────────────────────────────────────────────────────
+  const nombreStatusOp = (op: any): string => {
+    const r = resolverStatus(op?.status);
+    return String(r.nombre || op?.statusNombre || op?.status || '');
+  };
+  // Una operación completada es "Falso" si su status contiene la palabra "falso".
+  const esFalso = (op: any): boolean => nombreStatusOp(op).toLowerCase().includes('falso');
+
+  const tieneDiesel = (op: any): boolean => !!(op?.referenciaDieselConsecutivo || op?.referenciaDieselId);
+  const tieneNomina = (op: any): boolean => !!(op?.referenciaNominaConsecutivo || op?.referenciaNominaId);
+  const facturadoCliente = (op: any): boolean => !!(op?.facturaClienteInvoice || op?.facturaClienteId || op?.facturado);
+  const facturadoProveedor = (op: any): boolean => !!(op?.facturaProveedorFolio || op?.facturaProveedorId || op?.facturadoProveedor);
+
+  // Píldora reutilizable para mostrar una conexión (ref / invoice) en la tabla.
+  const chipConexion = (texto: string, color: string) => (
+    <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', color, border: `1px solid ${color}`, backgroundColor: `${color}1a`, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{texto}</span>
+  );
 
   // ✅ NUEVO: clave de caché basada en el RANGO DE FECHAS + cliente (opcional).
   const claveCacheActual = () =>
@@ -992,6 +1024,33 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return filtradas;
   }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // ✅ NUEVO: RESUMEN de conteos del rango/filtro actual.
+  //   Respeta el rango de fechas + cliente/remolque/búsqueda activos (lo mismo
+  //   que muestra la tabla). Cuenta: Completados vs Falsos, facturados y
+  //   pendientes (cliente y proveedor), con diésel cargado y pagados en nómina.
+  // ───────────────────────────────────────────────────────────────────────────
+  const resumenServicios = useMemo(() => {
+    const base = operacionesFiltradas;
+    const total = base.length;
+    let falsos = 0, factCliente = 0, factProveedor = 0, conDiesel = 0, conNomina = 0;
+    base.forEach((op: any) => {
+      if (esFalso(op)) falsos++;
+      if (facturadoCliente(op)) factCliente++;
+      if (facturadoProveedor(op)) factProveedor++;
+      if (tieneDiesel(op)) conDiesel++;
+      if (tieneNomina(op)) conNomina++;
+    });
+    const completados = total - falsos;
+    return {
+      total, completados, falsos,
+      factCliente, pendCliente: total - factCliente,
+      factProveedor, pendProveedor: total - factProveedor,
+      conDiesel, conNomina,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesFiltradas, mapaStatus]);
+
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
@@ -1059,6 +1118,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       case 'fechaCita': return <span style={{ color: '#c9d1d9' }}>{formatearFechaHora(op.fechaCita)}</span>;
       case 'tipoOperacion': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</span>;
       case 'status': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</span>;
+      // ✅ NUEVO: conexiones (ref. diésel, ref. nómina, invoice cliente/proveedor)
+      case 'refDiesel': return op.referenciaDieselConsecutivo ? chipConexion(op.referenciaDieselConsecutivo, '#f59e0b') : <span style={{ color: '#8b949e' }}>-</span>;
+      case 'refNomina': return op.referenciaNominaConsecutivo ? chipConexion(op.referenciaNominaConsecutivo, '#a371f7') : <span style={{ color: '#8b949e' }}>-</span>;
+      case 'invoiceCliente': return (op.facturaClienteInvoice || op.facturado) ? chipConexion(op.facturaClienteInvoice || 'Facturada', '#10b981') : <span style={{ color: '#8b949e' }}>-</span>;
+      case 'invoiceProveedor': return (op.facturaProveedorFolio || op.facturadoProveedor) ? chipConexion(op.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span style={{ color: '#8b949e' }}>-</span>;
       case 'trafico': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.trafico)}</span>;
       case 'cliente': return <span style={{ color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
       case 'convenioTarifa': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
@@ -1132,6 +1196,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           case 'fechaCita': val = formatearFechaHora(op.fechaCita); break;
           case 'tipoOperacion': val = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre); break;
           case 'status': val = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre); break; 
+          // ✅ NUEVO: conexiones en el Excel
+          case 'refDiesel': val = op.referenciaDieselConsecutivo || ''; break;
+          case 'refNomina': val = op.referenciaNominaConsecutivo || ''; break;
+          case 'invoiceCliente': val = op.facturaClienteInvoice || (op.facturado ? 'Facturada' : ''); break;
+          case 'invoiceProveedor': val = op.facturaProveedorFolio || (op.facturadoProveedor ? 'Facturada' : ''); break;
           case 'trafico': val = op.trafico || ''; break;
           case 'cliente': val = mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente); break;
           case 'convenioTarifa': val = obtenerNombreConvenioCliente(op.convenio, op.convenioNombre); break;
@@ -1213,6 +1282,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
+
+  // ✅ NUEVO: estilos de las tarjetas de resumen.
+  const cardResumenStyle: React.CSSProperties = { backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '4px' };
+  const cardLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase' };
+  const cardValueStyle: React.CSSProperties = { fontSize: '1.6rem', fontWeight: 'bold', lineHeight: 1.1 };
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
@@ -1355,6 +1429,61 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             </button>
           </div>
         </div>
+
+        {/* ✅ NUEVO: TARJETAS DE RESUMEN (conteos del rango/filtro actual).
+            Status (Completados / Falsos), Diésel y Nómina; y la fila de
+            facturación (cliente y proveedor: facturados y pendientes). */}
+        {(filterFechaInicio && filterFechaFin) && (
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Servicios (rango)</span>
+                <span style={{ ...cardValueStyle, color: '#f0f6fc' }}>{resumenServicios.total}</span>
+              </div>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Completados</span>
+                <span style={{ ...cardValueStyle, color: '#10b981' }}>{resumenServicios.completados}</span>
+              </div>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Falsos</span>
+                <span style={{ ...cardValueStyle, color: '#f85149' }}>{resumenServicios.falsos}</span>
+              </div>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Cargaron Diésel</span>
+                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.conDiesel}</span>
+              </div>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Pagados Nómina</span>
+                <span style={{ ...cardValueStyle, color: '#a371f7' }}>{resumenServicios.conNomina}</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginTop: '12px' }}>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Facturados Cliente</span>
+                <span style={{ ...cardValueStyle, color: '#10b981' }}>{resumenServicios.factCliente}</span>
+              </div>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Pendientes Cliente</span>
+                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.pendCliente}</span>
+              </div>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Facturados Proveedor</span>
+                <span style={{ ...cardValueStyle, color: '#58a6ff' }}>{resumenServicios.factProveedor}</span>
+              </div>
+              <div style={cardResumenStyle}>
+                <span style={cardLabelStyle}>Pendientes Proveedor</span>
+                <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.pendProveedor}</span>
+              </div>
+            </div>
+
+            {hayMasOperaciones && (
+              <div style={{ marginTop: '8px', color: '#fb923c', fontSize: '0.78rem' }}>
+                ⚠ Hay más operaciones en este rango sin descargar (usa "+ Cargar más" abajo). Los conteos reflejan solo lo descargado hasta ahora.
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
@@ -1559,6 +1688,19 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 </div>
+              </div>
+
+              {/* ✅ NUEVO: chips de CONEXIONES de la operación (diésel, nómina, facturas) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingBottom: '4px' }}>
+                <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>CONEXIONES</span>
+                <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>Diésel:</span>
+                {operacionViendo.referenciaDieselConsecutivo ? chipConexion(operacionViendo.referenciaDieselConsecutivo, '#f59e0b') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Sin cargar</span>}
+                <span style={{ color: '#8b949e', fontSize: '0.78rem', marginLeft: '8px' }}>Nómina:</span>
+                {operacionViendo.referenciaNominaConsecutivo ? chipConexion(operacionViendo.referenciaNominaConsecutivo, '#a371f7') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Sin pagar</span>}
+                <span style={{ color: '#8b949e', fontSize: '0.78rem', marginLeft: '8px' }}>Factura Cliente:</span>
+                {(operacionViendo.facturaClienteInvoice || operacionViendo.facturado) ? chipConexion(operacionViendo.facturaClienteInvoice || 'Facturada', '#10b981') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Pendiente</span>}
+                <span style={{ color: '#8b949e', fontSize: '0.78rem', marginLeft: '8px' }}>Factura Proveedor:</span>
+                {(operacionViendo.facturaProveedorFolio || operacionViendo.facturadoProveedor) ? chipConexion(operacionViendo.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Pendiente</span>}
               </div>
 
               {/* ✅ NUEVO: SIGUIENTE PASO — editar status/horario igual que Operaciones Activas */}
