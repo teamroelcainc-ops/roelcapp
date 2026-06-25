@@ -8,7 +8,7 @@ import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config
 // ✅ NUEVO: visor y subida de documentos ligados a la operación
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
-import { TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
+import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -146,6 +146,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [formEdicion, setFormEdicion] = useState<any>({});
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [pestañaEdicionActiva, setPestañaEdicionActiva] = useState<string>('general');
+
+  // ✅ NUEVO: estado del FormularioOperacion COMPLETO (mismo que Operaciones Activas).
+  //   Al editar se abre este formulario en lugar del editor rápido reducido.
+  const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
 
   // ✅ NUEVO: conteos EXACTOS desde el servidor (getCountFromServer).
   //   No descargan documentos (≈1 lectura c/u), así que dan el total real
@@ -871,10 +875,20 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       onEditar(op);
       return;
     }
-    // Abrir editor integrado: copiamos la operación al formulario
+    // ✅ Abrir el FormularioOperacion COMPLETO (igual que Operaciones Activas)
+    setOperacionViendo(null);
     setOperacionEditando(op);
-    setFormEdicion({ ...op });
-    setPestañaEdicionActiva('general');
+    setEstadoFormulario('abierto');
+  };
+
+  // ✅ NUEVO: tras guardar en el FormularioOperacion, refresca el rango actual
+  // (sin caché) y cierra el formulario.
+  const handleOperacionGuardada = () => {
+    if (filterFechaInicio && filterFechaFin) {
+      descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente, { ignorarCache: true });
+    }
+    setEstadoFormulario('cerrado');
+    setOperacionEditando(null);
   };
 
   // ✅ NUEVO: actualiza un campo del formulario de edición.
@@ -1003,6 +1017,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     window.location.reload();
   };
 
+  // ✅ NUEVO: consecutivo de la referencia (toma los últimos dígitos).
+  //   "LO-190126-12" → 12. Se usa para ordenar dentro de una misma fecha.
+  const obtenerConsecutivoRef = (op: any): number => {
+    const ref = String(op?.ref || '');
+    const m = ref.match(/(\d+)\s*$/);
+    return m ? parseInt(m[1], 10) : 0;
+  };
+
   // ✅ MODIFICADO: el filtro PRINCIPAL es el rango de fechas.
   //   • Sin rango completo (inicio + fin) → vacío (mensaje guía).
   //   • Con rango → parte de lo descargado y aplica filtros OPCIONALES en memoria
@@ -1035,7 +1057,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       });
     }
 
-    return filtradas;
+    // ✅ Orden: del MÁS RECIENTE al más antiguo. Primero por fecha (desc) y,
+    //   dentro de la misma fecha, por consecutivo de la referencia (desc).
+    return [...filtradas].sort((a: any, b2: any) => {
+      const fa = String(a.fechaServicio || '');
+      const fb = String(b2.fechaServicio || '');
+      if (fa !== fb) return fb.localeCompare(fa);
+      return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
+    });
   }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -1367,6 +1396,20 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+
+      {/* ✅ NUEVO: FormularioOperacion COMPLETO para editar (igual que Operaciones Activas) */}
+      {estadoFormulario !== 'cerrado' && (
+        <FormularioOperacion
+          estado={estadoFormulario}
+          initialData={operacionEditando}
+          onClose={() => { setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
+          onMinimize={() => setEstadoFormulario('minimizado')}
+          onRestore={() => setEstadoFormulario('abierto')}
+          catalogosCacheados={catalogosGlobales}
+          onSave={handleOperacionGuardada}
+        />
+      )}
+
       <div style={{ width: '100%', margin: '0 auto' }}>
         <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#10b981', margin: '0 0 24px 0', fontWeight: 'bold' }}>
           ✓ Servicios Completados
@@ -2280,8 +2323,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
       )}
 
-      {/* ✅ NUEVO: Editor integrado (sólo se usa si NO se pasó la prop onEditar) */}
-      {operacionEditando && (
+      {/* ✅ Editor integrado DESHABILITADO: ahora "Editar" abre el FormularioOperacion completo (igual que Operaciones Activas) */}
+      {false && operacionEditando && (
         <div className="modal-overlay" style={{ zIndex: 1600 }}>
           <div className="form-card" style={{ maxWidth: '1000px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #58a6ff', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
 
