@@ -36,6 +36,10 @@ export const ReferenciasPuentesDashboard = () => {
   const [tiposGastoList, setTiposGastoList] = useState<any[]>([]);
   const [empresasList, setEmpresasList] = useState<any[]>([]);
   const [traficoList, setTraficoList] = useState<any[]>([]);
+  // Para resolver el tráfico por la cadena de la tarifa (igual que el formulario de operación)
+  const [convDetallesList, setConvDetallesList] = useState<any[]>([]);
+  const [tarifasRefList, setTarifasRefList] = useState<any[]>([]);
+  const [tiposTarifariosList, setTiposTarifariosList] = useState<any[]>([]);
   const [puenteSeleccionadoId, setPuenteSeleccionadoId] = useState('');
 
   // Filtros pestaña 1
@@ -104,6 +108,15 @@ export const ReferenciasPuentesDashboard = () => {
     subs.push(onSnapshot(collection(db, 'catalogo_trafico'), (snap) => {
       setTraficoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     }));
+    subs.push(onSnapshot(collection(db, 'convenios_clientes_detalles'), (snap) => {
+      setConvDetallesList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }));
+    subs.push(onSnapshot(collection(db, 'catalogo_tarifas_referencia'), (snap) => {
+      setTarifasRefList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }));
+    subs.push(onSnapshot(collection(db, 'catalogo_tipos_tarifarios'), (snap) => {
+      setTiposTarifariosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }));
     const qOps = query(collection(db, 'operaciones'), limit(500));
     subs.push(onSnapshot(qOps, (snap) => {
       const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
@@ -161,6 +174,25 @@ export const ReferenciasPuentesDashboard = () => {
     return map;
   }, [traficoList]);
 
+  // Mapas de la cadena de tarifa (para deducir el tráfico igual que el formulario)
+  const detallePorId = useMemo(() => {
+    const map = new Map<string, any>();
+    convDetallesList.forEach(d => map.set(String(d.id), d));
+    return map;
+  }, [convDetallesList]);
+
+  const tarifaRefPorId = useMemo(() => {
+    const map = new Map<string, any>();
+    tarifasRefList.forEach(t => map.set(String(t.id), t));
+    return map;
+  }, [tarifasRefList]);
+
+  const tipoTarifarioPorId = useMemo(() => {
+    const map = new Map<string, any>();
+    tiposTarifariosList.forEach(t => map.set(String(t.id), t));
+    return map;
+  }, [tiposTarifariosList]);
+
   // ── Helpers de tráfico ──
   const sinAcentos = (s: any) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   const capitalizar = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -201,7 +233,32 @@ export const ReferenciasPuentesDashboard = () => {
     if (directoNorm) return directoNorm;
     if (directoCrudo && !pareceId(directoCrudo)) return capitalizar(directoCrudo);
 
-    // 2) Convenio ligado a la operación
+    // 2) Cadena de la tarifa (igual que el formulario de operación):
+    //    op.convenio (id del DETALLE) -> convenios_clientes_detalles -> tarifaBaseId
+    //    -> catalogo_tarifas_referencia -> tipo_operacion
+    //    -> catalogo_tipos_tarifarios -> movimiento -> catalogo_trafico -> nombre
+    const detId = op.convenio ?? op.convenioId ?? op.convenioDetalleId ?? op.convenioClienteId ?? op.idConvenio;
+    const det = detId ? detallePorId.get(String(detId)) : null;
+    if (det) {
+      const tarifaBaseId = String(
+        det.tipoConvenioId ?? det.tipo_convenio_id ?? det.tipoConvenio ?? det.tipo_convenio ??
+        det.tarifaBaseId ?? det.tarifaId ?? det.tarifa_id ?? det['TIPO DE CONVENIO'] ?? ''
+      ).trim();
+      const tarifa = tarifaBaseId ? tarifaRefPorId.get(tarifaBaseId) : null;
+      if (tarifa) {
+        const tipoOpId = String(tarifa.tipo_operacion ?? tarifa.tipoOperacion ?? tarifa.tipo_operacion_id ?? '').trim();
+        const tipoTar = tipoOpId ? tipoTarifarioPorId.get(tipoOpId) : null;
+        if (tipoTar) {
+          const movRaw = tipoTar.movimiento ?? tipoTar.trafico ?? tipoTar.tipo_movimiento ?? '';
+          const movNombre = traficoCrudoANombre(movRaw);
+          const n = normalizarTrafico(movNombre);
+          if (n) return n;
+          if (movNombre && !pareceId(movNombre)) return capitalizar(movNombre);
+        }
+      }
+    }
+
+    // 3) Convenio MAESTRO ligado a la operación (respaldo)
     const convId = op.convenio ?? op.convenioId ?? op.convenioClienteId ?? op.idConvenio;
     const conv = convId ? convenioPorId.get(String(convId)) : null;
     if (conv) {
@@ -242,7 +299,7 @@ export const ReferenciasPuentesDashboard = () => {
       const matchTrafico = filtroTrafico === 'todos' || sinAcentos(tr) === sinAcentos(filtroTrafico);
       return matchTrafico && dentroRangoFecha(op);
     });
-  }, [operacionesGlobales, filtroTrafico, fechaInicio, fechaFin, filtrosCompletos, convenioPorId, traficoPorId]);
+  }, [operacionesGlobales, filtroTrafico, fechaInicio, fechaFin, filtrosCompletos, convenioPorId, traficoPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId]);
 
   const esAsignada = (op: any) => !!op.referenciaPuentesId;
 
@@ -276,7 +333,7 @@ export const ReferenciasPuentesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, operadoresList, convenioPorId, traficoPorId, empresaPorId]);
+  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, operadoresList, convenioPorId, traficoPorId, empresaPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -418,7 +475,7 @@ export const ReferenciasPuentesDashboard = () => {
     if (entradas.length === 0) return '—';
     if (entradas.length > 1 && entradas[0][1] === entradas[1][1]) return 'Mixto';
     return entradas[0][0];
-  }, [seleccionadas, operacionesGlobales, convenioPorId, traficoPorId]);
+  }, [seleccionadas, operacionesGlobales, convenioPorId, traficoPorId, detallePorId, tarifaRefPorId, tipoTarifarioPorId]);
 
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
