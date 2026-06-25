@@ -69,6 +69,11 @@ const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
 const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops';
 const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial';
 
+// ✅ Persistencia local (respaldo instantáneo que sobrevive al refresco aunque
+//    Firestore tarde o falle). La config de Firestore es la "compartida".
+const LS_COLS_OPS = 'cfgcols_facturacion_ops_v1';
+const LS_COLS_HIST = 'cfgcols_facturacion_hist_v1';
+
 // ✅ Lee un catálogo desde la caché local (cat_v1__<alias>) que mantienen
 // OperacionesDashboard / FormularioOperacion. Evita lecturas de Firestore.
 const leerCacheLocal = (alias: string): any[] | null => {
@@ -148,16 +153,16 @@ const aplicarConfigColumnasGuardada = (base: any[], guardadas: any): any[] => {
   return resultado;
 };
 
-// ✅ (C) Mueve la columna "statusFactura" al inicio (solo cuando se agrega por
-//     primera vez sobre una config vieja que no la contenía).
-const moverStatusAlInicio = (cols: any[]): any[] => {
-  const idx = cols.findIndex((c: any) => c.id === 'statusFactura');
+// ✅ Mueve una columna por id al inicio (cuando se agrega sobre una config vieja).
+const moverIdAlInicio = (cols: any[], id: string): any[] => {
+  const idx = cols.findIndex((c: any) => c.id === id);
   if (idx <= 0) return cols;
   const copia = [...cols];
-  const [st] = copia.splice(idx, 1);
-  copia.unshift(st);
+  const [el] = copia.splice(idx, 1);
+  copia.unshift(el);
   return copia;
 };
+const moverStatusAlInicio = (cols: any[]): any[] => moverIdAlInicio(cols, 'statusFactura');
 
 // ✅ (C) Opciones y colores del status de la factura.
 const STATUS_FACTURA_OPCIONES = ['Facturado', 'Cancelado', 'No Facturado'];
@@ -255,6 +260,7 @@ const normalizarFactura = (raw: any): any => {
 // Cuando `sourceField` es un array, se toma la primera con valor.
 const COLUMNAS_OPS_BASE: any[] = [
   // ─── Defaults visibles (render bespoke) ──────────────────────────
+  { id: 'factura',       label: '# Factura',       visible: true,  orden: true,  grupo: 'General' },
   { id: 'ref',           label: 'Ref. Operación',  visible: true,  orden: true,  grupo: 'General' },
   { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true,  orden: true,  grupo: 'General' },
   { id: 'cliente',       label: 'Cliente',         visible: true,  orden: true,  grupo: 'General' },
@@ -522,6 +528,27 @@ export const FacturacionClientesDashboard = () => {
   //     documento al montar). Si existe, se aplica para todos los usuarios.
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
+    // 1) localStorage primero: persistencia local instantánea (sobrevive al refresco).
+    const aplicarOps = (guardadas: any) => {
+      let cols = aplicarConfigColumnasGuardada(COLUMNAS_OPS_BASE, guardadas);
+      const teniaFactura = Array.isArray(guardadas) && guardadas.some((g: any) => g?.id === 'factura');
+      if (!teniaFactura) cols = moverIdAlInicio(cols, 'factura');
+      return cols;
+    };
+    const aplicarHist = (guardadas: any) => {
+      let cols = aplicarConfigColumnasGuardada(COLUMNAS_FACTURA_BASE, guardadas);
+      const teniaStatus = Array.isArray(guardadas) && guardadas.some((g: any) => g?.id === 'statusFactura');
+      if (!teniaStatus) cols = moverStatusAlInicio(cols);
+      return cols;
+    };
+    try {
+      const lsOps = localStorage.getItem(LS_COLS_OPS);
+      if (lsOps) setColumnasOps(aplicarOps(JSON.parse(lsOps)));
+      const lsHist = localStorage.getItem(LS_COLS_HIST);
+      if (lsHist) setColumnasFactura(aplicarHist(JSON.parse(lsHist)));
+    } catch { /* noop */ }
+
+    // 2) Firestore: config COMPARTIDA (para todos). Sobrescribe y refresca caché local.
     let activo = true;
     (async () => {
       try {
@@ -531,17 +558,14 @@ export const FacturacionClientesDashboard = () => {
         ]);
         if (!activo) return;
         if (snapOps.exists()) {
-          const data = snapOps.data() as any;
-          setColumnasOps(aplicarConfigColumnasGuardada(COLUMNAS_OPS_BASE, data?.columnas));
+          const guardadas = (snapOps.data() as any)?.columnas;
+          setColumnasOps(aplicarOps(guardadas));
+          try { localStorage.setItem(LS_COLS_OPS, JSON.stringify(guardadas || [])); } catch { /* noop */ }
         }
         if (snapHist.exists()) {
-          const data = snapHist.data() as any;
-          const guardadas = data?.columnas;
-          let cols = aplicarConfigColumnasGuardada(COLUMNAS_FACTURA_BASE, guardadas);
-          // ✅ (C) Si la config guardada no incluía el status (config vieja), forzar al inicio.
-          const teniaStatus = Array.isArray(guardadas) && guardadas.some((g: any) => g?.id === 'statusFactura');
-          if (!teniaStatus) cols = moverStatusAlInicio(cols);
-          setColumnasFactura(cols);
+          const guardadas = (snapHist.data() as any)?.columnas;
+          setColumnasFactura(aplicarHist(guardadas));
+          try { localStorage.setItem(LS_COLS_HIST, JSON.stringify(guardadas || [])); } catch { /* noop */ }
         }
       } catch (e) {
         console.error('Error cargando configuración de columnas (compartida):', e);
@@ -556,6 +580,7 @@ export const FacturacionClientesDashboard = () => {
     setGuardandoCols(true);
     try {
       const payload = columnasOps.map(c => ({ id: c.id, visible: !!c.visible }));
+      try { localStorage.setItem(LS_COLS_OPS, JSON.stringify(payload)); } catch { /* noop */ }
       await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_OPS), {
         columnas: payload,
         updatedAt: new Date().toISOString(),
@@ -576,6 +601,7 @@ export const FacturacionClientesDashboard = () => {
     setGuardandoCols(true);
     try {
       const payload = columnasFactura.map(c => ({ id: c.id, visible: !!c.visible }));
+      try { localStorage.setItem(LS_COLS_HIST, JSON.stringify(payload)); } catch { /* noop */ }
       await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_HISTORIAL), {
         columnas: payload,
         updatedAt: new Date().toISOString(),
@@ -807,6 +833,7 @@ export const FacturacionClientesDashboard = () => {
 
   const valorOrdenOp = (op: any, campo: string): string | number => {
     switch (campo) {
+      case 'factura': return String(op.facturaClienteInvoice || '').toLowerCase();
       case 'ref': return String(op.numReferencia || op.referencia || op.ref || op.id || '').toLowerCase();
       case 'fechaServicio': return String(op.fechaServicio || op.createdAt || '');
       case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId).toLowerCase();
@@ -833,7 +860,9 @@ export const FacturacionClientesDashboard = () => {
 
   const operacionesMostradas = useMemo(() => {
     if (!ambasFechas) return [];
-    const lista = operacionesGlobales.filter(op => !esFacturada(op) && dentroRangoFecha(op));
+    // Mostramos TODAS las del rango (pendientes + ya facturadas) para poder ver
+    // en qué factura están. Las facturadas no son seleccionables (ver tabla).
+    const lista = operacionesGlobales.filter(op => dentroRangoFecha(op));
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
       const va = valorOrdenOp(a, ordenOps.campo);
@@ -844,6 +873,13 @@ export const FacturacionClientesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos]);
 
+  // ✅ Conteos: en espera por facturar vs ya facturadas (dentro del rango cargado).
+  const resumenOps = useMemo(() => {
+    const porFacturar = operacionesMostradas.filter(op => !esFacturada(op)).length;
+    const facturadas = operacionesMostradas.filter(op => esFacturada(op)).length;
+    return { porFacturar, facturadas };
+  }, [operacionesMostradas]);
+
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
 
@@ -851,6 +887,7 @@ export const FacturacionClientesDashboard = () => {
 
   const valorCeldaOps = (op: any, key: string, m: any) => {
     switch (key) {
+      case 'factura': return op.facturaClienteInvoice || (esFacturada(op) ? 'Facturada' : 'Por facturar');
       case 'ref': return op.numReferencia || op.referencia || op.ref || op.id;
       case 'fechaServicio': return formatearFechaSpanish(op.fechaServicio || op.createdAt);
       case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId);
@@ -871,6 +908,11 @@ export const FacturacionClientesDashboard = () => {
   const renderCeldaOps = (op: any, key: string, m: any) => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
+      case 'factura': {
+        const inv = op.facturaClienteInvoice;
+        if (inv) return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', color: '#58a6ff', border: '1px solid #58a6ff', backgroundColor: 'rgba(88,166,255,0.1)', fontFamily: 'monospace' }}>{inv}</span></td>;
+        return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Por facturar</span></td>;
+      }
       case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.numReferencia || op.referencia || op.ref || op.id.substring(0, 6)}</td>;
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
       case 'cliente': return <td key={key} style={tdBase}>{getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId)}</td>;
@@ -926,6 +968,8 @@ export const FacturacionClientesDashboard = () => {
   };
 
   const toggleSeleccion = (id: string) => {
+    const op = operacionesGlobales.find(o => o.id === id);
+    if (op && esFacturada(op)) return; // las facturadas no se seleccionan
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
@@ -965,8 +1009,13 @@ export const FacturacionClientesDashboard = () => {
           ref: op?.numReferencia || op?.referencia || op?.ref || id.substring(0, 6),
           monto: montos.conv,
           subtotalBase: montos.subtotal,
+          // ✅ remolque (para poder buscar por # de Remolque en el historial)
+          remolque: op ? txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque) : '',
         };
       });
+      const remolquesFactura = Array.from(new Set(
+        operacionesResumenEstable.map((o: any) => String(o.remolque || '')).filter(r => r && r !== '-')
+      ));
 
       const data = {
         invoice: invoiceForm.trim(),
@@ -978,14 +1027,61 @@ export const FacturacionClientesDashboard = () => {
         monedaFacturacion,
         operacionesIds: seleccionadas,
         operacionesGuardadas: operacionesResumenEstable,
+        remolques: remolquesFactura,
         subtotalFactura: resumenSeleccion.subtotal,
         createdAt: new Date().toISOString(),
       };
 
-      batch.set(doc(db, 'facturas_clientes', nuevoId), data);
+      // ✅ ¿Ya existe una factura con el MISMO número (mismo cliente)? → fusionar.
+      const invKey = invoiceForm.trim().toLowerCase();
+      const existente = facturasGlobales.find(f =>
+        String(f.invoice || '').trim().toLowerCase() === invKey &&
+        String(f.clienteId || '') === String(clienteFacturaId)
+      );
+
+      let docId = nuevoId;
+      let facturaResultante: any = data;
+
+      if (existente) {
+        // Unir operaciones (dedup por id) y sumar totales sobre el doc existente.
+        docId = existente.id;
+        const idsPrev: string[] = Array.isArray(existente.operacionesIds) ? existente.operacionesIds.map(String) : [];
+        const idsUnion = Array.from(new Set([...idsPrev, ...seleccionadas]));
+
+        const guardadasPrev: any[] = Array.isArray(existente.operacionesGuardadas) ? existente.operacionesGuardadas : [];
+        const mapaGuardadas = new Map<string, any>();
+        [...guardadasPrev, ...operacionesResumenEstable].forEach((o: any) => { if (o?.id) mapaGuardadas.set(String(o.id), o); });
+        const guardadasUnion = Array.from(mapaGuardadas.values());
+
+        const remolquesUnion = Array.from(new Set([
+          ...(Array.isArray(existente.remolques) ? existente.remolques : []),
+          ...remolquesFactura,
+        ].map((r: any) => String(r || '')).filter(r => r && r !== '-')));
+
+        const subtotalUnion = Number(existente.subtotalFactura || 0) + Number(resumenSeleccion.subtotal || 0);
+
+        const merge = {
+          invoice: existente.invoice || invoiceForm.trim(),
+          facturaCcp: facturaCcpForm.trim() || existente.facturaCcp || '',
+          statusFactura: statusFacturaForm || existente.statusFactura || 'Facturado',
+          clienteId: clienteFacturaId,
+          clienteNombre: existente.clienteNombre || data.clienteNombre,
+          monedaFacturacion: existente.monedaFacturacion || monedaFacturacion,
+          operacionesIds: idsUnion,
+          operacionesGuardadas: guardadasUnion,
+          remolques: remolquesUnion,
+          subtotalFactura: subtotalUnion,
+          updatedAt: new Date().toISOString(),
+        };
+        batch.set(doc(db, 'facturas_clientes', docId), merge, { merge: true });
+        facturaResultante = { ...existente, ...merge };
+      } else {
+        batch.set(doc(db, 'facturas_clientes', docId), data);
+      }
+
       seleccionadas.forEach(id => {
         batch.update(doc(db, 'operaciones', id), {
-          facturaClienteId: nuevoId,
+          facturaClienteId: docId,
           facturaClienteInvoice: invoiceForm.trim(),
           facturado: true,
         });
@@ -994,14 +1090,20 @@ export const FacturacionClientesDashboard = () => {
       await batch.commit();
       setModalAbierto(false);
       const idsFacturadas = [...seleccionadas];
+      const invoiceTrim = invoiceForm.trim();
       setSeleccionadas([]);
       setInvoiceForm('');
       setFacturaCcpForm('');
       setStatusFacturaForm('Facturado');
       setOperacionesGlobales(prev => prev.map(op =>
-        idsFacturadas.includes(op.id) ? { ...op, facturaClienteId: nuevoId, facturaClienteInvoice: invoiceForm.trim(), facturado: true } : op
+        idsFacturadas.includes(op.id) ? { ...op, facturaClienteId: docId, facturaClienteInvoice: invoiceTrim, facturado: true } : op
       ));
-      setFacturasGlobales(prev => [normalizarFactura({ id: nuevoId, ...data }), ...prev]);
+      setFacturasGlobales(prev => {
+        if (existente) {
+          return prev.map(f => f.id === docId ? normalizarFactura({ id: docId, ...facturaResultante }) : f);
+        }
+        return [normalizarFactura({ id: docId, ...data }), ...prev];
+      });
       setActiveTab('historial');
     } catch (error) {
       console.error(error);
@@ -1014,10 +1116,13 @@ export const FacturacionClientesDashboard = () => {
   // ✅ (C) Cambiar el status de una factura existente (desde la ficha).
   const handleCambiarStatusFactura = async (factura: any, nuevoStatus: string) => {
     if (!factura?.id) return;
+    const ids: string[] = Array.isArray(factura.__groupIds) && factura.__groupIds.length ? factura.__groupIds : [factura.id];
     try {
-      await setDoc(doc(db, 'facturas_clientes', factura.id), { statusFactura: nuevoStatus }, { merge: true });
-      setFacturasGlobales(prev => prev.map(f => f.id === factura.id ? { ...f, statusFactura: nuevoStatus } : f));
-      setFacturaViendo((prev: any) => (prev && prev.id === factura.id) ? { ...prev, statusFactura: nuevoStatus } : prev);
+      const batch = writeBatch(db);
+      ids.forEach(id => batch.set(doc(db, 'facturas_clientes', id), { statusFactura: nuevoStatus }, { merge: true }));
+      await batch.commit();
+      setFacturasGlobales(prev => prev.map(f => ids.includes(f.id) ? { ...f, statusFactura: nuevoStatus } : f));
+      setFacturaViendo((prev: any) => (prev && (ids.includes(prev.id) || prev.id === factura.id)) ? { ...prev, statusFactura: nuevoStatus } : prev);
     } catch (e) {
       console.error('Error actualizando status de factura:', e);
       alert('No se pudo actualizar el status de la factura.');
@@ -1026,22 +1131,30 @@ export const FacturacionClientesDashboard = () => {
 
   const handleEliminarFactura = async (e: React.MouseEvent, facData: any) => {
     e.stopPropagation();
-    if (window.confirm(`¿Estás seguro de eliminar la factura ${facData.invoice}? Las operaciones asociadas quedarán liberadas nuevamente.`)) {
+    const ids: string[] = Array.isArray(facData.__groupIds) && facData.__groupIds.length ? facData.__groupIds : [facData.id];
+    const aviso = ids.length > 1
+      ? `¿Eliminar las ${ids.length} facturas con el número ${facData.invoice}? Las operaciones asociadas quedarán liberadas nuevamente.`
+      : `¿Estás seguro de eliminar la factura ${facData.invoice}? Las operaciones asociadas quedarán liberadas nuevamente.`;
+    if (window.confirm(aviso)) {
       try {
         const batch = writeBatch(db);
-        batch.delete(doc(db, 'facturas_clientes', facData.id));
-        if (Array.isArray(facData.operacionesIds)) {
-          facData.operacionesIds.forEach((opId: string) => {
-            batch.update(doc(db, 'operaciones', opId), {
-              facturaClienteId: null,
-              facturaClienteInvoice: null,
-              facturado: false,
+        const idsLiberadas: string[] = [];
+        ids.forEach(fid => batch.delete(doc(db, 'facturas_clientes', fid)));
+        const docs: any[] = Array.isArray(facData.__groupDocs) && facData.__groupDocs.length ? facData.__groupDocs : [facData];
+        docs.forEach((d: any) => {
+          if (Array.isArray(d.operacionesIds)) {
+            d.operacionesIds.forEach((opId: string) => {
+              idsLiberadas.push(opId);
+              batch.update(doc(db, 'operaciones', opId), {
+                facturaClienteId: null,
+                facturaClienteInvoice: null,
+                facturado: false,
+              });
             });
-          });
-        }
+          }
+        });
         await batch.commit();
-        setFacturasGlobales(prev => prev.filter(f => f.id !== facData.id));
-        const idsLiberadas: string[] = Array.isArray(facData.operacionesIds) ? facData.operacionesIds : [];
+        setFacturasGlobales(prev => prev.filter(f => !ids.includes(f.id)));
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, facturaClienteId: null, facturaClienteInvoice: null, facturado: false } : op
         ));
@@ -1084,8 +1197,13 @@ export const FacturacionClientesDashboard = () => {
       }
       if (String(f.facturaCcp || '').toLowerCase().includes(q)) return true;
       if (String(f.monedaFacturacion || '').toLowerCase().includes(q)) return true;
+      // ✅ búsqueda por # de Remolque (arreglo a nivel factura + por operación)
+      if (Array.isArray(f.remolques) && f.remolques.some((r: any) => String(r || '').toLowerCase().includes(q))) return true;
       if (Array.isArray(f.operacionesGuardadas)) {
-        if (f.operacionesGuardadas.some((op: any) => String(op?.ref || '').toLowerCase().includes(q))) return true;
+        if (f.operacionesGuardadas.some((op: any) =>
+          String(op?.ref || '').toLowerCase().includes(q) ||
+          String(op?.remolque || '').toLowerCase().includes(q)
+        )) return true;
       }
       return false;
     };
@@ -1103,7 +1221,47 @@ export const FacturacionClientesDashboard = () => {
 
     const filtradas = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideFechas(f));
 
-    return [...filtradas].sort((a, b) => {
+    // ✅ Agrupar facturas con el MISMO número (invoice) + mismo cliente en una
+    //    sola fila. Evita duplicados en el historial y combina sus operaciones.
+    const grupos = new Map<string, any>();
+    for (const f of filtradas) {
+      const key = `${String(f.invoice || f.id).trim().toLowerCase()}__${String(f.clienteId || '')}`;
+      if (!grupos.has(key)) {
+        grupos.set(key, {
+          ...f,
+          operacionesIds: Array.isArray(f.operacionesIds) ? [...f.operacionesIds] : [],
+          operacionesGuardadas: Array.isArray(f.operacionesGuardadas) ? [...f.operacionesGuardadas] : [],
+          remolques: Array.isArray(f.remolques) ? [...f.remolques] : [],
+          subtotalFactura: Number(f.subtotalFactura) || 0,
+          __groupIds: [f.id],
+          __groupDocs: [f],
+        });
+      } else {
+        const g = grupos.get(key);
+        g.__groupIds.push(f.id);
+        g.__groupDocs.push(f);
+        // unir ids
+        const setIds = new Set<string>([...(g.operacionesIds || []).map(String), ...((f.operacionesIds || []).map(String))]);
+        g.operacionesIds = Array.from(setIds);
+        // unir operacionesGuardadas (dedup por id)
+        const mapG = new Map<string, any>();
+        [...(g.operacionesGuardadas || []), ...(f.operacionesGuardadas || [])].forEach((o: any) => { if (o?.id) mapG.set(String(o.id), o); });
+        g.operacionesGuardadas = Array.from(mapG.values());
+        // unir remolques
+        g.remolques = Array.from(new Set([...(g.remolques || []), ...((f.remolques) || [])].map((r: any) => String(r || '')).filter(Boolean)));
+        // sumar totales
+        g.subtotalFactura = Number(g.subtotalFactura || 0) + (Number(f.subtotalFactura) || 0);
+        // conservar la fecha más reciente y createdAt más antiguo
+        if (String(f.fecha || '') > String(g.fecha || '')) g.fecha = f.fecha;
+        if (!g.createdAt || (f.createdAt && String(f.createdAt) < String(g.createdAt))) g.createdAt = f.createdAt || g.createdAt;
+        // si alguna no está "Facturado", reflejarlo (prioridad: Cancelado > No Facturado > Facturado)
+        const rank = (s: any) => { const t = String(s || '').toLowerCase(); if (t.includes('cancel')) return 3; if (t.includes('no')) return 2; return 1; };
+        if (rank(f.statusFactura) > rank(g.statusFactura)) g.statusFactura = f.statusFactura;
+      }
+    }
+    const agrupadas = Array.from(grupos.values());
+
+    return agrupadas.sort((a, b) => {
       const va = valorOrdenFac(a, ordenFac.campo);
       const vb = valorOrdenFac(b, ordenFac.campo);
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
@@ -1374,7 +1532,7 @@ export const FacturacionClientesDashboard = () => {
               <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input
                 type="text"
-                placeholder="Buscar por invoice, cliente, status, CCP o referencia..."
+                placeholder="Buscar por invoice, cliente, status, CCP, referencia o # remolque..."
                 value={textoBuscarFactura}
                 onChange={(e) => setTextoBuscarFactura(e.target.value)}
                 style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
@@ -1410,6 +1568,18 @@ export const FacturacionClientesDashboard = () => {
       ) : activeTab === 'operaciones' ? (
         /* ════════════════════ ASIGNAR OPERACIONES ════════════════════ */
         <div className="animation-fade-in">
+          {/* ✅ Tarjetas: en espera por facturar vs ya facturadas (en el rango) */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px 20px' }}>
+              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones en espera por facturar</span>
+              <span style={{ color: '#f59e0b', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenOps.porFacturar}</span>
+            </div>
+            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px 20px' }}>
+              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones ya facturadas (en historial)</span>
+              <span style={{ color: '#10b981', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenOps.facturadas}</span>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
@@ -1422,7 +1592,7 @@ export const FacturacionClientesDashboard = () => {
                 {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
               </button>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
-                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación por facturar' : 'operaciones por facturar'}
+                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'} · {resumenOps.porFacturar} por facturar
               </span>
             </div>
 
@@ -1489,15 +1659,20 @@ export const FacturacionClientesDashboard = () => {
                 {cargandoOperaciones ? (
                   <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones completadas del rango...</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones por facturar en este rango de fechas{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 1} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones completadas en este rango de fechas{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
                 ) : (
                   operacionesMostradas.map(op => {
                     const m = obtenerMontoOperacion(op);
+                    const yaFacturada = esFacturada(op);
                     return (
-                      <tr key={op.id} onClick={() => toggleSeleccion(op.id)}
-                        style={{ cursor: 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
+                      <tr key={op.id} onClick={() => { if (!yaFacturada) toggleSeleccion(op.id); }}
+                        style={{ cursor: yaFacturada ? 'default' : 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : (yaFacturada ? 'rgba(16,185,129,0.04)' : 'transparent') }}>
                         <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                          {yaFacturada ? (
+                            <span title="Ya facturada" style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                          ) : (
+                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                          )}
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
                       </tr>
