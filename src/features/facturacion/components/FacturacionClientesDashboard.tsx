@@ -24,6 +24,11 @@
 //      muestra el NOMBRE resuelto tanto en la tabla, como en el Excel y en la
 //      ficha de detalle de la operación.
 //
+// C) STATUS DE LA FACTURA (Facturado / Cancelado / No Facturado):
+//    · Se elige al generar la factura y se guarda en el campo `statusFactura`.
+//    · Aparece como PRIMERA columna del Historial (píldora de color) y es
+//      editable desde la ficha de cada factura.
+//
 // (Cambios anteriores que se conservan)
 // 1) FILTRO PRINCIPAL = RANGO DE FECHAS (Desde / Hasta). Cliente OPCIONAL.
 // 2) "Asignar Operaciones" muestra SOLO operaciones NO facturadas.
@@ -143,8 +148,30 @@ const aplicarConfigColumnasGuardada = (base: any[], guardadas: any): any[] => {
   return resultado;
 };
 
+// ✅ (C) Mueve la columna "statusFactura" al inicio (solo cuando se agrega por
+//     primera vez sobre una config vieja que no la contenía).
+const moverStatusAlInicio = (cols: any[]): any[] => {
+  const idx = cols.findIndex((c: any) => c.id === 'statusFactura');
+  if (idx <= 0) return cols;
+  const copia = [...cols];
+  const [st] = copia.splice(idx, 1);
+  copia.unshift(st);
+  return copia;
+};
+
+// ✅ (C) Opciones y colores del status de la factura.
+const STATUS_FACTURA_OPCIONES = ['Facturado', 'Cancelado', 'No Facturado'];
+const colorStatusFactura = (s: any): string => {
+  const t = String(s || '').toLowerCase();
+  if (t.includes('cancel')) return '#f85149';   // rojo
+  if (t.includes('no')) return '#f59e0b';        // ámbar (No Facturado)
+  if (t.includes('factur')) return '#10b981';    // verde (Facturado)
+  return '#8b949e';
+};
+
 // Columnas configurables del Historial de Facturas (tabla + Excel).
 const COLUMNAS_FACTURA_BASE = [
+  { id: 'statusFactura', label: 'Status',       visible: true },
   { id: 'invoice',     label: 'Invoice',      visible: true },
   { id: 'fecha',       label: 'Fecha',        visible: true },
   { id: 'cliente',     label: 'Cliente',      visible: true },
@@ -216,6 +243,8 @@ const normalizarFactura = (raw: any): any => {
     clienteNombre: raw.clienteNombre || raw.cliente || '',
     facturaCcp: raw.facturaCcp || raw.ccp || '',
     invoice: raw.invoice || raw.numeroInvoice || raw.numInvoice || raw.folio || String(raw.id || ''),
+    // ✅ (C) status de la factura (facturas viejas → "Facturado" por defecto)
+    statusFactura: raw.statusFactura || 'Facturado',
   };
 };
 
@@ -393,6 +422,8 @@ export const FacturacionClientesDashboard = () => {
   const [invoiceForm, setInvoiceForm] = useState('');
   const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
   const [facturaCcpForm, setFacturaCcpForm] = useState('');
+  // ✅ (C) Status de la factura (formulario "Generar Factura")
+  const [statusFacturaForm, setStatusFacturaForm] = useState<string>('Facturado');
 
   // ──────────────────────────────────────────────────────────────────
   // Formateadores
@@ -421,6 +452,17 @@ export const FacturacionClientesDashboard = () => {
     if (val === ID_USD) return 'USD';
     if (val === ID_MXN) return 'MXN';
     return val || '-';
+  };
+
+  // ✅ (C) Píldora de status de la factura
+  const chipStatusFactura = (s: any) => {
+    const texto = s || 'Facturado';
+    const color = colorStatusFactura(texto);
+    return (
+      <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', color, border: `1px solid ${color}`, backgroundColor: `${color}1a`, whiteSpace: 'nowrap' }}>
+        {texto}
+      </span>
+    );
   };
 
   // ──────────────────────────────────────────────────────────────────
@@ -494,7 +536,12 @@ export const FacturacionClientesDashboard = () => {
         }
         if (snapHist.exists()) {
           const data = snapHist.data() as any;
-          setColumnasFactura(aplicarConfigColumnasGuardada(COLUMNAS_FACTURA_BASE, data?.columnas));
+          const guardadas = data?.columnas;
+          let cols = aplicarConfigColumnasGuardada(COLUMNAS_FACTURA_BASE, guardadas);
+          // ✅ (C) Si la config guardada no incluía el status (config vieja), forzar al inicio.
+          const teniaStatus = Array.isArray(guardadas) && guardadas.some((g: any) => g?.id === 'statusFactura');
+          if (!teniaStatus) cols = moverStatusAlInicio(cols);
+          setColumnasFactura(cols);
         }
       } catch (e) {
         console.error('Error cargando configuración de columnas (compartida):', e);
@@ -543,16 +590,12 @@ export const FacturacionClientesDashboard = () => {
   };
 
   // ──────────────────────────────────────────────────────────────────
-  // ✅ HISTORIAL DE FACTURAS: carga TODAS al entrar a la pestaña historial,
-  //    igual que el Historial de Referencias del Diésel.
-  //    IMPORTANTE: NO usar orderBy('fecha') porque las facturas antiguas
-  //    NO tienen ese campo (usan 'fechaFactura' en formato DD/M/YYYY) y
-  //    quedarían fuera del resultado. Cargamos sin orden y ordenamos en
-  //    memoria con la fecha ya normalizada.
+  // ✅ HISTORIAL DE FACTURAS: carga TODAS al entrar a la pestaña historial.
+  //    NO usar orderBy('fecha') (facturas viejas usan 'fechaFactura').
+  //    Cargamos sin orden y ordenamos en memoria con la fecha normalizada.
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (activeTab !== 'historial') return;
-    // Si ya hay facturas cargadas, no volver a pedirlas al cambiar filtros.
     if (facturasGlobales.length > 0) return;
 
     const descargar = async () => {
@@ -563,7 +606,6 @@ export const FacturacionClientesDashboard = () => {
           limit(LIMITE_FACTURAS_TODAS),
         ));
         const docs = snap.docs.map(d => normalizarFactura({ id: d.id, ...(d.data() as any) }));
-        // Orden por fecha ISO desc; las que no tengan fecha se quedan al final.
         docs.sort((a: any, b: any) => {
           const fa = String(a.fecha || '');
           const fb = String(b.fecha || '');
@@ -590,8 +632,7 @@ export const FacturacionClientesDashboard = () => {
 
   // ──────────────────────────────────────────────────────────────────
   // ✅ (1)(3) OPERACIONES por RANGO DE FECHAS + status completado (cliente
-  //    opcional). Solo en la pestaña operaciones y solo con ambas fechas.
-  //    El filtro "no facturadas" se aplica en memoria (ver operacionesMostradas).
+  //    opcional). Solo en operaciones y solo con ambas fechas.
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
@@ -626,8 +667,6 @@ export const FacturacionClientesDashboard = () => {
         if (esIndice) {
           console.warn('[Facturación] Falta índice (status+fecha). Fallback por rango de fecha. Detalle:', msg1);
           try {
-            // Sin índice compuesto: rango por fecha (índice automático) y se
-            // filtra status/cliente en memoria.
             const snap2 = await getDocs(query(
               collection(db, 'operaciones'),
               where('fechaServicio', '>=', fechaDesdeOps),
@@ -662,7 +701,6 @@ export const FacturacionClientesDashboard = () => {
     if (!idOrName) return '-';
     const found = empresasList.find(e => e.id === idOrName || e.nombre === idOrName || e.nombreCorto === idOrName);
     if (found) return found.nombre || found.nombreCorto || idOrName;
-    // ✅ (B) Fallback: otros catálogos cacheados (para datos viejos con ID).
     const porCatalogo = mapaCatalogos[String(idOrName)];
     return porCatalogo || idOrName;
   };
@@ -698,8 +736,6 @@ export const FacturacionClientesDashboard = () => {
   // ──────────────────────────────────────────────────────────────────
   const esFacturada = (op: any) => !!op.facturaClienteId || !!op.facturado;
 
-  // Cliente efectivo para la factura: el del filtro, o —si no hay filtro— el
-  // único cliente compartido por las operaciones seleccionadas.
   const clienteFacturaId = useMemo(() => {
     if (filtroCliente) return filtroCliente;
     const ids = new Set<string>();
@@ -746,8 +782,6 @@ export const FacturacionClientesDashboard = () => {
 
   // ──────────────────────────────────────────────────────────────────
   // ✅ Helpers genéricos para columnas configurables (sourceField + tipo)
-  //    Se usan en `valorOrdenOp`, `valorCeldaOps` y `renderCeldaOps` para
-  //    soportar dinámicamente cualquier campo del doc de `operaciones`.
   // ──────────────────────────────────────────────────────────────────
   const valorGenericoOp = (op: any, col: any): any => {
     if (!col?.sourceField) return '';
@@ -767,7 +801,6 @@ export const FacturacionClientesDashboard = () => {
       case 'fecha':     return formatearFechaSpanish(String(val));
       case 'fechaHora': return formatearFechaHora(String(val));
       case 'moneda':    return mostrarMoneda(String(val));
-      // ✅ (B) texto: si el valor es un ID conocido, mostrar el NOMBRE.
       default:          return String(resolverNombre(val));
     }
   };
@@ -784,13 +817,11 @@ export const FacturacionClientesDashboard = () => {
         const col = columnasOps.find(c => c.id === campo);
         const raw = valorGenericoOp(op, col);
         if (col?.tipo === 'monto' || col?.tipo === 'numero') return Number(raw) || 0;
-        // ✅ (B) ordenar por NOMBRE resuelto cuando es texto/ID.
         return String(resolverNombre(raw) || '').toLowerCase();
       }
     }
   };
 
-  // Rango de fechas en memoria (respaldo; la consulta ya viene acotada).
   const dentroRangoFecha = (op: any) => {
     if (!fechaDesdeOps && !fechaHastaOps) return true;
     const f = String(op.fechaServicio || op.createdAt || '').slice(0, 10);
@@ -800,7 +831,6 @@ export const FacturacionClientesDashboard = () => {
     return true;
   };
 
-  // ✅ (2) Solo NO facturadas, dentro del rango. Ordenadas.
   const operacionesMostradas = useMemo(() => {
     if (!ambasFechas) return [];
     const lista = operacionesGlobales.filter(op => !esFacturada(op) && dentroRangoFecha(op));
@@ -856,7 +886,6 @@ export const FacturacionClientesDashboard = () => {
         const text = formatearValorGenericoOp(valorGenericoOp(op, col), col?.tipo);
         if (col?.tipo === 'monto') return <td key={key} style={{ ...tdBase, color: '#3fb950' }}>{text}</td>;
         if (col?.tipo === 'numero') return <td key={key} style={{ ...tdBase, textAlign: 'right' as const }}>{text}</td>;
-        // texto largo: permite ajustar línea para no romper el layout
         const long = (col?.tipo === 'texto') && typeof text === 'string' && text.length > 60;
         if (long) return <td key={key} style={{ ...tdBase, whiteSpace: 'normal', maxWidth: '320px' }}>{text}</td>;
         return <td key={key} style={tdBase}>{text}</td>;
@@ -896,9 +925,6 @@ export const FacturacionClientesDashboard = () => {
     XLSX.writeFile(wb, `Operaciones_PorFacturar_${cli}_${fechaDesdeOps}_a_${fechaHastaOps}.xlsx`);
   };
 
-  // ──────────────────────────────────────────────────────────────────
-  // Selección / resumen
-  // ──────────────────────────────────────────────────────────────────
   const toggleSeleccion = (id: string) => {
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
@@ -946,6 +972,7 @@ export const FacturacionClientesDashboard = () => {
         invoice: invoiceForm.trim(),
         fecha: fechaForm,
         facturaCcp: facturaCcpForm.trim(),
+        statusFactura: statusFacturaForm,
         clienteId: clienteFacturaId,
         clienteNombre: nombreClienteFactura || getNombreCliente(clienteFacturaId),
         monedaFacturacion,
@@ -970,7 +997,7 @@ export const FacturacionClientesDashboard = () => {
       setSeleccionadas([]);
       setInvoiceForm('');
       setFacturaCcpForm('');
-      // (2) marcar localmente como facturadas para que salgan de la lista
+      setStatusFacturaForm('Facturado');
       setOperacionesGlobales(prev => prev.map(op =>
         idsFacturadas.includes(op.id) ? { ...op, facturaClienteId: nuevoId, facturaClienteInvoice: invoiceForm.trim(), facturado: true } : op
       ));
@@ -981,6 +1008,19 @@ export const FacturacionClientesDashboard = () => {
       alert('Error al guardar la factura.');
     } finally {
       setGuardando(false);
+    }
+  };
+
+  // ✅ (C) Cambiar el status de una factura existente (desde la ficha).
+  const handleCambiarStatusFactura = async (factura: any, nuevoStatus: string) => {
+    if (!factura?.id) return;
+    try {
+      await setDoc(doc(db, 'facturas_clientes', factura.id), { statusFactura: nuevoStatus }, { merge: true });
+      setFacturasGlobales(prev => prev.map(f => f.id === factura.id ? { ...f, statusFactura: nuevoStatus } : f));
+      setFacturaViendo(prev => (prev && prev.id === factura.id) ? { ...prev, statusFactura: nuevoStatus } : prev);
+    } catch (e) {
+      console.error('Error actualizando status de factura:', e);
+      alert('No se pudo actualizar el status de la factura.');
     }
   };
 
@@ -1017,6 +1057,7 @@ export const FacturacionClientesDashboard = () => {
   // ──────────────────────────────────────────────────────────────────
   const valorOrdenFac = (f: any, campo: string): string | number => {
     switch (campo) {
+      case 'statusFactura': return String(f.statusFactura || '').toLowerCase();
       case 'invoice': return String(f.invoice || '').toLowerCase();
       case 'fecha': return String(f.fecha || '');
       case 'cliente': return String(f.clienteNombre || '').toLowerCase();
@@ -1036,14 +1077,13 @@ export const FacturacionClientesDashboard = () => {
       if (!q) return true;
       if (String(f.invoice || '').toLowerCase().includes(q)) return true;
       if (String(f.clienteNombre || '').toLowerCase().includes(q)) return true;
-      // Fallback: nombre resuelto vía catálogo (facturas viejas sin clienteNombre)
+      if (String(f.statusFactura || '').toLowerCase().includes(q)) return true;
       if (f.clienteId) {
         const nom = getNombreCliente(f.clienteId);
         if (nom && nom.toLowerCase().includes(q)) return true;
       }
       if (String(f.facturaCcp || '').toLowerCase().includes(q)) return true;
       if (String(f.monedaFacturacion || '').toLowerCase().includes(q)) return true;
-      // Buscar también dentro de las referencias guardadas
       if (Array.isArray(f.operacionesGuardadas)) {
         if (f.operacionesGuardadas.some((op: any) => String(op?.ref || '').toLowerCase().includes(q))) return true;
       }
@@ -1071,7 +1111,6 @@ export const FacturacionClientesDashboard = () => {
     });
   }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeOps, fechaHastaOps]);
 
-  // ✅ Resumen para tarjetas del historial (siempre sobre lo filtrado/visible)
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0;
     let totalMXN = 0;
@@ -1118,6 +1157,7 @@ export const FacturacionClientesDashboard = () => {
 
   const valorCeldaFactura = (f: any, colId: string): any => {
     switch (colId) {
+      case 'statusFactura': return f.statusFactura || 'Facturado';
       case 'invoice': return f.invoice || '';
       case 'fecha': return formatearFechaSpanish(f.fecha);
       case 'cliente': return nombreClienteFactura_(f);
@@ -1136,6 +1176,7 @@ export const FacturacionClientesDashboard = () => {
 
   const renderCeldaFactura = (f: any, colId: string) => {
     switch (colId) {
+      case 'statusFactura': return chipStatusFactura(f.statusFactura);
       case 'invoice': return <span style={{ color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace' }}>{f.invoice}</span>;
       case 'fecha': return <span style={{ color: '#c9d1d9' }}>{formatearFechaSpanish(f.fecha)}</span>;
       case 'cliente': return <span style={{ color: '#f0f6fc' }}>{nombreClienteFactura_(f)}</span>;
@@ -1326,7 +1367,6 @@ export const FacturacionClientesDashboard = () => {
           <BuscadorCliente />
         </div>
       ) : (
-        /* Historial: buscador + cliente + (fechas opcionales) */
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
           <div style={{ flex: 2, minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BUSCAR EN HISTORIAL</label>
@@ -1334,7 +1374,7 @@ export const FacturacionClientesDashboard = () => {
               <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input
                 type="text"
-                placeholder="Buscar por invoice, cliente, CCP o referencia..."
+                placeholder="Buscar por invoice, cliente, status, CCP o referencia..."
                 value={textoBuscarFactura}
                 onChange={(e) => setTextoBuscarFactura(e.target.value)}
                 style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
@@ -1370,7 +1410,6 @@ export const FacturacionClientesDashboard = () => {
       ) : activeTab === 'operaciones' ? (
         /* ════════════════════ ASIGNAR OPERACIONES ════════════════════ */
         <div className="animation-fade-in">
-          {/* Controles: orden + conteo + columnas + exportar + generar */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
@@ -1396,21 +1435,19 @@ export const FacturacionClientesDashboard = () => {
                   color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
                 ⬇ Exportar Excel
               </button>
-              <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => setModalAbierto(true)}
+              <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => { setStatusFacturaForm('Facturado'); setModalAbierto(true); }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                 Generar Factura ({seleccionadas.length})
               </button>
             </div>
           </div>
 
-          {/* Aviso multi-cliente */}
           {seleccionMultiCliente && (
             <div style={{ backgroundColor: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.4)', color: '#ff7b72', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.85rem' }}>
               Seleccionaste operaciones de <b>distintos clientes</b>. Una factura debe ser de un solo cliente: usa el filtro de cliente o selecciona operaciones del mismo cliente.
             </div>
           )}
 
-          {/* Resumen de selección */}
           {seleccionadas.length > 0 && !seleccionMultiCliente && (
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
@@ -1434,7 +1471,6 @@ export const FacturacionClientesDashboard = () => {
             </div>
           )}
 
-          {/* Tabla de operaciones */}
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
@@ -1477,7 +1513,6 @@ export const FacturacionClientesDashboard = () => {
         /* ════════════════════ HISTORIAL DE FACTURAS ════════════════════ */
         <div className="animation-fade-in">
 
-          {/* ✅ Tarjetas de resumen del Historial (similar al historial de Diésel) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px' }}>
               <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>Facturas Listadas</span>
@@ -1501,6 +1536,7 @@ export const FacturacionClientesDashboard = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
               <select value={ordenFac.campo} onChange={(e) => setOrdenFac(prev => ({ ...prev, campo: e.target.value }))} style={selectOrdenStyle}>
+                <option value="statusFactura">Status</option>
                 <option value="invoice">Invoice</option>
                 <option value="fecha">Fecha</option>
                 <option value="cliente">Cliente</option>
@@ -1612,7 +1648,6 @@ export const FacturacionClientesDashboard = () => {
               <button onClick={() => { setModalColumnasOps(false); setBusquedaColOps(''); }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
 
-            {/* Buscador y atajos */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
                 <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -1683,6 +1718,13 @@ export const FacturacionClientesDashboard = () => {
             <form onSubmit={handleGuardarFactura}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
                 <div style={{ gridColumn: 'span 2' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>STATUS DE LA FACTURA</label>
+                  <select value={statusFacturaForm} onChange={e => setStatusFacturaForm(e.target.value)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: colorStatusFactura(statusFacturaForm), border: `1px solid ${colorStatusFactura(statusFacturaForm)}`, borderRadius: '4px', fontWeight: 'bold' }}>
+                    {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div style={{ gridColumn: 'span 2' }}>
                   <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>NÚMERO DE INVOICE</label>
                   <input type="text" required placeholder="Ej. INV-2026-001" value={invoiceForm} onChange={e => setInvoiceForm(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold', fontSize: '1.1rem' }} />
                 </div>
@@ -1713,6 +1755,19 @@ export const FacturacionClientesDashboard = () => {
               <button onClick={() => setFacturaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
             <div style={{ padding: '24px' }}>
+              {/* ✅ Status editable de la factura */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', marginBottom: '20px', flexWrap: 'wrap' }}>
+                <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Status de la factura</span>
+                <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', color: colorStatusFactura(facturaViendo.statusFactura), border: `1px solid ${colorStatusFactura(facturaViendo.statusFactura)}`, backgroundColor: `${colorStatusFactura(facturaViendo.statusFactura)}1a`, whiteSpace: 'nowrap' }}>{facturaViendo.statusFactura || 'Facturado'}</span>
+                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>Cambiar a:</span>
+                  <select value={facturaViendo.statusFactura || 'Facturado'} onChange={(e) => handleCambiarStatusFactura(facturaViendo, e.target.value)}
+                    style={{ backgroundColor: '#0d1117', border: `1px solid ${colorStatusFactura(facturaViendo.statusFactura)}`, color: colorStatusFactura(facturaViendo.statusFactura), borderRadius: '6px', padding: '6px 10px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                    {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
                 <div style={{ gridColumn: 'span 3', display: 'flex', justifyContent: 'space-between', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', alignItems: 'center' }}>
                   <div>
