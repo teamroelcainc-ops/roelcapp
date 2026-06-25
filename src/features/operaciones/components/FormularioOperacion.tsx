@@ -1125,9 +1125,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const tarifaBase = String(convCliente.tarifaBaseId ?? '').trim();
     if (!tarifaBase) return;
 
-    // Sueldo: tarifas_gastos_incluidos -> tarifa_referencia_id === tarifaBase && gasto === ID_GASTO_SUELDO
+    // Sueldo: tarifas_gastos_incluidos -> (tarifa_referencia_id | ID_SERVICES | ...) === tarifaBase && gasto === ID_GASTO_SUELDO
     const filaSueldo = gastosIncluidosLocal.find((g: any) => {
-      const ref = String(g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ?? g.tarifaId ?? '').trim();
+      const ref = String(
+        g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ??
+        g.ID_SERVICES ?? g.id_services ?? g.idServices ?? g.tarifaId ?? ''
+      ).trim();
       const gastoId = String(g.gasto ?? g.gastoId ?? g.gasto_id ?? '').trim();
       return ref === tarifaBase && gastoId === ID_GASTO_SUELDO;
     });
