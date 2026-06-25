@@ -1017,7 +1017,7 @@ export const FacturacionClientesDashboard = () => {
     try {
       await setDoc(doc(db, 'facturas_clientes', factura.id), { statusFactura: nuevoStatus }, { merge: true });
       setFacturasGlobales(prev => prev.map(f => f.id === factura.id ? { ...f, statusFactura: nuevoStatus } : f));
-      setFacturaViendo(prev => (prev && prev.id === factura.id) ? { ...prev, statusFactura: nuevoStatus } : prev);
+      setFacturaViendo((prev: any) => (prev && prev.id === factura.id) ? { ...prev, statusFactura: nuevoStatus } : prev);
     } catch (e) {
       console.error('Error actualizando status de factura:', e);
       alert('No se pudo actualizar el status de la factura.');
