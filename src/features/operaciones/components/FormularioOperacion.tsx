@@ -1957,31 +1957,34 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empresa' && (
         <FormularioEmpresa
-          tipoPreseleccionado={modalCatalogo.catalogo.tipoEmpresaPreseleccionado}
+          estado="abierto"
+          registros={empresasLocal}
           onClose={cerrarCreacion}
-          onGuardar={cerrarCreacion}
+          onMinimize={() => {}}
+          onRestore={() => {}}
         />
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'remolque' && (
-        <FormularioRemolque onClose={cerrarCreacion} onGuardar={cerrarCreacion} />
+        <FormularioRemolque estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'unidad' && (
-        <FormularioUnidad onClose={cerrarCreacion} onGuardar={cerrarCreacion} />
+        <FormularioUnidad estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empleado' && (
-        <EmployeeForm onClose={cerrarCreacion} onGuardar={cerrarCreacion} />
+        <EmployeeForm estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
       )}
 
       {mostrarCostosAdic && initialData && (
         <CostosAdicionalesDashboard
-          operacionId={String((initialData as any).id)}
-          referencia={referenciaOperacion}
-          onClose={() => setMostrarCostosAdic(false)}
+          operacionFija={initialData}
+          onCerrar={() => setMostrarCostosAdic(false)}
+          onCostosActualizados={(cambios: { cargosAdicionales: number; cargosAdicionalesProv: number }) => setFormData(prev => ({ ...prev, cargosAdicionales: cambios.cargosAdicionales, cargosAdicionalesProv: cambios.cargosAdicionalesProv }))}
         />
       )}
 
       {mostrarSubirDoc && (
         <DocumentoUploadModal
+          isOpen={mostrarSubirDoc}
           coleccionOrigen="operaciones"
           registroId={String(idOperacion)}
           registroNombre={referenciaOperacion}
