@@ -49,6 +49,8 @@ import {
   getDocs,
   getDoc,
   setDoc,
+  documentId,
+  startAfter,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -200,8 +202,13 @@ const COLUMNAS_FACTURA_BASE = [
   { id: 'createdAt',   label: 'Registrada',   visible: false },
 ];
 
-// Límite para "Historial de Facturas" cuando se carga sin filtro de fechas.
-const LIMITE_FACTURAS_TODAS = 2000;
+// Límite/paginación para "Historial de Facturas". Se cargan TODAS por páginas
+// para que el índice de operaciones facturadas sea completo.
+const LIMITE_FACTURAS_TODAS = 12000;
+const PAG_FACTURAS = 1000;
+// Caché de facturas en sessionStorage (evita re-leer miles de docs por montaje).
+const SS_FACTURAS = 'roelca_facturas_clientes_v1';
+const SS_FACTURAS_TTL = 30 * 60 * 1000; // 30 min
 
 // ──────────────────────────────────────────────────────────────────────
 // ✅ Normalización de facturas (compat. con datos viejos):
@@ -457,6 +464,12 @@ export const FacturacionClientesDashboard = () => {
   const [costoAdicConcepto, setCostoAdicConcepto] = useState('');
   const [guardandoCostoAdic, setGuardandoCostoAdic] = useState(false);
 
+  // ✅ Info de operaciones resuelta bajo demanda (ref TR, remolque, moneda) para
+  //    las facturas visibles del historial. Se acumula para no re-pedir.
+  const [opInfoMap, setOpInfoMap] = useState<Record<string, any>>({});
+  // ✅ Diagnóstico / verificación
+  const [modalDiagnostico, setModalDiagnostico] = useState(false);
+
   // ──────────────────────────────────────────────────────────────────
   // Formateadores
   // ──────────────────────────────────────────────────────────────────
@@ -642,23 +655,45 @@ export const FacturacionClientesDashboard = () => {
   };
 
   // ──────────────────────────────────────────────────────────────────
-  // ✅ HISTORIAL DE FACTURAS: carga TODAS al entrar a la pestaña historial.
-  //    NO usar orderBy('fecha') (facturas viejas usan 'fechaFactura').
-  //    Cargamos sin orden y ordenamos en memoria con la fecha normalizada.
+  // ✅ Cargar TODAS las facturas al MONTAR (paginado), para que el índice de
+  //    operaciones facturadas esté disponible en ambas pestañas. Se cachea en
+  //    sessionStorage (30 min) para no releer miles de documentos por montaje.
   // ──────────────────────────────────────────────────────────────────
+  const guardarCacheFacturas = (docs: any[]) => {
+    try { sessionStorage.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
+  };
+
   useEffect(() => {
-    if (activeTab !== 'historial') return;
     if (facturasGlobales.length > 0) return;
+
+    // 1) Caché de sesión primero.
+    try {
+      const raw = sessionStorage.getItem(SS_FACTURAS);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_FACTURAS_TTL) {
+          setFacturasGlobales(obj.data.map((f: any) => normalizarFactura(f)));
+          return;
+        }
+      }
+    } catch { /* noop */ }
 
     const descargar = async () => {
       setCargandoFacturas(true);
       try {
-        const snap = await getDocs(query(
-          collection(db, 'facturas_clientes'),
-          limit(LIMITE_FACTURAS_TODAS),
-        ));
-        const docs = snap.docs.map(d => normalizarFactura({ id: d.id, ...(d.data() as any) }));
-        docs.sort((a: any, b: any) => {
+        const todas: any[] = [];
+        let cursor: any = null;
+        // Paginar por documentId para traer TODAS (sin depender de 'fecha').
+        for (let i = 0; i < Math.ceil(LIMITE_FACTURAS_TODAS / PAG_FACTURAS); i++) {
+          const cons: any[] = [orderBy(documentId()), limit(PAG_FACTURAS)];
+          if (cursor) cons.splice(1, 0, startAfter(cursor));
+          const snap = await getDocs(query(collection(db, 'facturas_clientes'), ...cons));
+          if (snap.empty) break;
+          snap.docs.forEach(d => todas.push(normalizarFactura({ id: d.id, ...(d.data() as any) })));
+          cursor = snap.docs[snap.docs.length - 1];
+          if (snap.docs.length < PAG_FACTURAS) break;
+        }
+        todas.sort((a: any, b: any) => {
           const fa = String(a.fecha || '');
           const fb = String(b.fecha || '');
           if (!fa && !fb) return 0;
@@ -666,10 +701,8 @@ export const FacturacionClientesDashboard = () => {
           if (!fb) return -1;
           return fb.localeCompare(fa);
         });
-        setFacturasGlobales(docs);
-        if (docs.length === LIMITE_FACTURAS_TODAS) {
-          console.warn(`[Facturación Historial] Se alcanzó el límite de ${LIMITE_FACTURAS_TODAS} facturas. Podría haber más.`);
-        }
+        setFacturasGlobales(todas);
+        guardarCacheFacturas(todas);
       } catch (e: any) {
         const msg = String(e?.message || e?.code || e || '');
         console.error('[Facturación Historial] Error al cargar facturas:', e);
@@ -680,11 +713,14 @@ export const FacturacionClientesDashboard = () => {
 
     descargar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, []);
 
-  // ──────────────────────────────────────────────────────────────────
-  // ✅ (1)(3) OPERACIONES por RANGO DE FECHAS + status completado (cliente
-  //    opcional). Solo en operaciones y solo con ambas fechas.
+  // ✅ Mantener la caché de sesión sincronizada cuando cambian las facturas
+  //    (crear, fusionar, eliminar, cambiar status, costo adicional).
+  useEffect(() => {
+    if (facturasGlobales.length > 0) guardarCacheFacturas(facturasGlobales);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facturasGlobales]);
   // ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
@@ -787,9 +823,44 @@ export const FacturacionClientesDashboard = () => {
   }, [filtroCliente, empresasList]);
 
   // ──────────────────────────────────────────────────────────────────
-  // (2) "No facturada" = la operación no está ligada a ninguna factura.
+  // ✅ ÍNDICE de operaciones facturadas (a partir de las facturas). El vínculo
+  //    op↔factura vive en la factura (operacionesIds), por eso construimos aquí
+  //    un mapa opId → { invoice, facturaId, ... } para saber qué está facturado.
   // ──────────────────────────────────────────────────────────────────
-  const esFacturada = (op: any) => !!op.facturaClienteId || !!op.facturado;
+  const opIndex = useMemo(() => {
+    const m = new Map<string, { invoice: string; facturaId: string; fecha: string; clienteId: string; moneda: string }>();
+    facturasGlobales.forEach((f: any) => {
+      const ids = Array.isArray(f.operacionesIds) ? f.operacionesIds : [];
+      ids.forEach((id: any) => {
+        const k = String(id || '');
+        if (k && !m.has(k)) m.set(k, { invoice: f.invoice, facturaId: f.id, fecha: f.fecha, clienteId: f.clienteId, moneda: f.monedaFacturacion });
+      });
+    });
+    return m;
+  }, [facturasGlobales]);
+
+  // ✅ Moneda que corresponde al cliente (desde su ficha de empresa).
+  const monedaDeCliente = (clienteId: any): string => {
+    if (!clienteId) return '';
+    const empresa = empresasList.find(e => e.id === clienteId);
+    const idMoneda = empresa?.monedaRef || empresa?.moneda || empresa?.monedaFacturacion;
+    if (idMoneda === ID_MXN) return 'MXN';
+    if (idMoneda === ID_USD) return 'USD';
+    return idMoneda ? String(idMoneda) : '';
+  };
+
+  // Moneda a mostrar para una factura: la propia, o si es N/A la del cliente.
+  const monedaFacturaMostrar = (f: any): string => {
+    const m = String(f.monedaFacturacion || '').trim();
+    if (m && m.toUpperCase() !== 'N/A') return m;
+    return monedaDeCliente(f.clienteId) || 'N/A';
+  };
+
+  // ──────────────────────────────────────────────────────────────────
+  // (2) "Facturada" = ligada a una factura (índice) o marcada en su doc.
+  // ──────────────────────────────────────────────────────────────────
+  const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado;
+  const invoiceDeOp = (op: any): string => op.facturaClienteInvoice || opIndex.get(String(op.id))?.invoice || '';
 
   const clienteFacturaId = useMemo(() => {
     if (filtroCliente) return filtroCliente;
@@ -910,7 +981,53 @@ export const FacturacionClientesDashboard = () => {
     const porFacturar = enRango.length - facturadas;
     return { porFacturar, facturadas };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ambasFechas, fechaDesdeOps, fechaHastaOps]);
+  }, [operacionesGlobales, ambasFechas, fechaDesdeOps, fechaHastaOps, facturasGlobales]);
+
+  // ──────────────────────────────────────────────────────────────────
+  // ✅ DIAGNÓSTICO: verifica la consistencia de la facturación con los datos
+  //    cargados (sin lecturas extra). Útil para validar "¿está todo ok?".
+  // ──────────────────────────────────────────────────────────────────
+  const diagnostico = useMemo(() => {
+    const totalFacturas = facturasGlobales.length;
+    const opsFacturadasUnicas = opIndex.size;
+
+    // Facturas duplicadas: mismo invoice + cliente en más de un documento.
+    const porClave = new Map<string, number>();
+    facturasGlobales.forEach((f: any) => {
+      const k = `${String(f.invoice || '').trim().toLowerCase()}__${String(f.clienteId || '')}`;
+      porClave.set(k, (porClave.get(k) || 0) + 1);
+    });
+    let invoicesDuplicados = 0;
+    porClave.forEach(v => { if (v > 1) invoicesDuplicados++; });
+
+    // Facturas sin moneda resuelta (ni propia ni por cliente).
+    let sinMoneda = 0;
+    let sinFecha = 0;
+    let sinTotal = 0;
+    facturasGlobales.forEach((f: any) => {
+      if (monedaFacturaMostrar(f) === 'N/A') sinMoneda++;
+      if (!String(f.fecha || '').trim()) sinFecha++;
+      if (!(Number(f.subtotalFactura) > 0)) sinTotal++;
+    });
+
+    // En el rango cargado de operaciones (si aplica).
+    const enRango = ambasFechas ? operacionesGlobales.filter(op => dentroRangoFecha(op)) : [];
+    const rangoTotal = enRango.length;
+    const rangoFacturadas = enRango.filter(op => esFacturada(op)).length;
+    const rangoPorFacturar = rangoTotal - rangoFacturadas;
+    // Operaciones marcadas como facturadas en su propio doc pero que NO aparecen
+    // en ninguna factura (posibles inconsistencias).
+    const huerfanas = enRango.filter(op => (op.facturado || op.facturaClienteId) && !opIndex.has(String(op.id))).length;
+
+    return {
+      totalFacturas, opsFacturadasUnicas, invoicesDuplicados,
+      sinMoneda, sinFecha, sinTotal,
+      rangoTotal, rangoFacturadas, rangoPorFacturar, huerfanas,
+      topeFacturas: totalFacturas >= LIMITE_FACTURAS_TODAS,
+      topeOps: topeOpsAlcanzado,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facturasGlobales, opIndex, operacionesGlobales, ambasFechas, fechaDesdeOps, fechaHastaOps, empresasList, topeOpsAlcanzado]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -919,7 +1036,7 @@ export const FacturacionClientesDashboard = () => {
 
   const valorCeldaOps = (op: any, key: string, m: any) => {
     switch (key) {
-      case 'factura': return op.facturaClienteInvoice || (esFacturada(op) ? 'Facturada' : 'Por facturar');
+      case 'factura': { const inv = invoiceDeOp(op); return inv || (esFacturada(op) ? 'Facturada' : 'Por facturar'); }
       case 'ref': return op.numReferencia || op.referencia || op.ref || op.id;
       case 'fechaServicio': return formatearFechaSpanish(op.fechaServicio || op.createdAt);
       case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId);
@@ -941,7 +1058,7 @@ export const FacturacionClientesDashboard = () => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
       case 'factura': {
-        const inv = op.facturaClienteInvoice;
+        const inv = invoiceDeOp(op);
         if (inv) return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', color: '#58a6ff', border: '1px solid #58a6ff', backgroundColor: 'rgba(88,166,255,0.1)', fontFamily: 'monospace' }}>{inv}</span></td>;
         return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Por facturar</span></td>;
       }
@@ -1269,13 +1386,16 @@ export const FacturacionClientesDashboard = () => {
       }
       if (String(f.facturaCcp || '').toLowerCase().includes(q)) return true;
       if (String(f.monedaFacturacion || '').toLowerCase().includes(q)) return true;
-      // ✅ búsqueda por # de Remolque (arreglo a nivel factura + por operación)
+      // ✅ búsqueda por # de Remolque y referencia TR (a nivel factura + por operación)
       if (Array.isArray(f.remolques) && f.remolques.some((r: any) => String(r || '').toLowerCase().includes(q))) return true;
       if (Array.isArray(f.operacionesGuardadas)) {
-        if (f.operacionesGuardadas.some((op: any) =>
-          String(op?.ref || '').toLowerCase().includes(q) ||
-          String(op?.remolque || '').toLowerCase().includes(q)
-        )) return true;
+        if (f.operacionesGuardadas.some((op: any) => {
+          const info = opInfoMap[String(op?.id || '')] || {};
+          return String(op?.ref || '').toLowerCase().includes(q) ||
+            String(op?.remolque || '').toLowerCase().includes(q) ||
+            String(info.ref || '').toLowerCase().includes(q) ||
+            String(info.remolque || '').toLowerCase().includes(q);
+        })) return true;
       }
       return false;
     };
@@ -1339,7 +1459,7 @@ export const FacturacionClientesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist]);
+  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap]);
 
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0;
@@ -1367,6 +1487,54 @@ export const FacturacionClientesDashboard = () => {
   const indexFirst = indexLast - registrosPorPagina;
   const registrosVisibles = historialOrdenado.slice(indexFirst, indexLast);
 
+  // ✅ Resolver bajo demanda la info real (ref TR, remolque, moneda) de las
+  //    operaciones de las facturas visibles, en lotes por documentId (máx 30).
+  useEffect(() => {
+    if (activeTab !== 'historial' || registrosVisibles.length === 0) return;
+    const faltantes = new Set<string>();
+    registrosVisibles.forEach((f: any) => {
+      (Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => {
+        const id = String(op?.id || '');
+        // solo si parece un ID (sin "TR-"/guion) y aún no lo tenemos resuelto
+        if (id && !opInfoMap[id] && !/[-\s]/.test(id) && id.length >= 12) faltantes.add(id);
+      });
+    });
+    if (faltantes.size === 0) return;
+    let activo = true;
+    (async () => {
+      const ids = Array.from(faltantes).slice(0, 120); // tope de seguridad por render
+      const nuevos: Record<string, any> = {};
+      for (let i = 0; i < ids.length; i += 30) {
+        const chunk = ids.slice(i, i + 30);
+        try {
+          const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
+          snap.docs.forEach(d => {
+            const o: any = { id: d.id, ...(d.data() as any) };
+            nuevos[d.id] = {
+              ref: o.numReferencia || o.referencia || o.ref || d.id,
+              remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
+              moneda: o.monedaCobroNombre || mostrarMoneda(o.facturadoEnCobrar),
+              clienteId: o.clientePaga || o.clienteId || '',
+            };
+          });
+        } catch (e) { console.warn('No se pudo resolver lote de operaciones del historial:', e); }
+      }
+      if (activo && Object.keys(nuevos).length) setOpInfoMap(prev => ({ ...prev, ...nuevos }));
+    })();
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registrosVisibles, activeTab]);
+
+  // Ref real de una operación guardada en factura (resuelta o tal cual).
+  const refDeOp = (op: any): string => {
+    const id = String(op?.id || '');
+    const info = opInfoMap[id];
+    if (info?.ref) return String(info.ref);
+    const r = String(op?.ref || '');
+    if (r && /[-\s]/.test(r)) return r; // ya es una referencia tipo TR-...
+    return r || id;
+  };
+
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
 
@@ -1391,12 +1559,12 @@ export const FacturacionClientesDashboard = () => {
       case 'invoice': return f.invoice || '';
       case 'fecha': return formatearFechaSpanish(f.fecha);
       case 'cliente': return nombreClienteFactura_(f);
-      case 'moneda': return f.monedaFacturacion || 'N/A';
+      case 'moneda': return monedaFacturaMostrar(f);
       case 'facturaCcp': return f.facturaCcp || '-';
       case 'cantOps': return f.operacionesIds?.length || 0;
       case 'referencias':
         return Array.isArray(f.operacionesGuardadas)
-          ? f.operacionesGuardadas.map((op: any) => op?.ref || '').filter(Boolean).join(', ')
+          ? f.operacionesGuardadas.map((op: any) => refDeOp(op)).filter(Boolean).join(', ')
           : '-';
       case 'total': return Number(f.subtotalFactura) || 0;
       case 'createdAt': return f.createdAt ? formatearFechaHora(f.createdAt) : '-';
@@ -1410,7 +1578,7 @@ export const FacturacionClientesDashboard = () => {
       case 'invoice': return <span style={{ color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace' }}>{f.invoice}</span>;
       case 'fecha': return <span style={{ color: '#c9d1d9' }}>{formatearFechaSpanish(f.fecha)}</span>;
       case 'cliente': return <span style={{ color: '#f0f6fc' }}>{nombreClienteFactura_(f)}</span>;
-      case 'moneda': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{f.monedaFacturacion || 'N/A'}</span>;
+      case 'moneda': { const mon = monedaFacturaMostrar(f); return <span style={{ color: mon === 'N/A' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{mon}</span>; }
       case 'facturaCcp': return <span style={{ color: '#c9d1d9' }}>{f.facturaCcp || '-'}</span>;
       case 'cantOps': return <span style={{ color: '#8b949e' }}>{f.operacionesIds?.length || 0}</span>;
       case 'referencias': {
@@ -1434,7 +1602,7 @@ export const FacturacionClientesDashboard = () => {
                   fontFamily: 'monospace',
                   fontWeight: 'bold',
                 }}>
-                {op?.ref || '-'}
+                {refDeOp(op)}
               </button>
             ))}
           </div>
@@ -1812,6 +1980,7 @@ export const FacturacionClientesDashboard = () => {
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
+              <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>🩺 Verificar</button>
               <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
               <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>⬇ Exportar Excel</button>
             </div>
@@ -2091,7 +2260,7 @@ export const FacturacionClientesDashboard = () => {
                   </div>
                   <div style={{ textAlign: 'center' }}>
                     <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Moneda</span>
-                    <span style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>{facturaViendo.monedaFacturacion || 'N/A'}</span>
+                    <span style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>{monedaFacturaMostrar(facturaViendo)}</span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Fecha de Facturación</span>
@@ -2123,7 +2292,7 @@ export const FacturacionClientesDashboard = () => {
                         style={{ backgroundColor: '#21262d', border: '1px solid #58a6ff', padding: '8px 14px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '4px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
                         onMouseEnter={(e: any) => { e.currentTarget.style.backgroundColor = '#1f2d44'; e.currentTarget.style.borderColor = '#79b8ff'; }}
                         onMouseLeave={(e: any) => { e.currentTarget.style.backgroundColor = '#21262d'; e.currentTarget.style.borderColor = '#58a6ff'; }}>
-                        <span style={{ color: '#58a6ff', fontSize: '0.9rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{op.ref}</span>
+                        <span style={{ color: '#58a6ff', fontSize: '0.9rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{refDeOp(op)}</span>
                         <span style={{ color: '#3fb950', fontSize: '0.85rem' }}>{formatoMoneda(op.monto)}</span>
                       </button>
                     )) || <span style={{ color: '#8b949e' }}>Sin detalle de operaciones.</span>}
@@ -2133,6 +2302,87 @@ export const FacturacionClientesDashboard = () => {
             </div>
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
               <button onClick={() => setFacturaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════ MODAL DIAGNÓSTICO / VERIFICACIÓN ════════════════════ */}
+      {modalDiagnostico && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1900, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setModalDiagnostico(false)}>
+          <div style={{ width: '720px', maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#f0f6fc', fontSize: '1.15rem', fontWeight: 'bold' }}>🩺 Verificación de Facturación</span>
+              <button onClick={() => setModalDiagnostico(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: '1.4rem', cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              {cargandoFacturas && (
+                <div style={{ color: '#f59e0b', fontSize: '0.85rem' }}>Cargando facturas… los números pueden cambiar al terminar.</div>
+              )}
+
+              <div>
+                <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Resumen global (facturas cargadas)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  {[
+                    { lbl: 'Facturas', val: diagnostico.totalFacturas, col: '#58a6ff' },
+                    { lbl: 'Ops facturadas (únicas)', val: diagnostico.opsFacturadasUnicas, col: '#3fb950' },
+                    { lbl: 'Invoices duplicados', val: diagnostico.invoicesDuplicados, col: diagnostico.invoicesDuplicados > 0 ? '#f85149' : '#3fb950' },
+                  ].map((c, i) => (
+                    <div key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px' }}>
+                      <div style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>{c.lbl}</div>
+                      <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Operaciones del rango (pestaña “Asignar Operaciones”)</div>
+                {ambasFechas ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                    {[
+                      { lbl: 'Completadas en rango', val: diagnostico.rangoTotal, col: '#c9d1d9' },
+                      { lbl: 'Ya facturadas', val: diagnostico.rangoFacturadas, col: '#3fb950' },
+                      { lbl: 'Por facturar', val: diagnostico.rangoPorFacturar, col: '#f59e0b' },
+                    ].map((c, i) => (
+                      <div key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px' }}>
+                        <div style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>{c.lbl}</div>
+                        <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ color: '#8b949e', fontSize: '0.85rem' }}>Selecciona un rango de fechas en “Asignar Operaciones” para ver el desglose por facturar.</div>
+                )}
+              </div>
+
+              <div>
+                <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Posibles pendientes a revisar</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem' }}>
+                  {[
+                    { ok: diagnostico.huerfanas === 0, txt: diagnostico.huerfanas === 0 ? 'No hay operaciones marcadas como facturadas sin factura asociada (en el rango).' : `${diagnostico.huerfanas} operación(es) del rango marcadas como facturadas pero sin factura que las referencie.` },
+                    { ok: diagnostico.invoicesDuplicados === 0, txt: diagnostico.invoicesDuplicados === 0 ? 'No hay invoices duplicados (mismo # y cliente).' : `${diagnostico.invoicesDuplicados} invoice(s) aparecen duplicados (mismo # y cliente).` },
+                    { ok: diagnostico.sinMoneda === 0, txt: diagnostico.sinMoneda === 0 ? 'Todas las facturas resuelven su moneda.' : `${diagnostico.sinMoneda} factura(s) sin moneda (ni propia ni por cliente).`, warn: true },
+                    { ok: diagnostico.sinFecha === 0, txt: diagnostico.sinFecha === 0 ? 'Todas las facturas tienen fecha.' : `${diagnostico.sinFecha} factura(s) sin fecha de facturación.`, warn: true },
+                    { ok: diagnostico.sinTotal === 0, txt: diagnostico.sinTotal === 0 ? 'Todas las facturas tienen total.' : `${diagnostico.sinTotal} factura(s) con total en $0 (datos importados sin monto).`, warn: true },
+                    { ok: !diagnostico.topeFacturas, txt: diagnostico.topeFacturas ? `Se alcanzó el tope de ${LIMITE_FACTURAS_TODAS} facturas cargadas: podría faltar información.` : `Se cargaron todas las facturas (sin alcanzar el tope de ${LIMITE_FACTURAS_TODAS}).` },
+                  ].map((r, i) => (
+                    <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', color: r.ok ? '#3fb950' : (r.warn ? '#f59e0b' : '#f85149') }}>
+                      <span style={{ flexShrink: 0 }}>{r.ok ? '✓' : (r.warn ? '⚠' : '✕')}</span>
+                      <span style={{ color: '#c9d1d9' }}>{r.txt}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ backgroundColor: 'rgba(88,166,255,0.06)', border: '1px solid rgba(88,166,255,0.3)', borderRadius: '8px', padding: '12px 14px', color: '#8b949e', fontSize: '0.8rem' }}>
+                Nota: el total en $0 y la fecha vacía en muchas facturas vienen de la importación del sistema anterior (esos datos no se migraron). La moneda se completa con la del cliente cuando la factura no la trae. El # de referencia (TR) y el # de remolque se resuelven al ver cada página del historial.
+              </div>
+            </div>
+            <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button onClick={() => { try { sessionStorage.removeItem(SS_FACTURAS); } catch {} ; setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
+                style={{ ...btnDirStyle }} title="Volver a leer todas las facturas desde la base de datos">↻ Recargar facturas</button>
+              <button onClick={() => setModalDiagnostico(false)} style={{ padding: '8px 24px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
             </div>
           </div>
         </div>
