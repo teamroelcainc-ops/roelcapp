@@ -392,6 +392,13 @@ export const FacturacionClientesDashboard = () => {
   // ✅ (1) Filtro principal: rango de fechas (obligatorio). Cliente opcional.
   const [fechaDesdeOps, setFechaDesdeOps] = useState('');
   const [fechaHastaOps, setFechaHastaOps] = useState('');
+  // ✅ Fechas del HISTORIAL: independientes de "Asignar Operaciones" (opcionales).
+  const [fechaDesdeHist, setFechaDesdeHist] = useState('');
+  const [fechaHastaHist, setFechaHastaHist] = useState('');
+  // ✅ Mostrar también las ya facturadas en "Asignar Operaciones" (por defecto NO).
+  const [mostrarFacturadas, setMostrarFacturadas] = useState(false);
+  // ✅ Bandera: se alcanzó el tope de lectura de operaciones del rango.
+  const [topeOpsAlcanzado, setTopeOpsAlcanzado] = useState(false);
   const [filtroCliente, setFiltroCliente] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
@@ -732,7 +739,10 @@ export const FacturacionClientesDashboard = () => {
         }
       }
 
-      if (exito) setOperacionesGlobales(opsFinal);
+      if (exito) {
+        setOperacionesGlobales(opsFinal);
+        setTopeOpsAlcanzado(opsFinal.length >= LIMITE_OPS_RANGO);
+      }
       setCargandoOperaciones(false);
     };
 
@@ -879,9 +889,9 @@ export const FacturacionClientesDashboard = () => {
 
   const operacionesMostradas = useMemo(() => {
     if (!ambasFechas) return [];
-    // Mostramos TODAS las del rango (pendientes + ya facturadas) para poder ver
-    // en qué factura están. Las facturadas no son seleccionables (ver tabla).
-    const lista = operacionesGlobales.filter(op => dentroRangoFecha(op));
+    // Por defecto solo las PENDIENTES (no facturadas). Con el toggle se incluyen
+    // también las ya facturadas (que no son seleccionables).
+    const lista = operacionesGlobales.filter(op => dentroRangoFecha(op) && (mostrarFacturadas || !esFacturada(op)));
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
       const va = valorOrdenOp(a, ordenOps.campo);
@@ -890,14 +900,17 @@ export const FacturacionClientesDashboard = () => {
       return String(va).localeCompare(String(vb)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos]);
+  }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, mostrarFacturadas]);
 
-  // ✅ Conteos: en espera por facturar vs ya facturadas (dentro del rango cargado).
+  // ✅ Conteos sobre TODO el rango cargado (no depende del toggle de visibilidad).
   const resumenOps = useMemo(() => {
-    const porFacturar = operacionesMostradas.filter(op => !esFacturada(op)).length;
-    const facturadas = operacionesMostradas.filter(op => esFacturada(op)).length;
+    if (!ambasFechas) return { porFacturar: 0, facturadas: 0 };
+    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op));
+    const facturadas = enRango.filter(op => esFacturada(op)).length;
+    const porFacturar = enRango.length - facturadas;
     return { porFacturar, facturadas };
-  }, [operacionesMostradas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesGlobales, ambasFechas, fechaDesdeOps, fechaHastaOps]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -1270,11 +1283,11 @@ export const FacturacionClientesDashboard = () => {
     const coincideCliente = (f: any) => !filtroCliente || String(f.clienteId || '') === filtroCliente;
 
     const coincideFechas = (f: any) => {
-      if (!fechaDesdeOps && !fechaHastaOps) return true;
+      if (!fechaDesdeHist && !fechaHastaHist) return true;
       const fc = String(f.fecha || '').slice(0, 10);
-      if (!fc) return false;
-      if (fechaDesdeOps && fc < fechaDesdeOps) return false;
-      if (fechaHastaOps && fc > fechaHastaOps) return false;
+      if (!fc) return true; // sin fecha → no la ocultamos por el filtro de fechas
+      if (fechaDesdeHist && fc < fechaDesdeHist) return false;
+      if (fechaHastaHist && fc > fechaHastaHist) return false;
       return true;
     };
 
@@ -1326,7 +1339,7 @@ export const FacturacionClientesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeOps, fechaHastaOps]);
+  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist]);
 
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0;
@@ -1357,7 +1370,7 @@ export const FacturacionClientesDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
 
-  useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeOps, fechaHastaOps, textoBuscarFactura]);
+  useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeHist, fechaHastaHist, textoBuscarFactura]);
 
   // ──────────────────────────────────────────────────────────────────
   // Columnas configurables — valor por columna + export
@@ -1603,14 +1616,14 @@ export const FacturacionClientesDashboard = () => {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE (opcional)</label>
-            <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={dateInputStyle} />
+            <input type="date" value={fechaDesdeHist} onChange={(e) => setFechaDesdeHist(e.target.value)} style={dateInputStyle} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA (opcional)</label>
-            <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={dateInputStyle} />
+            <input type="date" value={fechaHastaHist} onChange={(e) => setFechaHastaHist(e.target.value)} style={dateInputStyle} />
           </div>
-          {(fechaDesdeOps || fechaHastaOps) && (
-            <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
+          {(fechaDesdeHist || fechaHastaHist) && (
+            <button onClick={() => { setFechaDesdeHist(''); setFechaHastaHist(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
           )}
           <BuscadorCliente />
         </div>
@@ -1651,8 +1664,12 @@ export const FacturacionClientesDashboard = () => {
                 {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
               </button>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
-                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'} · {resumenOps.porFacturar} por facturar
+                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'mostrada' : 'mostradas'} · <b style={{ color: '#f59e0b' }}>{resumenOps.porFacturar}</b> por facturar
               </span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8b949e', fontSize: '0.8rem', cursor: 'pointer', userSelect: 'none' }} title="Mostrar también las operaciones ya facturadas">
+                <input type="checkbox" checked={mostrarFacturadas} onChange={(e) => setMostrarFacturadas(e.target.checked)} style={{ cursor: 'pointer' }} />
+                Mostrar facturadas
+              </label>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
@@ -1675,6 +1692,12 @@ export const FacturacionClientesDashboard = () => {
               </button>
             </div>
           </div>
+
+          {topeOpsAlcanzado && (
+            <div style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.85rem' }}>
+              Se alcanzó el tope de <b>{LIMITE_OPS_RANGO}</b> operaciones cargadas para este rango, por lo que podría haber más que no se muestran. <b>Acota el rango de fechas</b> (o filtra por cliente) para ver el total real por facturar.
+            </div>
+          )}
 
           {seleccionMultiCliente && (
             <div style={{ backgroundColor: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.4)', color: '#ff7b72', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.85rem' }}>
