@@ -34,12 +34,14 @@ export const ReferenciasPuentesDashboard = () => {
   const [operadoresList, setOperadoresList] = useState<any[]>([]);
   const [conveniosList, setConveniosList] = useState<any[]>([]);
   const [tiposGastoList, setTiposGastoList] = useState<any[]>([]);
+  const [empresasList, setEmpresasList] = useState<any[]>([]);
+  const [traficoList, setTraficoList] = useState<any[]>([]);
   const [puenteSeleccionadoId, setPuenteSeleccionadoId] = useState('');
 
   // Filtros pestaña 1
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
-  const [filtroTrafico, setFiltroTrafico] = useState<'todos' | 'importacion' | 'exportacion'>('todos');
+  const [filtroTrafico, setFiltroTrafico] = useState<string>('todos');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
   const [filtroEstadoOps, setFiltroEstadoOps] = useState<'pendientes' | 'asignadas'>('pendientes');
@@ -96,6 +98,12 @@ export const ReferenciasPuentesDashboard = () => {
     subs.push(onSnapshot(collection(db, 'catalogo_tipos_gastos'), (snap) => {
       setTiposGastoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     }));
+    subs.push(onSnapshot(collection(db, 'empresas'), (snap) => {
+      setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }));
+    subs.push(onSnapshot(collection(db, 'catalogo_trafico'), (snap) => {
+      setTraficoList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }));
     const qOps = query(collection(db, 'operaciones'), limit(500));
     subs.push(onSnapshot(qOps, (snap) => {
       const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
@@ -111,7 +119,18 @@ export const ReferenciasPuentesDashboard = () => {
     return found ? `${found.firstName || ''} ${found.lastNamePaternal || ''}`.trim() : idOrName;
   };
 
-  const getCliente = (op: any) => op.clienteNombre || op.clientePagaNombre || op.nombreCliente || op.clientePaga || '-';
+  const getCliente = (op: any) => {
+    // Nombre denormalizado si ya viene en la operación
+    const directo = op.clienteNombre || op.clientePagaNombre || op.nombreCliente;
+    if (directo) return directo;
+    // Si solo viene el ID, lo resolvemos contra el catálogo de empresas
+    const id = op.clientePaga || op.clienteId || op.cliente;
+    if (id) {
+      const emp = empresaPorId.get(String(id));
+      if (emp) return emp.nombre || emp.empresa || emp.razonSocial || String(id);
+    }
+    return id ? String(id) : '-';
+  };
 
   // Costo de puente/caseta de la operación (con varios nombres posibles)
   const getPuente = (op: any) => Number(
@@ -119,37 +138,89 @@ export const ReferenciasPuentesDashboard = () => {
     op.puente ?? op.peajeTotal ?? op.cruceTotal ?? op.casetas ?? 0
   );
 
-  // Mapa de convenios por id para resolver el tráfico de cada operación
+  // ── Mapas auxiliares (resolver IDs -> nombre) ──
   const convenioPorId = useMemo(() => {
     const map = new Map<string, any>();
     conveniosList.forEach(c => map.set(String(c.id), c));
     return map;
   }, [conveniosList]);
 
-  const detectarTrafico = (txt: any): 'Importación' | 'Exportación' | '—' => {
-    const t = String(txt || '').toLowerCase();
-    if (t.includes('export')) return 'Exportación';
-    if (t.includes('import')) return 'Importación';
-    return '—';
+  const empresaPorId = useMemo(() => {
+    const map = new Map<string, any>();
+    empresasList.forEach(e => map.set(String(e.id), e));
+    return map;
+  }, [empresasList]);
+
+  // catalogo_trafico: id -> nombre legible (Importación, Exportación, Movimiento, ...)
+  const traficoPorId = useMemo(() => {
+    const map = new Map<string, string>();
+    traficoList.forEach(t => {
+      const nombre = t.nombre ?? t.trafico ?? t.descripcion ?? t.label ?? t.movimiento ?? '';
+      if (nombre) map.set(String(t.id), String(nombre));
+    });
+    return map;
+  }, [traficoList]);
+
+  // ── Helpers de tráfico ──
+  const sinAcentos = (s: any) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  const capitalizar = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+  // ¿La cadena parece un ID (hex corto o id largo tipo Firestore) y no un nombre legible?
+  const pareceId = (s: string) => {
+    const x = String(s || '').replace(/\s+/g, '');
+    return /^[0-9a-f]{6,}$/i.test(x) || /^[A-Za-z0-9_-]{18,}$/.test(x);
   };
 
-  // El tráfico vive en el CONVENIO de la operación (op.convenio = id del convenio).
-  const getTrafico = (op: any): 'Importación' | 'Exportación' | '—' => {
+  // Normaliza un texto a un tráfico canónico si reconoce la palabra clave.
+  const normalizarTrafico = (txt: any): string => {
+    const t = sinAcentos(txt);
+    if (!t) return '';
+    if (t.includes('export')) return 'Exportación';
+    if (t.includes('import')) return 'Importación';
+    if (t.includes('movim') || t.includes('transfer') || t.includes('traslad')) return 'Movimiento';
+    return '';
+  };
+
+  // Convierte un valor crudo (que puede ser un ID del catálogo) a su nombre legible.
+  const traficoCrudoANombre = (val: any): string => {
+    const s = String(val ?? '').trim();
+    if (!s) return '';
+    const enCat = traficoPorId.get(s);
+    if (enCat) return String(enCat);
+    return s;
+  };
+
+  // Devuelve el NOMBRE del tráfico de la operación.
+  // Prioriza el campo `trafico` de la operación (ya resuelto al crearla, o un ID
+  // que se resuelve contra catalogo_trafico). Reconoce Importación / Exportación /
+  // Movimiento, y si viene un nombre legible no estándar (p. ej. importado de otra
+  // base) lo muestra tal cual. Si solo hay un ID sin catálogo, intenta por convenio.
+  const getTrafico = (op: any): string => {
+    // 1) Campo directo de la operación (lo más confiable)
+    const directoCrudo = traficoCrudoANombre(op.trafico ?? op.traficoNombre ?? op.trafico_nombre ?? op.traficoId ?? '');
+    const directoNorm = normalizarTrafico(directoCrudo);
+    if (directoNorm) return directoNorm;
+    if (directoCrudo && !pareceId(directoCrudo)) return capitalizar(directoCrudo);
+
+    // 2) Convenio ligado a la operación
     const convId = op.convenio ?? op.convenioId ?? op.convenioClienteId ?? op.idConvenio;
     const conv = convId ? convenioPorId.get(String(convId)) : null;
     if (conv) {
-      // 1) Campo dedicado de tráfico en el convenio
-      const campo = conv.trafico ?? conv.tipoTrafico ?? conv.tipoOperacion ?? conv.tipoOperacionNombre ?? conv.movimiento ?? conv.sentido ?? conv.direccion ?? '';
-      let r = detectarTrafico(campo);
-      if (r !== '—') return r;
-      // 2) Si no, se busca en cualquier texto del convenio (nombre/label/descripción)
+      const campos = [conv.trafico, conv.tipoTrafico, conv.movimiento, conv.tipoOperacion, conv.tipoOperacionNombre, conv.sentido, conv.direccion];
+      for (const c of campos) {
+        const n = normalizarTrafico(traficoCrudoANombre(c));
+        if (n) return n;
+      }
       const todoTexto = Object.values(conv).filter(v => typeof v === 'string').join(' ');
-      r = detectarTrafico(todoTexto);
-      if (r !== '—') return r;
+      const n2 = normalizarTrafico(todoTexto);
+      if (n2) return n2;
     }
-    // 3) Respaldo: campos denormalizados en la propia operación
-    if (op.trafico) { const r = detectarTrafico(op.trafico); if (r !== '—') return r; }
-    return detectarTrafico(`${op.convenioNombre || ''} ${op.tarifaLabel || ''} ${op.tarifarioLabel || ''} ${op.tipoOperacionNombre || ''} ${op.tipoServicio || ''} ${op.ref || ''}`);
+
+    // 3) Respaldo: textos denormalizados en la propia operación
+    const respaldo = `${op.convenioNombre || ''} ${op.tarifaLabel || ''} ${op.tarifarioLabel || ''} ${op.tipoServicio || ''} ${op.descripcionTarifa || ''} ${op.ref || ''}`;
+    const n3 = normalizarTrafico(respaldo);
+    if (n3) return n3;
+
+    return '—';
   };
 
   const dentroRangoFecha = (op: any) => {
@@ -168,13 +239,10 @@ export const ReferenciasPuentesDashboard = () => {
     if (!filtrosCompletos) return [];
     return operacionesGlobales.filter(op => {
       const tr = getTrafico(op);
-      const matchTrafico =
-        filtroTrafico === 'todos' ||
-        (filtroTrafico === 'importacion' && tr === 'Importación') ||
-        (filtroTrafico === 'exportacion' && tr === 'Exportación');
+      const matchTrafico = filtroTrafico === 'todos' || sinAcentos(tr) === sinAcentos(filtroTrafico);
       return matchTrafico && dentroRangoFecha(op);
     });
-  }, [operacionesGlobales, filtroTrafico, fechaInicio, fechaFin, filtrosCompletos, convenioPorId]);
+  }, [operacionesGlobales, filtroTrafico, fechaInicio, fechaFin, filtrosCompletos, convenioPorId, traficoPorId]);
 
   const esAsignada = (op: any) => !!op.referenciaPuentesId;
 
@@ -208,7 +276,7 @@ export const ReferenciasPuentesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, operadoresList, convenioPorId]);
+  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, operadoresList, convenioPorId, traficoPorId, empresaPorId]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -228,9 +296,18 @@ export const ReferenciasPuentesDashboard = () => {
     }
   };
 
+  const colorTrafico = (tr: string) => {
+    const n = sinAcentos(tr);
+    if (n === 'exportacion') return '#f37021';
+    if (n === 'importacion') return '#58a6ff';
+    if (n === 'movimiento') return '#a371f7';
+    if (n === 'mixto') return '#d29922';
+    return '#8b949e';
+  };
   const chipTrafico = (tr: string) => {
-    const color = tr === 'Exportación' ? '#f37021' : tr === 'Importación' ? '#58a6ff' : '#8b949e';
-    return <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', color, border: `1px solid ${color}`, backgroundColor: `${color}1a` }}>{tr}</span>;
+    const texto = tr || '—';
+    const color = colorTrafico(texto);
+    return <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', color, border: `1px solid ${color}`, backgroundColor: `${color}1a` }}>{texto}</span>;
   };
 
   const renderCeldaOps = (op: any, key: string) => {
@@ -330,18 +407,18 @@ export const ReferenciasPuentesDashboard = () => {
   };
 
   const traficoPredominante = useMemo(() => {
-    let imp = 0, exp = 0;
+    const conteo: Record<string, number> = {};
     seleccionadas.forEach(id => {
       const op = operacionesGlobales.find(o => o.id === id);
       if (!op) return;
       const tr = getTrafico(op);
-      if (tr === 'Importación') imp++; else if (tr === 'Exportación') exp++;
+      if (tr && tr !== '—') conteo[tr] = (conteo[tr] || 0) + 1;
     });
-    if (imp && exp) return 'Mixto';
-    if (imp) return 'Importación';
-    if (exp) return 'Exportación';
-    return '—';
-  }, [seleccionadas, operacionesGlobales]);
+    const entradas = Object.entries(conteo).sort((a, b) => b[1] - a[1]);
+    if (entradas.length === 0) return '—';
+    if (entradas.length > 1 && entradas[0][1] === entradas[1][1]) return 'Mixto';
+    return entradas[0][0];
+  }, [seleccionadas, operacionesGlobales, convenioPorId, traficoPorId]);
 
   const handleGuardarReferencia = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -515,10 +592,11 @@ export const ReferenciasPuentesDashboard = () => {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
             <div style={{ minWidth: '200px' }}>
               <label style={labelFiltro}>TRÁFICO</label>
-              <select value={filtroTrafico} onChange={e => { setFiltroTrafico(e.target.value as any); setSeleccionadas([]); }} style={{ ...inputFiltro, cursor: 'pointer' }}>
+              <select value={filtroTrafico} onChange={e => { setFiltroTrafico(e.target.value); setSeleccionadas([]); }} style={{ ...inputFiltro, cursor: 'pointer' }}>
                 <option value="todos">Todos</option>
                 <option value="importacion">Importación</option>
                 <option value="exportacion">Exportación</option>
+                <option value="movimiento">Movimiento</option>
               </select>
             </div>
             <div>
@@ -577,7 +655,7 @@ export const ReferenciasPuentesDashboard = () => {
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
             <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
-              {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}{filtroTrafico !== 'todos' ? ` · ${filtroTrafico === 'importacion' ? 'Importación' : 'Exportación'}` : ''}
+              {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}{filtroTrafico !== 'todos' ? ` · ${capitalizar(filtroTrafico)}` : ''}
             </span>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
