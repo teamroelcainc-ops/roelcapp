@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, getDocs, getCountFromServer, onSnapshot, orderBy, limit, where, startAfter, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
@@ -146,6 +146,20 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [formEdicion, setFormEdicion] = useState<any>({});
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   const [pestañaEdicionActiva, setPestañaEdicionActiva] = useState<string>('general');
+
+  // ✅ NUEVO: conteos EXACTOS desde el servidor (getCountFromServer).
+  //   No descargan documentos (≈1 lectura c/u), así que dan el total real
+  //   aunque la tabla solo tenga 100/500 operaciones cargadas.
+  //   - "Rango": respeta Fecha Inicio/Fin + Cliente seleccionados.
+  //   - "Global": TODA la base de completados, sin ningún filtro.
+  const [conteosServidor, setConteosServidor] = useState<{
+    completados: number | null;   // completados reales (sin falsos)
+    falsos: number | null;
+    total: number | null;         // completados + falsos
+    cargando: boolean;
+    error: string | null;
+    alcance: 'rango' | 'global' | null;
+  }>({ completados: null, falsos: null, total: null, cargando: false, error: null, alcance: null });
 
   // ✅ NUEVO: resolución bidireccional ID ↔ Nombre de catalogo_status_servicio.
   const mapaStatus = useMemo(() => {
@@ -1056,6 +1070,69 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
   const operacionesEnPantalla = operacionesFiltradas.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
+  // ───────────────────────────────────────────────────────────────────────────
+  // ✅ NUEVO: TOTALES EXACTOS desde el servidor con getCountFromServer().
+  //   Cuenta TODOS los documentos que cumplen el filtro SIN descargarlos
+  //   (cuesta ≈1 lectura por consulta), así que da el número real aunque la
+  //   tabla solo tenga cargadas 100/500 operaciones.
+  //
+  //   alcance = 'rango'  → respeta Fecha Inicio/Fin + Cliente seleccionados.
+  //   alcance = 'global' → toda la base de completados, SIN ningún filtro.
+  //
+  //   Los "Falsos" se cuentan por el ID de status cuyo nombre contiene "falso"
+  //   (resuelto desde el catálogo). Completados reales = total − falsos.
+  // ───────────────────────────────────────────────────────────────────────────
+  const idStatusFalso = useMemo(() => {
+    const lista = (catalogosGlobales.statusServicio || []) as any[];
+    const found = lista.find((s: any) => String(s.nombre || '').toLowerCase().includes('falso'));
+    return found ? String(found.id) : '';
+  }, [catalogosGlobales.statusServicio]);
+
+  const calcularTotalesServidor = async (alcance: 'rango' | 'global') => {
+    if (alcance === 'rango' && (!filterFechaInicio || !filterFechaFin)) {
+      alert('Selecciona Fecha Inicio y Fecha Fin para los totales del rango.');
+      return;
+    }
+    setConteosServidor(prev => ({ ...prev, cargando: true, error: null, alcance }));
+    try {
+      const col = collection(db, 'operaciones');
+
+      // Restricciones base según alcance
+      const baseConstraints: any[] = [];
+      if (alcance === 'rango') {
+        if (filterCliente) baseConstraints.push(where('clientePaga', '==', filterCliente));
+        baseConstraints.push(where('fechaServicio', '>=', filterFechaInicio));
+        baseConstraints.push(where('fechaServicio', '<=', filterFechaFin + '\uf8ff'));
+      }
+
+      // 1) TOTAL de completados (los 2 IDs hex)
+      const qTotal = query(col, where('status', 'in', STATUS_COMPLETADOS_VALORES), ...baseConstraints);
+      const snapTotal = await getCountFromServer(qTotal);
+      const total = snapTotal.data().count;
+
+      // 2) FALSOS (status == idStatusFalso). Si no se resolvió el ID, lo dejamos null.
+      let falsos: number | null = null;
+      if (idStatusFalso) {
+        const qFalsos = query(col, where('status', '==', idStatusFalso), ...baseConstraints);
+        const snapFalsos = await getCountFromServer(qFalsos);
+        falsos = snapFalsos.data().count;
+      }
+
+      const completados = falsos !== null ? total - falsos : total;
+      setConteosServidor({ completados, falsos, total, cargando: false, error: null, alcance });
+    } catch (e: any) {
+      const msg = String(e?.message || e || '');
+      console.error('[ServiciosCompletados] Error en conteo de servidor:', e);
+      setConteosServidor(prev => ({
+        ...prev,
+        cargando: false,
+        error: msg.toLowerCase().includes('index')
+          ? 'Falta un índice en Firestore para este conteo. Revisa la consola para el enlace de creación.'
+          : (msg || 'No se pudo calcular el total.'),
+      }));
+    }
+  };
+
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
@@ -1479,9 +1556,70 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
             {hayMasOperaciones && (
               <div style={{ marginTop: '8px', color: '#fb923c', fontSize: '0.78rem' }}>
-                ⚠ Hay más operaciones en este rango sin descargar (usa "+ Cargar más" abajo). Los conteos reflejan solo lo descargado hasta ahora.
+                ⚠ Hay más operaciones en este rango sin descargar (usa "+ Cargar más" abajo). Los conteos de arriba reflejan solo lo descargado hasta ahora.
               </div>
             )}
+
+            {/* ✅ NUEVO: TOTALES EXACTOS desde el servidor (cuenta toda la base sin descargarla) */}
+            <div style={{ marginTop: '14px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
+                <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.9rem' }}>Totales exactos (servidor)</span>
+                <span style={{ color: '#8b949e', fontSize: '0.78rem', flex: '1 1 200px' }}>
+                  Cuenta TODA la base sin importar el límite de descarga. No descarga operaciones.
+                </span>
+                <button
+                  onClick={() => calcularTotalesServidor('rango')}
+                  disabled={conteosServidor.cargando}
+                  style={{ padding: '8px 14px', backgroundColor: conteosServidor.cargando ? '#0d1117' : '#238636', color: conteosServidor.cargando ? '#484f58' : '#fff', border: 'none', borderRadius: '6px', cursor: conteosServidor.cargando ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.82rem' }}
+                  title="Cuenta exactamente los completados del rango/cliente seleccionado"
+                >
+                  Σ Total del rango
+                </button>
+                <button
+                  onClick={() => calcularTotalesServidor('global')}
+                  disabled={conteosServidor.cargando}
+                  style={{ padding: '8px 14px', backgroundColor: conteosServidor.cargando ? '#0d1117' : '#1f6feb', color: conteosServidor.cargando ? '#484f58' : '#fff', border: 'none', borderRadius: '6px', cursor: conteosServidor.cargando ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.82rem' }}
+                  title="Cuenta TODA la base de completados, sin fechas ni cliente"
+                >
+                  Σ Total global (sin filtros)
+                </button>
+              </div>
+
+              {conteosServidor.cargando && (
+                <div style={{ marginTop: '12px', color: '#8b949e', fontSize: '0.85rem' }}>Contando en el servidor...</div>
+              )}
+
+              {conteosServidor.error && !conteosServidor.cargando && (
+                <div style={{ marginTop: '12px', color: '#f85149', fontSize: '0.82rem' }}>{conteosServidor.error}</div>
+              )}
+
+              {!conteosServidor.cargando && !conteosServidor.error && conteosServidor.total !== null && (
+                <div style={{ marginTop: '12px' }}>
+                  <div style={{ color: '#8b949e', fontSize: '0.75rem', marginBottom: '8px' }}>
+                    Resultado: <span style={{ color: '#fb923c', fontWeight: 'bold' }}>{conteosServidor.alcance === 'global' ? 'TODA la base (sin filtros)' : 'Rango / cliente seleccionado'}</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+                    <div style={cardResumenStyle}>
+                      <span style={cardLabelStyle}>Total (real)</span>
+                      <span style={{ ...cardValueStyle, color: '#f0f6fc' }}>{conteosServidor.total}</span>
+                    </div>
+                    <div style={cardResumenStyle}>
+                      <span style={cardLabelStyle}>Completados (real)</span>
+                      <span style={{ ...cardValueStyle, color: '#10b981' }}>{conteosServidor.completados}</span>
+                    </div>
+                    <div style={cardResumenStyle}>
+                      <span style={cardLabelStyle}>Falsos (real)</span>
+                      <span style={{ ...cardValueStyle, color: '#f85149' }}>{conteosServidor.falsos !== null ? conteosServidor.falsos : 'N/D'}</span>
+                    </div>
+                  </div>
+                  {conteosServidor.falsos === null && (
+                    <div style={{ marginTop: '8px', color: '#fb923c', fontSize: '0.78rem' }}>
+                      ⚠ No se encontró un status llamado "Falso" en el catálogo, por eso no se separan los falsos. El "Total" sí es exacto.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
