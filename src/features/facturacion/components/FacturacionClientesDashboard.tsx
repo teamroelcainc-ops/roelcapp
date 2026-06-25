@@ -78,7 +78,7 @@ const LS_COLS_HIST = 'cfgcols_facturacion_hist_v1';
 // OperacionesDashboard / FormularioOperacion. Evita lecturas de Firestore.
 const leerCacheLocal = (alias: string): any[] | null => {
   try {
-    const raw = localStorage.getItem(`cat_v1__${alias}`);
+    const raw = localStorage.getItem(`cat_v1__${alias}`) || localStorage.getItem(`cat_v2__${alias}`);
     if (!raw) return null;
     const obj = JSON.parse(raw);
     return obj && Array.isArray(obj.data) ? obj.data : null;
@@ -94,14 +94,26 @@ const construirMapaCatalogos = (): Record<string, string> => {
   const mapa: Record<string, string> = {};
   const tomarNombre = (item: any): string | null => {
     if (!item || item.id === undefined || item.id === null) return null;
-    const n = item.nombre ?? item.nombreCorto ?? item.label ?? item.descripcion ?? item.name ?? item.titulo;
+    // Empleados (operadores): nombre compuesto firstName + lastNamePaternal
+    const fn = item.firstName ?? item.first_name;
+    const lp = item.lastNamePaternal ?? item.last_name_paternal ?? item.apellidoPaterno;
+    if (fn || lp) {
+      const full = `${fn || ''} ${lp || ''}`.trim();
+      if (full) return full;
+    }
+    // Unidades: el nombre legible va en el campo `unidad`
+    if (item.unidad && typeof item.unidad === 'string' && item.unidad.trim() !== '') return String(item.unidad).trim();
+    // Remolques: nombre + placas
+    const placa = item.placas ?? item.placa;
+    if (item.nombre && placa) return `${item.nombre} ${placa}`.trim();
+    const n = item.nombre ?? item.nombreCorto ?? item.label ?? item.descripcion ?? item.name ?? item.titulo ?? item.moneda ?? item.tipo_operacion;
     return (n !== undefined && n !== null && String(n) !== '') ? String(n) : null;
   };
-  // Catálogos estándar cat_v1__<alias>
+  // Catálogos estándar cat_v1__<alias> y cat_v2__<alias> (OperacionesDashboard usa v2)
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (!key || key.indexOf('cat_v1__') !== 0) continue;
+      if (!key || (key.indexOf('cat_v1__') !== 0 && key.indexOf('cat_v2__') !== 0)) continue;
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       try {
@@ -430,6 +442,13 @@ export const FacturacionClientesDashboard = () => {
   const [facturaCcpForm, setFacturaCcpForm] = useState('');
   // ✅ (C) Status de la factura (formulario "Generar Factura")
   const [statusFacturaForm, setStatusFacturaForm] = useState<string>('Facturado');
+
+  // ✅ Costo adicional al cliente (desde Asignar Operaciones)
+  const [modalCostoAdic, setModalCostoAdic] = useState(false);
+  const [costoAdicOpId, setCostoAdicOpId] = useState('');
+  const [costoAdicMonto, setCostoAdicMonto] = useState('');
+  const [costoAdicConcepto, setCostoAdicConcepto] = useState('');
+  const [guardandoCostoAdic, setGuardandoCostoAdic] = useState(false);
 
   // ──────────────────────────────────────────────────────────────────
   // Formateadores
@@ -971,6 +990,46 @@ export const FacturacionClientesDashboard = () => {
     const op = operacionesGlobales.find(o => o.id === id);
     if (op && esFacturada(op)) return; // las facturadas no se seleccionan
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
+  };
+
+  // ✅ Abrir / guardar costo adicional al cliente en una operación seleccionada.
+  const abrirModalCostoAdic = () => {
+    setCostoAdicOpId(seleccionadas.length > 0 ? seleccionadas[0] : '');
+    setCostoAdicMonto('');
+    setCostoAdicConcepto('');
+    setModalCostoAdic(true);
+  };
+
+  const handleGuardarCostoAdic = async () => {
+    const op = operacionesGlobales.find(o => o.id === costoAdicOpId);
+    if (!op) return alert('Selecciona una operación.');
+    const monto = Number(costoAdicMonto);
+    if (!monto || isNaN(monto)) return alert('Captura un monto válido (puede ser negativo para un descuento).');
+    setGuardandoCostoAdic(true);
+    try {
+      const nuevoCargos = (Number(op.cargosAdicionales) || 0) + monto;
+      const { subtotal, dol, pes, conv } = calcularConversionCliente({ ...op, cargosAdicionales: nuevoCargos });
+      const concepto = costoAdicConcepto.trim();
+      const updates: any = {
+        cargosAdicionales: nuevoCargos,
+        subtotalCliente: subtotal,
+        dolaresCliente: dol,
+        pesosCliente: pes,
+        conversionCliente: conv,
+      };
+      if (concepto) {
+        const obsPrev = String(op.observacionesCobrar || '').trim();
+        updates.observacionesCobrar = `${obsPrev ? obsPrev + ' | ' : ''}Costo adicional: ${concepto} (${monto >= 0 ? '+' : ''}${monto})`;
+      }
+      await setDoc(doc(db, 'operaciones', String(op.id)), updates, { merge: true });
+      setOperacionesGlobales(prev => prev.map(o => o.id === op.id ? { ...o, ...updates } : o));
+      setModalCostoAdic(false);
+    } catch (e) {
+      console.error('Error guardando costo adicional:', e);
+      alert('No se pudo guardar el costo adicional.');
+    } finally {
+      setGuardandoCostoAdic(false);
+    }
   };
 
   const resumenSeleccion = useMemo(() => {
@@ -1605,6 +1664,11 @@ export const FacturacionClientesDashboard = () => {
                   color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
                 ⬇ Exportar Excel
               </button>
+              <button disabled={seleccionadas.length === 0} onClick={abrirModalCostoAdic}
+                style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #58a6ff', backgroundColor: 'transparent', color: seleccionadas.length === 0 ? '#484f58' : '#58a6ff', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', cursor: seleccionadas.length === 0 ? 'not-allowed' : 'pointer' }}
+                title="Agregar un costo adicional al cliente en una operación seleccionada">
+                ➕ Costo adicional
+              </button>
               <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => { setStatusFacturaForm('Facturado'); setModalAbierto(true); }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                 Generar Factura ({seleccionadas.length})
@@ -1862,6 +1926,59 @@ export const FacturacionClientesDashboard = () => {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
               <button onClick={guardarConfigColumnasOps} disabled={guardandoCols} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: guardandoCols ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoCols ? 0.7 : 1 }}>{guardandoCols ? 'Guardando...' : 'Guardar para todos'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════ MODAL COSTO ADICIONAL (Cliente) ════════════════════ */}
+      {modalCostoAdic && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1700, padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '520px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '16px' }}>
+              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Costo adicional al cliente</h2>
+              <button onClick={() => setModalCostoAdic(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.82rem', marginBottom: '16px' }}>
+              Se suma a los <b style={{ color: '#c9d1d9' }}>Cargos Adicionales</b> del cliente en la operación elegida y se recalcula su subtotal/conversión. Usa un monto negativo para aplicar un descuento.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>OPERACIÓN (seleccionadas)</label>
+                <select value={costoAdicOpId} onChange={e => setCostoAdicOpId(e.target.value)}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box' }}>
+                  <option value="">-- Selecciona una operación --</option>
+                  {seleccionadas.map(id => {
+                    const o = operacionesGlobales.find(x => x.id === id);
+                    const ref = o?.numReferencia || o?.referencia || o?.ref || id.substring(0, 6);
+                    return <option key={id} value={id}>{ref}</option>;
+                  })}
+                </select>
+              </div>
+              {(() => {
+                const o = operacionesGlobales.find(x => x.id === costoAdicOpId);
+                if (!o) return null;
+                const mm = obtenerMontoOperacion(o);
+                return (
+                  <div style={{ backgroundColor: '#010409', border: '1px dashed #30363d', borderRadius: '8px', padding: '12px 14px', fontSize: '0.82rem', color: '#8b949e' }}>
+                    Cargos actuales: <b style={{ color: '#c9d1d9' }}>{formatoMoneda(o.cargosAdicionales)}</b> · Conversión actual: <b style={{ color: '#3fb950' }}>{formatoMoneda(mm.conv)}</b>
+                  </div>
+                );
+              })()}
+              <div>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>MONTO ADICIONAL (en la moneda del convenio)</label>
+                <input type="number" step="any" value={costoAdicMonto} onChange={e => setCostoAdicMonto(e.target.value)} placeholder="Ej. 150.00"
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.05rem', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>CONCEPTO (opcional)</label>
+                <input type="text" value={costoAdicConcepto} onChange={e => setCostoAdicConcepto(e.target.value)} placeholder="Ej. Estadía, maniobras, demora..."
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px', marginTop: '20px' }}>
+              <button onClick={() => setModalCostoAdic(false)} disabled={guardandoCostoAdic} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={handleGuardarCostoAdic} disabled={guardandoCostoAdic || !costoAdicOpId} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: (guardandoCostoAdic || !costoAdicOpId) ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: (guardandoCostoAdic || !costoAdicOpId) ? 0.7 : 1 }}>{guardandoCostoAdic ? 'Guardando...' : 'Agregar costo'}</button>
             </div>
           </div>
         </div>
