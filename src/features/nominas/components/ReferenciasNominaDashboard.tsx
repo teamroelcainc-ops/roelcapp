@@ -776,16 +776,27 @@ export const ReferenciasNominaDashboard = () => {
     }
 
     let cancelado = false;
-    const mapearOp = (op: any) => ({
-      id: op.id,
-      ref: op.ref || op.id?.substring(0, 6),
-      fecha: op.fechaServicio || op.fecha || '',
-      cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '-',
-      tipoServicio: op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-',
-      sueldo: Number(op.sueldoTotal || op.sueldoOperador || 0),
-      sueldoExtra: Number(op.sueldoExtra || 0),
-      importe: Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0),
-    });
+    const mapearOp = (op: any) => {
+      const sueldoTotal = Number(op.sueldoTotal || op.sueldoOperador || 0);
+      return {
+        id: op.id,
+        ref: op.ref || op.id?.substring(0, 6),
+        fecha: op.fechaServicio || op.fecha || '',
+        cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '-',
+        tipoServicio: op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-',
+        sueldo: sueldoTotal,
+        sueldoExtra: Number(op.sueldoExtra || 0),
+        // El importe que suma para el Subtotal Referencias es el sueldoTotal de la operación.
+        importe: sueldoTotal,
+      };
+    };
+
+    // operacionesIds puede venir como ARREGLO o como STRING separado por comas.
+    const parsearIds = (val: any): string[] => {
+      if (Array.isArray(val)) return val.map((x: any) => String(x).trim()).filter(Boolean);
+      if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean);
+      return [];
+    };
 
     (async () => {
       setCargandoOpsFicha(true);
@@ -802,11 +813,11 @@ export const ReferenciasNominaDashboard = () => {
         if (nominaViendo.consecutivo) {
           agregar(await getDocs(query(collection(db, 'operaciones'), where('referenciaNominaConsecutivo', '==', nominaViendo.consecutivo))));
         }
-        // 4) por operacionesIds (en bloques de 10 por el límite de 'in')
-        if (encontradas.length === 0 && Array.isArray(nominaViendo.operacionesIds) && nominaViendo.operacionesIds.length > 0) {
-          const ids: string[] = nominaViendo.operacionesIds.filter(Boolean);
-          for (let i = 0; i < ids.length; i += 10) {
-            const bloque = ids.slice(i, i + 10);
+        // 4) por operacionesIds (acepta arreglo o string con comas; en bloques de 10)
+        const idsNomina = parsearIds(nominaViendo.operacionesIds);
+        if (encontradas.length === 0 && idsNomina.length > 0) {
+          for (let i = 0; i < idsNomina.length; i += 10) {
+            const bloque = idsNomina.slice(i, i + 10);
             if (bloque.length) agregar(await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', bloque))));
           }
         }
@@ -824,14 +835,18 @@ export const ReferenciasNominaDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nominaViendo]);
 
-  // ✅ NUEVO: subtotal de las referencias mostradas en la Ficha.
-  //   Usa subtotalPagar si viene > 0; si no, suma el detalle cargado; y si
-  //   tampoco hay, lo deriva de (Subtotal a Pagar − Extra).
+  // ✅ Subtotal de las referencias mostradas en la Ficha.
+  //   Regla pedida: SUMAR el sueldoTotal de TODAS las operaciones ligadas a la
+  //   nómina. Por eso, si hay operaciones cargadas, se usa esa suma (autoridad
+  //   real del dato). Si no hay operaciones cargadas, se respalda con el campo
+  //   guardado subtotalPagar y, en último caso, con (Subtotal a Pagar − Extra).
   const subtotalReferenciasFicha = useMemo(() => {
     if (!nominaViendo) return 0;
+    if (opsFicha.length > 0) {
+      return opsFicha.reduce((s: number, o: any) => s + Number(o.importe ?? o.sueldo ?? o.sueldoTotal ?? 0), 0);
+    }
     const guardado = Number(nominaViendo.subtotalPagar || 0);
     if (guardado > 0) return guardado;
-    if (opsFicha.length > 0) return opsFicha.reduce((s: number, o: any) => s + Number(o.importe ?? o.sueldo ?? 0), 0);
     return Math.max(Number(nominaViendo.subtotalAPagar || 0) - Number(nominaViendo.extras || 0), 0);
   }, [nominaViendo, opsFicha]);
 
