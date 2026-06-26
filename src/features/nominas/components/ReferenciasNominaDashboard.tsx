@@ -129,6 +129,79 @@ export const ReferenciasNominaDashboard = () => {
       return String(b.ref || '').localeCompare(String(a.ref || ''));
     });
 
+  // operacionesIds puede venir como ARREGLO o como STRING separado por comas.
+  const parsearIdsNomina = (val: any): string[] => {
+    if (Array.isArray(val)) return val.map((x: any) => String(x).trim()).filter(Boolean);
+    if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean);
+    return [];
+  };
+
+  // Normaliza una operación a la forma que usan la Ficha y el Recibo.
+  const mapearOpDetalle = (op: any) => {
+    const sueldoTotal = Number(op.sueldoTotal || op.sueldoOperador || 0);
+    return {
+      id: op.id,
+      ref: op.ref || op.id?.substring(0, 6),
+      fecha: op.fechaServicio || op.fecha || '',
+      clientePagaId: op.clientePaga || op.cliente || '',
+      cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '',
+      tipoServicio: op.tarifaLabel || op.tarifarioLabel || op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-',
+      sueldo: sueldoTotal,
+      sueldoExtra: Number(op.sueldoExtra || 0),
+      // El importe que suma para el Subtotal Referencias es el sueldoTotal.
+      importe: sueldoTotal,
+    };
+  };
+
+  // ✅ Carga TODAS las operaciones (referencias) ligadas a una nómina.
+  //   Combina TODAS las fuentes y deduplica, para no perder ninguna referencia:
+  //     1) operacionesGuardadas (si la nómina ya trae el detalle, se usa directo)
+  //     2) operaciones con referenciaNominaId === nómina.id
+  //     3) operaciones con referenciaNominaConsecutivo === consecutivo
+  //     4) operacionesIds (arreglo o string), buscadas por su ID en bloques de 10
+  const cargarOperacionesDeNomina = async (nom: any): Promise<any[]> => {
+    if (!nom) return [];
+    if (Array.isArray(nom.operacionesGuardadas) && nom.operacionesGuardadas.length > 0) {
+      return ordenarOpsRecientes(nom.operacionesGuardadas);
+    }
+    const vistos = new Set<string>();
+    const encontradas: any[] = [];
+    const agregar = (snap: any) => snap.docs.forEach((d: any) => {
+      if (!vistos.has(d.id)) { vistos.add(d.id); encontradas.push({ id: d.id, ...d.data() }); }
+    });
+
+    if (nom.id) {
+      agregar(await getDocs(query(collection(db, 'operaciones'), where('referenciaNominaId', '==', nom.id))));
+    }
+    if (nom.consecutivo) {
+      agregar(await getDocs(query(collection(db, 'operaciones'), where('referenciaNominaConsecutivo', '==', nom.consecutivo))));
+    }
+    // SIEMPRE se combinan los operacionesIds (no solo cuando lo anterior viene vacío),
+    // así no se pierden referencias cuando el vínculo está parcial.
+    const idsNomina = parsearIdsNomina(nom.operacionesIds);
+    for (let i = 0; i < idsNomina.length; i += 10) {
+      const bloque = idsNomina.slice(i, i + 10);
+      if (bloque.length) agregar(await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', bloque))));
+    }
+
+    return ordenarOpsRecientes(encontradas.map(mapearOpDetalle));
+  };
+
+  // ✅ Reconstruye los totales de una nómina (las importadas vienen con
+  //   subtotalPagar/totalDeducciones/total/totalAPagar en 0). Si hay operaciones
+  //   cargadas, el Subtotal Referencias = suma del sueldoTotal de esas operaciones.
+  const reconstruirTotales = (n: any, ops?: any[]) => {
+    if (!n) return { subRef: 0, subAPagar: 0, totalDed: 0, neto: 0, totalAPagar: 0 };
+    const subRef = (ops && ops.length > 0)
+      ? ops.reduce((s: number, o: any) => s + aNum(o.importe ?? o.sueldo ?? o.sueldoTotal), 0)
+      : (aNum(n.subtotalPagar) > 0 ? aNum(n.subtotalPagar) : Math.max(aNum(n.subtotalAPagar) - aNum(n.extras), 0));
+    const subAPagar = aNum(n.subtotalAPagar) > 0 ? aNum(n.subtotalAPagar) : (subRef + aNum(n.extras));
+    const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot));
+    const neto = aNum(n.total) > 0 ? aNum(n.total) : (subAPagar - totalDed);
+    const totalAPagar = aNum(n.totalAPagar) > 0 ? aNum(n.totalAPagar) : (neto + aNum(n.depositoGastos) + aNum(n.otrosDepositos));
+    return { subRef, subAPagar, totalDed, neto, totalAPagar };
+  };
+
   useEffect(() => {
     // ✅ CORREGIDO: NO usar orderBy('createdAt') en la query. Firestore EXCLUYE
     //   los documentos que NO tienen ese campo, por lo que las nóminas viejas o
@@ -625,15 +698,28 @@ export const ReferenciasNominaDashboard = () => {
   };
 
   // ── Recibo de Nómina (PDF) generado desde React vía impresión del navegador ──
-  const generarReciboNomina = (nom: any) => {
+  const generarReciboNomina = async (nom: any) => {
     const m = (v: any) => '$' + (Number(v) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const esc = (s: any) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const trips = Array.isArray(nom.operacionesGuardadas) ? nom.operacionesGuardadas : [];
+
+    // ✅ Carga las operaciones reales (igual que la Ficha) para que el recibo
+    //   muestre el detalle aunque la nómina venga importada sin operacionesGuardadas.
+    let trips: any[] = [];
+    try {
+      trips = await cargarOperacionesDeNomina(nom);
+    } catch (e) {
+      console.error('[Recibo] No se pudieron cargar las operaciones:', e);
+      trips = Array.isArray(nom.operacionesGuardadas) ? nom.operacionesGuardadas : [];
+    }
+    // ✅ Totales reconstruidos (las importadas traen 0 en varios campos).
+    const tot = reconstruirTotales(nom, trips);
+    const operadorNombreRec = getNombreOperador(nom.operadorNombre || nom.operadorId);
+
     const filas = trips.map((t: any) => `
         <tr>
           <td>${esc(t.ref || '-')}</td>
           <td>${t.fecha ? esc(formatearFechaSpanish(t.fecha)) : '-'}</td>
-          <td>${esc(t.cliente || '-')}</td>
+          <td>${esc(t.cliente || getNombreEmpresa(t.clientePagaId) || '-')}</td>
           <td>${esc(t.tipoServicio || '-')}</td>
           <td>${m(t.importe ?? t.sueldo ?? 0)}</td>
         </tr>`).join('');
@@ -683,7 +769,7 @@ export const ReferenciasNominaDashboard = () => {
       </div>
       <div class="header-info">
         <h2>RECIBO DE NÓMINA</h2>
-        <p><strong>Operador:</strong> ${esc(nom.operadorNombre || '-')}</p>
+        <p><strong>Operador:</strong> ${esc(operadorNombreRec || '-')}</p>
         <p><strong>Periodo:</strong> ${esc(formatearFechaSpanish(nom.fechaInicio))} al ${esc(formatearFechaSpanish(nom.fechaFin))}</p>
         <p><strong>Fecha de Pago:</strong> ${esc(formatearFechaSpanish(nom.fechaPago))}</p>
         <p><strong>Referencia:</strong> ${esc(nom.consecutivo || '-')}</p>
@@ -695,11 +781,11 @@ export const ReferenciasNominaDashboard = () => {
         <h3>Percepciones</h3>
         <div class="row"><span>Sueldo Base</span><span>${m(sueldoBase)}</span></div>
         <div class="row"><span>Diferencia Aplicable</span><span>${m(nom.diferenciaAplicable)}</span></div>
-        <div class="row"><span>Subtotal</span><span>${m(nom.subtotalPagar)}</span></div>
+        <div class="row"><span>Subtotal</span><span>${m(tot.subRef)}</span></div>
         <div class="row"><span>Extras</span><span>${m(nom.extras)}</span></div>
         <div class="row"><span>Otros Gastos</span><span>${m(nom.depositoGastos)}</span></div>
         <div class="row"><span>Otros Depositos</span><span>${m(nom.otrosDepositos)}</span></div>
-        <div class="row total-row"><span>Total Bruto</span><span>${m(nom.subtotalAPagar)}</span></div>
+        <div class="row total-row"><span>Total Bruto</span><span>${m(tot.subAPagar)}</span></div>
       </div>
       <div class="card">
         <h3>Deducciones</h3>
@@ -709,7 +795,7 @@ export const ReferenciasNominaDashboard = () => {
         <div class="row"><span>Fonacot</span><span>${m(nom.fonacot)}</span></div>
         <div class="row"><span>Ahorro</span><span>${m(nom.ahorro)}</span></div>
         <div class="row"><span>Abono a Préstamo</span><span>${m(nom.pagoPrestamo)}</span></div>
-        <div class="row total-row"><span>Total Deducciones</span><span>${m(nom.totalDeducciones)}</span></div>
+        <div class="row total-row"><span>Total Deducciones</span><span>${m(tot.totalDed)}</span></div>
       </div>
       <div class="card">
         <h3>Saldos Informativos</h3>
@@ -730,7 +816,7 @@ export const ReferenciasNominaDashboard = () => {
     </div>
 
     <div class="footer-total">
-      <div class="total-box"><p>Neto a Recibir</p><h2>${m(nom.totalAPagar)}</h2></div>
+      <div class="total-box"><p>Neto a Recibir</p><h2>${m(tot.totalAPagar)}</h2></div>
     </div>
   </div>`;
 
@@ -791,69 +877,16 @@ export const ReferenciasNominaDashboard = () => {
 
   useEffect(() => { setPaginaActual(1); }, [busquedaHistorial, filtroEstadoHist]);
 
-  // ✅ NUEVO: al abrir la Ficha, carga el detalle de operaciones (referencias)
-  //   pagadas en la nómina. Orden de preferencia para obtenerlas:
-  //     1) nómina.operacionesGuardadas (detalle ya guardado al generar).
-  //     2) operaciones ligadas por referenciaNominaId === nómina.id.
-  //     3) operaciones ligadas por referenciaNominaConsecutivo === consecutivo.
-  //     4) nómina.operacionesIds (busca esos documentos por su ID, en bloques de 10).
+  // ✅ Al abrir la Ficha, carga el detalle de operaciones (referencias) con la
+  //   función compartida (combina todas las fuentes y deduplica).
   useEffect(() => {
     if (!nominaViendo) { setOpsFicha([]); return; }
-
-    if (Array.isArray(nominaViendo.operacionesGuardadas) && nominaViendo.operacionesGuardadas.length > 0) {
-      setOpsFicha(ordenarOpsRecientes(nominaViendo.operacionesGuardadas));
-      return;
-    }
-
     let cancelado = false;
-    const mapearOp = (op: any) => {
-      const sueldoTotal = Number(op.sueldoTotal || op.sueldoOperador || 0);
-      return {
-        id: op.id,
-        ref: op.ref || op.id?.substring(0, 6),
-        fecha: op.fechaServicio || op.fecha || '',
-        clientePagaId: op.clientePaga || op.cliente || '',
-        cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '',
-        tipoServicio: op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-',
-        sueldo: sueldoTotal,
-        sueldoExtra: Number(op.sueldoExtra || 0),
-        // El importe que suma para el Subtotal Referencias es el sueldoTotal de la operación.
-        importe: sueldoTotal,
-      };
-    };
-
-    // operacionesIds puede venir como ARREGLO o como STRING separado por comas.
-    const parsearIds = (val: any): string[] => {
-      if (Array.isArray(val)) return val.map((x: any) => String(x).trim()).filter(Boolean);
-      if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean);
-      return [];
-    };
-
     (async () => {
       setCargandoOpsFicha(true);
       try {
-        const vistos = new Set<string>();
-        const encontradas: any[] = [];
-        const agregar = (snap: any) => snap.docs.forEach((d: any) => {
-          if (!vistos.has(d.id)) { vistos.add(d.id); encontradas.push({ id: d.id, ...d.data() }); }
-        });
-
-        // 2) por referenciaNominaId
-        agregar(await getDocs(query(collection(db, 'operaciones'), where('referenciaNominaId', '==', nominaViendo.id))));
-        // 3) por referenciaNominaConsecutivo
-        if (nominaViendo.consecutivo) {
-          agregar(await getDocs(query(collection(db, 'operaciones'), where('referenciaNominaConsecutivo', '==', nominaViendo.consecutivo))));
-        }
-        // 4) por operacionesIds (acepta arreglo o string con comas; en bloques de 10)
-        const idsNomina = parsearIds(nominaViendo.operacionesIds);
-        if (encontradas.length === 0 && idsNomina.length > 0) {
-          for (let i = 0; i < idsNomina.length; i += 10) {
-            const bloque = idsNomina.slice(i, i + 10);
-            if (bloque.length) agregar(await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', bloque))));
-          }
-        }
-
-        if (!cancelado) setOpsFicha(ordenarOpsRecientes(encontradas.map(mapearOp)));
+        const ops = await cargarOperacionesDeNomina(nominaViendo);
+        if (!cancelado) setOpsFicha(ops);
       } catch (e) {
         console.error('[Nómina] Error al cargar operaciones de la ficha:', e);
         if (!cancelado) setOpsFicha([]);
@@ -861,38 +894,22 @@ export const ReferenciasNominaDashboard = () => {
         if (!cancelado) setCargandoOpsFicha(false);
       }
     })();
-
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nominaViendo]);
 
-  // ✅ Subtotal de las referencias mostradas en la Ficha.
-  //   Regla pedida: SUMAR el sueldoTotal de TODAS las operaciones ligadas a la
-  //   nómina. Por eso, si hay operaciones cargadas, se usa esa suma (autoridad
-  //   real del dato). Si no hay operaciones cargadas, se respalda con el campo
-  //   guardado subtotalPagar y, en último caso, con (Subtotal a Pagar − Extra).
-  const subtotalReferenciasFicha = useMemo(() => {
-    if (!nominaViendo) return 0;
-    if (opsFicha.length > 0) {
-      return opsFicha.reduce((s: number, o: any) => s + Number(o.importe ?? o.sueldo ?? o.sueldoTotal ?? 0), 0);
-    }
-    const guardado = Number(nominaViendo.subtotalPagar || 0);
-    if (guardado > 0) return guardado;
-    return Math.max(Number(nominaViendo.subtotalAPagar || 0) - Number(nominaViendo.extras || 0), 0);
-  }, [nominaViendo, opsFicha]);
+  // ✅ Subtotal de las referencias mostradas en la Ficha (suma del sueldoTotal
+  //   de las operaciones cargadas; con respaldos si no hay detalle).
+  const subtotalReferenciasFicha = useMemo(
+    () => reconstruirTotales(nominaViendo, opsFicha).subRef,
+    [nominaViendo, opsFicha]
+  );
 
-  // ✅ Totales reconstruidos para la cuadrícula de la Ficha (las nóminas
-  //   importadas vienen con totalDeducciones/total/totalAPagar en 0). Se usa el
-  //   valor guardado si es > 0; si no, se reconstruye desde sus componentes.
-  const fichaTotales = useMemo(() => {
-    const n = nominaViendo;
-    if (!n) return { subAPagar: 0, totalDed: 0, neto: 0, totalAPagar: 0 };
-    const subAPagar = aNum(n.subtotalAPagar) > 0 ? aNum(n.subtotalAPagar) : (subtotalReferenciasFicha + aNum(n.extras));
-    const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot));
-    const neto = aNum(n.total) > 0 ? aNum(n.total) : (subAPagar - totalDed);
-    const totalAPagar = aNum(n.totalAPagar) > 0 ? aNum(n.totalAPagar) : (neto + aNum(n.depositoGastos) + aNum(n.otrosDepositos));
-    return { subAPagar, totalDed, neto, totalAPagar };
-  }, [nominaViendo, subtotalReferenciasFicha]);
+  // ✅ Totales reconstruidos para la cuadrícula de la Ficha.
+  const fichaTotales = useMemo(
+    () => reconstruirTotales(nominaViendo, opsFicha),
+    [nominaViendo, opsFicha]
+  );
 
   // Marcar una nómina como Pagada / Pendiente
   const handleTogglePagoNomina = async (e: React.MouseEvent, nom: any) => {
