@@ -7,8 +7,7 @@ import {
   writeBatch, 
   updateDoc,
   doc, 
-  limit,
-  orderBy
+  limit
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -97,9 +96,20 @@ export const ReferenciasNominaDashboard = () => {
   };
 
   useEffect(() => {
-    const qNominas = query(collection(db, 'referencias_nomina'), orderBy('createdAt', 'desc'), limit(400));
+    // ✅ CORREGIDO: NO usar orderBy('createdAt') en la query. Firestore EXCLUYE
+    //   los documentos que NO tienen ese campo, por lo que las nóminas viejas o
+    //   cargadas sin "createdAt" no aparecían (la lista salía vacía). Ahora se
+    //   trae sin orderBy y se ordena en memoria: por createdAt (desc) y, si
+    //   falta, por fechaPago como respaldo.
+    const qNominas = query(collection(db, 'referencias_nomina'), limit(400));
     const unSubNominas = onSnapshot(qNominas, (snap) => {
-      setNominasGlobales(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+      const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      docs.sort((a: any, b: any) => {
+        const ka = String(a.createdAt || a.fechaPago || '');
+        const kb = String(b.createdAt || b.fechaPago || '');
+        return kb.localeCompare(ka);
+      });
+      setNominasGlobales(docs);
     });
     return () => unSubNominas();
   }, []);
