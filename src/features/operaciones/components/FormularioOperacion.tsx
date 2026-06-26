@@ -3,16 +3,13 @@ import { doc, getDoc, updateDoc, collection, getDocs, setDoc } from 'firebase/fi
 import { db, storage, auth } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
 import { calcularStatusDinamico } from '../config/statusRules';
-// ✅ NUEVO: subida de documentos por campo (Storage) + modal genérico "otros documentos"
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 
-// ✅ NUEVO: formularios de catálogo reutilizados por los botones "+"
 import { FormularioEmpresa } from '../../empresas/components/FormularioEmpresa';
 import { FormularioRemolque } from '../../remolques/components/FormularioRemolque';
 import { FormularioUnidad } from '../../unidades/components/FormularioUnidad';
 import { EmployeeForm } from '../../empleados/components/EmployeeForm';
-// ✅ NUEVO: módulo de Costos Adicionales (se abre como modal enfocado en la operación)
 import { CostosAdicionalesDashboard } from '../../costosAdicionales/CostosAdicionalesDashboard';
 
 interface FormProps {
@@ -27,13 +24,8 @@ interface FormProps {
 
 type TabType = 'general' | 'pedimento' | 'manifiesto' | 'unidad' | 'cobrar';
 
-// ✅ NUEVO: orden/listado completo de pestañas. Es el default cuando el flujo
-// no trae `pestanasVisibles` configurado (campo ausente => mostrar todas).
 const TODAS_LAS_PESTANAS: TabType[] = ['general', 'pedimento', 'manifiesto', 'unidad', 'cobrar'];
 
-// ✅ NUEVO: mapa campo -> pestaña (espejo de CAMPOS_OPERACION_COMPLETOS del Configurador).
-// Sirve para saber si un campo de `camposObligatorios` pertenece a una pestaña oculta:
-// en ese caso se ignora por completo (ni se ve ni se exige), aunque esté marcado como obligatorio.
 const CAMPO_TAB_MAP: Record<string, TabType> = {
   tipoOperacionId: 'general', fechaServicio: 'general', fechaCita: 'general',
   clientePaga: 'general', convenio: 'general', numeroRemolque: 'general',
@@ -58,26 +50,18 @@ const CAMPO_TAB_MAP: Record<string, TabType> = {
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
-// ✅ NUEVO: en `tarifas_gastos_incluidos`, el gasto que representa el SUELDO del operador.
-// Al elegir el Convenio (Tarifa) se autollena "Sueldo Operador ($)" con el `monto` de ese gasto.
 const ID_GASTO_SUELDO = '25b772d3';
 
-// ✅ Regla: este tipo de operación obliga a un proveedor fijo
 const TIPO_OP_PROVEEDOR_FIJO = '8ec24dfe';
 const PROVEEDOR_FIJO_ID = '349123';
-// Costo de manifiesto que se precarga al seleccionar el Proveedor de Servicios.
-// Cámbialo aquí si el valor base cambia; el usuario igual puede editarlo en el campo.
 const COSTO_MANIFIESTO_DEFAULT = 8.52;
 
-// ✅ NUEVO: tipos de empresa por string legible (lo que FormularioEmpresa entiende para preseleccionar)
 const TIPO_EMP_CLIENTE_PAGA      = 'Cliente (Paga)';
 const TIPO_EMP_CLIENTE_MERCANCIA = 'Cliente (Mercancía)';
 const TIPO_EMP_ORIGEN_DESTINO    = 'Origen / Destino';
 const TIPO_EMP_PROV_TRANSPORTE   = 'Proveedor (Transporte)';
 const TIPO_EMP_PROV_SERVICIOS    = 'Proveedor (Servicios)';
 
-// ✅ NUEVO: tipos sugeridos para el botón genérico "Subir Documentos" de la operación.
-// El tipo elegido se usa como nombre de subcarpeta (operaciones/<Ref>/<tipo>/archivo).
 export const TIPOS_DOCUMENTO_OPERACION = [
   'Otros documentos',
   'Factura',
@@ -90,17 +74,12 @@ export const TIPOS_DOCUMENTO_OPERACION = [
   'Otro',
 ];
 
-// Quita caracteres no válidos para rutas de Storage (mismo criterio que DocumentoUploadModal)
 const sanitizarRutaOp = (s: string) =>
   String(s || '').trim().replace(/[\/\\:*?"<>|#]+/g, '').replace(/\s+/g, ' ').trim();
 
-// Referencia legible de la operación (carpeta raíz dentro de "operaciones/")
 const referenciaDeOperacion = (idOp: string, ref?: string): string =>
   (ref && String(ref).trim()) || (idOp ? String(idOp).substring(0, 6) : 'Operacion');
 
-// ✅ NUEVO: sube UN archivo de la operación a Storage en una carpeta con el nombre del campo
-// y lo registra en la colección unificada "documentos" (mismo formato que DocumentoUploadModal).
-// Estructura: operaciones / <Referencia> / <NombreCampo> / <archivo>
 const subirDocumentoOperacion = async (
   file: File,
   idOp: string,
@@ -140,9 +119,6 @@ const subirDocumentoOperacion = async (
 };
 
 
-// ============================================================
-// ICONOS SVG
-// ============================================================
 const IconBriefcase     = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>;
 const IconFileText      = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
 const IconTruck         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
@@ -168,11 +144,8 @@ const IconArrowRight    = (p: { size?: number }) => <svg width={p.size || 18} he
 const IconPlus          = (p: { size?: number }) => <svg width={p.size || 16} height={p.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 
 const tipoTarifarioCache = new Map<string, any>();
-const traficoCache = new Map<string, string>(); // id -> nombre (cache de sesión)
+const traficoCache = new Map<string, string>();
 
-// ============================================================
-// ✅ NUEVO: Botón "+" reutilizable que se coloca al lado de un input de búsqueda
-// ============================================================
 const BotonAgregar = ({ onClick, title }: { onClick: () => void; title: string }) => (
   <button
     type="button"
@@ -199,10 +172,6 @@ const BotonAgregar = ({ onClick, title }: { onClick: () => void; title: string }
   </button>
 );
 
-// ============================================================
-// ✅ NUEVO: Campo de archivo con indicador visible de carga
-// Muestra un check verde + nombre del archivo cuando hay uno seleccionado.
-// ============================================================
 const CampoArchivo = ({
   label,
   file,
@@ -219,8 +188,6 @@ const CampoArchivo = ({
   const cargado = !!file;
   const [arrastrando, setArrastrando] = useState(false);
 
-  // Al soltar un archivo construimos un evento sintético compatible con el mismo
-  // handler del <input type="file"> (que solo lee e.target.files[0]).
   const onDrop = (e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -231,8 +198,6 @@ const CampoArchivo = ({
     }
   };
 
-  // ✅ NUEVO: quita el archivo cargado (sirve igual si se eligió con clic o arrastrando).
-  // Enviamos un evento sintético con files vacío para que el handler del padre lo limpie.
   const quitarArchivo = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -262,7 +227,6 @@ const CampoArchivo = ({
         <span style={{ flex: 1, minWidth: 0, fontSize: '0.85rem', fontWeight: cargado ? 600 : 400, color: arrastrando ? '#fb923c' : (cargado ? '#3fb950' : '#8b949e'), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {arrastrando ? 'Suelta el archivo aquí…' : (cargado ? `✓ ${file!.name}` : 'Haz clic o arrastra un archivo aquí')}
         </span>
-        {/* ✅ NUEVO: botón para quitar el archivo cargado */}
         {cargado && !arrastrando && (
           <button
             type="button"
@@ -279,7 +243,6 @@ const CampoArchivo = ({
   );
 };
 
-// Tipo de catálogo que puede crear el modal "+"
 type CatalogoCreable =
   | { tipo: 'empresa'; tipoEmpresaPreseleccionado: string; coleccion: 'empresas' }
   | { tipo: 'remolque'; coleccion: 'remolques' }
@@ -289,68 +252,49 @@ type CatalogoCreable =
 export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, onRestore, catalogosCacheados, onSave }: FormProps) => {
   const [pestañaActiva, setPestañaActiva] = useState<TabType>('general');
   const [cargando, setCargando] = useState(false);
-  // ✅ NUEVO: control del modal de Costos Adicionales (enfocado en esta operación)
   const [mostrarCostosAdic, setMostrarCostosAdic] = useState(false);
-  // ✅ NUEVO: control del modal genérico "Subir Documentos" (otros documentos)
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
-  // ✅ ¿Puede editar la Referencia? Es ADMIN (acceso total / Bypass) o alguno de
-  //    sus roles tiene el permiso "Editar Referencia" (configurable en Roles).
   const [puedeEditarRef, setPuedeEditarRef] = useState(false);
-  // ✅ NUEVO (punto 3): referencia editable. En alta se genera al guardar (servicio).
   const [referencia, setReferencia] = useState('');
 
   const [statusPreview, setStatusPreview] = useState<string>('');
   const [statusError, setStatusError] = useState<string | null>(null);
 
-  // ✅ NUEVO: campos requeridos para avanzar al siguiente status automático.
-  // Cada item: { campo, etiqueta, cumplido }. Se muestra en el panel lateral.
   const [camposSiguienteStatus, setCamposSiguienteStatus] = useState<{ campo: string; etiqueta: string; cumplido: boolean }[]>([]);
   const [nombreSiguienteAuto, setNombreSiguienteAuto] = useState<string>('');
 
-  // ✅ NUEVO: configuración del FORMULARIO por flujo (config_flujos_operacion/{configId}).
   const [pestanasVisiblesConfig, setPestanasVisiblesConfig] = useState<TabType[] | null>(null);
   const [camposObligatoriosConfig, setCamposObligatoriosConfig] = useState<string[] | null>(null);
 
-  // ✅ NUEVO: estado del modal de creación de catálogo (botón "+")
   const [modalCatalogo, setModalCatalogo] = useState<{
     catalogo: CatalogoCreable;
     idsPrevios: Set<string>;
     onCreado: (nuevoId: string, registro: any) => void;
   } | null>(null);
 
-  // Catálogos en memoria (mutables localmente al crear con "+")
   const [empresasLocal, setEmpresasLocal] = useState<any[]>(catalogosCacheados?.empresas || []);
   const [remolquesLocal, setRemolquesLocal] = useState<any[]>(catalogosCacheados?.remolques || []);
   const [unidadesLocal, setUnidadesLocal] = useState<any[]>(catalogosCacheados?.unidades || []);
   const [empleadosLocalState, setEmpleadosLocalState] = useState<any[]>(catalogosCacheados?.empleados || []);
-  // ✅ NUEVO: tarifas y convenios también como estado local mutable, para poder
-  //    refrescarlos en vivo (ver efecto de refresco al montar) sin cerrar/reabrir.
   const [tarifasLocal, setTarifasLocal] = useState<any[]>(catalogosCacheados?.tarifas || []);
   const [convClientesLocal, setConvClientesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvClientes || []);
   const [convDetallesLocal, setConvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvDetalles || []);
   const [convProvLocal, setConvProvLocal] = useState<any[]>(catalogosCacheados?.conveniosProv || []);
   const [convProvDetallesLocal, setConvProvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvProvDetalles || []);
-  // ✅ NUEVO: gastos incluidos y rendimiento por tarifa (para autollenar Sueldo y Combustible al elegir convenio).
   const [gastosIncluidosLocal, setGastosIncluidosLocal] = useState<any[]>(catalogosCacheados?.tarifasGastosIncluidos || []);
   const [rendimientoLocal, setRendimientoLocal] = useState<any[]>(catalogosCacheados?.tarifasRendimiento || []);
 
-  // Mantener sincronizados si el cache global cambia
   useEffect(() => { setEmpresasLocal(catalogosCacheados?.empresas || []); }, [catalogosCacheados?.empresas]);
   useEffect(() => { setRemolquesLocal(catalogosCacheados?.remolques || []); }, [catalogosCacheados?.remolques]);
   useEffect(() => { setUnidadesLocal(catalogosCacheados?.unidades || []); }, [catalogosCacheados?.unidades]);
   useEffect(() => { setEmpleadosLocalState(catalogosCacheados?.empleados || []); }, [catalogosCacheados?.empleados]);
-  // ✅ NUEVO: sincronía de tarifas y convenios cuando el cache global cambia
   useEffect(() => { setTarifasLocal(catalogosCacheados?.tarifas || []); }, [catalogosCacheados?.tarifas]);
   useEffect(() => { setConvClientesLocal(catalogosCacheados?.catalogoConvClientes || []); }, [catalogosCacheados?.catalogoConvClientes]);
   useEffect(() => { setConvDetallesLocal(catalogosCacheados?.catalogoConvDetalles || []); }, [catalogosCacheados?.catalogoConvDetalles]);
   useEffect(() => { setConvProvLocal(catalogosCacheados?.conveniosProv || []); }, [catalogosCacheados?.conveniosProv]);
   useEffect(() => { setConvProvDetallesLocal(catalogosCacheados?.catalogoConvProvDetalles || []); }, [catalogosCacheados?.catalogoConvProvDetalles]);
 
-  // ============================================================
-  // ✅ NUEVO: REFRESCO EN VIVO AL ABRIR EL FORMULARIO
-  // (trae de Firestore las colecciones más editadas y refresca estado + caché)
-  // ============================================================
   useEffect(() => {
     let activo = true;
     const fuentes: { alias: string; coleccion: string; setter: (d: any[]) => void }[] = [
@@ -382,29 +326,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Detecta si el usuario puede editar la Referencia leyendo usuarios/{uid}.
-  //    Acceso total (modo Bypass) si no hay sesión/doc. Puede editar si:
-  //      1) alguno de sus roles es ADMIN, o
-  //      2) alguno de sus roles tiene el permiso "Editar Referencia"
-  //         (modulosPermitidos en la colección 'roles').
   useEffect(() => {
     let activo = true;
     const norm = (s: any) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
     (async () => {
       try {
         const u = auth.currentUser;
-        if (!u) { if (activo) setPuedeEditarRef(true); return; }           // sin sesión → Bypass
+        if (!u) { if (activo) setPuedeEditarRef(true); return; }
         const snap = await getDoc(doc(db, 'usuarios', u.uid));
         if (!activo) return;
-        if (!snap.exists()) { setPuedeEditarRef(true); return; }            // sin doc de usuario → Bypass
+        if (!snap.exists()) { setPuedeEditarRef(true); return; }
         const data = snap.data() as any;
         const rolesUsuario: string[] = Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : []);
         const rolesSet = new Set(rolesUsuario.map(norm));
 
-        // 1) ADMIN siempre puede editar la referencia.
         if ([...rolesSet].some((r) => r.includes('ADMIN'))) { setPuedeEditarRef(true); return; }
 
-        // 2) ¿Alguno de los roles del usuario tiene el permiso "Editar Referencia"?
         const rolesSnap = await getDocs(collection(db, 'roles'));
         if (!activo) return;
         const permitido = rolesSnap.docs.some((d: any) => {
@@ -430,7 +367,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     proveedoresUnidad = catalogosCacheados?.proveedores_unidad || []
   } = catalogosCacheados || {};
 
-  // ✅ Usamos los catálogos LOCALES (mutables) en lugar de los del cache directo.
   const empresas = empresasLocal;
   const remolques = remolquesLocal;
   const unidades = unidadesLocal;
@@ -441,7 +377,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const catalogoConvClientes = convClientesLocal;
   const catalogoConvDetalles = convDetallesLocal;
 
- // ⚠️ Ajusta la clave si en catalogosCacheados se llama distinto
   const catalogoTrafico = useMemo(() =>
     catalogosCacheados?.catalogo_trafico
     || catalogosCacheados?.traficos
@@ -454,16 +389,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const listaOpeProvLocal: any[] = proveedoresUnidad;
   const listaMonedasLocal: any[] = catalogoMoneda;
 
-  // ✅ NUEVO (punto 1): resuelve la moneda guardada en la empresa (campo `moneda`)
-  // al ID del catálogo de monedas, para asignarla a facturadoEnCobrar /
-  // facturadoEnUnidad (los <select> usan el ID de la moneda como value).
   const resolverMonedaIdDeEmpresa = (emp: any): string => {
     if (!emp) return '';
     const raw = String(emp.moneda ?? emp.monedaId ?? emp.monedaRef ?? '').trim();
     if (!raw) return '';
-    // ¿ya es un ID válido del catálogo?
     if (listaMonedasLocal.some((m: any) => String(m.id) === raw)) return raw;
-    // intentar por texto (USD / MXN / Dólares / Pesos…)
     const up = raw.toUpperCase();
     const porTexto = listaMonedasLocal.find((m: any) => {
       const nom = String(m.moneda || '').toUpperCase();
@@ -531,9 +461,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     utilidadEstimada: 0, tipoCambioAprobado: 0
   });
 
-  // ============================================================
-  // ✅ Lógica de los botones "+" (crear catálogo inline)
-  // ============================================================
   const recargarColeccion = useCallback(async (coleccion: string) => {
     const snap = await getDocs(collection(db, coleccion));
     return snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
@@ -611,7 +538,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const buildConfigId = () => {
     let tipoOpText = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || 'N/A';
 
-    
     if (tipoOpText.toLowerCase() === 'logistica') {
       tipoOpText = 'Logística';
     } else if (tipoOpText !== 'N/A') {
@@ -622,7 +548,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (!str || str === 'N/A') return 'N/A';
       return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
     };
-
 
     const idGenerado = `${tipoOpText}_${formatTitleCase(formData.trafico)}_${formatTitleCase(formData.carga)}`;
     console.log('🔑 configId generado:', idGenerado);
@@ -790,7 +715,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       ...prev,
       proveedorUnidad: PROVEEDOR_FIJO_ID,
       convenioProveedor: '',
-      // ✅ CORREGIDO (punto 1): moneda del proveedor desde su campo `moneda`.
       facturadoEnUnidad: resolverMonedaIdDeEmpresa(prov) || prev.facturadoEnUnidad,
     }));
     if (prov) setSearchProvTransporte(prov.nombre || '');
@@ -870,7 +794,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       setSearchOperadorProveedor(initialData.operadorProveedorNombre || (opProv ? (opProv.nombre || opProv.nombres || opProv.nombreCompleto) : initialData.operadorProveedor || ''));
       setSearchConvenio(initialData.convenioNombre || '');
       setSearchConvenioProveedor(initialData.convenioProveedorNombre || '');
-      // ✅ NUEVO (punto 3): precarga la referencia existente para que el admin pueda editarla.
       setReferencia(initialData.ref || (initialData as any).referencia || '');
     }
   }, [initialData, empresas, remolques, unidades, listaEmpleadosLocal, listaUniProvLocal, listaOpeProvLocal]);
@@ -957,23 +880,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
   }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas]);
 
-  // ============================================================
-  // ✅ NUEVO: Sincronía Convenio (Tarifa) Cliente  ↔  Convenio Proveedor
-  // ------------------------------------------------------------
-  // Aunque el convenio del cliente se captura en convenios_clientes_detalles y el
-  // del proveedor en convenios_proveedores_detalles, AMBOS referencian la misma
-  // colección base `catalogo_tarifas_referencia` a través de `tarifaBaseId`.
-  // Por eso "que sean el mismo convenio" significa: MISMA tarifa base.
-  //
-  //   1) Al colocar el Convenio (Tarifa) del cliente se autoselecciona el Convenio
-  //      Proveedor que tenga la MISMA tarifa base (si el proveedor ya está elegido).
-  //   2) Si el proveedor NO tiene un convenio con esa misma tarifa, se marca un
-  //      error (que bloquea el guardado) indicando que se debe AGREGAR ese convenio.
-  // ============================================================
-
-  // Aviso/validación: { mensaje, bloquea } o null. Se muestra en el campo y en el panel lateral.
   const convenioProvAviso = useMemo<{ mensaje: string; bloquea: boolean } | null>(() => {
-    // La regla solo aplica si la pestaña de Unidad/Proveedor está visible.
     if (!pestanasVisibles.includes('unidad')) return null;
     if (!formData.convenio) return null;
 
@@ -1010,7 +917,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return null;
   }, [pestanasVisibles, formData.convenio, formData.convenioProveedor, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor]);
 
-  // Autoselección del Convenio Proveedor con la MISMA tarifa base que el cliente.
   useEffect(() => {
     if (!pestanasVisibles.includes('unidad')) return;
     if (!formData.convenio) return;
@@ -1020,11 +926,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const tarifaCliente = String(convCliente.tarifaBaseId ?? '').trim();
     if (!tarifaCliente) return;
 
-    // Necesitamos un proveedor seleccionado para tener sus convenios disponibles.
     if (!(formData.proveedorUnidad || searchProvTransporte)) return;
 
-    // Si el convenio del proveedor YA coincide por tarifa base, no tocamos nada
-    // (evita pisar montos ajustados manualmente, p. ej. al editar una operación).
     const convProvActual = listaConveniosProveedor.find((c: any) => c.id === formData.convenioProveedor);
     if (convProvActual && String(convProvActual.tarifaBaseId ?? '').trim() === tarifaCliente) return;
 
@@ -1041,13 +944,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       }));
       setSearchConvenioProveedor(convProvMatch.tipoConvenioNombre);
     } else if (!initialData && formData.convenioProveedor) {
-      // En alta: si el convenio previo del proveedor ya no coincide con la tarifa
-      // del cliente y no hay uno equivalente, lo limpiamos (evita mostrar uno incorrecto).
       setFormData(prev => ({ ...prev, convenioProveedor: '', monedaConvenioProv: '', totalAPagarProv: 0 }));
       setSearchConvenioProveedor('');
     }
-    // No incluimos formData.convenioProveedor en deps a propósito: solo autollenamos
-    // cuando cambia el convenio del cliente o el proveedor, no en ediciones manuales.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pestanasVisibles, formData.convenio, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor, initialData]);
 
@@ -1107,15 +1006,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!initialData) resolverFlujo();
   }, [formData.convenio, listaConveniosCliente, tarifas, initialData, resolverNombreTrafico]);
 
-  // ============================================================
-  // ✅ NUEVO: al elegir el Convenio (Tarifa) autollena Sueldo Operador y Combustible.
-  // ------------------------------------------------------------
-  // Usando el `tarifaBaseId` del convenio (ID en `catalogo_tarifas_referencia`):
-  //   • Sueldo Operador  → `tarifas_gastos_incluidos`, registro de esa tarifa con
-  //     gasto === ID_GASTO_SUELDO ('25b772d3'); se toma su campo `monto`.
-  //   • Combustible      → `tarifas_rendimiento`, registro de esa tarifa; campo `Quantity`.
-  // Solo en ALTA (!initialData), para no pisar valores ya guardados/ajustados al editar.
-  // ============================================================
   useEffect(() => {
     if (initialData) return;
     if (!formData.convenio) return;
@@ -1125,7 +1015,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const tarifaBase = String(convCliente.tarifaBaseId ?? '').trim();
     if (!tarifaBase) return;
 
-    // Sueldo: tarifas_gastos_incluidos -> (tarifa_referencia_id | ID_SERVICES | ...) === tarifaBase && gasto === ID_GASTO_SUELDO
     const filaSueldo = gastosIncluidosLocal.find((g: any) => {
       const ref = String(
         g.tarifa_referencia_id ?? g.tarifaReferenciaId ?? g.tarifa_referencia ?? g.tarifaReferencia ??
@@ -1136,7 +1025,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     const sueldo = filaSueldo ? Number(filaSueldo.monto ?? filaSueldo.importe ?? filaSueldo.cantidad ?? filaSueldo.valor ?? 0) : null;
 
-    // Combustible: tarifas_rendimiento -> ID_SERVICES === tarifaBase ; campo Quantity
     const filaRend = rendimientoLocal.find((r: any) => {
       const ref = String(r.ID_SERVICES ?? r.id_services ?? r.idServices ?? r.tarifa_referencia_id ?? r.tarifaId ?? '').trim();
       return ref === tarifaBase;
@@ -1193,11 +1081,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  // ✅ Cliente (Paga): TODAS las empresas tipo 7eec9cbb (sin exigir 'Activa').
   const filClientesPaga = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb')) || [], [empresas]);
   const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('51246232') && e.status === 'Activa') || [], [empresas]);
-  // ✅ CORREGIDO (punto 4): Proveedor de Servicios = TODAS las empresas tipo
-  //    11894dfd, SIN exigir status 'Activa'.
   const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd')) || [], [empresas]);
   const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('6e7af5ab') && e.status === 'Activa') || [], [empresas]);
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('ca21ab07') && e.status === 'Activa') || [], [empresas]);
@@ -1230,6 +1115,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const resultadosConvenio = listaConveniosCliente.filter((c:any) => (c.descripcion || '').toLowerCase().includes(sConvenio));
   const resultadosConvenioProveedor = listaConveniosProveedor.filter((c:any) => (c.tipoConvenioNombre || '').toLowerCase().includes(sConvenioProveedor));
 
+  // ✅ NUEVO: ID de la tarifa base (catalogo_tarifas_referencia) del convenio
+  //   seleccionado en cliente y en proveedor, para comparar visualmente cuál coincide.
+  const tarifaIdCliente = String(listaConveniosCliente.find((c:any) => c.id === formData.convenio)?.tarifaBaseId || '').trim();
+  const tarifaIdProveedor = String(listaConveniosProveedor.find((c:any) => c.id === formData.convenioProveedor)?.tarifaBaseId || '').trim();
+  const tarifasCoinciden = !!tarifaIdCliente && tarifaIdCliente === tarifaIdProveedor;
+
 
   const tipoOpTextNormalizado = (tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '').toLowerCase();
   const isTransfer = tipoOpTextNormalizado.includes('transfer');
@@ -1242,8 +1133,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // ✅ NUEVO: bloquea el guardado si el Convenio Proveedor no es el mismo (misma tarifa)
-    // que el Convenio (Tarifa) del cliente. Lleva al usuario a la pestaña de Unidad.
     if (convenioProvAviso?.bloquea) {
       alert(convenioProvAviso.mensaje);
       if (pestanasVisibles.includes('unidad')) setPestañaActiva('unidad');
@@ -1305,13 +1194,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       Object.keys(operacionData).forEach(key => { if (operacionData[key] === undefined) delete operacionData[key]; });
 
-      // ✅ NUEVO (punto 3): si es admin y editó la referencia de una operación
-      // existente, se guarda la referencia corregida.
       if (initialData && puedeEditarRef && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
         operacionData.ref = referencia.trim();
       }
 
-      // ✅ guardamos la operación y obtenemos id + referencia para ligar los documentos
       let idGuardado = '';
       let refGuardado = '';
       if (initialData) {
@@ -1327,7 +1213,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         if (onSave) onSave({ id: nuevoId, ...operacionData });
       }
 
-      // ✅ subir a Storage los PDFs cargados por campo, en carpetas con el nombre del campo.
       const archivosPorCampo: { file: File; campo: string; sufijo?: string }[] = [];
       if (pdfCartaPorte) archivosPorCampo.push({ file: pdfCartaPorte, campo: 'Carta Porte' });
       if (pdfDoda) archivosPorCampo.push({ file: pdfDoda, campo: 'DODA' });
@@ -1360,7 +1245,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtFecha = (f: string) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return f; } };
 
-  // ✅ id y referencia de la operación para el modal "Subir Documentos"
   const idOperacion = (initialData as any)?.id || '';
   const referenciaOperacion = referenciaDeOperacion(idOperacion, (initialData as any)?.ref);
 
@@ -1498,7 +1382,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconBriefcase /></div><h3 className="roelca-card-title">Tipo de Servicio y Fechas</h3></div>
                     <div className="form-grid">
-                      {/* ✅ NUEVO (punto 3): Referencia. En alta se genera al guardar; en edición solo admin puede corregirla. */}
                       <div className="form-group">
                         <label className="form-label orange">Referencia</label>
                         {initialData ? (
@@ -1556,12 +1439,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               {resultadosConvenio.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenio.map((c:any) => (
                                 <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(c.descripcion); setShowDropdownConvenio(false); }}>
                                   <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.descripcion}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#fb923c', fontFamily: 'monospace', marginTop: '2px' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
                                 </div>
                               ))}
                             </div>
                           )}
                         </div>
                         {listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}
+                        {formData.convenio && tarifaIdCliente && (
+                          <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>
+                            ID tarifa: {tarifaIdCliente}{tarifaIdProveedor ? (tarifasCoinciden ? '  ✓ coincide con el del proveedor' : '  ✕ NO coincide con el del proveedor') : ''}
+                          </small>
+                        )}
                       </div>
                       <div className="form-group">
                         <label className="form-label"># de Remolque</label>
@@ -1725,13 +1614,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               {resultadosConvenioProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
                                 <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
                                   <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.tipoConvenioNombre}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#fb923c', fontFamily: 'monospace', marginTop: '2px' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
                                 </div>
                               ))}
                             </div>
                           )}
                         </div>
                         {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
-                        {/* ✅ NUEVO: aviso de sincronía con el Convenio (Tarifa) del cliente */}
+                        {formData.convenioProveedor && tarifaIdProveedor && (
+                          <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>
+                            ID tarifa: {tarifaIdProveedor}{tarifaIdCliente ? (tarifasCoinciden ? '  ✓ coincide con el del cliente' : '  ✕ NO coincide con el del cliente') : ''}
+                          </small>
+                        )}
                         {convenioProvAviso && (
                           <small style={{ display: 'block', marginTop: '4px', color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c', fontWeight: 600, lineHeight: 1.35 }}>
                             {convenioProvAviso.bloquea ? '⛔ ' : 'ℹ️ '}{convenioProvAviso.mensaje}
@@ -1913,13 +1807,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               </div>
             )}
 
-            {/* ✅ NUEVO: aviso de sincronía Convenio (Tarifa) Cliente ↔ Convenio Proveedor */}
             {convenioProvAviso && (
               <div className={convenioProvAviso.bloquea ? 'status-error-card' : 'status-preview-card'} style={convenioProvAviso.bloquea ? undefined : { background: 'linear-gradient(135deg, rgba(251, 146, 60, 0.08), rgba(251, 146, 60, 0.02))', border: '1px solid rgba(251, 146, 60, 0.3)' }}>
                 <div className="roelca-sidebar-label" style={{ marginBottom: '6px', color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c' }}>
                   <IconAlert size={13} /> {convenioProvAviso.bloquea ? 'Convenio Proveedor requerido' : 'Convenio Proveedor'}
                 </div>
                 <div className="roelca-sidebar-value" style={{ color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c', fontWeight: 500 }}>{convenioProvAviso.mensaje}</div>
+              </div>
+            )}
+
+            {(tarifaIdCliente || tarifaIdProveedor) && (
+              <div className="roelca-sidebar-section" style={{ borderColor: tarifasCoinciden ? 'rgba(63, 185, 80, 0.35)' : 'rgba(251, 146, 60, 0.35)' }}>
+                <div className="roelca-sidebar-label" style={{ color: tarifasCoinciden ? '#3fb950' : '#fb923c' }}>
+                  <span className="roelca-sidebar-icon"><IconReceipt size={13} /></span> ID Tarifa (catalogo_tarifas_referencia)
+                </div>
+                <div className="roelca-money-row"><span className="lbl">Cliente</span><span className="val" style={{ fontFamily: 'monospace', color: '#e6edf3' }}>{tarifaIdCliente || '—'}</span></div>
+                <div className="roelca-money-row"><span className="lbl">Proveedor</span><span className="val" style={{ fontFamily: 'monospace', color: '#e6edf3' }}>{tarifaIdProveedor || '—'}</span></div>
+                {tarifaIdCliente && tarifaIdProveedor && (
+                  <div className="roelca-route-line" style={{ color: tarifasCoinciden ? '#3fb950' : '#f85149', fontWeight: 600 }}>
+                    {tarifasCoinciden ? <IconCheck size={12} /> : <IconX size={12} />} {tarifasCoinciden ? 'Los IDs coinciden' : 'Los IDs NO coinciden'}
+                  </div>
+                )}
               </div>
             )}
 
