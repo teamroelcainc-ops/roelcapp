@@ -571,6 +571,10 @@ export const ReferenciasNominaDashboard = () => {
   const dPrestamoAcumulado = Number(deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0);
   const dAhorroMonto      = Number(deduccionOperador?.ahorro || 0);
   const dAhorroAcumulado  = Number(deduccionOperador?.ahorroAcumulado || 0);
+  // ✅ Saldos INICIALES heredados de la app anterior (tomados directo de deducciones):
+  //   préstamo inicial -> campo `prestamo` ; ahorro inicial -> campo `ahorroInicial`.
+  const dPrestamoInicial   = Number(deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0);
+  const dAhorroInicial     = Number(deduccionOperador?.ahorroInicial || 0);
 
   const subtotalReferencias     = resumenSeleccion.subtotal;
   const subtotalAPagarCalc      = subtotalReferencias + (Number(extras) || 0);
@@ -1031,96 +1035,64 @@ export const ReferenciasNominaDashboard = () => {
     return { otorgado, pagado };
   }, [historialPrestamos]);
 
-  // ✅ NUEVO: reconstructor de movimientos (saldo corriente) para préstamo y ahorro.
-  //   Se ancla al saldo guardado en cada nómina (lo más fiel a lo que realmente quedó),
-  //   y deriva el SALDO INICIAL heredado a partir del primer movimiento. Así el saldo
-  //   final del historial coincide con el saldo real de la colección `deducciones`.
+  // ✅ Reconstructor de movimientos (saldo corriente) para préstamo y ahorro.
+  //   Parte del SALDO INICIAL heredado (que viene de la colección `deducciones`) y va
+  //   sumando lo agregado en cada nómina y restando el pago/retiro de cada nómina.
+  //   Saldo de cada fila = inicial + (suma de agregados − suma de pagos hasta esa nómina).
   const construirMovimientos = (
     lista: any[],
     getAgregado: (n: any) => number,
-    getPago: (n: any) => number | null,
-    getStoredAfter: (n: any) => number | null,
-    getPrevio: (n: any) => number | null,
-    saldoActualFallback: number
+    getPago: (n: any) => number,
+    inicial: number
   ) => {
-    let running: number | null = null;
-    let inicial = 0;
+    let running = inicial;
     let sumaAgregado = 0;
     let sumaPago = 0;
-    const filas = lista.map((n, idx) => {
+    const filas = lista.map((n) => {
       const agregado = getAgregado(n);
-      const storedAfter = getStoredAfter(n);
-      const pagoExplicito = getPago(n);
-      const previo = getPrevio(n);
-
-      let before: number;
-      if (running != null) before = running;
-      else if (previo != null) before = previo;
-      else if (storedAfter != null) before = Math.max(storedAfter - agregado + (pagoExplicito ?? 0), 0);
-      else before = 0;
-
-      if (idx === 0) inicial = before;
-
-      let pago: number;
-      let after: number;
-      if (storedAfter != null) {
-        after = storedAfter;
-        pago = (pagoExplicito != null) ? pagoExplicito : Math.max(before + agregado - storedAfter, 0);
-      } else {
-        pago = pagoExplicito ?? 0;
-        after = before + agregado - pago;
-      }
-
-      running = after;
+      const pago = getPago(n);
+      running = running + agregado - pago;
       sumaAgregado += agregado;
       sumaPago += pago;
-
       return {
         id: n.id,
         fecha: n.fechaPago || n.createdAt || '',
         consecutivo: getConsecutivoNomina(n),
         agregado,
         pago,
-        saldo: after,
+        saldo: running,
       };
     });
-
-    const saldoFinal = (running != null) ? running : saldoActualFallback;
-    if (lista.length === 0) inicial = saldoActualFallback;
-    return { inicial, filas, sumaAgregado, sumaPago, saldoFinal };
+    return { inicial, filas, sumaAgregado, sumaPago, saldoFinal: running };
   };
 
   const datosPrestamo = useMemo(() => construirMovimientos(
     historialPrestamos,
     n => Number(n.prestamoOtorgado || 0),
-    n => (n.pagoPrestamo != null && n.pagoPrestamo !== '') ? Number(n.pagoPrestamo) : null,
-    n => (n.saldoPrestamo != null && n.saldoPrestamo !== '') ? Number(n.saldoPrestamo) : null,
-    n => (n.prestamoAcumuladoPrevio != null && n.prestamoAcumuladoPrevio !== '') ? Number(n.prestamoAcumuladoPrevio) : null,
-    dPrestamoAcumulado
+    n => Number(n.pagoPrestamo || 0),
+    dPrestamoInicial
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [historialPrestamos, dPrestamoAcumulado]);
+  ), [historialPrestamos, dPrestamoInicial]);
 
   const datosAhorro = useMemo(() => construirMovimientos(
     historialPrestamos,
     n => Number(n.ahorro || 0),
-    n => (n.pagoAhorro != null && n.pagoAhorro !== '') ? Number(n.pagoAhorro) : null,
-    n => (n.ahorroAcumulado != null && n.ahorroAcumulado !== '') ? Number(n.ahorroAcumulado) : null,
-    n => (n.ahorroAcumuladoPrevio != null && n.ahorroAcumuladoPrevio !== '') ? Number(n.ahorroAcumuladoPrevio) : null,
-    dAhorroAcumulado
+    n => Number(n.pagoAhorro || 0),
+    dAhorroInicial
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ), [historialPrestamos, dAhorroAcumulado]);
+  ), [historialPrestamos, dAhorroInicial]);
 
   const exportarPrestamosCSV = () => {
     if (datosPrestamo.filas.length === 0) return alert("No hay movimientos de préstamo para este operador.");
     const datos = [
-      { 'Fecha Pago': 'SALDO INICIAL (heredado)', 'Consecutivo': '-', 'Préstamo Otorgado': 0, 'Pago Préstamo': 0, 'Saldo': datosPrestamo.inicial },
-      ...datosPrestamo.filas.map(f => ({
+      ...[...datosPrestamo.filas].reverse().map(f => ({
         'Fecha Pago': formatearFechaSpanish(f.fecha),
         'Consecutivo': f.consecutivo,
         'Préstamo Otorgado': f.agregado,
         'Pago Préstamo': f.pago,
         'Saldo': f.saldo,
       })),
+      { 'Fecha Pago': 'SALDO INICIAL (heredado)', 'Consecutivo': '-', 'Préstamo Otorgado': 0, 'Pago Préstamo': 0, 'Saldo': datosPrestamo.inicial },
     ];
     const ws = XLSX.utils.json_to_sheet(datos);
     const wb = XLSX.utils.book_new();
@@ -1132,14 +1104,14 @@ export const ReferenciasNominaDashboard = () => {
   const exportarAhorroCSV = () => {
     if (datosAhorro.filas.length === 0) return alert("No hay movimientos de ahorro para este operador.");
     const datos = [
-      { 'Fecha Pago': 'SALDO INICIAL (heredado)', 'Consecutivo': '-', 'Ahorro Agregado': 0, 'Pago/Retiro Ahorro': 0, 'Saldo': datosAhorro.inicial },
-      ...datosAhorro.filas.map(f => ({
+      ...[...datosAhorro.filas].reverse().map(f => ({
         'Fecha Pago': formatearFechaSpanish(f.fecha),
         'Consecutivo': f.consecutivo,
         'Ahorro Agregado': f.agregado,
         'Pago/Retiro Ahorro': f.pago,
         'Saldo': f.saldo,
       })),
+      { 'Fecha Pago': 'SALDO INICIAL (heredado)', 'Consecutivo': '-', 'Ahorro Agregado': 0, 'Pago/Retiro Ahorro': 0, 'Saldo': datosAhorro.inicial },
     ];
     const ws = XLSX.utils.json_to_sheet(datos);
     const wb = XLSX.utils.book_new();
@@ -1510,8 +1482,8 @@ export const ReferenciasNominaDashboard = () => {
                   <span style={{ color: '#3fb950', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenPrestamos.pagado)}</span>
                 </div>
                 <div style={{ backgroundColor: '#0d1117', border: '1px solid #f59e0b', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Actual (deducciones)</span>
-                  <span style={{ color: '#f59e0b', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(dPrestamoAcumulado)}</span>
+                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Actual</span>
+                  <span style={{ color: '#f59e0b', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosPrestamo.saldoFinal)}</span>
                 </div>
               </div>
 
@@ -1527,17 +1499,10 @@ export const ReferenciasNominaDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr style={{ borderBottom: '1px solid #21262d', backgroundColor: '#010409' }}>
-                      <td style={{ padding: '16px', color: '#8b949e', fontStyle: 'italic', whiteSpace: 'nowrap' }}>Saldo inicial (heredado)</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(datosPrestamo.inicial)}</td>
-                    </tr>
                     {datosPrestamo.filas.length === 0 ? (
                       <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este operador no tiene movimientos de préstamo en las nóminas registradas.</td></tr>
                     ) : (
-                      datosPrestamo.filas.map(m => (
+                      [...datosPrestamo.filas].reverse().map(m => (
                         <tr key={m.id} style={{ borderBottom: '1px solid #21262d' }}>
                           <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(m.fecha)}</td>
                           <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{m.consecutivo}</td>
@@ -1547,6 +1512,13 @@ export const ReferenciasNominaDashboard = () => {
                         </tr>
                       ))
                     )}
+                    <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
+                      <td style={{ padding: '16px', color: '#8b949e', fontStyle: 'italic', whiteSpace: 'nowrap' }}>Saldo inicial (heredado)</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(datosPrestamo.inicial)}</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -1585,8 +1557,8 @@ export const ReferenciasNominaDashboard = () => {
                   <span style={{ color: '#3fb950', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.sumaPago)}</span>
                 </div>
                 <div style={{ backgroundColor: '#0d1117', border: '1px solid #58a6ff', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#58a6ff', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Actual (deducciones)</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(dAhorroAcumulado)}</span>
+                  <span style={{ display: 'block', color: '#58a6ff', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Actual</span>
+                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.saldoFinal)}</span>
                 </div>
               </div>
 
@@ -1602,17 +1574,10 @@ export const ReferenciasNominaDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr style={{ borderBottom: '1px solid #21262d', backgroundColor: '#010409' }}>
-                      <td style={{ padding: '16px', color: '#8b949e', fontStyle: 'italic', whiteSpace: 'nowrap' }}>Saldo inicial (heredado)</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(datosAhorro.inicial)}</td>
-                    </tr>
                     {datosAhorro.filas.length === 0 ? (
                       <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este operador no tiene movimientos de ahorro en las nóminas registradas.</td></tr>
                     ) : (
-                      datosAhorro.filas.map(m => (
+                      [...datosAhorro.filas].reverse().map(m => (
                         <tr key={m.id} style={{ borderBottom: '1px solid #21262d' }}>
                           <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(m.fecha)}</td>
                           <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{m.consecutivo}</td>
@@ -1622,6 +1587,13 @@ export const ReferenciasNominaDashboard = () => {
                         </tr>
                       ))
                     )}
+                    <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
+                      <td style={{ padding: '16px', color: '#8b949e', fontStyle: 'italic', whiteSpace: 'nowrap' }}>Saldo inicial (heredado)</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(datosAhorro.inicial)}</td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
