@@ -7,6 +7,9 @@ import {
   writeBatch, 
   updateDoc,
   doc, 
+  getDocs,
+  where,
+  documentId,
   limit
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
@@ -68,6 +71,9 @@ export const ReferenciasNominaDashboard = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [nominaViendo, setNominaViendo] = useState<any | null>(null);
+  // ✅ NUEVO: detalle de operaciones (referencias) pagadas en la nómina abierta.
+  const [opsFicha, setOpsFicha] = useState<any[]>([]);
+  const [cargandoOpsFicha, setCargandoOpsFicha] = useState(false);
   const [pestanaModalNomina, setPestanaModalNomina] = useState<'general' | 'referencia' | 'deducciones' | 'totales'>('general');
 
   // Cabecera del formulario
@@ -111,7 +117,12 @@ export const ReferenciasNominaDashboard = () => {
       });
       setNominasGlobales(docs);
     });
-    return () => unSubNominas();
+    // ✅ NUEVO: empleados SIEMPRE (no solo en Asignar/Préstamos), para poder
+    //   resolver el NOMBRE del operador en el Historial y en la Ficha de Nómina.
+    const unSubEmpleados = onSnapshot(collection(db, 'empleados'), (snap) => {
+      setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    });
+    return () => { unSubNominas(); unSubEmpleados(); };
   }, []);
 
   useEffect(() => {
@@ -119,10 +130,8 @@ export const ReferenciasNominaDashboard = () => {
 
     const subs: Array<() => void> = [];
 
-    // Empleados + Deducciones se necesitan en ambas pestañas (operaciones y préstamos)
-    subs.push(onSnapshot(collection(db, 'empleados'), (snap) => {
-      setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-    }));
+    // Deducciones se necesitan en ambas pestañas (operaciones y préstamos).
+    // (empleados ya se suscribe al montar para todas las pestañas)
     subs.push(onSnapshot(collection(db, 'deducciones'), (snap) => {
       setDeduccionesList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     }));
@@ -752,6 +761,80 @@ export const ReferenciasNominaDashboard = () => {
 
   useEffect(() => { setPaginaActual(1); }, [busquedaHistorial, filtroEstadoHist]);
 
+  // ✅ NUEVO: al abrir la Ficha, carga el detalle de operaciones (referencias)
+  //   pagadas en la nómina. Orden de preferencia para obtenerlas:
+  //     1) nómina.operacionesGuardadas (detalle ya guardado al generar).
+  //     2) operaciones ligadas por referenciaNominaId === nómina.id.
+  //     3) operaciones ligadas por referenciaNominaConsecutivo === consecutivo.
+  //     4) nómina.operacionesIds (busca esos documentos por su ID, en bloques de 10).
+  useEffect(() => {
+    if (!nominaViendo) { setOpsFicha([]); return; }
+
+    if (Array.isArray(nominaViendo.operacionesGuardadas) && nominaViendo.operacionesGuardadas.length > 0) {
+      setOpsFicha(nominaViendo.operacionesGuardadas);
+      return;
+    }
+
+    let cancelado = false;
+    const mapearOp = (op: any) => ({
+      id: op.id,
+      ref: op.ref || op.id?.substring(0, 6),
+      fecha: op.fechaServicio || op.fecha || '',
+      cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '-',
+      tipoServicio: op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-',
+      sueldo: Number(op.sueldoTotal || op.sueldoOperador || 0),
+      sueldoExtra: Number(op.sueldoExtra || 0),
+      importe: Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0),
+    });
+
+    (async () => {
+      setCargandoOpsFicha(true);
+      try {
+        const vistos = new Set<string>();
+        const encontradas: any[] = [];
+        const agregar = (snap: any) => snap.docs.forEach((d: any) => {
+          if (!vistos.has(d.id)) { vistos.add(d.id); encontradas.push({ id: d.id, ...d.data() }); }
+        });
+
+        // 2) por referenciaNominaId
+        agregar(await getDocs(query(collection(db, 'operaciones'), where('referenciaNominaId', '==', nominaViendo.id))));
+        // 3) por referenciaNominaConsecutivo
+        if (nominaViendo.consecutivo) {
+          agregar(await getDocs(query(collection(db, 'operaciones'), where('referenciaNominaConsecutivo', '==', nominaViendo.consecutivo))));
+        }
+        // 4) por operacionesIds (en bloques de 10 por el límite de 'in')
+        if (encontradas.length === 0 && Array.isArray(nominaViendo.operacionesIds) && nominaViendo.operacionesIds.length > 0) {
+          const ids: string[] = nominaViendo.operacionesIds.filter(Boolean);
+          for (let i = 0; i < ids.length; i += 10) {
+            const bloque = ids.slice(i, i + 10);
+            if (bloque.length) agregar(await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', bloque))));
+          }
+        }
+
+        if (!cancelado) setOpsFicha(encontradas.map(mapearOp));
+      } catch (e) {
+        console.error('[Nómina] Error al cargar operaciones de la ficha:', e);
+        if (!cancelado) setOpsFicha([]);
+      } finally {
+        if (!cancelado) setCargandoOpsFicha(false);
+      }
+    })();
+
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nominaViendo]);
+
+  // ✅ NUEVO: subtotal de las referencias mostradas en la Ficha.
+  //   Usa subtotalPagar si viene > 0; si no, suma el detalle cargado; y si
+  //   tampoco hay, lo deriva de (Subtotal a Pagar − Extra).
+  const subtotalReferenciasFicha = useMemo(() => {
+    if (!nominaViendo) return 0;
+    const guardado = Number(nominaViendo.subtotalPagar || 0);
+    if (guardado > 0) return guardado;
+    if (opsFicha.length > 0) return opsFicha.reduce((s: number, o: any) => s + Number(o.importe ?? o.sueldo ?? 0), 0);
+    return Math.max(Number(nominaViendo.subtotalAPagar || 0) - Number(nominaViendo.extras || 0), 0);
+  }, [nominaViendo, opsFicha]);
+
   // Marcar una nómina como Pagada / Pendiente
   const handleTogglePagoNomina = async (e: React.MouseEvent, nom: any) => {
     e.stopPropagation();
@@ -1155,7 +1238,7 @@ export const ReferenciasNominaDashboard = () => {
                           {r.statusPagado ? 'PAGADA' : 'PENDIENTE'}
                         </span>
                       </td>
-                      <td style={{ padding: '16px', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{r.operadorNombre || r.operadorId || '-'}</td>
+                      <td style={{ padding: '16px', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{getNombreOperador(r.operadorNombre || r.operadorId)}</td>
                       <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaPago)}</td>
                       <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaInicio)} <br/>al {formatearFechaSpanish(r.fechaFin)}</td>
                       <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(r.totalAPagar != null ? r.totalAPagar : r.subtotalPagar)}</td>
@@ -1471,7 +1554,7 @@ export const ReferenciasNominaDashboard = () => {
 
                 <div>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Operador</span>
-                  <span style={{ color: '#f0f6fc', fontSize: '1rem', fontWeight: 'bold' }}>{nominaViendo.operadorNombre || '-'}</span>
+                  <span style={{ color: '#f0f6fc', fontSize: '1rem', fontWeight: 'bold' }}>{getNombreOperador(nominaViendo.operadorNombre || nominaViendo.operadorId)}</span>
                 </div>
                 <div>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Período Reportado</span>
@@ -1486,7 +1569,7 @@ export const ReferenciasNominaDashboard = () => {
 
                 <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d' }}>
                   {[
-                    {lbl: 'SUBTOTAL REFERENCIAS', val: nominaViendo.subtotalPagar},
+                    {lbl: 'SUBTOTAL REFERENCIAS', val: subtotalReferenciasFicha},
                     {lbl: 'EXTRA', val: nominaViendo.extras},
                     {lbl: 'SUBTOTAL A PAGAR', val: nominaViendo.subtotalAPagar},
                     {lbl: 'NÓMINA FISCAL', val: nominaViendo.nominaFiscal ?? nominaViendo.nomina},
@@ -1525,16 +1608,43 @@ export const ReferenciasNominaDashboard = () => {
 
                 <div style={{ gridColumn: 'span 3', marginTop: '16px' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
-                    Operaciones Pagadas en esta Nómina ({nominaViendo.operacionesGuardadas?.length || 0})
+                    Operaciones (Referencias) Pagadas en esta Nómina ({opsFicha.length})
                   </span>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {nominaViendo.operacionesGuardadas?.map((op: any) => (
-                      <span key={op.id} title={`Sueldo Original: ${formatoMoneda(op.sueldo)}`}
-                        style={{ backgroundColor: '#21262d', border: '1px solid #58a6ff', color: '#58a6ff', padding: '6px 14px', borderRadius: '16px', fontSize: '0.85rem', fontFamily: 'monospace', cursor: 'default', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                        {op.ref}
-                      </span>
-                    )) || <span style={{ color: '#8b949e' }}>Sin detalle de operaciones.</span>}
-                  </div>
+
+                  {cargandoOpsFicha ? (
+                    <div style={{ color: '#8b949e', fontSize: '0.85rem', padding: '12px' }}>Buscando las referencias ligadas a esta nómina...</div>
+                  ) : opsFicha.length === 0 ? (
+                    <div style={{ color: '#8b949e', fontSize: '0.85rem', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '12px' }}>
+                      No hay detalle de operaciones ligado a esta nómina. Las nóminas generadas desde la app guardan el detalle automáticamente; las nóminas importadas necesitan el vínculo con sus operaciones (ver nota).
+                    </div>
+                  ) : (
+                    <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead style={{ backgroundColor: '#1f2937', color: '#8b949e' }}>
+                          <tr>
+                            <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>REFERENCIA</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>FECHA</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'left' }}>CLIENTE</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>IMPORTE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {opsFicha.map((op: any) => (
+                            <tr key={op.id} style={{ borderTop: '1px solid #21262d' }}>
+                              <td style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{op.ref}</td>
+                              <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.fecha ? formatearFechaSpanish(op.fecha) : '-'}</td>
+                              <td style={{ padding: '10px 12px', color: '#c9d1d9' }}>{op.cliente || '-'}</td>
+                              <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(op.importe ?? op.sueldo ?? 0)}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
+                            <td colSpan={3} style={{ padding: '10px 12px', color: '#8b949e', fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase' }}>Subtotal Referencias</td>
+                            <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalReferenciasFicha)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
