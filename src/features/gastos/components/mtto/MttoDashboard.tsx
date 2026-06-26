@@ -106,7 +106,7 @@ const MttoDashboard = () => {
         return { id: d.id, ...data };
       });
 
-      // ✅ ORDEN: No facturados arriba, luego ordenado del más nuevo al más viejo
+      // ✅ ORDEN: No facturados arriba, luego por FECHA (más reciente primero)
       mttoData.sort((a, b) => {
         // Prioridad 1: "No facturado" siempre arriba
         const aNoFacturado = a.estatus === 'No facturado';
@@ -115,27 +115,24 @@ const MttoDashboard = () => {
         if (aNoFacturado && !bNoFacturado) return -1;
         if (!aNoFacturado && bNoFacturado) return 1;
 
-        // Prioridad 2: Orden cronológico (Más reciente arriba)
-        const parseGasto = (str: string) => {
-            if (!str) return 0;
-            const match = String(str).match(/[A-Za-z]+-(\d{2})(\d{2})(\d{4})-(\d+)/);
-            if (match) {
-                const [ , mm, dd, yyyy, seq ] = match;
-                return parseInt(`${yyyy}${mm}${dd}${seq.padStart(4, '0')}`, 10);
-            }
-            return 0;
+        // Prioridad 2: Fecha del gasto, de la más reciente a la más antigua.
+        // Se usa el campo "fecha" (respaldo "createdAt") para no depender del formato del folio.
+        const obtenerTiempo = (m: any) => {
+          if (m.fecha) { const t = new Date(m.fecha).getTime(); if (!isNaN(t)) return t; }
+          if (m.createdAt) { const t = new Date(m.createdAt).getTime(); if (!isNaN(t)) return t; }
+          return 0;
         };
+        const tA = obtenerTiempo(a);
+        const tB = obtenerTiempo(b);
+        if (tA !== tB) return tB - tA;
 
-        const valA = parseGasto(a.numeroGasto);
-        const valB = parseGasto(b.numeroGasto);
-
-        if (valA !== valB) {
-            return valB - valA; 
-        }
-
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.fecha || 0).getTime();
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.fecha || 0).getTime();
-        return dateB - dateA;
+        // Prioridad 3: Mismo día -> consecutivo más alto primero
+        const consecutivo = (m: any) => {
+          const parte = String(m.numeroGasto || '').split('-').pop() || '';
+          const n = parseInt(parte, 10);
+          return isNaN(n) ? 0 : n;
+        };
+        return consecutivo(b) - consecutivo(a);
       });
 
       setMttoGlobales(mttoData);

@@ -148,24 +148,30 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         setFormData(prev => ({ ...prev, numeroGasto: initialData.numeroGasto }));
         return;
       }
-      const dateObj = new Date(formData.fecha || new Date());
-      const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const dd = String(dateObj.getDate()).padStart(2, '0');
-      const yyyy = dateObj.getFullYear();
-      const dateString = `${mm}${dd}${yyyy}`;
+      // ✅ FORMATO DDMMYY -> Ej: 2026-06-26 = "260626" (se parsea el string para evitar el
+      // desfase de zona horaria que provoca new Date('YYYY-MM-DD') en husos negativos como MX)
+      const fechaStr = formData.fecha || new Date().toISOString().split('T')[0];
+      const [yyyyStr = '', mmStr = '', ddStr = ''] = String(fechaStr).split('-');
+      const yyyy = yyyyStr || String(new Date().getFullYear());
+      const mm = (mmStr || '01').padStart(2, '0');
+      const dd = (ddStr || '01').padStart(2, '0');
+      const yy = yyyy.slice(-2);
+      const dateString = `${dd}${mm}${yy}`;
 
       try {
-        const q = query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(1));
+        // Se revisan los gastos más recientes y se toma el consecutivo MÁS ALTO del mismo día
+        const q = query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(50));
         const snap = await getDocs(q);
-        let proximoNumero = 1;
-        const regexHoy = new RegExp(`MTTO-${dateString}-`);
-        if (!snap.empty) {
-          const ultimoRef = snap.docs[0].data().numeroGasto;
-          if (ultimoRef && regexHoy.test(ultimoRef)) {
-             const partes = ultimoRef.split('-');
-             proximoNumero = parseInt(partes[2], 10) + 1;
+        let maxConsecutivo = 0;
+        const prefijoHoy = `MTTO-${dateString}-`;
+        snap.docs.forEach((docu: any) => {
+          const ref = docu.data().numeroGasto;
+          if (ref && String(ref).startsWith(prefijoHoy)) {
+            const seq = parseInt(String(ref).split('-')[2], 10);
+            if (!isNaN(seq) && seq > maxConsecutivo) maxConsecutivo = seq;
           }
-        }
+        });
+        const proximoNumero = maxConsecutivo + 1;
         const paddedCorrelativo = String(proximoNumero).padStart(3, '0');
         setFormData(prev => ({ ...prev, numeroGasto: `MTTO-${dateString}-${paddedCorrelativo}` }));
       } catch (error) {
@@ -484,7 +490,9 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
                 <input type="text" required={configuracion.requeridos.proveedor && !formData.proveedorId} value={searchProveedor} onChange={(e) => { setSearchProveedor(e.target.value); setShowProveedor(true); }} onFocus={() => setShowProveedor(true)} placeholder="Buscar proveedor..." style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
                 {showProveedor && searchProveedor && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '150px', overflowY: 'auto' }}>
-                    {proveedoresFiltro.map((p:any) => (
+                    {proveedoresFiltro.map((p:any) => {
+                      const dirProveedor = p.direccion || p.domicilio || p.direccionFiscal || p.direccion_fiscal || p.calle || p.ubicacion || '';
+                      return (
                       <div 
                         key={p.id} 
                         style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} 
@@ -501,9 +509,11 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
                           setShowProveedor(false); 
                         }}
                       >
-                        {p.nombre}
+                        <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div>
+                        {dirProveedor && <div style={{ fontSize: '0.8rem', color: '#8b949e', marginTop: '2px', whiteSpace: 'normal' }}>{dirProveedor}</div>}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
