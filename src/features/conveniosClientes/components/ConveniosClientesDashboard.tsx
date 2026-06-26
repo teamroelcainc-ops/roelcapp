@@ -8,11 +8,6 @@ import { obtenerTarifasReferencia } from '../services/tarifasReferenciaService';
 
 // ============================================================
 // HELPERS DE CRUCE (NORMALIZACIÓN)
-// ------------------------------------------------------------
-// El problema raíz: una operación guarda el detalle del convenio
-// en el campo "convenio" (ID del doc de convenios_clientes_detalles)
-// y su nombre en "convenioNombre". Para que el cruce no falle nunca,
-// normalizamos textos y cruzamos por VARIAS llaves.
 // ============================================================
 const normalizar = (texto: any): string => {
   if (texto === null || texto === undefined) return '';
@@ -32,13 +27,16 @@ export const ConveniosClientesDashboard: React.FC = () => {
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
 
+  // ✅ NUEVO (Cambio 2): edición / eliminación de detalles (tarifas) del convenio.
+  const [detalleEditando, setDetalleEditando] = useState<any | null>(null);
+  const [guardandoDetalle, setGuardandoDetalle] = useState(false);
+
   // Todas las operaciones (en vivo) — base para todos los cruces.
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   // Todos los detalles de convenios (en vivo): doc de convenios_clientes_detalles.
   const [detallesGlobales, setDetallesGlobales] = useState<any[]>([]);
 
-  // ✅ NUEVO (Cambio 2): catálogo catalogo_tarifas_referencia indexado por id.
-  // Se carga UNA SOLA VEZ por sesión (cache en memoria + sessionStorage en el helper).
+  // ✅ catálogo catalogo_tarifas_referencia indexado por id.
   const [tarifasReferencia, setTarifasReferencia] = useState<Record<string, any>>({});
   useEffect(() => {
     obtenerTarifasReferencia()
@@ -68,7 +66,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
   // 1. CARGA EN TIEMPO REAL: CONVENIOS + DETALLES + OPERACIONES
   // =========================================================
   useEffect(() => {
-    // 1.A) Convenios maestros
     const unsubscribeConvenios = onSnapshot(collection(db, 'convenios_clientes'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       data.sort((a: any, b: any) => {
@@ -79,12 +76,10 @@ export const ConveniosClientesDashboard: React.FC = () => {
       setRegistrosGlobales(data);
     });
 
-    // 1.B) Detalles de convenios (convenios_clientes_detalles)
     const unsubscribeDetalles = onSnapshot(collection(db, 'convenios_clientes_detalles'), (snap) => {
       setDetallesGlobales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // 1.C) Operaciones (limitadas a las más recientes para el cruce)
     const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(3000));
     const unsubscribeOperaciones = onSnapshot(qOps, (snap) => {
       setOperacionesGlobales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -99,12 +94,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
 
   // =========================================================
   // 2. ÍNDICES DE CRUCE ROBUSTOS
-  //    Construimos varios mapas para que el cruce funcione
-  //    aunque la operación solo guarde el ID, solo el nombre,
-  //    o ambos. Llave de detalle = idDetalle.
   // =========================================================
-
-  // Mapa auxiliar: idDetalle -> convenioId maestro
   const detalleToConvenio = useMemo(() => {
     const m: Record<string, string> = {};
     detallesGlobales.forEach(d => {
@@ -113,8 +103,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
     return m;
   }, [detallesGlobales]);
 
-  // Para cruzar por nombre necesitamos saber qué convenio (cliente) tiene cada detalle.
-  // Mapa: convenioId -> clienteId
   const convenioToCliente = useMemo(() => {
     const m: Record<string, string> = {};
     registrosGlobales.forEach(c => {
@@ -123,15 +111,30 @@ export const ConveniosClientesDashboard: React.FC = () => {
     return m;
   }, [registrosGlobales]);
 
-  // Última fecha de uso por DETALLE.
-  // Se calcula recorriendo TODAS las operaciones y cruzando por:
-  //   (a) ID del detalle  -> operacion.convenio === detalle.id
-  //   (b) Nombre + cliente -> operacion.convenioNombre === detalle.tipoConvenioNombre
-  //       y el cliente de la operación coincide con el del convenio.
+  // ✅ NUEVO (Cambio 3): cuántos convenios tiene cada cliente.
+  //   Se cuenta por clienteId (preferente) y también por nombre (respaldo).
+  const conteoConveniosPorCliente = useMemo(() => {
+    const porId: Record<string, number> = {};
+    const porNombre: Record<string, number> = {};
+    registrosGlobales.forEach(c => {
+      const id = String(c.clienteId || '').trim();
+      const nom = String(c.clienteNombre || '').trim().toLowerCase();
+      if (id) porId[id] = (porId[id] || 0) + 1;
+      if (nom) porNombre[nom] = (porNombre[nom] || 0) + 1;
+    });
+    return { porId, porNombre };
+  }, [registrosGlobales]);
+
+  const contarConveniosCliente = (reg: any): number => {
+    const id = String(reg?.clienteId || '').trim();
+    const nom = String(reg?.clienteNombre || '').trim().toLowerCase();
+    if (id && conteoConveniosPorCliente.porId[id]) return conteoConveniosPorCliente.porId[id];
+    return conteoConveniosPorCliente.porNombre[nom] || 0;
+  };
+
   const lastUsedDetalleMap = useMemo(() => {
     const map: Record<string, string> = {};
 
-    // Índice de nombres: "clienteId|nombreNormalizado" -> [idDetalle, ...]
     const nombreIndex: Record<string, string[]> = {};
     detallesGlobales.forEach(d => {
       const idDet = String(d.id).trim();
@@ -144,7 +147,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
       const key = `${cliId}|${nom}`;
       if (!nombreIndex[key]) nombreIndex[key] = [];
       nombreIndex[key].push(idDet);
-      // También indexamos sin cliente, como último recurso.
       const keySinCliente = `|${nom}`;
       if (!nombreIndex[keySinCliente]) nombreIndex[keySinCliente] = [];
       nombreIndex[keySinCliente].push(idDet);
@@ -163,7 +165,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
       if (!fechaRaw || typeof fechaRaw !== 'string') return;
       const fecha = fechaRaw.split('T')[0];
 
-      // (a) Cruce directo por ID del detalle.
       const idEnOp = op.convenio || op.convenioTarifa || op.convenioTarifaId || op.tarifaId;
       let cruzadoPorId = false;
       if (idEnOp && typeof idEnOp === 'string' && detalleToConvenio[String(idEnOp).trim()] !== undefined) {
@@ -171,16 +172,13 @@ export const ConveniosClientesDashboard: React.FC = () => {
         cruzadoPorId = true;
       }
 
-      // (b) Cruce por nombre del detalle (respaldo si el ID no existe/coincide).
       if (!cruzadoPorId) {
         const nombreOp = normalizar(
           op.convenioNombre || op.convenioTarifaNombre || op.tarifaNombre || op.convenioTarifa
         );
         if (nombreOp) {
           const cliOp = String(op.clientePaga || op.clienteId || '').trim();
-          // 1ro intentamos con cliente (más preciso)
           let candidatos = nombreIndex[`${cliOp}|${nombreOp}`];
-          // 2do, si no hay, intentamos solo por nombre
           if (!candidatos || candidatos.length === 0) {
             candidatos = nombreIndex[`|${nombreOp}`];
           }
@@ -194,8 +192,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
     return map;
   }, [operacionesGlobales, detallesGlobales, detalleToConvenio, convenioToCliente]);
 
-  // Última fecha de uso por CONVENIO maestro = la fecha más reciente
-  // entre TODOS sus detalles (el último detalle usado).
   const lastUsedConvenioMap = useMemo(() => {
     const map: Record<string, string> = {};
     Object.entries(lastUsedDetalleMap).forEach(([idDetalle, fecha]) => {
@@ -271,6 +267,13 @@ export const ConveniosClientesDashboard: React.FC = () => {
     setPaginaActual(1);
   }, [busqueda, filtroActivo]);
 
+  // ✅ Opciones del catálogo de tarifas para el selector del editor de detalle.
+  const opcionesTarifas = useMemo(() => {
+    return Object.entries(tarifasReferencia)
+      .map(([id, data]: any) => ({ id, nombre: data?.descripcion || data?.nombre || id }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+  }, [tarifasReferencia]);
+
   const handleNuevo = () => { 
     setRegistroEditando(null); 
     setEstadoFormulario('abierto'); 
@@ -283,8 +286,6 @@ export const ConveniosClientesDashboard: React.FC = () => {
 
   // =========================================================
   // 5. FICHA DE DETALLE
-  //    Carga los detalles del convenio y filtra (desde memoria,
-  //    sin nuevas lecturas) las operaciones que lo usaron.
   // =========================================================
   const verDetalle = async (convenio: any) => {
     setConvenioViendo({ ...convenio, detalles: [] }); 
@@ -293,13 +294,11 @@ export const ConveniosClientesDashboard: React.FC = () => {
     setOperacionesUso([]);
 
     try {
-      // Detalles del convenio
       const qDetalles = query(collection(db, 'convenios_clientes_detalles'), where('convenioId', '==', convenio.id));
       const snapDetalles = await getDocs(qDetalles);
       const detallesList = snapDetalles.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setConvenioViendo((prev: any) => ({ ...prev, detalles: detallesList }));
 
-      // IDs y nombres válidos de este convenio para filtrar operaciones.
       const idsDetalles = new Set(detallesList.map(d => String(d.id).trim()));
       const nombresDetalles = new Set(
         detallesList
@@ -308,16 +307,13 @@ export const ConveniosClientesDashboard: React.FC = () => {
       );
       const clienteConvenio = String(convenio.clienteId || '').trim();
 
-      // Filtramos operaciones desde memoria (operacionesGlobales ya está en vivo).
       const opsFiltradas = operacionesGlobales.filter(op => {
         const idEnOp = String(op.convenio || op.convenioTarifa || op.convenioTarifaId || op.tarifaId || '').trim();
         if (idEnOp && idsDetalles.has(idEnOp)) return true;
 
-        // Respaldo por nombre + cliente
         const nombreOp = normalizar(op.convenioNombre || op.convenioTarifaNombre || op.tarifaNombre || op.convenioTarifa);
         if (!nombreOp || !nombresDetalles.has(nombreOp)) return false;
         const cliOp = String(op.clientePaga || op.clienteId || '').trim();
-        // Si conocemos el cliente, exigimos coincidencia; si no, aceptamos por nombre.
         return !clienteConvenio || !cliOp || cliOp === clienteConvenio;
       });
 
@@ -342,6 +338,76 @@ export const ConveniosClientesDashboard: React.FC = () => {
       } catch (error) {
         alert('Hubo un error al eliminar. Revisa tu conexión.');
       }
+    }
+  };
+
+  // ✅ NUEVO (Cambio 2): abrir el editor de un detalle (tarifa) del convenio.
+  const abrirEditorDetalle = (det: any) => {
+    setDetalleEditando({
+      ...det,
+      tarifa: det.tarifa ?? '',
+      costo: det.costo ?? '',
+      venta: det.venta ?? '',
+      origenNombre: det.origenNombre ?? det.origen ?? '',
+      destinoNombre: det.destinoNombre ?? det.destino ?? '',
+      tipoConvenioId: det.tipoConvenioId ?? '',
+      tipoConvenioNombre: det.tipoConvenioNombre ?? '',
+    });
+  };
+
+  // ✅ Guarda los cambios del detalle en convenios_clientes_detalles.
+  const guardarDetalleEditado = async () => {
+    if (!detalleEditando) return;
+    setGuardandoDetalle(true);
+    try {
+      const id = String(detalleEditando.id);
+      const numOrUndef = (v: any) => (v === '' || v === null || v === undefined) ? undefined : Number(v);
+
+      const payload: any = {
+        tipoConvenioId: detalleEditando.tipoConvenioId || '',
+        tipoConvenioNombre: detalleEditando.tipoConvenioNombre || '',
+        origenNombre: detalleEditando.origenNombre || '',
+        destinoNombre: detalleEditando.destinoNombre || '',
+      };
+      const t = numOrUndef(detalleEditando.tarifa);
+      const c = numOrUndef(detalleEditando.costo);
+      const v = numOrUndef(detalleEditando.venta);
+      if (t !== undefined) payload.tarifa = t;
+      if (c !== undefined) payload.costo = c;
+      if (v !== undefined) payload.venta = v;
+
+      await actualizarRegistro('convenios_clientes_detalles', id, payload);
+
+      // Refleja el cambio en la ficha abierta (sin esperar al onSnapshot).
+      setConvenioViendo((prev: any) => prev ? {
+        ...prev,
+        detalles: (prev.detalles || []).map((d: any) => d.id === id ? { ...d, ...payload } : d)
+      } : prev);
+
+      await registrarLog('Convenios', 'Edición', `Editó un detalle/tarifa del convenio ${convenioViendo?.numeroConvenio || ''}.`);
+      setDetalleEditando(null);
+    } catch (error) {
+      console.error('Error al guardar el detalle del convenio:', error);
+      alert('No se pudo guardar el detalle. Revisa tu conexión.');
+    } finally {
+      setGuardandoDetalle(false);
+    }
+  };
+
+  // ✅ Elimina un detalle (tarifa) del convenio.
+  const eliminarDetalle = async (det: any) => {
+    const nombre = det.tipoConvenioNombre || det.tarifaNombre || det.nombre || 'esta tarifa';
+    if (!window.confirm(`¿Eliminar el detalle "${nombre}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await eliminarRegistro('convenios_clientes_detalles', det.id);
+      setConvenioViendo((prev: any) => prev ? {
+        ...prev,
+        detalles: (prev.detalles || []).filter((d: any) => d.id !== det.id)
+      } : prev);
+      await registrarLog('Convenios', 'Eliminación', `Eliminó un detalle/tarifa del convenio ${convenioViendo?.numeroConvenio || ''}.`);
+    } catch (error) {
+      console.error('Error al eliminar el detalle del convenio:', error);
+      alert('No se pudo eliminar el detalle. Revisa tu conexión.');
     }
   };
 
@@ -426,12 +492,13 @@ export const ConveniosClientesDashboard: React.FC = () => {
   const exportarCSV = () => {
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
     
-    const encabezados = ['# de Convenio', 'Fecha del Convenio', 'Fecha de Vencimiento', 'Cliente', 'Moneda', 'Crédito', 'Último Uso', 'Status'];
+    const encabezados = ['# de Convenio', 'Fecha del Convenio', 'Fecha de Vencimiento', 'Cliente', 'Convenios del Cliente', 'Moneda', 'Crédito', 'Último Uso', 'Status'];
     const lineas = registrosFiltrados.map(r => [
       `"${r.numeroConvenio || ''}"`, 
       `"${formatearFechaEsp(r.fechaConvenio)}"`, 
       `"${formatearFechaEsp(r.fechaVencimiento)}"`, 
       `"${r.clienteNombre || ''}"`, 
+      `"${contarConveniosCliente(r)}"`,
       `"${r.monedaNombre || ''}"`, 
       `"${r.credito || ''}"`,
       `"${r._fechaDinamicaUso ? formatearFechaEsp(r._fechaDinamicaUso) : 'Nunca usado'}"`,
@@ -537,6 +604,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>FECHA DEL CONVENIO</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>FECHA DE VENCIMIENTO</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>CLIENTE</th>
+                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', textAlign: 'center' }}>CONVENIOS DEL CLIENTE</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>MONEDA</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>CRÉDITO</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>ÚLTIMO USO</th>
@@ -545,13 +613,14 @@ export const ConveniosClientesDashboard: React.FC = () => {
               <tbody>
                 {registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                       {busqueda || filtroActivo !== 'Todo' ? 'No se encontraron convenios para tu búsqueda.' : 'Aún no hay convenios registrados. Haz clic en "+" para comenzar.'}
                     </td>
                   </tr>
                 ) : (
                   registrosEnPantalla.map((reg) => {
                     const colorSemaforo = obtenerColorInactividad(reg._fechaDinamicaUso);
+                    const numConvCliente = contarConveniosCliente(reg);
                     
                     return (
                     <tr 
@@ -624,6 +693,11 @@ export const ConveniosClientesDashboard: React.FC = () => {
                       <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatearFechaEsp(reg.fechaVencimiento)}</td>
                       <td style={{ padding: '16px', color: '#f0f6fc', fontSize: '0.95rem', fontWeight: '500', whiteSpace: 'nowrap' }}>
                         {reg.clienteNombre} {reg.status === 'Baja' && <span style={{ fontSize: '0.7rem', border: '1px solid #ef4444', color: '#ef4444', padding: '2px 4px', borderRadius: '4px', marginLeft: '6px' }}>BAJA</span>}
+                      </td>
+                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <span title={`Este cliente tiene ${numConvCliente} convenio(s) registrado(s)`} style={{ display: 'inline-block', minWidth: '28px', padding: '3px 10px', borderRadius: '12px', backgroundColor: 'rgba(88,166,255,0.12)', border: '1px solid #58a6ff', color: '#58a6ff', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                          {numConvCliente}
+                        </span>
                       </td>
                       <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{reg.monedaNombre}</td>
                       <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{reg.credito}</td>
@@ -705,6 +779,13 @@ export const ConveniosClientesDashboard: React.FC = () => {
                       {convenioViendo.status || 'Activo'}
                     </span>
                   </div>
+
+                  <div className="detail-item" style={{ gridColumn: 'span 3', backgroundColor: 'rgba(88,166,255,0.06)', border: '1px solid rgba(88,166,255,0.3)', borderRadius: '8px', padding: '12px 16px' }}>
+                    <span className="detail-label" style={{ color: '#58a6ff', fontSize: '0.85rem', display:'block', fontWeight: 'bold' }}>Convenios de este cliente</span>
+                    <span className="detail-value" style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                      {contarConveniosCliente(convenioViendo)} {contarConveniosCliente(convenioViendo) === 1 ? 'convenio' : 'convenios'} registrado(s) para {convenioViendo.clienteNombre || 'este cliente'}
+                    </span>
+                  </div>
                   
                   <div className="detail-item">
                     <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Fecha de Convenio</span>
@@ -746,7 +827,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
               {activeTabDetalle === 'detalles' && (
                 <div style={{ animation: 'fadeIn 0.3s ease' }}>
                   <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
-                    Mostrando los detalles/tarifas del convenio y su último uso en base a las operaciones registradas.
+                    Mostrando los detalles/tarifas del convenio y su último uso en base a las operaciones registradas. Usa los botones para editar o eliminar cada tarifa.
                   </p>
                   {(!convenioViendo.detalles || convenioViendo.detalles.length === 0) ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
@@ -754,39 +835,23 @@ export const ConveniosClientesDashboard: React.FC = () => {
                     </div>
                   ) : (
                     <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', minWidth: '760px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
                         <thead style={{ backgroundColor: '#1f2937' }}>
                           <tr>
                             <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>DESCRIPCIÓN / TARIFA</th>
                             <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>RUTA</th>
                             <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>COSTO / VENTA</th>
                             <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>ÚLTIMO USO</th>
+                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textAlign: 'center' }}>ACCIONES</th>
                           </tr>
                         </thead>
                         <tbody>
                           {convenioViendo.detalles.map((det: any, idx: number) => {
-                            // El cruce usa el ID del documento del detalle, que es
-                            // exactamente lo que la operación guarda en "convenio".
                             const idDet = String(det.id || '').trim();
-                            // ✅ NUEVO (Cambio 3): resolver descripción real desde catalogo_tarifas_referencia
-                            // (usando tipoConvenioId del detalle). Cae a fallbacks si no encuentra.
+                            // Descripción real desde catalogo_tarifas_referencia (tipoConvenioId).
                             const refDoc = det.tipoConvenioId ? tarifasReferencia[String(det.tipoConvenioId)] : null;
                             const descMaster = refDoc?.descripcion || refDoc?.nombre || '';
                             const nomDet = det.tipoConvenioNombre || descMaster || det.tarifaNombre || det.nombre || det.tipoOperacionNombre || det.tipoServicio;
-
-                            // 🔍 DIAGNÓSTICO TEMPORAL — elimínalo cuando funcione
-                            const catalogoCount = Object.keys(tarifasReferencia).length;
-                            let diagnostico = '';
-                            if (!det.tipoConvenioId) {
-                              diagnostico = '🔶 Sin tipoConvenioId en el detalle (registro viejo)';
-                            } else if (catalogoCount === 0) {
-                              diagnostico = '🔶 Catálogo NO cargado (0 docs en tarifasReferencia)';
-                            } else if (!refDoc) {
-                              diagnostico = `🔶 tipoConvenioId="${det.tipoConvenioId}" no existe en catálogo (${catalogoCount} docs cargados)`;
-                            } else {
-                              diagnostico = `✅ Encontrado: "${descMaster}"`;
-                            }
-                            console.log(`[FichaConvenio] detalle #${idx + 1}:`, { det, refDoc, diagnostico });
 
                             const fechaUso = idDet ? (lastUsedDetalleMap[idDet] || '') : '';
                             const colorInactividadDetalle = obtenerColorInactividad(fechaUso);
@@ -795,15 +860,16 @@ export const ConveniosClientesDashboard: React.FC = () => {
                               <tr key={idDet || idx} style={{ borderBottom: '1px solid #30363d' }}>
                                 <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
                                   {nomDet || `Tarifa ${idx + 1}`}
+                                  {/* ✅ Cambio 1: ID del catálogo de tarifas (tipoConvenioId) */}
                                   <div style={{ fontSize: '0.7rem', color: '#fb923c', marginTop: '4px', fontFamily: 'monospace' }}>
-                                    {diagnostico}
+                                    ID tarifa: {det.tipoConvenioId || '—'}
                                   </div>
                                 </td>
                                 <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem' }}>
                                   {det.origenNombre || det.origen || '-'} → {det.destinoNombre || det.destino || '-'}
                                 </td>
                                 <td style={{ padding: '12px 16px', color: '#10b981', fontWeight: 'bold', fontSize: '0.85rem' }}>
-                                  {det.tarifa !== undefined ? `$${det.tarifa}` : `C: $${det.costo || 0} / V: $${det.venta || 0}`}
+                                  {det.tarifa !== undefined && det.tarifa !== null && det.tarifa !== '' ? `$${det.tarifa}` : `C: $${det.costo || 0} / V: $${det.venta || 0}`}
                                 </td>
                                 <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -820,6 +886,31 @@ export const ConveniosClientesDashboard: React.FC = () => {
                                       }}>
                                     </span>
                                     {fechaUso ? formatearFechaEsp(fechaUso) : 'Nunca usado'}
+                                  </div>
+                                </td>
+                                {/* ✅ Cambio 2: editar y eliminar el detalle */}
+                                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                    <button
+                                      type="button"
+                                      title="Editar detalle"
+                                      onClick={() => abrirEditorDetalle(det)}
+                                      style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                      onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
+                                      onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Eliminar detalle"
+                                      onClick={() => eliminarDetalle(det)}
+                                      style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                      onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                                      onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                    </button>
                                   </div>
                                 </td>
                               </tr>
@@ -881,6 +972,106 @@ export const ConveniosClientesDashboard: React.FC = () => {
             
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', flexShrink: 0 }}>
               <button onClick={() => setConvenioViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO (Cambio 2): MODAL EDITAR DETALLE / TARIFA */}
+      {detalleEditando && (
+        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1200, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          <div className="form-card" style={{ maxWidth: '560px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <h3 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.1rem' }}>Editar Detalle / Tarifa</h3>
+              <button onClick={() => setDetalleEditando(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Tipo de Convenio (Tarifa del catálogo)</label>
+                <select
+                  value={detalleEditando.tipoConvenioId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const data = tarifasReferencia[id];
+                    const nombre = data?.descripcion || data?.nombre || '';
+                    setDetalleEditando((prev: any) => prev ? { ...prev, tipoConvenioId: id, tipoConvenioNombre: nombre } : prev);
+                  }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                >
+                  <option value="">-- Sin asignar --</option>
+                  {/* Si el ID actual no está en el catálogo, lo mostramos igual para no perderlo */}
+                  {detalleEditando.tipoConvenioId && !opcionesTarifas.some(o => o.id === detalleEditando.tipoConvenioId) && (
+                    <option value={detalleEditando.tipoConvenioId}>{detalleEditando.tipoConvenioNombre || detalleEditando.tipoConvenioId} (actual)</option>
+                  )}
+                  {opcionesTarifas.map(o => (
+                    <option key={o.id} value={o.id}>{o.nombre}</option>
+                  ))}
+                </select>
+                <small style={{ color: '#fb923c', fontFamily: 'monospace', fontSize: '0.7rem' }}>ID tarifa: {detalleEditando.tipoConvenioId || '—'}</small>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Origen</label>
+                  <input
+                    type="text"
+                    value={detalleEditando.origenNombre || ''}
+                    onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, origenNombre: e.target.value } : prev)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Destino</label>
+                  <input
+                    type="text"
+                    value={detalleEditando.destinoNombre || ''}
+                    onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, destinoNombre: e.target.value } : prev)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', color: '#10b981', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 'bold' }}>Tarifa ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={detalleEditando.tarifa}
+                    onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, tarifa: e.target.value } : prev)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#10b981', fontWeight: 'bold', borderRadius: '6px', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Costo ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={detalleEditando.costo}
+                    onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, costo: e.target.value } : prev)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Venta ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={detalleEditando.venta}
+                    onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, venta: e.target.value } : prev)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+              <small style={{ color: '#8b949e', fontSize: '0.75rem' }}>
+                Deja en blanco los montos que no apliquen. Si el detalle usa una sola "Tarifa", captura solo ese campo; si usa "Costo / Venta", captura esos dos.
+              </small>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button type="button" onClick={() => setDetalleEditando(null)} disabled={guardandoDetalle} style={{ padding: '9px 20px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button type="button" onClick={guardarDetalleEditado} disabled={guardandoDetalle} style={{ padding: '9px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoDetalle ? 'Guardando...' : 'Guardar Detalle'}</button>
             </div>
           </div>
         </div>
