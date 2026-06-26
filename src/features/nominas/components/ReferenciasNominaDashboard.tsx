@@ -48,6 +48,8 @@ export const ReferenciasNominaDashboard = () => {
   const [deduccionesList, setDeduccionesList] = useState<any[]>([]);
   // ✅ NUEVO: catálogo de empresas (clientePaga -> empresas/{id}.nombre)
   const [empresasList, setEmpresasList] = useState<any[]>([]);
+  // ✅ NUEVO: catálogo de convenios (operación.convenio -> nombre del convenio)
+  const [conveniosList, setConveniosList] = useState<any[]>([]);
 
   // Filtros Pestaña 1 / Préstamos
   const [filtroOperador, setFiltroOperador] = useState('');
@@ -138,13 +140,19 @@ export const ReferenciasNominaDashboard = () => {
 
   // Normaliza una operación a la forma que usan la Ficha y el Recibo.
   const mapearOpDetalle = (op: any) => {
-    const sueldoTotal = Number(op.sueldoTotal || op.sueldoOperador || 0);
+    // ✅ Importe = sueldoTotal de la operación (estrictamente). Solo si sueldoTotal
+    //   NO existe (null/undefined/''), se respalda con sueldoOperador.
+    const sueldoTotal = (op.sueldoTotal != null && op.sueldoTotal !== '')
+      ? aNum(op.sueldoTotal)
+      : aNum(op.sueldoOperador);
     return {
       id: op.id,
       ref: op.ref || op.id?.substring(0, 6),
       fecha: op.fechaServicio || op.fecha || '',
       clientePagaId: op.clientePaga || op.cliente || '',
       cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '',
+      // ✅ Nombre del convenio (se resuelve por catálogo si viene un ID).
+      convenio: getNombreConvenio(op.convenioId || op.convenio) || op.convenioNombre || (typeof op.convenio === 'string' ? op.convenio : '') || '-',
       tipoServicio: op.tarifaLabel || op.tarifarioLabel || op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-',
       sueldo: sueldoTotal,
       sueldoExtra: Number(op.sueldoExtra || 0),
@@ -228,7 +236,11 @@ export const ReferenciasNominaDashboard = () => {
     const unSubEmpresas = onSnapshot(collection(db, 'empresas'), (snap) => {
       setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     });
-    return () => { unSubNominas(); unSubEmpleados(); unSubEmpresas(); };
+    // ✅ NUEVO: convenios SIEMPRE, para mostrar el NOMBRE del convenio en la factura.
+    const unSubConvenios = onSnapshot(collection(db, 'catalogo_convenios'), (snap) => {
+      setConveniosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    }, (err) => console.warn('[Nómina] No se pudo leer catalogo_convenios:', err));
+    return () => { unSubNominas(); unSubEmpleados(); unSubEmpresas(); unSubConvenios(); };
   }, []);
 
   useEffect(() => {
@@ -288,6 +300,29 @@ export const ReferenciasNominaDashboard = () => {
   const getNombreEmpresa = (id: string) => {
     if (!id) return '';
     return empresasList.find(e => e.id === id)?.nombre || '';
+  };
+
+  // ✅ NUEVO: resuelve el NOMBRE del convenio desde catalogo_convenios.
+  //   Acepta el ID (lo busca en el catálogo) y prueba varios nombres de campo.
+  const getNombreConvenio = (idOrName: string) => {
+    if (!idOrName) return '';
+    const c = conveniosList.find(x => x.id === idOrName);
+    if (c) return c.nombre || c.convenio || c.nombreConvenio || c.descripcion || c.name || '';
+    return '';
+  };
+
+  // ✅ NUEVO: consecutivo "real" de la nómina. Las nóminas importadas quedaron
+  //   con el mismo valor en `consecutivo`; si el consecutivo correcto se guardó
+  //   en otro campo durante la importación, se toma de ahí. Se prueban varios
+  //   nombres de campo comunes y, si ninguno aplica, se usa `consecutivo`.
+  const getConsecutivoNomina = (n: any): string => {
+    if (!n) return '-';
+    const candidatos = [
+      n.referencia, n.folio, n.numeroReferencia, n.noReferencia,
+      n.consecutivoOriginal, n.numero, n.referenciaNomina, n.consecutivo,
+    ];
+    const val = candidatos.find(v => typeof v === 'string' && v.trim() !== '');
+    return (val as string) || (n.consecutivo || '-');
   };
 
   const formatearFechaSpanish = (fechaString: string) => {
@@ -579,8 +614,10 @@ export const ReferenciasNominaDashboard = () => {
           fecha: op?.fechaServicio || op?.fecha || '',
           cliente: getNombreEmpresa(op?.clientePaga)
             || op?.clienteNombre || op?.clientePagaNombre || op?.nombreCliente || '-',
+          convenio: getNombreConvenio(op?.convenioId || op?.convenio) || op?.convenioNombre || (typeof op?.convenio === 'string' ? op?.convenio : '') || '-',
           tipoServicio: op?.tarifaLabel || op?.tarifarioLabel || op?.convenioNombre || op?.tipoOperacionNombre || op?.tipoServicio || '-',
-          importe: base + extraOp,
+          // ✅ Importe = sueldoTotal (el sueldo extra va aparte en sueldoExtra).
+          importe: base,
           sueldo: base,
           sueldoExtra: extraOp
         };
@@ -714,13 +751,14 @@ export const ReferenciasNominaDashboard = () => {
     // ✅ Totales reconstruidos (las importadas traen 0 en varios campos).
     const tot = reconstruirTotales(nom, trips);
     const operadorNombreRec = getNombreOperador(nom.operadorNombre || nom.operadorId);
+    const consecutivoRec = getConsecutivoNomina(nom);
 
     const filas = trips.map((t: any) => `
         <tr>
           <td>${esc(t.ref || '-')}</td>
           <td>${t.fecha ? esc(formatearFechaSpanish(t.fecha)) : '-'}</td>
           <td>${esc(t.cliente || getNombreEmpresa(t.clientePagaId) || '-')}</td>
-          <td>${esc(t.tipoServicio || '-')}</td>
+          <td>${esc(t.convenio || t.tipoServicio || '-')}</td>
           <td>${m(t.importe ?? t.sueldo ?? 0)}</td>
         </tr>`).join('');
 
@@ -772,7 +810,7 @@ export const ReferenciasNominaDashboard = () => {
         <p><strong>Operador:</strong> ${esc(operadorNombreRec || '-')}</p>
         <p><strong>Periodo:</strong> ${esc(formatearFechaSpanish(nom.fechaInicio))} al ${esc(formatearFechaSpanish(nom.fechaFin))}</p>
         <p><strong>Fecha de Pago:</strong> ${esc(formatearFechaSpanish(nom.fechaPago))}</p>
-        <p><strong>Referencia:</strong> ${esc(nom.consecutivo || '-')}</p>
+        <p><strong>Referencia:</strong> ${esc(consecutivoRec || '-')}</p>
       </div>
     </header>
 
@@ -810,7 +848,7 @@ export const ReferenciasNominaDashboard = () => {
     <div class="table-section">
       <h3>Detalle de Viajes realizados</h3>
       <table>
-        <thead><tr><th>Referencia</th><th>Fecha</th><th>Cliente</th><th>Tipo Servicio</th><th>Importe</th></tr></thead>
+        <thead><tr><th>Referencia</th><th>Fecha</th><th>Cliente</th><th>Convenio</th><th>Importe</th></tr></thead>
         <tbody>${filas || '<tr><td colspan="5" style="text-align:center;color:#888;">Sin operaciones registradas.</td></tr>'}</tbody>
       </table>
     </div>
@@ -826,7 +864,7 @@ export const ReferenciasNominaDashboard = () => {
     elementoTemporal.innerHTML = htmlTemplate;
     document.body.appendChild(elementoTemporal);
 
-    const filename = `Recibo_Nomina_${String(nom.consecutivo || 'recibo').replace(/\W/g, '_')}.pdf`;
+    const filename = `Recibo_Nomina_${String(consecutivoRec || 'recibo').replace(/\W/g, '_')}.pdf`;
 
     const opt = {
       margin:       0.2,
@@ -854,19 +892,29 @@ export const ReferenciasNominaDashboard = () => {
   const historialBusqueda = useMemo(() => {
     const t = busquedaHistorial.toLowerCase();
     return nominasGlobales.filter(n =>
+      getConsecutivoNomina(n).toLowerCase().includes(t) ||
       n.consecutivo?.toLowerCase().includes(t) ||
       (n.operadorNombre || n.operadorId || '').toLowerCase().includes(t)
     );
-  }, [nominasGlobales, busquedaHistorial]);
+  }, [nominasGlobales, busquedaHistorial, conveniosList]);
 
   const conteoHist = useMemo(() => {
     const pagadas = historialBusqueda.filter(n => !!n.statusPagado).length;
     return { pendientes: historialBusqueda.length - pagadas, pagadas };
   }, [historialBusqueda]);
 
-  const historialFiltrado = useMemo(() =>
-    historialBusqueda.filter(n => filtroEstadoHist === 'pagadas' ? !!n.statusPagado : !n.statusPagado),
-  [historialBusqueda, filtroEstadoHist]);
+  // ✅ Orden pedido: por FECHA DE PAGO (más reciente → más antigua) y, como
+  //   segundo criterio, por la REFERENCIA/consecutivo (descendente, numérico).
+  const historialFiltrado = useMemo(() => {
+    const lista = historialBusqueda.filter(n => filtroEstadoHist === 'pagadas' ? !!n.statusPagado : !n.statusPagado);
+    return [...lista].sort((a, b) => {
+      const fa = String(a.fechaPago || a.createdAt || '');
+      const fb = String(b.fechaPago || b.createdAt || '');
+      if (fb !== fa) return fb.localeCompare(fa); // fecha de pago desc
+      // Empate por fecha: por referencia descendente (numérico-aware).
+      return getConsecutivoNomina(b).localeCompare(getConsecutivoNomina(a), 'es', { numeric: true });
+    });
+  }, [historialBusqueda, filtroEstadoHist, conveniosList]);
 
   const totalPaginas = Math.ceil(historialFiltrado.length / registrosPorPagina);
   const indexLast = paginaActual * registrosPorPagina;
@@ -932,7 +980,7 @@ export const ReferenciasNominaDashboard = () => {
   const exportarCSV = () => {
     if (historialFiltrado.length === 0) return alert("No hay datos para exportar.");
     const datosExcel = historialFiltrado.map(n => ({
-      'Consecutivo': n.consecutivo,
+      'Consecutivo': getConsecutivoNomina(n),
       'Operador': n.operadorNombre || n.operadorId,
       'Fecha Pago': formatearFechaSpanish(n.fechaPago),
       'Semana': `${formatearFechaSpanish(n.fechaInicio)} al ${formatearFechaSpanish(n.fechaFin)}`,
@@ -990,7 +1038,7 @@ export const ReferenciasNominaDashboard = () => {
     if (historialPrestamos.length === 0) return alert("No hay movimientos de préstamo para este operador.");
     const datos = historialPrestamos.map(n => ({
       'Fecha Pago': formatearFechaSpanish(n.fechaPago),
-      'Consecutivo': n.consecutivo,
+      'Consecutivo': getConsecutivoNomina(n),
       'Préstamo Otorgado': Number(n.prestamoOtorgado || 0),
       'Pago Préstamo': Number(n.pagoPrestamo || 0),
       'Saldo': Number(n.saldoPrestamo ?? n.prestamo ?? 0),
@@ -1305,7 +1353,7 @@ export const ReferenciasNominaDashboard = () => {
                           </button>
                         </div>
                       </td>
-                      <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{r.consecutivo}</td>
+                      <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{getConsecutivoNomina(r)}</td>
                       <td style={{ padding: '16px', whiteSpace: 'nowrap' }}>
                         <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold',
                           backgroundColor: r.statusPagado ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
@@ -1384,7 +1432,7 @@ export const ReferenciasNominaDashboard = () => {
                       historialPrestamos.map(n => (
                         <tr key={n.id} style={{ borderBottom: '1px solid #21262d' }}>
                           <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(n.fechaPago)}</td>
-                          <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{n.consecutivo}</td>
+                          <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{getConsecutivoNomina(n)}</td>
                           <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.prestamoOtorgado || 0)}</td>
                           <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.pagoPrestamo || 0)}</td>
                           <td style={{ padding: '16px', color: '#f59e0b', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.saldoPrestamo ?? n.prestamo ?? 0)}</td>
@@ -1611,7 +1659,7 @@ export const ReferenciasNominaDashboard = () => {
                 <div style={{ gridColumn: 'span 3', display: 'flex', justifyContent: 'space-between', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', alignItems: 'center' }}>
                   <div>
                     <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Consecutivo</span>
-                    <span style={{ color: '#D84315', fontSize: '1.2rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{nominaViendo.consecutivo}</span>
+                    <span style={{ color: '#D84315', fontSize: '1.2rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{getConsecutivoNomina(nominaViendo)}</span>
                   </div>
                   <div style={{ textAlign: 'center' }}>
                     <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Status</span>
