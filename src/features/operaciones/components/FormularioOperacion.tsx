@@ -826,6 +826,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setBuscandoTC(false);
   }, [formData.fechaServicio, catalogoTC, initialData]);
 
+  // Helpers de resolución tolerantes a distintos nombres de campo en la data.
+  const refMaestroDetalle = (d: any): string => String(
+    d.convenioId ?? d.convenio ?? d.id_convenio ?? d.convenioClienteId ?? d.convenioProveedorId ??
+    d.maestroId ?? d.padreId ?? d.convenio_id ?? ''
+  ).trim();
+  const ownerClienteDetalle = (d: any): string => String(
+    d.clienteId ?? d.cliente ?? d.id_cliente ?? d.clientePaga ?? d.empresaId ?? ''
+  ).trim();
+  const ownerProvDetalle = (d: any): string => String(
+    d.proveedorId ?? d.proveedor ?? d.id_proveedor ?? d.empresaId ?? ''
+  ).trim();
+  const montoDetalle = (d: any): number => Number(
+    d.tarifa ?? d.monto ?? d.precio ?? d.importe ?? d.costo ?? d.montoConvenio ?? d.monto_convenio ??
+    d.tarifaMonto ?? d.valor ?? 0
+  ) || 0;
+
   const listaConveniosCliente = useMemo(() => {
     let clientId = formData.clientePaga;
     if (!clientId && searchClientePaga && empresas) {
@@ -833,20 +849,38 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (emp) clientId = emp.id;
     }
     if (!clientId || !catalogoConvClientes || !catalogoConvDetalles) return [];
-    const maestros = catalogoConvClientes.filter((c: any) => String(c.clienteId).trim() === String(clientId).trim());
-    if (maestros.length === 0) return [];
+    const cid = String(clientId).trim();
+
+    // Maestros del cliente (probando varios nombres de campo para el id del cliente).
+    const maestros = catalogoConvClientes.filter((c: any) => String(
+      c.clienteId ?? c.cliente ?? c.id_cliente ?? c.clientePaga ?? c.empresaId ?? c.empresa ?? ''
+    ).trim() === cid);
     const maestroIds = new Set(maestros.map((m: any) => String(m.id).trim()));
-    const detallesAsociados = catalogoConvDetalles.filter((d: any) => maestroIds.has(String(d.convenioId).trim()));
+
+    // Detalles ligados: por referencia al maestro O por vínculo directo al cliente.
+    //   Se unen ambas vías y se deduplica por id para no perder ninguna fila.
+    const union = new Map<string, any>();
+    catalogoConvDetalles.forEach((d: any) => {
+      const ref = refMaestroDetalle(d);
+      const directo = ownerClienteDetalle(d);
+      if ((ref && maestroIds.has(ref)) || (directo && directo === cid)) {
+        union.set(String(d.id), d);
+      }
+    });
+    const detallesAsociados = Array.from(union.values());
+
     return detallesAsociados.map((d: any) => {
       const tarifaId = d.tipoConvenioId || d.tipo_convenio_id || d.tipoConvenio || d.tipo_convenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
-      const maestroAsociado = maestros.find((m: any) => String(m.id).trim() === String(d.convenioId).trim());
+      const ref = refMaestroDetalle(d);
+      const maestroAsociado = maestros.find((m: any) => String(m.id).trim() === ref);
       const nombreTarifa = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || tObj?.tipo;
       const nombreFinal = d.tipoConvenioNombre || nombreTarifa || (tarifaId ? `Tarifa (${tarifaId})` : 'Sin Asignar');
       return {
+        ...d,
         id: d.id, tarifaBaseId: tarifaId, descripcion: nombreFinal,
         monedaMaestro: d.moneda || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
-        tarifaMonto: Number(d.tarifa || d.monto || d.precio || 0), ...d
+        tarifaMonto: montoDetalle(d),
       };
     });
   }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas]);
@@ -858,24 +892,33 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (prov) provId = prov.id;
     }
     if (!provId || !conveniosProv || !Array.isArray(conveniosProv)) return [];
-    const maestrosAsociados = conveniosProv.filter((c: any) =>
-      String(c.proveedorId || c.proveedor || c.id_proveedor || '').trim() === String(provId).trim()
-    );
-    if (maestrosAsociados.length === 0) return [];
+    const pid = String(provId).trim();
+
+    const maestrosAsociados = conveniosProv.filter((c: any) => String(
+      c.proveedorId ?? c.proveedor ?? c.id_proveedor ?? c.empresaId ?? c.empresa ?? ''
+    ).trim() === pid);
     const maestroIds = new Set(maestrosAsociados.map((m: any) => String(m.id).trim()));
-    const detallesAsociados = (catalogoConvProvDetalles || []).filter((d: any) => {
-      const convRef = String(d.convenioId || d.convenio || d.id_convenio || '').trim();
-      return maestroIds.has(convRef);
+
+    const union = new Map<string, any>();
+    (catalogoConvProvDetalles || []).forEach((d: any) => {
+      const ref = refMaestroDetalle(d);
+      const directo = ownerProvDetalle(d);
+      if ((ref && maestroIds.has(ref)) || (directo && directo === pid)) {
+        union.set(String(d.id), d);
+      }
     });
+    const detallesAsociados = Array.from(union.values());
+
     return detallesAsociados.map((d: any) => {
-      const tarifaId = d.tipoConvenioId || d.tipo_convenio || d.tarifaId || d['TIPO DE CONVENIO'];
+      const tarifaId = d.tipoConvenioId || d.tipo_convenio || d.tipoConvenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
-      const maestroParent = maestrosAsociados.find((m: any) => String(m.id).trim() === String(d.convenioId).trim());
+      const ref = refMaestroDetalle(d);
+      const maestroParent = maestrosAsociados.find((m: any) => String(m.id).trim() === ref);
       const nombreFinal = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || d.tipoConvenioNombre || 'Concepto sin nombre';
       return {
         id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
         monedaBase: maestroParent?.monedaId || maestroParent?.moneda || d.moneda || ID_USD,
-        tarifaMonto: Number(d.tarifa || d.monto || d.precio || 0)
+        tarifaMonto: montoDetalle(d),
       };
     });
   }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas]);
@@ -1115,11 +1158,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const resultadosConvenio = listaConveniosCliente.filter((c:any) => (c.descripcion || '').toLowerCase().includes(sConvenio));
   const resultadosConvenioProveedor = listaConveniosProveedor.filter((c:any) => (c.tipoConvenioNombre || '').toLowerCase().includes(sConvenioProveedor));
 
-  // ✅ NUEVO: ID de la tarifa base (catalogo_tarifas_referencia) del convenio
+  // ✅ NUEVO: ID de la tarifa base (catalogo_tarifas_referencia) + MONTO del convenio
   //   seleccionado en cliente y en proveedor, para comparar visualmente cuál coincide.
-  const tarifaIdCliente = String(listaConveniosCliente.find((c:any) => c.id === formData.convenio)?.tarifaBaseId || '').trim();
-  const tarifaIdProveedor = String(listaConveniosProveedor.find((c:any) => c.id === formData.convenioProveedor)?.tarifaBaseId || '').trim();
+  const convClienteSel = listaConveniosCliente.find((c:any) => c.id === formData.convenio);
+  const convProvSelObj = listaConveniosProveedor.find((c:any) => c.id === formData.convenioProveedor);
+  const tarifaIdCliente = String(convClienteSel?.tarifaBaseId || '').trim();
+  const tarifaIdProveedor = String(convProvSelObj?.tarifaBaseId || '').trim();
+  const montoCliente = Number(convClienteSel?.tarifaMonto || 0);
+  const montoProveedor = Number(convProvSelObj?.tarifaMonto || 0);
+  const monedaClienteId = convClienteSel?.monedaMaestro;
+  const monedaProveedorId = convProvSelObj?.monedaBase;
   const tarifasCoinciden = !!tarifaIdCliente && tarifaIdCliente === tarifaIdProveedor;
+  const nombreMoneda = (monedaId: any) =>
+    listaMonedasLocal.find((m:any) => String(m.id) === String(monedaId))?.moneda || '';
 
 
   const tipoOpTextNormalizado = (tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '').toLowerCase();
@@ -1440,6 +1491,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                                 <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(c.descripcion); setShowDropdownConvenio(false); }}>
                                   <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.descripcion}</div>
                                   <div style={{ fontSize: '0.72rem', color: '#fb923c', fontFamily: 'monospace', marginTop: '2px' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#3fb950', fontFamily: 'monospace', marginTop: '1px' }}>Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}</div>
                                 </div>
                               ))}
                             </div>
@@ -1448,7 +1500,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}
                         {formData.convenio && tarifaIdCliente && (
                           <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>
-                            ID tarifa: {tarifaIdCliente}{tarifaIdProveedor ? (tarifasCoinciden ? '  ✓ coincide con el del proveedor' : '  ✕ NO coincide con el del proveedor') : ''}
+                            ID tarifa: {tarifaIdCliente} · Monto: {fmtMoney(montoCliente)}{nombreMoneda(monedaClienteId) ? ` ${nombreMoneda(monedaClienteId)}` : ''}{tarifaIdProveedor ? (tarifasCoinciden ? '  ✓ coincide con el del proveedor' : '  ✕ NO coincide con el del proveedor') : ''}
                           </small>
                         )}
                       </div>
@@ -1615,6 +1667,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                                 <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
                                   <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.tipoConvenioNombre}</div>
                                   <div style={{ fontSize: '0.72rem', color: '#fb923c', fontFamily: 'monospace', marginTop: '2px' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
+                                  <div style={{ fontSize: '0.72rem', color: '#3fb950', fontFamily: 'monospace', marginTop: '1px' }}>Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}</div>
                                 </div>
                               ))}
                             </div>
@@ -1623,7 +1676,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
                         {formData.convenioProveedor && tarifaIdProveedor && (
                           <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>
-                            ID tarifa: {tarifaIdProveedor}{tarifaIdCliente ? (tarifasCoinciden ? '  ✓ coincide con el del cliente' : '  ✕ NO coincide con el del cliente') : ''}
+                            ID tarifa: {tarifaIdProveedor} · Monto: {fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}{tarifaIdCliente ? (tarifasCoinciden ? '  ✓ coincide con el del cliente' : '  ✕ NO coincide con el del cliente') : ''}
                           </small>
                         )}
                         {convenioProvAviso && (
@@ -1823,6 +1876,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 </div>
                 <div className="roelca-money-row"><span className="lbl">Cliente</span><span className="val" style={{ fontFamily: 'monospace', color: '#e6edf3' }}>{tarifaIdCliente || '—'}</span></div>
                 <div className="roelca-money-row"><span className="lbl">Proveedor</span><span className="val" style={{ fontFamily: 'monospace', color: '#e6edf3' }}>{tarifaIdProveedor || '—'}</span></div>
+                <div className="roelca-money-row"><span className="lbl">Monto Cliente</span><span className="val" style={{ color: '#3fb950' }}>{formData.convenio ? `${fmtMoney(montoCliente)}${nombreMoneda(monedaClienteId) ? ' ' + nombreMoneda(monedaClienteId) : ''}` : '—'}</span></div>
+                <div className="roelca-money-row"><span className="lbl">Monto Proveedor</span><span className="val" style={{ color: '#3fb950' }}>{formData.convenioProveedor ? `${fmtMoney(montoProveedor)}${nombreMoneda(monedaProveedorId) ? ' ' + nombreMoneda(monedaProveedorId) : ''}` : '—'}</span></div>
                 {tarifaIdCliente && tarifaIdProveedor && (
                   <div className="roelca-route-line" style={{ color: tarifasCoinciden ? '#3fb950' : '#f85149', fontWeight: 600 }}>
                     {tarifasCoinciden ? <IconCheck size={12} /> : <IconX size={12} />} {tarifasCoinciden ? 'Los IDs coinciden' : 'Los IDs NO coinciden'}
