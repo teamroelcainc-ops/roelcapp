@@ -33,7 +33,7 @@ const COLUMNAS_OPS_NOMINA_BASE = [
 export const ReferenciasNominaDashboard = () => {
   const { config: empresaConfig } = useEmpresaConfig();
 
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'prestamos'>('historial');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'prestamos' | 'ahorro'>('historial');
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [nominasGlobales, setNominasGlobales] = useState<any[]>([]);
@@ -86,7 +86,9 @@ export const ReferenciasNominaDashboard = () => {
   const [pagoPrestamo, setPagoPrestamo] = useState<number | ''>('');
   const [depositoGastos, setDepositoGastos] = useState<number | ''>('');
   const [otrosDepositos, setOtrosDepositos] = useState<number | ''>('');
-  const [pagarAhorro, setPagarAhorro] = useState(false);
+  // ✅ NUEVO: el ahorro ahora funciona igual que el préstamo (monto de esta nómina + pago/retiro).
+  const [ahorroNuevo, setAhorroNuevo] = useState<number | ''>('');
+  const [pagoAhorro, setPagoAhorro] = useState<number | ''>('');
 
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
@@ -200,7 +202,7 @@ export const ReferenciasNominaDashboard = () => {
   }, []);
 
   useEffect(() => {
-    if (activeTab !== 'operaciones' && activeTab !== 'prestamos') return;
+    if (activeTab !== 'operaciones' && activeTab !== 'prestamos' && activeTab !== 'ahorro') return;
 
     const subs: Array<() => void> = [];
 
@@ -528,6 +530,29 @@ export const ReferenciasNominaDashboard = () => {
     return { subtotal, subtotalExtra, refs };
   }, [seleccionadas, operacionesGlobales]);
 
+  // ✅ NUEVO: detalle de las operaciones seleccionadas (para mostrarlas en la pestaña Referencia
+  //   del modal junto con su sueldo total y así llevar el control de lo que se está pagando).
+  const detalleSeleccionadas = useMemo(() => {
+    return seleccionadas
+      .map(id => {
+        const op = operacionesGlobales.find(o => o.id === id);
+        if (!op) return null;
+        const base = Number(op.sueldoTotal || op.sueldoOperador || 0);
+        const extra = Number(op.sueldoExtra || 0);
+        return {
+          id,
+          ref: op.ref || op.id?.substring(0, 6) || '-',
+          fecha: op.fechaServicio || op.fecha || '',
+          origen: op.origen || '-',
+          destino: op.destino || '-',
+          sueldo: base,
+          extra,
+          total: base + extra,
+        };
+      })
+      .filter(Boolean) as Array<{ id: string; ref: string; fecha: string; origen: string; destino: string; sueldo: number; extra: number; total: number }>;
+  }, [seleccionadas, operacionesGlobales]);
+
   const operadorIdSeleccionado = useMemo(() => {
     const f = operadoresList.find(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() === filtroOperador.trim());
     return f?.id || '';
@@ -555,7 +580,9 @@ export const ReferenciasNominaDashboard = () => {
   const saldoPrestamoCalc       = prestamoAcumuladoTotal - (Number(pagoPrestamo) || 0);
   const totalDeduccionesCalc    = (Number(infonavit) || 0) + (Number(imss) || 0) + isrMontoCalc + (Number(fonacot) || 0);
   const totalNetoCalc           = subtotalAPagarCalc - totalDeduccionesCalc;
-  const ahorroAcumuladoNuevo    = pagarAhorro ? 0 : (dAhorroAcumulado + dAhorroMonto);
+  // ✅ NUEVO: ahorro con la misma lógica que el préstamo.
+  const ahorroAcumuladoTotal    = dAhorroAcumulado + (Number(ahorroNuevo) || 0);
+  const saldoAhorroCalc         = ahorroAcumuladoTotal - (Number(pagoAhorro) || 0);
   const totalAPagarCalc         = totalNetoCalc + (Number(depositoGastos) || 0) + (Number(otrosDepositos) || 0);
 
   const abrirModalNomina = () => {
@@ -570,7 +597,8 @@ export const ReferenciasNominaDashboard = () => {
     setExtras('');
     setDepositoGastos('');
     setOtrosDepositos('');
-    setPagarAhorro(false);
+    setAhorroNuevo(dAhorroMonto || '');
+    setPagoAhorro('');
     setModalAbierto(true);
   };
 
@@ -632,9 +660,12 @@ export const ReferenciasNominaDashboard = () => {
         pagoPrestamo: Number(pagoPrestamo),
         saldoPrestamo: saldoPrestamoCalc,
 
-        ahorro: dAhorroMonto,
-        ahorroPagado: pagarAhorro,
-        ahorroAcumulado: ahorroAcumuladoNuevo,
+        // ✅ NUEVO: ahorro con la misma lógica que el préstamo.
+        ahorro: Number(ahorroNuevo) || 0,
+        pagoAhorro: Number(pagoAhorro) || 0,
+        ahorroAcumuladoPrevio: dAhorroAcumulado,
+        ahorroPagado: (Number(pagoAhorro) || 0) > 0,
+        ahorroAcumulado: saldoAhorroCalc,
 
         totalDeducciones: totalDeduccionesCalc,
         total: totalNetoCalc,
@@ -655,7 +686,7 @@ export const ReferenciasNominaDashboard = () => {
       if (deduccionOperador?.id) {
         batch.update(doc(db, 'deducciones', deduccionOperador.id), {
           prestamo: saldoPrestamoCalc,
-          ahorroAcumulado: ahorroAcumuladoNuevo,
+          ahorroAcumulado: saldoAhorroCalc,
         });
       }
 
@@ -707,7 +738,7 @@ export const ReferenciasNominaDashboard = () => {
   const resetFormulario = () => {
     setExtras(''); setInfonavit(''); setFonacot(''); setImss(''); setIsr('');
     setPrestamoNuevo(''); setPagoPrestamo(''); setDepositoGastos(''); setOtrosDepositos('');
-    setPagarAhorro(false);
+    setAhorroNuevo(''); setPagoAhorro('');
     setNotaDepositos(''); setFormaPagoSeleccionada(''); setBancoSeleccionado(''); setStatusPagado('Pendiente');
     setPestanaModalNomina('general');
   };
@@ -803,6 +834,7 @@ export const ReferenciasNominaDashboard = () => {
         <div class="row"><span>Infonavit</span><span>${m(nom.infonavit)}</span></div>
         <div class="row"><span>Fonacot</span><span>${m(nom.fonacot)}</span></div>
         <div class="row"><span>Ahorro</span><span>${m(nom.ahorro)}</span></div>
+        <div class="row"><span>Retiro/Pago Ahorro</span><span>${m(nom.pagoAhorro)}</span></div>
         <div class="row"><span>Abono a Préstamo</span><span>${m(nom.pagoPrestamo)}</span></div>
         <div class="row total-row"><span>Total Deducciones</span><span>${m(tot.totalDed)}</span></div>
       </div>
@@ -812,7 +844,7 @@ export const ReferenciasNominaDashboard = () => {
         <div class="row"><span>Saldo de Préstamo</span><span>${m(nom.saldoPrestamo)}</span></div>
         <div class="row"><span>Banco</span><span>${esc(nom.bancoPagoNombre || '-')}</span></div>
         <div class="row"><span>Forma de Pago</span><span>${esc(nom.formaPagoNombre || '-')}</span></div>
-        ${nom.ahorroPagado ? '<div class="row total-row"><span>Ahorro pagado</span><span>SÍ</span></div>' : ''}
+        ${nom.ahorroPagado ? '<div class="row total-row"><span>Retiro de ahorro</span><span>SÍ</span></div>' : ''}
       </div>
     </div>
 
@@ -963,6 +995,7 @@ export const ReferenciasNominaDashboard = () => {
       'Pago Préstamo': n.pagoPrestamo,
       'Saldo Préstamo': n.saldoPrestamo,
       'Ahorro': n.ahorro,
+      'Pago/Retiro Ahorro': n.pagoAhorro,
       'Ahorro Acumulado': n.ahorroAcumulado,
       'Total Deducciones': n.totalDeducciones,
       'Total': n.total,
@@ -979,6 +1012,7 @@ export const ReferenciasNominaDashboard = () => {
     XLSX.writeFile(workbook, `Historial_Nominas_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
+  // Movimientos del operador (todas sus nóminas), en orden ascendente por fecha.
   const historialPrestamos = useMemo(() => {
     if (!filtroOperador) return [];
     const movs = nominasGlobales.filter(n =>
@@ -997,20 +1031,121 @@ export const ReferenciasNominaDashboard = () => {
     return { otorgado, pagado };
   }, [historialPrestamos]);
 
+  // ✅ NUEVO: reconstructor de movimientos (saldo corriente) para préstamo y ahorro.
+  //   Se ancla al saldo guardado en cada nómina (lo más fiel a lo que realmente quedó),
+  //   y deriva el SALDO INICIAL heredado a partir del primer movimiento. Así el saldo
+  //   final del historial coincide con el saldo real de la colección `deducciones`.
+  const construirMovimientos = (
+    lista: any[],
+    getAgregado: (n: any) => number,
+    getPago: (n: any) => number | null,
+    getStoredAfter: (n: any) => number | null,
+    getPrevio: (n: any) => number | null,
+    saldoActualFallback: number
+  ) => {
+    let running: number | null = null;
+    let inicial = 0;
+    let sumaAgregado = 0;
+    let sumaPago = 0;
+    const filas = lista.map((n, idx) => {
+      const agregado = getAgregado(n);
+      const storedAfter = getStoredAfter(n);
+      const pagoExplicito = getPago(n);
+      const previo = getPrevio(n);
+
+      let before: number;
+      if (running != null) before = running;
+      else if (previo != null) before = previo;
+      else if (storedAfter != null) before = Math.max(storedAfter - agregado + (pagoExplicito ?? 0), 0);
+      else before = 0;
+
+      if (idx === 0) inicial = before;
+
+      let pago: number;
+      let after: number;
+      if (storedAfter != null) {
+        after = storedAfter;
+        pago = (pagoExplicito != null) ? pagoExplicito : Math.max(before + agregado - storedAfter, 0);
+      } else {
+        pago = pagoExplicito ?? 0;
+        after = before + agregado - pago;
+      }
+
+      running = after;
+      sumaAgregado += agregado;
+      sumaPago += pago;
+
+      return {
+        id: n.id,
+        fecha: n.fechaPago || n.createdAt || '',
+        consecutivo: getConsecutivoNomina(n),
+        agregado,
+        pago,
+        saldo: after,
+      };
+    });
+
+    const saldoFinal = (running != null) ? running : saldoActualFallback;
+    if (lista.length === 0) inicial = saldoActualFallback;
+    return { inicial, filas, sumaAgregado, sumaPago, saldoFinal };
+  };
+
+  const datosPrestamo = useMemo(() => construirMovimientos(
+    historialPrestamos,
+    n => Number(n.prestamoOtorgado || 0),
+    n => (n.pagoPrestamo != null && n.pagoPrestamo !== '') ? Number(n.pagoPrestamo) : null,
+    n => (n.saldoPrestamo != null && n.saldoPrestamo !== '') ? Number(n.saldoPrestamo) : null,
+    n => (n.prestamoAcumuladoPrevio != null && n.prestamoAcumuladoPrevio !== '') ? Number(n.prestamoAcumuladoPrevio) : null,
+    dPrestamoAcumulado
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [historialPrestamos, dPrestamoAcumulado]);
+
+  const datosAhorro = useMemo(() => construirMovimientos(
+    historialPrestamos,
+    n => Number(n.ahorro || 0),
+    n => (n.pagoAhorro != null && n.pagoAhorro !== '') ? Number(n.pagoAhorro) : null,
+    n => (n.ahorroAcumulado != null && n.ahorroAcumulado !== '') ? Number(n.ahorroAcumulado) : null,
+    n => (n.ahorroAcumuladoPrevio != null && n.ahorroAcumuladoPrevio !== '') ? Number(n.ahorroAcumuladoPrevio) : null,
+    dAhorroAcumulado
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [historialPrestamos, dAhorroAcumulado]);
+
   const exportarPrestamosCSV = () => {
-    if (historialPrestamos.length === 0) return alert("No hay movimientos de préstamo para este operador.");
-    const datos = historialPrestamos.map(n => ({
-      'Fecha Pago': formatearFechaSpanish(n.fechaPago),
-      'Consecutivo': getConsecutivoNomina(n),
-      'Préstamo Otorgado': Number(n.prestamoOtorgado || 0),
-      'Pago Préstamo': Number(n.pagoPrestamo || 0),
-      'Saldo': Number(n.saldoPrestamo ?? n.prestamo ?? 0),
-    }));
+    if (datosPrestamo.filas.length === 0) return alert("No hay movimientos de préstamo para este operador.");
+    const datos = [
+      { 'Fecha Pago': 'SALDO INICIAL (heredado)', 'Consecutivo': '-', 'Préstamo Otorgado': 0, 'Pago Préstamo': 0, 'Saldo': datosPrestamo.inicial },
+      ...datosPrestamo.filas.map(f => ({
+        'Fecha Pago': formatearFechaSpanish(f.fecha),
+        'Consecutivo': f.consecutivo,
+        'Préstamo Otorgado': f.agregado,
+        'Pago Préstamo': f.pago,
+        'Saldo': f.saldo,
+      })),
+    ];
     const ws = XLSX.utils.json_to_sheet(datos);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Prestamos');
     const ope = (filtroOperador || 'operador').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
     XLSX.writeFile(wb, `Prestamos_${ope}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const exportarAhorroCSV = () => {
+    if (datosAhorro.filas.length === 0) return alert("No hay movimientos de ahorro para este operador.");
+    const datos = [
+      { 'Fecha Pago': 'SALDO INICIAL (heredado)', 'Consecutivo': '-', 'Ahorro Agregado': 0, 'Pago/Retiro Ahorro': 0, 'Saldo': datosAhorro.inicial },
+      ...datosAhorro.filas.map(f => ({
+        'Fecha Pago': formatearFechaSpanish(f.fecha),
+        'Consecutivo': f.consecutivo,
+        'Ahorro Agregado': f.agregado,
+        'Pago/Retiro Ahorro': f.pago,
+        'Saldo': f.saldo,
+      })),
+    ];
+    const ws = XLSX.utils.json_to_sheet(datos);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Ahorro');
+    const ope = (filtroOperador || 'operador').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+    XLSX.writeFile(wb, `Ahorro_${ope}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const tabStyle = (active: boolean) => ({
@@ -1102,6 +1237,7 @@ export const ReferenciasNominaDashboard = () => {
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Nóminas</button>
         <button onClick={() => setActiveTab('prestamos')} style={tabStyle(activeTab === 'prestamos')}>Préstamos</button>
+        <button onClick={() => setActiveTab('ahorro')} style={tabStyle(activeTab === 'ahorro')}>Ahorro</button>
       </div>
 
       {activeTab === 'operaciones' ? (
@@ -1343,7 +1479,7 @@ export const ReferenciasNominaDashboard = () => {
           )}
         </div>
 
-      ) : (
+      ) : activeTab === 'prestamos' ? (
         <div className="animation-fade-in">
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
             {renderBuscadorOperador()}
@@ -1360,13 +1496,17 @@ export const ReferenciasNominaDashboard = () => {
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
                 <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Otorgado (histórico)</span>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Inicial (heredado)</span>
+                  <span style={{ color: '#8b949e', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosPrestamo.inicial)}</span>
+                </div>
+                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Otorgado</span>
                   <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenPrestamos.otorgado)}</span>
                 </div>
                 <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Pagado (histórico)</span>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Pagado</span>
                   <span style={{ color: '#3fb950', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenPrestamos.pagado)}</span>
                 </div>
                 <div style={{ backgroundColor: '#0d1117', border: '1px solid #f59e0b', borderRadius: '8px', padding: '16px' }}>
@@ -1387,16 +1527,98 @@ export const ReferenciasNominaDashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {historialPrestamos.length === 0 ? (
+                    <tr style={{ borderBottom: '1px solid #21262d', backgroundColor: '#010409' }}>
+                      <td style={{ padding: '16px', color: '#8b949e', fontStyle: 'italic', whiteSpace: 'nowrap' }}>Saldo inicial (heredado)</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(datosPrestamo.inicial)}</td>
+                    </tr>
+                    {datosPrestamo.filas.length === 0 ? (
                       <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este operador no tiene movimientos de préstamo en las nóminas registradas.</td></tr>
                     ) : (
-                      historialPrestamos.map(n => (
-                        <tr key={n.id} style={{ borderBottom: '1px solid #21262d' }}>
-                          <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(n.fechaPago)}</td>
-                          <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{getConsecutivoNomina(n)}</td>
-                          <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.prestamoOtorgado || 0)}</td>
-                          <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.pagoPrestamo || 0)}</td>
-                          <td style={{ padding: '16px', color: '#f59e0b', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(n.saldoPrestamo ?? n.prestamo ?? 0)}</td>
+                      datosPrestamo.filas.map(m => (
+                        <tr key={m.id} style={{ borderBottom: '1px solid #21262d' }}>
+                          <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(m.fecha)}</td>
+                          <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{m.consecutivo}</td>
+                          <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.agregado)}</td>
+                          <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.pago)}</td>
+                          <td style={{ padding: '16px', color: '#f59e0b', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.saldo)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+
+      ) : (
+        <div className="animation-fade-in">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+            {renderBuscadorOperador()}
+            {filtroOperador && (
+              <button title="Exportar a Excel" onClick={exportarAhorroCSV} style={{ padding: '10px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: '#1a7f37', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                ⬇ Exportar Ahorro
+              </button>
+            )}
+          </div>
+
+          {!filtroOperador ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', border: '1px solid #30363d', borderRadius: '8px', backgroundColor: '#161b22' }}>
+              Selecciona un operador para ver su historial de ahorro.
+            </div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
+                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Inicial (heredado)</span>
+                  <span style={{ color: '#8b949e', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.inicial)}</span>
+                </div>
+                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Ahorrado</span>
+                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.sumaAgregado)}</span>
+                </div>
+                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Pagado / Retirado</span>
+                  <span style={{ color: '#3fb950', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.sumaPago)}</span>
+                </div>
+                <div style={{ backgroundColor: '#0d1117', border: '1px solid #58a6ff', borderRadius: '8px', padding: '16px' }}>
+                  <span style={{ display: 'block', color: '#58a6ff', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Actual (deducciones)</span>
+                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(dAhorroAcumulado)}</span>
+                </div>
+              </div>
+
+              <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+                    <tr>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA PAGO</th>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CONSECUTIVO</th>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>AHORRO AGREGADO</th>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PAGO / RETIRO</th>
+                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>SALDO</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style={{ borderBottom: '1px solid #21262d', backgroundColor: '#010409' }}>
+                      <td style={{ padding: '16px', color: '#8b949e', fontStyle: 'italic', whiteSpace: 'nowrap' }}>Saldo inicial (heredado)</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
+                      <td style={{ padding: '16px', color: '#8b949e', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(datosAhorro.inicial)}</td>
+                    </tr>
+                    {datosAhorro.filas.length === 0 ? (
+                      <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este operador no tiene movimientos de ahorro en las nóminas registradas.</td></tr>
+                    ) : (
+                      datosAhorro.filas.map(m => (
+                        <tr key={m.id} style={{ borderBottom: '1px solid #21262d' }}>
+                          <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(m.fecha)}</td>
+                          <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{m.consecutivo}</td>
+                          <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.agregado)}</td>
+                          <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.pago)}</td>
+                          <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.saldo)}</td>
                         </tr>
                       ))
                     )}
@@ -1554,12 +1776,55 @@ export const ReferenciasNominaDashboard = () => {
               )}
 
               {pestanaModalNomina === 'referencia' && (
-                <div style={gridTres}>
-                  {campoTotal('Subtotal a Referencias', subtotalReferencias, '#58a6ff')}
-                  {campoNumerico('Extra', extras, setExtras)}
-                  {campoTotal('Subtotal a Pagar', subtotalAPagarCalc, '#3fb950')}
-                  {campoTotal('Diferencia Aplicable', diferenciaAplicableCalc, '#58a6ff')}
-                </div>
+                <>
+                  <div style={gridTres}>
+                    {campoTotal('Subtotal a Referencias', subtotalReferencias, '#58a6ff')}
+                    {campoNumerico('Extra', extras, setExtras)}
+                    {campoTotal('Subtotal a Pagar', subtotalAPagarCalc, '#3fb950')}
+                    {campoTotal('Diferencia Aplicable', diferenciaAplicableCalc, '#58a6ff')}
+                  </div>
+
+                  {/* ✅ NUEVO: referencias (operaciones) que se están pagando en esta nómina */}
+                  <div style={{ marginTop: '20px' }}>
+                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      Referencias en esta nómina ({detalleSeleccionadas.length})
+                    </span>
+                    <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', maxHeight: '300px', overflowY: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', position: 'sticky', top: 0 }}>
+                          <tr>
+                            <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>REFERENCIA</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>FECHA</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>SUELDO</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>EXTRA</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>SUELDO TOTAL</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detalleSeleccionadas.length === 0 ? (
+                            <tr><td colSpan={5} style={{ padding: '20px', textAlign: 'center', color: '#8b949e' }}>No hay referencias seleccionadas.</td></tr>
+                          ) : (
+                            detalleSeleccionadas.map(d => (
+                              <tr key={d.id} style={{ borderTop: '1px solid #21262d' }}>
+                                <td style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{d.ref}</td>
+                                <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{d.fecha ? formatearFechaSpanish(d.fecha) : '-'}</td>
+                                <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' }}>{formatoMoneda(d.sueldo)}</td>
+                                <td style={{ padding: '10px 12px', color: '#f59e0b', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' }}>{formatoMoneda(d.extra)}</td>
+                                <td style={{ padding: '10px 12px', color: '#58a6ff', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(d.total)}</td>
+                              </tr>
+                            ))
+                          )}
+                          {detalleSeleccionadas.length > 0 && (
+                            <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
+                              <td colSpan={4} style={{ padding: '10px 12px', color: '#8b949e', fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase' }}>Subtotal a Referencias</td>
+                              <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalReferencias)}</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
               )}
 
               {pestanaModalNomina === 'deducciones' && (
@@ -1570,23 +1835,32 @@ export const ReferenciasNominaDashboard = () => {
                   {campoNumerico('ISR (factor)', isr, setIsr, '0.0001')}
                   {campoTotal('ISR Monto', isrMontoCalc, '#f85149')}
                   <div></div>
+
                   {campoNumerico('Préstamo (esta nómina)', prestamoNuevo, setPrestamoNuevo)}
                   {campoTotal('Préstamo Acumulado', prestamoAcumuladoTotal, '#c9d1d9')}
                   <div></div>
                   {campoNumerico('Pago Préstamo', pagoPrestamo, setPagoPrestamo)}
                   {campoTotal('Saldo del Préstamo', saldoPrestamoCalc, '#f59e0b')}
                   <div></div>
-                  {campoTotal('Ahorro (por nómina)', dAhorroMonto, '#c9d1d9')}
-                  {campoTotal('Ahorro Acumulado', dAhorroAcumulado, '#58a6ff')}
+                  <div style={{ gridColumn: 'span 3', color: '#8b949e', fontSize: '0.78rem', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '10px 14px' }}>
+                    Saldo inicial heredado <b style={{ color: '#c9d1d9' }}>{formatoMoneda(dPrestamoAcumulado)}</b>
+                    {' + esta nómina '}<b style={{ color: '#58a6ff' }}>{formatoMoneda(Number(prestamoNuevo) || 0)}</b>
+                    {' − pago '}<b style={{ color: '#3fb950' }}>{formatoMoneda(Number(pagoPrestamo) || 0)}</b>
+                    {' = saldo '}<b style={{ color: '#f59e0b' }}>{formatoMoneda(saldoPrestamoCalc)}</b>
+                  </div>
+
+                  {/* ✅ NUEVO: ahorro con la misma lógica que el préstamo */}
+                  {campoNumerico('Ahorro (esta nómina)', ahorroNuevo, setAhorroNuevo)}
+                  {campoTotal('Ahorro Acumulado', ahorroAcumuladoTotal, '#c9d1d9')}
                   <div></div>
-                  <div style={{ gridColumn: 'span 3', display: 'flex', alignItems: 'center', gap: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '12px 14px' }}>
-                    <input type="checkbox" checked={pagarAhorro} onChange={e => setPagarAhorro(e.target.checked)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
-                    <span style={{ color: '#c9d1d9', fontSize: '0.85rem' }}>
-                      Pagar ahorro acumulado al operador en esta nómina
-                      {pagarAhorro
-                        ? <b style={{ color: '#3fb950' }}> — se pagará {formatoMoneda(dAhorroAcumulado)} y el acumulado quedará en $0.00</b>
-                        : <span style={{ color: '#8b949e' }}> — si no, se suma el ahorro de la semana ({formatoMoneda(dAhorroMonto)}); acumulado nuevo: {formatoMoneda(ahorroAcumuladoNuevo)}</span>}
-                    </span>
+                  {campoNumerico('Pago / Retiro de Ahorro', pagoAhorro, setPagoAhorro)}
+                  {campoTotal('Saldo del Ahorro', saldoAhorroCalc, '#58a6ff')}
+                  <div></div>
+                  <div style={{ gridColumn: 'span 3', color: '#8b949e', fontSize: '0.78rem', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '10px 14px' }}>
+                    Saldo inicial heredado <b style={{ color: '#c9d1d9' }}>{formatoMoneda(dAhorroAcumulado)}</b>
+                    {' + ahorro de esta nómina '}<b style={{ color: '#58a6ff' }}>{formatoMoneda(Number(ahorroNuevo) || 0)}</b>
+                    {' − pago/retiro '}<b style={{ color: '#3fb950' }}>{formatoMoneda(Number(pagoAhorro) || 0)}</b>
+                    {' = saldo '}<b style={{ color: '#58a6ff' }}>{formatoMoneda(saldoAhorroCalc)}</b>
                   </div>
                 </div>
               )}
@@ -1693,6 +1967,7 @@ export const ReferenciasNominaDashboard = () => {
                     {lbl: 'PAGO PRÉSTAMO', val: nominaViendo.pagoPrestamo},
                     {lbl: 'SALDO PRÉSTAMO', val: nominaViendo.saldoPrestamo},
                     {lbl: 'AHORRO', val: nominaViendo.ahorro},
+                    {lbl: 'PAGO AHORRO', val: nominaViendo.pagoAhorro},
                     {lbl: 'AHORRO ACUM.', val: nominaViendo.ahorroAcumulado},
                     {lbl: 'TOTAL', val: fichaTotales.neto},
                     {lbl: 'DEP. GASTOS', val: nominaViendo.depositoGastos},
@@ -1705,7 +1980,7 @@ export const ReferenciasNominaDashboard = () => {
                     </div>
                   ))}
                   {nominaViendo.ahorroPagado && (
-                    <div style={{ gridColumn: 'span 5', color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold' }}>✔ En esta nómina se pagó el ahorro acumulado al operador.</div>
+                    <div style={{ gridColumn: 'span 5', color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold' }}>✔ En esta nómina se registró un pago/retiro de ahorro al operador.</div>
                   )}
                 </div>
 
