@@ -25,6 +25,11 @@ export const TIPOS_DOCUMENTO_EMPRESA = [
   '15. Otro',
 ];
 
+// ✅ ID del tipo de empresa "Cliente (Paga)" en el catálogo catalogo_tipo_empresa.
+//    En la base de datos, las empresas guardan su tiposEmpresa con ESTE id (no
+//    con el texto). Es el mismo id que usa FormularioOperacion.tsx.
+const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
+
 // =========================================
 // SUB-COMPONENTE: SELECTOR MULTIPLE CON CHECKBOXES
 // =========================================
@@ -605,7 +610,15 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   const monedaSeleccionadaString = monedas.find(m => m.id === formData.moneda)?.moneda || formData.moneda;
   const tiposFacturasFiltrados = tiposFacturas.filter(tf => tf.moneda === monedaSeleccionadaString);
   
-  const clientesPaga = registros.filter(r => Array.isArray(r.tiposEmpresa) && r.tiposEmpresa.includes('Cliente (Paga)'));
+  // ✅ CORRECCIÓN: el campo tiposEmpresa puede venir guardado como el ID del
+  //    catálogo ('7eec9cbb') o como el texto ('Cliente (Paga)'). Antes solo se
+  //    comparaba contra el texto, por eso el selector de "Cliente(s) que Paga
+  //    (Relacionados)" salía vacío ("No se encontraron coincidencias"). Ahora
+  //    aceptamos AMBOS formatos para que sí aparezcan los clientes que pagan.
+  const esClientePaga = (r: any) =>
+    Array.isArray(r.tiposEmpresa) &&
+    (r.tiposEmpresa.includes('Cliente (Paga)') || r.tiposEmpresa.includes(ID_TIPO_CLIENTE_PAGA));
+  const clientesPaga = registros.filter(esClientePaga);
   const opcionesClientesPaga = clientesPaga.map(c => ({ id: c.id, label: c.nombre }));
 
   return (
