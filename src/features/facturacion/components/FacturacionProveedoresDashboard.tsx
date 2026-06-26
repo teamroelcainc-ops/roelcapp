@@ -66,7 +66,6 @@ const ID_MXN = 'f95d8894';
 
 // Límites para acotar lecturas (ajustables).
 const LIMITE_OPS_RANGO = 400;
-const LIMITE_FACTURAS = 200;
 // Carga total del historial (paginado) para que el índice de operaciones
 // facturadas sea completo, y caché de sesión para no releer miles de docs.
 const LIMITE_FACTURAS_TODAS = 12000;
