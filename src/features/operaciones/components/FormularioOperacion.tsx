@@ -1383,14 +1383,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   // ✅ NUEVO: cuántas operaciones usan cada tarifa (se cuenta una vez por operación por tarifa única).
   const [usoTarifaMap, setUsoTarifaMap] = useState<Record<string, number>>({});
-  const [cargandoUsoTarifa, setCargandoUsoTarifa] = useState(false);
   const usoTarifaCargadoRef = useRef(false);
 
   const cargarUsoTarifas = useCallback(async () => {
     if (usoTarifaCargadoRef.current) return;
     if (!((catalogoConvDetalles && catalogoConvDetalles.length) || (catalogoConvProvDetalles && catalogoConvProvDetalles.length))) return; // espera a que carguen los detalles
     usoTarifaCargadoRef.current = true;
-    setCargandoUsoTarifa(true);
     try {
       // mapa: id del detalle de convenio -> id de la tarifa del catálogo
       const detCli = new Map<string, string>();
@@ -1418,8 +1416,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     } catch (e) {
       console.error('Error contando uso de tarifas en operaciones:', e);
       usoTarifaCargadoRef.current = false; // permite reintentar
-    } finally {
-      setCargandoUsoTarifa(false);
     }
   }, [catalogoConvDetalles, catalogoConvProvDetalles]);
 
