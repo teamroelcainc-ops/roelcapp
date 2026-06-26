@@ -518,6 +518,8 @@ export const ReferenciasNominaDashboard = () => {
     try {
       await updateDoc(doc(db, 'operaciones', editandoExtra.id), { sueldoExtra: nuevoValor });
       setOperacionesGlobales(prev => prev.map(o => o.id === editandoExtra.id ? { ...o, sueldoExtra: nuevoValor } : o));
+      // ✅ Refleja el cambio también en el detalle de la Ficha abierta.
+      setOpsFicha(prev => prev.map(o => o.id === editandoExtra.id ? { ...o, sueldoExtra: nuevoValor } : o));
       setEditandoExtra(null);
     } catch (error) {
       console.error('Error al guardar el sueldo extra:', error);
@@ -958,6 +960,13 @@ export const ReferenciasNominaDashboard = () => {
     () => reconstruirTotales(nominaViendo, opsFicha),
     [nominaViendo, opsFicha]
   );
+
+  // ✅ Subtotales del detalle: Sueldo (sueldoTotal), Sueldo Extra y Sueldo Total.
+  const subtotalesFicha = useMemo(() => {
+    const sueldo = opsFicha.reduce((s: number, o: any) => s + aNum(o.sueldo ?? o.importe ?? o.sueldoTotal), 0);
+    const extra = opsFicha.reduce((s: number, o: any) => s + aNum(o.sueldoExtra), 0);
+    return { sueldo, extra, total: sueldo + extra };
+  }, [opsFicha]);
 
   // Marcar una nómina como Pagada / Pendiente
   const handleTogglePagoNomina = async (e: React.MouseEvent, nom: any) => {
@@ -1742,28 +1751,48 @@ export const ReferenciasNominaDashboard = () => {
                       No hay detalle de operaciones ligado a esta nómina. Las nóminas generadas desde la app guardan el detalle automáticamente; las nóminas importadas necesitan el vínculo con sus operaciones (ver nota).
                     </div>
                   ) : (
-                    <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                         <thead style={{ backgroundColor: '#1f2937', color: '#8b949e' }}>
                           <tr>
                             <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>REFERENCIA</th>
                             <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>FECHA</th>
                             <th style={{ padding: '10px 12px', textAlign: 'left' }}>CLIENTE</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>IMPORTE</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>SUELDO</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>SUELDO EXTRA</th>
+                            <th style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>SUELDO TOTAL</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {opsFicha.map((op: any) => (
-                            <tr key={op.id} style={{ borderTop: '1px solid #21262d' }}>
-                              <td style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{op.ref}</td>
-                              <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.fecha ? formatearFechaSpanish(op.fecha) : '-'}</td>
-                              <td style={{ padding: '10px 12px', color: '#c9d1d9' }}>{op.cliente || getNombreEmpresa(op.clientePagaId) || '-'}</td>
-                              <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(op.importe ?? op.sueldo ?? 0)}</td>
-                            </tr>
-                          ))}
+                          {opsFicha.map((op: any) => {
+                            const sueldoOp = aNum(op.sueldo ?? op.importe ?? op.sueldoTotal);
+                            const extraOp = aNum(op.sueldoExtra);
+                            const tieneExtra = extraOp > 0;
+                            return (
+                              <tr key={op.id} style={{ borderTop: '1px solid #21262d' }}>
+                                <td style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{op.ref}</td>
+                                <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.fecha ? formatearFechaSpanish(op.fecha) : '-'}</td>
+                                <td style={{ padding: '10px 12px', color: '#c9d1d9' }}>{op.cliente || getNombreEmpresa(op.clientePagaId) || '-'}</td>
+                                <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(sueldoOp)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                  <button type="button" onClick={(e) => abrirEditorExtra(e, op)} title="Editar sueldo extra de esta operación"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem',
+                                      backgroundColor: tieneExtra ? 'rgba(245,158,11,0.12)' : 'transparent',
+                                      border: `1px solid ${tieneExtra ? '#f59e0b' : '#30363d'}`,
+                                      color: tieneExtra ? '#f59e0b' : '#8b949e' }}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                    {tieneExtra ? formatoMoneda(extraOp) : 'Agregar'}
+                                  </button>
+                                </td>
+                                <td style={{ padding: '10px 12px', color: '#58a6ff', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(sueldoOp + extraOp)}</td>
+                              </tr>
+                            );
+                          })}
                           <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
-                            <td colSpan={3} style={{ padding: '10px 12px', color: '#8b949e', fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase' }}>Subtotal Referencias</td>
-                            <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalReferenciasFicha)}</td>
+                            <td colSpan={3} style={{ padding: '10px 12px', color: '#8b949e', fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase' }}>Subtotales</td>
+                            <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalesFicha.sueldo)}</td>
+                            <td style={{ padding: '10px 12px', color: '#f59e0b', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalesFicha.extra)}</td>
+                            <td style={{ padding: '10px 12px', color: '#58a6ff', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalesFicha.total)}</td>
                           </tr>
                         </tbody>
                       </table>
