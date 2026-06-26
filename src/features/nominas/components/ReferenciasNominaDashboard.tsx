@@ -101,6 +101,34 @@ export const ReferenciasNominaDashboard = () => {
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // Helper numérico seguro.
+  const aNum = (v: any) => Number(v) || 0;
+
+  // ✅ Total a Pagar efectivo de una nómina (para la tabla del Historial y la Ficha).
+  //   Si el documento ya trae totalAPagar > 0, se usa tal cual. Si viene en 0
+  //   (nóminas importadas), se reconstruye:
+  //     Subtotal a Pagar − Total Deducciones + Depósitos (gastos + otros).
+  const calcularTotalAPagar = (n: any): number => {
+    if (!n) return 0;
+    const stored = aNum(n.totalAPagar);
+    if (stored > 0) return stored;
+    const subRef = aNum(n.subtotalPagar) > 0 ? aNum(n.subtotalPagar) : Math.max(aNum(n.subtotalAPagar) - aNum(n.extras), 0);
+    const subAPagar = aNum(n.subtotalAPagar) > 0 ? aNum(n.subtotalAPagar) : (subRef + aNum(n.extras));
+    const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot));
+    const neto = aNum(n.total) > 0 ? aNum(n.total) : (subAPagar - totalDed);
+    return neto + aNum(n.depositoGastos) + aNum(n.otrosDepositos);
+  };
+
+  // ✅ Ordena las operaciones de la ficha de la MÁS RECIENTE a la MÁS ANTIGUA
+  //   (por fecha; empate por referencia descendente).
+  const ordenarOpsRecientes = (arr: any[]) =>
+    [...arr].sort((a, b) => {
+      const fa = String(a.fecha || '');
+      const fb = String(b.fecha || '');
+      if (fb !== fa) return fb.localeCompare(fa);
+      return String(b.ref || '').localeCompare(String(a.ref || ''));
+    });
+
   useEffect(() => {
     // ✅ CORREGIDO: NO usar orderBy('createdAt') en la query. Firestore EXCLUYE
     //   los documentos que NO tienen ese campo, por lo que las nóminas viejas o
@@ -122,7 +150,12 @@ export const ReferenciasNominaDashboard = () => {
     const unSubEmpleados = onSnapshot(collection(db, 'empleados'), (snap) => {
       setOperadoresList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     });
-    return () => { unSubNominas(); unSubEmpleados(); };
+    // ✅ NUEVO: empresas SIEMPRE, para resolver el nombre del cliente (clientePaga)
+    //   en la Ficha de Nómina (columna Cliente del detalle de referencias).
+    const unSubEmpresas = onSnapshot(collection(db, 'empresas'), (snap) => {
+      setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
+    });
+    return () => { unSubNominas(); unSubEmpleados(); unSubEmpresas(); };
   }, []);
 
   useEffect(() => {
@@ -143,10 +176,7 @@ export const ReferenciasNominaDashboard = () => {
       subs.push(onSnapshot(collection(db, 'catalogo_bancos'), (snap) => {
         setBancosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
       }));
-      // ✅ NUEVO: empresas, para resolver el nombre del cliente que paga (clientePaga).
-      subs.push(onSnapshot(collection(db, 'empresas'), (snap) => {
-        setEmpresasList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
-      }));
+      // (empresas ya se suscribe al montar, para todas las pestañas)
       const qOps = query(collection(db, 'operaciones'), limit(500));
       subs.push(onSnapshot(qOps, (snap) => {
         const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
@@ -771,7 +801,7 @@ export const ReferenciasNominaDashboard = () => {
     if (!nominaViendo) { setOpsFicha([]); return; }
 
     if (Array.isArray(nominaViendo.operacionesGuardadas) && nominaViendo.operacionesGuardadas.length > 0) {
-      setOpsFicha(nominaViendo.operacionesGuardadas);
+      setOpsFicha(ordenarOpsRecientes(nominaViendo.operacionesGuardadas));
       return;
     }
 
@@ -782,7 +812,8 @@ export const ReferenciasNominaDashboard = () => {
         id: op.id,
         ref: op.ref || op.id?.substring(0, 6),
         fecha: op.fechaServicio || op.fecha || '',
-        cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '-',
+        clientePagaId: op.clientePaga || op.cliente || '',
+        cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '',
         tipoServicio: op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-',
         sueldo: sueldoTotal,
         sueldoExtra: Number(op.sueldoExtra || 0),
@@ -822,7 +853,7 @@ export const ReferenciasNominaDashboard = () => {
           }
         }
 
-        if (!cancelado) setOpsFicha(encontradas.map(mapearOp));
+        if (!cancelado) setOpsFicha(ordenarOpsRecientes(encontradas.map(mapearOp)));
       } catch (e) {
         console.error('[Nómina] Error al cargar operaciones de la ficha:', e);
         if (!cancelado) setOpsFicha([]);
@@ -849,6 +880,19 @@ export const ReferenciasNominaDashboard = () => {
     if (guardado > 0) return guardado;
     return Math.max(Number(nominaViendo.subtotalAPagar || 0) - Number(nominaViendo.extras || 0), 0);
   }, [nominaViendo, opsFicha]);
+
+  // ✅ Totales reconstruidos para la cuadrícula de la Ficha (las nóminas
+  //   importadas vienen con totalDeducciones/total/totalAPagar en 0). Se usa el
+  //   valor guardado si es > 0; si no, se reconstruye desde sus componentes.
+  const fichaTotales = useMemo(() => {
+    const n = nominaViendo;
+    if (!n) return { subAPagar: 0, totalDed: 0, neto: 0, totalAPagar: 0 };
+    const subAPagar = aNum(n.subtotalAPagar) > 0 ? aNum(n.subtotalAPagar) : (subtotalReferenciasFicha + aNum(n.extras));
+    const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot));
+    const neto = aNum(n.total) > 0 ? aNum(n.total) : (subAPagar - totalDed);
+    const totalAPagar = aNum(n.totalAPagar) > 0 ? aNum(n.totalAPagar) : (neto + aNum(n.depositoGastos) + aNum(n.otrosDepositos));
+    return { subAPagar, totalDed, neto, totalAPagar };
+  }, [nominaViendo, subtotalReferenciasFicha]);
 
   // Marcar una nómina como Pagada / Pendiente
   const handleTogglePagoNomina = async (e: React.MouseEvent, nom: any) => {
@@ -1256,7 +1300,7 @@ export const ReferenciasNominaDashboard = () => {
                       <td style={{ padding: '16px', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{getNombreOperador(r.operadorNombre || r.operadorId)}</td>
                       <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaPago)}</td>
                       <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaInicio)} <br/>al {formatearFechaSpanish(r.fechaFin)}</td>
-                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(r.totalAPagar != null ? r.totalAPagar : r.subtotalPagar)}</td>
+                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(calcularTotalAPagar(r))}</td>
                     </tr>
                   ))
                 )}
@@ -1586,23 +1630,23 @@ export const ReferenciasNominaDashboard = () => {
                   {[
                     {lbl: 'SUBTOTAL REFERENCIAS', val: subtotalReferenciasFicha},
                     {lbl: 'EXTRA', val: nominaViendo.extras},
-                    {lbl: 'SUBTOTAL A PAGAR', val: nominaViendo.subtotalAPagar},
+                    {lbl: 'SUBTOTAL A PAGAR', val: fichaTotales.subAPagar},
                     {lbl: 'NÓMINA FISCAL', val: nominaViendo.nominaFiscal ?? nominaViendo.nomina},
                     {lbl: 'DIFERENCIA APLICABLE', val: nominaViendo.diferenciaAplicable},
                     {lbl: 'INFONAVIT', val: nominaViendo.infonavit},
                     {lbl: 'FONACOT', val: nominaViendo.fonacot},
                     {lbl: 'IMSS', val: nominaViendo.imss},
                     {lbl: 'ISR MONTO', val: nominaViendo.isrMonto},
-                    {lbl: 'TOTAL DEDUCCIONES', val: nominaViendo.totalDeducciones},
+                    {lbl: 'TOTAL DEDUCCIONES', val: fichaTotales.totalDed},
                     {lbl: 'PRÉSTAMO OTORGADO', val: nominaViendo.prestamoOtorgado},
                     {lbl: 'PAGO PRÉSTAMO', val: nominaViendo.pagoPrestamo},
                     {lbl: 'SALDO PRÉSTAMO', val: nominaViendo.saldoPrestamo},
                     {lbl: 'AHORRO', val: nominaViendo.ahorro},
                     {lbl: 'AHORRO ACUM.', val: nominaViendo.ahorroAcumulado},
-                    {lbl: 'TOTAL', val: nominaViendo.total},
+                    {lbl: 'TOTAL', val: fichaTotales.neto},
                     {lbl: 'DEP. GASTOS', val: nominaViendo.depositoGastos},
                     {lbl: 'OTROS DEPÓSITOS', val: nominaViendo.otrosDepositos},
-                    {lbl: 'TOTAL A PAGAR', val: nominaViendo.totalAPagar},
+                    {lbl: 'TOTAL A PAGAR', val: fichaTotales.totalAPagar},
                   ].map((it, idx) => (
                     <div key={idx}>
                       <span style={{ display: 'block', color: '#8b949e', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase' }}>{it.lbl}</span>
@@ -1648,7 +1692,7 @@ export const ReferenciasNominaDashboard = () => {
                             <tr key={op.id} style={{ borderTop: '1px solid #21262d' }}>
                               <td style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{op.ref}</td>
                               <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.fecha ? formatearFechaSpanish(op.fecha) : '-'}</td>
-                              <td style={{ padding: '10px 12px', color: '#c9d1d9' }}>{op.cliente || '-'}</td>
+                              <td style={{ padding: '10px 12px', color: '#c9d1d9' }}>{op.cliente || getNombreEmpresa(op.clientePagaId) || '-'}</td>
                               <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(op.importe ?? op.sueldo ?? 0)}</td>
                             </tr>
                           ))}
