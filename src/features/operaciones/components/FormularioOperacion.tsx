@@ -260,6 +260,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [detalleConvEditando, setDetalleConvEditando] = useState<any | null>(null);
   const [guardandoDetalleConv, setGuardandoDetalleConv] = useState(false);
 
+  // ✅ NUEVO: ver / editar los convenios (tarifas) del proveedor desde la operación.
+  const [mostrarConveniosProveedor, setMostrarConveniosProveedor] = useState(false);
+  const [detalleConvProvEditando, setDetalleConvProvEditando] = useState<any | null>(null);
+  const [guardandoDetalleConvProv, setGuardandoDetalleConvProv] = useState(false);
+
   const [puedeEditarRef, setPuedeEditarRef] = useState(false);
   const [referencia, setReferencia] = useState('');
 
@@ -932,6 +937,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const maestroParent = maestrosAsociados.find((m: any) => String(m.id).trim() === ref);
       const nombreFinal = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || d.tipoConvenioNombre || 'Concepto sin nombre';
       return {
+        ...d,
         id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
         monedaBase: maestroParent?.monedaId || maestroParent?.moneda || d.moneda || ID_USD,
         tarifaMonto: montoDetalle(d),
@@ -1387,6 +1393,70 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
+  // ✅ NUEVO: ver / editar / eliminar los convenios (tarifas) del PROVEEDOR.
+  const refrescarConvProvDetalles = useCallback(async () => {
+    try {
+      const snap = await getDocs(collection(db, 'convenios_proveedores_detalles'));
+      const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      setConvProvDetallesLocal(docs);
+      try { localStorage.setItem('cat_v1__catalogoConvProvDetalles', JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
+    } catch (e) {
+      console.error('Error refrescando detalles de convenios de proveedor:', e);
+    }
+  }, []);
+
+  const abrirEditorConvenioProv = (c: any) => {
+    setDetalleConvProvEditando({
+      id: c.id,
+      tipoConvenioId: c.tipoConvenioId ?? c.tarifaBaseId ?? '',
+      tipoConvenioNombre: c.tipoConvenioNombre ?? '',
+      tarifa: c.tarifa ?? '',
+      costo: c.costo ?? '',
+      venta: c.venta ?? '',
+    });
+  };
+
+  const guardarDetalleConvenioProv = async () => {
+    if (!detalleConvProvEditando) return;
+    setGuardandoDetalleConvProv(true);
+    try {
+      const id = String(detalleConvProvEditando.id);
+      const numOrUndef = (v: any) => (v === '' || v === null || v === undefined) ? undefined : Number(v);
+      const payload: any = {
+        tipoConvenioId: detalleConvProvEditando.tipoConvenioId || '',
+        tipoConvenioNombre: detalleConvProvEditando.tipoConvenioNombre || '',
+      };
+      const t = numOrUndef(detalleConvProvEditando.tarifa);
+      const c2 = numOrUndef(detalleConvProvEditando.costo);
+      const v = numOrUndef(detalleConvProvEditando.venta);
+      if (t !== undefined) payload.tarifa = t;
+      if (c2 !== undefined) payload.costo = c2;
+      if (v !== undefined) payload.venta = v;
+
+      await updateDoc(doc(db, 'convenios_proveedores_detalles', id), payload);
+      await refrescarConvProvDetalles();
+      setDetalleConvProvEditando(null);
+    } catch (e) {
+      console.error('Error guardando detalle de convenio de proveedor:', e);
+      alert('No se pudo guardar el convenio. Revisa tu conexión.');
+    } finally {
+      setGuardandoDetalleConvProv(false);
+    }
+  };
+
+  const eliminarDetalleConvenioProv = async (c: any) => {
+    const nombre = c.tipoConvenioNombre || c.descripcion || 'esta tarifa';
+    if (!window.confirm(`¿Eliminar el convenio/tarifa "${nombre}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await deleteDoc(doc(db, 'convenios_proveedores_detalles', String(c.id)));
+      if (formData.convenioProveedor === c.id) { setFormData(prev => ({ ...prev, convenioProveedor: '' })); setSearchConvenioProveedor(''); }
+      await refrescarConvProvDetalles();
+    } catch (e) {
+      console.error('Error eliminando detalle de convenio de proveedor:', e);
+      alert('No se pudo eliminar. Revisa tu conexión.');
+    }
+  };
+
 
   const idOperacion = (initialData as any)?.id || '';
   const referenciaOperacion = referenciaDeOperacion(idOperacion, (initialData as any)?.ref);
@@ -1760,7 +1830,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Convenio Proveedor</label>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                          <label className="form-label" style={{ margin: 0 }}>Convenio Proveedor</label>
+                          {(formData.proveedorUnidad || searchProvTransporte) && (
+                            <button
+                              type="button"
+                              onClick={() => setMostrarConveniosProveedor(true)}
+                              title="Ver y editar los convenios (tarifas) de este proveedor"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}
+                            >
+                              <IconReceipt size={12} /> Ver / editar ({listaConveniosProveedor.length})
+                            </button>
+                          )}
+                        </div>
                         <div style={{ position: 'relative' }}>
                           <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Escriba para buscar convenio..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor}
                             onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '' })); }}
@@ -2253,6 +2335,136 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               <button type="button" onClick={() => setDetalleConvEditando(null)} disabled={guardandoDetalleConv} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 20px' }}>Cancelar</button>
               <button type="button" onClick={guardarDetalleConvenio} disabled={guardandoDetalleConv} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 24px' }}>
                 {guardandoDetalleConv ? 'Guardando...' : (<><IconSave size={15} /> Guardar Convenio</>)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: MODAL — Convenios (tarifas) del proveedor seleccionado */}
+      {mostrarConveniosProveedor && (
+        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 3200, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', pointerEvents: 'auto' }}>
+          <div style={{ maxWidth: '820px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '88vh' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #1f2733', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Convenios del Proveedor</h2>
+                <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#7d8590' }}>
+                  {searchProvTransporte || 'Proveedor'} · {listaConveniosProveedor.length} convenio(s) / tarifa(s)
+                </p>
+              </div>
+              <button type="button" onClick={() => setMostrarConveniosProveedor(false)} className="roelca-window-btn" title="Cerrar"><IconX size={16} /></button>
+            </div>
+
+            <div style={{ padding: '18px 24px', overflowY: 'auto', flex: 1 }}>
+              {listaConveniosProveedor.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
+                  Este proveedor no tiene convenios / tarifas registradas.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
+                    <thead style={{ backgroundColor: '#1f2937' }}>
+                      <tr>
+                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>DESCRIPCIÓN / TARIFA</th>
+                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>MONTO</th>
+                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textAlign: 'center' }}>ACCIONES</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listaConveniosProveedor.map((c: any, idx: number) => (
+                        <tr key={c.id || idx} style={{ borderBottom: '1px solid #30363d', backgroundColor: formData.convenioProveedor === c.id ? 'rgba(88,166,255,0.06)' : 'transparent' }}>
+                          <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
+                            {c.tipoConvenioNombre || `Tarifa ${idx + 1}`}
+                            <div style={{ fontSize: '0.7rem', color: '#fb923c', marginTop: '4px', fontFamily: 'monospace' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
+                          </td>
+                          <td style={{ padding: '12px 16px', color: '#3fb950', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                            {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}
+                          </td>
+                          <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button type="button" title="Editar convenio" onClick={() => abrirEditorConvenioProv(c)}
+                                style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.1)'}
+                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                                <IconEdit size={14} />
+                              </button>
+                              <button type="button" title="Eliminar convenio" onClick={() => eliminarDetalleConvenioProv(c)}
+                                style={{ background: 'transparent', border: '1px solid #f85149', borderRadius: '4px', color: '#f85149', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(248,81,73,0.1)'}
+                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #1f2733', backgroundColor: '#0d1117', flexShrink: 0 }}>
+              <button type="button" onClick={() => setMostrarConveniosProveedor(false)} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 24px' }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: MODAL — Editar un convenio (tarifa) del proveedor */}
+      {detalleConvProvEditando && (
+        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 3300, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', pointerEvents: 'auto' }}>
+          <div style={{ maxWidth: '520px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '12px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #1f2733', paddingBottom: '14px' }}>
+              <h3 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.1rem' }}>Editar Convenio / Tarifa (Proveedor)</h3>
+              <button type="button" onClick={() => setDetalleConvProvEditando(null)} className="roelca-window-btn" title="Cerrar"><IconX size={16} /></button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+              <div>
+                <label className="form-label">Tipo de Convenio (Tarifa del catálogo)</label>
+                <select
+                  className="form-control"
+                  value={detalleConvProvEditando.tipoConvenioId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const tObj = (tarifas || []).find((t: any) => String(t.id) === id);
+                    const nombre = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || '';
+                    setDetalleConvProvEditando((prev: any) => prev ? { ...prev, tipoConvenioId: id, tipoConvenioNombre: nombre } : prev);
+                  }}
+                >
+                  <option value="">-- Sin asignar --</option>
+                  {detalleConvProvEditando.tipoConvenioId && !opcionesTarifasRef.some((o: any) => o.id === detalleConvProvEditando.tipoConvenioId) && (
+                    <option value={detalleConvProvEditando.tipoConvenioId}>{detalleConvProvEditando.tipoConvenioNombre || detalleConvProvEditando.tipoConvenioId} (actual)</option>
+                  )}
+                  {opcionesTarifasRef.map((o: any) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                </select>
+                <small style={{ color: '#fb923c', fontFamily: 'monospace', fontSize: '0.7rem' }}>ID tarifa: {detalleConvProvEditando.tipoConvenioId || '—'}</small>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label className="form-label" style={{ color: '#3fb950' }}>Tarifa ($)</label>
+                  <input type="number" step="0.01" className="form-control" value={detalleConvProvEditando.tarifa} onChange={(e) => setDetalleConvProvEditando((prev: any) => prev ? { ...prev, tarifa: e.target.value } : prev)} />
+                </div>
+                <div>
+                  <label className="form-label">Costo ($)</label>
+                  <input type="number" step="0.01" className="form-control" value={detalleConvProvEditando.costo} onChange={(e) => setDetalleConvProvEditando((prev: any) => prev ? { ...prev, costo: e.target.value } : prev)} />
+                </div>
+                <div>
+                  <label className="form-label">Venta ($)</label>
+                  <input type="number" step="0.01" className="form-control" value={detalleConvProvEditando.venta} onChange={(e) => setDetalleConvProvEditando((prev: any) => prev ? { ...prev, venta: e.target.value } : prev)} />
+                </div>
+              </div>
+              <small style={{ color: '#8b949e', fontSize: '0.75rem' }}>
+                Deja en blanco los montos que no apliquen. Si el convenio usa una sola "Tarifa", captura solo ese campo; si usa "Costo / Venta", captura esos dos.
+              </small>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #1f2733', paddingTop: '16px' }}>
+              <button type="button" onClick={() => setDetalleConvProvEditando(null)} disabled={guardandoDetalleConvProv} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 20px' }}>Cancelar</button>
+              <button type="button" onClick={guardarDetalleConvenioProv} disabled={guardandoDetalleConvProv} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 24px' }}>
+                {guardandoDetalleConvProv ? 'Guardando...' : (<><IconSave size={15} /> Guardar Convenio</>)}
               </button>
             </div>
           </div>

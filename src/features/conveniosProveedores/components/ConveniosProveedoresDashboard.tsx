@@ -1,18 +1,12 @@
 // src/features/conveniosProveedores/components/ConveniosProveedoresDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy } from 'firebase/firestore';
-import { db, eliminarRegistro } from '../../../config/firebase'; 
+import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase'; 
 import { FormularioConvenioProveedor } from './FormularioConvenioProveedor';
 import type { ConvenioProveedorRecord } from '../../../types/convenioProveedor';
 
 // ============================================================
 // HELPER DE NORMALIZACIÓN PARA EL CRUCE
-// ------------------------------------------------------------
-// El campo operaciones.convenioProveedor guarda el ID del DETALLE
-// (doc de convenios_proveedores_detalles), NO el ID del maestro.
-// El nombre del detalle se guarda en operaciones.convenioProveedorNombre.
-// Normalizamos textos (minúsculas, sin acentos ni espacios sobrantes)
-// para que el cruce por nombre nunca falle por formato.
 // ============================================================
 const normalizar = (texto: any): string => {
   if (texto === null || texto === undefined) return '';
@@ -32,9 +26,29 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
 
+  // ✅ NUEVO (Cambio 2): edición / eliminación de detalles (tarifas) del convenio.
+  const [detalleEditando, setDetalleEditando] = useState<any | null>(null);
+  const [guardandoDetalle, setGuardandoDetalle] = useState(false);
+
   // Datos crudos en vivo — base para todos los cruces.
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [detallesGlobales, setDetallesGlobales] = useState<any[]>([]);
+
+  // ✅ catálogo catalogo_tarifas_referencia indexado por id (carga directa).
+  const [tarifasReferencia, setTarifasReferencia] = useState<Record<string, any>>({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
+        const map: Record<string, any> = {};
+        snap.docs.forEach(d => { map[String(d.id)] = { id: d.id, ...d.data() }; });
+        setTarifasReferencia(map);
+      } catch (err) {
+        console.error('[ConveniosProveedoresDashboard] Error cargando catalogo_tarifas_referencia:', err);
+        setTarifasReferencia({});
+      }
+    })();
+  }, []);
 
   const [registrosGlobales, setRegistrosGlobales] = useState<ConvenioProveedorRecord[]>([]);
   const [busqueda, setBusqueda] = useState('');
@@ -48,7 +62,6 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
   // 1. CARGA EN TIEMPO REAL: CONVENIOS + DETALLES + OPERACIONES
   // =========================================================
   useEffect(() => {
-    // 1.A) Convenios maestros de proveedores
     const unsubscribeConvenios = onSnapshot(collection(db, 'convenios_proveedores'), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as ConvenioProveedorRecord[];
       data.sort((a, b) => {
@@ -59,12 +72,10 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
       setRegistrosGlobales(data);
     });
 
-    // 1.B) Detalles de convenios de proveedores (convenios_proveedores_detalles)
     const unsubscribeDetalles = onSnapshot(collection(db, 'convenios_proveedores_detalles'), (snap) => {
       setDetallesGlobales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // 1.C) Operaciones (las más recientes, para el cruce de uso)
     const qOps = query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(3000));
     const unsubscribeOperaciones = onSnapshot(qOps, (snap) => {
       setOperacionesGlobales(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -80,8 +91,6 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
   // =========================================================
   // 2. ÍNDICES DE CRUCE
   // =========================================================
-
-  // idDetalle -> convenioId maestro
   const detalleToConvenio = useMemo(() => {
     const m: Record<string, string> = {};
     detallesGlobales.forEach(d => {
@@ -90,7 +99,6 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
     return m;
   }, [detallesGlobales]);
 
-  // convenioId maestro -> proveedorId (para acotar el cruce por nombre)
   const convenioToProveedor = useMemo(() => {
     const m: Record<string, string> = {};
     registrosGlobales.forEach((c: any) => {
@@ -99,14 +107,29 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
     return m;
   }, [registrosGlobales]);
 
-  // Última fecha de uso por DETALLE.
-  // Cruce con doble llave:
-  //   (a) ID  -> operacion.convenioProveedor === detalle.id
-  //   (b) Nombre + proveedor -> operacion.convenioProveedorNombre === detalle.tipoConvenioNombre
+  // ✅ NUEVO (Cambio 3): cuántos convenios tiene cada proveedor.
+  const conteoConveniosPorProveedor = useMemo(() => {
+    const porId: Record<string, number> = {};
+    const porNombre: Record<string, number> = {};
+    registrosGlobales.forEach((c: any) => {
+      const id = String(c.proveedorId || '').trim();
+      const nom = String(c.proveedorNombre || '').trim().toLowerCase();
+      if (id) porId[id] = (porId[id] || 0) + 1;
+      if (nom) porNombre[nom] = (porNombre[nom] || 0) + 1;
+    });
+    return { porId, porNombre };
+  }, [registrosGlobales]);
+
+  const contarConveniosProveedor = (reg: any): number => {
+    const id = String(reg?.proveedorId || '').trim();
+    const nom = String(reg?.proveedorNombre || '').trim().toLowerCase();
+    if (id && conteoConveniosPorProveedor.porId[id]) return conteoConveniosPorProveedor.porId[id];
+    return conteoConveniosPorProveedor.porNombre[nom] || 0;
+  };
+
   const lastUsedDetalleMap = useMemo(() => {
     const map: Record<string, string> = {};
 
-    // Índice de nombres: "proveedorId|nombreNormalizado" -> [idDetalle, ...]
     const nombreIndex: Record<string, string[]> = {};
     detallesGlobales.forEach(d => {
       const idDet = String(d.id).trim();
@@ -135,7 +158,6 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
       if (!fechaRaw || typeof fechaRaw !== 'string') return;
       const fecha = fechaRaw.split('T')[0];
 
-      // (a) Cruce directo por ID del detalle.
       const idEnOp = op.convenioProveedor || op.convenioProveedorDetalleId;
       let cruzadoPorId = false;
       if (idEnOp && typeof idEnOp === 'string' && detalleToConvenio[String(idEnOp).trim()] !== undefined) {
@@ -143,7 +165,6 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
         cruzadoPorId = true;
       }
 
-      // (b) Cruce por nombre (respaldo si el ID no coincide).
       if (!cruzadoPorId) {
         const nombreOp = normalizar(
           op.convenioProveedorNombre || op.convenioProveedorDetalleNombre || op.tarifaNombre
@@ -164,8 +185,6 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
     return map;
   }, [operacionesGlobales, detallesGlobales, detalleToConvenio, convenioToProveedor]);
 
-  // Última fecha de uso por CONVENIO maestro = fecha más reciente
-  // entre TODOS sus detalles (el último detalle usado).
   const lastUsedConvenioMap = useMemo(() => {
     const map: Record<string, string> = {};
     Object.entries(lastUsedDetalleMap).forEach(([idDetalle, fecha]) => {
@@ -193,6 +212,13 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
     setPaginaActual(1);
   }, [busqueda]);
 
+  // ✅ Opciones del catálogo de tarifas para el selector del editor de detalle.
+  const opcionesTarifas = useMemo(() => {
+    return Object.entries(tarifasReferencia)
+      .map(([id, data]: any) => ({ id, nombre: data?.descripcion || data?.nombre || id }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+  }, [tarifasReferencia]);
+
   const handleNuevo = () => { 
     setRegistroEditando(null); 
     setEstadoFormulario('abierto'); 
@@ -213,13 +239,11 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
     setOperacionesUso([]);
 
     try {
-      // Detalles reales del convenio
       const qDetalles = query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', '==', convenio.id));
       const snapDetalles = await getDocs(qDetalles);
       const detallesList = snapDetalles.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setConvenioViendo((prev: any) => ({ ...prev, detalles: detallesList }));
 
-      // IDs y nombres válidos de este convenio para filtrar operaciones.
       const idsDetalles = new Set(detallesList.map(d => String(d.id).trim()));
       const nombresDetalles = new Set(
         detallesList
@@ -228,12 +252,10 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
       );
       const proveedorConvenio = String((convenio as any).proveedorId || '').trim();
 
-      // Filtramos operaciones desde memoria (operacionesGlobales ya está en vivo).
       const opsFiltradas = operacionesGlobales.filter(op => {
         const idEnOp = String(op.convenioProveedor || op.convenioProveedorDetalleId || '').trim();
         if (idEnOp && idsDetalles.has(idEnOp)) return true;
 
-        // Respaldo por nombre + proveedor
         const nombreOp = normalizar(op.convenioProveedorNombre || op.convenioProveedorDetalleNombre || op.tarifaNombre);
         if (!nombreOp || !nombresDetalles.has(nombreOp)) return false;
         const provOp = String(op.proveedorUnidad || op.proveedorId || '').trim();
@@ -261,6 +283,67 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
         console.error("Error al eliminar:", error);
         alert('Hubo un error al eliminar. Revisa tu conexión.');
       }
+    }
+  };
+
+  // ✅ NUEVO (Cambio 2): abrir editor de un detalle (tarifa) del convenio.
+  const abrirEditorDetalle = (det: any) => {
+    setDetalleEditando({
+      ...det,
+      tarifa: det.tarifa ?? '',
+      costo: det.costo ?? '',
+      venta: det.venta ?? '',
+      tipoConvenioId: det.tipoConvenioId ?? '',
+      tipoConvenioNombre: det.tipoConvenioNombre ?? '',
+    });
+  };
+
+  // ✅ Guarda los cambios del detalle en convenios_proveedores_detalles.
+  const guardarDetalleEditado = async () => {
+    if (!detalleEditando) return;
+    setGuardandoDetalle(true);
+    try {
+      const id = String(detalleEditando.id);
+      const numOrUndef = (v: any) => (v === '' || v === null || v === undefined) ? undefined : Number(v);
+      const payload: any = {
+        tipoConvenioId: detalleEditando.tipoConvenioId || '',
+        tipoConvenioNombre: detalleEditando.tipoConvenioNombre || '',
+      };
+      const t = numOrUndef(detalleEditando.tarifa);
+      const c = numOrUndef(detalleEditando.costo);
+      const v = numOrUndef(detalleEditando.venta);
+      if (t !== undefined) payload.tarifa = t;
+      if (c !== undefined) payload.costo = c;
+      if (v !== undefined) payload.venta = v;
+
+      await actualizarRegistro('convenios_proveedores_detalles', id, payload);
+
+      setConvenioViendo((prev: any) => prev ? {
+        ...prev,
+        detalles: (prev.detalles || []).map((d: any) => d.id === id ? { ...d, ...payload } : d)
+      } : prev);
+      setDetalleEditando(null);
+    } catch (error) {
+      console.error('Error al guardar el detalle del convenio de proveedor:', error);
+      alert('No se pudo guardar el detalle. Revisa tu conexión.');
+    } finally {
+      setGuardandoDetalle(false);
+    }
+  };
+
+  // ✅ Elimina un detalle (tarifa) del convenio.
+  const eliminarDetalle = async (det: any) => {
+    const nombre = det.tipoConvenioNombre || det.nombre || 'esta tarifa';
+    if (!window.confirm(`¿Eliminar el detalle "${nombre}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await eliminarRegistro('convenios_proveedores_detalles', det.id);
+      setConvenioViendo((prev: any) => prev ? {
+        ...prev,
+        detalles: (prev.detalles || []).filter((d: any) => d.id !== det.id)
+      } : prev);
+    } catch (error) {
+      console.error('Error al eliminar el detalle del convenio de proveedor:', error);
+      alert('No se pudo eliminar el detalle. Revisa tu conexión.');
     }
   };
 
@@ -306,10 +389,11 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
   const exportarCSV = () => {
     if (registrosFiltrados.length === 0) return alert("No hay datos para exportar.");
-    const encabezados = ['# de Convenio', 'Fecha del Convenio', 'Fecha de Vencimiento', 'Proveedor', 'Moneda', 'Crédito', 'Último Uso'];
+    const encabezados = ['# de Convenio', 'Fecha del Convenio', 'Fecha de Vencimiento', 'Proveedor', 'Convenios del Proveedor', 'Moneda', 'Crédito', 'Último Uso'];
     const lineas = registrosFiltrados.map(r => [
       `"${r.numeroConvenio || ''}"`, `"${formatearFechaEsp(r.fechaConvenio)}"`, 
       `"${formatearFechaEsp(r.fechaVencimiento)}"`, `"${r.proveedorNombre || ''}"`, 
+      `"${contarConveniosProveedor(r)}"`,
       `"${r.monedaNombre || ''}"`, `"${r.credito || ''}"`,
       `"${r._fechaDinamicaUso ? formatearFechaEsp(r._fechaDinamicaUso) : 'Nunca usado'}"`
     ].join(','));
@@ -395,7 +479,7 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <table className="data-table" style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: '16px', width: '160px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
@@ -405,6 +489,7 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha del convenio</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha de vencimiento</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Proveedor</th>
+                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', textAlign: 'center' }}>Convenios del Proveedor</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Moneda</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Crédito</th>
                   <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Último Uso</th>
@@ -413,13 +498,14 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
               <tbody>
                 {registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                       {busqueda ? 'No se encontraron convenios para tu búsqueda.' : 'Aún no hay convenios registrados. Haz clic en el botón de "+" para comenzar.'}
                     </td>
                   </tr>
                 ) : (
                   registrosEnPantalla.map((reg) => {
                     const colorSemaforo = obtenerColorInactividad(reg._fechaDinamicaUso);
+                    const numConvProv = contarConveniosProveedor(reg);
 
                     return (
                     <tr 
@@ -475,6 +561,11 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                       <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatearFechaEsp(reg.fechaConvenio)}</td>
                       <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatearFechaEsp(reg.fechaVencimiento)}</td>
                       <td style={{ padding: '16px', color: '#f0f6fc', fontSize: '0.95rem', fontWeight: '500', whiteSpace: 'nowrap' }}>{reg.proveedorNombre}</td>
+                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <span title={`Este proveedor tiene ${numConvProv} convenio(s) registrado(s)`} style={{ display: 'inline-block', minWidth: '28px', padding: '3px 10px', borderRadius: '12px', backgroundColor: 'rgba(88,166,255,0.12)', border: '1px solid #58a6ff', color: '#58a6ff', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                          {numConvProv}
+                        </span>
+                      </td>
                       <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{reg.monedaNombre}</td>
                       <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{reg.credito}</td>
                       <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
@@ -551,6 +642,13 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                       {convenioViendo.status || 'Activo'}
                     </span>
                   </div>
+
+                  <div className="detail-item" style={{ gridColumn: 'span 3', backgroundColor: 'rgba(88,166,255,0.06)', border: '1px solid rgba(88,166,255,0.3)', borderRadius: '8px', padding: '12px 16px' }}>
+                    <span className="detail-label" style={{ color: '#58a6ff', fontSize: '0.85rem', display:'block', fontWeight: 'bold' }}>Convenios de este proveedor</span>
+                    <span className="detail-value" style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                      {contarConveniosProveedor(convenioViendo)} {contarConveniosProveedor(convenioViendo) === 1 ? 'convenio' : 'convenios'} registrado(s) para {convenioViendo.proveedorNombre || 'este proveedor'}
+                    </span>
+                  </div>
                   
                   <div className="detail-item">
                     <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Fecha de Convenio</span>
@@ -585,7 +683,7 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
               {activeTabDetalle === 'detalles' && (
                 <div style={{ animation: 'fadeIn 0.3s ease' }}>
                   <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
-                    Mostrando los detalles/tarifas del convenio y su último uso en base a las operaciones registradas.
+                    Mostrando los detalles/tarifas del convenio y su último uso en base a las operaciones registradas. Usa los botones para editar o eliminar cada tarifa.
                   </p>
                   {(!convenioViendo.detalles || convenioViendo.detalles.length === 0) ? (
                     <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
@@ -593,26 +691,34 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                     </div>
                   ) : (
                     <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
                         <thead style={{ backgroundColor: '#1f2937' }}>
                           <tr>
                             <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>DESCRIPCIÓN / CONCEPTO</th>
                             <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>COSTO TARIFA</th>
                             <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>ÚLTIMO USO</th>
+                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textAlign: 'center' }}>ACCIONES</th>
                           </tr>
                         </thead>
                         <tbody>
                           {convenioViendo.detalles.map((det: any, idx: number) => {
-                            // El cruce usa el ID del documento del detalle, que es
-                            // exactamente lo que la operación guarda en "convenioProveedor".
                             const idDet = String(det.id || '').trim();
+                            // Descripción real desde catalogo_tarifas_referencia (tipoConvenioId).
+                            const refDoc = det.tipoConvenioId ? tarifasReferencia[String(det.tipoConvenioId)] : null;
+                            const descMaster = refDoc?.descripcion || refDoc?.nombre || '';
+                            const nomDet = det.tipoConvenioNombre || descMaster || det.nombre || det.descripcion;
+
                             const fechaUso = idDet ? (lastUsedDetalleMap[idDet] || '') : '';
                             const colorInactividadDetalle = obtenerColorInactividad(fechaUso);
 
                             return (
                               <tr key={idDet || idx} style={{ borderBottom: '1px solid #30363d' }}>
                                 <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
-                                  {det.tipoConvenioNombre || det.nombre || `Concepto ${idx + 1}`}
+                                  {nomDet || `Concepto ${idx + 1}`}
+                                  {/* ✅ Cambio 1: ID del catálogo de tarifas (tipoConvenioId) */}
+                                  <div style={{ fontSize: '0.7rem', color: '#fb923c', marginTop: '4px', fontFamily: 'monospace' }}>
+                                    ID tarifa: {det.tipoConvenioId || '—'}
+                                  </div>
                                 </td>
                                 <td style={{ padding: '12px 16px', color: '#10b981', fontWeight: 'bold', fontSize: '0.85rem' }}>
                                   ${Number(det.tarifa || 0).toFixed(2)}
@@ -632,6 +738,31 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                                       }}>
                                     </span>
                                     {fechaUso ? formatearFechaEsp(fechaUso) : 'Nunca usado'}
+                                  </div>
+                                </td>
+                                {/* ✅ Cambio 2: editar y eliminar el detalle */}
+                                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                    <button
+                                      type="button"
+                                      title="Editar detalle"
+                                      onClick={() => abrirEditorDetalle(det)}
+                                      style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                      onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
+                                      onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      title="Eliminar detalle"
+                                      onClick={() => eliminarDetalle(det)}
+                                      style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                      onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                                      onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                                    </button>
                                   </div>
                                 </td>
                               </tr>
@@ -693,6 +824,84 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
             
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', flexShrink: 0 }}>
               <button onClick={() => setConvenioViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO (Cambio 2): MODAL EDITAR DETALLE / TARIFA */}
+      {detalleEditando && (
+        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1200, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          <div className="form-card" style={{ maxWidth: '560px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <h3 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.1rem' }}>Editar Detalle / Tarifa</h3>
+              <button onClick={() => setDetalleEditando(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Tipo de Convenio (Tarifa del catálogo)</label>
+                <select
+                  value={detalleEditando.tipoConvenioId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const data = tarifasReferencia[id];
+                    const nombre = data?.descripcion || data?.nombre || '';
+                    setDetalleEditando((prev: any) => prev ? { ...prev, tipoConvenioId: id, tipoConvenioNombre: nombre } : prev);
+                  }}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                >
+                  <option value="">-- Sin asignar --</option>
+                  {detalleEditando.tipoConvenioId && !opcionesTarifas.some(o => o.id === detalleEditando.tipoConvenioId) && (
+                    <option value={detalleEditando.tipoConvenioId}>{detalleEditando.tipoConvenioNombre || detalleEditando.tipoConvenioId} (actual)</option>
+                  )}
+                  {opcionesTarifas.map(o => (
+                    <option key={o.id} value={o.id}>{o.nombre}</option>
+                  ))}
+                </select>
+                <small style={{ color: '#fb923c', fontFamily: 'monospace', fontSize: '0.7rem' }}>ID tarifa: {detalleEditando.tipoConvenioId || '—'}</small>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', color: '#10b981', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 'bold' }}>Tarifa ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={detalleEditando.tarifa}
+                    onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, tarifa: e.target.value } : prev)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#10b981', fontWeight: 'bold', borderRadius: '6px', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Costo ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={detalleEditando.costo}
+                    onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, costo: e.target.value } : prev)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Venta ($)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={detalleEditando.venta}
+                    onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, venta: e.target.value } : prev)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+              <small style={{ color: '#8b949e', fontSize: '0.75rem' }}>
+                Deja en blanco los montos que no apliquen. Si el detalle usa una sola "Tarifa", captura solo ese campo; si usa "Costo / Venta", captura esos dos.
+              </small>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button type="button" onClick={() => setDetalleEditando(null)} disabled={guardandoDetalle} style={{ padding: '9px 20px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button type="button" onClick={guardarDetalleEditado} disabled={guardandoDetalle} style={{ padding: '9px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoDetalle ? 'Guardando...' : 'Guardar Detalle'}</button>
             </div>
           </div>
         </div>
