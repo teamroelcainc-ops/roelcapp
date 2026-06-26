@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { db, storage, auth } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
 import { calcularStatusDinamico } from '../config/statusRules';
@@ -254,6 +254,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [cargando, setCargando] = useState(false);
   const [mostrarCostosAdic, setMostrarCostosAdic] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
+
+  // ✅ NUEVO: ver / editar los convenios (tarifas) del cliente desde la operación.
+  const [mostrarConveniosCliente, setMostrarConveniosCliente] = useState(false);
+  const [detalleConvEditando, setDetalleConvEditando] = useState<any | null>(null);
+  const [guardandoDetalleConv, setGuardandoDetalleConv] = useState(false);
 
   const [puedeEditarRef, setPuedeEditarRef] = useState(false);
   const [referencia, setReferencia] = useState('');
@@ -855,7 +860,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const maestros = catalogoConvClientes.filter((c: any) => String(
       c.clienteId ?? c.cliente ?? c.id_cliente ?? c.clientePaga ?? c.empresaId ?? c.empresa ?? ''
     ).trim() === cid);
-    const maestroIds = new Set(maestros.map((m: any) => String(m.id).trim()));
+    // El detalle puede referenciar al maestro por su ID de doc o por su numeroConvenio.
+    //   Metemos AMBOS en el set para no perder filas.
+    const maestroIds = new Set<string>();
+    maestros.forEach((m: any) => {
+      if (m.id != null) maestroIds.add(String(m.id).trim());
+      const nc = String(m.numeroConvenio ?? '').trim(); if (nc) maestroIds.add(nc);
+      const nm = String(m.numero ?? '').trim(); if (nm) maestroIds.add(nm);
+    });
 
     // Detalles ligados: por referencia al maestro O por vínculo directo al cliente.
     //   Se unen ambas vías y se deduplica por id para no perder ninguna fila.
@@ -873,7 +885,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const tarifaId = d.tipoConvenioId || d.tipo_convenio_id || d.tipoConvenio || d.tipo_convenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
       const ref = refMaestroDetalle(d);
-      const maestroAsociado = maestros.find((m: any) => String(m.id).trim() === ref);
+      const maestroAsociado = maestros.find((m: any) =>
+        String(m.id).trim() === ref ||
+        String(m.numeroConvenio ?? '').trim() === ref ||
+        String(m.numero ?? '').trim() === ref
+      );
       const nombreTarifa = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || tObj?.tipo;
       const nombreFinal = d.tipoConvenioNombre || nombreTarifa || (tarifaId ? `Tarifa (${tarifaId})` : 'Sin Asignar');
       return {
@@ -1296,6 +1312,82 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtFecha = (f: string) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return f; } };
 
+  // ✅ NUEVO: opciones del catálogo de tarifas para el selector del editor de convenio.
+  const opcionesTarifasRef = useMemo(() => {
+    return (tarifas || [])
+      .map((t: any) => ({ id: String(t.id), nombre: t.descripcion || t.nombre || t.tarifa || t.concepto || String(t.id) }))
+      .sort((a: any, b: any) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
+  }, [tarifas]);
+
+  // Recarga los detalles de convenios desde Firestore tras editar/eliminar.
+  const refrescarConvDetallesCliente = useCallback(async () => {
+    try {
+      const snap = await getDocs(collection(db, 'convenios_clientes_detalles'));
+      const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      setConvDetallesLocal(docs);
+      try { localStorage.setItem('cat_v1__catalogoConvDetalles', JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
+    } catch (e) {
+      console.error('Error refrescando detalles de convenios:', e);
+    }
+  }, []);
+
+  const abrirEditorConvenio = (c: any) => {
+    setDetalleConvEditando({
+      id: c.id,
+      tipoConvenioId: c.tipoConvenioId ?? c.tarifaBaseId ?? '',
+      tipoConvenioNombre: c.tipoConvenioNombre ?? c.descripcion ?? '',
+      origenNombre: c.origenNombre ?? c.origen ?? '',
+      destinoNombre: c.destinoNombre ?? c.destino ?? '',
+      tarifa: c.tarifa ?? '',
+      costo: c.costo ?? '',
+      venta: c.venta ?? '',
+    });
+  };
+
+  const guardarDetalleConvenio = async () => {
+    if (!detalleConvEditando) return;
+    setGuardandoDetalleConv(true);
+    try {
+      const id = String(detalleConvEditando.id);
+      const numOrUndef = (v: any) => (v === '' || v === null || v === undefined) ? undefined : Number(v);
+      const payload: any = {
+        tipoConvenioId: detalleConvEditando.tipoConvenioId || '',
+        tipoConvenioNombre: detalleConvEditando.tipoConvenioNombre || '',
+        origenNombre: detalleConvEditando.origenNombre || '',
+        destinoNombre: detalleConvEditando.destinoNombre || '',
+      };
+      const t = numOrUndef(detalleConvEditando.tarifa);
+      const c2 = numOrUndef(detalleConvEditando.costo);
+      const v = numOrUndef(detalleConvEditando.venta);
+      if (t !== undefined) payload.tarifa = t;
+      if (c2 !== undefined) payload.costo = c2;
+      if (v !== undefined) payload.venta = v;
+
+      await updateDoc(doc(db, 'convenios_clientes_detalles', id), payload);
+      await refrescarConvDetallesCliente();
+      setDetalleConvEditando(null);
+    } catch (e) {
+      console.error('Error guardando detalle de convenio:', e);
+      alert('No se pudo guardar el convenio. Revisa tu conexión.');
+    } finally {
+      setGuardandoDetalleConv(false);
+    }
+  };
+
+  const eliminarDetalleConvenio = async (c: any) => {
+    const nombre = c.descripcion || c.tipoConvenioNombre || 'esta tarifa';
+    if (!window.confirm(`¿Eliminar el convenio/tarifa "${nombre}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      await deleteDoc(doc(db, 'convenios_clientes_detalles', String(c.id)));
+      if (formData.convenio === c.id) { setFormData(prev => ({ ...prev, convenio: '' })); setSearchConvenio(''); }
+      await refrescarConvDetallesCliente();
+    } catch (e) {
+      console.error('Error eliminando detalle de convenio:', e);
+      alert('No se pudo eliminar. Revisa tu conexión.');
+    }
+  };
+
+
   const idOperacion = (initialData as any)?.id || '';
   const referenciaOperacion = referenciaDeOperacion(idOperacion, (initialData as any)?.ref);
 
@@ -1480,7 +1572,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Convenio (Tarifa)</label>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                          <label className="form-label" style={{ margin: 0 }}>Convenio (Tarifa)</label>
+                          {(formData.clientePaga || searchClientePaga) && (
+                            <button
+                              type="button"
+                              onClick={() => setMostrarConveniosCliente(true)}
+                              title="Ver y editar los convenios (tarifas) de este cliente"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}
+                            >
+                              <IconReceipt size={12} /> Ver / editar ({listaConveniosCliente.length})
+                            </button>
+                          )}
+                        </div>
                         <div style={{ position: 'relative' }}>
                           <input type="text" className={`form-control${claseSiFalta('convenio')}`} placeholder="Escriba para buscar convenio..." required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio}
                             onChange={e => { setSearchConvenio(e.target.value); setShowDropdownConvenio(true); if (formData.convenio) setFormData(prev => ({ ...prev, convenio: '' })); }}
@@ -2008,6 +2112,151 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
           onClose={() => setMostrarSubirDoc(false)}
         />
+      )}
+
+      {/* ✅ NUEVO: MODAL — Convenios (tarifas) del cliente seleccionado */}
+      {mostrarConveniosCliente && (
+        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 3000, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', pointerEvents: 'auto' }}>
+          <div style={{ maxWidth: '880px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '88vh' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #1f2733', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Convenios del Cliente</h2>
+                <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#7d8590' }}>
+                  {searchClientePaga || 'Cliente'} · {listaConveniosCliente.length} convenio(s) / tarifa(s)
+                </p>
+              </div>
+              <button type="button" onClick={() => setMostrarConveniosCliente(false)} className="roelca-window-btn" title="Cerrar"><IconX size={16} /></button>
+            </div>
+
+            <div style={{ padding: '18px 24px', overflowY: 'auto', flex: 1 }}>
+              {listaConveniosCliente.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
+                  Este cliente no tiene convenios / tarifas registradas.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', minWidth: '760px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
+                    <thead style={{ backgroundColor: '#1f2937' }}>
+                      <tr>
+                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>DESCRIPCIÓN / TARIFA</th>
+                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>RUTA</th>
+                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>MONTO</th>
+                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textAlign: 'center' }}>ACCIONES</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {listaConveniosCliente.map((c: any, idx: number) => (
+                        <tr key={c.id || idx} style={{ borderBottom: '1px solid #30363d', backgroundColor: formData.convenio === c.id ? 'rgba(88,166,255,0.06)' : 'transparent' }}>
+                          <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
+                            {c.descripcion || `Tarifa ${idx + 1}`}
+                            <div style={{ fontSize: '0.7rem', color: '#fb923c', marginTop: '4px', fontFamily: 'monospace' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
+                          </td>
+                          <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem' }}>
+                            {c.origenNombre || c.origen || '-'} → {c.destinoNombre || c.destino || '-'}
+                          </td>
+                          <td style={{ padding: '12px 16px', color: '#3fb950', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                            {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}
+                          </td>
+                          <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button type="button" title="Editar convenio" onClick={() => abrirEditorConvenio(c)}
+                                style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.1)'}
+                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                                <IconEdit size={14} />
+                              </button>
+                              <button type="button" title="Eliminar convenio" onClick={() => eliminarDetalleConvenio(c)}
+                                style={{ background: 'transparent', border: '1px solid #f85149', borderRadius: '4px', color: '#f85149', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(248,81,73,0.1)'}
+                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #1f2733', backgroundColor: '#0d1117', flexShrink: 0 }}>
+              <button type="button" onClick={() => setMostrarConveniosCliente(false)} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 24px' }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: MODAL — Editar un convenio (tarifa) del cliente */}
+      {detalleConvEditando && (
+        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 3100, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', pointerEvents: 'auto' }}>
+          <div style={{ maxWidth: '560px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '12px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #1f2733', paddingBottom: '14px' }}>
+              <h3 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.1rem' }}>Editar Convenio / Tarifa</h3>
+              <button type="button" onClick={() => setDetalleConvEditando(null)} className="roelca-window-btn" title="Cerrar"><IconX size={16} /></button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+              <div>
+                <label className="form-label">Tipo de Convenio (Tarifa del catálogo)</label>
+                <select
+                  className="form-control"
+                  value={detalleConvEditando.tipoConvenioId || ''}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    const tObj = (tarifas || []).find((t: any) => String(t.id) === id);
+                    const nombre = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || '';
+                    setDetalleConvEditando((prev: any) => prev ? { ...prev, tipoConvenioId: id, tipoConvenioNombre: nombre } : prev);
+                  }}
+                >
+                  <option value="">-- Sin asignar --</option>
+                  {detalleConvEditando.tipoConvenioId && !opcionesTarifasRef.some((o: any) => o.id === detalleConvEditando.tipoConvenioId) && (
+                    <option value={detalleConvEditando.tipoConvenioId}>{detalleConvEditando.tipoConvenioNombre || detalleConvEditando.tipoConvenioId} (actual)</option>
+                  )}
+                  {opcionesTarifasRef.map((o: any) => <option key={o.id} value={o.id}>{o.nombre}</option>)}
+                </select>
+                <small style={{ color: '#fb923c', fontFamily: 'monospace', fontSize: '0.7rem' }}>ID tarifa: {detalleConvEditando.tipoConvenioId || '—'}</small>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label className="form-label">Origen</label>
+                  <input type="text" className="form-control" value={detalleConvEditando.origenNombre || ''} onChange={(e) => setDetalleConvEditando((prev: any) => prev ? { ...prev, origenNombre: e.target.value } : prev)} />
+                </div>
+                <div>
+                  <label className="form-label">Destino</label>
+                  <input type="text" className="form-control" value={detalleConvEditando.destinoNombre || ''} onChange={(e) => setDetalleConvEditando((prev: any) => prev ? { ...prev, destinoNombre: e.target.value } : prev)} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                <div>
+                  <label className="form-label" style={{ color: '#3fb950' }}>Tarifa ($)</label>
+                  <input type="number" step="0.01" className="form-control" value={detalleConvEditando.tarifa} onChange={(e) => setDetalleConvEditando((prev: any) => prev ? { ...prev, tarifa: e.target.value } : prev)} />
+                </div>
+                <div>
+                  <label className="form-label">Costo ($)</label>
+                  <input type="number" step="0.01" className="form-control" value={detalleConvEditando.costo} onChange={(e) => setDetalleConvEditando((prev: any) => prev ? { ...prev, costo: e.target.value } : prev)} />
+                </div>
+                <div>
+                  <label className="form-label">Venta ($)</label>
+                  <input type="number" step="0.01" className="form-control" value={detalleConvEditando.venta} onChange={(e) => setDetalleConvEditando((prev: any) => prev ? { ...prev, venta: e.target.value } : prev)} />
+                </div>
+              </div>
+              <small style={{ color: '#8b949e', fontSize: '0.75rem' }}>
+                Deja en blanco los montos que no apliquen. Si el convenio usa una sola "Tarifa", captura solo ese campo; si usa "Costo / Venta", captura esos dos.
+              </small>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #1f2733', paddingTop: '16px' }}>
+              <button type="button" onClick={() => setDetalleConvEditando(null)} disabled={guardandoDetalleConv} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 20px' }}>Cancelar</button>
+              <button type="button" onClick={guardarDetalleConvenio} disabled={guardandoDetalleConv} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 24px' }}>
+                {guardandoDetalleConv ? 'Guardando...' : (<><IconSave size={15} /> Guardar Convenio</>)}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
