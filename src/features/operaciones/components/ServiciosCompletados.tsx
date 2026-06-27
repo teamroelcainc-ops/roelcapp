@@ -78,8 +78,8 @@ const COLUMNAS_BASE = [
   { id: 'observacionesCobrar', label: 'Obs. Cobro', visible: false }
 ];
 
-// ✅ Status considerados "Completado" — sólo los 2 IDs hex (estricto)
-const STATUS_COMPLETADOS_VALORES = ['f557b751', 'c2d57403'];
+// ✅ Status que se muestran en esta vista — SOLO estos 2 IDs hex.
+const STATUS_COMPLETADOS_VALORES = ['c2d57403', 'f557b751'];
 // ID del tipo de empresa "Cliente (Paga)" para el buscador
 const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
 // ✅ NUEVO: tamaño de página para descarga incremental
@@ -189,13 +189,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   // ───────────────────────────────────────────────────────────────────────────
   // ✅ NUEVO: helpers de status y de CONEXIONES con los demás módulos.
-  //   Las conexiones (diésel, nómina, factura cliente/proveedor) ya vienen
-  //   desnormalizadas en el propio documento de la operación cuando se asignan
-  //   en sus módulos, así que NO requieren lecturas extra a Firestore:
-  //     · Diésel    → referenciaDieselConsecutivo / referenciaDieselId
-  //     · Nómina    → referenciaNominaConsecutivo / referenciaNominaId
-  //     · Cliente   → facturaClienteInvoice / facturaClienteId / facturado
-  //     · Proveedor → facturaProveedorFolio / facturaProveedorId / facturadoProveedor
   // ───────────────────────────────────────────────────────────────────────────
   const nombreStatusOp = (op: any): string => {
     const r = resolverStatus(op?.status);
@@ -218,28 +211,27 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const claveCacheActual = () =>
     CACHE_PREFIX + `${filterFechaInicio}_${filterFechaFin}_${filterCliente || 'all'}`;
 
-  // ✅ MODIFICADO: el filtro PRINCIPAL ahora es el RANGO DE FECHAS (inicio y fin).
-  // El cliente es OPCIONAL (si se elige, se agrega como filtro dentro de la query).
+  // ✅ CORREGIDO: descarga resistente a falta de índices (misma filosofía que
+  //   Operaciones Activas). El filtro PRINCIPAL es el RANGO DE FECHAS; el cliente
+  //   es OPCIONAL. Solo se muestran los status de STATUS_COMPLETADOS_VALORES.
   //
-  // Estrategia de carga (en orden):
-  //   0) Caché válido en sessionStorage (< 5 min) por rango+cliente → usarlo.
-  //   1) Query óptima: where(status, in, [...]) [+ where(clientePaga)] +
-  //      where(fechaServicio >= inicio) + where(fechaServicio <= fin) +
-  //      orderBy(fechaServicio) + limit(100). Requiere índice compuesto.
-  //   2) Fallback 1: misma query SIN orderBy (ordena en memoria).
-  //   3) Fallback 2: SOLO rango de fechaServicio + limit(500) (un solo campo,
-  //      no requiere índice compuesto) y filtra status/cliente en memoria.
+  //   Orden de intentos:
+  //     0) Caché en sessionStorage (< 5 min) por rango+cliente.
+  //     1) ÓPTIMA: status(in) [+cliente] + rango fechaServicio + orderBy + limit.
+  //        (Rápida, pero requiere índice COMPUESTO. Si falta, cae al respaldo.)
+  //     2) RESPALDO A: rango de fechaServicio (índice de UN campo) + filtra
+  //        status/cliente EN MEMORIA. Eficiente porque la fecha ya acota.
+  //     3) RESPALDO B: status(in) (índice de UN campo) + filtra fecha/cliente EN
+  //        MEMORIA. Último recurso por si el índice de fechaServicio fallara.
   const descargarOperaciones = async (
     fechaInicio: string,
     fechaFin: string,
     clienteId: string,
     opciones: { ignorarCache?: boolean } = {}
   ) => {
-    // Reset paginación al cargar de cero
     setLastDocSnap(null);
     setHayMasOperaciones(false);
 
-    // Sin rango de fechas completo no se descarga nada (es el filtro principal)
     if (!fechaInicio || !fechaFin) {
       setOperacionesGlobales([]);
       return;
@@ -247,7 +239,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
     const cacheKey = CACHE_PREFIX + `${fechaInicio}_${fechaFin}_${clienteId || 'all'}`;
 
-    // [0] Intentar caché en sessionStorage
+    // [0] Caché
     if (!opciones.ignorarCache) {
       try {
         const cacheStr = sessionStorage.getItem(cacheKey);
@@ -267,7 +259,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     // Límite superior inclusivo aunque fechaServicio traiga hora (ej. "2026-06-20T10:30")
     const finInclusivo = fechaFin + '\uf8ff';
 
-    const filtrarLegacy = (ops: any[]) => ops.filter((op: any) => {
+    // Filtra status (SOLO los 2 IDs) + cliente + rango de fechas EN MEMORIA.
+    const filtrarEnMemoria = (ops: any[]) => ops.filter((op: any) => {
       const statusOk = STATUS_COMPLETADOS_VALORES.includes(String(op.status || '').trim());
       const clienteOk = !clienteId || String(op.clientePaga || op.clienteId || '') === clienteId;
       const f = String(op.fechaServicio || '');
@@ -279,83 +272,87 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     let lastSnapFinal: any = null;
     let hayMasFinal = false;
     let exito = false;
+    let metodo = '';
 
+    // [1] ÓPTIMA (requiere índice compuesto status + fechaServicio)
     try {
-      // [1] Query óptima: status(in) [+ cliente] + rango fechaServicio + orderBy + limit
-      const constraints1: any[] = [where('status', 'in', STATUS_COMPLETADOS_VALORES)];
-      if (clienteId) constraints1.push(where('clientePaga', '==', clienteId));
-      constraints1.push(where('fechaServicio', '>=', fechaInicio));
-      constraints1.push(where('fechaServicio', '<=', finInclusivo));
-      constraints1.push(orderBy('fechaServicio', 'desc'));
-      constraints1.push(limit(TAMANIO_PAGINA));
+      const c1: any[] = [where('status', 'in', STATUS_COMPLETADOS_VALORES)];
+      if (clienteId) c1.push(where('clientePaga', '==', clienteId));
+      c1.push(where('fechaServicio', '>=', fechaInicio));
+      c1.push(where('fechaServicio', '<=', finInclusivo));
+      c1.push(orderBy('fechaServicio', 'desc'));
+      c1.push(limit(TAMANIO_PAGINA));
 
-      const q1 = query(collection(db, 'operaciones'), ...constraints1);
-      const snap = await getDocs(q1);
+      const snap = await getDocs(query(collection(db, 'operaciones'), ...c1));
       opsFinal = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       lastSnapFinal = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
       hayMasFinal = snap.docs.length === TAMANIO_PAGINA;
       exito = true;
-    } catch (e1: any) {
-      const msg1 = String(e1?.message || e1?.code || e1 || '');
-      const esIndice1 = msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition');
-      if (esIndice1) {
-        console.warn('[ServiciosCompletados] Query óptima falló (falta índice). Crea el índice con:', msg1);
-        try {
-          // [2] Fallback 1: misma query SIN orderBy (ordena en memoria)
-          const constraints2: any[] = [where('status', 'in', STATUS_COMPLETADOS_VALORES)];
-          if (clienteId) constraints2.push(where('clientePaga', '==', clienteId));
-          constraints2.push(where('fechaServicio', '>=', fechaInicio));
-          constraints2.push(where('fechaServicio', '<=', finInclusivo));
-          constraints2.push(limit(TAMANIO_PAGINA * 3));
+      metodo = 'óptima (índice compuesto)';
+    } catch (e1) {
+      console.log('[ServiciosCompletados] Sin índice compuesto; uso respaldos a prueba de índice. (Crea el índice para más velocidad.)');
+    }
 
-          const q2 = query(collection(db, 'operaciones'), ...constraints2);
-          const snap2 = await getDocs(q2);
-          opsFinal = snap2.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-          opsFinal.sort((a: any, b: any) =>
-            String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
-          );
-          // Sin cursor: no se puede paginar correctamente
+    // [2] RESPALDO A: rango de fechaServicio (1 campo) + filtra status/cliente en memoria
+    if (!exito || opsFinal.length === 0) {
+      try {
+        const snapB = await getDocs(query(
+          collection(db, 'operaciones'),
+          where('fechaServicio', '>=', fechaInicio),
+          where('fechaServicio', '<=', finInclusivo),
+          limit(2000)
+        ));
+        const todas = snapB.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        const filtradas = filtrarEnMemoria(todas);
+        filtradas.sort((a: any, b: any) =>
+          String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
+        );
+        if (!exito || filtradas.length > 0) {
+          opsFinal = filtradas;
+          lastSnapFinal = null;   // sin cursor: "Cargar más" no aplica en este modo
+          hayMasFinal = false;
+          exito = true;
+          metodo = 'respaldo por fecha (filtra status en memoria)';
+        }
+        console.log(`[ServiciosCompletados] Respaldo por fecha: ${todas.length} crudas, ${filtradas.length} completadas en el rango.`);
+      } catch (eB) {
+        console.warn('[ServiciosCompletados] Respaldo por fecha falló:', eB);
+      }
+    }
+
+    // [3] RESPALDO B (último recurso): status(in) (1 campo) + filtra fecha/cliente en memoria
+    if (!exito || opsFinal.length === 0) {
+      try {
+        const snapC = await getDocs(query(
+          collection(db, 'operaciones'),
+          where('status', 'in', STATUS_COMPLETADOS_VALORES),
+          limit(3000)
+        ));
+        const todas = snapC.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        const filtradas = filtrarEnMemoria(todas);
+        filtradas.sort((a: any, b: any) =>
+          String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
+        );
+        if (!exito || filtradas.length > 0) {
+          opsFinal = filtradas;
           lastSnapFinal = null;
           hayMasFinal = false;
           exito = true;
-          console.warn('[ServiciosCompletados] Usando Fallback 1 (sin orderBy). Crea el índice para mejor rendimiento.');
-        } catch (e2: any) {
-          const msg2 = String(e2?.message || e2 || '');
-          console.warn('[ServiciosCompletados] Fallback 1 falló, probando legacy:', msg2);
-          try {
-            // [3] Fallback 2: SOLO rango de fechaServicio (un campo → sin índice compuesto)
-            const q3 = query(
-              collection(db, 'operaciones'),
-              where('fechaServicio', '>=', fechaInicio),
-              where('fechaServicio', '<=', finInclusivo),
-              limit(500)
-            );
-            const snap3 = await getDocs(q3);
-            const todas = snap3.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-            opsFinal = filtrarLegacy(todas);
-            opsFinal.sort((a: any, b: any) =>
-              String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
-            );
-            lastSnapFinal = null;
-            hayMasFinal = false;
-            exito = true;
-            console.warn('[ServiciosCompletados] Usando Fallback 2 (rango simple, filtra en memoria).');
-          } catch (e3: any) {
-            console.error('[ServiciosCompletados] Todos los intentos fallaron:', e3);
-            alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${e3?.message || e3}`);
-          }
+          metodo = 'respaldo por status (filtra fecha en memoria)';
         }
-      } else {
-        console.error('[ServiciosCompletados] Error inesperado:', e1);
-        alert(`Hubo un problema al cargar las operaciones.\n\nDetalle: ${msg1}`);
+        console.log(`[ServiciosCompletados] Respaldo por status: ${todas.length} crudas, ${filtradas.length} en el rango.`);
+      } catch (eC: any) {
+        console.error('[ServiciosCompletados] Todos los intentos fallaron:', eC);
+        if (!exito) alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${eC?.message || eC}`);
       }
     }
+
+    console.log(`[ServiciosCompletados v2] método: ${metodo || 'ninguno'} | mostradas: ${opsFinal.length}`);
 
     if (exito) {
       setOperacionesGlobales(opsFinal);
       setLastDocSnap(lastSnapFinal);
       setHayMasOperaciones(hayMasFinal);
-      // Guardar en caché (los snapshots NO son serializables, sólo los datos)
       try {
         sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), ops: opsFinal }));
       } catch { /* cuota agotada: ignorar */ }
@@ -386,7 +383,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       setOperacionesGlobales(setCompleto);
       setLastDocSnap(snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null);
       setHayMasOperaciones(snap.docs.length === TAMANIO_PAGINA);
-      // Actualizar caché con el conjunto acumulado
       try {
         sessionStorage.setItem(
           claveCacheActual(),
@@ -400,10 +396,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setCargandoMas(false);
   };
 
-  // ✅ Catálogos en tiempo real vía onSnapshot: cualquier cambio hecho en otra
-  // pantalla (p.ej. tipo de cambio, convenios, empresas) se refleja aquí al
-  // instante, sin depender del caché en sessionStorage que antes podía quedar
-  // desactualizado durante toda la sesión.
+  // ✅ Catálogos en tiempo real vía onSnapshot.
   const COLECCIONES_CATALOGOS: Record<string, string> = {
     empresas: 'empresas',
     tiposOperacion: 'catalogo_tipo_operacion',
@@ -436,20 +429,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     );
   };
 
-  // Se conserva como no-op para no tocar los puntos donde se invocaba antes
-  // de abrir formularios/modales: los catálogos ya quedan suscritos al montar.
+  // Se conserva como no-op para no tocar los puntos donde se invocaba antes.
   const cargarCatalogosSiEsNecesario = async () => {};
 
-  // ✅ Al montar nos suscribimos a los catálogos en vivo.
-  // Las operaciones se cargarán cuando el usuario elija un cliente.
   useEffect(() => {
     const unsubscribers = suscribirCatalogosEnVivo();
     return () => unsubscribers.forEach((unsub) => unsub());
   }, []);
 
-  // ✅ NUEVO: el RANGO DE FECHAS (inicio + fin) es el filtro PRINCIPAL.
-  // Cuando ambas fechas están definidas se ejecuta la query (cliente opcional incluido).
-  // Si falta alguna fecha, se limpia la tabla.
   useEffect(() => {
     if (filterFechaInicio && filterFechaFin) {
       descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
@@ -463,7 +450,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
 
-  // ✅ NUEVO: cargar los botones de "Siguiente Paso" para la operación abierta.
   useEffect(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
@@ -575,7 +561,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setCargandoHorarios(false);
   };
 
-  // ✅ NUEVO: abrir el modal de registro retroactivo (fecha/hora personalizada)
   const abrirRegistroHorario = () => {
     const now = new Date();
     const tzOffset = now.getTimezoneOffset() * 60000;
@@ -585,7 +570,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setModalHorarios('registrar');
   };
 
-  // ✅ NUEVO: refleja el cambio de status en memoria + caché (clave por rango+cliente).
   const aplicarStatusEnMemoria = (opId: string, statusId: string, statusNombre: string) => {
     setOperacionesGlobales(prev => {
       const next = prev.map((o: any) => (o.id === opId ? { ...o, status: statusId, statusNombre } : o));
@@ -597,7 +581,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setOperacionViendo((prev: any) => (prev && prev.id === opId ? { ...prev, status: statusId, statusNombre } : prev));
   };
 
-  // ✅ NUEVO: guardar movimiento retroactivo (resuelve nombre → ID hex).
   const guardarHorario = async () => {
     if (!operacionViendo) return;
     if (!nuevoStatus || !nuevaFechaHora) return alert('Completa la fecha y el estatus.');
@@ -627,7 +610,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setCargandoHorarios(false);
   };
 
-  // ✅ NUEVO: registrar status rápido (con cascada) — igual que Operaciones Activas.
   const registrarStatusRapido = async (statusNombre: string) => {
     if (!operacionViendo || !statusNombre) return;
     if (guardandoStatusRapido) return;
@@ -660,7 +642,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       const cadenaResuelta = cadenaStatus.map(resolverStatus);
       const statusFinal = cadenaResuelta[cadenaResuelta.length - 1];
 
-      // Optimista: refleja en pantalla de inmediato
       aplicarStatusEnMemoria(operacionViendo.id, statusFinal.id, statusFinal.nombre);
 
       obtenerBotonesHorarioDinamicos({ ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre })
@@ -694,7 +675,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       setTimeout(() => setUltimoStatusGuardado(null), 1500);
     } catch (e: any) {
       console.error('[ServiciosCompletados] Error al registrar status:', e);
-      // Revertir el cambio optimista
       setOperacionViendo(operacionPrevia);
       setOperacionesGlobales(operacionesPrevias);
       setBotonesDisponibles(botonesPrevios);
@@ -866,8 +846,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     });
   };
 
-  // ✅ MODIFICADO: editar — si el padre pasa onEditar, delega ahí (su formulario).
-  // Si NO, abre el editor integrado de este módulo.
   const handleEditarOperacion = (op: any, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!op) return;
@@ -875,14 +853,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       onEditar(op);
       return;
     }
-    // ✅ Abrir el FormularioOperacion COMPLETO (igual que Operaciones Activas)
     setOperacionViendo(null);
     setOperacionEditando(op);
     setEstadoFormulario('abierto');
   };
 
-  // ✅ NUEVO: tras guardar en el FormularioOperacion, refresca el rango actual
-  // (sin caché) y cierra el formulario.
   const handleOperacionGuardada = () => {
     if (filterFechaInicio && filterFechaFin) {
       descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente, { ignorarCache: true });
@@ -891,26 +866,19 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setOperacionEditando(null);
   };
 
-  // ✅ NUEVO: actualiza un campo del formulario de edición.
-  // Recalcula los totales que la propia UI define por fórmula (subtotales, sueldo, combustible).
   const actualizarCampoEdicion = (campo: string, valor: any) => {
     setFormEdicion((prev: any) => {
       const next = { ...prev, [campo]: valor };
       const num = (v: any) => Number(v) || 0;
-
-      // Subtotal Cliente = Monto Convenio + Cargos Adicionales
       if (campo === 'montoConvenioCliente' || campo === 'cargosAdicionales') {
         next.subtotalCliente = num(next.montoConvenioCliente) + num(next.cargosAdicionales);
       }
-      // Subtotal Prov = Monto Base + Cargos Adicionales Prov
       if (campo === 'totalAPagarProv' || campo === 'cargosAdicionalesProv') {
         next.subtotalProv = num(next.totalAPagarProv) + num(next.cargosAdicionalesProv);
       }
-      // Sueldo Total = Sueldo Operador + Sueldo Extra
       if (campo === 'sueldoOperador' || campo === 'sueldoExtra') {
         next.sueldoTotal = num(next.sueldoOperador) + num(next.sueldoExtra);
       }
-      // Combustible Total = Combustible + Combustible Extra
       if (campo === 'combustible' || campo === 'combustibleExtra') {
         next.combustibleTotal = num(next.combustible) + num(next.combustibleExtra);
       }
@@ -918,12 +886,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     });
   };
 
-  // ✅ NUEVO: guardar los cambios del editor integrado en Firestore.
   const guardarEdicion = async () => {
     if (!operacionEditando?.id) return;
     setGuardandoEdicion(true);
     try {
-      // Sólo enviamos los campos editables (evitamos sobrescribir todo el documento).
       const camposEditables = [
         'refCliente', 'fechaServicio', 'fechaCita', 'trafico', 'observacionesEjecutivo',
         'clienteMercanciaNombre', 'descripcionMercancia', 'cantidad', 'embalajeNombre', 'pesoKg',
@@ -944,7 +910,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
       await updateDoc(doc(db, 'operaciones', operacionEditando.id), payload);
 
-      // Reflejar los cambios en memoria
       const aplicar = (o: any) => (o.id === operacionEditando.id ? { ...o, ...payload } : o);
       const nuevasGlobales = operacionesGlobales.map(aplicar);
       setOperacionesGlobales(nuevasGlobales);
@@ -952,7 +917,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         setOperacionViendo({ ...operacionViendo, ...payload });
       }
 
-      // Actualizar caché (clave por rango de fechas + cliente)
       if (filterFechaInicio && filterFechaFin) {
         try {
           sessionStorage.setItem(
@@ -971,7 +935,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setGuardandoEdicion(false);
   };
 
-  // ✅ NUEVO: eliminar — borra el documento en Firestore y limpia estado/caché.
   const handleEliminarOperacion = async (op: any, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!op?.id) return;
@@ -984,15 +947,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
     try {
       await deleteDoc(doc(db, 'operaciones', op.id));
-
-      // Quitar de los estados en memoria
       const restantes = operacionesGlobales.filter((o: any) => o.id !== op.id);
       setOperacionesGlobales(restantes);
-
-      // Cerrar la ficha si era la que estaba abierta
       if (operacionViendo?.id === op.id) setOperacionViendo(null);
-
-      // Actualizar el caché (clave por rango de fechas + cliente)
       if (filterFechaInicio && filterFechaFin) {
         try {
           sessionStorage.setItem(
@@ -1009,7 +966,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   const forzarRecarga = () => {
     sessionStorage.removeItem('roelca_catalogos_v2');
-    // ✅ NUEVO: limpiar también el caché de operaciones completadas
     try {
       const keys = Object.keys(sessionStorage);
       keys.forEach(k => { if (k.startsWith(CACHE_PREFIX)) sessionStorage.removeItem(k); });
@@ -1017,24 +973,17 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     window.location.reload();
   };
 
-  // ✅ NUEVO: consecutivo de la referencia (toma los últimos dígitos).
-  //   "LO-190126-12" → 12. Se usa para ordenar dentro de una misma fecha.
   const obtenerConsecutivoRef = (op: any): number => {
     const ref = String(op?.ref || '');
     const m = ref.match(/(\d+)\s*$/);
     return m ? parseInt(m[1], 10) : 0;
   };
 
-  // ✅ MODIFICADO: el filtro PRINCIPAL es el rango de fechas.
-  //   • Sin rango completo (inicio + fin) → vacío (mensaje guía).
-  //   • Con rango → parte de lo descargado y aplica filtros OPCIONALES en memoria
-  //     (cliente defensivo, remolque y búsqueda general).
   const operacionesFiltradas = useMemo(() => {
     if (!filterFechaInicio || !filterFechaFin) return [];
 
     let filtradas = operacionesGlobales;
 
-    // Cliente (opcional) — defensivo, por si el fallback no lo filtró en la query
     if (filterCliente) {
       filtradas = filtradas.filter(op => String(op.clientePaga || op.clienteId || '') === filterCliente);
     }
@@ -1057,8 +1006,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       });
     }
 
-    // ✅ Orden: del MÁS RECIENTE al más antiguo. Primero por fecha (desc) y,
-    //   dentro de la misma fecha, por consecutivo de la referencia (desc).
     return [...filtradas].sort((a: any, b2: any) => {
       const fa = String(a.fechaServicio || '');
       const fb = String(b2.fechaServicio || '');
@@ -1067,12 +1014,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     });
   }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // ✅ NUEVO: RESUMEN de conteos del rango/filtro actual.
-  //   Respeta el rango de fechas + cliente/remolque/búsqueda activos (lo mismo
-  //   que muestra la tabla). Cuenta: Completados vs Falsos, facturados y
-  //   pendientes (cliente y proveedor), con diésel cargado y pagados en nómina.
-  // ───────────────────────────────────────────────────────────────────────────
   const resumenServicios = useMemo(() => {
     const base = operacionesFiltradas;
     const total = base.length;
@@ -1099,18 +1040,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
   const operacionesEnPantalla = operacionesFiltradas.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
-  // ───────────────────────────────────────────────────────────────────────────
-  // ✅ NUEVO: TOTALES EXACTOS desde el servidor con getCountFromServer().
-  //   Cuenta TODOS los documentos que cumplen el filtro SIN descargarlos
-  //   (cuesta ≈1 lectura por consulta), así que da el número real aunque la
-  //   tabla solo tenga cargadas 100/500 operaciones.
-  //
-  //   alcance = 'rango'  → respeta Fecha Inicio/Fin + Cliente seleccionados.
-  //   alcance = 'global' → toda la base de completados, SIN ningún filtro.
-  //
-  //   Los "Falsos" se cuentan por el ID de status cuyo nombre contiene "falso"
-  //   (resuelto desde el catálogo). Completados reales = total − falsos.
-  // ───────────────────────────────────────────────────────────────────────────
   const idStatusFalso = useMemo(() => {
     const lista = (catalogosGlobales.statusServicio || []) as any[];
     const found = lista.find((s: any) => String(s.nombre || '').toLowerCase().includes('falso'));
@@ -1126,7 +1055,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     try {
       const col = collection(db, 'operaciones');
 
-      // Restricciones base según alcance
       const baseConstraints: any[] = [];
       if (alcance === 'rango') {
         if (filterCliente) baseConstraints.push(where('clientePaga', '==', filterCliente));
@@ -1134,12 +1062,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         baseConstraints.push(where('fechaServicio', '<=', filterFechaFin + '\uf8ff'));
       }
 
-      // 1) TOTAL de completados (los 2 IDs hex)
       const qTotal = query(col, where('status', 'in', STATUS_COMPLETADOS_VALORES), ...baseConstraints);
       const snapTotal = await getCountFromServer(qTotal);
       const total = snapTotal.data().count;
 
-      // 2) FALSOS (status == idStatusFalso). Si no se resolvió el ID, lo dejamos null.
       let falsos: number | null = null;
       if (idStatusFalso) {
         const qFalsos = query(col, where('status', '==', idStatusFalso), ...baseConstraints);
@@ -1165,7 +1091,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
-  // ✅ NUEVO: lista de clientes Paga (filtra empresas por tiposEmpresa que incluya 7eec9cbb)
   const clientesFiltradosBuscador = useMemo(() => {
     if (!catalogosGlobales.empresas) return [];
 
@@ -1190,7 +1115,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     ).slice(0, 30);
   }, [catalogosGlobales.empresas, textoBuscarCliente]);
 
-  // ✅ NUEVO: nombre del cliente actualmente seleccionado (para mostrar el chip)
   const nombreClienteSeleccionado = useMemo(() => {
     if (!filterCliente || !catalogosGlobales.empresas) return '';
     const cli = catalogosGlobales.empresas.find((e: any) => e.id === filterCliente);
@@ -1224,7 +1148,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       case 'fechaCita': return <span style={{ color: '#c9d1d9' }}>{formatearFechaHora(op.fechaCita)}</span>;
       case 'tipoOperacion': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</span>;
       case 'status': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</span>;
-      // ✅ NUEVO: conexiones (ref. diésel, ref. nómina, invoice cliente/proveedor)
       case 'refDiesel': return op.referenciaDieselConsecutivo ? chipConexion(op.referenciaDieselConsecutivo, '#f59e0b') : <span style={{ color: '#8b949e' }}>-</span>;
       case 'refNomina': return op.referenciaNominaConsecutivo ? chipConexion(op.referenciaNominaConsecutivo, '#a371f7') : <span style={{ color: '#8b949e' }}>-</span>;
       case 'invoiceCliente': return (op.facturaClienteInvoice || op.facturado) ? chipConexion(op.facturaClienteInvoice || 'Facturada', '#10b981') : <span style={{ color: '#8b949e' }}>-</span>;
@@ -1302,7 +1225,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           case 'fechaCita': val = formatearFechaHora(op.fechaCita); break;
           case 'tipoOperacion': val = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre); break;
           case 'status': val = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre); break; 
-          // ✅ NUEVO: conexiones en el Excel
           case 'refDiesel': val = op.referenciaDieselConsecutivo || ''; break;
           case 'refNomina': val = op.referenciaNominaConsecutivo || ''; break;
           case 'invoiceCliente': val = op.facturaClienteInvoice || (op.facturado ? 'Facturada' : ''); break;
@@ -1383,13 +1305,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
-  // ✅ Referencia legible de la operación en curso (carpeta de Storage de documentos)
   const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
 
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
-  // ✅ NUEVO: estilos de las tarjetas de resumen.
   const cardResumenStyle: React.CSSProperties = { backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '4px' };
   const cardLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase' };
   const cardValueStyle: React.CSSProperties = { fontSize: '1.6rem', fontWeight: 'bold', lineHeight: 1.1 };
@@ -1397,7 +1317,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
 
-      {/* ✅ NUEVO: FormularioOperacion COMPLETO para editar (igual que Operaciones Activas) */}
       {estadoFormulario !== 'cerrado' && (
         <FormularioOperacion
           estado={estadoFormulario}
@@ -1415,17 +1334,12 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           ✓ Servicios Completados
         </h1>
 
-        {/* ✅ MODIFICADO: el filtro PRINCIPAL ahora es el RANGO DE FECHAS
-            (Fecha Inicio + Fecha Fin). Cliente, Remolque y el filtro general
-            son OPCIONALES. La query se dispara cuando ambas fechas están puestas. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          {/* ✅ PRINCIPAL: Fecha Inicio */}
           <div style={{ flex: '1 1 180px' }}>
             <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO ★</label>
             <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
           </div>
 
-          {/* ✅ PRINCIPAL: Fecha Fin */}
           <div style={{ flex: '1 1 180px' }}>
             <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN ★</label>
             <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
@@ -1435,7 +1349,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
 
             {filterCliente ? (
-              // ✅ Cliente seleccionado: mostrar chip con X para limpiar
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
                 <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1450,7 +1363,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 </button>
               </div>
             ) : (
-              // ✅ Sin cliente: input de búsqueda con autocompletado
               <div style={{ position: 'relative' }}>
                 <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                 <input
@@ -1467,17 +1379,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
             {!filterCliente && mostrarSugerenciasCliente && (
               <div style={{
-                position: 'absolute',
-                top: '100%',
-                left: 0,
-                right: 0,
-                backgroundColor: '#0d1117',
-                border: '1px solid #30363d',
-                borderRadius: '6px',
-                maxHeight: '320px',
-                overflowY: 'auto',
-                zIndex: 100,
-                marginTop: '4px',
+                position: 'absolute', top: '100%', left: 0, right: 0,
+                backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
+                maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px',
                 boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
               }}>
                 {clientesFiltradosBuscador.length === 0 ? (
@@ -1498,14 +1402,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                           setTextoBuscarCliente('');
                           setMostrarSugerenciasCliente(false);
                         }}
-                        style={{
-                          padding: '10px 12px',
-                          cursor: 'pointer',
-                          color: '#c9d1d9',
-                          fontSize: '0.88rem',
-                          borderBottom: '1px solid #21262d',
-                          transition: 'background-color 0.15s'
-                        }}
+                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
                         onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                         onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
@@ -1550,9 +1447,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
         </div>
 
-        {/* ✅ NUEVO: TARJETAS DE RESUMEN (conteos del rango/filtro actual).
-            Status (Completados / Falsos), Diésel y Nómina; y la fila de
-            facturación (cliente y proveedor: facturados y pendientes). */}
         {(filterFechaInicio && filterFechaFin) && (
           <div style={{ marginBottom: '20px' }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
@@ -1603,7 +1497,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               </div>
             )}
 
-            {/* ✅ NUEVO: TOTALES EXACTOS desde el servidor (cuenta toda la base sin descargarla) */}
             <div style={{ marginTop: '14px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
                 <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.9rem' }}>Totales exactos (servidor)</span>
@@ -1704,34 +1597,25 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
                         <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
                           <div className="actions-cell" style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                            <button 
-                              type="button" 
-                              title="Ver Detalles"
+                            <button type="button" title="Ver Detalles"
                               onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setPestañaDetalleActiva('general'); }} 
                               style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'} 
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                             </button>
-                            <button 
-                              type="button" 
-                              title="Editar"
+                            <button type="button" title="Editar"
                               onClick={(e) => handleEditarOperacion(op, e)} 
                               style={{ background: 'transparent', border: '1px solid #58a6ff', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(88, 166, 255, 0.1)'} 
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                             </button>
-                            <button 
-                              type="button" 
-                              title="Eliminar"
+                            <button type="button" title="Eliminar"
                               onClick={(e) => handleEliminarOperacion(op, e)} 
                               style={{ background: 'transparent', border: '1px solid #f85149', borderRadius: '4px', color: '#f85149', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(248, 81, 73, 0.1)'} 
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                             </button>
                           </div>
@@ -1756,21 +1640,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 {hayMasOperaciones && <span style={{ color: '#fb923c', marginLeft: '8px' }}>(hay más disponibles)</span>}
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                {/* ✅ NUEVO: botón Cargar más (paginación por rango de fechas) */}
                 {hayMasOperaciones && (
                   <button
                     onClick={cargarMasOperaciones}
                     disabled={cargandoMas}
-                    style={{
-                      padding: '6px 14px',
-                      backgroundColor: cargandoMas ? '#0d1117' : '#D84315',
-                      color: cargandoMas ? '#484f58' : '#fff',
-                      border: '1px solid #D84315',
-                      borderRadius: '6px',
-                      cursor: cargandoMas ? 'not-allowed' : 'pointer',
-                      fontWeight: 'bold',
-                      fontSize: '0.85rem'
-                    }}
+                    style={{ padding: '6px 14px', backgroundColor: cargandoMas ? '#0d1117' : '#D84315', color: cargandoMas ? '#484f58' : '#fff', border: '1px solid #D84315', borderRadius: '6px', cursor: cargandoMas ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
                     title="Descargar el siguiente bloque de operaciones del rango"
                   >
                     {cargandoMas ? 'Cargando...' : `+ Cargar más (${TAMANIO_PAGINA})`}
@@ -1871,7 +1745,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 </div>
               </div>
 
-              {/* ✅ NUEVO: chips de CONEXIONES de la operación (diésel, nómina, facturas) */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingBottom: '4px' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>CONEXIONES</span>
                 <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>Diésel:</span>
@@ -1884,7 +1757,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 {(operacionViendo.facturaProveedorFolio || operacionViendo.facturadoProveedor) ? chipConexion(operacionViendo.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Pendiente</span>}
               </div>
 
-              {/* ✅ NUEVO: SIGUIENTE PASO — editar status/horario igual que Operaciones Activas */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 0 10px 0', borderTop: '1px solid #30363d', flexWrap: 'wrap' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>SIGUIENTE PASO</span>
                 {botonesDisponibles.length > 0 ? (
@@ -2323,7 +2195,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
       )}
 
-      {/* ✅ Editor integrado DESHABILITADO: ahora "Editar" abre el FormularioOperacion completo (igual que Operaciones Activas) */}
+      {/* ✅ Editor integrado DESHABILITADO: ahora "Editar" abre el FormularioOperacion completo */}
       {false && operacionEditando && (
         <div className="modal-overlay" style={{ zIndex: 1600 }}>
           <div className="form-card" style={{ maxWidth: '1000px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #58a6ff', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
@@ -2518,7 +2390,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
       )}
 
-      {/* ✅ NUEVO: Registro retroactivo de movimiento (fecha/hora personalizada) */}
       {modalHorarios === 'registrar' && (
         <div className="modal-overlay" style={{ zIndex: 2000 }}>
           <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
@@ -2559,7 +2430,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
       )}
 
-      {/* ✅ NUEVO: Visor de documentos de la operación */}
       {mostrarDocumentos && operacionViendo && (
         <div className="modal-overlay" style={{ zIndex: 2100 }}>
           <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
@@ -2592,7 +2462,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
       )}
 
-      {/* ✅ NUEVO: Subida de documentos ligada a la operación */}
       {operacionViendo && (
         <DocumentoUploadModal
           isOpen={mostrarSubirDocOp && !!operacionViendo}
