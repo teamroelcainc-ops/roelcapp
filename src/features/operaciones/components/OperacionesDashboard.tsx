@@ -231,11 +231,14 @@ const OperacionesDashboard = () => {
   //    no solo su fecha, para no depender de que exista el campo `fechaServicio`.
   const ultimoDocRef = useRef<any>(null);
 
-  const IDS_STATUS_EXCLUIDOS = ['f557b751', 'c2d57403', '7607f692'];
+  const IDS_STATUS_EXCLUIDOS = ['7607f692', 'f557b751', 'c2d57403'];
+  // ✅ "Activa" = cualquier operación cuyo ID de status NO sea uno de los 3
+  //    excluidos (cancelado / completado / falso). Se filtra SOLO por ID; ya no
+  //    se descarta por el texto "completado" del nombre, porque eso ocultaba
+  //    operaciones que sí están activas.
   const esOperacionActiva = (op: any): boolean => {
     const statusId = String(op.status || '').trim();
-    const statusTexto = String(op.statusNombre || op.status || '').toLowerCase();
-    return !IDS_STATUS_EXCLUIDOS.includes(statusId) && !statusTexto.includes('completado');
+    return !IDS_STATUS_EXCLUIDOS.includes(statusId);
   };
 
   const descargarOperaciones = async () => {
@@ -295,6 +298,17 @@ const OperacionesDashboard = () => {
       }
     }
     setCargandoOperaciones(false);
+  };
+
+  // ✅ NUEVO: actualizar manualmente la colección de operaciones.
+  //   Vuelve a leer `operaciones` desde Firestore (reinicia paginación y vuelve
+  //   a la página 1) SIN recargar toda la página del navegador.
+  const actualizarOperaciones = async () => {
+    if (cargandoOperaciones || cargandoMas) return;
+    ultimoDocRef.current = null;
+    setHayMasOperaciones(true);
+    setPaginaActual(1);
+    await descargarOperaciones();
   };
 
   const cargarMasOperaciones = async () => {
@@ -1197,7 +1211,7 @@ const OperacionesDashboard = () => {
   const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
 
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
-  const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
+  const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
@@ -1233,6 +1247,11 @@ const OperacionesDashboard = () => {
             </div>
           </div>
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
+            {/* ✅ NUEVO: Actualizar — vuelve a leer la colección "operaciones" desde Firestore */}
+            <button className="btn btn-outline" onClick={actualizarOperaciones} disabled={cargandoOperaciones || cargandoMas} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: (cargandoOperaciones || cargandoMas) ? 'wait' : 'pointer' }} title="Actualizar operaciones (vuelve a leer la colección desde Firestore)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: cargandoOperaciones ? 'spin 1s linear infinite' : 'none' }}><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              <span>{cargandoOperaciones ? 'Actualizando...' : 'Actualizar'}</span>
+            </button>
             <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>
             <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos (pide confirmación)">
