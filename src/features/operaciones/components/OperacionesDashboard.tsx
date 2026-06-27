@@ -227,27 +227,62 @@ const OperacionesDashboard = () => {
     }
   };
 
+  // ✅ Cursor robusto de paginación: guardamos el ÚLTIMO documento (snapshot),
+  //    no solo su fecha, para no depender de que exista el campo `fechaServicio`.
+  const ultimoDocRef = useRef<any>(null);
+
+  const IDS_STATUS_EXCLUIDOS = ['f557b751', 'c2d57403', '7607f692'];
+  const esOperacionActiva = (op: any): boolean => {
+    const statusId = String(op.status || '').trim();
+    const statusTexto = String(op.statusNombre || op.status || '').toLowerCase();
+    return !IDS_STATUS_EXCLUIDOS.includes(statusId) && !statusTexto.includes('completado');
+  };
+
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     try {
-      const queryOperaciones = query(
-        collection(db, 'operaciones'),
-        orderBy('fechaServicio', 'desc'),
-        limit(TAMANO_PAGINA)
+      // 1) Intento ideal: ordenar por fechaServicio (más recientes primero).
+      let docs: any[] = [];
+      let ordenadoPorFecha = true;
+      try {
+        const q1 = query(
+          collection(db, 'operaciones'),
+          orderBy('fechaServicio', 'desc'),
+          limit(TAMANO_PAGINA)
+        );
+        const snap1 = await getDocs(q1);
+        docs = snap1.docs;
+      } catch (errOrden) {
+        console.warn('No se pudo ordenar por fechaServicio; se reintenta sin orden:', errOrden);
+        docs = [];
+      }
+
+      // 2) ⚠️ CLAVE: Firestore OCULTA los documentos que NO tienen el campo del
+      //    orderBy. Si la consulta ordenada vino vacía, lo más probable es que
+      //    los registros (migrados de la app anterior) no tengan `fechaServicio`.
+      //    En ese caso los bajamos SIN ordenar para que SÍ aparezcan.
+      if (docs.length === 0) {
+        ordenadoPorFecha = false;
+        const q2 = query(collection(db, 'operaciones'), limit(TAMANO_PAGINA));
+        const snap2 = await getDocs(q2);
+        docs = snap2.docs;
+      }
+
+      ultimoDocRef.current = docs.length ? docs[docs.length - 1] : null;
+
+      const opDataRaw = docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      const operacionesActivas = opDataRaw.filter(esOperacionActiva);
+
+      // 🔎 Diagnóstico (abre la consola con F12 para ver estos números):
+      console.log(
+        `[Operaciones] crudas: ${opDataRaw.length} | activas tras filtro: ${operacionesActivas.length} | ordenadas por fecha: ${ordenadoPorFecha}`
       );
-      const operacionesSnap = await getDocs(queryOperaciones);
-      
-      const opDataRaw = operacionesSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      const idsExcluidos = ['f557b751', 'c2d57403', '7607f692'];
-      
-      const operacionesActivas = opDataRaw.filter((op: any) => {
-        const statusId = String(op.status || '').trim();
-        const statusTexto = String(op.statusNombre || op.status || '').toLowerCase();
-        return !idsExcluidos.includes(statusId) && !statusTexto.includes('completado');
-      });
+      if (opDataRaw.length > 0 && operacionesActivas.length === 0) {
+        console.warn('[Operaciones] Se bajaron registros pero el FILTRO los ocultó todos (status excluido o "completado"). Revisa los campos status / statusNombre de tus documentos.');
+      }
 
       setOperacionesGlobales(operacionesActivas);
-      setHayMasOperaciones(operacionesSnap.docs.length === TAMANO_PAGINA);
+      setHayMasOperaciones(docs.length === TAMANO_PAGINA);
     } catch (e: any) {
       console.error("Error al cargar operaciones:", e);
       const msg = String(e?.message || e?.code || e || '').toLowerCase();
@@ -266,26 +301,36 @@ const OperacionesDashboard = () => {
     if (!hayMasOperaciones || cargandoMas || operacionesGlobales.length === 0) return;
     setCargandoMas(true);
     try {
-      const ultimo = operacionesGlobales[operacionesGlobales.length - 1];
-      const cursorFecha = ultimo.fechaServicio || '';
+      const cursor = ultimoDocRef.current;
 
-      const q = query(
-        collection(db, 'operaciones'),
-        orderBy('fechaServicio', 'desc'),
-        startAfter(cursorFecha),
-        limit(TAMANO_PAGINA)
-      );
-      const snap = await getDocs(q);
-      const nuevasRaw = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      const idsExcluidos = ['f557b751', 'c2d57403', '7607f692'];
-      const nuevasFiltradas = nuevasRaw.filter((op: any) => {
-        const statusId = String(op.status || '').trim();
-        const statusTexto = String(op.statusNombre || op.status || '').toLowerCase();
-        return !idsExcluidos.includes(statusId) && !statusTexto.includes('completado');
+      // Paginación basada en el SNAPSHOT del último documento (no en la fecha),
+      // con el mismo fallback sin orden por si no existe `fechaServicio`.
+      let docs: any[] = [];
+      try {
+        const q1 = cursor
+          ? query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), startAfter(cursor), limit(TAMANO_PAGINA))
+          : query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(TAMANO_PAGINA));
+        const snap1 = await getDocs(q1);
+        docs = snap1.docs;
+      } catch (errOrden) {
+        const q2 = cursor
+          ? query(collection(db, 'operaciones'), startAfter(cursor), limit(TAMANO_PAGINA))
+          : query(collection(db, 'operaciones'), limit(TAMANO_PAGINA));
+        const snap2 = await getDocs(q2);
+        docs = snap2.docs;
+      }
+
+      if (docs.length) ultimoDocRef.current = docs[docs.length - 1];
+
+      const nuevasRaw = docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      const nuevasFiltradas = nuevasRaw.filter(esOperacionActiva);
+
+      setOperacionesGlobales(prev => {
+        const idsPrev = new Set(prev.map((o: any) => String(o.id)));
+        const sinDuplicar = nuevasFiltradas.filter((o: any) => !idsPrev.has(String(o.id)));
+        return [...prev, ...sinDuplicar];
       });
-
-      setOperacionesGlobales(prev => [...prev, ...nuevasFiltradas]);
-      setHayMasOperaciones(snap.docs.length === TAMANO_PAGINA);
+      setHayMasOperaciones(docs.length === TAMANO_PAGINA);
     } catch (e) {
       console.error("Error al cargar más operaciones:", e);
       alert("No se pudieron cargar más operaciones.");
