@@ -1,7 +1,7 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
-import { collection, doc, writeBatch, query, getDocs, orderBy, limit, where, startAfter } from 'firebase/firestore';
+import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
@@ -244,29 +244,40 @@ const OperacionesDashboard = () => {
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     try {
-      // 1) Intento ideal: ordenar por fechaServicio (más recientes primero).
+      // ⚠️ CLAVE: la colección tiene MILES de operaciones completadas y solo
+      //    unas pocas activas. Antes bajábamos las primeras 50 por fecha y
+      //    filtrábamos en memoria, pero esas 50 eran TODAS completadas, así que
+      //    las activas (enterradas entre miles) nunca aparecían.
+      //
+      //    Solución: pedirle a Firestore DIRECTAMENTE solo las activas, con
+      //    `not-in` sobre los 3 IDs de status excluidos. Así trae únicamente las
+      //    operaciones cuyo status NO sea cancelado/completado/falso, sin
+      //    importar dónde estén en la colección.
       let docs: any[] = [];
-      let ordenadoPorFecha = true;
+      let metodo = 'directa (not-in)';
+      let exito = false;
+
+      // 1) Consulta directa: status NOT-IN [excluidos]. (Usa el índice de campo
+      //    `status`; no requiere índice compuesto.)
       try {
         const q1 = query(
           collection(db, 'operaciones'),
-          orderBy('fechaServicio', 'desc'),
+          where('status', 'not-in', IDS_STATUS_EXCLUIDOS),
           limit(TAMANO_PAGINA)
         );
         const snap1 = await getDocs(q1);
         docs = snap1.docs;
-      } catch (errOrden) {
-        console.warn('No se pudo ordenar por fechaServicio; se reintenta sin orden:', errOrden);
-        docs = [];
+        exito = true;
+      } catch (errNotIn) {
+        console.warn('[Operaciones] La consulta not-in falló; uso respaldo sin filtro:', errNotIn);
       }
 
-      // 2) ⚠️ CLAVE: Firestore OCULTA los documentos que NO tienen el campo del
-      //    orderBy. Si la consulta ordenada vino vacía, lo más probable es que
-      //    los registros (migrados de la app anterior) no tengan `fechaServicio`.
-      //    En ese caso los bajamos SIN ordenar para que SÍ aparezcan.
-      if (docs.length === 0) {
-        ordenadoPorFecha = false;
-        const q2 = query(collection(db, 'operaciones'), limit(TAMANO_PAGINA));
+      // 2) RESPALDO (solo si la consulta directa falló): baja un bloque grande y
+      //    filtra en memoria. Nota: `not-in` ignora documentos SIN campo
+      //    `status`; este respaldo sí los puede capturar.
+      if (!exito) {
+        metodo = 'respaldo (sin filtro, filtra en memoria)';
+        const q2 = query(collection(db, 'operaciones'), limit(2000));
         const snap2 = await getDocs(q2);
         docs = snap2.docs;
       }
@@ -274,18 +285,17 @@ const OperacionesDashboard = () => {
       ultimoDocRef.current = docs.length ? docs[docs.length - 1] : null;
 
       const opDataRaw = docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      // Filtro en memoria por seguridad (en la vía directa ya vienen filtradas).
       const operacionesActivas = opDataRaw.filter(esOperacionActiva);
 
       // 🔎 Diagnóstico (abre la consola con F12 para ver estos números):
       console.log(
-        `[Operaciones] crudas: ${opDataRaw.length} | activas tras filtro: ${operacionesActivas.length} | ordenadas por fecha: ${ordenadoPorFecha}`
+        `[Operaciones v3] método: ${metodo} | crudas: ${opDataRaw.length} | activas: ${operacionesActivas.length}`
       );
-      if (opDataRaw.length > 0 && operacionesActivas.length === 0) {
-        console.warn('[Operaciones] Se bajaron registros pero el FILTRO los ocultó todos (status excluido o "completado"). Revisa los campos status / statusNombre de tus documentos.');
-      }
 
       setOperacionesGlobales(operacionesActivas);
-      setHayMasOperaciones(docs.length === TAMANO_PAGINA);
+      // En la vía directa, "hay más" si llenamos la página completa de activas.
+      setHayMasOperaciones(exito && docs.length === TAMANO_PAGINA);
     } catch (e: any) {
       console.error("Error al cargar operaciones:", e);
       const msg = String(e?.message || e?.code || e || '').toLowerCase();
@@ -317,22 +327,14 @@ const OperacionesDashboard = () => {
     try {
       const cursor = ultimoDocRef.current;
 
-      // Paginación basada en el SNAPSHOT del último documento (no en la fecha),
-      // con el mismo fallback sin orden por si no existe `fechaServicio`.
-      let docs: any[] = [];
-      try {
-        const q1 = cursor
-          ? query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), startAfter(cursor), limit(TAMANO_PAGINA))
-          : query(collection(db, 'operaciones'), orderBy('fechaServicio', 'desc'), limit(TAMANO_PAGINA));
-        const snap1 = await getDocs(q1);
-        docs = snap1.docs;
-      } catch (errOrden) {
-        const q2 = cursor
-          ? query(collection(db, 'operaciones'), startAfter(cursor), limit(TAMANO_PAGINA))
-          : query(collection(db, 'operaciones'), limit(TAMANO_PAGINA));
-        const snap2 = await getDocs(q2);
-        docs = snap2.docs;
-      }
+      // Paginación con la MISMA consulta directa (not-in), avanzando con el
+      // snapshot del último documento.
+      const constraints: any[] = [where('status', 'not-in', IDS_STATUS_EXCLUIDOS)];
+      if (cursor) constraints.push(startAfter(cursor));
+      constraints.push(limit(TAMANO_PAGINA));
+
+      const snap = await getDocs(query(collection(db, 'operaciones'), ...constraints));
+      const docs = snap.docs;
 
       if (docs.length) ultimoDocRef.current = docs[docs.length - 1];
 
