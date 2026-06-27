@@ -861,12 +861,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!clientId || !catalogoConvClientes || !catalogoConvDetalles) return [];
     const cid = String(clientId).trim();
 
-    // Maestros del cliente (probando varios nombres de campo para el id del cliente).
     const maestros = catalogoConvClientes.filter((c: any) => String(
       c.clienteId ?? c.cliente ?? c.id_cliente ?? c.clientePaga ?? c.empresaId ?? c.empresa ?? ''
     ).trim() === cid);
-    // El detalle puede referenciar al maestro por su ID de doc o por su numeroConvenio.
-    //   Metemos AMBOS en el set para no perder filas.
     const maestroIds = new Set<string>();
     maestros.forEach((m: any) => {
       if (m.id != null) maestroIds.add(String(m.id).trim());
@@ -874,8 +871,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const nm = String(m.numero ?? '').trim(); if (nm) maestroIds.add(nm);
     });
 
-    // Detalles ligados: por referencia al maestro O por vínculo directo al cliente.
-    //   Se unen ambas vías y se deduplica por id para no perder ninguna fila.
     const union = new Map<string, any>();
     catalogoConvDetalles.forEach((d: any) => {
       const ref = refMaestroDetalle(d);
@@ -981,46 +976,25 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return maestro ? String(maestro.id) : '';
   }, [proveedorIdResuelto, conveniosProv]);
 
-  const convenioProvAviso = useMemo<{ mensaje: string; bloquea: boolean } | null>(() => {
-    if (!pestanasVisibles.includes('unidad')) return null;
-    if (!formData.convenio) return null;
+  // ✅ MODIFICADO: validación de "convenio cliente = convenio proveedor" ELIMINADA.
+  //   Antes este memo generaba un aviso que podía BLOQUEAR el guardado cuando las
+  //   tarifas no coincidían. Ahora siempre devuelve null (no bloquea ni advierte),
+  //   por lo que el convenio del proveedor y el del cliente pueden ser distintos.
+  //   Se conserva la variable para que el resto del JSX/handlers que la referencian
+  //   sigan compilando y queden inertes (convenioProvAviso?.bloquea === false).
+  const convenioProvAviso = useMemo<{ mensaje: string; bloquea: boolean } | null>(() => null, []);
 
-    const convCliente = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
-    if (!convCliente) return null;
-    const tarifaCliente = String(convCliente.tarifaBaseId ?? '').trim();
-    if (!tarifaCliente) return null;
-
-    const hayProveedor = !!(formData.proveedorUnidad || searchProvTransporte);
-    if (!hayProveedor) {
-      return {
-        mensaje: 'Selecciona el Proveedor de Transporte para asignarle automáticamente el mismo convenio (tarifa) que el cliente.',
-        bloquea: false,
-      };
-    }
-
-    const existeMatch = listaConveniosProveedor.some(
-      (c: any) => String(c.tarifaBaseId ?? '').trim() === tarifaCliente
-    );
-    if (!existeMatch) {
-      return {
-        mensaje: `El proveedor de transporte no tiene un convenio con la misma tarifa que el cliente ("${convCliente.descripcion}"). Debes AGREGAR ese convenio al proveedor para poder continuar.`,
-        bloquea: true,
-      };
-    }
-
-    const convProvSel = listaConveniosProveedor.find((c: any) => c.id === formData.convenioProveedor);
-    if (convProvSel && String(convProvSel.tarifaBaseId ?? '').trim() !== tarifaCliente) {
-      return {
-        mensaje: 'El Convenio Proveedor seleccionado no coincide con la tarifa del cliente. Ambos deben ser el mismo convenio (tarifa).',
-        bloquea: true,
-      };
-    }
-    return null;
-  }, [pestanasVisibles, formData.convenio, formData.convenioProveedor, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor]);
-
+  // ✅ MODIFICADO: auto-asignación NO destructiva del convenio del proveedor.
+  //   Solo SUGIERE un convenio al proveedor cuando éste todavía NO tiene uno
+  //   seleccionado y existe uno con la misma tarifa que el cliente (comodidad).
+  //   Ya NO borra ni sobrescribe una selección manual: si eliges un convenio
+  //   distinto para el proveedor, se respeta tal cual.
   useEffect(() => {
     if (!pestanasVisibles.includes('unidad')) return;
     if (!formData.convenio) return;
+
+    // Si el proveedor YA tiene un convenio elegido, no tocar nada (pueden diferir).
+    if (formData.convenioProveedor) return;
 
     const convCliente = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
     if (!convCliente) return;
@@ -1028,9 +1002,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!tarifaCliente) return;
 
     if (!(formData.proveedorUnidad || searchProvTransporte)) return;
-
-    const convProvActual = listaConveniosProveedor.find((c: any) => c.id === formData.convenioProveedor);
-    if (convProvActual && String(convProvActual.tarifaBaseId ?? '').trim() === tarifaCliente) return;
 
     const convProvMatch = listaConveniosProveedor.find(
       (c: any) => String(c.tarifaBaseId ?? '').trim() === tarifaCliente
@@ -1044,12 +1015,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         totalAPagarProv: convProvMatch.tarifaMonto,
       }));
       setSearchConvenioProveedor(convProvMatch.tipoConvenioNombre);
-    } else if (!initialData && formData.convenioProveedor) {
-      setFormData(prev => ({ ...prev, convenioProveedor: '', monedaConvenioProv: '', totalAPagarProv: 0 }));
-      setSearchConvenioProveedor('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pestanasVisibles, formData.convenio, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor, initialData]);
+  }, [pestanasVisibles, formData.convenio, formData.convenioProveedor, formData.proveedorUnidad, searchProvTransporte, listaConveniosCliente, listaConveniosProveedor]);
 
   const resolverNombreTrafico = useCallback(async (movRaw: any): Promise<string> => {
     const valor = String(movRaw || '').trim();
@@ -1248,11 +1216,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (convenioProvAviso?.bloquea) {
-      alert(convenioProvAviso.mensaje);
-      if (pestanasVisibles.includes('unidad')) setPestañaActiva('unidad');
-      return;
-    }
+    // ✅ MODIFICADO: se eliminó el bloqueo por "convenio cliente ≠ convenio proveedor".
+    //   Ahora el guardado procede aunque los convenios/tarifas sean distintos.
     setCargando(true);
     try {
       const configId = buildConfigId();
