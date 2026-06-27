@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, getCountFromServer, onSnapshot, orderBy, limit, where, startAfter, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, getDocs, getCountFromServer, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
@@ -84,9 +84,64 @@ const STATUS_COMPLETADOS_VALORES = ['c2d57403', 'f557b751'];
 const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
 // ✅ NUEVO: tamaño de página para descarga incremental
 const TAMANIO_PAGINA = 100;
+// ✅ NUEVO: tamaño de bloque al descargar TODOS los completados por status.
+const TAMANIO_BLOQUE_STATUS = 500;
 // ✅ NUEVO: TTL del caché en sessionStorage (5 minutos)
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const CACHE_PREFIX = 'roelca_completadas_';
+// ✅ NUEVO: clave ÚNICA de caché. Ahora descargamos TODOS los completados (ambos
+//   status) una sola vez y filtramos fecha/cliente en memoria, así que la caché
+//   NO depende del rango de fechas ni del cliente.
+const CACHE_KEY_TODOS = CACHE_PREFIX + 'all_v3';
+
+// ✅ NUEVO: normaliza CUALQUIER formato de fecha de servicio a "YYYY-MM-DD".
+//   Los registros migrados/viejos pueden guardar la fecha como Timestamp de
+//   Firestore, objeto Date, número epoch o texto "DD/MM/YYYY" / "MM/DD/YYYY".
+//   Sin esta normalización, el filtro por rango fallaba y no mostraba nada.
+const normalizarFechaServicioISO = (valor: any): string => {
+  if (valor === null || valor === undefined || valor === '') return '';
+
+  // Timestamp de Firestore u objeto con toDate()/seconds.
+  if (typeof valor === 'object') {
+    try {
+      if (typeof valor.toDate === 'function') return valor.toDate().toISOString().split('T')[0];
+      if (typeof valor.seconds === 'number') return new Date(valor.seconds * 1000).toISOString().split('T')[0];
+      if (valor instanceof Date && !isNaN(valor.getTime())) return valor.toISOString().split('T')[0];
+    } catch { /* sigue abajo */ }
+  }
+
+  const s = String(valor).trim();
+  if (!s) return '';
+
+  // Ya viene en ISO ("2026-06-25" o "2026-06-25T10:30:00").
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  // Formatos con barras o guiones: DD/MM/YYYY (latino) o MM/DD/YYYY.
+  const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (dmy) {
+    let a = parseInt(dmy[1], 10);
+    let b = parseInt(dmy[2], 10);
+    const y = dmy[3];
+    let dd = a, mm = b;            // Por defecto se asume DD/MM (formato latino).
+    if (a <= 12 && b > 12) { mm = a; dd = b; }   // Si el 2º > 12 era MM/DD.
+    if (mm < 1 || mm > 12) return s;             // Formato no reconocible.
+    return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  }
+
+  // Número epoch (ms o s).
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    const d = new Date(n > 1e12 ? n : n * 1000);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+
+  // Último intento: que lo resuelva el motor de fechas del navegador.
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+
+  return s;
+};
 
 // ✅ NUEVO: prop opcional para conectar la edición con el formulario existente del padre.
 interface ServiciosCompletadosProps {
@@ -132,10 +187,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // ✅ NUEVO: paginación incremental (chunks de Firestore con startAfter)
-  const [lastDocSnap, setLastDocSnap] = useState<any | null>(null);
+  // ✅ NUEVO: paginación incremental (ya no se usa: se descargan todos por status).
   const [hayMasOperaciones, setHayMasOperaciones] = useState(false);
-  const [cargandoMas, setCargandoMas] = useState(false);
+  const [cargandoMas] = useState(false);
 
   // ✅ NUEVO: buscador autocompletado de cliente
   const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
@@ -152,10 +206,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
 
   // ✅ NUEVO: conteos EXACTOS desde el servidor (getCountFromServer).
-  //   No descargan documentos (≈1 lectura c/u), así que dan el total real
-  //   aunque la tabla solo tenga 100/500 operaciones cargadas.
-  //   - "Rango": respeta Fecha Inicio/Fin + Cliente seleccionados.
-  //   - "Global": TODA la base de completados, sin ningún filtro.
   const [conteosServidor, setConteosServidor] = useState<{
     completados: number | null;   // completados reales (sin falsos)
     falsos: number | null;
@@ -207,42 +257,35 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     <span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', color, border: `1px solid ${color}`, backgroundColor: `${color}1a`, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{texto}</span>
   );
 
-  // ✅ NUEVO: clave de caché basada en el RANGO DE FECHAS + cliente (opcional).
-  const claveCacheActual = () =>
-    CACHE_PREFIX + `${filterFechaInicio}_${filterFechaFin}_${filterCliente || 'all'}`;
+  // ✅ MODIFICADO: clave de caché ÚNICA (todos los completados). Filtramos en memoria.
+  const claveCacheActual = () => CACHE_KEY_TODOS;
 
-  // ✅ CORREGIDO: descarga resistente a falta de índices (misma filosofía que
-  //   Operaciones Activas). El filtro PRINCIPAL es el RANGO DE FECHAS; el cliente
-  //   es OPCIONAL. Solo se muestran los status de STATUS_COMPLETADOS_VALORES.
+  // ✅ REESCRITO: descarga TODOS los servicios completados (status c2d57403 y
+  //   f557b751) paginando por status. NO depende de índices compuestos ni del
+  //   formato de fechaServicio. La fecha y el cliente se filtran EN MEMORIA
+  //   (ver operacionesFiltradas) usando normalizarFechaServicioISO.
   //
-  //   Orden de intentos:
-  //     0) Caché en sessionStorage (< 5 min) por rango+cliente.
-  //     1) ÓPTIMA: status(in) [+cliente] + rango fechaServicio + orderBy + limit.
-  //        (Rápida, pero requiere índice COMPUESTO. Si falta, cae al respaldo.)
-  //     2) RESPALDO A: rango de fechaServicio (índice de UN campo) + filtra
-  //        status/cliente EN MEMORIA. Eficiente porque la fecha ya acota.
-  //     3) RESPALDO B: status(in) (índice de UN campo) + filtra fecha/cliente EN
-  //        MEMORIA. Último recurso por si el índice de fechaServicio fallara.
+  //   Por qué: los registros migrados guardan fechaServicio en formatos que la
+  //   consulta por rango de Firestore no reconoce (devolvía 0). Al traer todos
+  //   los completados y filtrar la fecha en memoria, siempre aparecen.
   const descargarOperaciones = async (
     fechaInicio: string,
     fechaFin: string,
-    clienteId: string,
+    _clienteId: string,
     opciones: { ignorarCache?: boolean } = {}
   ) => {
-    setLastDocSnap(null);
     setHayMasOperaciones(false);
 
+    // Se mantiene el requisito de elegir rango para mostrar la tabla.
     if (!fechaInicio || !fechaFin) {
       setOperacionesGlobales([]);
       return;
     }
 
-    const cacheKey = CACHE_PREFIX + `${fechaInicio}_${fechaFin}_${clienteId || 'all'}`;
-
-    // [0] Caché
+    // [0] Caché (mismo dataset completo para cualquier rango/cliente).
     if (!opciones.ignorarCache) {
       try {
-        const cacheStr = sessionStorage.getItem(cacheKey);
+        const cacheStr = sessionStorage.getItem(CACHE_KEY_TODOS);
         if (cacheStr) {
           const cache = JSON.parse(cacheStr);
           if (cache && Date.now() - cache.ts < CACHE_TTL_MS && Array.isArray(cache.ops)) {
@@ -256,144 +299,84 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
     setCargandoOperaciones(true);
 
-    // Límite superior inclusivo aunque fechaServicio traiga hora (ej. "2026-06-20T10:30")
-    const finInclusivo = fechaFin + '\uf8ff';
+    const todas: any[] = [];
+    const vistos = new Set<string>();
 
-    // Filtra status (SOLO los 2 IDs) + cliente + rango de fechas EN MEMORIA.
-    const filtrarEnMemoria = (ops: any[]) => ops.filter((op: any) => {
-      const statusOk = STATUS_COMPLETADOS_VALORES.includes(String(op.status || '').trim());
-      const clienteOk = !clienteId || String(op.clientePaga || op.clienteId || '') === clienteId;
-      const f = String(op.fechaServicio || '');
-      const fechaOk = f >= fechaInicio && f <= finInclusivo;
-      return statusOk && clienteOk && fechaOk;
-    });
-
-    let opsFinal: any[] = [];
-    let lastSnapFinal: any = null;
-    let hayMasFinal = false;
-    let exito = false;
-    let metodo = '';
-
-    // [1] ÓPTIMA (requiere índice compuesto status + fechaServicio)
     try {
-      const c1: any[] = [where('status', 'in', STATUS_COMPLETADOS_VALORES)];
-      if (clienteId) c1.push(where('clientePaga', '==', clienteId));
-      c1.push(where('fechaServicio', '>=', fechaInicio));
-      c1.push(where('fechaServicio', '<=', finInclusivo));
-      c1.push(orderBy('fechaServicio', 'desc'));
-      c1.push(limit(TAMANIO_PAGINA));
+      // Por cada status permitido, paginamos por documentId hasta traerlos todos.
+      for (const statusVal of STATUS_COMPLETADOS_VALORES) {
+        let cursor: any = null;
+        let intentoSimple = false;
 
-      const snap = await getDocs(query(collection(db, 'operaciones'), ...c1));
-      opsFinal = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      lastSnapFinal = snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null;
-      hayMasFinal = snap.docs.length === TAMANIO_PAGINA;
-      exito = true;
-      metodo = 'óptima (índice compuesto)';
-    } catch (e1) {
-      console.log('[ServiciosCompletados] Sin índice compuesto; uso respaldos a prueba de índice. (Crea el índice para más velocidad.)');
-    }
+        for (let pagina = 0; pagina < 60; pagina++) {
+          let snap;
+          try {
+            const partes: any[] = [where('status', '==', statusVal), orderBy(documentId()), limit(TAMANIO_BLOQUE_STATUS)];
+            if (cursor) partes.splice(2, 0, startAfter(cursor));
+            snap = await getDocs(query(collection(db, 'operaciones'), ...partes));
+          } catch (errPag) {
+            // Si orderBy(documentId) fallara por índice, traemos un bloque grande
+            // sin paginar (último recurso) y salimos del bucle de este status.
+            console.warn('[ServiciosCompletados] Paginación por documentId no disponible; uso bloque simple.', errPag);
+            intentoSimple = true;
+            break;
+          }
 
-    // [2] RESPALDO A: rango de fechaServicio (1 campo) + filtra status/cliente en memoria
-    if (!exito || opsFinal.length === 0) {
-      try {
-        const snapB = await getDocs(query(
-          collection(db, 'operaciones'),
-          where('fechaServicio', '>=', fechaInicio),
-          where('fechaServicio', '<=', finInclusivo),
-          limit(2000)
-        ));
-        const todas = snapB.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        const filtradas = filtrarEnMemoria(todas);
-        filtradas.sort((a: any, b: any) =>
-          String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
-        );
-        if (!exito || filtradas.length > 0) {
-          opsFinal = filtradas;
-          lastSnapFinal = null;   // sin cursor: "Cargar más" no aplica en este modo
-          hayMasFinal = false;
-          exito = true;
-          metodo = 'respaldo por fecha (filtra status en memoria)';
+          snap.docs.forEach((d: any) => {
+            const id = d.id;
+            if (!vistos.has(id)) { vistos.add(id); todas.push({ id, ...d.data() }); }
+          });
+
+          if (snap.docs.length < TAMANIO_BLOQUE_STATUS) break;     // ya no hay más
+          cursor = snap.docs[snap.docs.length - 1];
         }
-        console.log(`[ServiciosCompletados] Respaldo por fecha: ${todas.length} crudas, ${filtradas.length} completadas en el rango.`);
-      } catch (eB) {
-        console.warn('[ServiciosCompletados] Respaldo por fecha falló:', eB);
-      }
-    }
 
-    // [3] RESPALDO B (último recurso): status(in) (1 campo) + filtra fecha/cliente en memoria
-    if (!exito || opsFinal.length === 0) {
-      try {
-        const snapC = await getDocs(query(
-          collection(db, 'operaciones'),
-          where('status', 'in', STATUS_COMPLETADOS_VALORES),
-          limit(3000)
-        ));
-        const todas = snapC.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-        const filtradas = filtrarEnMemoria(todas);
-        filtradas.sort((a: any, b: any) =>
-          String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || ''))
-        );
-        if (!exito || filtradas.length > 0) {
-          opsFinal = filtradas;
-          lastSnapFinal = null;
-          hayMasFinal = false;
-          exito = true;
-          metodo = 'respaldo por status (filtra fecha en memoria)';
+        if (intentoSimple) {
+          const snapSimple = await getDocs(query(
+            collection(db, 'operaciones'),
+            where('status', '==', statusVal),
+            limit(8000)
+          ));
+          snapSimple.docs.forEach((d: any) => {
+            const id = d.id;
+            if (!vistos.has(id)) { vistos.add(id); todas.push({ id, ...d.data() }); }
+          });
         }
-        console.log(`[ServiciosCompletados] Respaldo por status: ${todas.length} crudas, ${filtradas.length} en el rango.`);
-      } catch (eC: any) {
-        console.error('[ServiciosCompletados] Todos los intentos fallaron:', eC);
-        if (!exito) alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${eC?.message || eC}`);
       }
-    }
 
-    console.log(`[ServiciosCompletados v2] método: ${metodo || 'ninguno'} | mostradas: ${opsFinal.length}`);
+      // Seguridad: dejar ESTRICTAMENTE solo los 2 status permitidos.
+      const soloCompletados = todas.filter((op: any) =>
+        STATUS_COMPLETADOS_VALORES.includes(String(op.status || '').trim())
+      );
 
-    if (exito) {
-      setOperacionesGlobales(opsFinal);
-      setLastDocSnap(lastSnapFinal);
-      setHayMasOperaciones(hayMasFinal);
+      // Orden por fecha (normalizada) descendente, desempatando por consecutivo.
+      soloCompletados.sort((a: any, b: any) => {
+        const fa = normalizarFechaServicioISO(a.fechaServicio);
+        const fb = normalizarFechaServicioISO(b.fechaServicio);
+        if (fa !== fb) return fb.localeCompare(fa);
+        return obtenerConsecutivoRef(b) - obtenerConsecutivoRef(a);
+      });
+
+      setOperacionesGlobales(soloCompletados);
+      setHayMasOperaciones(false);
+
       try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), ops: opsFinal }));
+        sessionStorage.setItem(CACHE_KEY_TODOS, JSON.stringify({ ts: Date.now(), ops: soloCompletados }));
       } catch { /* cuota agotada: ignorar */ }
+
+      console.log(`[ServiciosCompletados v3] descargados ${soloCompletados.length} completados (status ${STATUS_COMPLETADOS_VALORES.join(' / ')}). Filtro de fecha aplicado en memoria.`);
+    } catch (e: any) {
+      console.error('[ServiciosCompletados] Error al descargar completados:', e);
+      alert(`No se pudieron cargar las operaciones completadas.\n\nDetalle: ${e?.message || e}`);
     }
 
     setCargandoOperaciones(false);
   };
 
-  // ✅ NUEVO: descarga el siguiente chunk de operaciones (paginación incremental).
-  // Sólo funciona si la query óptima funcionó (necesita lastDocSnap).
+  // ✅ MODIFICADO: ya no se usa (se descargan todos por status). Se deja como
+  //   no-op por compatibilidad con el botón "Cargar más" (que ya no se muestra).
   const cargarMasOperaciones = async () => {
-    if (!filterFechaInicio || !filterFechaFin || !lastDocSnap || cargandoMas || cargandoOperaciones) return;
-    setCargandoMas(true);
-    try {
-      const finInclusivo = filterFechaFin + '\uf8ff';
-      const constraints: any[] = [where('status', 'in', STATUS_COMPLETADOS_VALORES)];
-      if (filterCliente) constraints.push(where('clientePaga', '==', filterCliente));
-      constraints.push(where('fechaServicio', '>=', filterFechaInicio));
-      constraints.push(where('fechaServicio', '<=', finInclusivo));
-      constraints.push(orderBy('fechaServicio', 'desc'));
-      constraints.push(startAfter(lastDocSnap));
-      constraints.push(limit(TAMANIO_PAGINA));
-
-      const qMas = query(collection(db, 'operaciones'), ...constraints);
-      const snap = await getDocs(qMas);
-      const nuevas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      const setCompleto = [...operacionesGlobales, ...nuevas];
-      setOperacionesGlobales(setCompleto);
-      setLastDocSnap(snap.docs.length > 0 ? snap.docs[snap.docs.length - 1] : null);
-      setHayMasOperaciones(snap.docs.length === TAMANIO_PAGINA);
-      try {
-        sessionStorage.setItem(
-          claveCacheActual(),
-          JSON.stringify({ ts: Date.now(), ops: setCompleto })
-        );
-      } catch { /* ignorar */ }
-    } catch (e: any) {
-      console.error('[ServiciosCompletados] Error al cargar más:', e);
-      alert(`No se pudieron cargar más operaciones.\n\nDetalle: ${e?.message || e}`);
-    }
-    setCargandoMas(false);
+    return;
   };
 
   // ✅ Catálogos en tiempo real vía onSnapshot.
@@ -442,7 +425,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
     } else {
       setOperacionesGlobales([]);
-      setLastDocSnap(null);
       setHayMasOperaciones(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -979,10 +961,20 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return m ? parseInt(m[1], 10) : 0;
   };
 
+  // ✅ MODIFICADO: el filtro de RANGO DE FECHAS ahora se aplica AQUÍ, en memoria,
+  //   usando normalizarFechaServicioISO. Así funciona aunque fechaServicio venga
+  //   como Timestamp, "DD/MM/YYYY", etc. (antes el filtro fallaba y salía vacío).
   const operacionesFiltradas = useMemo(() => {
     if (!filterFechaInicio || !filterFechaFin) return [];
 
     let filtradas = operacionesGlobales;
+
+    // Filtro por rango de fechas (robusto a distintos formatos).
+    filtradas = filtradas.filter(op => {
+      const f = normalizarFechaServicioISO(op.fechaServicio);
+      if (!f) return false;
+      return f >= filterFechaInicio && f <= filterFechaFin;
+    });
 
     if (filterCliente) {
       filtradas = filtradas.filter(op => String(op.clientePaga || op.clienteId || '') === filterCliente);
@@ -1007,8 +999,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     }
 
     return [...filtradas].sort((a: any, b2: any) => {
-      const fa = String(a.fechaServicio || '');
-      const fb = String(b2.fechaServicio || '');
+      const fa = normalizarFechaServicioISO(a.fechaServicio);
+      const fb = normalizarFechaServicioISO(b2.fechaServicio);
       if (fa !== fb) return fb.localeCompare(fa);
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
@@ -1490,12 +1482,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 <span style={{ ...cardValueStyle, color: '#f59e0b' }}>{resumenServicios.pendProveedor}</span>
               </div>
             </div>
-
-            {hayMasOperaciones && (
-              <div style={{ marginTop: '8px', color: '#fb923c', fontSize: '0.78rem' }}>
-                ⚠ Hay más operaciones en este rango sin descargar (usa "+ Cargar más" abajo). Los conteos de arriba reflejan solo lo descargado hasta ahora.
-              </div>
-            )}
 
             <div style={{ marginTop: '14px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>

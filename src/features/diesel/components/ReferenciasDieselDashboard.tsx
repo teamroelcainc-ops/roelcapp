@@ -50,6 +50,8 @@ export const ReferenciasDieselDashboard = () => {
 
   const [filtroUnidad, setFiltroUnidad] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
+  // Indicador de carga de operaciones de la unidad seleccionada.
+  const [cargandoOps, setCargandoOps] = useState(false);
 
   // Filtro Pendientes / Cargadas
   const [filtroEstadoOps, setFiltroEstadoOps] = useState<'pendientes' | 'cargadas'>('pendientes');
@@ -93,6 +95,76 @@ export const ReferenciasDieselDashboard = () => {
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // ──────────────────────────────────────────────────────────────────
+  // ✅ PARSEO DE FECHAS A PRUEBA DE FORMATOS (corrige "Invalid Date")
+  // ──────────────────────────────────────────────────────────────────
+  // Acepta: Timestamp de Firestore (toDate()/seconds), objeto Date,
+  // número (epoch), ISO "YYYY-MM-DD[...]", "DD/MM/YYYY" y "DD-MM-YYYY".
+  // Devuelve un Date local (sin corrimiento de zona horaria) o null.
+  const parsearFechaSegura = (valor: any): Date | null => {
+    if (valor === null || valor === undefined || valor === '') return null;
+
+    // Objeto: Timestamp de Firestore o Date
+    if (typeof valor === 'object') {
+      if (typeof valor.toDate === 'function') {
+        const d = valor.toDate();
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (typeof valor.seconds === 'number') {
+        const d = new Date(valor.seconds * 1000);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (valor instanceof Date) {
+        return isNaN(valor.getTime()) ? null : valor;
+      }
+      return null;
+    }
+
+    // Número (epoch en ms)
+    if (typeof valor === 'number') {
+      const d = new Date(valor);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    // Texto
+    if (typeof valor === 'string') {
+      const s = valor.trim();
+      if (!s) return null;
+
+      // ISO: YYYY-MM-DD (construimos fecha LOCAL para evitar corrimiento)
+      let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (m) {
+        const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      // DD/MM/YYYY o DD-MM-YYYY (también admite año de 2 dígitos)
+      m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if (m) {
+        let year = Number(m[3]);
+        if (year < 100) year += 2000;
+        const d = new Date(year, Number(m[2]) - 1, Number(m[1]));
+        return isNaN(d.getTime()) ? null : d;
+      }
+
+      // Último recurso: dejar que el navegador lo intente
+      const d = new Date(s);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    return null;
+  };
+
+  // ISO "YYYY-MM-DD" robusto (para comparar rangos de fechas).
+  const fechaISO = (valor: any): string => {
+    const d = parsearFechaSegura(valor);
+    if (!d) return '';
+    const y = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${mm}-${dd}`;
+  };
+
   // ✅ 1. CARGAMOS REFERENCIAS Y CATÁLOGOS LIGEROS
   useEffect(() => {
     const qRefs = query(collection(db, 'referencias_diesel'), orderBy('createdAt', 'desc'), limit(400));
@@ -125,19 +197,53 @@ export const ReferenciasDieselDashboard = () => {
     return () => { unSubReferencias(); unSubUnidades(); unSubEmpleados(); unSubEmpresas(); unSubLugares(); };
   }, []);
 
-  // ✅ 2. LAZY LOAD DE OPERACIONES
+  // ✅ 2. CARGA DE OPERACIONES POR UNIDAD (sin límite global)
+  // Antes se traían sólo 400 operaciones de TODA la colección y luego se
+  // filtraban en memoria, por lo que muchas operaciones de la unidad quedaban
+  // fuera. Ahora, al elegir una unidad consultamos TODAS sus operaciones.
+  // Como la unidad puede guardarse en distintos campos (unidadNombre, unidad
+  // o unidadId), consultamos los tres y unimos los resultados sin duplicar.
   useEffect(() => {
-    if (activeTab !== 'operaciones') return;
+    if (activeTab !== 'operaciones' || !filtroUnidad) return;
 
-    const qOps = query(collection(db, 'operaciones'), limit(400));
-    const unSubOperaciones = onSnapshot(qOps, (snap) => {
-      const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-      ops.sort((a: any, b: any) => new Date(b.fechaServicio || b.createdAt || 0).getTime() - new Date(a.fechaServicio || a.createdAt || 0).getTime());
-      setOperacionesGlobales(ops);
-    });
+    const uniDoc = unidadesList.find(
+      u => String(u.unidad || u.nombre || u.numeroEconomico || '').trim() === filtroUnidad.trim()
+    );
+    const uniId = uniDoc?.id;
 
-    return () => { unSubOperaciones(); };
-  }, [activeTab]);
+    let cancelado = false;
+    setCargandoOps(true);
+
+    (async () => {
+      try {
+        const acumulador = new Map<string, any>();
+        const ejecutarConsulta = async (campo: string, valor: string) => {
+          if (!valor) return;
+          const snap = await getDocs(query(collection(db, 'operaciones'), where(campo, '==', valor)));
+          snap.docs.forEach(d => acumulador.set(d.id, { id: d.id, ...(d.data() as any) }));
+        };
+
+        await ejecutarConsulta('unidadNombre', filtroUnidad);
+        await ejecutarConsulta('unidad', filtroUnidad);
+        if (uniId) await ejecutarConsulta('unidadId', uniId);
+
+        if (cancelado) return;
+
+        const ops = Array.from(acumulador.values());
+        ops.sort((a: any, b: any) =>
+          (parsearFechaSegura(b.fechaServicio || b.createdAt)?.getTime() || 0) -
+          (parsearFechaSegura(a.fechaServicio || a.createdAt)?.getTime() || 0)
+        );
+        setOperacionesGlobales(ops);
+      } catch (error) {
+        console.error('Error cargando operaciones de la unidad:', error);
+      } finally {
+        if (!cancelado) setCargandoOps(false);
+      }
+    })();
+
+    return () => { cancelado = true; };
+  }, [activeTab, filtroUnidad, unidadesList]);
 
   // ✅ 3. OBTENER COSTO DIÉSEL
   useEffect(() => {
@@ -290,12 +396,11 @@ export const ReferenciasDieselDashboard = () => {
     generarInstruccionesDieselPDF(construirDatosInstrucciones(r));
   };
 
-  const formatearFechaSpanish = (fechaString: string) => {
-    if (!fechaString) return '-';
-    try { 
-      return new Date(fechaString + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }); 
-    } 
-    catch { return fechaString; }
+  // ✅ Formato de fecha en español a prueba de "Invalid Date".
+  const formatearFechaSpanish = (valor: any) => {
+    const d = parsearFechaSegura(valor);
+    if (!d) return '-';
+    return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
   // ✅ TODAS las unidades del catálogo, sin excepción (no depende de las operaciones).
@@ -354,6 +459,20 @@ export const ReferenciasDieselDashboard = () => {
     return mm ? parseInt(mm[1], 10) : 0;
   };
 
+  // ✅ Fecha de orden de una referencia (a prueba de formatos).
+  // Usa el campo `fecha`; si falta o es inválido, intenta extraer la fecha
+  // embebida en el consecutivo (DIESEL-DDMMYY-seq) para no romper el orden.
+  const fechaOrdenRef = (r: any): string => {
+    const iso = fechaISO(r.fecha);
+    if (iso) return iso;
+    const m = String(r.consecutivo || '').match(/-(\d{2})(\d{2})(\d{2})-/);
+    if (m) {
+      const [, dd, mes, yy] = m;
+      return `20${yy}-${mes}-${dd}`;
+    }
+    return '';
+  };
+
   // ✅ "Cargada" = está en el historial de referencias (por id o por referenciaDieselId).
   //    "Pendiente" = NO está en el historial.
   const esCargada = (op: any) => !!op.referenciaDieselId || idsCargadasSet.has(op.id);
@@ -367,7 +486,7 @@ export const ReferenciasDieselDashboard = () => {
   const valorOrdenOp = (op: any, campo: string): string | number => {
     switch (campo) {
       case 'ref': return String(op.ref || op.id || '').toLowerCase();
-      case 'fechaServicio': return String(op.fechaServicio || op.createdAt || '');
+      case 'fechaServicio': return parsearFechaSegura(op.fechaServicio || op.createdAt)?.getTime() || 0;
       case 'unidad': return getNombreUnidad(op.unidadNombre || op.unidadId || op.unidad).toLowerCase();
       case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador).toLowerCase();
       case 'origen': return getNombreLugar(op.origen).toLowerCase();
@@ -381,7 +500,7 @@ export const ReferenciasDieselDashboard = () => {
   // Rango de fechas (sobre fechaServicio). Vacío = sin límite.
   const dentroRangoFecha = (op: any) => {
     if (!fechaDesdeOps && !fechaHastaOps) return true;
-    const f = String(op.fechaServicio || op.createdAt || '').slice(0, 10);
+    const f = fechaISO(op.fechaServicio || op.createdAt);
     if (!f) return false;
     if (fechaDesdeOps && f < fechaDesdeOps) return false;
     if (fechaHastaOps && f > fechaHastaOps) return false;
@@ -784,9 +903,11 @@ export const ReferenciasDieselDashboard = () => {
       );
     });
     // ✅ Orden: fecha (desc) y luego consecutivo (desc). Del más nuevo al más viejo.
+    // La fecha se normaliza a ISO para que el orden sea correcto aunque venga
+    // en formatos distintos (ISO, DD/MM/YYYY) o falte (se usa el consecutivo).
     return [...lista].sort((a, b) => {
-      const fa = String(a.fecha || '');
-      const fb = String(b.fecha || '');
+      const fa = fechaOrdenRef(a);
+      const fb = fechaOrdenRef(b);
       if (fa !== fb) return fb.localeCompare(fa);
       return consecutivoNum(b.consecutivo) - consecutivoNum(a.consecutivo);
     });
@@ -1013,6 +1134,8 @@ export const ReferenciasDieselDashboard = () => {
               <tbody>
                 {!filtroUnidad ? (
                   <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona una Unidad en el filtro superior para buscar operaciones.</td></tr>
+                ) : cargandoOps ? (
+                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones de la unidad...</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
                   <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
                     {filtroEstadoOps === 'pendientes'
