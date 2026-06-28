@@ -219,16 +219,6 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           </button>
         </form>
 
-        <div style={{ marginTop: '24px', textAlign: 'center', borderTop: '1px solid #30363d', paddingTop: '24px' }}>
-          <button 
-            type="button" 
-            onClick={onLoginSuccess}
-            style={{ background: 'none', border: 'none', color: '#58a6ff', fontSize: '0.85rem', cursor: 'pointer', textDecoration: 'underline' }}
-          >
-            Entrar como Admin (Bypass para pruebas)
-          </button>
-        </div>
-
       </div>
     </div>
   );
