@@ -144,6 +144,11 @@ const OperacionesDashboard = () => {
 
   const [busqueda, setBusqueda] = useState('');
 
+  // ✅ NUEVO (Fix 1): filtros por columna (Status, Unidad Roelca, Remolque).
+  const [filtroStatus, setFiltroStatus] = useState('');
+  const [filtroUnidad, setFiltroUnidad] = useState('');
+  const [filtroRemolque, setFiltroRemolque] = useState('');
+
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 50;
@@ -385,7 +390,9 @@ const OperacionesDashboard = () => {
     setLogoPdf(b64 && b64.startsWith('data:') ? b64 : '');
   }, [empresaConfig?.logoBase64]);
 
-  useEffect(() => { setPaginaActual(1); }, [busqueda]);
+  // ✅ (Fix 1) Reinicia a la página 1 cuando cambia el buscador o cualquiera de
+  //    los filtros de Status / Unidad / Remolque.
+  useEffect(() => { setPaginaActual(1); }, [busqueda, filtroStatus, filtroUnidad, filtroRemolque]);
 
   useEffect(() => {
     const cargarBotones = async () => {
@@ -925,6 +932,30 @@ const OperacionesDashboard = () => {
     return m ? parseInt(m[1], 10) : 0;
   };
 
+  // ✅ NUEVO (Fix 3): parser de fecha ROBUSTO para ORDENAR. La colección guarda la
+  //    fecha en formatos MEZCLADOS ("2026-06-27", "26/6/2026", Timestamp...), por
+  //    eso el orden por texto fallaba (dejaba la más nueva abajo). Devuelve un
+  //    número (epoch ms) comparable.
+  const fechaOrdenOp = (valor: any): number => {
+    if (valor == null || valor === '') return 0;
+    if (typeof valor === 'object') {
+      if (typeof valor.toDate === 'function') { const d = valor.toDate(); return isNaN(d.getTime()) ? 0 : d.getTime(); }
+      if (typeof valor.seconds === 'number') return valor.seconds * 1000;
+      if (valor instanceof Date) return isNaN(valor.getTime()) ? 0 : valor.getTime();
+      return 0;
+    }
+    if (typeof valor === 'number') return valor;
+    const s = String(valor).trim();
+    if (!s) return 0;
+    // ISO: YYYY-MM-DD (fecha local)
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) { const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])); return isNaN(d.getTime()) ? 0 : d.getTime(); }
+    // DD/MM/YYYY o DD-MM-YYYY (admite año de 2 dígitos)
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (m) { let y = Number(m[3]); if (y < 100) y += 2000; const d = new Date(y, Number(m[2]) - 1, Number(m[1])); return isNaN(d.getTime()) ? 0 : d.getTime(); }
+    const d = new Date(s); return isNaN(d.getTime()) ? 0 : d.getTime();
+  };
+
   // ✅ Texto "buscable" de cada columna. Devuelve EXACTAMENTE lo que se ve en la
   //    tabla (incluyendo lo que se resuelve por catálogo: cliente, convenio,
   //    unidad, operador, remolque, monedas, etc.). Se usa para que el buscador
@@ -992,19 +1023,41 @@ const OperacionesDashboard = () => {
     }
   };
 
+  // ✅ NUEVO (Fix 1): opciones de los filtros = valores DISTINTOS realmente
+  //    presentes en las operaciones cargadas, ya resueltos a su nombre. Así el
+  //    dropdown solo ofrece lo que existe (Status, Unidad Roelca, Remolque).
+  const construirOpcionesFiltro = (colId: string): string[] => {
+    const set = new Set<string>();
+    operacionesGlobales.forEach(op => {
+      const v = valorTextoColumna(op, colId);
+      if (v && v !== '-' && v.trim() !== '') set.add(v);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' }));
+  };
+  const opcionesStatus = useMemo(() => construirOpcionesFiltro('status'), [operacionesGlobales, catalogosGlobales]);
+  const opcionesUnidad = useMemo(() => construirOpcionesFiltro('unidad'), [operacionesGlobales, catalogosGlobales]);
+  const opcionesRemolque = useMemo(() => construirOpcionesFiltro('remolque'), [operacionesGlobales, catalogosGlobales]);
+  const hayFiltrosActivos = !!(filtroStatus || filtroUnidad || filtroRemolque);
+  const limpiarFiltros = () => { setFiltroStatus(''); setFiltroUnidad(''); setFiltroRemolque(''); };
+
   const operacionesFiltradas = useMemo(() => {
     const b = busqueda.trim().toLowerCase();
-    // ✅ Buscador por TODAS las columnas de la tabla (visibles u ocultas),
-    //    comparando contra el texto que realmente se muestra. Además:
-    //    - NO hace falta escribir la palabra completa (busca por coincidencia
-    //      parcial, p. ej. "und" encuentra "UND.1011").
-    //    - Se puede escribir varias palabras sueltas en CUALQUIER orden
-    //      (p. ej. "robinson 220626" o "1011 roelca"): cada palabra debe
-    //      aparecer en alguna columna de la fila.
     const tokens = b.split(/\s+/).filter(Boolean);
+
+    // 1) ✅ Filtros de dropdown (Status / Unidad / Remolque). Se comparan contra
+    //    el MISMO texto que se ve en la tabla (ya resuelto por catálogo).
+    let base = operacionesGlobales;
+    if (filtroStatus)   base = base.filter(op => valorTextoColumna(op, 'status')   === filtroStatus);
+    if (filtroUnidad)   base = base.filter(op => valorTextoColumna(op, 'unidad')   === filtroUnidad);
+    if (filtroRemolque) base = base.filter(op => valorTextoColumna(op, 'remolque') === filtroRemolque);
+
+    // 2) Buscador por TODAS las columnas de la tabla (visibles u ocultas),
+    //    comparando contra el texto que realmente se muestra. Además:
+    //    - NO hace falta escribir la palabra completa (coincidencia parcial).
+    //    - Se pueden escribir varias palabras sueltas en CUALQUIER orden.
     const filtradas = tokens.length === 0
-      ? [...operacionesGlobales]
-      : operacionesGlobales.filter(op => {
+      ? [...base]
+      : base.filter(op => {
           const textoFila = columnasTabla
             .map(col => valorTextoColumna(op, col.id))
             .join(' ')
@@ -1012,15 +1065,16 @@ const OperacionesDashboard = () => {
           return tokens.every(t => textoFila.includes(t));
         });
 
-    // ✅ Orden: primero por FECHA (desc), y dentro de la misma fecha por el
-    //    CONSECUTIVO de la referencia (desc). Del más nuevo al más antiguo.
+    // 3) ✅ (Fix 3) Orden: primero por FECHA (desc, parseada de forma robusta),
+    //    y dentro de la misma fecha por el CONSECUTIVO de la referencia (desc).
+    //    Del más nuevo al más antiguo.
     return filtradas.sort((a: any, b2: any) => {
-      const fa = String(a.fechaServicio || '');
-      const fb = String(b2.fechaServicio || '');
-      if (fa !== fb) return fb.localeCompare(fa); // fecha YYYY-MM-DD desc
+      const ta = fechaOrdenOp(a.fechaServicio);
+      const tb = fechaOrdenOp(b2.fechaServicio);
+      if (ta !== tb) return tb - ta; // fecha desc (más reciente arriba)
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a); // consecutivo desc
     });
-  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla]);
+  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroStatus, filtroUnidad, filtroRemolque]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -1215,6 +1269,10 @@ const OperacionesDashboard = () => {
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
+  // ✅ NUEVO (Fix 1): estilos para la barra de filtros.
+  const filtroLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' };
+  const filtroSelectStyle: React.CSSProperties = { padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', fontSize: '0.9rem', minWidth: '180px' };
+
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
       
@@ -1236,13 +1294,8 @@ const OperacionesDashboard = () => {
           </h1>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
-          <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
-            <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9' }}>
-              <option>Filtro: Todo</option>
-            </select>
-          </div>
-          <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '16px', width: '100%' }}>
+          <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'flex-start' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
               <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input type="text" placeholder="Buscar en todas las columnas..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }} />
@@ -1266,6 +1319,41 @@ const OperacionesDashboard = () => {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
           </div>
+        </div>
+
+        {/* ✅ NUEVO (Fix 1): barra de filtros por Status, Unidad Roelca y Remolque */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', marginBottom: '20px', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <label style={filtroLabelStyle}>Status</label>
+            <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} style={filtroSelectStyle}>
+              <option value="">Todos</option>
+              {opcionesStatus.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <label style={filtroLabelStyle}>Unidad Roelca</label>
+            <select value={filtroUnidad} onChange={(e) => setFiltroUnidad(e.target.value)} style={filtroSelectStyle}>
+              <option value="">Todas</option>
+              {opcionesUnidad.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <label style={filtroLabelStyle}>Remolque</label>
+            <select value={filtroRemolque} onChange={(e) => setFiltroRemolque(e.target.value)} style={filtroSelectStyle}>
+              <option value="">Todos</option>
+              {opcionesRemolque.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          {hayFiltrosActivos && (
+            <button onClick={limpiarFiltros} style={{ padding: '9px 14px', borderRadius: '6px', border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer', fontSize: '0.85rem', height: 'fit-content' }} title="Quitar todos los filtros">
+              ✕ Limpiar filtros
+            </button>
+          )}
+          {hayFiltrosActivos && (
+            <span style={{ color: '#8b949e', fontSize: '0.82rem', marginLeft: 'auto', alignSelf: 'center' }}>
+              {operacionesFiltradas.length} {operacionesFiltradas.length === 1 ? 'resultado' : 'resultados'}
+            </span>
+          )}
         </div>
 
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
