@@ -8,7 +8,6 @@ import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarChec
 import * as XLSX from 'xlsx';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
-import { EmpresaBrand } from '../../configuracion/EmpresaBrand';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 
 const ID_USD = '7dca62b3';
@@ -144,7 +143,8 @@ const OperacionesDashboard = () => {
 
   const [busqueda, setBusqueda] = useState('');
 
-  // ✅ NUEVO (Fix 1): filtros por columna (Status, Unidad Roelca, Remolque).
+  // ✅ NUEVO (Fix 1): filtros por columna (Tipo Operación, Status, Unidad Roelca, Remolque).
+  const [filtroTipoOperacion, setFiltroTipoOperacion] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroUnidad, setFiltroUnidad] = useState('');
   const [filtroRemolque, setFiltroRemolque] = useState('');
@@ -392,7 +392,7 @@ const OperacionesDashboard = () => {
 
   // ✅ (Fix 1) Reinicia a la página 1 cuando cambia el buscador o cualquiera de
   //    los filtros de Status / Unidad / Remolque.
-  useEffect(() => { setPaginaActual(1); }, [busqueda, filtroStatus, filtroUnidad, filtroRemolque]);
+  useEffect(() => { setPaginaActual(1); }, [busqueda, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque]);
 
   useEffect(() => {
     const cargarBotones = async () => {
@@ -773,21 +773,6 @@ const OperacionesDashboard = () => {
     setOperacionEditando(null);
   };
 
-  const forzarRecarga = () => {
-    if (!window.confirm(
-      '¿Recargar todos los catálogos desde Firestore?\n\n' +
-      'Esto consumirá un buen número de lecturas (~500-2000). ' +
-      'Hazlo solo si editaste un catálogo en otra pantalla o sospechas datos viejos.'
-    )) return;
-    try {
-      Object.keys(localStorage)
-        .filter(k => k.startsWith('cat_v1__') || k.startsWith('cat_v2__') || k.startsWith('flujo_v1__'))
-        .forEach(k => localStorage.removeItem(k));
-    } catch {}
-    sessionStorage.removeItem('roelca_catalogos_v2');
-    window.location.reload();
-  };
-
   const handleDescargarSolicitudRetiro = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
@@ -1034,11 +1019,12 @@ const OperacionesDashboard = () => {
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' }));
   };
+  const opcionesTipoOperacion = useMemo(() => construirOpcionesFiltro('tipoOperacion'), [operacionesGlobales, catalogosGlobales]);
   const opcionesStatus = useMemo(() => construirOpcionesFiltro('status'), [operacionesGlobales, catalogosGlobales]);
   const opcionesUnidad = useMemo(() => construirOpcionesFiltro('unidad'), [operacionesGlobales, catalogosGlobales]);
   const opcionesRemolque = useMemo(() => construirOpcionesFiltro('remolque'), [operacionesGlobales, catalogosGlobales]);
-  const hayFiltrosActivos = !!(filtroStatus || filtroUnidad || filtroRemolque);
-  const limpiarFiltros = () => { setFiltroStatus(''); setFiltroUnidad(''); setFiltroRemolque(''); };
+  const hayFiltrosActivos = !!(filtroTipoOperacion || filtroStatus || filtroUnidad || filtroRemolque);
+  const limpiarFiltros = () => { setFiltroTipoOperacion(''); setFiltroStatus(''); setFiltroUnidad(''); setFiltroRemolque(''); };
 
   const operacionesFiltradas = useMemo(() => {
     const b = busqueda.trim().toLowerCase();
@@ -1047,6 +1033,7 @@ const OperacionesDashboard = () => {
     // 1) ✅ Filtros de dropdown (Status / Unidad / Remolque). Se comparan contra
     //    el MISMO texto que se ve en la tabla (ya resuelto por catálogo).
     let base = operacionesGlobales;
+    if (filtroTipoOperacion) base = base.filter(op => valorTextoColumna(op, 'tipoOperacion') === filtroTipoOperacion);
     if (filtroStatus)   base = base.filter(op => valorTextoColumna(op, 'status')   === filtroStatus);
     if (filtroUnidad)   base = base.filter(op => valorTextoColumna(op, 'unidad')   === filtroUnidad);
     if (filtroRemolque) base = base.filter(op => valorTextoColumna(op, 'remolque') === filtroRemolque);
@@ -1074,7 +1061,7 @@ const OperacionesDashboard = () => {
       if (ta !== tb) return tb - ta; // fecha desc (más reciente arriba)
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a); // consecutivo desc
     });
-  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroStatus, filtroUnidad, filtroRemolque]);
+  }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -1288,7 +1275,6 @@ const OperacionesDashboard = () => {
 
      <div style={{ width: '100%', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
-          <EmpresaBrand tamanoLogo={36} />
           <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: 0, fontWeight: 'bold' }}>
             Operaciones Activas
           </h1>
@@ -1309,9 +1295,6 @@ const OperacionesDashboard = () => {
             </button>
             <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>
-            <button className="btn btn-outline" onClick={forzarRecarga} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Recargar Catálogos (pide confirmación)">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
-            </button>
             <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
@@ -1323,6 +1306,13 @@ const OperacionesDashboard = () => {
 
         {/* ✅ NUEVO (Fix 1): barra de filtros por Status, Unidad Roelca y Remolque */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', marginBottom: '20px', width: '100%' }}>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <label style={filtroLabelStyle}>Tipo de Operación</label>
+            <select value={filtroTipoOperacion} onChange={(e) => setFiltroTipoOperacion(e.target.value)} style={filtroSelectStyle}>
+              <option value="">Todos</option>
+              {opcionesTipoOperacion.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <label style={filtroLabelStyle}>Status</label>
             <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} style={filtroSelectStyle}>
