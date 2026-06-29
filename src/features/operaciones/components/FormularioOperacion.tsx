@@ -80,6 +80,12 @@ const sanitizarRutaOp = (s: string) =>
 const referenciaDeOperacion = (idOp: string, ref?: string): string =>
   (ref && String(ref).trim()) || (idOp ? String(idOp).substring(0, 6) : 'Operacion');
 
+// ✅ NUEVO: normaliza una clave (Servicio/Tráfico/Carga) para comparar de forma
+//   TOLERANTE: sin acentos, sin distinguir mayúsculas y con espacios colapsados.
+//   Así "Logística"=="Logistica" y "Movimiento LDO"=="Movimiento ldo".
+const normClave = (s: any): string =>
+  String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+
 // ✅ NUEVO: normaliza CUALQUIER formato de fecha a "YYYY-MM-DD" para que el
 //   <input type="date"> la muestre. Los registros viejos/migrados pueden guardar
 //   la fecha como Timestamp de Firestore, ISO con hora, "DD/MM/YYYY", etc. y por
@@ -317,6 +323,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const [pestanasVisiblesConfig, setPestanasVisiblesConfig] = useState<TabType[] | null>(null);
   const [camposObligatoriosConfig, setCamposObligatoriosConfig] = useState<string[] | null>(null);
+
+  // ✅ NUEVO: índice de los flujos YA guardados (id real del documento + sus
+  //   claves Servicio/Tráfico/Carga). Sirve para resolver el flujo de forma
+  //   tolerante a mayúsculas/acentos en lugar de depender de un ID exacto.
+  const [flujosIndex, setFlujosIndex] = useState<{ id: string; tipoServicio: string; trafico: string; carga: string }[]>([]);
 
   const [modalCatalogo, setModalCatalogo] = useState<{
     catalogo: CatalogoCreable;
@@ -588,22 +599,46 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const labelUnidad = (u: any) => u?.unidad || u?.nombre || '';
   const labelEmpleado = (o: any) => `${o?.firstName || ''} ${o?.lastNamePaternal || ''}`.trim();
 
+  // ✅ NUEVO: carga (una vez) la lista de flujos guardados para poder resolver
+  //   el flujo correcto aunque el texto difiera en mayúsculas/acentos.
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'config_flujos_operacion'));
+        if (!activo) return;
+        setFlujosIndex(snap.docs.map(d => {
+          const x = d.data() as any;
+          return { id: d.id, tipoServicio: x.tipoServicio || '', trafico: x.trafico || '', carga: x.carga || '' };
+        }));
+      } catch (e) { console.warn('No se pudo cargar el índice de flujos:', e); }
+    })();
+    return () => { activo = false; };
+  }, []);
+
   const buildConfigId = () => {
-    let tipoOpText = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || 'N/A';
+    // Valores CRUDOS, exactamente como los guarda el Editor de Flujos
+    //   (Servicio = tipo_operacion tal cual; Tráfico = nombre de catalogo_trafico;
+    //   Carga = "Cargada"/"Vacía"/"N/A"). NO se fuerza acento ni se cambia el
+    //   case, porque eso era justo lo que rompía la coincidencia del ID.
+    const tipoOpText = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || 'N/A';
+    const traficoTxt = formData.trafico || 'N/A';
+    const cargaTxt = formData.carga || 'N/A';
 
-    if (tipoOpText.toLowerCase() === 'logistica') {
-      tipoOpText = 'Logística';
-    } else if (tipoOpText !== 'N/A') {
-      tipoOpText = tipoOpText.charAt(0).toUpperCase() + tipoOpText.slice(1).toLowerCase();
-    }
+    const idCrudo = `${tipoOpText}_${traficoTxt}_${cargaTxt}`;
 
-    const formatTitleCase = (str: string) => {
-      if (!str || str === 'N/A') return 'N/A';
-      return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
-    };
+    // ✅ Resolución TOLERANTE: si ya existe un flujo guardado cuya combinación
+    //   coincide ignorando mayúsculas/acentos/espacios, se usa su ID REAL de
+    //   documento. Así "Logística/Movimiento ldo" encuentra el guardado como
+    //   "Logistica/Movimiento LDO". Si no hay match, se usa el id crudo.
+    const match = flujosIndex.find(f =>
+      normClave(f.tipoServicio) === normClave(tipoOpText) &&
+      normClave(f.trafico) === normClave(traficoTxt) &&
+      normClave(f.carga) === normClave(cargaTxt)
+    );
 
-    const idGenerado = `${tipoOpText}_${formatTitleCase(formData.trafico)}_${formatTitleCase(formData.carga)}`;
-    console.log('🔑 configId generado:', idGenerado);
+    const idGenerado = match ? match.id : idCrudo;
+    console.log('🔑 configId generado:', idGenerado, match ? '(resuelto por índice)' : '(crudo)');
     return idGenerado;
   };
 
@@ -633,7 +668,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     })();
 
     return () => { cancelado = true; };
-  }, [formData.tipoOperacionId, formData.trafico, formData.carga, tiposOperacion]);
+  }, [formData.tipoOperacionId, formData.trafico, formData.carga, tiposOperacion, flujosIndex]);
 
   const pestanasVisibles = useMemo<TabType[]>(
     () => (pestanasVisiblesConfig === null ? TODAS_LAS_PESTANAS : pestanasVisiblesConfig),
@@ -675,7 +710,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }, 800);
 
     return () => clearTimeout(timerId);
-  }, [formData, initialData, tiposOperacion, statusServicio]);
+  }, [formData, initialData, tiposOperacion, statusServicio, flujosIndex]);
 
   const etiquetaCampo = (campo: string): string => {
     const mapa: Record<string, string> = {
