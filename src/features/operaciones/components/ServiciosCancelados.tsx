@@ -6,11 +6,10 @@ import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarChec
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 // ✅ NUEVO: visor y subida de documentos ligados a la operación
-import { TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
+import { TIPOS_DOCUMENTO_OPERACION, FormularioOperacion } from './FormularioOperacion';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
-// ✅ NUEVO: logo + nombre de la empresa (lee de la configuración)
-import { EmpresaBrand } from '../../configuracion/EmpresaBrand';
+// ✅ logo + nombre de la empresa removidos de esta vista (se quitó EmpresaBrand)
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 
 const ID_USD = '7dca62b3';
@@ -76,6 +75,9 @@ const ServiciosCancelados = () => {
   // ✅ NUEVO: control del visor de documentos y del modal de subida
   const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
   const [mostrarSubirDocOp, setMostrarSubirDocOp] = useState(false);
+  // ✅ NUEVO: edición vía FormularioOperacion completo (igual que Activos/Completados)
+  const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
+  const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
   
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
@@ -214,13 +216,24 @@ const ServiciosCancelados = () => {
     setCatalogosGlobales(catGuardados);
   };
 
-  // ✅ Al montar: cargamos catálogos (para buscadores) y TODAS las operaciones
-  //    canceladas (status 7607f692). Los filtros se aplican luego en memoria.
+  // ✅ Al montar solo cargamos catálogos (para poblar los buscadores de Cliente y
+  //    Remolque). Los registros NO se cargan hasta que se defina el rango de fechas.
   useEffect(() => {
     cargarCatalogosSiEsNecesario();
-    descargarOperaciones();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ✅ MODIFICADO: los registros solo se cargan/muestran cuando el rango de fechas
+  //    (inicio + fin) está completo. La carga sigue siendo por status 7607f692.
+  useEffect(() => {
+    if (filterFechaInicio && filterFechaFin) {
+      descargarOperaciones();
+    } else {
+      setOperacionesGlobales([]);
+      setErrorCarga(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterFechaInicio, filterFechaFin]);
 
   // ✅ Logo para los PDF: si en la config hay un logo en base64 (data:...), úsalo;
   // si no, dejamos el global vacío para que el generador use el logo INCRUSTADO por
@@ -732,32 +745,18 @@ const ServiciosCancelados = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
-  const exportarCSV = () => {
-    if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
-    const encabezados = ['# Ref', 'Fecha', 'Tipo de Operación', 'Status', 'Convenio (Tarifa)', '# de Remolque', 'Proveedor', 'Unidad', 'Cliente (Paga)', 'Convenio (Prov)', 'Cargos Adicionales', 'Subtotal'];
-    const lineas = operacionesFiltradas.map(op => [
-      `"${op.ref || op.id?.substring(0,6) || ''}"`, 
-      `"${op.fechaServicio || ''}"`, 
-      `"${mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}"`, 
-      `"${mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}"`, 
-      `"${obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}"`, 
-      `"${mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}"`, 
-      `"${mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}"`, 
-      `"${mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}"`, 
-      `"${mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}"`, 
-      `"${obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}"`, 
-      `"${formatoMoneda(op.cargosAdicionales)}"`, 
-      `"${formatoMoneda(op.subtotalCliente)}"`
-    ].join(','));
-    const csvContent = [encabezados.join(','), ...lineas].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Servicios_Cancelados_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // ✅ NUEVO: abrir el FormularioOperacion completo para editar (igual que Activos/Completados)
+  const abrirEdicion = (op: any) => {
+    setOperacionEditando(op);
+    setEstadoFormulario('abierto');
+  };
+
+  // ✅ NUEVO: tras guardar, cerrar el formulario y refrescar la lista (si hay rango activo)
+  const handleOperacionGuardada = () => {
+    setEstadoFormulario('cerrado');
+    setOperacionEditando(null);
+    setOperacionViendo(null);
+    if (filterFechaInicio && filterFechaFin) descargarOperaciones();
   };
 
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
@@ -776,23 +775,36 @@ const ServiciosCancelados = () => {
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+
+      {/* ✅ NUEVO: FormularioOperacion COMPLETO para editar (igual que Activos/Completados) */}
+      {estadoFormulario !== 'cerrado' && (
+        <FormularioOperacion
+          estado={estadoFormulario}
+          initialData={operacionEditando}
+          onClose={() => { setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
+          onMinimize={() => setEstadoFormulario('minimizado')}
+          onRestore={() => setEstadoFormulario('abierto')}
+          catalogosCacheados={catalogosGlobales}
+          onSave={handleOperacionGuardada}
+        />
+      )}
+
      <div style={{ width: '100%', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
-          <EmpresaBrand tamanoLogo={36} />
           <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: 0, fontWeight: 'bold' }}>Servicios Cancelados</h1>
         </div>
         {/* Barra de filtros. Todos los filtros son OPCIONALES y se aplican en memoria. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          {/* Fecha Inicio (opcional) */}
+          {/* Fecha Inicio (requerida para mostrar registros) */}
           <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO (opcional)</label>
-            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO *</label>
+            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
           </div>
 
-          {/* Fecha Fin (opcional) */}
+          {/* Fecha Fin (requerida para mostrar registros) */}
           <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN (opcional)</label>
-            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN *</label>
+            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
           </div>
 
           {/* Cliente que paga (buscador con autocompletado) */}
@@ -917,16 +929,14 @@ const ServiciosCancelados = () => {
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
             <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
           </div>
-
-          <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', marginLeft: 'auto', paddingBottom: '2px' }}>
-            <button className="btn btn-outline" onClick={exportarCSV} title="Exportar CSV" style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '6px', cursor: 'pointer' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-              Exportar CSV
-            </button>
-          </div>
         </div>
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          {cargandoOperaciones ? (
+          {(!filterFechaInicio || !filterFechaFin) ? (
+            <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
+              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>Selecciona un rango de fechas</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Define <span style={{ color: '#ef4444' }}>Fecha Inicio</span> y <span style={{ color: '#ef4444' }}>Fecha Fin</span> para ver las operaciones canceladas.</div>
+            </div>
+          ) : cargandoOperaciones ? (
             <div style={{ border: '1px solid #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones canceladas...</div>
           ) : errorCarga ? (
             <div style={{ border: '1px solid rgba(248,81,73,0.4)', backgroundColor: 'rgba(248,81,73,0.06)', borderRadius: '8px', padding: '40px 24px', textAlign: 'center' }}>
@@ -977,6 +987,16 @@ const ServiciosCancelados = () => {
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </button>
+                            <button 
+                              type="button" 
+                              title="Editar Operación"
+                              onClick={(e) => { e.stopPropagation(); abrirEdicion(op); }}
+                              style={{ background: 'transparent', border: '1px solid #58a6ff', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(88, 166, 255, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                             </button>
                             <button 
                               type="button" 
@@ -1068,6 +1088,10 @@ const ServiciosCancelados = () => {
                   Instrucciones
                 </button>
 
+                <button onClick={() => abrirEdicion(operacionViendo)} title="Editar Operación" style={{ background: '#21262d', border: '1px solid rgba(88, 166, 255, 0.4)', color: '#58a6ff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                  Editar
+                </button>
                 <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ background: '#21262d', border: '1px solid rgba(251, 146, 60, 0.4)', color: '#fb923c', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>Documentos</button>
                 <button onClick={verHistorial} style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>Bitácora</button>
                 <button onClick={() => setOperacionViendo(null)} className="btn-window close" style={{ padding: '6px', borderRadius: '50%' }}>✕</button>
