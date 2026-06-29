@@ -168,15 +168,12 @@ const IconFileText      = (p: { size?: number }) => <svg width={p.size || 18} he
 const IconTruck         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
 const IconClipboard     = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="13" y2="15"/></svg>;
 const IconDollar        = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
-const IconUser          = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
 const IconUsers         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
 const IconMapPin        = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
 const IconCalendar      = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
 const IconPackage       = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
 const IconReceipt       = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M4 2h16v20l-3-2-2 2-3-2-3 2-2-2-3 2z"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg>;
-const IconChart         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="3" y1="20" x2="21" y2="20"/></svg>;
 const IconTrendingUp    = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
-const IconRefresh       = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>;
 const IconRoute         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>;
 const IconEdit          = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
 const IconSave          = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>;
@@ -1146,13 +1143,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return maestro ? String(maestro.id) : '';
   }, [proveedorIdResuelto, conveniosProv]);
 
-  // ✅ MODIFICADO: validación de "convenio cliente = convenio proveedor" ELIMINADA.
-  //   Antes este memo generaba un aviso que podía BLOQUEAR el guardado cuando las
-  //   tarifas no coincidían. Ahora siempre devuelve null (no bloquea ni advierte),
-  //   por lo que el convenio del proveedor y el del cliente pueden ser distintos.
-  //   Se conserva la variable para que el resto del JSX/handlers que la referencian
-  //   sigan compilando y queden inertes (convenioProvAviso?.bloquea === false).
-  const convenioProvAviso = useMemo<{ mensaje: string; bloquea: boolean } | null>(() => null, []);
+  // Nota: la validación de "convenio cliente = convenio proveedor" fue eliminada;
+  //   el convenio del proveedor y el del cliente pueden ser distintos sin bloquear.
 
   // ✅ MODIFICADO: auto-asignación NO destructiva del convenio del proveedor.
   //   Solo SUGIERE un convenio al proveedor cuando éste todavía NO tiene uno
@@ -1420,6 +1412,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const tarifasCoinciden = !!tarifaIdCliente && tarifaIdCliente === tarifaIdProveedor;
   const nombreMoneda = (monedaId: any) =>
     listaMonedasLocal.find((m:any) => String(m.id) === String(monedaId))?.moneda || '';
+
+  // ✅ NUEVO (FIX RESUMEN): resuelve el NOMBRE legible de una tarifa por su ID
+  //   (catalogo_tarifas_referencia) para mostrarlo en el panel "Resumen" en lugar
+  //   del ID hexadecimal. Si no se encuentra en el catálogo, usa el nombre
+  //   denormalizado del convenio seleccionado.
+  const nombreTarifaPorId = (tarifaId: any): string => {
+    const id = String(tarifaId || '').trim();
+    if (!id) return '';
+    const t = (tarifas || []).find((x: any) => String(x.id).trim() === id);
+    return t?.descripcion || t?.nombre || t?.tarifa || t?.concepto || '';
+  };
+  const nombreTarifaCli = convClienteSel?.descripcion || nombreTarifaPorId(tarifaIdCliente);
+  const nombreTarifaProv = convProvSelObj?.tipoConvenioNombre || nombreTarifaPorId(tarifaIdProveedor);
 
 
   const tipoOpTextNormalizado = (tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '').toLowerCase();
@@ -2049,17 +2054,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </div>
                 </>
               )}
+
               {pestañaActiva === 'pedimento' && pestanasVisibles.includes('pedimento') && (
                 <>
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconPackage /></div><h3 className="roelca-card-title">Cliente y Mercancía</h3></div>
                     <div className="form-grid">
-                      <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                      <div className="form-group">
                         <label className="form-label">Cliente (Mercancía)</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('clienteMercancia')}`} placeholder="Escriba para buscar cliente mercancía..." value={searchClienteMercancia} onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }} onFocus={() => setShowDropdownClienteMercancia(true)} onBlur={() => setTimeout(() => setShowDropdownClienteMercancia(false), 200)} />
-                            {showDropdownClienteMercancia && searchClienteMercancia && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosClienteMercancia.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(c.nombre); setShowDropdownClienteMercancia(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}
+                            <input type="text" className={`form-control${claseSiFalta('clienteMercancia')}`} placeholder="Buscar cliente de mercancía..." value={searchClienteMercancia}
+                              onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }}
+                              onFocus={() => setShowDropdownClienteMercancia(true)} onBlur={() => setTimeout(() => setShowDropdownClienteMercancia(false), 200)} />
+                            {showDropdownClienteMercancia && searchClienteMercancia && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                                {resultadosClienteMercancia.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(c.nombre); setShowDropdownClienteMercancia(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_MERCANCIA },
@@ -2067,19 +2083,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Descripción de la Mercancía</label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Cantidad (Enteros)</label><input type="number" step="1" name="cantidad" className={`form-control${claseSiFalta('cantidad')}`} value={formData.cantidad || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{embalajes?.map((e:any) => <option key={e.id} value={e.id}>{e.clave || e.nombre}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label">Peso (Kg) Decimales</label><input type="number" step="0.01" name="pesoKg" className={`form-control${claseSiFalta('pesoKg')}`} value={formData.pesoKg || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Descripción de Mercancía</label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Cantidad</label><input type="text" name="cantidad" className={`form-control${claseSiFalta('cantidad')}`} value={formData.cantidad || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{embalajes?.map((em:any) => <option key={em.id} value={em.id}>{em.embalaje || em.nombre || em.descripcion}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label">Peso (Kg)</label><input type="number" name="pesoKg" className={`form-control${claseSiFalta('pesoKg')}`} value={formData.pesoKg || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
+
                   <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Documentación (CT y DODA)</h3></div>
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Documentación (Carta Porte / DODA)</h3></div>
                     <div className="form-grid">
-                      <CampoArchivo label="PDF - Carta Porte" file={formData.pdfCartaPorte} onChange={(e) => handleFileChange(e, 'pdfCartaPorte')} resaltar={camposObligatoriosFaltantesSet.has('pdfCartaPorte')} />
                       <div className="form-group"><label className="form-label"># DODA</label><input type="text" name="numDoda" className={`form-control${claseSiFalta('numDoda')}`} value={formData.numDoda || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Fecha de Emisión DODA</label><input type="date" name="fechaEmisionDoda" className={`form-control${claseSiFalta('fechaEmisionDoda')}`} value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
-                      <CampoArchivo label="PDF - DODA" file={formData.pdfDoda} onChange={(e) => handleFileChange(e, 'pdfDoda')} resaltar={camposObligatoriosFaltantesSet.has('pdfDoda')} />
+                      <div className="form-group"><label className="form-label">Fecha Emisión DODA</label><input type="date" name="fechaEmisionDoda" className={`form-control${claseSiFalta('fechaEmisionDoda')}`} value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
+                      <CampoArchivo label="PDF Carta Porte" file={formData.pdfCartaPorte} resaltar={camposObligatoriosFaltantesSet.has('pdfCartaPorte')} onChange={(e) => handleFileChange(e, 'pdfCartaPorte')} />
+                      <CampoArchivo label="PDF DODA" file={formData.pdfDoda} resaltar={camposObligatoriosFaltantesSet.has('pdfDoda')} onChange={(e) => handleFileChange(e, 'pdfDoda')} />
                     </div>
                   </div>
                 </>
@@ -2091,10 +2108,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconClipboard /></div><h3 className="roelca-card-title">Entry's</h3></div>
                     <div className="form-grid">
                       <div className="form-group"><label className="form-label"># de Entry's</label><input type="text" name="numeroEntrys" className={`form-control${claseSiFalta('numeroEntrys')}`} value={formData.numeroEntrys || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Cantidad de Entry's (Max 10)</label><input type="number" max="10" min="0" name="cantEntrys" className={`form-control${claseSiFalta('cantEntrys')}`} value={formData.cantEntrys || 0} onChange={(e) => { const val = Math.min(10, Math.max(0, parseInt(e.target.value) || 0)); setFormData(prev => ({ ...prev, cantEntrys: val, pdfsEntrys: new Array(val).fill(null) })); }} /></div>
-                      {Array.from({ length: Number(formData.cantEntrys) || 0 }).map((_, i) => (<CampoArchivo key={i} label={`PDF Entry #${i + 1}`} file={formData.pdfsEntrys?.[i]} onChange={(e) => handleFileChange(e, '', i)} resaltar={camposObligatoriosFaltantesSet.has('pdfsEntrys')} />))}
+                      <div className="form-group">
+                        <label className="form-label">Cantidad de Entry's</label>
+                        <input type="number" min={0} name="cantEntrys" className={`form-control${claseSiFalta('cantEntrys')}`} value={formData.cantEntrys || 0}
+                          onChange={(e) => {
+                            const n = Math.max(0, parseInt(e.target.value || '0', 10) || 0);
+                            setFormData(prev => {
+                              const arr = [...(prev.pdfsEntrys || [])];
+                              arr.length = n;
+                              return { ...prev, cantEntrys: n, pdfsEntrys: arr };
+                            });
+                          }} />
+                      </div>
                     </div>
+                    {Number(formData.cantEntrys) > 0 && (
+                      <div className="form-grid" style={{ marginTop: '14px' }}>
+                        {Array.from({ length: Number(formData.cantEntrys) }).map((_, i) => (
+                          <CampoArchivo key={i} label={`PDF Entry #${i + 1}`} file={formData.pdfsEntrys?.[i]} onChange={(e) => handleFileChange(e, 'pdfsEntrys', i)} />
+                        ))}
+                      </div>
+                    )}
                   </div>
+
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconReceipt /></div><h3 className="roelca-card-title">Manifiesto</h3></div>
                     <div className="form-grid">
@@ -2103,17 +2138,31 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Proveedor de Servicios</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('provServicios')}`} placeholder="Escriba para buscar proveedor..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
-                            {showDropdownProvServicios && searchProvServicios && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (<div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id, montoManifiesto: COSTO_MANIFIESTO_DEFAULT })); setSearchProvServicios(c.nombre); setShowDropdownProvServicios(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div></div>))}</div>)}
+                            <input type="text" className={`form-control${claseSiFalta('provServicios')}`} placeholder="Buscar proveedor de servicios..." value={searchProvServicios}
+                              onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }}
+                              onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
+                            {showDropdownProvServicios && searchProvServicios && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                                {resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id })); setSearchProvServicios(c.nombre); setShowDropdownProvServicios(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <BotonAgregar title="Agregar nuevo Proveedor (Servicios)" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_SERVICIOS },
-                            (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id, montoManifiesto: COSTO_MANIFIESTO_DEFAULT })); setSearchProvServicios(labelEmpresa(reg)); }
+                            (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id })); setSearchProvServicios(labelEmpresa(reg)); }
                           )} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Costo Manifiesto ($)</label><input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto} onChange={handleChange} /></div>
-                      <CampoArchivo label="PDF Manifiesto" file={formData.pdfManifiesto} onChange={(e) => handleFileChange(e, 'pdfManifiesto')} resaltar={camposObligatoriosFaltantesSet.has('pdfManifiesto')} />
+                      <div className="form-group">
+                        <label className="form-label">Costo Manifiesto</label>
+                        <input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto || 0} onChange={handleChange} />
+                        <small style={{ color: '#8b949e' }}>Costo por defecto: ${COSTO_MANIFIESTO_DEFAULT.toFixed(2)}</small>
+                      </div>
+                      <CampoArchivo label="PDF Manifiesto" file={formData.pdfManifiesto} resaltar={camposObligatoriosFaltantesSet.has('pdfManifiesto')} onChange={(e) => handleFileChange(e, 'pdfManifiesto')} />
                     </div>
                   </div>
                 </>
@@ -2125,12 +2174,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Proveedor de Transporte</h3></div>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label orange">Proveedor de Transporte</label>
+                        <label className="form-label">Proveedor de Transporte</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Escriba para buscar proveedor..." disabled={proveedorForzado} value={searchProvTransporte}
+                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Buscar proveedor de transporte..." value={searchProvTransporte} disabled={proveedorForzado}
                               onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }}
-                              onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} />
+                              onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)}
+                              style={proveedorForzado ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} />
                             {showDropdownProvTransporte && searchProvTransporte && !proveedorForzado && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((c:any) => (
@@ -2148,17 +2198,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             )} />
                           )}
                         </div>
+                        {proveedorForzado && <small style={{ color: '#fb923c' }}>Este tipo de operación usa un proveedor fijo.</small>}
                       </div>
+
                       <div className="form-group">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                           <label className="form-label" style={{ margin: 0 }}>Convenio Proveedor</label>
                           {(formData.proveedorUnidad || searchProvTransporte) && (
-                            <button
-                              type="button"
-                              onClick={() => setMostrarConveniosProveedor(true)}
-                              title="Ver y editar los convenios (tarifas) de este proveedor"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}
-                            >
+                            <button type="button" onClick={() => setMostrarConveniosProveedor(true)} title="Ver y editar los convenios (tarifas) de este proveedor"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}>
                               <IconReceipt size={12} /> Ver / editar ({listaConveniosProveedor.length})
                             </button>
                           )}
@@ -2179,42 +2227,44 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             </div>
                           )}
                         </div>
-                        {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios registrados</small>}
+                        {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios asignados</small>}
                         {formData.convenioProveedor && tarifaIdProveedor && (
                           <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>
                             ID tarifa: {tarifaIdProveedor} · Monto: {fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}{tarifaIdCliente ? (tarifasCoinciden ? '  ✓ coincide con el del cliente' : '  ✕ NO coincide con el del cliente') : ''}
                           </small>
                         )}
-                        {convenioProvAviso && (
-                          <small style={{ display: 'block', marginTop: '4px', color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c', fontWeight: 600, lineHeight: 1.35 }}>
-                            {convenioProvAviso.bloquea ? '⛔ ' : 'ℹ️ '}{convenioProvAviso.mensaje}
-                          </small>
-                        )}
                       </div>
+
                       <div className="form-group">
                         <label className="form-label">Facturado En</label>
                         <select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}>
                           <option value="">-- Seleccionar --</option>
-                          {listaMonedasLocal.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
+                          {listaMonedasLocal?.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
                         </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Moneda del Convenio</label>
-                        <input type="text" className="form-control" readOnly value={listaMonedasLocal.find((m:any) => m.id === formData.monedaConvenioProv)?.moneda || ''} style={{ opacity: 0.7 }} />
                       </div>
                     </div>
                   </div>
 
                   {showInternalFleet && (
                     <div className="roelca-card">
-                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconUser /></div><h3 className="roelca-card-title">Unidad y Operador (Flota Roelca)</h3></div>
+                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Flota Interna (Roelca)</h3></div>
                       <div className="form-grid">
                         <div className="form-group">
                           <label className="form-label">Unidad</label>
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
-                              <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
-                              {showDropdownUnidad && searchUnidad && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosUnidad.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosUnidad.map((u:any) => (<div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(labelUnidad(u)); setShowDropdownUnidad(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelUnidad(u)}</div></div>))}</div>)}
+                              <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad}
+                                onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }}
+                                onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
+                              {showDropdownUnidad && searchUnidad && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                                  {resultadosUnidad.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosUnidad.map((u:any) => (
+                                    <div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(labelUnidad(u)); setShowDropdownUnidad(false); }}>
+                                      <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelUnidad(u)}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             <BotonAgregar title="Agregar nueva Unidad" onClick={() => abrirCreacion(
                               { tipo: 'unidad', coleccion: 'unidades' },
@@ -2226,8 +2276,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <label className="form-label">Operador</label>
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
-                              <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
-                              {showDropdownOperador && searchOperador && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperador.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosOperador.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operador: o.id })); setSearchOperador(labelEmpleado(o)); setShowDropdownOperador(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelEmpleado(o)}</div></div>))}</div>)}
+                              <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador}
+                                onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }}
+                                onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
+                              {showDropdownOperador && searchOperador && (
+                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                                  {resultadosOperador.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosOperador.map((o:any) => (
+                                    <div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operador: o.id })); setSearchOperador(labelEmpleado(o)); setShowDropdownOperador(false); }}>
+                                      <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelEmpleado(o)}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                             <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion(
                               { tipo: 'empleado', coleccion: 'empleados' },
@@ -2235,30 +2295,52 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             )} />
                           </div>
                         </div>
-                        <div className="form-group"><label className="form-label">Sueldo Operador ($)</label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Sueldo Extra ($)</label><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Combustible ($)</label><input type="number" step="0.01" name="combustible" className={`form-control${claseSiFalta('combustible')}`} value={formData.combustible} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Combustible Extra ($)</label><input type="number" step="0.01" name="combustibleExtra" className="form-control" value={formData.combustibleExtra} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo Operador</label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador || 0} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo Extra</label><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo Total</label><input type="number" className="form-control" value={formData.sueldoTotal || 0} readOnly style={{ opacity: 0.75 }} /></div>
+                        <div className="form-group"><label className="form-label">Combustible</label><input type="number" step="0.01" name="combustible" className={`form-control${claseSiFalta('combustible')}`} value={formData.combustible || 0} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Extra</label><input type="number" step="0.01" name="combustibleExtra" className="form-control" value={formData.combustibleExtra || 0} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Total</label><input type="number" className="form-control" value={formData.combustibleTotal || 0} readOnly style={{ opacity: 0.75 }} /></div>
                       </div>
                     </div>
                   )}
 
                   {showExternalFleet && (
                     <div className="roelca-card">
-                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconUsers /></div><h3 className="roelca-card-title">Unidad y Operador del Proveedor</h3></div>
+                      <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Flota Externa (Proveedor)</h3></div>
                       <div className="form-grid">
                         <div className="form-group">
                           <label className="form-label">Unidad del Proveedor</label>
                           <div style={{ position: 'relative' }}>
-                            <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} placeholder="Buscar unidad del proveedor..." value={searchUnidadProveedor} onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); if (formData.unidadProveedor) setFormData(prev => ({ ...prev, unidadProveedor: '' })); }} onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
-                            {showDropdownUnidadProveedor && searchUnidadProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosUnidadProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosUnidadProveedor.map((u:any) => { const etiqueta = String(u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || ''); return (<div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidadProveedor: u.id })); setSearchUnidadProveedor(etiqueta); setShowDropdownUnidadProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{etiqueta}</div></div>); })}</div>)}
+                            <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} placeholder="Buscar/escribir unidad del proveedor..." value={searchUnidadProveedor}
+                              onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); setFormData(prev => ({ ...prev, unidadProveedor: e.target.value })); }}
+                              onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
+                            {showDropdownUnidadProveedor && searchUnidadProveedor && resultadosUnidadProveedor.length > 0 && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                                {resultadosUnidadProveedor.map((u:any) => { const txt = String(u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || ''); return (
+                                  <div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidadProveedor: u.id })); setSearchUnidadProveedor(txt); setShowDropdownUnidadProveedor(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{txt}</div>
+                                  </div>
+                                ); })}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="form-group">
                           <label className="form-label">Operador del Proveedor</label>
                           <div style={{ position: 'relative' }}>
-                            <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} placeholder="Buscar operador del proveedor..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); if (formData.operadorProveedor) setFormData(prev => ({ ...prev, operadorProveedor: '' })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
-                            {showDropdownOperadorProveedor && searchOperadorProveedor && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOperadorProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosOperadorProveedor.map((o:any) => { const etiqueta = String(o.nombre || o.nombres || o.nombreCompleto || ''); return (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(etiqueta); setShowDropdownOperadorProveedor(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{etiqueta}</div></div>); })}</div>)}
+                            <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} placeholder="Buscar/escribir operador del proveedor..." value={searchOperadorProveedor}
+                              onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }}
+                              onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
+                            {showDropdownOperadorProveedor && searchOperadorProveedor && resultadosOperadorProveedor.length > 0 && (
+                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                                {resultadosOperadorProveedor.map((o:any) => { const txt = String(o.nombre || o.nombres || o.nombreCompleto || ''); return (
+                                  <div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(txt); setShowDropdownOperadorProveedor(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{txt}</div>
+                                  </div>
+                                ); })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2268,18 +2350,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor ($)</label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Cargos Adicionales ($)</label><input type="number" step="0.01" name="cargosAdicionalesProv" className="form-control" value={formData.cargosAdicionalesProv} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Subtotal Proveedor</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.subtotalProv)} style={{ opacity: 0.7 }} /></div>
-                      <div className="form-group"><label className="form-label">Conversión (MXN)</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.conversionProv)} style={{ opacity: 0.7 }} /></div>
-                    </div>
-                  </div>
-
-                  <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Total y Observaciones</h3></div>
-                    <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Total de Gastos</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.totalGastos)} style={{ opacity: 0.7 }} /></div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones de Unidad</label><textarea name="observacionesUnidad" className="form-control" rows={2} value={formData.observacionesUnidad || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor</label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} /></div>
+                      <div className="form-group">
+                        <label className="form-label">Cargos Adicionales (Prov)</label>
+                        <div className="roelca-lookup-row">
+                          <input type="number" step="0.01" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || 0} onChange={handleChange} style={{ flex: 1, minWidth: 0 }} />
+                          <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
+                        </div>
+                      </div>
+                      <div className="form-group"><label className="form-label">Subtotal Proveedor</label><input type="number" className="form-control" value={formData.subtotalProv || 0} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Conversión (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Unidad</label><textarea name="observacionesUnidad" className="form-control" rows={2} value={formData.observacionesUnidad || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                 </>
@@ -2288,50 +2369,39 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               {pestañaActiva === 'cobrar' && pestanasVisibles.includes('cobrar') && (
                 <>
                   <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconReceipt /></div><h3 className="roelca-card-title">Costos Adicionales</h3></div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                      <p style={{ margin: 0, fontSize: '0.85rem', color: '#8b949e' }}>Administra los costos adicionales ligados a esta operación.</p>
-                      <button type="button" className="roelca-btn-outline" style={{ width: 'auto' }} onClick={() => { if (!initialData) { alert('Guarda la operación primero para registrar costos adicionales.'); return; } setMostrarCostosAdic(true); }}>
-                        <IconPlus size={15} /> Abrir Costos Adicionales
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Facturación al Cliente</h3></div>
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Facturado En</label>
                         <select name="facturadoEnCobrar" className={`form-control${claseSiFalta('facturadoEnCobrar')}`} value={formData.facturadoEnCobrar || ''} onChange={handleChange}>
                           <option value="">-- Seleccionar --</option>
-                          {listaMonedasLocal.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
+                          {listaMonedasLocal?.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
                         </select>
                       </div>
-                      <div className="form-group"><label className="form-label">Monto Convenio Cliente ($)</label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Cargos Adicionales ($)</label><input type="number" step="0.01" name="cargosAdicionales" className="form-control" value={formData.cargosAdicionales} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Subtotal Cliente</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.subtotalCliente)} style={{ opacity: 0.7 }} /></div>
-                    </div>
-                  </div>
-
-                  <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconTrendingUp /></div><h3 className="roelca-card-title">Conversión e Ingreso</h3></div>
-                    <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado</label><input type="number" step="0.0001" name="tipoCambioAprobado" className={`form-control${claseSiFalta('tipoCambioAprobado')}`} value={formData.tipoCambioAprobado} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN)</label><input type="text" className="form-control" readOnly value={fmtMoney(formData.conversionCliente)} style={{ opacity: 0.7 }} /></div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                        <label className="form-label">Utilidad Estimada</label>
-                        <div className={`roelca-utility-box ${formData.utilidadEstimada < 0 ? 'negative' : ''}`}>
-                          <div className="roelca-utility-label">Utilidad Estimada (MXN)</div>
-                          <div className="roelca-utility-value">{fmtMoney(formData.utilidadEstimada)}</div>
+                      <div className="form-group"><label className="form-label">Monto Convenio Cliente</label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente || 0} onChange={handleChange} /></div>
+                      <div className="form-group">
+                        <label className="form-label">Cargos Adicionales</label>
+                        <div className="roelca-lookup-row">
+                          <input type="number" step="0.01" name="cargosAdicionales" className={`form-control${claseSiFalta('cargosAdicionales')}`} value={formData.cargosAdicionales || 0} onChange={handleChange} style={{ flex: 1, minWidth: 0 }} />
+                          <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado</label><input type="number" step="0.0001" name="tipoCambioAprobado" className={`form-control${claseSiFalta('tipoCambioAprobado')}`} value={formData.tipoCambioAprobado || 0} onChange={handleChange} /></div>
                     </div>
                   </div>
 
                   <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Observaciones de Cobranza</h3></div>
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconTrendingUp /></div><h3 className="roelca-card-title">Conversión y Utilidad</h3></div>
                     <div className="form-grid">
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones de Cobranza</label><textarea name="observacionesCobrar" className="form-control" rows={3} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Subtotal Cliente</label><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Conversión Proveedor (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group">
+                        <label className="form-label">Utilidad Estimada (MXN)</label>
+                        <input type="number" className="form-control" value={Number(formData.utilidadEstimada || 0).toFixed(2)} readOnly
+                          style={{ opacity: 0.95, color: Number(formData.utilidadEstimada) >= 0 ? '#3fb950' : '#f85149', fontWeight: 700 }} />
+                      </div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Cobranza</label><textarea name="observacionesCobrar" className="form-control" rows={2} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                 </>
@@ -2341,105 +2411,97 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         </div>
 
         <aside className="roelca-form-right">
-          <div className="roelca-form-header" style={{ borderBottom: '1px solid #1f2733' }}>
-            <div>
-              <h2 style={{ fontSize: '1.1rem' }}>Resumen</h2>
-              <p>Estatus y validaciones en vivo</p>
-            </div>
-            {statusError
-              ? <span className="status-badge-error"><IconAlert size={12} /> Revisar</span>
-              : <span className="status-badge-ok"><IconCheck size={12} /> OK</span>}
-          </div>
-
-          <div className="roelca-scroll" style={{ padding: '18px 20px' }}>
-            {!statusError && statusPreview && (
-              <div className="status-preview-card">
-                <div className="roelca-sidebar-label" style={{ marginBottom: '6px' }}>Estatus calculado</div>
-                <div className="roelca-sidebar-value" style={{ color: '#3fb950' }}>{statusPreview}</div>
-              </div>
-            )}
-
-            {statusError && (
+          <div className="roelca-scroll" style={{ padding: '20px' }}>
+            {statusError ? (
               <div className="status-error-card">
-                <div className="roelca-sidebar-label" style={{ marginBottom: '6px', color: '#f85149' }}><IconAlert size={13} /> No se puede avanzar</div>
-                <div className="roelca-sidebar-value" style={{ color: '#f85149', fontWeight: 500 }}>{statusError}</div>
-              </div>
-            )}
-
-            {convenioProvAviso && (
-              <div className={convenioProvAviso.bloquea ? 'status-error-card' : 'status-preview-card'} style={convenioProvAviso.bloquea ? undefined : { background: 'linear-gradient(135deg, rgba(251, 146, 60, 0.08), rgba(251, 146, 60, 0.02))', border: '1px solid rgba(251, 146, 60, 0.3)' }}>
-                <div className="roelca-sidebar-label" style={{ marginBottom: '6px', color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c' }}>
-                  <IconAlert size={13} /> {convenioProvAviso.bloquea ? 'Convenio Proveedor requerido' : 'Convenio Proveedor'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span className="status-badge-error"><IconAlert size={12} /> Estatus</span>
                 </div>
-                <div className="roelca-sidebar-value" style={{ color: convenioProvAviso.bloquea ? '#f85149' : '#fb923c', fontWeight: 500 }}>{convenioProvAviso.mensaje}</div>
+                <div style={{ color: '#f0a3a0', fontSize: '0.82rem', lineHeight: 1.4 }}>{statusError}</div>
               </div>
-            )}
-
-            {(tarifaIdCliente || tarifaIdProveedor) && (
-              <div className="roelca-sidebar-section" style={{ borderColor: tarifasCoinciden ? 'rgba(63, 185, 80, 0.35)' : 'rgba(251, 146, 60, 0.35)' }}>
-                <div className="roelca-sidebar-label" style={{ color: tarifasCoinciden ? '#3fb950' : '#fb923c' }}>
-                  <span className="roelca-sidebar-icon"><IconReceipt size={13} /></span> ID Tarifa (catalogo_tarifas_referencia)
+            ) : statusPreview ? (
+              <div className="status-preview-card">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <span className="status-badge-ok"><IconCheck size={12} /> Estatus actual</span>
                 </div>
-                <div className="roelca-money-row"><span className="lbl">Cliente</span><span className="val" style={{ fontFamily: 'monospace', color: '#e6edf3' }}>{tarifaIdCliente || '—'}</span></div>
-                <div className="roelca-money-row"><span className="lbl">Proveedor</span><span className="val" style={{ fontFamily: 'monospace', color: '#e6edf3' }}>{tarifaIdProveedor || '—'}</span></div>
-                <div className="roelca-money-row"><span className="lbl">Monto Cliente</span><span className="val" style={{ color: '#3fb950' }}>{formData.convenio ? `${fmtMoney(montoCliente)}${nombreMoneda(monedaClienteId) ? ' ' + nombreMoneda(monedaClienteId) : ''}` : '—'}</span></div>
-                <div className="roelca-money-row"><span className="lbl">Monto Proveedor</span><span className="val" style={{ color: '#3fb950' }}>{formData.convenioProveedor ? `${fmtMoney(montoProveedor)}${nombreMoneda(monedaProveedorId) ? ' ' + nombreMoneda(monedaProveedorId) : ''}` : '—'}</span></div>
-                {tarifaIdCliente && tarifaIdProveedor && (
-                  <div className="roelca-route-line" style={{ color: tarifasCoinciden ? '#3fb950' : '#f85149', fontWeight: 600 }}>
-                    {tarifasCoinciden ? <IconCheck size={12} /> : <IconX size={12} />} {tarifasCoinciden ? 'Los IDs coinciden' : 'Los IDs NO coinciden'}
+                <div style={{ color: '#e6edf3', fontSize: '1rem', fontWeight: 700 }}>{statusPreview}</div>
+                {nombreSiguienteAuto && camposSiguienteStatus.length > 0 && (
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(63,185,80,0.18)' }}>
+                    <div style={{ fontSize: '0.68rem', color: '#7d8590', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, marginBottom: '6px' }}>
+                      Para avanzar a "{nombreSiguienteAuto}":
+                    </div>
+                    {camposSiguienteStatus.map((c) => (
+                      <div key={c.campo} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: c.cumplido ? '#3fb950' : '#8b949e', padding: '2px 0' }}>
+                        <span style={{ width: '14px', display: 'inline-flex' }}>{c.cumplido ? <IconCheck size={12} /> : <IconArrowRight size={12} />}</span>
+                        {c.etiqueta}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
 
-            {camposObligatoriosFaltantes.length > 0 && (
-              <div className="roelca-sidebar-section" style={{ borderColor: 'rgba(248, 81, 73, 0.3)' }}>
-                <div className="roelca-sidebar-label" style={{ color: '#f85149' }}><IconAlert size={13} /> Campos obligatorios faltantes</div>
-                {camposObligatoriosFaltantes.map((c) => (
-                  <div key={c.campo} className="roelca-route-line" style={{ color: '#f85149' }}><IconX size={12} /> {c.etiqueta}</div>
-                ))}
-              </div>
-            )}
-
-            {camposSiguienteStatus.length > 0 && (
+            {(tarifaIdCliente || tarifaIdProveedor) && (
               <div className="roelca-sidebar-section">
-                <div className="roelca-sidebar-label"><IconArrowRight size={13} /> Para avanzar a "{nombreSiguienteAuto}"</div>
-                {camposSiguienteStatus.map((c) => (
-                  <div key={c.campo} className="roelca-route-line" style={{ color: c.cumplido ? '#3fb950' : '#8b949e' }}>
-                    {c.cumplido ? <IconCheck size={12} /> : <IconArrowRight size={12} />} {c.etiqueta}
-                  </div>
-                ))}
+                <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconReceipt size={13} /></span> Tarifa (Convenio)</div>
+                {/* ✅ FIX: mostrar el NOMBRE de la tarifa (no el ID). El ID queda como subtexto. */}
+                <div className="roelca-money-row" style={{ alignItems: 'flex-start' }}>
+                  <span className="lbl">Cliente</span>
+                  <span className="val" style={{ color: '#e6edf3', textAlign: 'right', maxWidth: '62%', lineHeight: 1.3 }}>
+                    {nombreTarifaCli || '—'}
+                    {tarifaIdCliente && <span style={{ display: 'block', fontSize: '0.66rem', color: '#7d8590', fontFamily: 'monospace', fontWeight: 400, marginTop: '2px' }}>ID: {tarifaIdCliente}</span>}
+                  </span>
+                </div>
+                <div className="roelca-money-row" style={{ alignItems: 'flex-start' }}>
+                  <span className="lbl">Proveedor</span>
+                  <span className="val" style={{ color: '#e6edf3', textAlign: 'right', maxWidth: '62%', lineHeight: 1.3 }}>
+                    {nombreTarifaProv || '—'}
+                    {tarifaIdProveedor && <span style={{ display: 'block', fontSize: '0.66rem', color: '#7d8590', fontFamily: 'monospace', fontWeight: 400, marginTop: '2px' }}>ID: {tarifaIdProveedor}</span>}
+                  </span>
+                </div>
+                <div className="roelca-money-row"><span className="lbl">Monto Cliente</span><span className="val">{fmtMoney(montoCliente)}{nombreMoneda(monedaClienteId) ? ` ${nombreMoneda(monedaClienteId)}` : ''}</span></div>
+                <div className="roelca-money-row"><span className="lbl">Monto Proveedor</span><span className="val">{fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}</span></div>
+                <div className="roelca-money-row" style={{ borderTop: '1px solid #1f2733', marginTop: '4px', paddingTop: '8px' }}>
+                  <span className="lbl">¿Tarifas coinciden?</span>
+                  <span className="val" style={{ color: tarifasCoinciden ? '#3fb950' : '#fb923c' }}>
+                    {tarifaIdCliente && tarifaIdProveedor ? (tarifasCoinciden ? '✓ Sí' : '✕ No') : '—'}
+                  </span>
+                </div>
               </div>
             )}
 
             <div className="roelca-sidebar-section">
               <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconUsers size={13} /></span> Cliente y Ruta</div>
               <div className="roelca-sidebar-value">{searchClientePaga || <span className="roelca-sidebar-muted">Sin cliente</span>}</div>
-              <div className="roelca-route-line"><IconMapPin size={12} /> {searchOrigen || '—'} <IconArrowRight size={12} /> {searchDestino || '—'}</div>
+              {convenioNombreResumen && <div className="roelca-sidebar-secondary">Convenio: {convenioNombreResumen}</div>}
+              <div className="roelca-route-line">
+                <IconMapPin size={13} /> {searchOrigen || '—'} <IconArrowRight size={12} /> {searchDestino || '—'}
+              </div>
             </div>
 
             <div className="roelca-sidebar-section">
               <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconBriefcase size={13} /></span> Servicio</div>
-              <div className="roelca-sidebar-value">{tipoOpNombreResumen || <span className="roelca-sidebar-muted">Sin tipo</span>}</div>
-              {convenioNombreResumen && <div className="roelca-sidebar-secondary">{convenioNombreResumen}</div>}
+              <div className="roelca-sidebar-value">{tipoOpNombreResumen || <span className="roelca-sidebar-muted">Sin tipo de operación</span>}</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                {formData.trafico && formData.trafico !== 'N/A' && <span className="roelca-chip">{formData.trafico}</span>}
+                {formData.carga && formData.carga !== 'N/A' && <span className="roelca-chip">{formData.carga}</span>}
+                {searchProvTransporte && <span className="roelca-chip">{searchProvTransporte}</span>}
+              </div>
             </div>
 
             <div className="roelca-sidebar-section">
-              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconCalendar size={13} /></span> Fechas</div>
-              <div className="roelca-sidebar-value">{fmtFecha(formData.fechaServicio) || <span className="roelca-sidebar-muted">Sin fecha</span>}</div>
-              {formData.fechaCita && <div className="roelca-sidebar-secondary">Cita: {fmtFecha(formData.fechaCita)}</div>}
+              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconCalendar size={13} /></span> Fechas y Tipo de Cambio</div>
+              <div className="roelca-money-row"><span className="lbl">Servicio</span><span className="val">{fmtFecha(formData.fechaServicio) || '—'}</span></div>
+              {isFletes && <div className="roelca-money-row"><span className="lbl">Cita</span><span className="val">{formData.fechaCita ? fmtFecha(formData.fechaCita) : '—'}</span></div>}
+              <div className="roelca-money-row"><span className="lbl">Tipo de Cambio</span><span className="val" style={{ color: tcResumen ? '#3fb950' : '#f85149' }}>{tcResumen ? `$${tcResumen}` : 'Sin registro'}</span></div>
             </div>
 
             <div className="roelca-sidebar-section">
-              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconRefresh size={13} /></span> Tipo de Cambio</div>
-              <div className="roelca-sidebar-value">{tcResumen ? `$${tcResumen}` : <span className="roelca-sidebar-muted">Sin registro</span>}</div>
-            </div>
-
-            <div className="roelca-sidebar-section">
-              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconChart size={13} /></span> Financiero</div>
+              <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconTrendingUp size={13} /></span> Financiero</div>
               <div className="roelca-money-row"><span className="lbl">Subtotal Cliente</span><span className="val">{fmtMoney(formData.subtotalCliente)}</span></div>
-              <div className="roelca-money-row"><span className="lbl">Pago Proveedor</span><span className="val">{fmtMoney(formData.subtotalProv)}</span></div>
-              <div className={`roelca-utility-box ${formData.utilidadEstimada < 0 ? 'negative' : ''}`}>
+              <div className="roelca-money-row"><span className="lbl">Subtotal Proveedor</span><span className="val">{fmtMoney(formData.subtotalProv)}</span></div>
+              <div className="roelca-money-row"><span className="lbl">Total Gastos</span><span className="val">{fmtMoney(formData.totalGastos)}</span></div>
+              <div className={`roelca-utility-box ${Number(formData.utilidadEstimada) < 0 ? 'negative' : ''}`}>
                 <div className="roelca-utility-label">Utilidad Estimada (MXN)</div>
                 <div className="roelca-utility-value">{fmtMoney(formData.utilidadEstimada)}</div>
               </div>
@@ -2447,22 +2509,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           </div>
 
           <div className="roelca-form-footer">
-            <button
-              type="button"
-              className="roelca-btn-primary"
-              disabled={cargando || !!statusError || !!convenioProvAviso?.bloquea}
-              title={
-                statusError
-                  ? 'Corrige el estatus antes de guardar'
-                  : convenioProvAviso?.bloquea
-                    ? convenioProvAviso.mensaje
-                    : (initialData ? 'Guardar cambios' : 'Guardar operación')
-              }
-              onClick={() => (document.querySelector('.roelca-form-left form') as HTMLFormElement)?.requestSubmit()}
-            >
-              {cargando ? 'Guardando...' : (<><IconSave size={16} /> {initialData ? 'Guardar Cambios' : 'Guardar Operación'}</>)}
+            <button type="button" onClick={handleSubmit} className="roelca-btn-primary" disabled={cargando}>
+              <IconSave size={16} /> {cargando ? 'Guardando…' : (initialData ? 'Guardar Cambios' : 'Guardar Operación')}
             </button>
-            <button type="button" className="roelca-btn-outline" onClick={handleCancelarConfirmado}><IconX size={15} /> Cancelar</button>
+            <button type="button" onClick={handleCancelarConfirmado} className="roelca-btn-outline">
+              <IconX size={15} /> Cancelar
+            </button>
           </div>
         </aside>
       </div>
@@ -2470,22 +2522,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       {estado === 'minimizado' && (
         <div
           onClick={onRestore}
-          style={{ position: 'fixed', bottom: '20px', right: '20px', display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 18px', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '10px', cursor: 'pointer', pointerEvents: 'auto', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 9999 }}
+          style={{ position: 'fixed', bottom: '20px', right: '20px', backgroundColor: '#0d1117', border: '1px solid #fb923c', borderRadius: '10px', padding: '12px 18px', cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 1000 }}
         >
-          <span className="roelca-sidebar-icon"><IconEdit size={14} /></span>
-          <span style={{ color: '#e6edf3', fontWeight: 600, fontSize: '0.88rem' }}>{initialData ? `Operación ${initialData.ref || ''}` : 'Nueva Operación'}</span>
-          <IconArrowRight size={14} />
+          <span style={{ color: '#fb923c' }}><IconBriefcase size={18} /></span>
+          <div style={{ color: '#e6edf3', fontSize: '0.85rem', fontWeight: 600 }}>
+            {initialData ? `Editar ${initialData.ref || initialData.id?.substring(0,6)}` : 'Nueva Operación'}
+          </div>
+          <span style={{ color: '#8b949e' }}><IconArrowRight size={15} /></span>
         </div>
       )}
 
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empresa' && (
-        <FormularioEmpresa
-          estado="abierto"
-          registros={empresasLocal}
-          onClose={cerrarCreacion}
-          onMinimize={() => {}}
-          onRestore={() => {}}
-        />
+        <FormularioEmpresa estado="abierto" registros={empresasLocal} onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'remolque' && (
         <FormularioRemolque estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
@@ -2497,292 +2545,191 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         <EmployeeForm estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
       )}
 
-      {mostrarCostosAdic && initialData && (
-        <CostosAdicionalesDashboard
-          operacionFija={initialData}
-          onCerrar={() => setMostrarCostosAdic(false)}
-          onCostosActualizados={(cambios: { cargosAdicionales: number; cargosAdicionalesProv: number }) => setFormData(prev => ({ ...prev, cargosAdicionales: cambios.cargosAdicionales, cargosAdicionalesProv: cambios.cargosAdicionalesProv }))}
-        />
+      {mostrarCostosAdic && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <CostosAdicionalesDashboard
+            onCerrar={() => setMostrarCostosAdic(false)}
+            onCostosActualizados={(totalProv?: any, totalCliente?: any) => {
+              const p = Number(totalProv);
+              const c = Number(totalCliente);
+              setFormData(prev => ({
+                ...prev,
+                ...(Number.isFinite(p) ? { cargosAdicionalesProv: p } : {}),
+                ...(Number.isFinite(c) ? { cargosAdicionales: c } : {}),
+              }));
+            }}
+          />
+        </div>
       )}
 
-      {mostrarSubirDoc && (
+      {mostrarSubirDoc && idOperacion && (
         <DocumentoUploadModal
-          isOpen={mostrarSubirDoc}
+          isOpen={true}
           coleccionOrigen="operaciones"
-          registroId={String(idOperacion)}
+          registroId={idOperacion}
           registroNombre={referenciaOperacion}
           tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
           onClose={() => setMostrarSubirDoc(false)}
         />
       )}
 
-      {/* ✅ NUEVO: MODAL — Convenios (tarifas) del cliente seleccionado */}
+      {/* === Ver / editar convenios (tarifas) del CLIENTE === */}
       {mostrarConveniosCliente && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 3000, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', pointerEvents: 'auto' }}>
-          <div style={{ maxWidth: '880px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '88vh' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #1f2733', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <div className="modal-overlay" style={{ zIndex: 1100 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarConveniosCliente(false); }}>
+          <div className="form-card" style={{ width: 'min(820px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1f2733', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Convenios del Cliente</h2>
-                <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#7d8590' }}>
-                  {searchClientePaga || 'Cliente'} · {listaConveniosCliente.length} convenio(s) / tarifa(s)
-                </p>
+                <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 700 }}>Convenios del Cliente</h3>
+                <p style={{ margin: '3px 0 0', color: '#7d8590', fontSize: '0.8rem' }}>{searchClientePaga || 'Cliente'} · {listaConveniosCliente.length} convenio(s)</p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button type="button" onClick={abrirNuevoConvenioCliente} title="Agregar un nuevo convenio / tarifa a este cliente"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '0.82rem', fontWeight: 600, color: '#fff', background: 'linear-gradient(180deg, #ea580c, #c2410c)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', cursor: 'pointer' }}>
-                  <IconPlus size={15} /> Agregar convenio
-                </button>
-                <button type="button" onClick={() => setMostrarConveniosCliente(false)} className="roelca-window-btn" title="Cerrar"><IconX size={16} /></button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" onClick={abrirNuevoConvenioCliente} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '0.82rem', fontWeight: 600, color: '#fff', background: 'linear-gradient(180deg, #ea580c, #c2410c)', border: 'none', borderRadius: '8px', cursor: 'pointer' }}><IconPlus size={14} /> Nuevo</button>
+                <button type="button" onClick={() => setMostrarConveniosCliente(false)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
               </div>
             </div>
-
-            <div style={{ padding: '18px 24px', overflowY: 'auto', flex: 1 }}>
+            <div style={{ overflowY: 'auto', padding: '8px 0' }}>
               {listaConveniosCliente.length === 0 ? (
-                <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
-                  Este cliente no tiene convenios / tarifas registradas. Usa <b style={{ color: '#fb923c' }}>“Agregar convenio”</b> para crear el primero.
-                </div>
+                <div style={{ padding: '30px', textAlign: 'center', color: '#8b949e' }}>Este cliente no tiene convenios.</div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: '760px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
-                    <thead style={{ backgroundColor: '#1f2937' }}>
-                      <tr>
-                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>DESCRIPCIÓN / TARIFA</th>
-                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>RUTA</th>
-                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>MONTO</th>
-                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textAlign: 'center' }}>ACCIONES</th>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                  <thead>
+                    <tr style={{ color: '#7d8590', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 16px', fontWeight: 600 }}>Tarifa</th>
+                      <th style={{ padding: '8px 16px', fontWeight: 600 }}>ID</th>
+                      <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Monto</th>
+                      <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listaConveniosCliente.map((c:any) => (
+                      <tr key={c.id} style={{ borderTop: '1px solid #1f2733', color: '#c9d1d9' }}>
+                        <td style={{ padding: '10px 16px', fontWeight: 600 }}>{c.descripcion}</td>
+                        <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: '#fb923c' }}>{c.tarifaBaseId || '—'}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', color: '#3fb950', fontFamily: 'monospace' }}>{fmtMoney(c.tarifaMonto)}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button type="button" onClick={() => abrirEditorConvenio(c)} title="Editar" style={{ background: 'transparent', border: '1px solid #2d333b', color: '#58a6ff', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', marginRight: '6px' }}><IconEdit size={13} /></button>
+                          <button type="button" onClick={() => eliminarDetalleConvenio(c)} title="Eliminar" style={{ background: 'transparent', border: '1px solid rgba(248,81,73,0.35)', color: '#f85149', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer' }}><IconX size={13} /></button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {listaConveniosCliente.map((c: any, idx: number) => (
-                        <tr key={c.id || idx} style={{ borderBottom: '1px solid #30363d', backgroundColor: formData.convenio === c.id ? 'rgba(88,166,255,0.06)' : 'transparent' }}>
-                          <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
-                            {c.descripcion || `Tarifa ${idx + 1}`}
-                            <div style={{ fontSize: '0.7rem', color: '#fb923c', marginTop: '4px', fontFamily: 'monospace' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
-                          </td>
-                          <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem' }}>
-                            {c.origenNombre || c.origen || '-'} → {c.destinoNombre || c.destino || '-'}
-                          </td>
-                          <td style={{ padding: '12px 16px', color: '#3fb950', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                            {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}
-                          </td>
-                          <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button type="button" title="Editar convenio" onClick={() => abrirEditorConvenio(c)}
-                                style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.1)'}
-                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                                <IconEdit size={14} />
-                              </button>
-                              <button type="button" title="Eliminar convenio" onClick={() => eliminarDetalleConvenio(c)}
-                                style={{ background: 'transparent', border: '1px solid #f85149', borderRadius: '4px', color: '#f85149', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(248,81,73,0.1)'}
-                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               )}
-            </div>
-
-            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #1f2733', backgroundColor: '#0d1117', flexShrink: 0 }}>
-              <button type="button" onClick={() => setMostrarConveniosCliente(false)} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 24px' }}>Cerrar</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ✅ NUEVO: MODAL — Crear / editar un convenio (tarifa) del cliente */}
+      {/* === Editor de un convenio del CLIENTE (crear/editar) === */}
       {detalleConvEditando && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 3100, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', pointerEvents: 'auto' }}>
-          <div style={{ maxWidth: '560px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '12px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #1f2733', paddingBottom: '14px' }}>
-              <h3 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.1rem' }}>{detalleConvEditando.esNuevo ? 'Nuevo Convenio / Tarifa' : 'Editar Convenio / Tarifa'}</h3>
-              <button type="button" onClick={() => setDetalleConvEditando(null)} className="roelca-window-btn" title="Cerrar"><IconX size={16} /></button>
+        <div className="modal-overlay" style={{ zIndex: 1200 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setDetalleConvEditando(null); }}>
+          <div className="form-card" style={{ width: 'min(520px, 94vw)', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1f2733', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem', fontWeight: 700 }}>{detalleConvEditando.esNuevo ? 'Nuevo Convenio (Cliente)' : 'Editar Convenio (Cliente)'}</h3>
+              <button type="button" onClick={() => setDetalleConvEditando(null)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
             </div>
-
-            {detalleConvEditando.esNuevo && (
-              <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '8px', backgroundColor: 'rgba(88,166,255,0.08)', border: '1px solid rgba(88,166,255,0.3)', fontSize: '0.8rem', color: '#58a6ff' }}>
-                Se creará un nuevo convenio ligado a <b>{searchClientePaga || 'el cliente seleccionado'}</b>.
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
-              <div>
-                <label className="form-label">Tipo de Convenio (Tarifa del catálogo)</label>
-                <select
-                  className="form-control"
-                  value={detalleConvEditando.tipoConvenioId || ''}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    const tObj = (tarifas || []).find((t: any) => String(t.id) === id);
-                    const nombre = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || '';
-                    setDetalleConvEditando((prev: any) => prev ? { ...prev, tipoConvenioId: id, tipoConvenioNombre: nombre } : prev);
-                  }}
-                >
-                  <option value="">-- Sin asignar --</option>
-                  {detalleConvEditando.tipoConvenioId && !opcionesTarifasRef.some((o: any) => o.id === detalleConvEditando.tipoConvenioId) && (
-                    <option value={detalleConvEditando.tipoConvenioId}>{detalleConvEditando.tipoConvenioNombre || detalleConvEditando.tipoConvenioId} (actual)</option>
-                  )}
-                  {opcionesTarifasRef.map((o: any) => <option key={o.id} value={o.id}>{etiquetaOpcionTarifa(o)}</option>)}
+            <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-group">
+                <label className="form-label">Tarifa (catálogo)</label>
+                <select className="form-control" value={detalleConvEditando.tipoConvenioId || ''}
+                  onChange={(e) => { const id = e.target.value; const op = opcionesTarifasRef.find((o:any) => o.id === id); setDetalleConvEditando((prev:any) => ({ ...prev, tipoConvenioId: id, tipoConvenioNombre: op?.nombre || prev.tipoConvenioNombre })); }}>
+                  <option value="">-- Seleccionar tarifa --</option>
+                  {opcionesTarifasRef.map((o:any) => <option key={o.id} value={o.id}>{etiquetaOpcionTarifa(o)}</option>)}
                 </select>
-                <small style={{ color: '#fb923c', fontFamily: 'monospace', fontSize: '0.7rem' }}>ID tarifa: {detalleConvEditando.tipoConvenioId || '—'}</small>
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
-                <div>
-                  <label className="form-label" style={{ color: '#3fb950' }}>Tarifa ($)</label>
-                  <input type="number" step="0.01" className="form-control" value={detalleConvEditando.tarifa} onChange={(e) => setDetalleConvEditando((prev: any) => prev ? { ...prev, tarifa: e.target.value } : prev)} />
-                </div>
+              <div className="form-group">
+                <label className="form-label">Nombre del convenio</label>
+                <input type="text" className="form-control" value={detalleConvEditando.tipoConvenioNombre || ''} onChange={(e) => setDetalleConvEditando((prev:any) => ({ ...prev, tipoConvenioNombre: e.target.value }))} />
               </div>
-              <small style={{ color: '#8b949e', fontSize: '0.75rem' }}>
-                Captura el monto de la tarifa de este convenio. El ID de la tarifa, su costo y cuántas operaciones la usan se muestran en la lista desplegable de arriba.
-              </small>
+              <div className="form-group">
+                <label className="form-label">Monto / Tarifa</label>
+                <input type="number" step="0.01" className="form-control" value={detalleConvEditando.tarifa ?? ''} onChange={(e) => setDetalleConvEditando((prev:any) => ({ ...prev, tarifa: e.target.value }))} />
+              </div>
             </div>
-
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #1f2733', paddingTop: '16px' }}>
-              <button type="button" onClick={() => setDetalleConvEditando(null)} disabled={guardandoDetalleConv} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 20px' }}>Cancelar</button>
-              <button type="button" onClick={guardarDetalleConvenio} disabled={guardandoDetalleConv} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 24px' }}>
-                {guardandoDetalleConv ? 'Guardando...' : (<><IconSave size={15} /> {detalleConvEditando.esNuevo ? 'Crear Convenio' : 'Guardar Convenio'}</>)}
-              </button>
+            <div style={{ padding: '16px 22px', borderTop: '1px solid #1f2733', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" onClick={() => setDetalleConvEditando(null)} className="roelca-btn-outline" style={{ width: 'auto', padding: '10px 16px' }}>Cancelar</button>
+              <button type="button" onClick={guardarDetalleConvenio} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 18px' }} disabled={guardandoDetalleConv}>{guardandoDetalleConv ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ✅ NUEVO: MODAL — Convenios (tarifas) del proveedor seleccionado */}
+      {/* === Ver / editar convenios (tarifas) del PROVEEDOR === */}
       {mostrarConveniosProveedor && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 3200, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', pointerEvents: 'auto' }}>
-          <div style={{ maxWidth: '820px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '88vh' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #1f2733', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <div className="modal-overlay" style={{ zIndex: 1100 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarConveniosProveedor(false); }}>
+          <div className="form-card" style={{ width: 'min(820px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1f2733', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Convenios del Proveedor</h2>
-                <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#7d8590' }}>
-                  {searchProvTransporte || 'Proveedor'} · {listaConveniosProveedor.length} convenio(s) / tarifa(s)
-                </p>
+                <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 700 }}>Convenios del Proveedor</h3>
+                <p style={{ margin: '3px 0 0', color: '#7d8590', fontSize: '0.8rem' }}>{searchProvTransporte || 'Proveedor'} · {listaConveniosProveedor.length} convenio(s)</p>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button type="button" onClick={abrirNuevoConvenioProv} title="Agregar un nuevo convenio / tarifa a este proveedor"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', fontSize: '0.82rem', fontWeight: 600, color: '#fff', background: 'linear-gradient(180deg, #ea580c, #c2410c)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', cursor: 'pointer' }}>
-                  <IconPlus size={15} /> Agregar convenio
-                </button>
-                <button type="button" onClick={() => setMostrarConveniosProveedor(false)} className="roelca-window-btn" title="Cerrar"><IconX size={16} /></button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button type="button" onClick={abrirNuevoConvenioProv} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '0.82rem', fontWeight: 600, color: '#fff', background: 'linear-gradient(180deg, #ea580c, #c2410c)', border: 'none', borderRadius: '8px', cursor: 'pointer' }}><IconPlus size={14} /> Nuevo</button>
+                <button type="button" onClick={() => setMostrarConveniosProveedor(false)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
               </div>
             </div>
-
-            <div style={{ padding: '18px 24px', overflowY: 'auto', flex: 1 }}>
+            <div style={{ overflowY: 'auto', padding: '8px 0' }}>
               {listaConveniosProveedor.length === 0 ? (
-                <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
-                  Este proveedor no tiene convenios / tarifas registradas. Usa <b style={{ color: '#fb923c' }}>“Agregar convenio”</b> para crear el primero.
-                </div>
+                <div style={{ padding: '30px', textAlign: 'center', color: '#8b949e' }}>Este proveedor no tiene convenios.</div>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
-                    <thead style={{ backgroundColor: '#1f2937' }}>
-                      <tr>
-                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>DESCRIPCIÓN / TARIFA</th>
-                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>MONTO</th>
-                        <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textAlign: 'center' }}>ACCIONES</th>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                  <thead>
+                    <tr style={{ color: '#7d8590', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 16px', fontWeight: 600 }}>Tarifa</th>
+                      <th style={{ padding: '8px 16px', fontWeight: 600 }}>ID</th>
+                      <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Monto</th>
+                      <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {listaConveniosProveedor.map((c:any) => (
+                      <tr key={c.id} style={{ borderTop: '1px solid #1f2733', color: '#c9d1d9' }}>
+                        <td style={{ padding: '10px 16px', fontWeight: 600 }}>{c.tipoConvenioNombre}</td>
+                        <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: '#fb923c' }}>{c.tarifaBaseId || '—'}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', color: '#3fb950', fontFamily: 'monospace' }}>{fmtMoney(c.tarifaMonto)}</td>
+                        <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button type="button" onClick={() => abrirEditorConvenioProv(c)} title="Editar" style={{ background: 'transparent', border: '1px solid #2d333b', color: '#58a6ff', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', marginRight: '6px' }}><IconEdit size={13} /></button>
+                          <button type="button" onClick={() => eliminarDetalleConvenioProv(c)} title="Eliminar" style={{ background: 'transparent', border: '1px solid rgba(248,81,73,0.35)', color: '#f85149', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer' }}><IconX size={13} /></button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {listaConveniosProveedor.map((c: any, idx: number) => (
-                        <tr key={c.id || idx} style={{ borderBottom: '1px solid #30363d', backgroundColor: formData.convenioProveedor === c.id ? 'rgba(88,166,255,0.06)' : 'transparent' }}>
-                          <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
-                            {c.tipoConvenioNombre || `Tarifa ${idx + 1}`}
-                            <div style={{ fontSize: '0.7rem', color: '#fb923c', marginTop: '4px', fontFamily: 'monospace' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
-                          </td>
-                          <td style={{ padding: '12px 16px', color: '#3fb950', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                            {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}
-                          </td>
-                          <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button type="button" title="Editar convenio" onClick={() => abrirEditorConvenioProv(c)}
-                                style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59,130,246,0.1)'}
-                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                                <IconEdit size={14} />
-                              </button>
-                              <button type="button" title="Eliminar convenio" onClick={() => eliminarDetalleConvenioProv(c)}
-                                style={{ background: 'transparent', border: '1px solid #f85149', borderRadius: '4px', color: '#f85149', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(248,81,73,0.1)'}
-                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               )}
             </div>
-
-            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #1f2733', backgroundColor: '#0d1117', flexShrink: 0 }}>
-              <button type="button" onClick={() => setMostrarConveniosProveedor(false)} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 24px' }}>Cerrar</button>
-            </div>
           </div>
         </div>
       )}
 
-      {/* ✅ NUEVO: MODAL — Crear / editar un convenio (tarifa) del proveedor */}
+      {/* === Editor de un convenio del PROVEEDOR (crear/editar) === */}
       {detalleConvProvEditando && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 3300, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', pointerEvents: 'auto' }}>
-          <div style={{ maxWidth: '520px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #2d333b', borderRadius: '12px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #1f2733', paddingBottom: '14px' }}>
-              <h3 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.1rem' }}>{detalleConvProvEditando.esNuevo ? 'Nuevo Convenio / Tarifa (Proveedor)' : 'Editar Convenio / Tarifa (Proveedor)'}</h3>
-              <button type="button" onClick={() => setDetalleConvProvEditando(null)} className="roelca-window-btn" title="Cerrar"><IconX size={16} /></button>
+        <div className="modal-overlay" style={{ zIndex: 1200 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setDetalleConvProvEditando(null); }}>
+          <div className="form-card" style={{ width: 'min(520px, 94vw)', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1f2733', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem', fontWeight: 700 }}>{detalleConvProvEditando.esNuevo ? 'Nuevo Convenio (Proveedor)' : 'Editar Convenio (Proveedor)'}</h3>
+              <button type="button" onClick={() => setDetalleConvProvEditando(null)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
             </div>
-
-            {detalleConvProvEditando.esNuevo && (
-              <div style={{ marginBottom: '16px', padding: '10px 14px', borderRadius: '8px', backgroundColor: 'rgba(88,166,255,0.08)', border: '1px solid rgba(88,166,255,0.3)', fontSize: '0.8rem', color: '#58a6ff' }}>
-                Se creará un nuevo convenio ligado a <b>{searchProvTransporte || 'el proveedor seleccionado'}</b>.
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
-              <div>
-                <label className="form-label">Tipo de Convenio (Tarifa del catálogo)</label>
-                <select
-                  className="form-control"
-                  value={detalleConvProvEditando.tipoConvenioId || ''}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    const tObj = (tarifas || []).find((t: any) => String(t.id) === id);
-                    const nombre = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || '';
-                    setDetalleConvProvEditando((prev: any) => prev ? { ...prev, tipoConvenioId: id, tipoConvenioNombre: nombre } : prev);
-                  }}
-                >
-                  <option value="">-- Sin asignar --</option>
-                  {detalleConvProvEditando.tipoConvenioId && !opcionesTarifasRef.some((o: any) => o.id === detalleConvProvEditando.tipoConvenioId) && (
-                    <option value={detalleConvProvEditando.tipoConvenioId}>{detalleConvProvEditando.tipoConvenioNombre || detalleConvProvEditando.tipoConvenioId} (actual)</option>
-                  )}
-                  {opcionesTarifasRef.map((o: any) => <option key={o.id} value={o.id}>{etiquetaOpcionTarifa(o)}</option>)}
+            <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div className="form-group">
+                <label className="form-label">Tarifa (catálogo)</label>
+                <select className="form-control" value={detalleConvProvEditando.tipoConvenioId || ''}
+                  onChange={(e) => { const id = e.target.value; const op = opcionesTarifasRef.find((o:any) => o.id === id); setDetalleConvProvEditando((prev:any) => ({ ...prev, tipoConvenioId: id, tipoConvenioNombre: op?.nombre || prev.tipoConvenioNombre })); }}>
+                  <option value="">-- Seleccionar tarifa --</option>
+                  {opcionesTarifasRef.map((o:any) => <option key={o.id} value={o.id}>{etiquetaOpcionTarifa(o)}</option>)}
                 </select>
-                <small style={{ color: '#fb923c', fontFamily: 'monospace', fontSize: '0.7rem' }}>ID tarifa: {detalleConvProvEditando.tipoConvenioId || '—'}</small>
               </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
-                <div>
-                  <label className="form-label" style={{ color: '#3fb950' }}>Tarifa ($)</label>
-                  <input type="number" step="0.01" className="form-control" value={detalleConvProvEditando.tarifa} onChange={(e) => setDetalleConvProvEditando((prev: any) => prev ? { ...prev, tarifa: e.target.value } : prev)} />
-                </div>
+              <div className="form-group">
+                <label className="form-label">Nombre del convenio</label>
+                <input type="text" className="form-control" value={detalleConvProvEditando.tipoConvenioNombre || ''} onChange={(e) => setDetalleConvProvEditando((prev:any) => ({ ...prev, tipoConvenioNombre: e.target.value }))} />
               </div>
-              <small style={{ color: '#8b949e', fontSize: '0.75rem' }}>
-                Captura el monto de la tarifa de este convenio. El ID de la tarifa, su costo y cuántas operaciones la usan se muestran en la lista desplegable de arriba.
-              </small>
+              <div className="form-group">
+                <label className="form-label">Monto / Tarifa</label>
+                <input type="number" step="0.01" className="form-control" value={detalleConvProvEditando.tarifa ?? ''} onChange={(e) => setDetalleConvProvEditando((prev:any) => ({ ...prev, tarifa: e.target.value }))} />
+              </div>
             </div>
-
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #1f2733', paddingTop: '16px' }}>
-              <button type="button" onClick={() => setDetalleConvProvEditando(null)} disabled={guardandoDetalleConvProv} className="roelca-btn-outline" style={{ width: 'auto', padding: '9px 20px' }}>Cancelar</button>
-              <button type="button" onClick={guardarDetalleConvenioProv} disabled={guardandoDetalleConvProv} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 24px' }}>
-                {guardandoDetalleConvProv ? 'Guardando...' : (<><IconSave size={15} /> {detalleConvProvEditando.esNuevo ? 'Crear Convenio' : 'Guardar Convenio'}</>)}
-              </button>
+            <div style={{ padding: '16px 22px', borderTop: '1px solid #1f2733', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" onClick={() => setDetalleConvProvEditando(null)} className="roelca-btn-outline" style={{ width: 'auto', padding: '10px 16px' }}>Cancelar</button>
+              <button type="button" onClick={guardarDetalleConvenioProv} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 18px' }} disabled={guardandoDetalleConvProv}>{guardandoDetalleConvProv ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>
         </div>
