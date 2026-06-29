@@ -104,6 +104,24 @@ const fmtFechaCorta = (f: any): string => {
 const fmtMoneda = (v: any): string =>
   `$ ${(Number(v) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// ✅ NUEVO: extrae el consecutivo de una referencia tipo "R-240626-002" → 2.
+//   Toma el ÚLTIMO grupo de dígitos de la referencia. -1 si no hay.
+const consecutivoDeRef = (ref: any): number => {
+  const grupos = String(ref || '').match(/\d+/g);
+  if (!grupos || !grupos.length) return -1;
+  const n = Number(grupos[grupos.length - 1]);
+  return isNaN(n) ? -1 : n;
+};
+
+// ✅ NUEVO: comparador para ordenar registros: 1º por fecha DESCENDENTE
+//   (más reciente primero), 2º por consecutivo de la referencia DESCENDENTE.
+const compararPorFechaYConsecutivo = (a: any, b: any): number => {
+  const fa = String(a._fechaISO || a.fechaServicio || '');
+  const fb = String(b._fechaISO || b.fechaServicio || '');
+  if (fa !== fb) return fb.localeCompare(fa);                 // fecha desc
+  return consecutivoDeRef(b.ref) - consecutivoDeRef(a.ref);   // consecutivo desc
+};
+
 // Semana del mes (lunes inicia semana), 1-based — replica la lógica de tu Excel
 const semanaDelMes = (d: Date): number => {
   const primero = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -325,7 +343,7 @@ export const ReportesDashboard = () => {
   function reporteDetalle(c: Ctx, tipo: 'Transfer' | 'Logística' | 'Fletes'): ReporteResult {
     const filtradas = c.ops
       .filter(op => c.clasificarTipo(op) === tipo)
-      .sort((a, b) => String(a.fechaServicio || '').localeCompare(String(b.fechaServicio || '')));
+      .sort(compararPorFechaYConsecutivo);
 
     // Columnas "bonitas" sugeridas (resuelven IDs→nombres). Visibles por defecto.
     const columnasBase: Columna[] = [
@@ -601,7 +619,7 @@ export const ReportesDashboard = () => {
       // Filtro de rango (inclusivo) sobre la fecha YA normalizada a ISO.
       const ops = opsTodas
         .filter(op => op._fechaISO && op._fechaISO >= desde && op._fechaISO <= hasta)
-        .sort((a, b) => String(a._fechaISO).localeCompare(String(b._fechaISO)));
+        .sort(compararPorFechaYConsecutivo);
 
       // ✅ NUEVO: universo de campos crudos de la colección (unión de todas las
       //   claves de los documentos). Es lo que se ofrece en el modal "Columnas".
