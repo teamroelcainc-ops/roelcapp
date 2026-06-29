@@ -858,7 +858,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const emp = empresas.find((e: any) => e.nombre?.toLowerCase().trim() === searchClientePaga.toLowerCase().trim());
       if (emp) clientId = emp.id;
     }
-    if (!clientId || !catalogoConvClientes || !catalogoConvDetalles) return [];
+    if (!clientId || !catalogoConvClientes || !catalogoConvDetalles) {
+      // ✅ FIX EDITAR: aunque todavía no haya cliente/convenios cargados, si estamos
+      //   editando una operación que YA traía convenio, lo devolvemos como única
+      //   opción usando lo que se guardó (así "Editar" muestra lo mismo que se grabó).
+      const convId = String(initialData?.convenio || '').trim();
+      if (initialData && convId) {
+        return [{
+          id: convId,
+          tarifaBaseId: '',
+          descripcion: initialData.convenioNombre || 'Convenio guardado',
+          monedaMaestro: initialData.monedaConvenioCliente || ID_USD,
+          tarifaMonto: Number(initialData.montoConvenioCliente) || 0,
+        }];
+      }
+      return [];
+    }
     const cid = String(clientId).trim();
 
     const maestros = catalogoConvClientes.filter((c: any) => String(
@@ -881,7 +896,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     const detallesAsociados = Array.from(union.values());
 
-    return detallesAsociados.map((d: any) => {
+    const lista = detallesAsociados.map((d: any) => {
       const tarifaId = d.tipoConvenioId || d.tipo_convenio_id || d.tipoConvenio || d.tipo_convenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
       const ref = refMaestroDetalle(d);
@@ -899,7 +914,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         tarifaMonto: montoDetalle(d),
       };
     });
-  }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas]);
+
+    // ✅ FIX EDITAR: si estamos editando y el convenio que se guardó NO aparece en
+    //   la lista (por filtros/owner distintos o catálogo aún sincronizando), lo
+    //   inyectamos con los datos denormalizados de la operación para que el campo
+    //   muestre EXACTAMENTE lo que se grabó y no quede vacío ni deshabilitado.
+    const convGuardadoId = String(initialData?.convenio || '').trim();
+    if (initialData && convGuardadoId && !lista.some((c: any) => String(c.id) === convGuardadoId)) {
+      const detReal = (catalogoConvDetalles || []).find((d: any) => String(d.id) === convGuardadoId);
+      const tarifaId = detReal ? (detReal.tipoConvenioId || detReal.tipo_convenio_id || detReal.tipoConvenio || detReal.tipo_convenio || detReal.tarifaId || detReal.tarifa_id || detReal['TIPO DE CONVENIO']) : '';
+      lista.push({
+        ...(detReal || {}),
+        id: convGuardadoId,
+        tarifaBaseId: tarifaId,
+        descripcion: initialData.convenioNombre || (detReal as any)?.tipoConvenioNombre || 'Convenio guardado',
+        monedaMaestro: initialData.monedaConvenioCliente || (detReal as any)?.moneda || ID_USD,
+        tarifaMonto: Number(initialData.montoConvenioCliente ?? montoDetalle(detReal || {})) || 0,
+      });
+    }
+
+    return lista;
+  }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas, initialData]);
 
   const listaConveniosProveedor = useMemo(() => {
     let provId = formData.proveedorUnidad;
@@ -907,7 +942,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const prov = empresas.find((e: any) => e.nombre?.toLowerCase().trim() === searchProvTransporte.toLowerCase().trim());
       if (prov) provId = prov.id;
     }
-    if (!provId || !conveniosProv || !Array.isArray(conveniosProv)) return [];
+    if (!provId || !conveniosProv || !Array.isArray(conveniosProv)) {
+      // ✅ FIX EDITAR: igual que con el cliente, si editamos una operación con
+      //   convenio de proveedor guardado, lo devolvemos como única opción.
+      const convProvId = String(initialData?.convenioProveedor || '').trim();
+      if (initialData && convProvId) {
+        return [{
+          id: convProvId,
+          tarifaBaseId: '',
+          tipoConvenioNombre: initialData.convenioProveedorNombre || 'Convenio guardado',
+          monedaBase: initialData.monedaConvenioProv || ID_USD,
+          tarifaMonto: Number(initialData.totalAPagarProv) || 0,
+        }];
+      }
+      return [];
+    }
     const pid = String(provId).trim();
 
     const maestrosAsociados = conveniosProv.filter((c: any) => String(
@@ -925,7 +974,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     const detallesAsociados = Array.from(union.values());
 
-    return detallesAsociados.map((d: any) => {
+    const lista = detallesAsociados.map((d: any) => {
       const tarifaId = d.tipoConvenioId || d.tipo_convenio || d.tipoConvenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
       const ref = refMaestroDetalle(d);
@@ -938,7 +987,24 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         tarifaMonto: montoDetalle(d),
       };
     });
-  }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas]);
+
+    // ✅ FIX EDITAR: inyectar el convenio de proveedor guardado si no quedó en la lista.
+    const convProvGuardadoId = String(initialData?.convenioProveedor || '').trim();
+    if (initialData && convProvGuardadoId && !lista.some((c: any) => String(c.id) === convProvGuardadoId)) {
+      const detReal = (catalogoConvProvDetalles || []).find((d: any) => String(d.id) === convProvGuardadoId);
+      const tarifaId = detReal ? (detReal.tipoConvenioId || detReal.tipo_convenio || detReal.tipoConvenio || detReal.tarifaId || detReal.tarifa_id || detReal['TIPO DE CONVENIO']) : '';
+      lista.push({
+        ...(detReal || {}),
+        id: convProvGuardadoId,
+        tarifaBaseId: tarifaId,
+        tipoConvenioNombre: initialData.convenioProveedorNombre || (detReal as any)?.tipoConvenioNombre || 'Convenio guardado',
+        monedaBase: initialData.monedaConvenioProv || (detReal as any)?.moneda || ID_USD,
+        tarifaMonto: Number(initialData.totalAPagarProv ?? montoDetalle(detReal || {})) || 0,
+      });
+    }
+
+    return lista;
+  }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas, initialData]);
 
   // ✅ NUEVO: IDs resueltos del cliente/proveedor y de su convenio MAESTRO,
   //   para poder CREAR nuevos detalles de convenio ligados correctamente.
