@@ -5,6 +5,31 @@ import { collection, getDocs, query, limit, orderBy, doc, updateDoc } from 'fire
 import { db } from '../../../../config/firebase';
 import { guardarMttoSeguro } from '../services/mttoService';
 
+// ✅ Helpers de folio (mismo formato que el dashboard: MTTO-DDMMYY-NNN).
+//    Se usan solo para MOSTRAR el folio normalizado al editar registros viejos;
+//    el valor guardado en Firestore no se altera.
+const consecutivoDe = (m: any): number => {
+  const parte = String(m?.numeroGasto || '').split('-').pop() || '';
+  const n = parseInt(parte.replace(/\D/g, ''), 10);
+  return isNaN(n) ? 0 : n;
+};
+const partesFechaISO = (v: any): { yyyy: string; mm: string; dd: string } | null => {
+  const s = String(v || '').slice(0, 10);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return { yyyy: m[1], mm: m[2], dd: m[3] };
+};
+const formatearFolio = (m: any): string => {
+  const consStr = String(consecutivoDe(m)).padStart(3, '0');
+  const p = partesFechaISO(m?.fecha) || partesFechaISO(m?.createdAt);
+  if (p) return `MTTO-${p.dd}${p.mm}${p.yyyy.slice(2)}-${consStr}`;
+  const original = String(m?.numeroGasto || '').trim();
+  if (!original) return '-';
+  const partes = original.split('-');
+  if (partes.length >= 3) return `MTTO-${partes[1]}-${consStr}`;
+  return original;
+};
+
 interface FormProps {
   estado: 'abierto' | 'minimizado' | 'cerrado';
   catalogos: any;
@@ -349,6 +374,10 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
 
   const operacionesFiltro = catalogos?.operaciones?.filter((o:any) => (o.ref || '').toLowerCase().includes(searchOperacion.toLowerCase())) || [];
 
+  // ✅ Folio que se muestra: al editar se normaliza a MTTO-DDMMYY-NNN (solo visual,
+  //    el valor guardado en Firestore se conserva intacto). Al crear, muestra el folio en vivo.
+  const folioDisplay = initialData ? formatearFolio(formData) : formData.numeroGasto;
+
   if (estado === 'cerrado') return null;
 
   const tabs = [
@@ -366,7 +395,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         {/* ENCABEZADO */}
         <div className="form-header" style={{ padding: '16px 24px', borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
           <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            {initialData ? `Editar Gasto ${initialData.numeroGasto}` : 'Nuevo Gasto (MTTO)'}
+            {initialData ? `Editar Gasto ${folioDisplay}` : 'Nuevo Gasto (MTTO)'}
           </h2>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <button type="button" onClick={() => setShowConfig(true)} title="Configuración de Formulario" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', padding: '6px 12px', borderRadius: '6px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
@@ -411,7 +440,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', animation: 'fadeIn 0.2s ease' }}>
               <div className="form-group">
                 <label style={{ display: 'block', marginBottom: '8px', color: '#8b949e', fontSize: '0.85rem' }}># de Gasto</label>
-                <input type="text" readOnly value={formData.numeroGasto} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e' }} />
+                <input type="text" readOnly value={folioDisplay} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e' }} />
               </div>
               <div className="form-group">
                 <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}># de Invoice {configuracion.requeridos.invoice && <RequeridoMark />}</label>

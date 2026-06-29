@@ -37,6 +37,39 @@ const COLUMNAS_BASE = [
   { id: 'operacionAsignada', label: 'Asignar Operación', visible: true }
 ];
 
+// ✅ Consecutivo (última parte numérica del folio)
+const consecutivoDe = (m: any): number => {
+  const parte = String(m?.numeroGasto || '').split('-').pop() || '';
+  const n = parseInt(parte.replace(/\D/g, ''), 10);
+  return isNaN(n) ? 0 : n;
+};
+
+// ✅ Partes de una fecha ISO "YYYY-MM-DD" sin corrimiento de zona horaria
+const partesFechaISO = (v: any): { yyyy: string; mm: string; dd: string } | null => {
+  const s = String(v || '').slice(0, 10);
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return { yyyy: m[1], mm: m[2], dd: m[3] };
+};
+
+// ✅ Folio normalizado al formato MTTO-DDMMYY-NNN (p. ej. MTTO-290626-001).
+//    La fecha sale del campo `fecha` (respaldo `createdAt`); el consecutivo, del folio.
+const formatearFolio = (m: any): string => {
+  const consStr = String(consecutivoDe(m)).padStart(3, '0');
+  const p = partesFechaISO(m?.fecha) || partesFechaISO(m?.createdAt);
+  if (p) {
+    const ddmmyy = `${p.dd}${p.mm}${p.yyyy.slice(2)}`;
+    return `MTTO-${ddmmyy}-${consStr}`;
+  }
+  // Sin fecha ISO confiable: conserva el bloque de fecha del folio original,
+  // pero homologa el prefijo a MTTO y el consecutivo a 3 dígitos.
+  const original = String(m?.numeroGasto || '').trim();
+  if (!original) return '-';
+  const partes = original.split('-');
+  if (partes.length >= 3) return `MTTO-${partes[1]}-${consStr}`;
+  return original;
+};
+
 const MttoDashboard = () => {
   const [vistaActiva, setVistaActiva] = useState<VistaMaestra>('tabla');
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
@@ -106,33 +139,19 @@ const MttoDashboard = () => {
         return { id: d.id, ...data };
       });
 
-      // ✅ ORDEN: No facturados arriba, luego por FECHA (más reciente primero)
+      // ✅ ORDEN: 1) Fecha de la más reciente a la más antigua. 2) Por referencia (folio).
+      const obtenerTiempo = (m: any) => {
+        if (m.fecha) { const t = new Date(m.fecha).getTime(); if (!isNaN(t)) return t; }
+        if (m.createdAt) { const t = new Date(m.createdAt).getTime(); if (!isNaN(t)) return t; }
+        return 0;
+      };
       mttoData.sort((a, b) => {
-        // Prioridad 1: "No facturado" siempre arriba
-        const aNoFacturado = a.estatus === 'No facturado';
-        const bNoFacturado = b.estatus === 'No facturado';
-        
-        if (aNoFacturado && !bNoFacturado) return -1;
-        if (!aNoFacturado && bNoFacturado) return 1;
-
-        // Prioridad 2: Fecha del gasto, de la más reciente a la más antigua.
-        // Se usa el campo "fecha" (respaldo "createdAt") para no depender del formato del folio.
-        const obtenerTiempo = (m: any) => {
-          if (m.fecha) { const t = new Date(m.fecha).getTime(); if (!isNaN(t)) return t; }
-          if (m.createdAt) { const t = new Date(m.createdAt).getTime(); if (!isNaN(t)) return t; }
-          return 0;
-        };
+        // 1) Fecha del gasto (más reciente primero)
         const tA = obtenerTiempo(a);
         const tB = obtenerTiempo(b);
         if (tA !== tB) return tB - tA;
-
-        // Prioridad 3: Mismo día -> consecutivo más alto primero
-        const consecutivo = (m: any) => {
-          const parte = String(m.numeroGasto || '').split('-').pop() || '';
-          const n = parseInt(parte, 10);
-          return isNaN(n) ? 0 : n;
-        };
-        return consecutivo(b) - consecutivo(a);
+        // 2) Referencia / folio del mismo día: consecutivo más alto primero
+        return consecutivoDe(b) - consecutivoDe(a);
       });
 
       setMttoGlobales(mttoData);
@@ -259,6 +278,7 @@ const MttoDashboard = () => {
     const b = busqueda.toLowerCase();
     return mttoGlobales.filter(m => (
       String(m.numeroGasto || '').toLowerCase().includes(b) ||
+      String(formatearFolio(m)).toLowerCase().includes(b) ||
       String(m.invoice || '').toLowerCase().includes(b) ||
       String(m.estatus || '').toLowerCase().includes(b) ||
       String(m.operadorNombre || m.operador || '').toLowerCase().includes(b) ||
@@ -279,10 +299,7 @@ const MttoDashboard = () => {
         totalImporte += parseFloat(gasto.importe || 0);
         totalIva += parseFloat(gasto.ivaMonto || 0);
         granTotal += parseFloat(gasto.total || 0);
-        
-        if (gasto.numeroGasto) {
-           numerosGasto.push(gasto.numeroGasto);
-        }
+        numerosGasto.push(formatearFolio(gasto));
       }
     });
 
@@ -321,7 +338,7 @@ const MttoDashboard = () => {
   // ✅ RENDERIZADOR DINÁMICO DE CELDAS MTTO
   const renderCellContent = (m: any, colId: string) => {
     switch (colId) {
-      case 'numeroGasto': return <span style={{ color: '#58a6ff', fontWeight: 'bold' }}>{m.numeroGasto || '-'}</span>;
+      case 'numeroGasto': return <span style={{ color: '#58a6ff', fontWeight: 'bold' }}>{formatearFolio(m)}</span>;
       case 'invoice': return <span style={{ color: '#c9d1d9' }}>{m.invoice || '-'}</span>;
       case 'estatus': return <span style={{ color: m.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>{m.estatus || '-'}</span>;
       case 'fecha': return <span style={{ color: '#c9d1d9' }}>{m.fecha || '-'}</span>;
@@ -361,7 +378,7 @@ const MttoDashboard = () => {
       columnasVisibles.forEach(col => {
         let val: any = '-';
         switch (col.id) {
-          case 'numeroGasto': val = m.numeroGasto || ''; break;
+          case 'numeroGasto': val = formatearFolio(m); break;
           case 'invoice': val = m.invoice || ''; break;
           case 'estatus': val = m.estatus || ''; break;
           case 'fecha': val = m.fecha || ''; break;
@@ -690,7 +707,7 @@ const MttoDashboard = () => {
         <div className="modal-overlay" style={{ zIndex: 1500 }}>
           <div className="form-card detail-card" style={{ maxWidth: '1000px', width: '100%', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
             <div className="form-header" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc' }}>Detalle de Gasto <span style={{ color: '#58a6ff' }}>{mttoViendo.numeroGasto}</span></h2>
+              <h2 style={{ margin: 0, color: '#f0f6fc' }}>Detalle de Gasto <span style={{ color: '#58a6ff' }}>{formatearFolio(mttoViendo)}</span></h2>
               <button onClick={() => setMttoViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
             
@@ -703,7 +720,7 @@ const MttoDashboard = () => {
               {/* PESTAÑA 1: INFORMACIÓN GENERAL */}
               {pestañaDetalleActiva === 'general' && (
                 <div className="detail-grid-3">
-                   <div><label style={labelStyle}># DE GASTO</label><span style={valStyle}>{mttoViendo.numeroGasto || '-'}</span></div>
+                   <div><label style={labelStyle}># DE GASTO</label><span style={valStyle}>{formatearFolio(mttoViendo)}</span></div>
                    <div><label style={labelStyle}># DE INVOICE</label><span style={valStyle}>{mttoViendo.invoice || '-'}</span></div>
                    <div><label style={labelStyle}>ESTATUS</label><span style={{color: mttoViendo.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold'}}>{mttoViendo.estatus || '-'}</span></div>
                    <div><label style={labelStyle}>FECHA</label><span style={valStyle}>{mttoViendo.fecha || '-'}</span></div>
