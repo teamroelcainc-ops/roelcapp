@@ -24,6 +24,16 @@
 //    alguna razón la operación no trae fecha de servicio, se usa la fecha de
 //    hoy como respaldo.
 //
+// ✅ FIX ANTI-DUPLICADOS (solicitado): el consecutivo ahora NUNCA reutiliza un
+//    número ya existente. Además del contador, se consulta el MÁXIMO
+//    consecutivo REAL ya guardado para ese (prefijo + fecha) y el nuevo número
+//    parte del MAYOR entre el contador y ese máximo real. Esto sana el caso en
+//    que el contador quedó por debajo de la realidad (p. ej. al migrar del
+//    contador mezclado por día al contador por tipo, los nuevos contadores
+//    arrancaron en 0 aunque ya existían operaciones 001..00N, por lo que se
+//    regeneraban números repetidos). La transacción atómica sigue garantizando
+//    que el último enviado se respete aunque varias personas guarden a la vez.
+//
 // UNICIDAD (sin saltos ni repetidos, incluso con varias personas capturando a
 // la vez): el incremento del contador y la escritura de la operación ocurren
 // DENTRO DE LA MISMA `runTransaction`. La transacción de Firestore es atómica
@@ -32,7 +42,7 @@
 //
 // Formato de referencia: <PREFIJO>-<DDMMYY>-<NNN>  (ej. TR-270626-001)
 
-import { doc, getDoc, runTransaction, collection } from 'firebase/firestore';
+import { doc, getDoc, getDocs, runTransaction, collection, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { generarReferencia, fechaDDMMYY, prefijoTipoOperacion } from '../../../utils/generarReferencia';
 
@@ -144,6 +154,33 @@ const resolverPrefijoCorto = async (operacionData: any): Promise<string> => {
   return 'OP';
 };
 
+// ──────────────────────────────────────────────────────────────────────
+// ✅ NUEVO: máximo consecutivo REAL ya existente para un (prefijo + fecha).
+// Consulta `operaciones` por el rango de refs que empiezan con
+// `<PREFIJO>-<DDMMYY>-` y toma el mayor. Como el consecutivo va con 3 dígitos
+// (001..999), el orden de texto coincide con el numérico, así que basta pedir
+// la primera en orden descendente. Devuelve 0 si no hay ninguna o si falla.
+// ──────────────────────────────────────────────────────────────────────
+const obtenerMaximoConsecutivoExistente = async (prefijoRef: string): Promise<number> => {
+  try {
+    const qExist = query(
+      collection(db, 'operaciones'),
+      where('ref', '>=', prefijoRef),
+      where('ref', '<', prefijoRef + '\uf8ff'),
+      orderBy('ref', 'desc'),
+      limit(1)
+    );
+    const snap = await getDocs(qExist);
+    if (snap.empty) return 0;
+    const refTop = String((snap.docs[0].data() as any).ref || '');
+    const m = refTop.match(/(\d+)\s*$/);
+    return m ? (parseInt(m[1], 10) || 0) : 0;
+  } catch (e) {
+    console.warn('No se pudo calcular el máximo consecutivo existente; uso solo el contador.', e);
+    return 0;
+  }
+};
+
 export const guardarOperacionSegura = async (operacionData: any) => {
   // ✅ DDMMYY tomado de la FECHA DE SERVICIO de la operación (con respaldo a hoy).
   //    Esto hace que la referencia cambie según la fecha de servicio capturada.
@@ -151,6 +188,12 @@ export const guardarOperacionSegura = async (operacionData: any) => {
 
   // Prefijo del tipo (TR/LO/FL/OP) resuelto ANTES de la transacción.
   const prefijoCorto = await resolverPrefijoCorto(operacionData);
+
+  // ✅ Piso anti-duplicados: máximo consecutivo REAL ya usado para este
+  //    (prefijo, fecha de servicio). Se calcula ANTES de la transacción y sirve
+  //    como base mínima para que NUNCA se reutilice un número ya existente.
+  const prefijoRef = `${prefijoCorto}-${ddmmyy}-`;
+  const maxExistente = await obtenerMaximoConsecutivoExistente(prefijoRef);
 
   // ✅ Contador POR TIPO Y POR FECHA DE SERVICIO: cada (tipo, fecha) arranca en 001.
   //    Ej.: operaciones_TR_270626, operaciones_LO_270626, operaciones_FL_270626.
@@ -166,7 +209,13 @@ export const guardarOperacionSegura = async (operacionData: any) => {
 
       // Faltante = 0  →  el primero de la fecha SIEMPRE es 1 (sin saltos ni repetidos).
       const actual = counterDoc.exists() ? (Number(counterDoc.data().count) || 0) : 0;
-      const nuevoCorrelativo = actual + 1;
+
+      // ✅ El consecutivo NUNCA baja ni se repite: parte del MAYOR entre el
+      //    contador y el máximo consecutivo real ya existente. Si dos personas
+      //    guardan a la vez, la transacción reintenta y vuelve a leer el contador
+      //    ya incrementado, por lo que cada quien recibe un número distinto.
+      const base = Math.max(actual, maxExistente);
+      const nuevoCorrelativo = base + 1;
 
       // Referencia con prefijo del tipo, DDMMYY de la fecha de servicio y consecutivo.
       referenciaFinal = generarReferencia(prefijoCorto, nuevoCorrelativo, ddmmyy);
