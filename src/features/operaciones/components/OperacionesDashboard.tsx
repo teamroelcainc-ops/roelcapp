@@ -54,6 +54,31 @@ const cacheVigente = (alias: string): boolean => {
   return (Date.now() - (obj.ts || 0)) < ttl;
 };
 
+// ✅ NUEVO: ordena nombres de status por su número inicial (1, 3, 4.1, 5, 6,
+//    8.1, 8.2, 9, 10.1, 10.3, 10.5, 11, 11.2, 12.1, 13.1, 16, 18, 19) y, dentro
+//    del mismo número, alfabéticamente. Los que no inician con número van al
+//    final, ordenados alfabéticamente. Todo en orden ascendente.
+const compararStatusPorNumero = (a: string, b: string): number => {
+  const parse = (s: string): number[] | null => {
+    const m = String(s ?? '').trim().match(/^(\d+(?:\.\d+)*)/);
+    return m ? m[1].split('.').map((n) => parseInt(n, 10)) : null;
+  };
+  const na = parse(a);
+  const nb = parse(b);
+  if (na && nb) {
+    const len = Math.max(na.length, nb.length);
+    for (let i = 0; i < len; i++) {
+      const da = na[i] ?? 0;
+      const db = nb[i] ?? 0;
+      if (da !== db) return da - db;
+    }
+    return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
+  }
+  if (na && !nb) return -1;
+  if (!na && nb) return 1;
+  return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
+};
+
 const COLUMNAS_BASE = [
   { id: 'ref', label: '# Referencia', visible: true },
   { id: 'fechaServicio', label: 'Fecha Servicio', visible: true },
@@ -171,6 +196,15 @@ const OperacionesDashboard = () => {
     return { porId, porNombre };
   }, [catalogosGlobales.statusServicio]);
 
+  // ✅ NUEVO: lista de status ORDENADA (numérico → alfabético, ascendente) para
+  //    el desplegable del modal "Registrar Movimiento".
+  const statusServicioOrdenado = useMemo(() => {
+    const lista = (catalogosGlobales.statusServicio || []) as any[];
+    return [...lista]
+      .filter((s: any) => s && s.nombre)
+      .sort((a: any, b: any) => compararStatusPorNumero(String(a.nombre), String(b.nombre)));
+  }, [catalogosGlobales.statusServicio]);
+
   const resolverStatus = (valor: string | null | undefined): { id: string; nombre: string } => {
     if (!valor) return { id: '', nombre: '' };
     const v = String(valor).trim();
@@ -237,10 +271,6 @@ const OperacionesDashboard = () => {
   const ultimoDocRef = useRef<any>(null);
 
   const IDS_STATUS_EXCLUIDOS = ['7607f692', 'f557b751', 'c2d57403'];
-  // ✅ "Activa" = cualquier operación cuyo ID de status NO sea uno de los 3
-  //    excluidos (cancelado / completado / falso). Se filtra SOLO por ID; ya no
-  //    se descarta por el texto "completado" del nombre, porque eso ocultaba
-  //    operaciones que sí están activas.
   const esOperacionActiva = (op: any): boolean => {
     const statusId = String(op.status || '').trim();
     return !IDS_STATUS_EXCLUIDOS.includes(statusId);
@@ -249,21 +279,10 @@ const OperacionesDashboard = () => {
   const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     try {
-      // ⚠️ CLAVE: la colección tiene MILES de operaciones completadas y solo
-      //    unas pocas activas. Antes bajábamos las primeras 50 por fecha y
-      //    filtrábamos en memoria, pero esas 50 eran TODAS completadas, así que
-      //    las activas (enterradas entre miles) nunca aparecían.
-      //
-      //    Solución: pedirle a Firestore DIRECTAMENTE solo las activas, con
-      //    `not-in` sobre los 3 IDs de status excluidos. Así trae únicamente las
-      //    operaciones cuyo status NO sea cancelado/completado/falso, sin
-      //    importar dónde estén en la colección.
       let docs: any[] = [];
       let metodo = 'directa (not-in)';
       let exito = false;
 
-      // 1) Consulta directa: status NOT-IN [excluidos]. (Usa el índice de campo
-      //    `status`; no requiere índice compuesto.)
       try {
         const q1 = query(
           collection(db, 'operaciones'),
@@ -277,9 +296,6 @@ const OperacionesDashboard = () => {
         console.warn('[Operaciones] La consulta not-in falló; uso respaldo sin filtro:', errNotIn);
       }
 
-      // 2) RESPALDO (solo si la consulta directa falló): baja un bloque grande y
-      //    filtra en memoria. Nota: `not-in` ignora documentos SIN campo
-      //    `status`; este respaldo sí los puede capturar.
       if (!exito) {
         metodo = 'respaldo (sin filtro, filtra en memoria)';
         const q2 = query(collection(db, 'operaciones'), limit(2000));
@@ -290,16 +306,13 @@ const OperacionesDashboard = () => {
       ultimoDocRef.current = docs.length ? docs[docs.length - 1] : null;
 
       const opDataRaw = docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      // Filtro en memoria por seguridad (en la vía directa ya vienen filtradas).
       const operacionesActivas = opDataRaw.filter(esOperacionActiva);
 
-      // 🔎 Diagnóstico (abre la consola con F12 para ver estos números):
       console.log(
         `[Operaciones v3] método: ${metodo} | crudas: ${opDataRaw.length} | activas: ${operacionesActivas.length}`
       );
 
       setOperacionesGlobales(operacionesActivas);
-      // En la vía directa, "hay más" si llenamos la página completa de activas.
       setHayMasOperaciones(exito && docs.length === TAMANO_PAGINA);
     } catch (e: any) {
       console.error("Error al cargar operaciones:", e);
@@ -315,9 +328,6 @@ const OperacionesDashboard = () => {
     setCargandoOperaciones(false);
   };
 
-  // ✅ NUEVO: actualizar manualmente la colección de operaciones.
-  //   Vuelve a leer `operaciones` desde Firestore (reinicia paginación y vuelve
-  //   a la página 1) SIN recargar toda la página del navegador.
   const actualizarOperaciones = async () => {
     if (cargandoOperaciones || cargandoMas) return;
     ultimoDocRef.current = null;
@@ -332,8 +342,6 @@ const OperacionesDashboard = () => {
     try {
       const cursor = ultimoDocRef.current;
 
-      // Paginación con la MISMA consulta directa (not-in), avanzando con el
-      // snapshot del último documento.
       const constraints: any[] = [where('status', 'not-in', IDS_STATUS_EXCLUIDOS)];
       if (cursor) constraints.push(startAfter(cursor));
       constraints.push(limit(TAMANO_PAGINA));
@@ -360,9 +368,6 @@ const OperacionesDashboard = () => {
   };
 
   useEffect(() => {
-    // 0) ✅ LIMPIEZA AUTOMÁTICA: borra cachés viejas (v1) y cualquier caché que
-    //    haya quedado VACÍA (0 docs) por un bloqueo previo de Firestore. Así el
-    //    estado atascado (Tipo/Status mostrando ID) se cura solo al cargar.
     try {
       Object.keys(localStorage).forEach(k => {
         if (k.startsWith('cat_v1__')) { localStorage.removeItem(k); return; }
@@ -390,8 +395,6 @@ const OperacionesDashboard = () => {
     setLogoPdf(b64 && b64.startsWith('data:') ? b64 : '');
   }, [empresaConfig?.logoBase64]);
 
-  // ✅ (Fix 1) Reinicia a la página 1 cuando cambia el buscador o cualquiera de
-  //    los filtros de Status / Unidad / Remolque.
   useEffect(() => { setPaginaActual(1); }, [busqueda, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque]);
 
   useEffect(() => {
@@ -551,14 +554,6 @@ const OperacionesDashboard = () => {
     return { nombre: nombre || 'N/A', placa: placa || 'N/A' };
   };
 
-  // =====================================================================
-  // ✅ RESOLUCIÓN ROBUSTA DE LA UNIDAD (TRACTOR) PARA LOS PDF.
-  // Devuelve { nombre, placa } sin imprimir nunca "undefined". El nombre de la
-  // unidad en el catálogo `unidades` está en el campo `unidad` (no en
-  // `numeroEconomico`/`nombre`), por eso antes salía undefined. Aquí se prueban
-  // todos los campos posibles y, si es flota externa, se busca en
-  // `unidades_proveedor`. Como último recurso usa el valor desnormalizado.
-  // =====================================================================
   const resolverUnidadParaPDF = (): { nombre: string; placa: string } => {
     const refUnidad = operacionViendo?.unidad;
     const listaU: any[] = Array.isArray(catalogosGlobales.unidades) ? catalogosGlobales.unidades : [];
@@ -576,7 +571,6 @@ const OperacionesDashboard = () => {
       ''
     ).trim();
 
-    // Flota externa: si no hubo unidad propia, intenta con unidades_proveedor.
     if (!nombre && operacionViendo?.unidadProveedor) {
       const listaP: any[] = Array.isArray(catalogosGlobales.unidades_proveedor) ? catalogosGlobales.unidades_proveedor : [];
       const pObj = listaP.find((u: any) => String(u.id).trim() === String(operacionViendo.unidadProveedor).trim());
@@ -589,7 +583,6 @@ const OperacionesDashboard = () => {
     return { nombre: nombre || 'N/A', placa: placa || 'N/A' };
   };
 
-  // ✅ Nombre del operador para PDF, sin "undefined".
   const resolverOperadorParaPDF = (): string => {
     if (operacionViendo?.operadorNombre) return String(operacionViendo.operadorNombre).trim();
     const mapeado = mostrarDatoMapeado(operacionViendo?.operador, 'empleados');
@@ -910,17 +903,12 @@ const OperacionesDashboard = () => {
     });
   };
 
-  // ✅ Consecutivo de la referencia: toma los últimos dígitos de "TR-220626-003" → 3.
   const obtenerConsecutivoRef = (op: any): number => {
     const ref = String(op?.ref || '');
     const m = ref.match(/(\d+)\s*$/);
     return m ? parseInt(m[1], 10) : 0;
   };
 
-  // ✅ NUEVO (Fix 3): parser de fecha ROBUSTO para ORDENAR. La colección guarda la
-  //    fecha en formatos MEZCLADOS ("2026-06-27", "26/6/2026", Timestamp...), por
-  //    eso el orden por texto fallaba (dejaba la más nueva abajo). Devuelve un
-  //    número (epoch ms) comparable.
   const fechaOrdenOp = (valor: any): number => {
     if (valor == null || valor === '') return 0;
     if (typeof valor === 'object') {
@@ -932,19 +920,13 @@ const OperacionesDashboard = () => {
     if (typeof valor === 'number') return valor;
     const s = String(valor).trim();
     if (!s) return 0;
-    // ISO: YYYY-MM-DD (fecha local)
     let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (m) { const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])); return isNaN(d.getTime()) ? 0 : d.getTime(); }
-    // DD/MM/YYYY o DD-MM-YYYY (admite año de 2 dígitos)
     m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
     if (m) { let y = Number(m[3]); if (y < 100) y += 2000; const d = new Date(y, Number(m[2]) - 1, Number(m[1])); return isNaN(d.getTime()) ? 0 : d.getTime(); }
     const d = new Date(s); return isNaN(d.getTime()) ? 0 : d.getTime();
   };
 
-  // ✅ Texto "buscable" de cada columna. Devuelve EXACTAMENTE lo que se ve en la
-  //    tabla (incluyendo lo que se resuelve por catálogo: cliente, convenio,
-  //    unidad, operador, remolque, monedas, etc.). Se usa para que el buscador
-  //    encuentre por CUALQUIER columna de la tabla, no solo por unas pocas.
   const valorTextoColumna = (op: any, colId: string): string => {
     switch (colId) {
       case 'ref': return String(op.ref || op.id?.substring(0, 6) || '');
@@ -1008,9 +990,6 @@ const OperacionesDashboard = () => {
     }
   };
 
-  // ✅ NUEVO (Fix 1): opciones de los filtros = valores DISTINTOS realmente
-  //    presentes en las operaciones cargadas, ya resueltos a su nombre. Así el
-  //    dropdown solo ofrece lo que existe (Status, Unidad Roelca, Remolque).
   const construirOpcionesFiltro = (colId: string): string[] => {
     const set = new Set<string>();
     operacionesGlobales.forEach(op => {
@@ -1030,18 +1009,12 @@ const OperacionesDashboard = () => {
     const b = busqueda.trim().toLowerCase();
     const tokens = b.split(/\s+/).filter(Boolean);
 
-    // 1) ✅ Filtros de dropdown (Status / Unidad / Remolque). Se comparan contra
-    //    el MISMO texto que se ve en la tabla (ya resuelto por catálogo).
     let base = operacionesGlobales;
     if (filtroTipoOperacion) base = base.filter(op => valorTextoColumna(op, 'tipoOperacion') === filtroTipoOperacion);
     if (filtroStatus)   base = base.filter(op => valorTextoColumna(op, 'status')   === filtroStatus);
     if (filtroUnidad)   base = base.filter(op => valorTextoColumna(op, 'unidad')   === filtroUnidad);
     if (filtroRemolque) base = base.filter(op => valorTextoColumna(op, 'remolque') === filtroRemolque);
 
-    // 2) Buscador por TODAS las columnas de la tabla (visibles u ocultas),
-    //    comparando contra el texto que realmente se muestra. Además:
-    //    - NO hace falta escribir la palabra completa (coincidencia parcial).
-    //    - Se pueden escribir varias palabras sueltas en CUALQUIER orden.
     const filtradas = tokens.length === 0
       ? [...base]
       : base.filter(op => {
@@ -1052,14 +1025,11 @@ const OperacionesDashboard = () => {
           return tokens.every(t => textoFila.includes(t));
         });
 
-    // 3) ✅ (Fix 3) Orden: primero por FECHA (desc, parseada de forma robusta),
-    //    y dentro de la misma fecha por el CONSECUTIVO de la referencia (desc).
-    //    Del más nuevo al más antiguo.
     return filtradas.sort((a: any, b2: any) => {
       const ta = fechaOrdenOp(a.fechaServicio);
       const tb = fechaOrdenOp(b2.fechaServicio);
-      if (ta !== tb) return tb - ta; // fecha desc (más reciente arriba)
-      return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a); // consecutivo desc
+      if (ta !== tb) return tb - ta;
+      return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
   }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque]);
 
@@ -1256,7 +1226,6 @@ const OperacionesDashboard = () => {
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
-  // ✅ NUEVO (Fix 1): estilos para la barra de filtros.
   const filtroLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' };
   const filtroSelectStyle: React.CSSProperties = { padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', fontSize: '0.9rem', minWidth: '180px' };
 
@@ -1288,7 +1257,6 @@ const OperacionesDashboard = () => {
             </div>
           </div>
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
-            {/* ✅ NUEVO: Actualizar — vuelve a leer la colección "operaciones" desde Firestore */}
             <button className="btn btn-outline" onClick={actualizarOperaciones} disabled={cargandoOperaciones || cargandoMas} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: (cargandoOperaciones || cargandoMas) ? 'wait' : 'pointer' }} title="Actualizar operaciones (vuelve a leer la colección desde Firestore)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: cargandoOperaciones ? 'spin 1s linear infinite' : 'none' }}><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
               <span>{cargandoOperaciones ? 'Actualizando...' : 'Actualizar'}</span>
@@ -1304,7 +1272,6 @@ const OperacionesDashboard = () => {
           </div>
         </div>
 
-        {/* ✅ NUEVO (Fix 1): barra de filtros por Status, Unidad Roelca y Remolque */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', marginBottom: '20px', width: '100%' }}>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <label style={filtroLabelStyle}>Tipo de Operación</label>
@@ -1976,11 +1943,9 @@ const OperacionesDashboard = () => {
                       <option key={botonStr} value={botonStr}>{botonStr}</option>
                     ))
                   ) : (
-                    (catalogosGlobales.statusServicio || [])
-                      .filter((s: any) => s.nombre) 
-                      .map((s: any) => (
-                        <option key={s.id} value={s.nombre}>{s.nombre}</option>
-                      ))
+                    statusServicioOrdenado.map((s: any) => (
+                      <option key={s.id} value={s.nombre}>{s.nombre}</option>
+                    ))
                   )}
                 </select>
               </div>

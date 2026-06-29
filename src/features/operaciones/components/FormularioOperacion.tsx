@@ -329,6 +329,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [unidadesLocal, setUnidadesLocal] = useState<any[]>(catalogosCacheados?.unidades || []);
   const [empleadosLocalState, setEmpleadosLocalState] = useState<any[]>(catalogosCacheados?.empleados || []);
   const [tarifasLocal, setTarifasLocal] = useState<any[]>(catalogosCacheados?.tarifas || []);
+  const [embalajesLocal, setEmbalajesLocal] = useState<any[]>(catalogosCacheados?.embalajes || []);
   const [convClientesLocal, setConvClientesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvClientes || []);
   const [convDetallesLocal, setConvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvDetalles || []);
   const [convProvLocal, setConvProvLocal] = useState<any[]>(catalogosCacheados?.conveniosProv || []);
@@ -341,6 +342,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   useEffect(() => { setUnidadesLocal(catalogosCacheados?.unidades || []); }, [catalogosCacheados?.unidades]);
   useEffect(() => { setEmpleadosLocalState(catalogosCacheados?.empleados || []); }, [catalogosCacheados?.empleados]);
   useEffect(() => { setTarifasLocal(catalogosCacheados?.tarifas || []); }, [catalogosCacheados?.tarifas]);
+  useEffect(() => { setEmbalajesLocal(catalogosCacheados?.embalajes || []); }, [catalogosCacheados?.embalajes]);
   useEffect(() => { setConvClientesLocal(catalogosCacheados?.catalogoConvClientes || []); }, [catalogosCacheados?.catalogoConvClientes]);
   useEffect(() => { setConvDetallesLocal(catalogosCacheados?.catalogoConvDetalles || []); }, [catalogosCacheados?.catalogoConvDetalles]);
   useEffect(() => { setConvProvLocal(catalogosCacheados?.conveniosProv || []); }, [catalogosCacheados?.conveniosProv]);
@@ -354,6 +356,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       { alias: 'unidades',                 coleccion: 'unidades',                       setter: setUnidadesLocal },
       { alias: 'empleados',                coleccion: 'empleados',                      setter: setEmpleadosLocalState },
       { alias: 'tarifas',                  coleccion: 'catalogo_tarifas_referencia',    setter: setTarifasLocal },
+      { alias: 'embalajes',                coleccion: 'catalogo_embalaje',              setter: setEmbalajesLocal },
       { alias: 'catalogoConvClientes',     coleccion: 'convenios_clientes',             setter: setConvClientesLocal },
       { alias: 'catalogoConvDetalles',     coleccion: 'convenios_clientes_detalles',    setter: setConvDetallesLocal },
       { alias: 'conveniosProv',            coleccion: 'convenios_proveedores',          setter: setConvProvLocal },
@@ -410,7 +413,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const {
     tiposOperacion = [],
-    embalajes = [],
     catalogoTC = [],
     statusServicio = [],
     catalogoMoneda = [],
@@ -2053,7 +2055,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
                       <div className="form-group"><label className="form-label">Descripción de Mercancía</label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
                       <div className="form-group"><label className="form-label">Cantidad</label><input type="text" name="cantidad" className={`form-control${claseSiFalta('cantidad')}`} value={formData.cantidad || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{embalajes?.map((em:any) => <option key={em.id} value={em.id}>{em.embalaje || em.nombre || em.descripcion}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{(embalajesLocal || [])
+                        .map((em:any) => ({ id: String(em.id), texto: String(em.clave ?? em.Clave ?? em.CLAVE ?? em.embalaje ?? em.nombre ?? em.descripcion ?? em.tipo ?? '').trim() }))
+                        .filter((o:any) => o.texto !== '')
+                        .sort((a:any, b:any) => a.texto.localeCompare(b.texto, 'es', { sensitivity: 'base' }))
+                        .map((o:any) => <option key={o.id} value={o.id}>{o.texto}</option>)}</select></div>
                       <div className="form-group"><label className="form-label">Peso (Kg)</label><input type="number" name="pesoKg" className={`form-control${claseSiFalta('pesoKg')}`} value={formData.pesoKg || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
