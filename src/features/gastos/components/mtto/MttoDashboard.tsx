@@ -82,6 +82,8 @@ const MttoDashboard = () => {
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
+  // ✅ Pestaña por estatus: separa No facturados / Facturados
+  const [estatusVista, setEstatusVista] = useState<'no_facturado' | 'facturado'>('no_facturado');
 
   // Estados visuales y de acciones masivas
   const [gastosSeleccionados, setGastosSeleccionados] = useState<string[]>([]);
@@ -169,7 +171,7 @@ const MttoDashboard = () => {
   useEffect(() => {
     setPaginaActual(1);
     setGastosSeleccionados([]); 
-  }, [busqueda]);
+  }, [busqueda, estatusVista]);
 
   const handleNuevo = () => { setMttoEditando(null); setEstadoFormulario('abierto'); };
   const editarMtto = (mtto: any) => { setMttoEditando(mtto); setEstadoFormulario('abierto'); };
@@ -306,10 +308,21 @@ const MttoDashboard = () => {
     return { totalImporte, totalIva, granTotal, cantidad: gastosSeleccionados.length, numerosGasto };
   }, [gastosSeleccionados, mttoGlobales]);
 
-  const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
+  // ✅ Separación por estatus (respeta la búsqueda activa)
+  const esFacturado = (m: any) => m.estatus === 'Facturado' || (m.invoice && String(m.invoice).trim() !== '');
+  const registrosFacturados = useMemo(() => registrosFiltrados.filter(esFacturado), [registrosFiltrados]);
+  const registrosNoFacturados = useMemo(() => registrosFiltrados.filter(m => !esFacturado(m)), [registrosFiltrados]);
+  const sumaTotal = (lista: any[]) => lista.reduce((s, m) => s + (parseFloat(m.total) || 0), 0);
+  const totalFacturado = useMemo(() => sumaTotal(registrosFacturados), [registrosFacturados]);
+  const totalNoFacturado = useMemo(() => sumaTotal(registrosNoFacturados), [registrosNoFacturados]);
+
+  // Registros de la pestaña activa
+  const registrosVista = estatusVista === 'facturado' ? registrosFacturados : registrosNoFacturados;
+
+  const totalPaginas = Math.ceil(registrosVista.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const registrosEnPantalla = registrosFiltrados.slice(indicePrimerRegistro, indiceUltimoRegistro);
+  const registrosEnPantalla = registrosVista.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -462,6 +475,39 @@ const MttoDashboard = () => {
 
       {vistaActiva === 'agrupado' ? <MttoAgrupadosInvoice /> : (
         <div style={{ width: '100%', margin: '0 auto' }}>
+
+          {/* ✅ PESTAÑAS POR ESTATUS: No facturados / Facturados (con conteo y monto) */}
+          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            {([
+              { id: 'no_facturado', label: 'No facturados', count: registrosNoFacturados.length, total: totalNoFacturado, color: '#f85149' },
+              { id: 'facturado', label: 'Facturados', count: registrosFacturados.length, total: totalFacturado, color: '#3fb950' },
+            ] as const).map(t => {
+              const activo = estatusVista === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setEstatusVista(t.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '12px 18px', borderRadius: '10px', cursor: 'pointer',
+                    backgroundColor: activo ? '#161b22' : 'transparent',
+                    border: '1px solid ' + (activo ? t.color : '#30363d'),
+                    boxShadow: activo ? `inset 0 -3px 0 ${t.color}` : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: t.color, display: 'inline-block' }} />
+                    <span style={{ color: activo ? '#f0f6fc' : '#8b949e', fontWeight: activo ? 700 : 500, fontSize: '0.95rem' }}>{t.label}</span>
+                  </span>
+                  <span style={{ backgroundColor: activo ? t.color : '#21262d', color: activo ? '#fff' : '#c9d1d9', borderRadius: '999px', padding: '2px 10px', fontSize: '0.8rem', fontWeight: 700, minWidth: '24px', textAlign: 'center' }}>{t.count}</span>
+                  <span style={{ color: activo ? t.color : '#8b949e', fontSize: '0.85rem', fontWeight: 600, borderLeft: '1px solid #30363d', paddingLeft: '12px' }}>{formatoMoneda(t.total)}</span>
+                </button>
+              );
+            })}
+          </div>
+
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
             
             <div style={{ display: 'flex', gap: '12px', flex: '1 1 auto', maxWidth: '600px' }}>
@@ -607,10 +653,10 @@ const MttoDashboard = () => {
           </div>
 
           {/* CONTROLES DE PAGINACIÓN */}
-          {registrosFiltrados.length > 0 && !cargando && (
+          {registrosVista.length > 0 && !cargando && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
-                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} gastos
+                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosVista.length)} de {registrosVista.length} gastos
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button 
