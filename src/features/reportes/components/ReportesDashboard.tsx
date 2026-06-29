@@ -129,6 +129,9 @@ const MODULOS: ModuloDef[] = [
 // ✅ NUEVO: campos crudos (de la colección) que NO conviene ofrecer como columna.
 const CAMPOS_OCULTOS_SIEMPRE = new Set(['id', '_fechaISO']);
 
+// ✅ NUEVO: monedas conocidas por ID (respaldo si no están en catalogo_moneda).
+const MONEDA_FALLBACK: Record<string, string> = { '7dca62b3': 'USD', 'f95d8894': 'MXN' };
+
 // ✅ NUEVO: convierte una clave de campo ("subtotalCliente") en una etiqueta
 //   legible ("Subtotal Cliente") para mostrarla como nombre de columna.
 const prettyCampo = (k: string): string => {
@@ -205,13 +208,14 @@ export const ReportesDashboard = () => {
   const [remolquesPorId, setRemolquesPorId] = useState<Record<string, string>>({});
   const [unidadesPorId, setUnidadesPorId] = useState<Record<string, string>>({});
   const [operadoresPorId, setOperadoresPorId] = useState<Record<string, string>>({});
+  const [monedasPorId, setMonedasPorId] = useState<Record<string, string>>({});
 
   const cargarCatalogos = async () => {
     if (Object.keys(tiposPorId).length > 0 && Object.keys(empresasPorId).length > 0) {
-      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId, rem: remolquesPorId, uni: unidadesPorId, ope: operadoresPorId };
+      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId, rem: remolquesPorId, uni: unidadesPorId, ope: operadoresPorId, mon: monedasPorId };
     }
     try {
-      const [tSnap, sSnap, eSnap, cdSnap, tarSnap, remSnap, uniSnap, opSnap] = await Promise.all([
+      const [tSnap, sSnap, eSnap, cdSnap, tarSnap, remSnap, uniSnap, opSnap, monSnap] = await Promise.all([
         getDocs(collection(db, 'catalogo_tipo_operacion')),
         getDocs(collection(db, 'catalogo_status_servicio')),
         getDocs(collection(db, 'empresas')),
@@ -220,6 +224,7 @@ export const ReportesDashboard = () => {
         getDocs(collection(db, 'remolques')),
         getDocs(collection(db, 'unidades')),
         getDocs(collection(db, 'empleados')),
+        getDocs(collection(db, 'catalogo_moneda')),
       ]);
 
       const t: Record<string, string> = {};
@@ -255,6 +260,14 @@ export const ReportesDashboard = () => {
         if (txt) ope[d.id] = txt;
       });
 
+      // Moneda → "moneda" (USD/MXN…), con respaldo de IDs conocidos.
+      const mon: Record<string, string> = { ...MONEDA_FALLBACK };
+      monSnap.docs.forEach(d => {
+        const m = d.data() as any;
+        const txt = String(m.moneda || m.nombre || m.clave || m.codigo || '').trim();
+        if (txt) mon[d.id] = txt;
+      });
+
       // Mapa de tarifas (para nombrar convenios)
       const tarifas: Record<string, string> = {};
       tarSnap.docs.forEach(d => {
@@ -278,10 +291,11 @@ export const ReportesDashboard = () => {
       setRemolquesPorId(rem);
       setUnidadesPorId(uni);
       setOperadoresPorId(ope);
-      return { t, s, emp, conv, rem, uni, ope };
+      setMonedasPorId(mon);
+      return { t, s, emp, conv, rem, uni, ope, mon };
     } catch (e) {
       console.error('Error cargando catálogos de reportes:', e);
-      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId, rem: remolquesPorId, uni: unidadesPorId, ope: operadoresPorId };
+      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId, rem: remolquesPorId, uni: unidadesPorId, ope: operadoresPorId, mon: monedasPorId };
     }
   };
 
@@ -566,6 +580,7 @@ export const ReportesDashboard = () => {
       const remMap = (cat && cat.rem) || remolquesPorId;
       const uniMap = (cat && cat.uni) || unidadesPorId;
       const opeMap = (cat && cat.ope) || operadoresPorId;
+      const monMap = (cat && cat.mon) || monedasPorId;
 
       // Módulo elegido → colección + campo de fecha. Operaciones es el caso
       //   completo (resuelve tipos/estatus/nombres). Otros módulos usan el
@@ -645,6 +660,10 @@ export const ReportesDashboard = () => {
         numeroRemolque:    op => String(op.remolqueNombre || remMap[String(op.numeroRemolque || '').trim()] || (esId(op.numeroRemolque) ? '' : (op.numeroRemolque || ''))),
         unidad:            op => String(op.unidadNombre || uniMap[String(op.unidad || '').trim()] || (esId(op.unidad) ? '' : (op.unidad || ''))),
         operador:          op => String(op.operadorNombre || opeMap[String(op.operador || '').trim()] || (esId(op.operador) ? '' : (op.operador || ''))),
+        facturadoEnUnidad:    op => String(op.monedaUnidadNombre || monMap[String(op.facturadoEnUnidad || '').trim()] || (esId(op.facturadoEnUnidad) ? '' : (op.facturadoEnUnidad || ''))),
+        facturadoEnCobrar:    op => String(op.monedaCobroNombre || monMap[String(op.facturadoEnCobrar || '').trim()] || (esId(op.facturadoEnCobrar) ? '' : (op.facturadoEnCobrar || ''))),
+        monedaConvenioCliente: op => String(monMap[String(op.monedaConvenioCliente || '').trim()] || (esId(op.monedaConvenioCliente) ? '' : (op.monedaConvenioCliente || ''))),
+        monedaConvenioProv:    op => String(monMap[String(op.monedaConvenioProv || '').trim()] || (esId(op.monedaConvenioProv) ? '' : (op.monedaConvenioProv || ''))),
       };
 
       // ✅ NUEVO: lee un campo crudo y lo formatea. Prioriza NOMBRE sobre ID:
@@ -664,7 +683,7 @@ export const ReportesDashboard = () => {
         // Si el valor en sí es un ID conocido, resuélvelo a nombre.
         const sv = String(v).trim();
         if (esId(sv)) {
-          const nombre = empMap[sv] || convMap[sv] || sMap[sv] || tMap[sv] || remMap[sv] || uniMap[sv] || opeMap[sv];
+          const nombre = empMap[sv] || convMap[sv] || sMap[sv] || tMap[sv] || remMap[sv] || uniMap[sv] || opeMap[sv] || monMap[sv];
           if (nombre) return nombre;
         }
         if (/fecha/i.test(campo)) { const iso = normalizarFechaISO(v); return iso ? fmtFechaCorta(iso) : String(v); }
@@ -891,7 +910,7 @@ export const ReportesDashboard = () => {
         cell.value = col.label;
         cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF24292F' } };
-        cell.alignment = { horizontal: col.align || 'left', vertical: 'middle' };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
         cell.border = borderAll;
       });
       ws.getRow(headerRow).height = 22;
@@ -902,12 +921,11 @@ export const ReportesDashboard = () => {
         const esTotalRow = !!(vista.totalFlags && vista.totalFlags[ri]);
         const weekend = vista.weekendFlags && vista.weekendFlags[ri];
         f.forEach((v, ci) => {
-          const col = vista.columnas[ci];
           const cell = ws.getCell(r, ci + 1);
           const num = aNumeroMoneda(v);
           if (num !== null) { cell.value = num; cell.numFmt = '"$"#,##0.00'; }
           else { cell.value = (v === '' || v == null) ? null : v; }
-          cell.alignment = { horizontal: col?.align || 'left', vertical: 'middle' };
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
           cell.font = { size: 10, bold: esTotalRow, color: { argb: esTotalRow ? 'FF24292F' : 'FF1F2328' } };
           const fill = esTotalRow
             ? 'FFE8EEF7'
@@ -946,10 +964,10 @@ export const ReportesDashboard = () => {
       const weekend = vista.weekendFlags && vista.weekendFlags[i];
       const bg = esTotalRow ? '#e8eef7' : (weekend ? '#fff6e5' : (i % 2 ? '#f6f8fa' : '#ffffff'));
       const fw = esTotalRow ? '700' : '400';
-      const tds = f.map((v, j) => `<td style="padding:7px 11px;border:1px solid #d0d7de;text-align:${cols[j]?.align || 'left'};font-weight:${fw};white-space:nowrap">${v === '' || v == null ? '' : String(v)}</td>`).join('');
+      const tds = f.map((v) => `<td style="padding:7px 11px;border:1px solid #d0d7de;text-align:center;font-weight:${fw};white-space:nowrap">${v === '' || v == null ? '' : String(v)}</td>`).join('');
       return `<tr style="background:${bg}">${tds}</tr>`;
     }).join('');
-    const ths = cols.map(c => `<th style="padding:9px 11px;border:1px solid #24292f;background:#24292f;color:#fff;text-align:${c.align || 'left'};font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">${c.label}</th>`).join('');
+    const ths = cols.map(c => `<th style="padding:9px 11px;border:1px solid #24292f;background:#24292f;color:#fff;text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">${c.label}</th>`).join('');
     const resumenHtml = (vista.resumen || []).map(r =>
       `<div style="background:#fff;border:1px solid #e6eaf0;border-radius:8px;padding:8px 14px;min-width:120px">
         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#8a94a6">${r.label}</div>
