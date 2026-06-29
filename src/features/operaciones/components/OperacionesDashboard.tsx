@@ -1,13 +1,11 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
+import { FormularioOperacion } from './FormularioOperacion';
 import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
-import { DocumentosLista } from '../../documentos/DocumentosLista';
-import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 
 const ID_USD = '7dca62b3';
@@ -153,8 +151,6 @@ const OperacionesDashboard = () => {
   const [cargandoMas, setCargandoMas] = useState(false);
 
   const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'registrar' | 'historial'>('cerrado');
-  const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
-  const [mostrarSubirDocOp, setMostrarSubirDocOp] = useState(false);
   const [historialList, setHistorialList] = useState<any[]>([]);
   const [cargandoHorarios, setCargandoHorarios] = useState(false);
   const [nuevoStatus, setNuevoStatus] = useState('');
@@ -1365,13 +1361,6 @@ const OperacionesDashboard = () => {
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             </button>
-                            <button type="button" title="Ver Documentos"
-                              onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setMostrarDocumentos(true); }}
-                              style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                            </button>
                             <button type="button" title="Eliminar Operación"
                               onClick={(e) => { e.stopPropagation(); eliminarOperacion(op.id); }} 
                               style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
@@ -1467,10 +1456,6 @@ const OperacionesDashboard = () => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ ...btnSecondaryActionStyle, color: '#fb923c', borderColor: 'rgba(251, 146, 60, 0.4)' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                    Documentos
-                  </button>
                   <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
@@ -1893,47 +1878,6 @@ const OperacionesDashboard = () => {
             </div>
           </div>
         </div>
-      )}
-
-      {mostrarDocumentos && operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 1700, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(1, 4, 9, 0.7)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '900px', maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #30363d' }}>
-              <div>
-                <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.15rem' }}>Documentos de la Operación</h3>
-                <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '0.9rem' }}>{refOperacionViendo}</span>
-              </div>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <button onClick={() => setMostrarSubirDocOp(true)} style={{ ...btnSecondaryActionStyle, color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                  Subir Documento
-                </button>
-                <button onClick={() => setMostrarDocumentos(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex' }} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-              </div>
-            </div>
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-              <DocumentosLista
-                coleccionPadre="operaciones"
-                idPadre={String(operacionViendo.id)}
-                referenciaVisible={refOperacionViendo}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {operacionViendo && (
-        <DocumentoUploadModal
-          abierto={mostrarSubirDocOp}
-          onClose={() => setMostrarSubirDocOp(false)}
-          coleccionPadre="operaciones"
-          idPadre={String(operacionViendo.id)}
-          referenciaVisible={refOperacionViendo}
-          tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
-          onSubido={() => setMostrarSubirDocOp(false)}
-        />
       )}
 
       {modalHorarios === 'registrar' && operacionViendo && (
