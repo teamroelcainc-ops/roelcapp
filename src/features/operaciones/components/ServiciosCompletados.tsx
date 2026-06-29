@@ -94,6 +94,51 @@ const CACHE_PREFIX = 'roelca_completadas_';
 //   NO depende del rango de fechas ni del cliente.
 const CACHE_KEY_TODOS = CACHE_PREFIX + 'all_v3';
 
+// ✅ NUEVO: clave para PERSISTIR la configuración de columnas (orden + visibles)
+//   en localStorage, para que NO se pierda al recargar la página.
+const COLUMNAS_STORAGE_KEY = 'roelca_completadas_columnas_v1';
+
+// ✅ NUEVO: carga la configuración guardada y la reconcilia con COLUMNAS_BASE:
+//   · respeta el ORDEN y la VISIBILIDAD guardados,
+//   · si en el código se agregaron columnas nuevas (que no estaban guardadas),
+//     se añaden al final con su valor por defecto,
+//   · si una columna guardada ya no existe en el código, se descarta.
+//   Así nunca se rompe aunque el catálogo de columnas cambie en una actualización.
+const cargarColumnasGuardadas = (): typeof COLUMNAS_BASE => {
+  const base = COLUMNAS_BASE.map(c => ({ ...c }));
+  try {
+    const raw = localStorage.getItem(COLUMNAS_STORAGE_KEY);
+    if (!raw) return base;
+    const guardadas = JSON.parse(raw);
+    if (!Array.isArray(guardadas)) return base;
+
+    const basePorId = new Map(base.map(c => [c.id, c]));
+    const resultado: typeof COLUMNAS_BASE = [];
+    const yaAgregados = new Set<string>();
+
+    // 1) Primero, en el ORDEN guardado (solo las que siguen existiendo).
+    guardadas.forEach((g: any) => {
+      const def = basePorId.get(g?.id);
+      if (def && !yaAgregados.has(def.id)) {
+        resultado.push({ ...def, visible: typeof g.visible === 'boolean' ? g.visible : def.visible });
+        yaAgregados.add(def.id);
+      }
+    });
+
+    // 2) Columnas nuevas del código que no estaban guardadas: al final.
+    base.forEach(c => {
+      if (!yaAgregados.has(c.id)) {
+        resultado.push({ ...c });
+        yaAgregados.add(c.id);
+      }
+    });
+
+    return resultado;
+  } catch {
+    return base;
+  }
+};
+
 // ✅ NUEVO: normaliza CUALQUIER formato de fecha de servicio a "YYYY-MM-DD".
 //   Los registros migrados/viejos pueden guardar la fecha como Timestamp de
 //   Firestore, objeto Date, número epoch o texto "DD/MM/YYYY" / "MM/DD/YYYY".
@@ -184,7 +229,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
 
   const [modalColumnas, setModalColumnas] = useState(false);
-  const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
+  const [columnasTabla, setColumnasTabla] = useState(cargarColumnasGuardadas);
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
   // ✅ NUEVO: buscador dentro del modal "Configurar Columnas".
   const [busquedaColumnas, setBusquedaColumnas] = useState('');
@@ -196,6 +241,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: buscador autocompletado de cliente
   const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
   const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
+
+  // ✅ NUEVO: buscador autocompletado de remolque (reemplaza el desplegable)
+  const [textoBuscarRemolque, setTextoBuscarRemolque] = useState('');
+  const [mostrarSugerenciasRemolque, setMostrarSugerenciasRemolque] = useState(false);
 
   // ✅ NUEVO: editor integrado (fallback cuando NO se pasa la prop onEditar)
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
@@ -433,6 +482,17 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   }, [filterFechaInicio, filterFechaFin, filterCliente]);
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
+
+  // ✅ NUEVO: cada vez que cambian las columnas (orden o visibilidad), se guardan
+  //   en localStorage para que la configuración se mantenga al recargar la página.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        COLUMNAS_STORAGE_KEY,
+        JSON.stringify(columnasTabla.map(c => ({ id: c.id, visible: c.visible })))
+      );
+    } catch { /* almacenamiento lleno o no disponible: ignorar */ }
+  }, [columnasTabla]);
 
   useEffect(() => {
     const cargarBotones = async () => {
@@ -1117,6 +1177,25 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return cli?.nombre || filterCliente;
   }, [filterCliente, catalogosGlobales.empresas]);
 
+  // ✅ NUEVO: lista filtrada de remolques para el buscador (nombre o placa).
+  const etiquetaRemolque = (rem: any) => `${rem?.nombre || ''} ${rem?.placas || rem?.placa || ''}`.trim();
+
+  const remolquesFiltradosBuscador = useMemo(() => {
+    const lista = (catalogosGlobales.remolques || []) as any[];
+    const ordenados = [...lista].sort((a: any, b: any) =>
+      etiquetaRemolque(a).localeCompare(etiquetaRemolque(b), 'es', { sensitivity: 'base' })
+    );
+    if (!textoBuscarRemolque.trim()) return ordenados.slice(0, 30);
+    const q = textoBuscarRemolque.toLowerCase().trim();
+    return ordenados.filter((r: any) => etiquetaRemolque(r).toLowerCase().includes(q)).slice(0, 30);
+  }, [catalogosGlobales.remolques, textoBuscarRemolque]);
+
+  const nombreRemolqueSeleccionado = useMemo(() => {
+    if (!filterRemolque || !catalogosGlobales.remolques) return '';
+    const r = catalogosGlobales.remolques.find((x: any) => x.id === filterRemolque);
+    return r ? (etiquetaRemolque(r) || filterRemolque) : filterRemolque;
+  }, [filterRemolque, catalogosGlobales.remolques]);
+
   const handleDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.effectAllowed = 'move';
     setDraggedColIndex(index);
@@ -1412,14 +1491,74 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
           </div>
 
-          <div style={{ flex: '1 1 200px' }}>
+          <div style={{ flex: '1 1 240px', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE (opcional)</label>
-            <select value={filterRemolque} onChange={(e) => setFilterRemolque(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
-              <option value="">Seleccionar Remolque...</option>
-              {catalogosGlobales.remolques?.map((rem: any) => (
-                <option key={rem.id} value={rem.id}>{`${rem.nombre || ''} ${rem.placas || rem.placa || ''}`.trim()}</option>
-              ))}
-            </select>
+
+            {filterRemolque ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', minHeight: '20px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+                <span style={{ color: '#c9d1d9', fontWeight: '500', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {nombreRemolqueSeleccionado}
+                </span>
+                <button
+                  onClick={() => { setFilterRemolque(''); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
+                  title="Quitar remolque"
+                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div style={{ position: 'relative' }}>
+                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input
+                  type="text"
+                  placeholder="Buscar remolque por nombre o placa..."
+                  value={textoBuscarRemolque}
+                  onChange={(e) => { setTextoBuscarRemolque(e.target.value); setMostrarSugerenciasRemolque(true); }}
+                  onFocus={() => setMostrarSugerenciasRemolque(true)}
+                  onBlur={() => setTimeout(() => setMostrarSugerenciasRemolque(false), 180)}
+                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+
+            {!filterRemolque && mostrarSugerenciasRemolque && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0,
+                backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
+                maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px',
+                boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
+              }}>
+                {remolquesFiltradosBuscador.length === 0 ? (
+                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                    {textoBuscarRemolque.trim() ? 'Sin coincidencias' : 'No hay remolques cargados'}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                      {remolquesFiltradosBuscador.length} {remolquesFiltradosBuscador.length === 1 ? 'remolque' : 'remolques'}{textoBuscarRemolque.trim() ? '' : ' (primeros 30)'}
+                    </div>
+                    {remolquesFiltradosBuscador.map((rem: any) => (
+                      <div
+                        key={rem.id}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setFilterRemolque(rem.id);
+                          setTextoBuscarRemolque('');
+                          setMostrarSugerenciasRemolque(false);
+                        }}
+                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                        onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                        onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <div style={{ fontWeight: '500' }}>{etiquetaRemolque(rem) || rem.id}</div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ flex: '1 1 200px' }}>
