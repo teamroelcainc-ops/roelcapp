@@ -80,6 +80,50 @@ const sanitizarRutaOp = (s: string) =>
 const referenciaDeOperacion = (idOp: string, ref?: string): string =>
   (ref && String(ref).trim()) || (idOp ? String(idOp).substring(0, 6) : 'Operacion');
 
+// ✅ NUEVO: normaliza CUALQUIER formato de fecha a "YYYY-MM-DD" para que el
+//   <input type="date"> la muestre. Los registros viejos/migrados pueden guardar
+//   la fecha como Timestamp de Firestore, ISO con hora, "DD/MM/YYYY", etc. y por
+//   eso al editar el campo de fecha aparecía vacío. Devuelve '' si no se puede.
+const normalizarFechaISO = (valor: any): string => {
+  if (valor === null || valor === undefined || valor === '') return '';
+
+  if (typeof valor === 'object') {
+    try {
+      if (typeof valor.toDate === 'function') return valor.toDate().toISOString().split('T')[0];
+      if (typeof valor.seconds === 'number') return new Date(valor.seconds * 1000).toISOString().split('T')[0];
+      if (valor instanceof Date && !isNaN(valor.getTime())) return valor.toISOString().split('T')[0];
+    } catch { /* sigue abajo */ }
+  }
+
+  const s = String(valor).trim();
+  if (!s) return '';
+
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+  const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (dmy) {
+    const a = parseInt(dmy[1], 10);
+    const b = parseInt(dmy[2], 10);
+    const y = dmy[3];
+    let dd = a, mm = b;
+    if (a <= 12 && b > 12) { mm = a; dd = b; }
+    if (mm < 1 || mm > 12) return '';
+    return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  }
+
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    const d = new Date(n > 1e12 ? n : n * 1000);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+
+  return '';
+};
+
 const subirDocumentoOperacion = async (
   file: File,
   idOp: string,
@@ -746,6 +790,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (initialData && empresas && remolques) {
       const safeInitialData = {
         ...initialData,
+        // ✅ FIX EDITAR: normaliza las fechas a "YYYY-MM-DD" para que el input de
+        //   tipo date las muestre (antes aparecían vacías por venir como Timestamp,
+        //   ISO con hora o "DD/MM/YYYY").
+        fechaServicio: normalizarFechaISO(initialData.fechaServicio),
+        fechaEmisionDoda: normalizarFechaISO(initialData.fechaEmisionDoda),
         fechaCita: initialData.fechaCita || '',
         pdfsEntrys: initialData.pdfsEntrys || [],
         numeroEntrys: initialData.numeroEntrys || '', 
@@ -788,13 +837,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         return item ? item.unidad || item.nombre : id;
       };
 
+      // ✅ FIX EDITAR: el remolque puede venir guardado en distintos campos según
+      //   la antigüedad del registro. Probamos todos antes de darnos por vencidos.
+      const remIdGuardado = String(
+        initialData.numeroRemolque || initialData.remolque || initialData.remolqueId || initialData.numero_remolque || ''
+      ).trim();
+
       setSearchClientePaga(initialData.clienteNombre || getNombreEmpresa(initialData.clientePaga));
       setSearchOrigen(initialData.origenNombre || getNombreEmpresa(initialData.origen));
       setSearchDestino(initialData.destinoNombre || getNombreEmpresa(initialData.destino));
       setSearchClienteMercancia(initialData.clienteMercanciaNombre || getNombreEmpresa(initialData.clienteMercancia));
       setSearchProvServicios(initialData.provServiciosNombre || getNombreEmpresa(initialData.provServicios));
       setSearchProvTransporte(initialData.proveedorUnidadNombre || getNombreEmpresa(initialData.proveedorUnidad));
-      setSearchRemolque(initialData.remolqueNombre || getNombreRemolque(initialData.numeroRemolque)); 
+      setSearchRemolque(initialData.remolqueNombre || getNombreRemolque(remIdGuardado) || initialData.remolquePlaca || ''); 
       setSearchUnidad(initialData.unidadNombre || getNombreUnidad(initialData.unidad));
       setSearchOperador(initialData.operadorNombre || getNombreOperador(initialData.operador));
 
@@ -830,7 +885,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       }
     }
     setTipoCambioDia(tcEncontrado);
-    if(tcEncontrado && (!initialData || formData.fechaServicio !== initialData.fechaServicio)) {
+    // ✅ FIX EDITAR: compara contra la fecha inicial YA NORMALIZADA para no
+    //   sobrescribir el tipo de cambio aprobado guardado al abrir la edición.
+    const fechaInicialISO = normalizarFechaISO(initialData?.fechaServicio);
+    if(tcEncontrado && (!initialData || formData.fechaServicio !== fechaInicialISO)) {
        setFormData(prev => ({...prev, tipoCambioAprobado: tcEncontrado}));
     }
     setBuscandoTC(false);
@@ -1005,6 +1063,52 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
     return lista;
   }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas, initialData]);
+
+  // ✅ FIX EDITAR (convenio cliente): al editar, el id del convenio sí carga pero el
+  //   buscador puede quedar vacío si no se guardó "convenioNombre". Resolvemos el
+  //   texto desde la lista de convenios del cliente. No se reactiva si el usuario
+  //   lo limpia (al limpiar también se vacía formData.convenio).
+  useEffect(() => {
+    if (!initialData) return;
+    if (!formData.convenio) return;
+    if (searchConvenio && searchConvenio.trim()) return;
+    const conv = listaConveniosCliente.find((c: any) => String(c.id) === String(formData.convenio));
+    const nombre = conv?.descripcion || initialData.convenioNombre || '';
+    if (nombre) setSearchConvenio(nombre);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData, formData.convenio, searchConvenio, listaConveniosCliente]);
+
+  // ✅ FIX EDITAR (convenio proveedor): mismo criterio para el buscador del proveedor.
+  useEffect(() => {
+    if (!initialData) return;
+    if (!formData.convenioProveedor) return;
+    if (searchConvenioProveedor && searchConvenioProveedor.trim()) return;
+    const conv = listaConveniosProveedor.find((c: any) => String(c.id) === String(formData.convenioProveedor));
+    const nombre = conv?.tipoConvenioNombre || initialData.convenioProveedorNombre || '';
+    if (nombre) setSearchConvenioProveedor(nombre);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData, formData.convenioProveedor, searchConvenioProveedor, listaConveniosProveedor]);
+
+  // ✅ FIX EDITAR (# de remolque): cuando los remolques terminan de cargar, si el
+  //   buscador sigue vacío resolvemos el nombre desde el catálogo (probando varios
+  //   nombres de campo) y dejamos sincronizado formData.numeroRemolque.
+  useEffect(() => {
+    if (!initialData) return;
+    if (searchRemolque && searchRemolque.trim()) return;
+    const remId = String(
+      initialData.numeroRemolque || initialData.remolque || initialData.remolqueId || initialData.numero_remolque || ''
+    ).trim();
+    if (initialData.remolqueNombre) { setSearchRemolque(initialData.remolqueNombre); return; }
+    if (!remId) return;
+    const item = (remolques || []).find((r: any) => String(r.id) === remId);
+    if (item) {
+      setSearchRemolque(`${item.nombre || ''} ${item.placas || item.placa || ''}`.trim() || remId);
+    } else {
+      setSearchRemolque(initialData.remolquePlaca || remId);
+    }
+    if (!formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: remId }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData, remolques, searchRemolque, formData.numeroRemolque]);
 
   // ✅ NUEVO: IDs resueltos del cliente/proveedor y de su convenio MAESTRO,
   //   para poder CREAR nuevos detalles de convenio ligados correctamente.
