@@ -202,18 +202,24 @@ export const ReportesDashboard = () => {
   const [statusPorId, setStatusPorId] = useState<Record<string, string>>({});
   const [empresasPorId, setEmpresasPorId] = useState<Record<string, string>>({});
   const [convenioPorId, setConvenioPorId] = useState<Record<string, string>>({});
+  const [remolquesPorId, setRemolquesPorId] = useState<Record<string, string>>({});
+  const [unidadesPorId, setUnidadesPorId] = useState<Record<string, string>>({});
+  const [operadoresPorId, setOperadoresPorId] = useState<Record<string, string>>({});
 
   const cargarCatalogos = async () => {
     if (Object.keys(tiposPorId).length > 0 && Object.keys(empresasPorId).length > 0) {
-      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId };
+      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId, rem: remolquesPorId, uni: unidadesPorId, ope: operadoresPorId };
     }
     try {
-      const [tSnap, sSnap, eSnap, cdSnap, tarSnap] = await Promise.all([
+      const [tSnap, sSnap, eSnap, cdSnap, tarSnap, remSnap, uniSnap, opSnap] = await Promise.all([
         getDocs(collection(db, 'catalogo_tipo_operacion')),
         getDocs(collection(db, 'catalogo_status_servicio')),
         getDocs(collection(db, 'empresas')),
         getDocs(collection(db, 'convenios_clientes_detalles')),
         getDocs(collection(db, 'catalogo_tarifas_referencia')),
+        getDocs(collection(db, 'remolques')),
+        getDocs(collection(db, 'unidades')),
+        getDocs(collection(db, 'empleados')),
       ]);
 
       const t: Record<string, string> = {};
@@ -224,6 +230,30 @@ export const ReportesDashboard = () => {
 
       const emp: Record<string, string> = {};
       eSnap.docs.forEach(d => { emp[d.id] = String((d.data() as any).nombre || ''); });
+
+      // Remolque → "nombre placas" (igual que en el formulario de operación)
+      const rem: Record<string, string> = {};
+      remSnap.docs.forEach(d => {
+        const r = d.data() as any;
+        const txt = `${r.nombre || ''} ${r.placas || r.placa || ''}`.trim();
+        if (txt) rem[d.id] = txt;
+      });
+
+      // Unidad → "unidad" o "nombre"
+      const uni: Record<string, string> = {};
+      uniSnap.docs.forEach(d => {
+        const u = d.data() as any;
+        const txt = String(u.unidad || u.nombre || '').trim();
+        if (txt) uni[d.id] = txt;
+      });
+
+      // Operador (empleado) → "nombre apellido"
+      const ope: Record<string, string> = {};
+      opSnap.docs.forEach(d => {
+        const o = d.data() as any;
+        const txt = `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() || String(o.nombre || o.nombreCompleto || '').trim();
+        if (txt) ope[d.id] = txt;
+      });
 
       // Mapa de tarifas (para nombrar convenios)
       const tarifas: Record<string, string> = {};
@@ -245,10 +275,13 @@ export const ReportesDashboard = () => {
       setStatusPorId(s);
       setEmpresasPorId(emp);
       setConvenioPorId(conv);
-      return { t, s, emp, conv };
+      setRemolquesPorId(rem);
+      setUnidadesPorId(uni);
+      setOperadoresPorId(ope);
+      return { t, s, emp, conv, rem, uni, ope };
     } catch (e) {
       console.error('Error cargando catálogos de reportes:', e);
-      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId };
+      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId, rem: remolquesPorId, uni: unidadesPorId, ope: operadoresPorId };
     }
   };
 
@@ -530,6 +563,9 @@ export const ReportesDashboard = () => {
       const sMap = (cat && cat.s) || statusPorId;
       const empMap = (cat && cat.emp) || empresasPorId;
       const convMap = (cat && cat.conv) || convenioPorId;
+      const remMap = (cat && cat.rem) || remolquesPorId;
+      const uniMap = (cat && cat.uni) || unidadesPorId;
+      const opeMap = (cat && cat.ope) || operadoresPorId;
 
       // Módulo elegido → colección + campo de fecha. Operaciones es el caso
       //   completo (resuelve tipos/estatus/nombres). Otros módulos usan el
@@ -606,6 +642,9 @@ export const ReportesDashboard = () => {
         convenioProveedor: op => String(op.convenioProveedorNombre || nombreConvenio(op.convenioProveedor)),
         status:            op => statusNombreDe(op),
         tipoOperacionId:   op => tipoTextoDe(op),
+        numeroRemolque:    op => String(op.remolqueNombre || remMap[String(op.numeroRemolque || '').trim()] || (esId(op.numeroRemolque) ? '' : (op.numeroRemolque || ''))),
+        unidad:            op => String(op.unidadNombre || uniMap[String(op.unidad || '').trim()] || (esId(op.unidad) ? '' : (op.unidad || ''))),
+        operador:          op => String(op.operadorNombre || opeMap[String(op.operador || '').trim()] || (esId(op.operador) ? '' : (op.operador || ''))),
       };
 
       // ✅ NUEVO: lee un campo crudo y lo formatea. Prioriza NOMBRE sobre ID:
@@ -625,7 +664,7 @@ export const ReportesDashboard = () => {
         // Si el valor en sí es un ID conocido, resuélvelo a nombre.
         const sv = String(v).trim();
         if (esId(sv)) {
-          const nombre = empMap[sv] || convMap[sv] || sMap[sv] || tMap[sv];
+          const nombre = empMap[sv] || convMap[sv] || sMap[sv] || tMap[sv] || remMap[sv] || uniMap[sv] || opeMap[sv];
           if (nombre) return nombre;
         }
         if (/fecha/i.test(campo)) { const iso = normalizarFechaISO(v); return iso ? fmtFechaCorta(iso) : String(v); }
