@@ -10,8 +10,7 @@ import {
   doc, 
   limit,
   orderBy,
-  getDoc,
-  updateDoc
+  getDoc
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -78,7 +77,7 @@ export const ReferenciasDieselDashboard = () => {
 
   // ✅ Edición del registro completo de la referencia (modal)
   const [editandoRef, setEditandoRef] = useState<any | null>(null);
-  const [formEditRef, setFormEditRef] = useState<any>({ fecha: '', proveedorId: '', galonesExtras: '', galonesCargados: '', costoDiesel: '', observaciones: '' });
+  const [formEditRef, setFormEditRef] = useState<any>({ consecutivo: '', fecha: '', proveedorId: '', galonesExtras: '', galonesCargados: '', costoDiesel: '', observaciones: '' });
   const [guardandoEdicionRef, setGuardandoEdicionRef] = useState(false);
 
   const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
@@ -98,13 +97,9 @@ export const ReferenciasDieselDashboard = () => {
   // ──────────────────────────────────────────────────────────────────
   // ✅ PARSEO DE FECHAS A PRUEBA DE FORMATOS (corrige "Invalid Date")
   // ──────────────────────────────────────────────────────────────────
-  // Acepta: Timestamp de Firestore (toDate()/seconds), objeto Date,
-  // número (epoch), ISO "YYYY-MM-DD[...]", "DD/MM/YYYY" y "DD-MM-YYYY".
-  // Devuelve un Date local (sin corrimiento de zona horaria) o null.
   const parsearFechaSegura = (valor: any): Date | null => {
     if (valor === null || valor === undefined || valor === '') return null;
 
-    // Objeto: Timestamp de Firestore o Date
     if (typeof valor === 'object') {
       if (typeof valor.toDate === 'function') {
         const d = valor.toDate();
@@ -120,25 +115,21 @@ export const ReferenciasDieselDashboard = () => {
       return null;
     }
 
-    // Número (epoch en ms)
     if (typeof valor === 'number') {
       const d = new Date(valor);
       return isNaN(d.getTime()) ? null : d;
     }
 
-    // Texto
     if (typeof valor === 'string') {
       const s = valor.trim();
       if (!s) return null;
 
-      // ISO: YYYY-MM-DD (construimos fecha LOCAL para evitar corrimiento)
       let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
       if (m) {
         const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
         return isNaN(d.getTime()) ? null : d;
       }
 
-      // DD/MM/YYYY o DD-MM-YYYY (también admite año de 2 dígitos)
       m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
       if (m) {
         let year = Number(m[3]);
@@ -147,7 +138,6 @@ export const ReferenciasDieselDashboard = () => {
         return isNaN(d.getTime()) ? null : d;
       }
 
-      // Último recurso: dejar que el navegador lo intente
       const d = new Date(s);
       return isNaN(d.getTime()) ? null : d;
     }
@@ -198,11 +188,6 @@ export const ReferenciasDieselDashboard = () => {
   }, []);
 
   // ✅ 2. CARGA DE OPERACIONES POR UNIDAD (sin límite global)
-  // Antes se traían sólo 400 operaciones de TODA la colección y luego se
-  // filtraban en memoria, por lo que muchas operaciones de la unidad quedaban
-  // fuera. Ahora, al elegir una unidad consultamos TODAS sus operaciones.
-  // Como la unidad puede guardarse en distintos campos (unidadNombre, unidad
-  // o unidadId), consultamos los tres y unimos los resultados sin duplicar.
   useEffect(() => {
     if (activeTab !== 'operaciones' || !filtroUnidad) return;
 
@@ -273,10 +258,6 @@ export const ReferenciasDieselDashboard = () => {
     fetchCosto();
   }, [fechaForm, proveedorSeleccionado, activeTab]);
 
-  // ✅ Al abrir la Ficha de una referencia, garantizamos tener en memoria las
-  // operaciones que incluye (aunque estemos en "Historial de Referencias",
-  // donde las operaciones no se cargan de forma masiva). Así los chips de
-  // "Operaciones Incluidas" sí son clicables y abren su formulario de edición.
   useEffect(() => {
     if (!referenciaViendo || !Array.isArray(referenciaViendo.operacionesIds) || referenciaViendo.operacionesIds.length === 0) return;
     const idsFaltantes = referenciaViendo.operacionesIds.filter(
@@ -324,6 +305,44 @@ export const ReferenciasDieselDashboard = () => {
     return `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
   };
 
+  // ✅ Genera el siguiente consecutivo CONSULTANDO Firestore (no depende del
+  //    límite de 400 en memoria), para evitar números repetidos.
+  const obtenerSiguienteConsecutivo = async (fechaStr: string): Promise<string> => {
+    const [year, month, day] = fechaStr.split('-');
+    const aa = year.slice(2);
+    const prefix = `DIESEL-${day}${month}${aa}-`;
+    let maxSeq = 0;
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'referencias_diesel'),
+        where('consecutivo', '>=', prefix),
+        where('consecutivo', '<', prefix + '\uf8ff')
+      ));
+      snap.forEach(d => {
+        const parts = String((d.data() as any).consecutivo || '').split('-');
+        if (parts.length === 3) {
+          const seq = parseInt(parts[2], 10);
+          if (!isNaN(seq) && seq > maxSeq) maxSeq = seq;
+        }
+      });
+    } catch (e) {
+      return generarConsecutivo(fechaStr);
+    }
+    return `${prefix}${String(maxSeq + 1).padStart(3, '0')}`;
+  };
+
+  // ✅ ¿Ya existe ese consecutivo en otra referencia? (para impedir duplicados)
+  const existeConsecutivo = async (consecutivo: string, excluirId?: string): Promise<boolean> => {
+    const limpio = String(consecutivo || '').trim();
+    if (!limpio) return false;
+    try {
+      const snap = await getDocs(query(collection(db, 'referencias_diesel'), where('consecutivo', '==', limpio)));
+      return snap.docs.some(d => d.id !== excluirId);
+    } catch (e) {
+      return referenciasGlobales.some(r => r.consecutivo === limpio && r.id !== excluirId);
+    }
+  };
+
   const getNombreUnidad = (idOrName: string) => {
     if (!idOrName) return '-';
     const found = unidadesList.find(u => u.id === idOrName || u.unidad === idOrName || u.nombre === idOrName);
@@ -342,9 +361,6 @@ export const ReferenciasDieselDashboard = () => {
     return found ? found.nombre : idOrName;
   };
 
-  // ✅ Dirección del proveedor para el PDF de Instrucciones del Servicio.
-  // La empresa puede guardar la dirección de varias formas, así que probamos
-  // los campos más comunes (texto plano, objeto o arreglo de direcciones).
   const getDireccionProveedor = (idOrName: string): string => {
     if (!idOrName) return '';
     const found = proveedoresList.find(p => p.id === idOrName || p.nombre === idOrName);
@@ -360,10 +376,6 @@ export const ReferenciasDieselDashboard = () => {
     return '';
   };
 
-  // ✅ Resuelve el ID de un Origen/Destino a su nombre legible.
-  // Busca primero en el catálogo de lugares y, como respaldo, en empresas
-  // (por si origen/destino apuntan a una empresa/cliente). Si no lo encuentra,
-  // devuelve el valor original tal cual (puede ser un nombre ya legible).
   const getNombreLugar = (idOrName: string): string => {
     if (!idOrName) return '-';
     const fuente = lugaresList.find(l => l.id === idOrName) || proveedoresList.find(p => p.id === idOrName);
@@ -379,7 +391,6 @@ export const ReferenciasDieselDashboard = () => {
     return String(nombre);
   };
 
-  // ✅ Construye los datos para el PDF "Instrucciones del Servicio" (Diesel).
   const construirDatosInstrucciones = (r: any) => ({
     referencia: r.consecutivo || '',
     fecha: r.fecha || '',
@@ -390,20 +401,17 @@ export const ReferenciasDieselDashboard = () => {
     galonesAutorizados: r.galonesAutorizados || 0,
   });
 
-  // ✅ Genera/descarga el PDF desde la tabla (evita seleccionar la fila).
   const handleGenerarInstrucciones = (e: React.MouseEvent, r: any) => {
     e.stopPropagation();
     generarInstruccionesDieselPDF(construirDatosInstrucciones(r));
   };
 
-  // ✅ Formato de fecha en español a prueba de "Invalid Date".
   const formatearFechaSpanish = (valor: any) => {
     const d = parsearFechaSegura(valor);
     if (!d) return '-';
     return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
-  // ✅ TODAS las unidades del catálogo, sin excepción (no depende de las operaciones).
   const unidadesOptions = useMemo(() => {
     const names = unidadesList
       .map(u => String(u.unidad || u.nombre || u.numeroEconomico || '').trim())
@@ -419,11 +427,6 @@ export const ReferenciasDieselDashboard = () => {
     });
   }, [proveedoresList]);
 
-  // ──────────────────────────────────────────────────────────────────
-  // Operaciones de la unidad (base), conteo y filtro por estado
-  // ──────────────────────────────────────────────────────────────────
-  // Base: todas las que coinciden con la unidad seleccionada,
-  // estén o no asignadas a una referencia de diésel.
   const operacionesBaseUnidad = useMemo(() => {
     if (!filtroUnidad) return [];
     return operacionesGlobales.filter(op => {
@@ -432,8 +435,6 @@ export const ReferenciasDieselDashboard = () => {
     });
   }, [operacionesGlobales, filtroUnidad, unidadesList]);
 
-  // ✅ Set con TODOS los ids de operaciones que ya están dentro de alguna
-  // referencia del historial (operacionesIds).
   const idsCargadasSet = useMemo(() => {
     const s = new Set<string>();
     referenciasGlobales.forEach(r => {
@@ -442,7 +443,6 @@ export const ReferenciasDieselDashboard = () => {
     return s;
   }, [referenciasGlobales]);
 
-  // ✅ Mapa: id de operación → consecutivo de la referencia donde se cargó.
   const refDieselPorOpId = useMemo(() => {
     const m: Record<string, string> = {};
     referenciasGlobales.forEach(r => {
@@ -453,15 +453,11 @@ export const ReferenciasDieselDashboard = () => {
     return m;
   }, [referenciasGlobales]);
 
-  // Extrae el número final de un consecutivo (para ordenar por referencia).
   const consecutivoNum = (str: string) => {
     const mm = String(str || '').match(/(\d+)\s*$/);
     return mm ? parseInt(mm[1], 10) : 0;
   };
 
-  // ✅ Fecha de orden de una referencia (a prueba de formatos).
-  // Usa el campo `fecha`; si falta o es inválido, intenta extraer la fecha
-  // embebida en el consecutivo (DIESEL-DDMMYY-seq) para no romper el orden.
   const fechaOrdenRef = (r: any): string => {
     const iso = fechaISO(r.fecha);
     if (iso) return iso;
@@ -473,8 +469,6 @@ export const ReferenciasDieselDashboard = () => {
     return '';
   };
 
-  // ✅ "Cargada" = está en el historial de referencias (por id o por referenciaDieselId).
-  //    "Pendiente" = NO está en el historial.
   const esCargada = (op: any) => !!op.referenciaDieselId || idsCargadasSet.has(op.id);
 
   const conteoOps = useMemo(() => {
@@ -497,7 +491,6 @@ export const ReferenciasDieselDashboard = () => {
     }
   };
 
-  // Rango de fechas (sobre fechaServicio). Vacío = sin límite.
   const dentroRangoFecha = (op: any) => {
     if (!fechaDesdeOps && !fechaHastaOps) return true;
     const f = fechaISO(op.fechaServicio || op.createdAt);
@@ -520,7 +513,6 @@ export const ReferenciasDieselDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') cmp = (va - vb) * dir;
       else cmp = String(va).localeCompare(String(vb)) * dir;
       if (cmp !== 0) return cmp;
-      // ✅ Desempate: por número de referencia de la operación, del más nuevo al más viejo.
       return consecutivoNum(b.ref) - consecutivoNum(a.ref);
     });
   }, [operacionesBaseUnidad, filtroUnidad, filtroEstadoOps, ordenOps, fechaDesdeOps, fechaHastaOps, idsCargadasSet, lugaresList, proveedoresList]);
@@ -530,7 +522,6 @@ export const ReferenciasDieselDashboard = () => {
 
   const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
-  // Valor textual/numérico de cada columna (para el Excel)
   const valorCeldaOps = (op: any, key: string) => {
     switch (key) {
       case 'ref': return op.ref || op.id;
@@ -545,7 +536,6 @@ export const ReferenciasDieselDashboard = () => {
     }
   };
 
-  // Celda con formato visual para la tabla
   const renderCeldaOps = (op: any, key: string) => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
@@ -564,7 +554,6 @@ export const ReferenciasDieselDashboard = () => {
     }
   };
 
-  // Drag & drop / visibilidad de columnas de la tabla de operaciones
   const handleDragStartOps = (_e: React.DragEvent, index: number) => setDraggedColOpsIndex(index);
   const handleDragEnterOps = (index: number) => {
     if (draggedColOpsIndex === null || draggedColOpsIndex === index) return;
@@ -580,8 +569,6 @@ export const ReferenciasDieselDashboard = () => {
     setColumnasOps(nuevas);
   };
 
-  // Exportar a Excel las operaciones mostradas (respeta unidad,
-  // estado, rango de fechas y columnas/orden configurados).
   const exportarExcelOps = () => {
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
     const cols = columnasOps.filter(c => c.visible);
@@ -604,7 +591,6 @@ export const ReferenciasDieselDashboard = () => {
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
-  // ── Seleccionar todo / quitar todo (solo en Pendientes) ──
   const idsMostradas = useMemo(() => operacionesMostradas.map(o => o.id), [operacionesMostradas]);
   const todasSeleccionadas = operacionesMostradas.length > 0 && idsMostradas.every(id => seleccionadas.includes(id));
   const toggleSeleccionarTodas = () => {
@@ -629,7 +615,6 @@ export const ReferenciasDieselDashboard = () => {
     return { dieselTotal, refs };
   }, [seleccionadas, operacionesGlobales]);
 
-  // Operador(es) derivados de las operaciones seleccionadas (ya no hay filtro de operador)
   const operadoresSeleccionados = useMemo(() => {
     const set = new Set<string>();
     seleccionadas.forEach(id => {
@@ -642,15 +627,12 @@ export const ReferenciasDieselDashboard = () => {
     return Array.from(set);
   }, [seleccionadas, operacionesGlobales, operadoresList]);
 
-  // ✅ GALONES CALCULADOS = EXACTAMENTE LA SUMA DE COMBUSTIBLE DE LAS OPERACIONES (No dividido)
   const galonesCalculadosOp = resumenSeleccion.dieselTotal;
 
-  // ✅ GALONES AUTORIZADOS (NO editable) = galones cargados de las operaciones + galones extras
   const galonesAutorizadosCalc = useMemo(() => {
     return galonesCalculadosOp + (Number(galonesExtras) || 0);
   }, [galonesCalculadosOp, galonesExtras]);
 
-  // ✅ CÁLCULO DINÁMICO DEL STATUS
   const statusReferenciaForm = useMemo(() => {
     const extraVacio = galonesExtras === '' || galonesExtras === 0 || isNaN(galonesExtras as number);
     const cargVacio = galonesCargados === '' || galonesCargados === 0 || isNaN(galonesCargados as number);
@@ -667,11 +649,20 @@ export const ReferenciasDieselDashboard = () => {
     try {
       const batch = writeBatch(db);
       const nuevoRefId = doc(collection(db, 'referencias_diesel')).id;
-      const consecutivoFinal = generarConsecutivo(fechaForm);
+
+      // ✅ Consecutivo ÚNICO: se calcula consultando Firestore y se verifica que
+      //    no exista; si por una carrera ya estuviera tomado, avanza el número.
+      let consecutivoFinal = await obtenerSiguienteConsecutivo(fechaForm);
+      let intentos = 0;
+      while ((await existeConsecutivo(consecutivoFinal)) && intentos < 25) {
+        const partes = consecutivoFinal.split('-');
+        const next = (parseInt(partes[2], 10) || 0) + 1;
+        consecutivoFinal = `${partes[0]}-${partes[1]}-${String(next).padStart(3, '0')}`;
+        intentos++;
+      }
 
       const foundUni = unidadesList.find(u => u.unidad === filtroUnidad || u.nombre === filtroUnidad);
 
-      // Operador derivado de las operaciones seleccionadas
       const operadorRef = operadoresSeleccionados.length === 1
         ? operadoresSeleccionados[0]
         : (operadoresSeleccionados.length > 1 ? 'Varios' : '');
@@ -688,9 +679,9 @@ export const ReferenciasDieselDashboard = () => {
         operadorNombre: operadorRef, 
         operacionesIds: seleccionadas,
         sumaDiesel: resumenSeleccion.dieselTotal,
-        galonesCalculadosOperaciones: galonesCalculadosOp, // Guardamos la suma directa
+        galonesCalculadosOperaciones: galonesCalculadosOp,
         galonesExtras: Number(galonesExtras) || 0,
-        galonesAutorizados: galonesAutorizadosCalc, // NO editable: operaciones + extras
+        galonesAutorizados: galonesAutorizadosCalc,
         galonesCargados: Number(galonesCargados),
         proveedorId: proveedorSeleccionado,
         proveedorNombre: getNombreProveedor(proveedorSeleccionado),
@@ -708,14 +699,12 @@ export const ReferenciasDieselDashboard = () => {
       });
 
       await batch.commit();
-      // Marcar localmente como cargadas para que salgan de "Pendientes"
       setOperacionesGlobales(prev => prev.map(op =>
         seleccionadas.includes(op.id) ? { ...op, referenciaDieselId: nuevoRefId, referenciaDieselConsecutivo: consecutivoFinal } : op
       ));
       setModalAbierto(false);
       setSeleccionadas([]);
       
-      // Limpiamos los campos
       setGalonesExtras('');
       setGalonesCargados('');
       setObservacionesForm('');
@@ -745,7 +734,6 @@ export const ReferenciasDieselDashboard = () => {
           });
         }
         await batch.commit();
-        // liberar localmente (vuelven a Pendientes)
         const idsLiberadas: string[] = Array.isArray(refData.operacionesIds) ? refData.operacionesIds : [];
         setOperacionesGlobales(prev => prev.map(op =>
           idsLiberadas.includes(op.id) ? { ...op, referenciaDieselId: null, referenciaDieselConsecutivo: null } : op
@@ -773,12 +761,10 @@ export const ReferenciasDieselDashboard = () => {
 
       const diferencia = combustibleNuevo - combustibleViejo;
       const nuevaSumaReferencia = Number(referenciaViendo.sumaDiesel || 0) + diferencia;
-      // Recalcular galones autorizados = nueva suma de operaciones + extras guardados
       const extrasGuardados = Number(referenciaViendo.galonesExtras || 0);
       const nuevosAutorizados = nuevaSumaReferencia + extrasGuardados;
       const nuevoTotalAutorizado = nuevosAutorizados * Number(referenciaViendo.costoDiesel || 0);
 
-      // Actualiza en base de datos la suma original, el cálculo y los autorizados
       batch.update(doc(db, 'referencias_diesel', referenciaViendo.id), {
         sumaDiesel: nuevaSumaReferencia,
         galonesCalculadosOperaciones: nuevaSumaReferencia,
@@ -788,7 +774,6 @@ export const ReferenciasDieselDashboard = () => {
 
       await batch.commit();
 
-      // Reflejar el nuevo combustible en memoria para que el chip se actualice.
       setOperacionesGlobales(prev => prev.map(o =>
         o.id === operacionAEditar.id ? { ...o, combustibleTotal: combustibleNuevo } : o
       ));
@@ -813,6 +798,7 @@ export const ReferenciasDieselDashboard = () => {
   // ✅ Abre el modal de edición precargando los datos de la referencia.
   const abrirEdicionRef = (r: any) => {
     setFormEditRef({
+      consecutivo: r.consecutivo || '',
       fecha: r.fecha || '',
       proveedorId: r.proveedorId || '',
       operadorId: r.operadorId || (r.operadorNombre ? '__actual__' : ''),
@@ -824,26 +810,38 @@ export const ReferenciasDieselDashboard = () => {
     setEditandoRef(r);
   };
 
-  // ✅ Guarda los cambios del registro y recalcula autorizados/totales/status.
+  // ✅ Guarda los cambios del registro: valida consecutivo único, recalcula
+  //    autorizados/totales/status y sincroniza el consecutivo en las operaciones.
   const handleGuardarEdicionRef = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editandoRef) return;
+
+    const nuevoConsecutivo = String(formEditRef.consecutivo || '').trim();
+    if (!nuevoConsecutivo) { alert('El número de referencia no puede quedar vacío.'); return; }
+
     setGuardandoEdicionRef(true);
     try {
+      const cambioConsecutivo = nuevoConsecutivo !== editandoRef.consecutivo;
+
+      // ✅ Unicidad: ninguna otra referencia puede tener el mismo consecutivo.
+      if (cambioConsecutivo && (await existeConsecutivo(nuevoConsecutivo, editandoRef.id))) {
+        alert(`El número de referencia "${nuevoConsecutivo}" ya existe. Usa uno diferente.`);
+        setGuardandoEdicionRef(false);
+        return;
+      }
+
       const sumaDiesel = Number(editandoRef.sumaDiesel || 0);
       const extras = Number(formEditRef.galonesExtras) || 0;
       const cargados = Number(formEditRef.galonesCargados) || 0;
       const costo = Number(formEditRef.costoDiesel) || 0;
       const autorizados = sumaDiesel + extras;
 
-      // Mismo criterio que al crear la referencia.
       const extraVacio = !extras;
       const cargVacio = !cargados;
       let status = 'Cargado';
       if (extraVacio && cargVacio) status = 'No Autorizado';
       else if (!extraVacio && cargVacio) status = 'Autorizado';
 
-      // Operador: '' = sin asignar, '__actual__' = conservar el actual, o un id de empleado.
       let operadorIdFinal: string | null;
       let operadorNombreFinal: string;
       if (formEditRef.operadorId === '__actual__') {
@@ -859,6 +857,7 @@ export const ReferenciasDieselDashboard = () => {
       }
 
       const updates: any = {
+        consecutivo: nuevoConsecutivo,
         fecha: formEditRef.fecha,
         proveedorId: formEditRef.proveedorId,
         proveedorNombre: getNombreProveedor(formEditRef.proveedorId),
@@ -874,11 +873,23 @@ export const ReferenciasDieselDashboard = () => {
         status
       };
 
-      await updateDoc(doc(db, 'referencias_diesel', editandoRef.id), updates);
+      // ✅ Batch: actualiza la referencia y, si cambió el consecutivo, sincroniza
+      //    el campo referenciaDieselConsecutivo en las operaciones ligadas.
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'referencias_diesel', editandoRef.id), updates);
+      if (cambioConsecutivo && Array.isArray(editandoRef.operacionesIds)) {
+        editandoRef.operacionesIds.forEach((opId: string) => {
+          batch.update(doc(db, 'operaciones', opId), { referenciaDieselConsecutivo: nuevoConsecutivo });
+        });
+      }
+      await batch.commit();
 
-      // Reflejar en memoria (lista + ficha abierta).
       setReferenciasGlobales((prev: any[]) => prev.map((r: any) => r.id === editandoRef.id ? { ...r, ...updates } : r));
       setReferenciaViendo((prev: any) => (prev && prev.id === editandoRef.id) ? { ...prev, ...updates } : prev);
+      if (cambioConsecutivo && Array.isArray(editandoRef.operacionesIds)) {
+        const idsSet = new Set(editandoRef.operacionesIds);
+        setOperacionesGlobales(prev => prev.map(o => idsSet.has(o.id) ? { ...o, referenciaDieselConsecutivo: nuevoConsecutivo } : o));
+      }
       setEditandoRef(null);
     } catch (error) {
       console.error('Error al editar la referencia:', error);
@@ -902,9 +913,6 @@ export const ReferenciasDieselDashboard = () => {
         (r.status || '').toLowerCase().includes(t)
       );
     });
-    // ✅ Orden: fecha (desc) y luego consecutivo (desc). Del más nuevo al más viejo.
-    // La fecha se normaliza a ISO para que el orden sea correcto aunque venga
-    // en formatos distintos (ISO, DD/MM/YYYY) o falte (se usa el consecutivo).
     return [...lista].sort((a, b) => {
       const fa = fechaOrdenRef(a);
       const fb = fechaOrdenRef(b);
@@ -913,14 +921,19 @@ export const ReferenciasDieselDashboard = () => {
     });
   }, [referenciasGlobales, busquedaRef, unidadesList, operadoresList, proveedoresList]);
 
+  // ✅ Resumen del historial: separa lo AUTORIZADO de lo CARGADO (galones y $).
   const resumenHistorial = useMemo(() => {
-    let totalGalones = 0;
+    let totalGalones = 0;             // cargados
     let granTotalCargado = 0;
+    let totalGalonesAutorizados = 0;
+    let granTotalAutorizado = 0;
     referenciasFiltradas.forEach(r => {
       totalGalones += Number(r.galonesCargados) || 0;
       granTotalCargado += Number(r.totalCargado) || 0;
+      totalGalonesAutorizados += Number(r.galonesAutorizados) || 0;
+      granTotalAutorizado += Number(r.totalAutorizado) || 0;
     });
-    return { totalGalones, granTotalCargado };
+    return { totalGalones, granTotalCargado, totalGalonesAutorizados, granTotalAutorizado };
   }, [referenciasFiltradas]);
 
   const totalPaginas = Math.ceil(referenciasFiltradas.length / registrosPorPagina);
@@ -1018,7 +1031,6 @@ export const ReferenciasDieselDashboard = () => {
                   ● Cargadas ({conteoOps.cargadas})
                 </button>
 
-                {/* ✅ Botón Seleccionar todo / Quitar todo (solo en Pendientes) */}
                 {filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
                   <button onClick={toggleSeleccionarTodas}
                     style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
@@ -1175,20 +1187,33 @@ export const ReferenciasDieselDashboard = () => {
             </button>
           </div>
 
+          {/* ✅ RESUMEN: separa lo AUTORIZADO de lo CARGADO (galones y $) */}
           {referenciasFiltradas.length > 0 && (
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '16px' }}>
                 <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Referencias Listadas</span>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Referencias Listadas</span>
                   <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{referenciasFiltradas.length}</span>
                 </div>
+
+                {/* AUTORIZADO */}
                 <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Galones Cargados</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenHistorial.totalGalones.toFixed(2)}</span>
+                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Galones Autorizados</span>
+                  <span style={{ color: '#f59e0b', fontSize: '1.6rem', fontWeight: 'bold' }}>{resumenHistorial.totalGalonesAutorizados.toFixed(2)}</span>
+                </div>
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Autorizado</span>
+                  <span style={{ color: '#f0f6fc', fontSize: '1.6rem', fontWeight: 'bold' }}>{formatoMoneda(resumenHistorial.granTotalAutorizado)}</span>
+                </div>
+
+                {/* CARGADO */}
+                <div style={{ borderRight: '1px solid #30363d' }}>
+                  <span style={{ display: 'block', color: '#10b981', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Galones Cargados</span>
+                  <span style={{ color: '#10b981', fontSize: '1.6rem', fontWeight: 'bold' }}>{resumenHistorial.totalGalones.toFixed(2)}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Gran Total (Costo Diesel)</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenHistorial.granTotalCargado)}</span>
+                  <span style={{ display: 'block', color: '#10b981', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Cargado</span>
+                  <span style={{ color: '#3fb950', fontSize: '1.6rem', fontWeight: 'bold' }}>{formatoMoneda(resumenHistorial.granTotalCargado)}</span>
                 </div>
               </div>
             </div>
@@ -1204,14 +1229,16 @@ export const ReferenciasDieselDashboard = () => {
                   <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>UNIDAD</th>
                   <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>OPERADOR</th>
                   <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>PROVEEDOR</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>GALONES</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>TOTAL</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap', color: '#f59e0b' }}>GAL. AUTORIZADOS</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap', color: '#10b981' }}>GAL. CARGADOS</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap', color: '#f59e0b' }}>TOTAL AUTORIZADO</th>
+                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap', color: '#10b981' }}>TOTAL CARGADO</th>
                   <th style={{ padding: '16px', borderBottom: '1px solid #30363d', backgroundColor: '#1f2937', whiteSpace: 'nowrap' }}>OBSERVACIONES</th>
                 </tr>
               </thead>
               <tbody>
                 {registrosVisibles.length === 0 ? (
-                  <tr><td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay referencias registradas.</td></tr>
+                  <tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay referencias registradas.</td></tr>
                 ) : (
                   registrosVisibles.map(r => (
                     <tr key={r.id} style={{ borderBottom: '1px solid #21262d' }}>
@@ -1262,7 +1289,9 @@ export const ReferenciasDieselDashboard = () => {
                       <td style={{ padding: '16px', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{getNombreUnidad(r.unidadNombre || r.unidadId || r.unidad)}</td>
                       <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{getNombreOperador(r.operadorNombre || r.operadorId || r.operador)}</td>
                       <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{getNombreProveedor(r.proveedorNombre || r.proveedorId || r.proveedor)}</td>
-                      <td style={{ padding: '16px', color: '#58a6ff', whiteSpace: 'nowrap' }}>{r.galonesCargados} Gal.</td>
+                      <td style={{ padding: '16px', color: '#f59e0b', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{Number(r.galonesAutorizados || 0).toFixed(2)} Gal.</td>
+                      <td style={{ padding: '16px', color: '#10b981', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{Number(r.galonesCargados || 0).toFixed(2)} Gal.</td>
+                      <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(r.totalAutorizado)}</td>
                       <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(r.totalCargado)}</td>
                       <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{r.observaciones || '-'}</td>
                     </tr>
@@ -1316,7 +1345,6 @@ export const ReferenciasDieselDashboard = () => {
               <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
 
-            {/* ✅ SECCIÓN DE ESTATUS Y GALONES CALCULADOS */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', marginBottom: '20px' }}>
               <div>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Status de la Referencia</span>
@@ -1360,7 +1388,6 @@ export const ReferenciasDieselDashboard = () => {
                   <input type="number" step="0.01" value={galonesCargados} onChange={e => setGalonesCargados(e.target.valueAsNumber || '')} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
                 </div>
 
-                {/* ✅ GALONES AUTORIZADOS (no editable) = Operaciones + Extras */}
                 <div style={{ gridColumn: 'span 2', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Galones Autorizados (no editable)</span>
@@ -1531,6 +1558,20 @@ export const ReferenciasDieselDashboard = () => {
 
             <form onSubmit={handleGuardarEdicionRef}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
+
+                {/* ✅ NÚMERO DE REFERENCIA EDITABLE (debe ser único) */}
+                <div style={{ gridColumn: 'span 2' }}>
+                  <label style={{ color: '#D84315', fontSize: '0.75rem', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>NÚMERO DE REFERENCIA (CONSECUTIVO)</label>
+                  <input
+                    type="text"
+                    value={formEditRef.consecutivo}
+                    onChange={e => setFormEditRef({ ...formEditRef, consecutivo: e.target.value })}
+                    placeholder="Ej: DIESEL-260626-001"
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #D84315', borderRadius: '6px', fontFamily: 'monospace', fontWeight: 'bold', boxSizing: 'border-box' }}
+                  />
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '4px' }}>Debe ser único. Si lo cambias, se actualizará también en las operaciones ligadas.</span>
+                </div>
+
                 <div>
                   <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FECHA</label>
                   <input type="date" value={formEditRef.fecha} onChange={e => setFormEditRef({ ...formEditRef, fecha: e.target.value })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px', colorScheme: 'dark' }} />
