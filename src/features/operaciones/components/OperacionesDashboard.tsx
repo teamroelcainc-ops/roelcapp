@@ -595,6 +595,17 @@ const OperacionesDashboard = () => {
     return 'N/A';
   };
 
+  // ✅ Detecta si la operación es Logística o Fletes (para vaciar unidad/operador
+  //    en los documentos: en esos casos los asigna el proveedor externo).
+  const esLogisticaOFletesActual = (): boolean => {
+    const t = String(
+      operacionViendo?.tipoOperacionNombre ||
+      mostrarDatoMapeado(operacionViendo?.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo?.tipoOperacionNombre) ||
+      ''
+    ).toLowerCase();
+    return t.includes('logistica') || t.includes('logística') || t.includes('flete');
+  };
+
   const abrirRegistroHorario = () => {
     const now = new Date();
     const tzOffset = now.getTimezoneOffset() * 60000;
@@ -798,14 +809,22 @@ const OperacionesDashboard = () => {
     const unidadRes = resolverUnidadParaPDF();
     const operadorRes = resolverOperadorParaPDF();
 
+    // ✅ CAMBIO 1: si la operación es Logística o Fletes, la Unidad y el Operador
+    //    van VACÍOS en el documento (los asigna el proveedor externo).
+    const esLogFlete = esLogisticaOFletesActual();
+
+    // ✅ CAMBIO 2: en el campo "Tipo de Operación" del documento va el CONVENIO
+    //    (tarifa del cliente), no el tipo de operación como tal.
+    const convenioCliente = obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre);
+
     generarInstruccionesServicioPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'N/A',
       fecha: operacionViendo.fechaServicio || '',
-      unidadNombre: unidadRes.nombre,
-      empleadoNombre: operadorRes,
+      unidadNombre: esLogFlete ? '' : unidadRes.nombre,
+      empleadoNombre: esLogFlete ? '' : operadorRes,
       remolqueNombre: remolqueRes.nombre,
       remolquePlacas: remolqueRes.placa,
-      tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
+      tipoOperacion: (convenioCliente && convenioCliente !== '-') ? convenioCliente : '',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: origenObj ? origenObj.direccion : 'N/A',
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
@@ -1877,32 +1896,29 @@ const OperacionesDashboard = () => {
       )}
 
       {mostrarDocumentos && operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 2100 }}>
-          <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="modal-overlay" style={{ zIndex: 1700, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(1, 4, 9, 0.7)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '900px', maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #30363d' }}>
               <div>
-                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Documentos de la Operación</h2>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#8b949e' }}>
-                  Referencia: <span style={{ color: '#fb923c', fontWeight: 600 }}>{refOperacionViendo}</span>
-                </p>
+                <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.15rem' }}>Documentos de la Operación</h3>
+                <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '0.9rem' }}>{refOperacionViendo}</span>
               </div>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <button
-                  type="button"
-                  onClick={() => setMostrarSubirDocOp(true)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <button onClick={() => setMostrarSubirDocOp(true)} style={{ ...btnSecondaryActionStyle, color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.4)' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                   Subir Documento
                 </button>
-                <button onClick={() => setMostrarDocumentos(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1 }} title="Cerrar">✕</button>
+                <button onClick={() => setMostrarDocumentos(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex' }} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
               </div>
             </div>
-            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-              <DocumentosLista coleccionOrigen="operaciones" registroId={operacionViendo.id} />
-            </div>
-            <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', textAlign: 'right', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar</button>
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+              <DocumentosLista
+                coleccionPadre="operaciones"
+                idPadre={String(operacionViendo.id)}
+                referenciaVisible={refOperacionViendo}
+              />
             </div>
           </div>
         </div>
@@ -1910,88 +1926,85 @@ const OperacionesDashboard = () => {
 
       {operacionViendo && (
         <DocumentoUploadModal
-          isOpen={mostrarSubirDocOp && !!operacionViendo}
+          abierto={mostrarSubirDocOp}
           onClose={() => setMostrarSubirDocOp(false)}
-          coleccionOrigen="operaciones"
-          registroId={operacionViendo.id}
-          registroNombre={refOperacionViendo}
+          coleccionPadre="operaciones"
+          idPadre={String(operacionViendo.id)}
+          referenciaVisible={refOperacionViendo}
           tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
+          onSubido={() => setMostrarSubirDocOp(false)}
         />
       )}
 
-      {modalHorarios === 'registrar' && (
-        <div className="modal-overlay" style={{ zIndex: 2000 }}>
-          <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '20px 24px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f0f6fc' }}>Registrar Movimiento (Fecha Personalizada)</h2>
-              <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
+      {modalHorarios === 'registrar' && operacionViendo && (
+        <div className="modal-overlay" style={{ zIndex: 1600, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(1, 4, 9, 0.7)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '480px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Registrar Movimiento</h3>
+              <button onClick={() => setModalHorarios('cerrado')} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-            <div style={{ padding: '24px' }}>
-              <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
-                Usa este formulario solo si necesitas registrar un movimiento con una fecha y hora distinta a la actual.
-              </p>
-              <div className="form-group">
-                <label className="form-label" style={{ color: '#8b949e' }}>Fecha y Hora</label>
-                <input type="datetime-local" className="form-control" value={nuevaFechaHora} onChange={e => setNuevaFechaHora(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label className="form-label" style={{ color: '#8b949e' }}>Estatus / Hito</label>
-                <select className="form-control" value={nuevoStatus} onChange={e => setNuevoStatus(e.target.value)}>
-                  <option value="">-- Selecciona un status --</option>
-                  {botonesDisponibles.length > 0 ? (
-                    botonesDisponibles.map((botonStr: string) => (
-                      <option key={botonStr} value={botonStr}>{botonStr}</option>
-                    ))
-                  ) : (
-                    statusServicioOrdenado.map((s: any) => (
-                      <option key={s.id} value={s.nombre}>{s.nombre}</option>
-                    ))
-                  )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', color: '#8b949e', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Estatus</label>
+                <select value={nuevoStatus} onChange={(e) => setNuevoStatus(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }}>
+                  <option value="">Selecciona un estatus...</option>
+                  {(statusServicioOrdenado.length > 0
+                    ? statusServicioOrdenado.map((s: any) => String(s.nombre))
+                    : botonesDisponibles
+                  ).map((nombre: string) => (
+                    <option key={nombre} value={nombre}>{nombre}</option>
+                  ))}
                 </select>
               </div>
-              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary" style={{ width: '100%', marginTop: '24px', padding: '12px', borderRadius: '6px', fontWeight: 'bold' }}>
-                {cargandoHorarios ? 'Actualizando...' : 'Guardar y Actualizar Operación'}
+              <div>
+                <label style={{ display: 'block', color: '#8b949e', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Fecha y Hora</label>
+                <input type="datetime-local" value={nuevaFechaHora} onChange={(e) => setNuevaFechaHora(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box', colorScheme: 'dark' }} />
+              </div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline" style={{ padding: '10px 20px', borderRadius: '6px' }}>Cancelar</button>
+              <button onClick={guardarHorario} disabled={cargandoHorarios} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: cargandoHorarios ? 'wait' : 'pointer', fontWeight: 'bold' }}>
+                {cargandoHorarios ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {modalHorarios === 'historial' && (
-        <div className="modal-overlay" style={{ zIndex: 2000 }}>
-          <div className="form-card" style={{ maxWidth: '650px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '20px 24px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f0f6fc' }}>Bitácora de Movimientos</h2>
-              <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
+      {modalHorarios === 'historial' && operacionViendo && (
+        <div className="modal-overlay" style={{ zIndex: 1600, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(1, 4, 9, 0.7)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '560px', maxWidth: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #30363d' }}>
+              <div>
+                <h3 style={{ margin: 0, color: '#f0f6fc' }}>Bitácora de la Operación</h3>
+                <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '0.9rem' }}>{refOperacionViendo}</span>
+              </div>
+              <button onClick={() => setModalHorarios('cerrado')} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-            <div style={{ padding: '24px', maxHeight: '60vh', overflowY: 'auto' }}>
+            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
               {cargandoHorarios ? (
-                <div style={{ textAlign: 'center', color: '#8b949e', padding: '20px' }}>Descargando historial...</div>
+                <div style={{ textAlign: 'center', color: '#8b949e', padding: '40px' }}>Cargando bitácora...</div>
+              ) : historialList.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#8b949e', padding: '40px' }}>No hay movimientos registrados.</div>
               ) : (
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ backgroundColor: '#161b22', color: '#8b949e' }}>
-                    <tr>
-                      <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #30363d' }}>Fecha y Hora</th>
-                      <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #30363d' }}>Estatus Marcado</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historialList.length === 0 ? (
-                      <tr><td colSpan={2} style={{ textAlign: 'center', padding: '20px', color: '#8b949e' }}>Sin movimientos registrados.</td></tr>
-                    ) : (
-                      historialList.map((h: any) => (
-                        <tr key={h.id} style={{ borderBottom: '1px solid #21262d' }}>
-                          <td style={{ padding: '16px 12px', color: '#c9d1d9' }}>{new Date(h.fechaHora).toLocaleString('es-MX')}</td>
-                          <td style={{ padding: '16px 12px', color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre', h.statusNombre)}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {historialList.map((h: any) => (
+                    <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px' }}>
+                      <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: h.esAutomatico ? '#8b949e' : '#10b981', flexShrink: 0 }}></div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                          {h.statusNombre || resolverStatus(h.status).nombre || h.status}
+                          {h.esAutomatico && <span style={{ marginLeft: 8, color: '#8b949e', fontSize: '0.75rem', fontWeight: 'normal', fontStyle: 'italic' }}>(automático)</span>}
+                        </div>
+                        <div style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: '2px' }}>{formatearFechaHora(h.fechaHora)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', textAlign: 'right', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar Historial</button>
+            <div style={{ padding: '12px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
+              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar</button>
             </div>
           </div>
         </div>
@@ -1999,24 +2012,11 @@ const OperacionesDashboard = () => {
 
       <style>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes pop {
-          0%   { transform: scale(0); opacity: 0; }
-          60%  { transform: scale(1.3); opacity: 1; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-        .status-pill { transform: translateY(0); }
-        .status-pill:not(:disabled):hover {
-          transform: translateY(-2px);
-          filter: brightness(1.08);
-          box-shadow: 0 8px 20px rgba(234, 88, 12, 0.5) !important;
-        }
-        .status-pill:not(:disabled):active { transform: translateY(0); filter: brightness(0.95); }
-        .status-circle-btn:hover {
-          background: #30363d !important;
-          color: #ea580c !important;
-          border-color: #ea580c !important;
-          transform: scale(1.08);
-        }
+        @keyframes pop { 0% { transform: scale(0); } 70% { transform: scale(1.2); } 100% { transform: scale(1); } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .status-pill:hover { transform: translateY(-1px); filter: brightness(1.08); }
+        .status-pill:active { transform: translateY(0); }
+        .status-circle-btn:hover { background: #30363d !important; color: #f0f6fc !important; border-color: #484f58 !important; }
       `}</style>
     </div>
   );
