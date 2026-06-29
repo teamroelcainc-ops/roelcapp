@@ -1,6 +1,6 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch } from 'firebase/firestore';
+import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, startAfter } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
@@ -20,8 +20,39 @@ const ID_MXN = 'f95d8894';
 const STATUS_CANCELADO_ID = '7607f692';
 // ID del tipo de empresa "Cliente (Paga)" para el buscador de clientes
 const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
-// Tamaño de la consulta a Firestore por rango de fechas
+// Tamaño de cada página al traer las canceladas por cursor
 const TAMANIO_PAGINA = 150;
+
+// ✅ NUEVO: normaliza CUALQUIER formato de fecha a "YYYY-MM-DD" para poder filtrar
+//   por rango en memoria sin importar si el registro guardó Timestamp, ISO con hora
+//   o "DD/MM/YYYY". Devuelve '' si no se puede interpretar.
+const normalizarFechaISO = (valor: any): string => {
+  if (valor === null || valor === undefined || valor === '') return '';
+  if (typeof valor === 'object') {
+    try {
+      if (typeof valor.toDate === 'function') return valor.toDate().toISOString().split('T')[0];
+      if (typeof valor.seconds === 'number') return new Date(valor.seconds * 1000).toISOString().split('T')[0];
+      if (valor instanceof Date && !isNaN(valor.getTime())) return valor.toISOString().split('T')[0];
+    } catch { /* sigue abajo */ }
+  }
+  const s = String(valor).trim();
+  if (!s) return '';
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (dmy) {
+    const a = parseInt(dmy[1], 10);
+    const b = parseInt(dmy[2], 10);
+    const y = dmy[3];
+    let dd = a, mm = b;
+    if (a <= 12 && b > 12) { mm = a; dd = b; }
+    if (mm < 1 || mm > 12) return '';
+    return `${y}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  return '';
+};
 
 const ServiciosCancelados = () => {
   // ✅ NUEVO: logo de la empresa para los PDFs generados desde este módulo
@@ -49,8 +80,8 @@ const ServiciosCancelados = () => {
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
 
-  // ✅ MODIFICADO: el filtro PRINCIPAL ahora es el RANGO DE FECHAS (inicio/fin).
-  //    Cliente (ID, vía buscador) y Remolque (ID, vía selector) son opcionales.
+  // ✅ MODIFICADO: el rango de fechas y los demás campos son TODOS filtros OPCIONALES
+  //    que se aplican en memoria. La carga base trae todas las operaciones canceladas.
   const [filterFechaInicio, setFilterFechaInicio] = useState('');
   const [filterFechaFin, setFilterFechaFin] = useState('');
   const [filterCliente, setFilterCliente] = useState('');
@@ -59,6 +90,10 @@ const ServiciosCancelados = () => {
   // ✅ NUEVO: buscador autocompletado de cliente (igual que Servicios Completados)
   const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
   const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
+
+  // ✅ NUEVO: buscador autocompletado de remolque (antes era un desplegable)
+  const [textoBuscarRemolque, setTextoBuscarRemolque] = useState('');
+  const [mostrarSugerenciasRemolque, setMostrarSugerenciasRemolque] = useState(false);
 
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
@@ -88,82 +123,33 @@ const ServiciosCancelados = () => {
     return { id: v, nombre: v };
   };
 
-  // ✅ 1. CARGA RÁPIDA: Solo trae operaciones canceladas (Desnormalizado)
-  //    Robusto: si falta el índice compuesto (status + fechaServicio), hace
-  //    fallback a una consulta simple (solo where) y ordena del lado del cliente.
-  //    Si no hay canceladas, NO lanza error: deja la lista vacía y la UI lo informa.
-  const descargarOperaciones = async (fechaInicio: string, fechaFin: string, clienteId: string) => {
-    // Sin rango de fechas completo no se descarga nada (es el filtro principal)
-    if (!fechaInicio || !fechaFin) {
-      setOperacionesGlobales([]);
-      return;
-    }
-
+  // ✅ MODIFICADO: CARGA por STATUS (todas las canceladas, status === 7607f692).
+  //    Se pagina por cursor ordenando por documento (__name__) para NO depender de
+  //    un índice de fechaServicio ni del formato en que se guardó la fecha (que es
+  //    justo lo que dejaba la tabla vacía). El rango de fechas se aplica luego en
+  //    memoria sobre lo descargado.
+  const descargarOperaciones = async () => {
     setCargandoOperaciones(true);
     setErrorCarga(null);
-
-    // Límite superior inclusivo aunque fechaServicio traiga hora
-    const finInclusivo = fechaFin + '\uf8ff';
-
-    const filtrarLegacy = (ops: any[]) => ops.filter((op: any) => {
-      const statusOk = String(op.status || '').trim() === STATUS_CANCELADO_ID;
-      const clienteOk = !clienteId || String(op.clientePaga || op.clienteId || '') === clienteId;
-      const f = String(op.fechaServicio || '');
-      const fechaOk = f >= fechaInicio && f <= finInclusivo;
-      return statusOk && clienteOk && fechaOk;
-    });
-
     try {
-      let docs: any[] = [];
+      const acumulado: any[] = [];
+      let cursor: any = null;
 
-      try {
-        // [1] Consulta ideal: status + [cliente] + rango fechaServicio + orderBy + limit
-        const constraints1: any[] = [where('status', '==', STATUS_CANCELADO_ID)];
-        if (clienteId) constraints1.push(where('clientePaga', '==', clienteId));
-        constraints1.push(where('fechaServicio', '>=', fechaInicio));
-        constraints1.push(where('fechaServicio', '<=', finInclusivo));
-        constraints1.push(orderBy('fechaServicio', 'desc'));
-        constraints1.push(limit(TAMANIO_PAGINA));
+      for (let pagina = 0; pagina < 60; pagina++) {
+        const constraints: any[] = [where('status', '==', STATUS_CANCELADO_ID), orderBy('__name__')];
+        if (cursor) constraints.push(startAfter(cursor));
+        constraints.push(limit(TAMANIO_PAGINA));
 
-        const q1 = query(collection(db, 'operaciones'), ...constraints1);
-        const snap = await getDocs(q1);
-        docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-      } catch (errIndex: any) {
-        const msg = String(errIndex?.message || errIndex?.code || '').toLowerCase();
-        if (msg.includes('index') || msg.includes('failed-precondition')) {
-          console.warn('[ServiciosCancelados] Falta índice compuesto; usando fallback + orden en cliente.');
-          try {
-            // [2] Misma consulta SIN orderBy (ordena en memoria)
-            const constraints2: any[] = [where('status', '==', STATUS_CANCELADO_ID)];
-            if (clienteId) constraints2.push(where('clientePaga', '==', clienteId));
-            constraints2.push(where('fechaServicio', '>=', fechaInicio));
-            constraints2.push(where('fechaServicio', '<=', finInclusivo));
-            constraints2.push(limit(TAMANIO_PAGINA * 2));
-
-            const q2 = query(collection(db, 'operaciones'), ...constraints2);
-            const snap2 = await getDocs(q2);
-            docs = snap2.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-            docs.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
-          } catch (err2: any) {
-            // [3] Solo rango de fechaServicio (un campo) y filtra en memoria
-            const q3 = query(
-              collection(db, 'operaciones'),
-              where('fechaServicio', '>=', fechaInicio),
-              where('fechaServicio', '<=', finInclusivo),
-              limit(500)
-            );
-            const snap3 = await getDocs(q3);
-            const todas = snap3.docs.map((d: any) => ({ id: d.id, ...d.data() }));
-            docs = filtrarLegacy(todas);
-            docs.sort((a, b) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
-          }
-        } else {
-          throw errIndex;
-        }
+        const snap = await getDocs(query(collection(db, 'operaciones'), ...constraints));
+        if (snap.empty) break;
+        snap.docs.forEach((d: any) => acumulado.push({ id: d.id, ...d.data() }));
+        cursor = snap.docs[snap.docs.length - 1];
+        if (snap.docs.length < TAMANIO_PAGINA) break;
       }
 
-      console.log(`[FIREBASE READ] Descargadas ${docs.length} operaciones canceladas.`);
-      setOperacionesGlobales(docs);
+      acumulado.sort((a, b) => normalizarFechaISO(b.fechaServicio).localeCompare(normalizarFechaISO(a.fechaServicio)));
+      console.log(`[FIREBASE READ] Descargadas ${acumulado.length} operaciones canceladas.`);
+      setOperacionesGlobales(acumulado);
     } catch (e: any) {
       console.error("Error al cargar operaciones canceladas:", e);
       setOperacionesGlobales([]);
@@ -228,24 +214,13 @@ const ServiciosCancelados = () => {
     setCatalogosGlobales(catGuardados);
   };
 
-  // ✅ Al montar: cargamos los catálogos (para poblar el buscador de Cliente y el
-  //    selector de Remolque). Las operaciones se cargan al elegir el rango de fechas.
+  // ✅ Al montar: cargamos catálogos (para buscadores) y TODAS las operaciones
+  //    canceladas (status 7607f692). Los filtros se aplican luego en memoria.
   useEffect(() => {
     cargarCatalogosSiEsNecesario();
+    descargarOperaciones();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // ✅ El RANGO DE FECHAS (inicio + fin) es el filtro PRINCIPAL. Cuando ambas fechas
-  //    están definidas se ejecuta la consulta (cliente opcional incluido).
-  useEffect(() => {
-    if (filterFechaInicio && filterFechaFin) {
-      descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
-    } else {
-      setOperacionesGlobales([]);
-      setErrorCarga(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterFechaInicio, filterFechaFin, filterCliente]);
 
   // ✅ Logo para los PDF: si en la config hay un logo en base64 (data:...), úsalo;
   // si no, dejamos el global vacío para que el generador use el logo INCRUSTADO por
@@ -661,11 +636,6 @@ const ServiciosCancelados = () => {
     });
   };
 
-  const forzarRecarga = () => {
-    sessionStorage.removeItem('roelca_catalogos_v2');
-    window.location.reload();
-  };
-
   // ✅ NUEVO: lista de clientes "Paga" para el buscador (empresas con tipo 7eec9cbb)
   const clientesFiltradosBuscador = useMemo(() => {
     if (!catalogosGlobales.empresas) return [];
@@ -693,24 +663,47 @@ const ServiciosCancelados = () => {
     return cli?.nombre || filterCliente;
   }, [filterCliente, catalogosGlobales.empresas]);
 
-  // ✅ MODIFICADO: el filtro PRINCIPAL es el rango de fechas.
-  //   • Sin rango completo (inicio + fin) → vacío (mensaje guía).
-  //   • Con rango → parte de lo descargado y aplica filtros OPCIONALES en memoria
-  //     (cliente defensivo, remolque por ID y búsqueda general).
-  const operacionesFiltradas = useMemo(() => {
-    if (!filterFechaInicio || !filterFechaFin) return [];
+  // ✅ NUEVO: lista de remolques para el buscador (antes era un <select>)
+  const etiquetaRemolque = (r: any) => `${r?.nombre || ''} ${r?.placas || r?.placa || ''}`.trim();
 
+  const remolquesFiltradosBuscador = useMemo(() => {
+    const lista = (catalogosGlobales.remolques || []) as any[];
+    const ordenada = [...lista].sort((a: any, b: any) => etiquetaRemolque(a).localeCompare(etiquetaRemolque(b), 'es', { sensitivity: 'base' }));
+    if (!textoBuscarRemolque.trim()) return ordenada.slice(0, 30);
+    const q = textoBuscarRemolque.toLowerCase().trim();
+    return ordenada.filter((r: any) => etiquetaRemolque(r).toLowerCase().includes(q)).slice(0, 30);
+  }, [catalogosGlobales.remolques, textoBuscarRemolque]);
+
+  const nombreRemolqueSeleccionado = useMemo(() => {
+    if (!filterRemolque || !catalogosGlobales.remolques) return '';
+    const r = catalogosGlobales.remolques.find((x: any) => x.id === filterRemolque);
+    return r ? etiquetaRemolque(r) : filterRemolque;
+  }, [filterRemolque, catalogosGlobales.remolques]);
+
+  // ✅ MODIFICADO: TODOS los filtros son opcionales y se aplican en memoria sobre
+  //   las canceladas ya descargadas. El rango de fechas usa la fecha NORMALIZADA
+  //   para tolerar formatos legacy (Timestamp / DD-MM-YYYY / ISO con hora).
+  const operacionesFiltradas = useMemo(() => {
     const b = busqueda.toLowerCase();
+    const ini = filterFechaInicio || '';
+    const fin = filterFechaFin || '';
 
     return operacionesGlobales.filter(op => {
-      // Cliente (opcional) — defensivo por si el fallback no lo filtró en la query
+      // Rango de fechas (opcional)
+      if (ini || fin) {
+        const f = normalizarFechaISO(op.fechaServicio);
+        if (ini && (!f || f < ini)) return false;
+        if (fin && (!f || f > fin)) return false;
+      }
+
+      // Cliente (opcional)
       if (filterCliente && String(op.clientePaga || op.clienteId || '') !== filterCliente) return false;
 
       // Remolque (opcional) — por ID o por nombre desnormalizado
       if (filterRemolque) {
         const coincideRem =
           String(op.numeroRemolque || '') === filterRemolque ||
-          String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase());
+          String(op.remolqueNombre || '').toLowerCase().includes(nombreRemolqueSeleccionado.toLowerCase());
         if (!coincideRem) return false;
       }
 
@@ -729,7 +722,7 @@ const ServiciosCancelados = () => {
 
       return true;
     });
-  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterCliente, filterRemolque]);
+  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterCliente, filterRemolque, nombreRemolqueSeleccionado]);
 
   const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
@@ -786,30 +779,28 @@ const ServiciosCancelados = () => {
      <div style={{ width: '100%', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
           <EmpresaBrand tamanoLogo={36} />
-          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: 0, fontWeight: 'bold' }}>🚫 Servicios Cancelados</h1>
+          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: 0, fontWeight: 'bold' }}>Servicios Cancelados</h1>
         </div>
-        {/* ✅ Barra de filtros estilo "Servicios Completados" (en rojo).
-            Filtro PRINCIPAL: rango de fechas. Cliente y Remolque son opcionales. */}
+        {/* Barra de filtros. Todos los filtros son OPCIONALES y se aplican en memoria. */}
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          {/* PRINCIPAL: Fecha Inicio */}
+          {/* Fecha Inicio (opcional) */}
           <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO ★</label>
-            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO (opcional)</label>
+            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
           </div>
 
-          {/* PRINCIPAL: Fecha Fin */}
+          {/* Fecha Fin (opcional) */}
           <div style={{ flex: '1 1 180px' }}>
-            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN ★</label>
-            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN (opcional)</label>
+            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
           </div>
 
-          {/* OPCIONAL: Cliente que paga (buscador con autocompletado) */}
+          {/* Cliente que paga (buscador con autocompletado) */}
           <div style={{ flex: '1 1 280px', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
 
             {filterCliente ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
                 <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {nombreClienteSeleccionado}
                 </span>
@@ -822,18 +813,15 @@ const ServiciosCancelados = () => {
                 </button>
               </div>
             ) : (
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#ef4444' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input
-                  type="text"
-                  placeholder="Buscar cliente por nombre o RFC..."
-                  value={textoBuscarCliente}
-                  onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
-                  onFocus={() => setMostrarSugerenciasCliente(true)}
-                  onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
-                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
-                />
-              </div>
+              <input
+                type="text"
+                placeholder="Buscar cliente por nombre o RFC..."
+                value={textoBuscarCliente}
+                onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
+                onFocus={() => setMostrarSugerenciasCliente(true)}
+                onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
+                style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+              />
             )}
 
             {!filterCliente && mostrarSugerenciasCliente && (
@@ -866,57 +854,94 @@ const ServiciosCancelados = () => {
             )}
           </div>
 
-          {/* OPCIONAL: Remolque (selector) */}
-          <div style={{ flex: '1 1 200px' }}>
+          {/* Remolque (buscador con autocompletado) */}
+          <div style={{ flex: '1 1 280px', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE (opcional)</label>
-            <select value={filterRemolque} onChange={(e) => setFilterRemolque(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}><option value="">Seleccionar Remolque...</option>
-              {catalogosGlobales.remolques?.map((rem: any) => (
-                <option key={rem.id} value={rem.id}>{`${rem.nombre || ''} ${rem.placas || rem.placa || ''}`.trim()}</option>
-              ))}
-            </select>
+
+            {filterRemolque ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
+                <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {nombreRemolqueSeleccionado}
+                </span>
+                <button
+                  onClick={() => { setFilterRemolque(''); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
+                  title="Cambiar remolque"
+                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <input
+                type="text"
+                placeholder="Buscar remolque por nombre o placa..."
+                value={textoBuscarRemolque}
+                onChange={(e) => { setTextoBuscarRemolque(e.target.value); setMostrarSugerenciasRemolque(true); }}
+                onFocus={() => setMostrarSugerenciasRemolque(true)}
+                onBlur={() => setTimeout(() => setMostrarSugerenciasRemolque(false), 180)}
+                style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+              />
+            )}
+
+            {!filterRemolque && mostrarSugerenciasRemolque && (
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+                {remolquesFiltradosBuscador.length === 0 ? (
+                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                    {textoBuscarRemolque.trim() ? 'Sin coincidencias' : 'No hay remolques cargados'}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                      {remolquesFiltradosBuscador.length} {remolquesFiltradosBuscador.length === 1 ? 'remolque' : 'remolques'}{textoBuscarRemolque.trim() ? '' : ' (primeros 30)'}
+                    </div>
+                    {remolquesFiltradosBuscador.map((rem: any) => (
+                      <div
+                        key={rem.id}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => { setFilterRemolque(rem.id); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
+                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                        onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                        onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <div style={{ fontWeight: '500' }}>{etiquetaRemolque(rem) || rem.id}</div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* OPCIONAL: Filtro general */}
+          {/* Filtro general (opcional) */}
           <div style={{ flex: '1 1 200px' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
-            <div style={{ position: 'relative' }}>
-              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 36px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
-            </div>
+            <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
           </div>
 
           <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', marginLeft: 'auto', paddingBottom: '2px' }}>
-            <button className="btn btn-outline" onClick={forzarRecarga} title="Recargar Catálogos" style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', padding: '10px 12px', borderRadius: '6px', cursor: 'pointer' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 0 20.49 15"></path></svg>
-            </button>
-            <button className="btn btn-outline" onClick={exportarCSV} title="Exportar CSV" style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', padding: '10px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+            <button className="btn btn-outline" onClick={exportarCSV} title="Exportar CSV" style={{ background: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', borderRadius: '6px', cursor: 'pointer' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Exportar CSV
             </button>
           </div>
         </div>
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          {(!filterFechaInicio || !filterFechaFin) ? (
-            <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
-              <div style={{ fontSize: '2.4rem', marginBottom: '10px' }}>🗓️</div>
-              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>
-                Selecciona <span style={{ color: '#ef4444' }}>Fecha Inicio</span> y <span style={{ color: '#ef4444' }}>Fecha Fin</span>
-              </div>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Define el rango de fechas para buscar las operaciones canceladas.</div>
-            </div>
-          ) : cargandoOperaciones ? (
+          {cargandoOperaciones ? (
             <div style={{ border: '1px solid #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones canceladas...</div>
           ) : errorCarga ? (
             <div style={{ border: '1px solid rgba(248,81,73,0.4)', backgroundColor: 'rgba(248,81,73,0.06)', borderRadius: '8px', padding: '40px 24px', textAlign: 'center' }}>
-              <div style={{ fontSize: '2rem', marginBottom: '8px' }}>⚠️</div>
               <div style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.05rem', marginBottom: '8px' }}>No se pudieron cargar las operaciones</div>
               <div style={{ color: '#8b949e', fontSize: '0.9rem', maxWidth: '520px', margin: '0 auto 16px' }}>{errorCarga}</div>
-              <button onClick={() => descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente)} style={{ padding: '8px 18px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Reintentar</button>
+              <button onClick={() => descargarOperaciones()} style={{ padding: '8px 18px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Reintentar</button>
             </div>
-          ) : operacionesGlobales.length === 0 ? (
+          ) : operacionesFiltradas.length === 0 ? (
             <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
-              <div style={{ fontSize: '2.4rem', marginBottom: '10px' }}>📭</div>
               <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>Sin resultados</div>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>No hay operaciones canceladas en el rango y los filtros seleccionados.</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+                {operacionesGlobales.length === 0
+                  ? 'No hay operaciones canceladas registradas.'
+                  : 'No hay operaciones canceladas que coincidan con los filtros seleccionados.'}
+              </div>
             </div>
           ) : (
           <>
@@ -1025,26 +1050,26 @@ const ServiciosCancelados = () => {
                 {evalIsFletes && (
                   <>
                     <button onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
-                      📄 Carta Instrucciones
+                      Carta Instrucciones
                     </button>
                     <button onClick={handleDescargarPruebaEntrega} title="Descargar Prueba de Entrega" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
-                      📄 Prueba Entrega
+                      Prueba Entrega
                     </button>
                   </>
                 )}
 
                 <button onClick={handleDescargarCheckList} title="Descargar Check List" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
-                  📄 Check List
+                  Check List
                 </button>
                 <button onClick={handleDescargarSolicitudRetiro} title="Descargar Solicitud de Retiro" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
-                  📄 Solicitud
+                  Solicitud
                 </button>
                 <button onClick={handleDescargarInstruccionesServicio} title="Descargar Instrucciones de Servicio" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
-                  📄 Instrucciones
+                  Instrucciones
                 </button>
 
-                <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ background: '#21262d', border: '1px solid rgba(251, 146, 60, 0.4)', color: '#fb923c', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>📎 Documentos</button>
-                <button onClick={verHistorial} style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>📋 Bitácora</button>
+                <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ background: '#21262d', border: '1px solid rgba(251, 146, 60, 0.4)', color: '#fb923c', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>Documentos</button>
+                <button onClick={verHistorial} style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>Bitácora</button>
                 <button onClick={() => setOperacionViendo(null)} className="btn-window close" style={{ padding: '6px', borderRadius: '50%' }}>✕</button>
               </div>
             </div>
@@ -1235,7 +1260,7 @@ const ServiciosCancelados = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: Visor de documentos de la operación cancelada */}
+      {/* ✅ Visor de documentos de la operación cancelada */}
       {mostrarDocumentos && operacionViendo && (
         <div className="modal-overlay" style={{ zIndex: 2100 }}>
           <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
@@ -1268,7 +1293,7 @@ const ServiciosCancelados = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: Subida de documentos ligada a la operación */}
+      {/* ✅ Subida de documentos ligada a la operación */}
       {operacionViendo && (
         <DocumentoUploadModal
           isOpen={mostrarSubirDocOp && !!operacionViendo}
@@ -1280,7 +1305,7 @@ const ServiciosCancelados = () => {
         />
       )}
 
-      {/* ✅ NUEVO: Registro retroactivo de movimiento (fecha/hora personalizada) */}
+      {/* ✅ Registro retroactivo de movimiento (fecha/hora personalizada) */}
       {modalHorarios === 'registrar' && (
         <div className="modal-overlay" style={{ zIndex: 2000 }}>
           <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
