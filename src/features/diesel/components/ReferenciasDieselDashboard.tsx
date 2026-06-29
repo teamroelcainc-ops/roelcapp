@@ -1,5 +1,5 @@
 // src/features/diesel/components/ReferenciasDieselDashboard.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   collection, 
   onSnapshot, 
@@ -33,6 +33,134 @@ const COLUMNAS_OPS_DIESEL_BASE = [
 // Los campos op.origen / op.destino guardan un ID; aquí buscamos su nombre.
 // Si tus orígenes/destinos viven en otra colección, cambia solo este valor.
 const COLECCION_LUGARES = 'destinos';
+
+// ──────────────────────────────────────────────────────────────────
+// ✅ FILTRO ROBUSTO DE IDS
+// Verifica si un campo de Firestore contiene un ID, sin importar si está
+// guardado como array, como string separado por comas/espacios, o como
+// objeto. Así el filtrado de proveedores funciona aunque el dato venga
+// en distintos formatos heredados.
+// ──────────────────────────────────────────────────────────────────
+const incluyeId = (valor: any, id: string): boolean => {
+  if (!valor) return false;
+  if (Array.isArray(valor)) return valor.map(String).includes(id);
+  if (typeof valor === 'string') return valor.split(/[,\s]+/).map(s => s.trim()).includes(id);
+  if (typeof valor === 'object') {
+    return Object.values(valor).map(String).includes(id) || Object.keys(valor).includes(id);
+  }
+  return false;
+};
+
+// ──────────────────────────────────────────────────────────────────
+// ✅ SELECTOR DE PROVEEDOR BUSCABLE (combobox)
+// Reemplaza el <select> nativo que "costaba seleccionar":
+//  - Mantiene su propio estado, por lo que NO se cierra cuando el
+//    componente padre se re-renderiza (p. ej. al llegar datos de Firestore).
+//  - Permite filtrar escribiendo, ideal cuando hay muchos proveedores.
+//  - Cierra al hacer clic fuera.
+// ──────────────────────────────────────────────────────────────────
+interface SelectorProveedorProps {
+  proveedores: any[];
+  value: string;
+  onChange: (id: string) => void;
+  placeholder?: string;
+  resolverNombre?: (id: string) => string;
+}
+
+const SelectorProveedorBuscable: React.FC<SelectorProveedorProps> = ({
+  proveedores,
+  value,
+  onChange,
+  placeholder = 'Seleccionar proveedor...',
+  resolverNombre,
+}) => {
+  const [abierto, setAbierto] = useState(false);
+  const [busqueda, setBusqueda] = useState('');
+  const contenedorRef = useRef<HTMLDivElement>(null);
+
+  const seleccionado = proveedores.find(p => p.id === value) || null;
+  const nombreMostrado = seleccionado
+    ? (seleccionado.nombre || seleccionado.id)
+    : (value && resolverNombre ? resolverNombre(value) : '');
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (contenedorRef.current && !contenedorRef.current.contains(e.target as Node)) {
+        setAbierto(false);
+        setBusqueda('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const filtrados = useMemo(() => {
+    const t = busqueda.trim().toLowerCase();
+    if (!t) return proveedores;
+    return proveedores.filter(p => String(p.nombre || '').toLowerCase().includes(t));
+  }, [proveedores, busqueda]);
+
+  return (
+    <div ref={contenedorRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        onClick={() => setAbierto(o => !o)}
+        style={{
+          width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff',
+          border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box',
+          cursor: 'pointer', textAlign: 'left', display: 'flex',
+          justifyContent: 'space-between', alignItems: 'center', gap: '8px',
+        }}
+      >
+        <span style={{ color: nombreMostrado ? '#fff' : '#8b949e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {nombreMostrado || placeholder}
+        </span>
+        <span style={{ color: '#8b949e', fontSize: '0.7rem', flexShrink: 0 }}>{abierto ? '▲' : '▼'}</span>
+      </button>
+
+      {abierto && (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 50,
+          backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.5)', overflow: 'hidden',
+        }}>
+          <div style={{ padding: '8px' }}>
+            <input
+              autoFocus
+              type="text"
+              value={busqueda}
+              onChange={e => setBusqueda(e.target.value)}
+              placeholder="Buscar proveedor..."
+              style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}
+            />
+          </div>
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: '220px', overflowY: 'auto' }}>
+            {filtrados.length === 0 ? (
+              <li style={{ padding: '12px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>Sin resultados</li>
+            ) : (
+              filtrados.map(p => (
+                <li
+                  key={p.id}
+                  onClick={() => { onChange(p.id); setAbierto(false); setBusqueda(''); }}
+                  style={{
+                    padding: '10px 12px', cursor: 'pointer', fontSize: '0.9rem',
+                    color: p.id === value ? '#fff' : '#c9d1d9',
+                    backgroundColor: p.id === value ? 'rgba(216,67,21,0.15)' : 'transparent',
+                    borderLeft: p.id === value ? '3px solid #D84315' : '3px solid transparent',
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = '#161b22'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.backgroundColor = p.id === value ? 'rgba(216,67,21,0.15)' : 'transparent'; }}
+                >
+                  {p.nombre || p.id}
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ReferenciasDieselDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'referencias'>('referencias');
@@ -419,12 +547,13 @@ export const ReferenciasDieselDashboard = () => {
     return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [unidadesList]);
 
+  // ✅ Solo proveedores con tipo de empresa "11894dfd" Y tipo de servicio
+  //    "189a4573". El filtro es robusto a array/string/objeto y la lista se
+  //    ordena alfabéticamente para que sea fácil encontrarlos.
   const proveedoresFiltrados = useMemo(() => {
-    return proveedoresList.filter(p => {
-      const tieneTipoEmpresa = Array.isArray(p.tiposEmpresa) && p.tiposEmpresa.includes('11894dfd');
-      const tieneTipoServicio = Array.isArray(p.tiposServicio) && p.tiposServicio.includes('189a4573');
-      return tieneTipoEmpresa && tieneTipoServicio;
-    });
+    return proveedoresList
+      .filter(p => incluyeId(p.tiposEmpresa, '11894dfd') && incluyeId(p.tiposServicio, '189a4573'))
+      .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
   }, [proveedoresList]);
 
   const operacionesBaseUnidad = useMemo(() => {
@@ -1374,10 +1503,12 @@ export const ReferenciasDieselDashboard = () => {
                 </div>
                 <div>
                   <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>PROVEEDOR</label>
-                  <select required value={proveedorSeleccionado} onChange={e => setProveedorSeleccionado(e.target.value)} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }}>
-                    <option value="">Seleccionar...</option>
-                    {proveedoresFiltrados.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                  </select>
+                  <SelectorProveedorBuscable
+                    proveedores={proveedoresFiltrados}
+                    value={proveedorSeleccionado}
+                    onChange={setProveedorSeleccionado}
+                    resolverNombre={getNombreProveedor}
+                  />
                 </div>
                 <div>
                   <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>GALONES EXTRAS</label>
@@ -1578,10 +1709,12 @@ export const ReferenciasDieselDashboard = () => {
                 </div>
                 <div>
                   <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>PROVEEDOR</label>
-                  <select value={formEditRef.proveedorId} onChange={e => setFormEditRef({ ...formEditRef, proveedorId: e.target.value })} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }}>
-                    <option value="">Seleccionar...</option>
-                    {proveedoresFiltrados.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-                  </select>
+                  <SelectorProveedorBuscable
+                    proveedores={proveedoresFiltrados}
+                    value={formEditRef.proveedorId}
+                    onChange={(id) => setFormEditRef({ ...formEditRef, proveedorId: id })}
+                    resolverNombre={getNombreProveedor}
+                  />
                 </div>
                 <div>
                   <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>OPERADOR</label>
