@@ -29,8 +29,8 @@
 // RUTA: src/features/reportes/components/ReportesDashboard.tsx
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { collection, getDocs, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 // ✅ Logo de la empresa (mismo base64 que usan los PDF) para ambos exports
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
@@ -193,6 +193,9 @@ export const ReportesDashboard = () => {
   const [colConfigs, setColConfigs] = useState<Record<string, ColCfg[]>>({});
   const [modalColumnas, setModalColumnas] = useState(false);
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
+  const [filtroCol, setFiltroCol] = useState('');          // buscador dentro del modal
+  const [guardandoCols, setGuardandoCols] = useState(false); // estado del botón Guardar
+  const cargadosCfgRef = useRef<Set<string>>(new Set());     // cfgKeys ya leídos de Firestore
 
   // Caches de catálogos para resolver tipo/estatus/empresa/convenio
   const [tiposPorId, setTiposPorId] = useState<Record<string, string>>({});
@@ -555,21 +558,6 @@ export const ReportesDashboard = () => {
       opsTodas.forEach(op => Object.keys(op).forEach(k => { if (!CAMPOS_OCULTOS_SIEMPRE.has(k)) camposSet.add(k); }));
       const camposColeccion = Array.from(camposSet).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
-      // ✅ NUEVO: lee un campo crudo y lo formatea (fechas → DD/MM/YYYY, montos → $).
-      const valorCrudo = (op: any, campo: string): any => {
-        const v = op[campo];
-        if (v === null || v === undefined || v === '') return '';
-        if (typeof v === 'object') {
-          const iso = normalizarFechaISO(v);
-          if (iso) return fmtFechaCorta(iso);
-          if (Array.isArray(v)) return `${v.length} elemento(s)`;
-          try { return JSON.stringify(v).slice(0, 80); } catch { return '[objeto]'; }
-        }
-        if (/fecha/i.test(campo)) { const iso = normalizarFechaISO(v); return iso ? fmtFechaCorta(iso) : String(v); }
-        if (typeof v === 'number' && esCampoMonetario(campo)) return fmtMoneda(v);
-        return typeof v === 'number' ? v : String(v);
-      };
-
       const tipoTextoDe = (op: any): string => String(op.tipoOperacionNombre || tMap[String(op.tipoOperacionId)] || '');
       const clasificarTipo = (op: any): 'Transfer' | 'Logística' | 'Fletes' | 'Otro' => {
         const t = norm(tipoTextoDe(op));
@@ -603,6 +591,48 @@ export const ReportesDashboard = () => {
         return '';
       };
 
+      // ✅ NUEVO: resolutores por NOMBRE de campo conocido (para mostrar el
+      //   nombre y NO el ID en las columnas crudas). Cada uno usa el campo
+      //   "*Nombre" desnormalizado si existe, o resuelve el ID con su catálogo.
+      const RESOLVERS: Record<string, (op: any) => string> = {
+        clientePaga:       op => nombreEmpresa(op.clientePaga, op.clienteNombre || op.nombreCliente),
+        clienteId:         op => nombreEmpresa(op.clienteId, op.clienteNombre || op.nombreCliente),
+        origen:            op => nombreEmpresa(op.origen, op.origenNombre),
+        destino:           op => nombreEmpresa(op.destino, op.destinoNombre),
+        clienteMercancia:  op => nombreEmpresa(op.clienteMercancia, op.clienteMercanciaNombre),
+        provServicios:     op => nombreEmpresa(op.provServicios, op.provServiciosNombre),
+        proveedorUnidad:   op => nombreEmpresa(op.proveedorUnidad, op.proveedorUnidadNombre),
+        convenio:          op => nombreConvenio(op.convenio, op.convenioNombre),
+        convenioProveedor: op => String(op.convenioProveedorNombre || nombreConvenio(op.convenioProveedor)),
+        status:            op => statusNombreDe(op),
+        tipoOperacionId:   op => tipoTextoDe(op),
+      };
+
+      // ✅ NUEVO: lee un campo crudo y lo formatea. Prioriza NOMBRE sobre ID:
+      //   1) resolutor específico del campo; 2) si el valor parece un ID, lo
+      //   busca en los catálogos (empresas/convenios/status/tipos); 3) fechas y
+      //   montos formateados. Nunca muestra un ID si puede mostrar el nombre.
+      const valorCrudo = (op: any, campo: string): any => {
+        if (RESOLVERS[campo]) { const r = RESOLVERS[campo](op); if (r) return r; }
+        const v = op[campo];
+        if (v === null || v === undefined || v === '') return '';
+        if (typeof v === 'object') {
+          const iso = normalizarFechaISO(v);
+          if (iso) return fmtFechaCorta(iso);
+          if (Array.isArray(v)) return `${v.length} elemento(s)`;
+          try { return JSON.stringify(v).slice(0, 80); } catch { return '[objeto]'; }
+        }
+        // Si el valor en sí es un ID conocido, resuélvelo a nombre.
+        const sv = String(v).trim();
+        if (esId(sv)) {
+          const nombre = empMap[sv] || convMap[sv] || sMap[sv] || tMap[sv];
+          if (nombre) return nombre;
+        }
+        if (/fecha/i.test(campo)) { const iso = normalizarFechaISO(v); return iso ? fmtFechaCorta(iso) : String(v); }
+        if (typeof v === 'number' && esCampoMonetario(campo)) return fmtMoneda(v);
+        return typeof v === 'number' ? v : String(v);
+      };
+
       const ctx: Ctx = { ops, desde, hasta, clasificarTipo, esNoCobrable, statusNombreDe, nombreEmpresa, nombreConvenio, camposColeccion, valorCrudo };
       const def = reportesDelModulo.find(r => r.id === reporteId) || reportesDelModulo[0];
       setResultado(def.build(ctx));
@@ -615,25 +645,66 @@ export const ReportesDashboard = () => {
     }
   };
 
-  // ✅ NUEVO: al obtener un resultado, inicializa la config de columnas del
-  //   reporte actual (todas visibles, en su orden original) si aún no existe.
   // Clave de config: incluye el módulo, porque las columnas crudas dependen de
   //   la colección de cada módulo.
   const cfgKey = `${moduloId}::${reporteId}`;
+  const cfgDocId = cfgKey.replace(/[^a-zA-Z0-9_]+/g, '_'); // id válido de doc Firestore
+
+  // Fusiona una config guardada (orden + visibilidad por key) con las columnas
+  //   REALES del reporte: respeta el orden guardado, conserva la visibilidad y
+  //   agrega al final cualquier columna nueva que aún no estuviera guardada.
+  const fusionarConfig = (reales: Columna[], guardada?: { key: string; visible: boolean }[] | null): ColCfg[] => {
+    const mapReal = new Map(reales.map(c => [c.key, c]));
+    const ordenadas: ColCfg[] = [];
+    const usados = new Set<string>();
+    (guardada || []).forEach(g => {
+      const real = mapReal.get(g.key);
+      if (real) { ordenadas.push({ key: real.key, label: real.label, align: real.align, visible: !!g.visible }); usados.add(real.key); }
+    });
+    reales.forEach(real => {
+      if (!usados.has(real.key)) ordenadas.push({ key: real.key, label: real.label, align: real.align, visible: !real.defaultHidden });
+    });
+    return ordenadas;
+  };
+
+  // ✅ NUEVO: al obtener un resultado, carga la config GUARDADA en Firestore
+  //   (compartida por todos los usuarios) y la fusiona con las columnas reales.
+  //   Si no hay guardada, usa el orden por defecto. Solo lee Firestore una vez
+  //   por cfgKey (cargadosCfgRef) para no recargar en cada "Generar".
   useEffect(() => {
     if (!resultado) return;
-    setColConfigs(prev => {
-      if (prev[cfgKey] && prev[cfgKey].length) {
-        // Asegura que existan columnas nuevas que el reporte pudiera traer.
-        const existentes = new Set(prev[cfgKey].map(c => c.key));
-        const faltantes = resultado.columnas.filter(c => !existentes.has(c.key))
-          .map(c => ({ key: c.key, label: c.label, align: c.align, visible: !c.defaultHidden }));
-        if (faltantes.length === 0) return prev;
-        return { ...prev, [cfgKey]: [...prev[cfgKey], ...faltantes] };
+    let activo = true;
+    (async () => {
+      const reales = resultado.columnas;
+      let guardada: { key: string; visible: boolean }[] | null = null;
+      if (!cargadosCfgRef.current.has(cfgKey)) {
+        try {
+          const snap = await getDoc(doc(db, 'config_reportes_columnas', cfgDocId));
+          if (snap.exists()) {
+            const data = snap.data() as any;
+            if (Array.isArray(data.columnas)) guardada = data.columnas;
+          }
+        } catch (e) { console.warn('No se pudo leer la config de columnas:', e); }
+        cargadosCfgRef.current.add(cfgKey);
       }
-      return { ...prev, [cfgKey]: resultado.columnas.map(c => ({ key: c.key, label: c.label, align: c.align, visible: !c.defaultHidden })) };
-    });
-  }, [resultado, cfgKey]);
+      if (!activo) return;
+      setColConfigs(prev => {
+        // Si ya hay config local Y no vino nada nuevo de Firestore, solo agrega faltantes.
+        if (prev[cfgKey] && prev[cfgKey].length && !guardada) {
+          const existentes = new Set(prev[cfgKey].map(c => c.key));
+          const faltantes = reales.filter(c => !existentes.has(c.key))
+            .map(c => ({ key: c.key, label: c.label, align: c.align, visible: !c.defaultHidden }));
+          if (faltantes.length === 0) return prev;
+          return { ...prev, [cfgKey]: [...prev[cfgKey], ...faltantes] };
+        }
+        // Hay config de Firestore (o no había local): fusionar.
+        const fuente = guardada || (prev[cfgKey] ? prev[cfgKey].map(c => ({ key: c.key, visible: c.visible })) : null);
+        return { ...prev, [cfgKey]: fusionarConfig(reales, fuente) };
+      });
+    })();
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resultado, cfgKey, cfgDocId]);
 
   // ✅ NUEVO: "vista" = el resultado con las columnas filtradas/reordenadas según
   //   la config del reporte. Es lo que se usa para mostrar en pantalla y para
@@ -689,6 +760,38 @@ export const ReportesDashboard = () => {
     setDraggedColIndex(idx);
   };
   const colConfigActual = colConfigs[cfgKey] || [];
+
+  // ✅ NUEVO: reordenar rápido con flechas (sube/baja una posición).
+  const moverColumna = (idx: number, dir: -1 | 1) => {
+    setColConfigs(prev => {
+      const lista = (prev[cfgKey] || []).map(c => ({ ...c }));
+      const j = idx + dir;
+      if (j < 0 || j >= lista.length) return prev;
+      [lista[idx], lista[j]] = [lista[j], lista[idx]];
+      return { ...prev, [cfgKey]: lista };
+    });
+  };
+
+  // ✅ NUEVO: guarda el orden/visibilidad en Firestore para que TODOS los
+  //   usuarios vean la misma configuración de columnas de este reporte.
+  const guardarConfigColumnas = async () => {
+    const cfg = colConfigs[cfgKey] || [];
+    setGuardandoCols(true);
+    try {
+      await setDoc(doc(db, 'config_reportes_columnas', cfgDocId), {
+        cfgKey,
+        moduloId,
+        reporteId,
+        columnas: cfg.map(c => ({ key: c.key, visible: c.visible })),
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.error('Error guardando la config de columnas:', e);
+      alert('No se pudo guardar la configuración de columnas. Revisa tu conexión o permisos de Firestore.');
+    } finally {
+      setGuardandoCols(false);
+    }
+  };
 
   // ---------------- Export ----------------
   const nombreArchivo = () => {
@@ -886,7 +989,7 @@ export const ReportesDashboard = () => {
         </button>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => setModalColumnas(true)} disabled={!resultado} style={{ ...btnOutline, opacity: resultado ? 1 : 0.5 }} title="Elegir y ordenar las columnas de este reporte">
+          <button onClick={() => { setFiltroCol(''); setModalColumnas(true); }} disabled={!resultado} style={{ ...btnOutline, opacity: resultado ? 1 : 0.5 }} title="Elegir y ordenar las columnas de este reporte">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
             Columnas
           </button>
@@ -979,12 +1082,26 @@ export const ReportesDashboard = () => {
               </button>
             </div>
 
-            <div style={{ padding: '8px 12px 4px', color: '#7d8590', fontSize: '0.76rem' }}>
-              Marca las columnas que quieres incluir. Arrastra <span style={{ color: '#fb923c' }}>⠿</span> para cambiar el orden. Aplica al reporte en pantalla, Excel y PDF.
-            </div>
+          <div style={{ padding: '10px 12px 4px', color: '#7d8590', fontSize: '0.76rem' }}>
+            Marca las columnas a incluir y ordénalas con las flechas <span style={{ color: '#fb923c' }}>▲▼</span> (o arrastrando). Pulsa <b style={{ color: '#fb923c' }}>Guardar para todos</b> para que el orden quede fijo y lo vean los demás usuarios.
+          </div>
 
-            <div style={{ overflowY: 'auto', padding: '6px 12px 12px' }}>
-              {colConfigActual.map((col, idx) => (
+          {/* Buscador de columnas (útil cuando hay muchos campos) */}
+          <div style={{ padding: '6px 12px 8px' }}>
+            <input
+              type="text"
+              value={filtroCol}
+              onChange={e => setFiltroCol(e.target.value)}
+              placeholder="Buscar columna…"
+              style={{ ...inputEstilo, width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+
+            <div style={{ overflowY: 'auto', padding: '0 12px 12px' }}>
+              {colConfigActual
+                .map((col, idx) => ({ col, idx }))
+                .filter(({ col }) => !filtroCol || norm(col.label).includes(norm(filtroCol)))
+                .map(({ col, idx }) => (
                 <div
                   key={col.key}
                   draggable
@@ -993,11 +1110,22 @@ export const ReportesDashboard = () => {
                   onDragEnd={() => setDraggedColIndex(null)}
                   onDragOver={(e) => e.preventDefault()}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', marginBottom: 6,
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 6,
                     background: draggedColIndex === idx ? '#161b22' : '#0b0f16',
-                    border: '1px solid #21262d', borderRadius: 8, cursor: 'grab',
+                    border: '1px solid #21262d', borderRadius: 8,
                   }}
                 >
+                  {/* Flechas rápidas */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <button type="button" title="Subir" onClick={() => moverColumna(idx, -1)} disabled={idx === 0}
+                      style={{ background: 'transparent', border: '1px solid #2d333b', color: idx === 0 ? '#3a414b' : '#8b949e', borderRadius: 5, width: 24, height: 18, cursor: idx === 0 ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                    </button>
+                    <button type="button" title="Bajar" onClick={() => moverColumna(idx, 1)} disabled={idx === colConfigActual.length - 1}
+                      style={{ background: 'transparent', border: '1px solid #2d333b', color: idx === colConfigActual.length - 1 ? '#3a414b' : '#8b949e', borderRadius: 5, width: 24, height: 18, cursor: idx === colConfigActual.length - 1 ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                    </button>
+                  </div>
                   <span style={{ color: '#6e7681', cursor: 'grab', fontSize: '1rem', lineHeight: 1 }} title="Arrastrar para reordenar">⠿</span>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, cursor: 'pointer', userSelect: 'none' }}>
                     <input type="checkbox" checked={col.visible} onChange={() => toggleColumna(idx)} style={{ width: 16, height: 16, accentColor: '#ea580c', cursor: 'pointer' }} />
@@ -1011,14 +1139,19 @@ export const ReportesDashboard = () => {
               )}
             </div>
 
-            <div style={{ padding: '14px 20px', borderTop: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            <div style={{ padding: '14px 20px', borderTop: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <button
                 onClick={() => setColConfigs(prev => ({ ...prev, [cfgKey]: colConfigActual.map(c => ({ ...c, visible: true })) }))}
                 style={{ ...btnOutline, padding: '9px 14px' }}
               >
                 Mostrar todas
               </button>
-              <button onClick={() => setModalColumnas(false)} style={{ ...btnPrimary, padding: '9px 20px' }}>Listo</button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setModalColumnas(false)} style={{ ...btnOutline, padding: '9px 14px' }}>Cerrar</button>
+                <button onClick={async () => { await guardarConfigColumnas(); setModalColumnas(false); }} disabled={guardandoCols} style={{ ...btnPrimary, padding: '9px 18px', opacity: guardandoCols ? 0.6 : 1 }}>
+                  {guardandoCols ? 'Guardando…' : 'Guardar para todos'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
