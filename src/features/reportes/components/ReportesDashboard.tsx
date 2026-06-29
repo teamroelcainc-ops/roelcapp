@@ -20,17 +20,20 @@
 //   TOTAL = Servicios − No cobrables.
 //   PROMEDIO MENSUAL = Acumulado ÷ (meses con datos).
 //
-// Exporta a EXCEL (SheetJS, ya usado en el proyecto) y a PDF (ventana de
-// impresión con estilo → "Guardar como PDF"; sin dependencias extra).
+// Export EXCEL con logo + estilo profesional (ExcelJS) y PDF con logo
+// (ventana de impresión → "Guardar como PDF"). Ambos muestran el rango.
+// Los reportes resuelven IDs → NOMBRES (empresas, convenios, status, tipos).
 //
-// Para identificar "no cobrable" se usan palabras clave editables abajo.
+// IMPORTANTE: el export a Excel usa ExcelJS. Instálalo una vez con:
+//   npm install exceljs
 // RUTA: src/features/reportes/components/ReportesDashboard.tsx
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useMemo } from 'react';
 import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import * as XLSX from 'xlsx';
+// ✅ Logo de la empresa (mismo base64 que usan los PDF) para ambos exports
+import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 
 // Palabras clave (normalizadas) que marcan una operación como NO COBRABLE
 const KEYWORDS_NO_COBRABLE = ['cancel', 'no cobrable'];
@@ -40,6 +43,14 @@ const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', '
 
 const norm = (s: any): string =>
   String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+// ✅ NUEVO: detecta si un valor "parece" un ID (hex de catálogo o auto-id de Firestore),
+//   para nunca mostrar IDs crudos cuando no se pudo resolver el nombre.
+const esId = (v: any): boolean => {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return false;
+  return /^[0-9a-f]{6,}$/i.test(s) || /^[A-Za-z0-9]{18,}$/.test(s);
+};
 
 // Parse "YYYY-MM-DD" → Date local (sin corrimiento de zona)
 const parseFecha = (f: any): Date | null => {
@@ -80,6 +91,9 @@ interface Ctx {
   clasificarTipo: (op: any) => 'Transfer' | 'Logística' | 'Fletes' | 'Otro';
   esNoCobrable: (op: any) => boolean;
   statusNombreDe: (op: any) => string;
+  // ✅ NUEVO: resolución de IDs → nombres
+  nombreEmpresa: (id: any, desnorm?: any) => string;
+  nombreConvenio: (id: any, desnorm?: any) => string;
 }
 
 export const ReportesDashboard = () => {
@@ -94,27 +108,58 @@ export const ReportesDashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<ReporteResult | null>(null);
 
-  // Caches de catálogos para resolver tipo/estatus
+  // Caches de catálogos para resolver tipo/estatus/empresa/convenio
   const [tiposPorId, setTiposPorId] = useState<Record<string, string>>({});
   const [statusPorId, setStatusPorId] = useState<Record<string, string>>({});
+  const [empresasPorId, setEmpresasPorId] = useState<Record<string, string>>({});
+  const [convenioPorId, setConvenioPorId] = useState<Record<string, string>>({});
 
   const cargarCatalogos = async () => {
-    if (Object.keys(tiposPorId).length > 0 || Object.keys(statusPorId).length > 0) return;
+    if (Object.keys(tiposPorId).length > 0 && Object.keys(empresasPorId).length > 0) {
+      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId };
+    }
     try {
-      const [tSnap, sSnap] = await Promise.all([
+      const [tSnap, sSnap, eSnap, cdSnap, tarSnap] = await Promise.all([
         getDocs(collection(db, 'catalogo_tipo_operacion')),
         getDocs(collection(db, 'catalogo_status_servicio')),
+        getDocs(collection(db, 'empresas')),
+        getDocs(collection(db, 'convenios_clientes_detalles')),
+        getDocs(collection(db, 'catalogo_tarifas_referencia')),
       ]);
+
       const t: Record<string, string> = {};
       tSnap.docs.forEach(d => { t[d.id] = String((d.data() as any).tipo_operacion || ''); });
+
       const s: Record<string, string> = {};
       sSnap.docs.forEach(d => { s[d.id] = String((d.data() as any).nombre || ''); });
+
+      const emp: Record<string, string> = {};
+      eSnap.docs.forEach(d => { emp[d.id] = String((d.data() as any).nombre || ''); });
+
+      // Mapa de tarifas (para nombrar convenios)
+      const tarifas: Record<string, string> = {};
+      tarSnap.docs.forEach(d => {
+        const data = d.data() as any;
+        tarifas[d.id] = String(data.descripcion || data.nombre || '');
+      });
+
+      // Convenio (detalle del cliente) → nombre de su tarifa
+      const conv: Record<string, string> = {};
+      cdSnap.docs.forEach(d => {
+        const data = d.data() as any;
+        const tarifaId = data.tipoConvenioId || data.tipo_convenio_id || data.tipoConvenio || data.tipo_convenio || data['TIPO DE CONVENIO'];
+        const nombre = tarifas[String(tarifaId)] || '';
+        if (nombre) conv[d.id] = nombre;
+      });
+
       setTiposPorId(t);
       setStatusPorId(s);
-      return { t, s };
+      setEmpresasPorId(emp);
+      setConvenioPorId(conv);
+      return { t, s, emp, conv };
     } catch (e) {
       console.error('Error cargando catálogos de reportes:', e);
-      return { t: {}, s: {} };
+      return { t: tiposPorId, s: statusPorId, emp: empresasPorId, conv: convenioPorId };
     }
   };
 
@@ -148,10 +193,10 @@ export const ReportesDashboard = () => {
     const filas = filtradas.map(op => [
       fmtFechaCorta(op.fechaServicio),
       op.ref || String(op.id || '').substring(0, 6),
-      op.clienteNombre || op.nombreCliente || op.clientePaga || '-',
-      op.convenioNombre || op.convenio || '-',
-      op.origenNombre || op.origen || '-',
-      op.destinoNombre || op.destino || '-',
+      c.nombreEmpresa(op.clientePaga || op.clienteId, op.clienteNombre || op.nombreCliente) || '-',
+      c.nombreConvenio(op.convenio, op.convenioNombre) || '-',
+      c.nombreEmpresa(op.origen, op.origenNombre) || '-',
+      c.nombreEmpresa(op.destino, op.destinoNombre) || '-',
       c.statusNombreDe(op) || '-',
       fmtMoneda(op.subtotalCliente),
       fmtMoneda(op.utilidadEstimada),
@@ -319,7 +364,7 @@ export const ReportesDashboard = () => {
   function reportePorCliente(c: Ctx): ReporteResult {
     const agg: Record<string, { cant: number; sub: number; util: number }> = {};
     c.ops.forEach(op => {
-      const cli = op.clienteNombre || op.nombreCliente || op.clientePaga || 'Sin cliente';
+      const cli = c.nombreEmpresa(op.clientePaga || op.clienteId, op.clienteNombre || op.nombreCliente) || 'Sin cliente';
       const a = (agg[cli] = agg[cli] || { cant: 0, sub: 0, util: 0 });
       a.cant++; a.sub += Number(op.subtotalCliente) || 0; a.util += Number(op.utilidadEstimada) || 0;
     });
@@ -347,6 +392,8 @@ export const ReportesDashboard = () => {
       const cat = await cargarCatalogos();
       const tMap = (cat && cat.t) || tiposPorId;
       const sMap = (cat && cat.s) || statusPorId;
+      const empMap = (cat && cat.emp) || empresasPorId;
+      const convMap = (cat && cat.conv) || convenioPorId;
 
       const q = query(
         collection(db, 'operaciones'),
@@ -365,13 +412,32 @@ export const ReportesDashboard = () => {
         if (t.includes('flete')) return 'Fletes';
         return 'Otro';
       };
-      const statusNombreDe = (op: any): string => String(op.statusNombre || sMap[String(op.status)] || op.status || '');
+      const statusNombreDe = (op: any): string => {
+        const desnorm = op.statusNombre;
+        if (desnorm && !esId(desnorm)) return String(desnorm);
+        return String(sMap[String(op.status)] || (esId(op.status) ? '' : (op.status || '')) || '');
+      };
       const esNoCobrable = (op: any): boolean => {
         const s = norm(statusNombreDe(op));
         return KEYWORDS_NO_COBRABLE.some(k => s.includes(k));
       };
+      // ✅ Resolución de IDs → nombres (nunca devuelve un ID crudo)
+      const nombreEmpresa = (id: any, desnorm?: any): string => {
+        if (desnorm && !esId(desnorm)) return String(desnorm);
+        const k = String(id || '').trim();
+        if (empMap[k]) return empMap[k];
+        if (k && !esId(k)) return k;
+        return '';
+      };
+      const nombreConvenio = (id: any, desnorm?: any): string => {
+        if (desnorm && !esId(desnorm)) return String(desnorm);
+        const k = String(id || '').trim();
+        if (convMap[k]) return convMap[k];
+        if (k && !esId(k)) return k;
+        return '';
+      };
 
-      const ctx: Ctx = { ops, desde, hasta, clasificarTipo, esNoCobrable, statusNombreDe };
+      const ctx: Ctx = { ops, desde, hasta, clasificarTipo, esNoCobrable, statusNombreDe, nombreEmpresa, nombreConvenio };
       const def = reportes.find(r => r.id === reporteId) || reportes[0];
       setResultado(def.build(ctx));
       if (ops.length === 0) setError('No hay operaciones en ese rango de fechas.');
@@ -389,43 +455,140 @@ export const ReportesDashboard = () => {
     return `${base}_${desde}_a_${hasta}`;
   };
 
-  const exportarExcel = () => {
-    if (!resultado) return;
-    const encabezados = resultado.columnas.map(c => c.label);
-    const aoa: any[][] = [];
-    aoa.push([resultado.titulo]);
-    aoa.push([`Del ${fmtFechaCorta(desde)} al ${fmtFechaCorta(hasta)}`]);
-    if (resultado.resumen && resultado.resumen.length) aoa.push(resultado.resumen.map(r => `${r.label}: ${r.valor}`));
-    aoa.push([]);
-    aoa.push(encabezados);
-    resultado.filas.forEach(f => aoa.push(f));
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Reporte');
-    XLSX.writeFile(wb, `${nombreArchivo()}.xlsx`);
+  // Convierte "$ 1,234.00" → 1234 ; deja el resto igual
+  const aNumeroMoneda = (v: any): number | null => {
+    if (typeof v !== 'string') return null;
+    if (!/^\s*\$\s*-?[\d,]/.test(v)) return null;
+    const n = Number(v.replace(/[^0-9.-]/g, ''));
+    return isNaN(n) ? null : n;
   };
 
+  // ✅ EXCEL profesional con logo (ExcelJS). Requiere: npm install exceljs
+  const exportarExcel = async () => {
+    if (!resultado) return;
+    try {
+      const ExcelJS: any = (await import('exceljs')).default || (await import('exceljs'));
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'Roelca Inc.';
+      wb.created = new Date();
+      const ws = wb.addWorksheet('Reporte', { views: [{ showGridLines: false }] });
+      const nCols = resultado.columnas.length;
+
+      // Logo (col A, filas superiores)
+      try {
+        const b64 = LOGO_DEFAULT.includes(',') ? LOGO_DEFAULT.split(',')[1] : LOGO_DEFAULT;
+        const imgId = wb.addImage({ base64: b64, extension: 'png' });
+        ws.addImage(imgId, { tl: { col: 0.15, row: 0.2 }, ext: { width: 86, height: 86 } });
+      } catch (imgErr) { console.warn('No se pudo insertar el logo en Excel:', imgErr); }
+
+      const colTitulo = Math.min(1, nCols - 1); // empieza junto al logo
+      const setMerged = (row: number, text: string, font: any) => {
+        ws.mergeCells(row, colTitulo + 1, row, nCols);
+        const cell = ws.getCell(row, colTitulo + 1);
+        cell.value = text;
+        cell.font = font;
+        cell.alignment = { horizontal: 'left', vertical: 'middle' };
+      };
+      setMerged(1, 'ROELCA INC.', { bold: true, size: 16, color: { argb: 'FFC2410C' } });
+      setMerged(2, resultado.titulo, { bold: true, size: 13, color: { argb: 'FF24292F' } });
+      setMerged(3, `Del ${fmtFechaCorta(desde)} al ${fmtFechaCorta(hasta)}`, { size: 11, color: { argb: 'FF57606A' } });
+      setMerged(4, `Generado: ${new Date().toLocaleString('es-MX')}`, { italic: true, size: 9, color: { argb: 'FF8B949E' } });
+      if (resultado.resumen && resultado.resumen.length) {
+        setMerged(5, resultado.resumen.map(r => `${r.label}: ${r.valor}`).join('      '), { bold: true, size: 10, color: { argb: 'FF1F2328' } });
+      }
+      for (let r = 1; r <= 5; r++) ws.getRow(r).height = 19;
+
+      const headerRow = 7;
+      const thin = { style: 'thin', color: { argb: 'FFD0D7DE' } };
+      const borderAll = { top: thin, left: thin, bottom: thin, right: thin };
+
+      // Encabezados
+      resultado.columnas.forEach((col, i) => {
+        const cell = ws.getCell(headerRow, i + 1);
+        cell.value = col.label;
+        cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF24292F' } };
+        cell.alignment = { horizontal: col.align || 'left', vertical: 'middle' };
+        cell.border = borderAll;
+      });
+      ws.getRow(headerRow).height = 22;
+
+      // Filas de datos
+      resultado.filas.forEach((f, ri) => {
+        const r = headerRow + 1 + ri;
+        const esTotalRow = typeof f[0] === 'string' && (f[0] === 'ACUMULADO' || f[0] === 'PROMEDIO MENSUAL');
+        const weekend = resultado.weekendFlags && resultado.weekendFlags[ri];
+        f.forEach((v, ci) => {
+          const col = resultado.columnas[ci];
+          const cell = ws.getCell(r, ci + 1);
+          const num = aNumeroMoneda(v);
+          if (num !== null) { cell.value = num; cell.numFmt = '"$"#,##0.00'; }
+          else { cell.value = (v === '' || v == null) ? null : v; }
+          cell.alignment = { horizontal: col?.align || 'left', vertical: 'middle' };
+          cell.font = { size: 10, bold: esTotalRow, color: { argb: esTotalRow ? 'FF24292F' : 'FF1F2328' } };
+          const fill = esTotalRow
+            ? 'FFE8EEF7'
+            : (weekend ? 'FFFFF6E5' : (ri % 2 ? 'FFFAFBFC' : 'FFFFFFFF'));
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+          cell.border = borderAll;
+        });
+      });
+
+      // Ancho de columnas (auto aproximado)
+      resultado.columnas.forEach((col, i) => {
+        let max = String(col.label).length;
+        resultado.filas.forEach(f => { const s = String(f[i] ?? ''); if (s.length > max) max = s.length; });
+        ws.getColumn(i + 1).width = Math.min(Math.max(max + 2, 11), 42);
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${nombreArchivo()}.xlsx`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      console.error('Error exportando Excel:', e);
+      alert('No se pudo exportar a Excel. Asegúrate de instalar la librería con:\n\n   npm install exceljs');
+    }
+  };
+
+  // ✅ PDF profesional con logo y rango de fechas (ventana de impresión → Guardar como PDF)
   const exportarPDF = () => {
     if (!resultado) return;
     const cols = resultado.columnas;
     const filasHtml = resultado.filas.map((f, i) => {
       const esTotalRow = typeof f[0] === 'string' && (f[0] === 'ACUMULADO' || f[0] === 'PROMEDIO MENSUAL');
       const weekend = resultado.weekendFlags && resultado.weekendFlags[i];
-      const bg = esTotalRow ? '#e8eef7' : (weekend ? '#fff6e5' : (i % 2 ? '#fafbfc' : '#ffffff'));
-      const fw = esTotalRow ? 'bold' : 'normal';
-      const tds = f.map((v, j) => `<td style="padding:6px 10px;border:1px solid #d0d7de;text-align:${cols[j]?.align || 'left'};font-weight:${fw}">${v === '' || v == null ? '' : String(v)}</td>`).join('');
+      const bg = esTotalRow ? '#e8eef7' : (weekend ? '#fff6e5' : (i % 2 ? '#f6f8fa' : '#ffffff'));
+      const fw = esTotalRow ? '700' : '400';
+      const tds = f.map((v, j) => `<td style="padding:7px 11px;border:1px solid #d0d7de;text-align:${cols[j]?.align || 'left'};font-weight:${fw};white-space:nowrap">${v === '' || v == null ? '' : String(v)}</td>`).join('');
       return `<tr style="background:${bg}">${tds}</tr>`;
     }).join('');
-    const ths = cols.map(c => `<th style="padding:8px 10px;border:1px solid #d0d7de;background:#24292f;color:#fff;text-align:${c.align || 'left'};font-size:11px;text-transform:uppercase;letter-spacing:.3px">${c.label}</th>`).join('');
-    const resumenHtml = (resultado.resumen || []).map(r => `<span style="margin-right:18px"><b>${r.label}:</b> ${r.valor}</span>`).join('');
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${resultado.titulo}</title></head>
-<body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1f2328;padding:24px">
-  <h1 style="font-size:20px;margin:0 0 4px">${resultado.titulo}</h1>
-  <div style="color:#57606a;font-size:13px;margin-bottom:8px">Del ${fmtFechaCorta(desde)} al ${fmtFechaCorta(hasta)} · Roelca Inc.</div>
-  <div style="font-size:13px;margin-bottom:14px">${resumenHtml}</div>
+    const ths = cols.map(c => `<th style="padding:9px 11px;border:1px solid #24292f;background:#24292f;color:#fff;text-align:${c.align || 'left'};font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">${c.label}</th>`).join('');
+    const resumenHtml = (resultado.resumen || []).map(r =>
+      `<div style="background:#fff;border:1px solid #e6eaf0;border-radius:8px;padding:8px 14px;min-width:120px">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#8a94a6">${r.label}</div>
+        <div style="font-size:16px;font-weight:700;color:#c2410c">${r.valor}</div>
+      </div>`).join('');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${resultado.titulo}</title>
+<style>@page{margin:14mm} body{margin:0}</style></head>
+<body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1f2328;padding:24px">
+  <div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #c2410c;padding-bottom:14px;margin-bottom:18px">
+    <img src="${LOGO_DEFAULT}" alt="Roelca Inc." style="height:64px;width:auto" />
+    <div style="flex:1">
+      <div style="font-size:13px;font-weight:700;letter-spacing:.5px;color:#c2410c">ROELCA INC.</div>
+      <div style="font-size:22px;font-weight:800;margin:2px 0 2px;color:#1f2328">${resultado.titulo}</div>
+      <div style="color:#57606a;font-size:13px">Periodo: <b>${fmtFechaCorta(desde)}</b> al <b>${fmtFechaCorta(hasta)}</b></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">${resumenHtml}</div>
   <table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr>${ths}</tr></thead><tbody>${filasHtml}</tbody></table>
-  <div style="color:#8b949e;font-size:10px;margin-top:14px">Generado el ${new Date().toLocaleString('es-MX')}</div>
-  <script>window.onload=function(){window.print();}</script>
+  <div style="color:#8b949e;font-size:10px;margin-top:16px;border-top:1px solid #e6eaf0;padding-top:8px">
+    Roelca Inc. · Reporte generado el ${new Date().toLocaleString('es-MX')}
+  </div>
+  <script>window.onload=function(){setTimeout(function(){window.print();},200);}</script>
 </body></html>`;
     const w = window.open('', '_blank');
     if (!w) { alert('Permite las ventanas emergentes para exportar a PDF.'); return; }
@@ -437,112 +600,105 @@ export const ReportesDashboard = () => {
   const btnPrimary: React.CSSProperties = { padding: '9px 18px', borderRadius: 8, border: 'none', background: 'linear-gradient(180deg,#ea580c,#c2410c)', color: '#fff', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer' };
   const btnOutline: React.CSSProperties = { padding: '9px 16px', borderRadius: 8, border: '1px solid #30363d', background: 'transparent', color: '#c9d1d9', fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 };
 
+  const nombreReporteActual = (reportes.find(r => r.id === reporteId) || reportes[0]).nombre;
+
   return (
     <div style={{ padding: 24, width: '100%', boxSizing: 'border-box', color: '#c9d1d9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       <h1 style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 4px', fontWeight: 'bold' }}>Reportes</h1>
       <p style={{ color: '#8b949e', margin: '0 0 20px', fontSize: '0.92rem' }}>Reportes de operaciones por rango de fechas. Exporta a Excel o PDF.</p>
 
-      <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-        {/* Lista de reportes */}
-        <div style={{ width: 280, flexShrink: 0, background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, padding: 10 }}>
-          <div style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.6px', padding: '6px 10px' }}>Reportes</div>
-          {reportes.map(r => (
-            <button key={r.id} onClick={() => { setReporteId(r.id); setResultado(null); }}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px', marginBottom: 4, borderRadius: 8, cursor: 'pointer',
-                border: '1px solid ' + (reporteId === r.id ? 'rgba(251,146,60,.4)' : 'transparent'),
-                background: reporteId === r.id ? 'rgba(251,146,60,.12)' : 'transparent',
-                color: reporteId === r.id ? '#fb923c' : '#c9d1d9', fontSize: '0.9rem', fontWeight: reporteId === r.id ? 600 : 400 }}>
-              {r.nombre}
-            </button>
-          ))}
+      {/* ✅ Filtros en una sola barra: Reporte (desplegable) + Desde + Hasta + acciones */}
+      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, padding: 18, marginBottom: 18, display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 260px', minWidth: 220 }}>
+          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Reporte</label>
+          <select value={reporteId} onChange={e => { setReporteId(e.target.value); setResultado(null); setError(null); }} style={{ ...inputEstilo, width: '100%' }}>
+            {reportes.map(r => (<option key={r.id} value={r.id}>{r.nombre}</option>))}
+          </select>
         </div>
-
-        {/* Panel principal */}
-        <div style={{ flex: 1, minWidth: 320 }}>
-          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, padding: 18, marginBottom: 18, display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Desde</label>
-              <input type="date" value={desde} onChange={e => setDesde(e.target.value)} style={inputEstilo} />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Hasta</label>
-              <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} style={inputEstilo} />
-            </div>
-            <button onClick={generar} disabled={cargando} style={{ ...btnPrimary, opacity: cargando ? 0.6 : 1 }}>
-              {cargando ? 'Generando…' : 'Generar reporte'}
-            </button>
-            <div style={{ flex: 1 }} />
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={exportarExcel} disabled={!resultado} style={{ ...btnOutline, opacity: resultado ? 1 : 0.5 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Excel
-              </button>
-              <button onClick={exportarPDF} disabled={!resultado} style={{ ...btnOutline, opacity: resultado ? 1 : 0.5 }}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                PDF
-              </button>
-            </div>
-          </div>
-
-          {error && <div style={{ background: 'rgba(248,81,73,.08)', border: '1px solid rgba(248,81,73,.3)', color: '#ff9b94', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: '0.88rem' }}>{error}</div>}
-
-          {resultado && (
-            <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, overflow: 'hidden' }}>
-              <div style={{ padding: '16px 18px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-                <div>
-                  <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '1.05rem' }}>{resultado.titulo}</div>
-                  <div style={{ color: '#8b949e', fontSize: '0.8rem' }}>Del {fmtFechaCorta(desde)} al {fmtFechaCorta(hasta)}</div>
-                </div>
-                {resultado.resumen && (
-                  <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
-                    {resultado.resumen.map((r, i) => (
-                      <div key={i} style={{ textAlign: 'right' }}>
-                        <div style={{ color: '#8b949e', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '.5px' }}>{r.label}</div>
-                        <div style={{ color: '#fb923c', fontWeight: 700, fontSize: '1.1rem' }}>{r.valor}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div style={{ overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                  <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
-                    <tr>
-                      {resultado.columnas.map(c => (
-                        <th key={c.key} style={{ padding: '12px 14px', background: '#161b22', color: '#8b949e', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', textAlign: c.align || 'left', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>{c.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resultado.filas.length === 0 ? (
-                      <tr><td colSpan={resultado.columnas.length} style={{ padding: 30, textAlign: 'center', color: '#8b949e' }}>Sin datos.</td></tr>
-                    ) : resultado.filas.map((f, i) => {
-                      const esTotalRow = typeof f[0] === 'string' && (f[0] === 'ACUMULADO' || f[0] === 'PROMEDIO MENSUAL');
-                      const weekend = resultado.weekendFlags && resultado.weekendFlags[i];
-                      const bg = esTotalRow ? '#161b22' : (weekend ? 'rgba(210,153,34,.07)' : 'transparent');
-                      return (
-                        <tr key={i} style={{ background: bg, borderBottom: '1px solid #21262d' }}>
-                          {f.map((v, j) => (
-                            <td key={j} style={{ padding: '10px 14px', textAlign: resultado.columnas[j]?.align || 'left', color: esTotalRow ? '#f0f6fc' : '#c9d1d9', fontWeight: esTotalRow ? 700 : 400, whiteSpace: 'nowrap' }}>
-                              {v === '' || v == null ? '' : String(v)}
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {!resultado && !error && !cargando && (
-            <div style={{ background: '#0d1117', border: '1px dashed #30363d', borderRadius: 12, padding: 40, textAlign: 'center', color: '#6e7681' }}>
-              Elige un reporte y un rango de fechas, luego pulsa <b style={{ color: '#fb923c' }}>Generar reporte</b>.
-            </div>
-          )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Desde</label>
+          <input type="date" value={desde} onChange={e => setDesde(e.target.value)} style={inputEstilo} />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Hasta</label>
+          <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} style={inputEstilo} />
+        </div>
+        <button onClick={generar} disabled={cargando} style={{ ...btnPrimary, opacity: cargando ? 0.6 : 1 }}>
+          {cargando ? 'Generando…' : 'Generar reporte'}
+        </button>
+        <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={exportarExcel} disabled={!resultado} style={{ ...btnOutline, opacity: resultado ? 1 : 0.5 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Excel
+          </button>
+          <button onClick={exportarPDF} disabled={!resultado} style={{ ...btnOutline, opacity: resultado ? 1 : 0.5 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            PDF
+          </button>
         </div>
       </div>
+
+      {error && <div style={{ background: 'rgba(248,81,73,.08)', border: '1px solid rgba(248,81,73,.3)', color: '#ff9b94', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: '0.88rem' }}>{error}</div>}
+
+      {resultado && (
+        <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '16px 18px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <img src={LOGO_DEFAULT} alt="Roelca Inc." style={{ height: 40, width: 'auto' }} />
+              <div>
+                <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '1.05rem' }}>{resultado.titulo}</div>
+                <div style={{ color: '#8b949e', fontSize: '0.8rem' }}>Del {fmtFechaCorta(desde)} al {fmtFechaCorta(hasta)}</div>
+              </div>
+            </div>
+            {resultado.resumen && (
+              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                {resultado.resumen.map((r, i) => (
+                  <div key={i} style={{ textAlign: 'right' }}>
+                    <div style={{ color: '#8b949e', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '.5px' }}>{r.label}</div>
+                    <div style={{ color: '#fb923c', fontWeight: 700, fontSize: '1.1rem' }}>{r.valor}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                <tr>
+                  {resultado.columnas.map(c => (
+                    <th key={c.key} style={{ padding: '12px 14px', background: '#161b22', color: '#8b949e', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', textAlign: c.align || 'left', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>{c.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {resultado.filas.length === 0 ? (
+                  <tr><td colSpan={resultado.columnas.length} style={{ padding: 30, textAlign: 'center', color: '#8b949e' }}>Sin datos.</td></tr>
+                ) : resultado.filas.map((f, i) => {
+                  const esTotalRow = typeof f[0] === 'string' && (f[0] === 'ACUMULADO' || f[0] === 'PROMEDIO MENSUAL');
+                  const weekend = resultado.weekendFlags && resultado.weekendFlags[i];
+                  const bg = esTotalRow ? '#161b22' : (weekend ? 'rgba(210,153,34,.07)' : 'transparent');
+                  return (
+                    <tr key={i} style={{ background: bg, borderBottom: '1px solid #21262d' }}>
+                      {f.map((v, j) => (
+                        <td key={j} style={{ padding: '10px 14px', textAlign: resultado.columnas[j]?.align || 'left', color: esTotalRow ? '#f0f6fc' : '#c9d1d9', fontWeight: esTotalRow ? 700 : 400, whiteSpace: 'nowrap' }}>
+                          {v === '' || v == null ? '' : String(v)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!resultado && !error && !cargando && (
+        <div style={{ background: '#0d1117', border: '1px dashed #30363d', borderRadius: 12, padding: 40, textAlign: 'center', color: '#6e7681' }}>
+          Reporte seleccionado: <b style={{ color: '#fb923c' }}>{nombreReporteActual}</b>. Elige el rango de fechas y pulsa <b style={{ color: '#fb923c' }}>Generar reporte</b>.
+        </div>
+      )}
     </div>
   );
 };
