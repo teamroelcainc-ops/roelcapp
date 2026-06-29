@@ -787,9 +787,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (initialData && empresas && remolques) {
       const safeInitialData = {
         ...initialData,
-        // ✅ FIX EDITAR: normaliza las fechas a "YYYY-MM-DD" para que el input de
-        //   tipo date las muestre (antes aparecían vacías por venir como Timestamp,
-        //   ISO con hora o "DD/MM/YYYY").
         fechaServicio: normalizarFechaISO(initialData.fechaServicio),
         fechaEmisionDoda: normalizarFechaISO(initialData.fechaEmisionDoda),
         fechaCita: initialData.fechaCita || '',
@@ -834,8 +831,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         return item ? item.unidad || item.nombre : id;
       };
 
-      // ✅ FIX EDITAR: el remolque puede venir guardado en distintos campos según
-      //   la antigüedad del registro. Probamos todos antes de darnos por vencidos.
       const remIdGuardado = String(
         initialData.numeroRemolque || initialData.remolque || initialData.remolqueId || initialData.numero_remolque || ''
       ).trim();
@@ -882,8 +877,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       }
     }
     setTipoCambioDia(tcEncontrado);
-    // ✅ FIX EDITAR: compara contra la fecha inicial YA NORMALIZADA para no
-    //   sobrescribir el tipo de cambio aprobado guardado al abrir la edición.
     const fechaInicialISO = normalizarFechaISO(initialData?.fechaServicio);
     if(tcEncontrado && (!initialData || formData.fechaServicio !== fechaInicialISO)) {
        setFormData(prev => ({...prev, tipoCambioAprobado: tcEncontrado}));
@@ -891,7 +884,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setBuscandoTC(false);
   }, [formData.fechaServicio, catalogoTC, initialData]);
 
-  // Helpers de resolución tolerantes a distintos nombres de campo en la data.
   const refMaestroDetalle = (d: any): string => String(
     d.convenioId ?? d.convenio ?? d.id_convenio ?? d.convenioClienteId ?? d.convenioProveedorId ??
     d.maestroId ?? d.padreId ?? d.convenio_id ?? ''
@@ -914,9 +906,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (emp) clientId = emp.id;
     }
     if (!clientId || !catalogoConvClientes || !catalogoConvDetalles) {
-      // ✅ FIX EDITAR: aunque todavía no haya cliente/convenios cargados, si estamos
-      //   editando una operación que YA traía convenio, lo devolvemos como única
-      //   opción usando lo que se guardó (así "Editar" muestra lo mismo que se grabó).
       const convId = String(initialData?.convenio || '').trim();
       if (initialData && convId) {
         return [{
@@ -970,10 +959,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       };
     });
 
-    // ✅ FIX EDITAR: si estamos editando y el convenio que se guardó NO aparece en
-    //   la lista (por filtros/owner distintos o catálogo aún sincronizando), lo
-    //   inyectamos con los datos denormalizados de la operación para que el campo
-    //   muestre EXACTAMENTE lo que se grabó y no quede vacío ni deshabilitado.
     const convGuardadoId = String(initialData?.convenio || '').trim();
     if (initialData && convGuardadoId && !lista.some((c: any) => String(c.id) === convGuardadoId)) {
       const detReal = (catalogoConvDetalles || []).find((d: any) => String(d.id) === convGuardadoId);
@@ -998,8 +983,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (prov) provId = prov.id;
     }
     if (!provId || !conveniosProv || !Array.isArray(conveniosProv)) {
-      // ✅ FIX EDITAR: igual que con el cliente, si editamos una operación con
-      //   convenio de proveedor guardado, lo devolvemos como única opción.
       const convProvId = String(initialData?.convenioProveedor || '').trim();
       if (initialData && convProvId) {
         return [{
@@ -1043,7 +1026,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       };
     });
 
-    // ✅ FIX EDITAR: inyectar el convenio de proveedor guardado si no quedó en la lista.
     const convProvGuardadoId = String(initialData?.convenioProveedor || '').trim();
     if (initialData && convProvGuardadoId && !lista.some((c: any) => String(c.id) === convProvGuardadoId)) {
       const detReal = (catalogoConvProvDetalles || []).find((d: any) => String(d.id) === convProvGuardadoId);
@@ -1061,10 +1043,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return lista;
   }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas, initialData]);
 
-  // ✅ FIX EDITAR (convenio cliente): al editar, el id del convenio sí carga pero el
-  //   buscador puede quedar vacío si no se guardó "convenioNombre". Resolvemos el
-  //   texto desde la lista de convenios del cliente. No se reactiva si el usuario
-  //   lo limpia (al limpiar también se vacía formData.convenio).
   useEffect(() => {
     if (!initialData) return;
     if (!formData.convenio) return;
@@ -1075,7 +1053,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, formData.convenio, searchConvenio, listaConveniosCliente]);
 
-  // ✅ FIX EDITAR (convenio proveedor): mismo criterio para el buscador del proveedor.
   useEffect(() => {
     if (!initialData) return;
     if (!formData.convenioProveedor) return;
@@ -1086,9 +1063,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, formData.convenioProveedor, searchConvenioProveedor, listaConveniosProveedor]);
 
-  // ✅ FIX EDITAR (# de remolque): cuando los remolques terminan de cargar, si el
-  //   buscador sigue vacío resolvemos el nombre desde el catálogo (probando varios
-  //   nombres de campo) y dejamos sincronizado formData.numeroRemolque.
   useEffect(() => {
     if (!initialData) return;
     if (searchRemolque && searchRemolque.trim()) return;
@@ -1107,8 +1081,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, remolques, searchRemolque, formData.numeroRemolque]);
 
-  // ✅ NUEVO: IDs resueltos del cliente/proveedor y de su convenio MAESTRO,
-  //   para poder CREAR nuevos detalles de convenio ligados correctamente.
   const clientePagaIdResuelto = useMemo(() => {
     let clientId = formData.clientePaga;
     if (!clientId && searchClientePaga && empresas) {
@@ -1143,17 +1115,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return maestro ? String(maestro.id) : '';
   }, [proveedorIdResuelto, conveniosProv]);
 
-  // Nota: la validación de "convenio cliente = convenio proveedor" fue eliminada;
-  //   el convenio del proveedor y el del cliente pueden ser distintos sin bloquear.
-
-  // ✅ MODIFICADO: auto-asignación NO destructiva del convenio del proveedor.
-  //   Solo SUGIERE un convenio al proveedor cuando éste todavía NO tiene uno
-  //   seleccionado y existe uno con la misma tarifa que el cliente (comodidad).
-  //   Ya NO borra ni sobrescribe una selección manual: si eliges un convenio
-  //   distinto para el proveedor, se respeta tal cual.
   useEffect(() => {
     if (!pestanasVisibles.includes('unidad')) return;
     if (!formData.convenio) return;
+
+    // ✅ NUEVO: si es FLOTA PROPIA de Roelca (Transfer, o Logística/Fletes con
+    //   proveedor Roelca) NO se autosugiere convenio ni monto a pagar al
+    //   proveedor, para que no aparezca un costo de proveedor inexistente.
+    const _tipoTxt = (tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '').toLowerCase();
+    const _isTransfer = _tipoTxt.includes('transfer');
+    const _isLog = _tipoTxt.includes('logistica') || _tipoTxt.includes('logística');
+    const _isFle = _tipoTxt.includes('fletes') || _tipoTxt.includes('flete');
+    const _isRoelcaProv = searchProvTransporte.toLowerCase().includes('roelca');
+    if (_isTransfer || ((_isLog || _isFle) && _isRoelcaProv)) return;
 
     // Si el proveedor YA tiene un convenio elegido, no tocar nada (pueden diferir).
     if (formData.convenioProveedor) return;
@@ -1237,13 +1211,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!initialData) resolverFlujo();
   }, [formData.convenio, listaConveniosCliente, tarifas, initialData, resolverNombreTrafico]);
 
-  // ✅ FIX EDITAR (estatus): los campos derivados `trafico` y `carga` arman el
-  //   configId del flujo de estatus (TipoOperacion_Trafico_Carga). El resolver
-  //   automático de arriba SÓLO corre al CREAR, por lo que en registros viejos
-  //   que no guardaron trafico/carga, al editar el panel mostraba
-  //   "selecciona Tipo/Cliente/Convenio" aunque todo estuviera capturado.
-  //   Aquí, SÓLO en edición y SÓLO si faltan, los derivamos de la tarifa del
-  //   convenio, SIN tocar montos, sueldos ni combustible ya guardados.
   useEffect(() => {
     if (!initialData) return;
     if (!formData.convenio) return;
@@ -1399,8 +1366,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     String(c.tarifaBaseId || '').toLowerCase().includes(sConvenioProveedor)
   );
 
-  // ✅ NUEVO: ID de la tarifa base (catalogo_tarifas_referencia) + MONTO del convenio
-  //   seleccionado en cliente y en proveedor, para comparar visualmente cuál coincide.
   const convClienteSel = listaConveniosCliente.find((c:any) => c.id === formData.convenio);
   const convProvSelObj = listaConveniosProveedor.find((c:any) => c.id === formData.convenioProveedor);
   const tarifaIdCliente = String(convClienteSel?.tarifaBaseId || '').trim();
@@ -1413,10 +1378,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const nombreMoneda = (monedaId: any) =>
     listaMonedasLocal.find((m:any) => String(m.id) === String(monedaId))?.moneda || '';
 
-  // ✅ NUEVO (FIX RESUMEN): resuelve el NOMBRE legible de una tarifa por su ID
-  //   (catalogo_tarifas_referencia) para mostrarlo en el panel "Resumen" en lugar
-  //   del ID hexadecimal. Si no se encuentra en el catálogo, usa el nombre
-  //   denormalizado del convenio seleccionado.
   const nombreTarifaPorId = (tarifaId: any): string => {
     const id = String(tarifaId || '').trim();
     if (!id) return '';
@@ -1435,11 +1396,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const proveedorForzado = formData.tipoOperacionId === TIPO_OP_PROVEEDOR_FIJO;
   const showInternalFleet = isTransfer || ((isLogistica || isFletes) && isRoelca);
   const showExternalFleet = (isLogistica || isFletes) && !isRoelca;
+  // ✅ NUEVO: cuando es flota PROPIA de Roelca (Transfer, o Logística/Fletes con
+  //   proveedor Roelca) NO se le paga a un proveedor externo. Se ocultan el
+  //   "Convenio Proveedor" y la sección "Pago al Proveedor" (no se pide tarifa
+  //   ni se muestra lo que habría que pagarle).
+  const esFlotaPropiaRoelca = showInternalFleet;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // ✅ MODIFICADO: se eliminó el bloqueo por "convenio cliente ≠ convenio proveedor".
-    //   Ahora el guardado procede aunque los convenios/tarifas sean distintos.
     setCargando(true);
     try {
       const configId = buildConfigId();
@@ -1494,6 +1458,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         convenioProveedorNombre: convProvObj?.tipoConvenioNombre || ''
       };
 
+      // ✅ NUEVO: en flota PROPIA de Roelca no hay pago a proveedor externo.
+      //   Se limpian los campos del proveedor para que NO se guarde un costo
+      //   inexistente (que afectaría la utilidad). El gasto real de la flota
+      //   propia se calcula con sueldo + combustible + manifiesto.
+      if (esFlotaPropiaRoelca) {
+        operacionData.convenioProveedor = '';
+        operacionData.convenioProveedorNombre = '';
+        operacionData.monedaConvenioProv = '';
+        operacionData.totalAPagarProv = 0;
+        operacionData.cargosAdicionalesProv = 0;
+        operacionData.subtotalProv = 0;
+        operacionData.dolaresProv = 0;
+        operacionData.pesosProv = 0;
+        operacionData.conversionProv = 0;
+      }
+
       Object.keys(operacionData).forEach(key => { if (operacionData[key] === undefined) delete operacionData[key]; });
 
       if (initialData && puedeEditarRef && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
@@ -1547,14 +1527,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtFecha = (f: string) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return f; } };
 
-  // ✅ NUEVO: opciones del catálogo de tarifas para el selector del editor de convenio.
   const opcionesTarifasRef = useMemo(() => {
     return (tarifas || [])
       .map((t: any) => ({ id: String(t.id), nombre: t.descripcion || t.nombre || t.tarifa || t.concepto || String(t.id) }))
       .sort((a: any, b: any) => String(a.nombre).localeCompare(String(b.nombre), 'es', { sensitivity: 'base' }));
   }, [tarifas]);
 
-  // ✅ NUEVO: costo representativo por tarifa (tomado de los convenios ya registrados, cliente + proveedor).
   const costoPorTarifa = useMemo(() => {
     const m: Record<string, number> = {};
     const tomar = (arr: any[]) => (arr || []).forEach((d: any) => {
@@ -1568,16 +1546,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return m;
   }, [catalogoConvDetalles, catalogoConvProvDetalles]);
 
-  // ✅ NUEVO: cuántas operaciones usan cada tarifa (se cuenta una vez por operación por tarifa única).
   const [usoTarifaMap, setUsoTarifaMap] = useState<Record<string, number>>({});
   const usoTarifaCargadoRef = useRef(false);
 
   const cargarUsoTarifas = useCallback(async () => {
     if (usoTarifaCargadoRef.current) return;
-    if (!((catalogoConvDetalles && catalogoConvDetalles.length) || (catalogoConvProvDetalles && catalogoConvProvDetalles.length))) return; // espera a que carguen los detalles
+    if (!((catalogoConvDetalles && catalogoConvDetalles.length) || (catalogoConvProvDetalles && catalogoConvProvDetalles.length))) return;
     usoTarifaCargadoRef.current = true;
     try {
-      // mapa: id del detalle de convenio -> id de la tarifa del catálogo
       const detCli = new Map<string, string>();
       (catalogoConvDetalles || []).forEach((d: any) => {
         const tid = String(d.tipoConvenioId ?? d.tipo_convenio_id ?? d.tipoConvenio ?? d.tipo_convenio ?? d.tarifaId ?? d.tarifa_id ?? '').trim();
@@ -1602,11 +1578,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       setUsoTarifaMap(conteo);
     } catch (e) {
       console.error('Error contando uso de tarifas en operaciones:', e);
-      usoTarifaCargadoRef.current = false; // permite reintentar
+      usoTarifaCargadoRef.current = false;
     }
   }, [catalogoConvDetalles, catalogoConvProvDetalles]);
 
-  // Construye la etiqueta de cada opción del desplegable: nombre · ID · costo · nº de operaciones.
   const etiquetaOpcionTarifa = (o: any): string => {
     const partes: string[] = [o.nombre, `ID: ${o.id}`];
     const costo = costoPorTarifa[o.id];
@@ -1616,14 +1591,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return partes.join('  ·  ');
   };
 
-  // Carga el conteo de uso en operaciones la primera vez que se abre cualquier vista de convenios.
   useEffect(() => {
     if (mostrarConveniosCliente || mostrarConveniosProveedor || detalleConvEditando || detalleConvProvEditando) {
       cargarUsoTarifas();
     }
   }, [mostrarConveniosCliente, mostrarConveniosProveedor, detalleConvEditando, detalleConvProvEditando, cargarUsoTarifas]);
 
-  // Recarga los detalles de convenios desde Firestore tras editar/eliminar.
   const refrescarConvDetallesCliente = useCallback(async () => {
     try {
       const snap = await getDocs(collection(db, 'convenios_clientes_detalles'));
@@ -1648,7 +1621,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
   };
 
-  // ✅ NUEVO: abrir el editor en modo CREACIÓN para un nuevo convenio del cliente.
   const abrirNuevoConvenioCliente = () => {
     if (!clientePagaIdResuelto) { alert('Selecciona primero un Cliente (Paga) para agregarle un convenio.'); return; }
     setDetalleConvEditando({
@@ -1672,7 +1644,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (t !== undefined) payload.tarifa = t;
 
       if (detalleConvEditando.esNuevo) {
-        // Crear un nuevo convenio/tarifa ligado al cliente seleccionado.
         if (!clientePagaIdResuelto) { alert('Selecciona un Cliente (Paga) válido antes de agregar el convenio.'); setGuardandoDetalleConv(false); return; }
         payload.clienteId = clientePagaIdResuelto;
         if (convenioClienteMaestroId) payload.convenioId = convenioClienteMaestroId;
@@ -1704,7 +1675,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  // ✅ NUEVO: ver / editar / eliminar los convenios (tarifas) del PROVEEDOR.
   const refrescarConvProvDetalles = useCallback(async () => {
     try {
       const snap = await getDocs(collection(db, 'convenios_proveedores_detalles'));
@@ -1727,7 +1697,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
   };
 
-  // ✅ NUEVO: abrir el editor en modo CREACIÓN para un nuevo convenio del proveedor.
   const abrirNuevoConvenioProv = () => {
     if (!proveedorIdResuelto) { alert('Selecciona primero un Proveedor de Transporte para agregarle un convenio.'); return; }
     setDetalleConvProvEditando({
@@ -1750,7 +1719,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (t !== undefined) payload.tarifa = t;
 
       if (detalleConvProvEditando.esNuevo) {
-        // Crear un nuevo convenio/tarifa ligado al proveedor seleccionado.
         if (!proveedorIdResuelto) { alert('Selecciona un Proveedor de Transporte válido antes de agregar el convenio.'); setGuardandoDetalleConvProv(false); return; }
         payload.proveedorId = proveedorIdResuelto;
         if (convenioProvMaestroId) payload.convenioId = convenioProvMaestroId;
@@ -1999,7 +1967,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}
                         {formData.convenio && tarifaIdCliente && (
                           <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>
-                            ID tarifa: {tarifaIdCliente} · Monto: {fmtMoney(montoCliente)}{nombreMoneda(monedaClienteId) ? ` ${nombreMoneda(monedaClienteId)}` : ''}{tarifaIdProveedor ? (tarifasCoinciden ? '  ✓ coincide con el del proveedor' : '  ✕ NO coincide con el del proveedor') : ''}
+                            ID tarifa: {tarifaIdCliente} · Monto: {fmtMoney(montoCliente)}{nombreMoneda(monedaClienteId) ? ` ${nombreMoneda(monedaClienteId)}` : ''}{tarifaIdProveedor && !esFlotaPropiaRoelca ? (tarifasCoinciden ? '  ✓ coincide con el del proveedor' : '  ✕ NO coincide con el del proveedor') : ''}
                           </small>
                         )}
                       </div>
@@ -2199,8 +2167,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )}
                         </div>
                         {proveedorForzado && <small style={{ color: '#fb923c' }}>Este tipo de operación usa un proveedor fijo.</small>}
+                        {esFlotaPropiaRoelca && <small style={{ color: '#3fb950' }}>Flota propia de Roelca: no se paga a un proveedor externo.</small>}
                       </div>
 
+                      {/* ✅ Convenio Proveedor: SOLO cuando NO es flota propia de Roelca. */}
+                      {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                           <label className="form-label" style={{ margin: 0 }}>Convenio Proveedor</label>
@@ -2234,7 +2205,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </small>
                         )}
                       </div>
+                      )}
 
+                      {/* ✅ Facturado En: SOLO cuando NO es flota propia (es parte del pago al proveedor). */}
+                      {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <label className="form-label">Facturado En</label>
                         <select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}>
@@ -2242,6 +2216,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {listaMonedasLocal?.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
                         </select>
                       </div>
+                      )}
                     </div>
                   </div>
 
@@ -2347,6 +2322,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     </div>
                   )}
 
+                  {/* ✅ Pago al Proveedor: SOLO cuando NO es flota propia de Roelca. */}
+                  {!esFlotaPropiaRoelca && (
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
@@ -2360,6 +2337,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
                       <div className="form-group"><label className="form-label">Subtotal Proveedor</label><input type="number" className="form-control" value={formData.subtotalProv || 0} readOnly style={{ opacity: 0.75 }} /></div>
                       <div className="form-group"><label className="form-label">Conversión (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                    </div>
+                  </div>
+                  )}
+
+                  {/* ✅ Observaciones de Unidad: SIEMPRE visible (aplica también a flota propia). */}
+                  <div className="roelca-card">
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Observaciones de Unidad</h3></div>
+                    <div className="form-grid">
                       <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Unidad</label><textarea name="observacionesUnidad" className="form-control" rows={2} value={formData.observacionesUnidad || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
@@ -2395,7 +2380,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group"><label className="form-label">Subtotal Cliente</label><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.75 }} /></div>
                       <div className="form-group"><label className="form-label">Conversión Cliente (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Conversión Proveedor (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      {!esFlotaPropiaRoelca && (
+                        <div className="form-group"><label className="form-label">Conversión Proveedor (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      )}
                       <div className="form-group">
                         <label className="form-label">Utilidad Estimada (MXN)</label>
                         <input type="number" className="form-control" value={Number(formData.utilidadEstimada || 0).toFixed(2)} readOnly
@@ -2444,7 +2431,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             {(tarifaIdCliente || tarifaIdProveedor) && (
               <div className="roelca-sidebar-section">
                 <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconReceipt size={13} /></span> Tarifa (Convenio)</div>
-                {/* ✅ FIX: mostrar el NOMBRE de la tarifa (no el ID). El ID queda como subtexto. */}
                 <div className="roelca-money-row" style={{ alignItems: 'flex-start' }}>
                   <span className="lbl">Cliente</span>
                   <span className="val" style={{ color: '#e6edf3', textAlign: 'right', maxWidth: '62%', lineHeight: 1.3 }}>
@@ -2452,21 +2438,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     {tarifaIdCliente && <span style={{ display: 'block', fontSize: '0.66rem', color: '#7d8590', fontFamily: 'monospace', fontWeight: 400, marginTop: '2px' }}>ID: {tarifaIdCliente}</span>}
                   </span>
                 </div>
-                <div className="roelca-money-row" style={{ alignItems: 'flex-start' }}>
-                  <span className="lbl">Proveedor</span>
-                  <span className="val" style={{ color: '#e6edf3', textAlign: 'right', maxWidth: '62%', lineHeight: 1.3 }}>
-                    {nombreTarifaProv || '—'}
-                    {tarifaIdProveedor && <span style={{ display: 'block', fontSize: '0.66rem', color: '#7d8590', fontFamily: 'monospace', fontWeight: 400, marginTop: '2px' }}>ID: {tarifaIdProveedor}</span>}
-                  </span>
-                </div>
+                {/* ✅ Filas del proveedor: SOLO cuando NO es flota propia de Roelca. */}
+                {!esFlotaPropiaRoelca && (
+                  <div className="roelca-money-row" style={{ alignItems: 'flex-start' }}>
+                    <span className="lbl">Proveedor</span>
+                    <span className="val" style={{ color: '#e6edf3', textAlign: 'right', maxWidth: '62%', lineHeight: 1.3 }}>
+                      {nombreTarifaProv || '—'}
+                      {tarifaIdProveedor && <span style={{ display: 'block', fontSize: '0.66rem', color: '#7d8590', fontFamily: 'monospace', fontWeight: 400, marginTop: '2px' }}>ID: {tarifaIdProveedor}</span>}
+                    </span>
+                  </div>
+                )}
                 <div className="roelca-money-row"><span className="lbl">Monto Cliente</span><span className="val">{fmtMoney(montoCliente)}{nombreMoneda(monedaClienteId) ? ` ${nombreMoneda(monedaClienteId)}` : ''}</span></div>
-                <div className="roelca-money-row"><span className="lbl">Monto Proveedor</span><span className="val">{fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}</span></div>
-                <div className="roelca-money-row" style={{ borderTop: '1px solid #1f2733', marginTop: '4px', paddingTop: '8px' }}>
-                  <span className="lbl">¿Tarifas coinciden?</span>
-                  <span className="val" style={{ color: tarifasCoinciden ? '#3fb950' : '#fb923c' }}>
-                    {tarifaIdCliente && tarifaIdProveedor ? (tarifasCoinciden ? '✓ Sí' : '✕ No') : '—'}
-                  </span>
-                </div>
+                {!esFlotaPropiaRoelca && (
+                  <div className="roelca-money-row"><span className="lbl">Monto Proveedor</span><span className="val">{fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}</span></div>
+                )}
+                {!esFlotaPropiaRoelca && (
+                  <div className="roelca-money-row" style={{ borderTop: '1px solid #1f2733', marginTop: '4px', paddingTop: '8px' }}>
+                    <span className="lbl">¿Tarifas coinciden?</span>
+                    <span className="val" style={{ color: tarifasCoinciden ? '#3fb950' : '#fb923c' }}>
+                      {tarifaIdCliente && tarifaIdProveedor ? (tarifasCoinciden ? '✓ Sí' : '✕ No') : '—'}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2499,7 +2492,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             <div className="roelca-sidebar-section">
               <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconTrendingUp size={13} /></span> Financiero</div>
               <div className="roelca-money-row"><span className="lbl">Subtotal Cliente</span><span className="val">{fmtMoney(formData.subtotalCliente)}</span></div>
-              <div className="roelca-money-row"><span className="lbl">Subtotal Proveedor</span><span className="val">{fmtMoney(formData.subtotalProv)}</span></div>
+              {/* ✅ Subtotal Proveedor: SOLO cuando NO es flota propia de Roelca. */}
+              {!esFlotaPropiaRoelca && (
+                <div className="roelca-money-row"><span className="lbl">Subtotal Proveedor</span><span className="val">{fmtMoney(formData.subtotalProv)}</span></div>
+              )}
               <div className="roelca-money-row"><span className="lbl">Total Gastos</span><span className="val">{fmtMoney(formData.totalGastos)}</span></div>
               <div className={`roelca-utility-box ${Number(formData.utilidadEstimada) < 0 ? 'negative' : ''}`}>
                 <div className="roelca-utility-label">Utilidad Estimada (MXN)</div>

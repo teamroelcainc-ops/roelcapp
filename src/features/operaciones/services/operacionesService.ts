@@ -42,7 +42,7 @@
 //
 // Formato de referencia: <PREFIJO>-<DDMMYY>-<NNN>  (ej. TR-270626-001)
 
-import { doc, getDoc, getDocs, runTransaction, collection, query, where, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, getDocs, runTransaction, collection, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { generarReferencia, fechaDDMMYY, prefijoTipoOperacion } from '../../../utils/generarReferencia';
 
@@ -155,30 +155,62 @@ const resolverPrefijoCorto = async (operacionData: any): Promise<string> => {
 };
 
 // ──────────────────────────────────────────────────────────────────────
-// ✅ NUEVO: máximo consecutivo REAL ya existente para un (prefijo + fecha).
-// Consulta `operaciones` por el rango de refs que empiezan con
-// `<PREFIJO>-<DDMMYY>-` y toma el mayor. Como el consecutivo va con 3 dígitos
-// (001..999), el orden de texto coincide con el numérico, así que basta pedir
-// la primera en orden descendente. Devuelve 0 si no hay ninguna o si falla.
+// ✅ Extrae el consecutivo (NNN) de una referencia tipo "TR-270626-003".
+//    Solo cuenta si la referencia EMPIEZA con el prefijo+fecha esperado
+//    (`<PREFIJO>-<DDMMYY>-`), y toma los dígitos que vienen JUSTO después.
+//    Así "TR-270626-003" → 3, y se ignoran refs de otro tipo/fecha.
+// ──────────────────────────────────────────────────────────────────────
+const consecutivoDeReferencia = (valorRef: any, prefijoRef: string): number => {
+  const s = String(valorRef || '').trim();
+  if (!s || !s.startsWith(prefijoRef)) return 0;
+  const resto = s.slice(prefijoRef.length);
+  const m = resto.match(/^(\d+)/);
+  return m ? (parseInt(m[1], 10) || 0) : 0;
+};
+
+// ──────────────────────────────────────────────────────────────────────
+// ✅ MÁXIMO consecutivo REAL ya existente para un (prefijo + fecha de servicio).
+//
+// Igual que el AppScript de AppSheet: el consecutivo nuevo se basa en lo que
+// REALMENTE ya está guardado, no solo en un contador que se puede
+// desincronizar. Para que sea CONFIABLE (la causa de que siguiera brincando /
+// repitiendo era que la consulta anterior usaba orderBy('ref','desc'), que
+// requiere un índice descendente que el proyecto puede no tener → fallaba en
+// silencio y devolvía 0):
+//
+//   • NO se usa orderBy ni limit → no requiere ningún índice especial; un
+//     rango sobre un solo campo usa el índice de campo único automático.
+//   • Se traen TODAS las operaciones del día con ese prefijo y se toma el
+//     máximo en memoria (no se confía en el orden del servidor).
+//   • Se revisa tanto el campo `ref` (actual) como `referencia` (registros
+//     viejos/migrados que usaban otro nombre de campo), por si alguno quedó
+//     fuera y provocaba que el máximo se subestimara → duplicado.
+//
+// Devuelve 0 solo si de verdad no hay ninguna (o si ambas consultas fallan).
 // ──────────────────────────────────────────────────────────────────────
 const obtenerMaximoConsecutivoExistente = async (prefijoRef: string): Promise<number> => {
-  try {
-    const qExist = query(
-      collection(db, 'operaciones'),
-      where('ref', '>=', prefijoRef),
-      where('ref', '<', prefijoRef + '\uf8ff'),
-      orderBy('ref', 'desc'),
-      limit(1)
-    );
-    const snap = await getDocs(qExist);
-    if (snap.empty) return 0;
-    const refTop = String((snap.docs[0].data() as any).ref || '');
-    const m = refTop.match(/(\d+)\s*$/);
-    return m ? (parseInt(m[1], 10) || 0) : 0;
-  } catch (e) {
-    console.warn('No se pudo calcular el máximo consecutivo existente; uso solo el contador.', e);
-    return 0;
+  let maximo = 0;
+  const campos = ['ref', 'referencia'];
+
+  for (const campo of campos) {
+    try {
+      const qExist = query(
+        collection(db, 'operaciones'),
+        where(campo, '>=', prefijoRef),
+        where(campo, '<', prefijoRef + '\uf8ff'),
+      );
+      const snap = await getDocs(qExist);
+      snap.forEach((d) => {
+        const data = d.data() as any;
+        const n = consecutivoDeReferencia(data[campo], prefijoRef);
+        if (n > maximo) maximo = n;
+      });
+    } catch (e) {
+      console.warn(`No se pudo calcular el máximo consecutivo existente por "${campo}"; continúo.`, e);
+    }
   }
+
+  return maximo;
 };
 
 export const guardarOperacionSegura = async (operacionData: any) => {
