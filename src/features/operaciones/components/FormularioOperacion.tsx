@@ -1245,6 +1245,53 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!initialData) resolverFlujo();
   }, [formData.convenio, listaConveniosCliente, tarifas, initialData, resolverNombreTrafico]);
 
+  // ✅ FIX EDITAR (estatus): los campos derivados `trafico` y `carga` arman el
+  //   configId del flujo de estatus (TipoOperacion_Trafico_Carga). El resolver
+  //   automático de arriba SÓLO corre al CREAR, por lo que en registros viejos
+  //   que no guardaron trafico/carga, al editar el panel mostraba
+  //   "selecciona Tipo/Cliente/Convenio" aunque todo estuviera capturado.
+  //   Aquí, SÓLO en edición y SÓLO si faltan, los derivamos de la tarifa del
+  //   convenio, SIN tocar montos, sueldos ni combustible ya guardados.
+  useEffect(() => {
+    if (!initialData) return;
+    if (!formData.convenio) return;
+
+    const traficoOk = formData.trafico && formData.trafico !== 'N/A';
+    const cargaOk = formData.carga && formData.carga !== 'N/A';
+    if (traficoOk && cargaOk) return;
+
+    let cancelado = false;
+    (async () => {
+      const detalle = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
+      if (!detalle) return;
+      const tarifaObj = tarifas?.find((t: any) => String(t.id) === String(detalle.tarifaBaseId));
+      if (!tarifaObj) return;
+
+      const tipoOpId = String(tarifaObj.tipo_operacion);
+      let tipoData = tipoTarifarioCache.get(tipoOpId);
+      if (!tipoData) {
+        try {
+          const tipoSnap = await getDoc(doc(db, 'catalogo_tipos_tarifarios', tipoOpId));
+          if (tipoSnap.exists()) { tipoData = tipoSnap.data(); tipoTarifarioCache.set(tipoOpId, tipoData); }
+        } catch { /* noop */ }
+      }
+      if (cancelado || !tipoData) return;
+
+      const nombreTrafico = await resolverNombreTrafico(tipoData.movimiento);
+      if (cancelado) return;
+
+      setFormData(prev => ({
+        ...prev,
+        tipoServicio: prev.tipoServicio || tipoData.descripcion || 'N/A',
+        trafico: (prev.trafico && prev.trafico !== 'N/A') ? prev.trafico : nombreTrafico,
+        carga: (prev.carga && prev.carga !== 'N/A') ? prev.carga : (tarifaObj.estado_carga || 'N/A'),
+      }));
+    })();
+
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData, formData.convenio, formData.trafico, formData.carga, listaConveniosCliente, tarifas, resolverNombreTrafico]);
+
   useEffect(() => {
     if (initialData) return;
     if (!formData.convenio) return;
