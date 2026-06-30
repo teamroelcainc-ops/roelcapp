@@ -343,8 +343,11 @@ export const FacturacionClientesDashboard = () => {
   const [textoBuscarFactura, setTextoBuscarFactura] = useState('');
   // ✅ (D) Filtro por status de la factura en el Historial.
   const [filtroStatusFactura, setFiltroStatusFactura] = useState<string>('Todos');
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  const [filtroTipoOp, setFiltroTipoOp] = useState('');
 
   const [paginaActual, setPaginaActual] = useState(1);
+  const [paginaOps, setPaginaOps] = useState(1);
   const registrosPorPagina = 50;
 
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -939,6 +942,19 @@ export const FacturacionClientesDashboard = () => {
   // ✅ (D) Filtro por cliente en memoria (antes se hacía en la consulta).
   const coincideClienteOp = (op: any) => !filtroCliente || String(op.clientePaga || op.clienteId || '') === filtroCliente;
 
+  // ✅ Filtro por TIPO DE OPERACIÓN (Logística, Fletes, Transfer, etc.).
+  const tipoOpNombre = (op: any): string => txt(op.tipoOperacionNombre, op.tipoOperacionId);
+  const tiposOperacionDisponibles = useMemo(() => {
+    const set = new Set<string>();
+    operacionesGlobales.forEach(op => {
+      const t = tipoOpNombre(op);
+      if (t && t !== '-') set.add(t);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesGlobales, mapaCatalogos]);
+  const coincideTipoOp = (op: any) => !filtroTipoOp || tipoOpNombre(op) === filtroTipoOp;
+
   const operacionesMostradas = useMemo(() => {
     const q = textoBuscarRemolqueOps.trim().toLowerCase();
     const coincide = (op: any) => {
@@ -955,7 +971,7 @@ export const FacturacionClientesDashboard = () => {
       return !esFacturada(op);
     };
     const lista = operacionesGlobales.filter(op =>
-      dentroRangoFecha(op) && coincideClienteOp(op) && coincideVista(op) && coincide(op)
+      dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op) && coincideVista(op) && coincide(op)
     );
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
@@ -969,16 +985,16 @@ export const FacturacionClientesDashboard = () => {
       return refNaturalKey(a).localeCompare(refNaturalKey(b));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, vistaOps, textoBuscarRemolqueOps, facturasGlobales, filtroCliente]);
+  }, [operacionesGlobales, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, vistaOps, textoBuscarRemolqueOps, facturasGlobales, filtroCliente, filtroTipoOp]);
 
   const resumenOps = useMemo(() => {
-    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op) && coincideClienteOp(op));
+    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op));
     const facturadas = enRango.filter(op => esFacturada(op)).length;
     const total = enRango.length;
     const porFacturar = total - facturadas;
     return { porFacturar, facturadas, total };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, facturasGlobales, filtroCliente]);
+  }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, facturasGlobales, filtroCliente, filtroTipoOp]);
 
   const diagnostico = useMemo(() => {
     const totalFacturas = facturasGlobales.length;
@@ -1805,6 +1821,7 @@ export const FacturacionClientesDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
   useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeHist, fechaHastaHist, textoBuscarFactura, filtroStatusFactura]);
+  useEffect(() => { setPaginaOps(1); }, [filtroCliente, ordenOps, fechaDesdeOps, fechaHastaOps, textoBuscarRemolqueOps, vistaOps, operacionesGlobales, filtroTipoOp]);
 
   const nombreClienteFactura_ = (f: any): string => {
     if (f.clienteNombre) return f.clienteNombre;
@@ -1990,6 +2007,23 @@ export const FacturacionClientesDashboard = () => {
     </div>
   );
 
+  // ✅ Paginación de la tabla de Asignar Operaciones (mejora de velocidad:
+  //    no se renderizan miles de filas, solo una página).
+  const OPS_POR_PAGINA = 100;
+  const totalPaginasOps = Math.max(1, Math.ceil(operacionesMostradas.length / OPS_POR_PAGINA));
+  const paginaOpsSegura = Math.min(paginaOps, totalPaginasOps);
+  const operacionesPagina = operacionesMostradas.slice((paginaOpsSegura - 1) * OPS_POR_PAGINA, paginaOpsSegura * OPS_POR_PAGINA);
+
+  // ✅ Resumen / limpieza de filtros del panel lateral (según la pestaña activa).
+  const filtrosActivos = activeTab === 'operaciones'
+    ? [fechaDesdeOps, fechaHastaOps, textoBuscarRemolqueOps, filtroTipoOp, filtroCliente].filter(Boolean).length
+    : [textoBuscarFactura, fechaDesdeHist, fechaHastaHist, filtroCliente].filter(Boolean).length;
+  const limpiarFiltros = () => {
+    if (activeTab === 'operaciones') { setFechaDesdeOps(''); setFechaHastaOps(''); setTextoBuscarRemolqueOps(''); setFiltroTipoOp(''); }
+    else { setTextoBuscarFactura(''); setFechaDesdeHist(''); setFechaHastaHist(''); }
+    setFiltroCliente(''); setTextoBuscarCliente('');
+  };
+
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
       <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Facturación de Clientes</h1>
@@ -1999,69 +2033,120 @@ export const FacturacionClientesDashboard = () => {
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
       </div>
 
-      {/* ════════ FILTROS POR PESTAÑA ════════ */}
-      {activeTab === 'operaciones' ? (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE (opcional)</label>
-            <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={dateInputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA (opcional)</label>
-            <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={dateInputStyle} />
-          </div>
-          {(fechaDesdeOps || fechaHastaOps) && (
-            <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
-          )}
-          <div style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}># REMOLQUE / REFERENCIA (opcional)</label>
-            <div style={{ position: 'relative' }}>
-              <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Buscar por # remolque o referencia..." value={textoBuscarRemolqueOps}
-                onChange={(e) => setTextoBuscarRemolqueOps(e.target.value)}
-                style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
-              {textoBuscarRemolqueOps && (
-                <button onClick={() => setTextoBuscarRemolqueOps('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
-              )}
+      {/* ════════ BOTÓN PARA ABRIR EL PANEL DE FILTROS ════════ */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+        <button onClick={() => setFiltrosAbiertos(true)} title="Mostrar filtros"
+          style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${filtrosActivos > 0 ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+          Filtros
+          {filtrosActivos > 0 && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{filtrosActivos}</span>}
+        </button>
+        {filtrosActivos > 0 && (
+          <button onClick={limpiarFiltros} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar todos los filtros">✕ Limpiar filtros</button>
+        )}
+        {activeTab === 'operaciones' && filtroTipoOp && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(163,113,247,0.1)', border: '1px solid #a371f7', borderRadius: '14px', color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>
+            {filtroTipoOp}
+            <button onClick={() => setFiltroTipoOp('')} style={{ background: 'transparent', border: 'none', color: '#a371f7', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+          </span>
+        )}
+        {filtroCliente && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid #10b981', borderRadius: '14px', color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold' }}>
+            {nombreClienteSeleccionado}
+            <button onClick={() => { setFiltroCliente(''); setTextoBuscarCliente(''); }} style={{ background: 'transparent', border: 'none', color: '#10b981', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+          </span>
+        )}
+      </div>
+
+      {/* ════════ PANEL LATERAL DE FILTROS (drawer) ════════ */}
+      {filtrosAbiertos && (
+        <div onClick={() => setFiltrosAbiertos(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '380px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
+              <button onClick={() => setFiltrosAbiertos(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-          </div>
-          <BuscadorCliente />
-          <div style={{ flexBasis: '100%', color: '#6e7681', fontSize: '0.75rem' }}>
-            Por defecto se muestran <b style={{ color: '#8b949e' }}>todas</b> las operaciones completadas. El rango de fechas y el cliente son <b style={{ color: '#8b949e' }}>opcionales</b> para acotar.
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          <div style={{ flex: 2, minWidth: '280px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BUSCAR EN HISTORIAL</label>
-            <div style={{ position: 'relative' }}>
-              <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input
-                type="text"
-                placeholder="Buscar por invoice, cliente, status, CCP, referencia o # remolque..."
-                value={textoBuscarFactura}
-                onChange={(e) => setTextoBuscarFactura(e.target.value)}
-                style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
-              />
-              {textoBuscarFactura && (
-                <button onClick={() => setTextoBuscarFactura('')} title="Limpiar búsqueda" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
-              )}
+
+            {activeTab === 'operaciones' ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}># REMOLQUE / REFERENCIA (opcional)</label>
+                  <div style={{ position: 'relative' }}>
+                    <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" placeholder="Buscar por # remolque o referencia..." value={textoBuscarRemolqueOps}
+                      onChange={(e) => setTextoBuscarRemolqueOps(e.target.value)}
+                      style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                    {textoBuscarRemolqueOps && (
+                      <button onClick={() => setTextoBuscarRemolqueOps('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>TIPO DE OPERACIÓN (opcional)</label>
+                  <select value={filtroTipoOp} onChange={(e) => setFiltroTipoOp(e.target.value)}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: `1px solid ${filtroTipoOp ? '#a371f7' : '#30363d'}`, borderRadius: '6px', color: filtroTipoOp ? '#a371f7' : '#c9d1d9', fontSize: '0.9rem', fontWeight: filtroTipoOp ? 'bold' : 'normal', boxSizing: 'border-box' }}>
+                    <option value="">Todos los tipos ({tiposOperacionDisponibles.length})</option>
+                    {tiposOperacionDisponibles.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  {tiposOperacionDisponibles.length === 0 && (
+                    <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>Carga las operaciones para ver los tipos disponibles.</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE</label>
+                    <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA</label>
+                    <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                {(fechaDesdeOps || fechaHastaOps) && (
+                  <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e', alignSelf: 'flex-start' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
+                )}
+                {BuscadorCliente()}
+                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
+                  Por defecto se muestran <b style={{ color: '#8b949e' }}>todas</b> las operaciones completadas. El rango de fechas y el cliente son <b style={{ color: '#8b949e' }}>opcionales</b> para acotar.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BUSCAR EN HISTORIAL</label>
+                  <div style={{ position: 'relative' }}>
+                    <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" placeholder="Invoice, cliente, status, CCP, referencia o # remolque..." value={textoBuscarFactura} onChange={(e) => setTextoBuscarFactura(e.target.value)}
+                      style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                    {textoBuscarFactura && (
+                      <button onClick={() => setTextoBuscarFactura('')} title="Limpiar búsqueda" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE</label>
+                    <input type="date" value={fechaDesdeHist} onChange={(e) => setFechaDesdeHist(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA</label>
+                    <input type="date" value={fechaHastaHist} onChange={(e) => setFechaHastaHist(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                {(fechaDesdeHist || fechaHastaHist) && (
+                  <button onClick={() => { setFechaDesdeHist(''); setFechaHastaHist(''); }} style={{ ...btnDirStyle, color: '#8b949e', alignSelf: 'flex-start' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
+                )}
+                {BuscadorCliente()}
+                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
+                  Por defecto se muestran <b style={{ color: '#8b949e' }}>todas</b> las facturas (sin filtro de fechas). Las facturas importadas sin fecha se ocultan al filtrar por fecha.
+                </div>
+              </>
+            )}
+
+            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
+              <button onClick={limpiarFiltros} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
+              <button onClick={() => setFiltrosAbiertos(false)} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar</button>
             </div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE (opcional)</label>
-            <input type="date" value={fechaDesdeHist} onChange={(e) => setFechaDesdeHist(e.target.value)} style={dateInputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA (opcional)</label>
-            <input type="date" value={fechaHastaHist} onChange={(e) => setFechaHastaHist(e.target.value)} style={dateInputStyle} />
-          </div>
-          {(fechaDesdeHist || fechaHastaHist) && (
-            <button onClick={() => { setFechaDesdeHist(''); setFechaHastaHist(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
-          )}
-          <BuscadorCliente />
-          <div style={{ flexBasis: '100%', color: '#6e7681', fontSize: '0.75rem' }}>
-            Por defecto se muestran <b style={{ color: '#8b949e' }}>todas</b> las facturas (sin filtro de fechas). Usa las fechas para acotar; las facturas importadas sin fecha se ocultan al filtrar por fecha.
           </div>
         </div>
       )}
@@ -2190,7 +2275,7 @@ export const FacturacionClientesDashboard = () => {
                 ) : operacionesMostradas.length === 0 ? (
                   <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones {vistaOps === 'facturadas' ? 'facturadas' : vistaOps === 'pendientes' ? 'pendientes' : 'completadas'} con los filtros actuales{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
                 ) : (
-                  operacionesMostradas.map(op => {
+                  operacionesPagina.map(op => {
                     const m = obtenerMontoOperacion(op);
                     const yaFacturada = esFacturada(op);
                     return (
@@ -2225,7 +2310,7 @@ export const FacturacionClientesDashboard = () => {
                           {yaFacturada ? (
                             <span title="Ya facturada" style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                           ) : (
-                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#ffffff' }} />
                           )}
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
@@ -2236,6 +2321,17 @@ export const FacturacionClientesDashboard = () => {
               </tbody>
             </table>
           </div>
+          {totalPaginasOps > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '16px' }}>
+              <button onClick={() => setPaginaOps(p => Math.max(1, p - 1))} disabled={paginaOpsSegura === 1}
+                style={{ padding: '8px 16px', background: 'none', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaOpsSegura === 1 ? 'not-allowed' : 'pointer', color: paginaOpsSegura === 1 ? '#484f58' : '#c9d1d9' }}>Anterior</button>
+              <span style={{ color: '#8b949e', fontSize: '0.85rem' }}>
+                Página {paginaOpsSegura} / {totalPaginasOps} · {operacionesMostradas.length} operaciones
+              </span>
+              <button onClick={() => setPaginaOps(p => Math.min(totalPaginasOps, p + 1))} disabled={paginaOpsSegura === totalPaginasOps}
+                style={{ padding: '8px 16px', background: 'none', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaOpsSegura === totalPaginasOps ? 'not-allowed' : 'pointer', color: paginaOpsSegura === totalPaginasOps ? '#484f58' : '#c9d1d9' }}>Siguiente</button>
+            </div>
+          )}
         </div>
 
       ) : (
