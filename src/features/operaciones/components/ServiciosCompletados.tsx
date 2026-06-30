@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, getDocs, getCountFromServer, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
@@ -377,7 +377,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
           snap.docs.forEach((d: any) => {
             const id = d.id;
-            if (!vistos.has(id)) { vistos.add(id); todas.push({ id, ...d.data() }); }
+            if (!vistos.has(id)) { vistos.add(id); const data = d.data(); todas.push({ id, ...data, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) }); }
           });
 
           if (snap.docs.length < TAMANIO_BLOQUE_STATUS) break;     // ya no hay más
@@ -392,7 +392,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           ));
           snapSimple.docs.forEach((d: any) => {
             const id = d.id;
-            if (!vistos.has(id)) { vistos.add(id); todas.push({ id, ...d.data() }); }
+            if (!vistos.has(id)) { vistos.add(id); const data = d.data(); todas.push({ id, ...data, _fechaISO: normalizarFechaServicioISO(data.fechaServicio) }); }
           });
         }
       }
@@ -404,8 +404,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
       // Orden por fecha (normalizada) descendente, desempatando por consecutivo.
       soloCompletados.sort((a: any, b: any) => {
-        const fa = normalizarFechaServicioISO(a.fechaServicio);
-        const fb = normalizarFechaServicioISO(b.fechaServicio);
+        const fa = a._fechaISO || '';
+        const fb = b._fechaISO || '';
         if (fa !== fb) return fb.localeCompare(fa);
         return obtenerConsecutivoRef(b) - obtenerConsecutivoRef(a);
       });
@@ -473,15 +473,30 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return () => unsubscribers.forEach((unsub) => unsub());
   }, []);
 
+  // ✅ OPTIMIZACIÓN: el conjunto descargado (TODOS los completados) NO depende de
+  //   los filtros — fecha, cliente, tipo y remolque se aplican en memoria. Por eso
+  //   sólo descargamos UNA vez por sesión: en cuanto hay un rango de fechas válido.
+  //   Cambiar cualquier filtro después es instantáneo (no vuelve a consultar la BD).
+  const yaDescargado = useRef(false);
+
   useEffect(() => {
-    if (filterFechaInicio && filterFechaFin) {
-      descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
-    } else {
-      setOperacionesGlobales([]);
-      setHayMasOperaciones(false);
-    }
+    if (!filterFechaInicio || !filterFechaFin) return;   // se requiere rango para mostrar
+    if (yaDescargado.current) return;                    // ya tenemos los datos en memoria
+    yaDescargado.current = true;
+    descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterFechaInicio, filterFechaFin, filterCliente]);
+  }, [filterFechaInicio, filterFechaFin]);
+
+  // ✅ NUEVO: fuerza una recarga desde Firestore (ignora caché). Para el botón "Actualizar".
+  const refrescarDatos = () => {
+    if (!filterFechaInicio || !filterFechaFin) {
+      alert('Selecciona Fecha Inicio y Fecha Fin primero.');
+      return;
+    }
+    try { sessionStorage.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
+    yaDescargado.current = true;
+    descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente, { ignorarCache: true });
+  };
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion]);
 
@@ -1053,8 +1068,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     let filtradas = operacionesGlobales;
 
     // Filtro por rango de fechas (robusto a distintos formatos).
+    //   Usa _fechaISO precalculado en la descarga; si viniera de un caché antiguo
+    //   sin ese campo, cae a normalizar al vuelo.
     filtradas = filtradas.filter(op => {
-      const f = normalizarFechaServicioISO(op.fechaServicio);
+      const f = op._fechaISO != null ? op._fechaISO : normalizarFechaServicioISO(op.fechaServicio);
       if (!f) return false;
       return f >= filterFechaInicio && f <= filterFechaFin;
     });
@@ -1087,8 +1104,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     }
 
     return [...filtradas].sort((a: any, b2: any) => {
-      const fa = normalizarFechaServicioISO(a.fechaServicio);
-      const fb = normalizarFechaServicioISO(b2.fechaServicio);
+      const fa = a._fechaISO != null ? a._fechaISO : normalizarFechaServicioISO(a.fechaServicio);
+      const fb = b2._fechaISO != null ? b2._fechaISO : normalizarFechaServicioISO(b2.fechaServicio);
       if (fa !== fb) return fb.localeCompare(fa);
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
@@ -1609,6 +1626,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
 
           <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', marginLeft: 'auto', paddingBottom: '2px' }}>
+            <button className="btn btn-outline" onClick={refrescarDatos} disabled={cargandoOperaciones} style={{ padding: '10px 12px', cursor: cargandoOperaciones ? 'wait' : 'pointer' }} title="Actualizar (recargar desde la base de datos)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            </button>
             <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ padding: '10px 12px' }} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
