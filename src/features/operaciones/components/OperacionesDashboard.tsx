@@ -315,7 +315,10 @@ const OperacionesDashboard = () => {
 
       ultimoDocRef.current = docs.length ? docs[docs.length - 1] : null;
 
-      const opDataRaw = docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      // ✅ _docId = ID REAL del documento en Firestore. Se conserva aparte porque
+      //    algunos registros (legacy/migrados) traen un campo `id` interno que
+      //    sobrescribe a d.id en el spread; ese campo NO sirve para update/delete.
+      const opDataRaw = docs.map((d: any) => ({ id: d.id, ...d.data(), _docId: d.id }));
       const operacionesActivas = opDataRaw.filter(esOperacionActiva);
 
       console.log(
@@ -361,7 +364,7 @@ const OperacionesDashboard = () => {
 
       if (docs.length) ultimoDocRef.current = docs[docs.length - 1];
 
-      const nuevasRaw = docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      const nuevasRaw = docs.map((d: any) => ({ id: d.id, ...d.data(), _docId: d.id }));
       const nuevasFiltradas = nuevasRaw.filter(esOperacionActiva);
 
       setOperacionesGlobales(prev => {
@@ -440,16 +443,19 @@ const OperacionesDashboard = () => {
     setEstadoFormulario('abierto'); 
   };
   
-  const eliminarOperacion = async (id: string) => {
-    if (!id) return;
+  const eliminarOperacion = async (op: any) => {
+    if (!op) return;
+    // ✅ Borra por el ID REAL de Firestore (_docId); si no existe, cae al id.
+    const docId = op._docId || op.id;
+    if (!docId) return;
     if (window.confirm('¿Estás seguro de eliminar este registro permanentemente?')) {
       try {
-        await eliminarRegistro('operaciones', id); 
-        setOperacionesGlobales(prev => prev.filter((op: any) => String(op.id) !== String(id)));
+        await eliminarRegistro('operaciones', docId); 
+        setOperacionesGlobales(prev => prev.filter((o: any) => String(o.id) !== String(op.id)));
         setOperacionViendo(null);
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error al eliminar:", error);
-        alert("Hubo un error al intentar eliminar el registro.");
+        alert("Hubo un error al intentar eliminar el registro.\n\nDetalle técnico: " + (error?.message || error?.code || 'desconocido'));
       }
     }
   };
@@ -653,7 +659,7 @@ const OperacionesDashboard = () => {
         fechaHora: nuevaFechaHora,
         registradoEn: new Date().toISOString()
       }));
-      const opRef = doc(db, 'operaciones', String(operacionViendo.id));
+      const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
       batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto }));
 
       await batch.commit();
@@ -755,7 +761,7 @@ const OperacionesDashboard = () => {
             }));
           });
 
-          const opRef = doc(db, 'operaciones', String(operacionViendo.id));
+          const opRef = doc(db, 'operaciones', String(operacionViendo._docId || operacionViendo.id));
           batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
             statusNombre: statusFinal.nombre
@@ -1416,7 +1422,7 @@ const OperacionesDashboard = () => {
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             </button>
                             <button type="button" title="Eliminar Operación"
-                              onClick={(e) => { e.stopPropagation(); eliminarOperacion(op.id); }} 
+                              onClick={(e) => { e.stopPropagation(); eliminarOperacion(op); }} 
                               style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
