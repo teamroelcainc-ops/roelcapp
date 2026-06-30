@@ -44,7 +44,7 @@ const ID_MXN = 'f95d8894';
 // ✅ (D) Cargar TODAS las operaciones completadas (sin filtro de fecha).
 const LIMITE_OPS_TODAS = 20000;
 const PAG_OPS = 1000;
-const SS_OPS = 'roelca_ops_completadas_v1';
+const SS_OPS = 'roelca_ops_completadas_v2';
 const SS_OPS_TTL = 30 * 60 * 1000; // 30 min
 
 // ✅ (A) Documento(s) de configuración de columnas COMPARTIDA en Firestore.
@@ -473,6 +473,18 @@ export const FacturacionClientesDashboard = () => {
     return mapaCatalogos[String(val)] || val;
   };
 
+  // ✅ Status que se deben FACTURAR: los completados/terminados (IDs conocidos)
+  //    MÁS cualquier status cuyo nombre en el catálogo sea "Falso" (falso flete),
+  //    que también se cobra. Se detecta dinámicamente para no depender de un ID fijo.
+  const STATUS_FACTURABLES = useMemo(() => {
+    const ids = new Set<string>(STATUS_COMPLETADOS);
+    Object.entries(mapaCatalogos).forEach(([id, nombre]) => {
+      const n = String(nombre || '');
+      if (/\bfalso/i.test(n) || /falso\b/i.test(n)) ids.add(id);
+    });
+    return Array.from(ids);
+  }, [mapaCatalogos]);
+
   const txt = (...cands: any[]): string => {
     for (const c of cands) {
       if (c !== undefined && c !== null && c !== '') {
@@ -668,7 +680,7 @@ export const FacturacionClientesDashboard = () => {
       try {
         let cursor: any = null;
         for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
-          const cons: any[] = [where('status', 'in', STATUS_COMPLETADOS), orderBy(documentId()), limit(PAG_OPS)];
+          const cons: any[] = [where('status', 'in', STATUS_FACTURABLES), orderBy(documentId()), limit(PAG_OPS)];
           if (cursor) cons.splice(2, 0, startAfter(cursor));
           const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
           if (snap.empty) break;
@@ -695,7 +707,7 @@ export const FacturacionClientesDashboard = () => {
           if (snap.empty) break;
           snap.docs.forEach(d => {
             const o: any = { id: d.id, ...(d.data() as any) };
-            if (STATUS_COMPLETADOS.includes(String(o.status || '').trim())) todas.push(o);
+            if (STATUS_FACTURABLES.includes(String(o.status || '').trim())) todas.push(o);
           });
           cursor = snap.docs[snap.docs.length - 1];
           if (snap.docs.length < PAG_OPS) break;
