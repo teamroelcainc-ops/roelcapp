@@ -899,7 +899,7 @@ const OperacionesDashboard = () => {
     generarCheckListPDF({
       consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
       fecha: operacionViendo.fechaServicio || '',
-      cliente: operacionViendo.clienteNombre || mostrarDatoMapeado(operacionViendo.clientePaga, 'empresas'),
+      cliente: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
       remolque: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
       proveedor: operacionViendo.proveedorUnidadNombre || mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas'),
       tractorInfo: `${uniNombre} / ${uniPlacas} / ${empNombre}`,

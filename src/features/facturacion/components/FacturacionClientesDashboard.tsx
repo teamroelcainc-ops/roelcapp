@@ -1,40 +1,18 @@
 // src/features/facturacion/components/FacturacionClientesDashboard.tsx
 //
 // ═══════════════════════════════════════════════════════════════════════
-// CAMBIOS EN ESTA VERSIÓN (solicitados)
+// CAMBIOS EN ESTA VERSIÓN
 // ═══════════════════════════════════════════════════════════════════════
-// A) CONFIGURACIÓN DE COLUMNAS COMPARTIDA (global para todos los usuarios):
-//    · Al pulsar "Guardar para todos" en cualquiera de los dos modales de
-//      "Configurar Columnas" (Asignar Operaciones e Historial de Facturas),
-//      la selección + el ORDEN se guardan en Firestore:
-//          config_columnas/facturacion_clientes_ops
-//          config_columnas/facturacion_clientes_historial
-//    · Al abrir el módulo, esa configuración se lee una sola vez y se aplica
-//      para TODOS los usuarios que vean la vista.
-//    · Solo se persiste { id, visible } + orden; el resto de metadatos
-//      (sourceField, tipo, grupo…) siempre se toma del código (BASE), así las
-//      columnas nuevas que se agreguen en el futuro siguen apareciendo.
-//
-// B) MOSTRAR NOMBRES EN LUGAR DE IDs:
-//    · Se construye un mapa id→nombre con TODOS los catálogos ya cacheados
-//      (cat_v1__* y, como respaldo, roelca_catalogos_v2) + empresas + monedas.
-//      Cero lecturas extra a Firestore.
-//    · Cuando una operación vieja solo guardó el ID (status, convenio, origen,
-//      embalaje, proveedor, unidad, operador, cliente-mercancía, etc.), se
-//      muestra el NOMBRE resuelto tanto en la tabla, como en el Excel y en la
-//      ficha de detalle de la operación.
-//
-// C) STATUS DE LA FACTURA (Facturado / Cancelado / No Facturado):
-//    · Se elige al generar la factura y se guarda en el campo `statusFactura`.
-//    · Aparece como PRIMERA columna del Historial (píldora de color) y es
-//      editable desde la ficha de cada factura.
-//
-// (Cambios anteriores que se conservan)
-// 1) FILTRO PRINCIPAL = RANGO DE FECHAS (Desde / Hasta). Cliente OPCIONAL.
-// 2) "Asignar Operaciones" muestra SOLO operaciones NO facturadas.
-// 3) LECTURAS MÍNIMAS (caché-primero para empresas, consultas acotadas).
-// (Se conservan: conversión USD/MXN, exportación a Excel con columnas
-//  configurables, ficha de factura y detalle de operación.)
+// D) VER TODO POR DEFECTO + SEPARAR PENDIENTES/FACTURADAS + FILTRO STATUS:
+//    · "Asignar Operaciones": se cargan TODAS las operaciones completadas
+//      (sin filtro de fecha obligatorio) paginando + caché de sesión. El
+//      rango de fechas pasa a ser OPCIONAL y filtra en memoria.
+//    · Vista segmentada Pendientes / Facturadas / Todas (separa las listas).
+//    · "Historial de Facturas": sin filtro de fechas por defecto (ve TODO) y
+//      con un filtro por status de la factura (Facturado / No Facturado /
+//      Cancelado / Todos).
+// (Se conservan: columnas compartidas, nombres vs IDs, status de factura,
+//  conversión USD/MXN, exportación a Excel, ficha de factura y detalle.)
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -63,21 +41,22 @@ const STATUS_COMPLETADOS = ['f557b751', 'c2d57403'];
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
-// Límites para acotar lecturas (ajustables).
-const LIMITE_OPS_RANGO = 400;
+// ✅ (D) Cargar TODAS las operaciones completadas (sin filtro de fecha).
+const LIMITE_OPS_TODAS = 20000;
+const PAG_OPS = 1000;
+const SS_OPS = 'roelca_ops_completadas_v1';
+const SS_OPS_TTL = 30 * 60 * 1000; // 30 min
 
 // ✅ (A) Documento(s) de configuración de columnas COMPARTIDA en Firestore.
 const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
 const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops';
 const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial';
 
-// ✅ Persistencia local (respaldo instantáneo que sobrevive al refresco aunque
-//    Firestore tarde o falle). La config de Firestore es la "compartida".
+// ✅ Persistencia local (respaldo instantáneo que sobrevive al refresco).
 const LS_COLS_OPS = 'cfgcols_facturacion_ops_v1';
 const LS_COLS_HIST = 'cfgcols_facturacion_hist_v1';
 
-// ✅ Lee un catálogo desde la caché local (cat_v1__<alias>) que mantienen
-// OperacionesDashboard / FormularioOperacion. Evita lecturas de Firestore.
+// ✅ Lee un catálogo desde la caché local (cat_v1__<alias>).
 const leerCacheLocal = (alias: string): any[] | null => {
   try {
     const raw = localStorage.getItem(`cat_v1__${alias}`) || localStorage.getItem(`cat_v2__${alias}`);
@@ -88,30 +67,24 @@ const leerCacheLocal = (alias: string): any[] | null => {
 };
 
 // ──────────────────────────────────────────────────────────────────────
-// ✅ (B) Mapa id→nombre con TODOS los catálogos cacheados. Cero lecturas a
-//     Firestore: usa únicamente lo que ya guardaron otros dashboards. Sirve
-//     para mostrar el NOMBRE cuando un registro viejo solo tiene el ID.
+// ✅ (B) Mapa id→nombre con TODOS los catálogos cacheados. Cero lecturas.
 // ──────────────────────────────────────────────────────────────────────
 const construirMapaCatalogos = (): Record<string, string> => {
   const mapa: Record<string, string> = {};
   const tomarNombre = (item: any): string | null => {
     if (!item || item.id === undefined || item.id === null) return null;
-    // Empleados (operadores): nombre compuesto firstName + lastNamePaternal
     const fn = item.firstName ?? item.first_name;
     const lp = item.lastNamePaternal ?? item.last_name_paternal ?? item.apellidoPaterno;
     if (fn || lp) {
       const full = `${fn || ''} ${lp || ''}`.trim();
       if (full) return full;
     }
-    // Unidades: el nombre legible va en el campo `unidad`
     if (item.unidad && typeof item.unidad === 'string' && item.unidad.trim() !== '') return String(item.unidad).trim();
-    // Remolques: nombre + placas
     const placa = item.placas ?? item.placa;
     if (item.nombre && placa) return `${item.nombre} ${placa}`.trim();
     const n = item.nombre ?? item.nombreCorto ?? item.label ?? item.descripcion ?? item.name ?? item.titulo ?? item.moneda ?? item.tipo_operacion;
     return (n !== undefined && n !== null && String(n) !== '') ? String(n) : null;
   };
-  // Catálogos estándar cat_v1__<alias> y cat_v2__<alias> (OperacionesDashboard usa v2)
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -129,7 +102,6 @@ const construirMapaCatalogos = (): Record<string, string> => {
       } catch { /* catálogo corrupto: ignorar */ }
     }
   } catch { /* localStorage no disponible */ }
-  // Respaldo: roelca_catalogos_v2 (forma desconocida → con guardas defensivas)
   try {
     const rawV2 = localStorage.getItem('roelca_catalogos_v2');
     if (rawV2) {
@@ -147,9 +119,7 @@ const construirMapaCatalogos = (): Record<string, string> => {
   return mapa;
 };
 
-// ✅ (A) Reconstruye las columnas a partir de la BASE (código) aplicando el
-//     orden + visibilidad guardados. Garantiza que columnas nuevas del código
-//     que no estaban guardadas sigan apareciendo (al final).
+// ✅ (A) Reconstruye las columnas a partir de la BASE aplicando orden + visibilidad.
 const aplicarConfigColumnasGuardada = (base: any[], guardadas: any): any[] => {
   if (!Array.isArray(guardadas) || guardadas.length === 0) return base.map((c: any) => ({ ...c }));
   const baseById = new Map<string, any>(base.map((c: any) => [c.id, c]));
@@ -162,12 +132,10 @@ const aplicarConfigColumnasGuardada = (base: any[], guardadas: any): any[] => {
       usados.add(g.id);
     }
   });
-  // Columnas nuevas (agregadas en código) que no estaban guardadas → al final
   base.forEach((c: any) => { if (!usados.has(c.id)) resultado.push({ ...c }); });
   return resultado;
 };
 
-// ✅ Mueve una columna por id al inicio (cuando se agrega sobre una config vieja).
 const moverIdAlInicio = (cols: any[], id: string): any[] => {
   const idx = cols.findIndex((c: any) => c.id === id);
   if (idx <= 0) return cols;
@@ -182,13 +150,12 @@ const moverStatusAlInicio = (cols: any[]): any[] => moverIdAlInicio(cols, 'statu
 const STATUS_FACTURA_OPCIONES = ['Facturado', 'Cancelado', 'No Facturado'];
 const colorStatusFactura = (s: any): string => {
   const t = String(s || '').toLowerCase();
-  if (t.includes('cancel')) return '#f85149';   // rojo
-  if (t.includes('no')) return '#f59e0b';        // ámbar (No Facturado)
-  if (t.includes('factur')) return '#10b981';    // verde (Facturado)
+  if (t.includes('cancel')) return '#f85149';
+  if (t.includes('no')) return '#f59e0b';
+  if (t.includes('factur')) return '#10b981';
   return '#8b949e';
 };
 
-// Columnas configurables del Historial de Facturas (tabla + Excel).
 const COLUMNAS_FACTURA_BASE = [
   { id: 'statusFactura', label: 'Status',       visible: true },
   { id: 'invoice',     label: 'Invoice',      visible: true },
@@ -202,36 +169,21 @@ const COLUMNAS_FACTURA_BASE = [
   { id: 'createdAt',   label: 'Registrada',   visible: false },
 ];
 
-// Límite/paginación para "Historial de Facturas". Se cargan TODAS por páginas
-// para que el índice de operaciones facturadas sea completo.
 const LIMITE_FACTURAS_TODAS = 12000;
 const PAG_FACTURAS = 1000;
-// Caché de facturas en sessionStorage (evita re-leer miles de docs por montaje).
 const SS_FACTURAS = 'roelca_facturas_clientes_v1';
 const SS_FACTURAS_TTL = 30 * 60 * 1000; // 30 min
 
-// ──────────────────────────────────────────────────────────────────────
-// ✅ Normalización de facturas (compat. con datos viejos):
-//    · fecha    : acepta 'fecha' (ISO) o 'fechaFactura' (DD/M/YYYY o D/M/YYYY)
-//    · operacionesIds       : string o array → siempre array
-//    · operacionesGuardadas : ausente → reconstruir desde operacionesIds
-//    · campos faltantes     : clienteNombre, subtotalFactura, monedaFacturacion,
-//      facturaCcp se completan con defaults seguros para que el resto del
-//      dashboard funcione (orden, búsqueda, totales, render de píldoras).
-// ──────────────────────────────────────────────────────────────────────
 const parseFechaFactura = (val: any): string => {
   if (!val) return '';
   const s = String(val).trim();
   if (!s) return '';
-  // Ya en ISO (YYYY-MM-DD…)
   if (/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) {
     const [y, m, d] = s.slice(0, 10).split('-');
     return `${y}-${(m || '01').padStart(2, '0')}-${(d || '01').padStart(2, '0')}`;
   }
-  // DD/MM/YYYY o D/M/YYYY
   const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (m1) return `${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}`;
-  // YYYY/MM/DD
   const m2 = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
   if (m2) return `${m2[1]}-${m2[2].padStart(2, '0')}-${m2[3].padStart(2, '0')}`;
   return s;
@@ -239,13 +191,9 @@ const parseFechaFactura = (val: any): string => {
 
 const normalizarFactura = (raw: any): any => {
   const fechaNorm = parseFechaFactura(raw.fecha || raw.fechaFactura);
-
-  // operacionesIds: string o array → array
   let opsIds: any = raw.operacionesIds;
   if (typeof opsIds === 'string') opsIds = opsIds ? [opsIds] : [];
   if (!Array.isArray(opsIds)) opsIds = [];
-
-  // operacionesGuardadas: si no es array, construir mínimo desde opsIds
   let opsGuardadas: any = raw.operacionesGuardadas;
   if (!Array.isArray(opsGuardadas) || opsGuardadas.length === 0) {
     opsGuardadas = opsIds.map((idOrRef: string) => ({
@@ -255,30 +203,21 @@ const normalizarFactura = (raw: any): any => {
       subtotalBase: 0,
     }));
   }
-
   return {
     ...raw,
     fecha: fechaNorm || String(raw.fecha || raw.fechaFactura || ''),
     operacionesIds: opsIds,
     operacionesGuardadas: opsGuardadas,
-    // defaults defensivos
     subtotalFactura: Number(raw.subtotalFactura) || Number(raw.total) || 0,
     monedaFacturacion: raw.monedaFacturacion || raw.moneda || 'N/A',
     clienteNombre: raw.clienteNombre || raw.cliente || '',
     facturaCcp: raw.facturaCcp || raw.ccp || '',
     invoice: raw.invoice || raw.numeroInvoice || raw.numInvoice || raw.folio || String(raw.id || ''),
-    // ✅ (C) status de la factura (facturas viejas → "Facturado" por defecto)
     statusFactura: raw.statusFactura || 'Facturado',
   };
 };
 
-// Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
-// Las 10 primeras tienen render bespoke y son visibles por defecto. El resto
-// se renderizan de forma genérica a partir de `sourceField` (qué propiedad
-// leer del doc de `operaciones`) + `tipo` (cómo formatear el valor).
-// Cuando `sourceField` es un array, se toma la primera con valor.
 const COLUMNAS_OPS_BASE: any[] = [
-  // ─── Defaults visibles (render bespoke) ──────────────────────────
   { id: 'factura',       label: '# Factura',       visible: true,  orden: true,  grupo: 'General' },
   { id: 'ref',           label: 'Ref. Operación',  visible: true,  orden: true,  grupo: 'General' },
   { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true,  orden: true,  grupo: 'General' },
@@ -290,8 +229,6 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'dolares',       label: 'Dólares',         visible: true,  orden: false, grupo: 'Por Cobrar' },
   { id: 'pesos',         label: 'Pesos',           visible: true,  orden: false, grupo: 'Por Cobrar' },
   { id: 'conv',          label: 'Conversión',      visible: true,  orden: true,  grupo: 'Por Cobrar' },
-
-  // ─── Información General ─────────────────────────────────────────
   { id: 'tipoOperacion',  label: 'Tipo de Operación', visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['tipoOperacionNombre', 'tipoOperacionId'] },
   { id: 'status',         label: 'Status',            visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['statusNombre', 'status'] },
   { id: 'fechaCita',      label: 'Fecha Cita',        visible: false, orden: true,  grupo: 'General', tipo: 'fechaHora', sourceField: 'fechaCita' },
@@ -301,8 +238,6 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'origen',         label: 'Origen',            visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['origenNombre', 'origen'] },
   { id: 'observacionesEjecutivo', label: 'Obs. Ejecutivo',    visible: false, orden: false, grupo: 'General', tipo: 'texto',     sourceField: 'observacionesEjecutivo' },
   { id: 'createdAt',      label: 'Fecha de Creación', visible: false, orden: true,  grupo: 'General', tipo: 'fechaHora', sourceField: 'createdAt' },
-
-  // ─── Pedimento y CT ──────────────────────────────────────────────
   { id: 'clienteMercancia',     label: 'Cliente (Mercancía)',  visible: false, orden: true,  grupo: 'Pedimento', tipo: 'texto',  sourceField: ['clienteMercanciaNombre', 'clienteMercancia'] },
   { id: 'descripcionMercancia', label: 'Descripción Mercancía', visible: false, orden: false, grupo: 'Pedimento', tipo: 'texto',  sourceField: 'descripcionMercancia' },
   { id: 'cantidad',             label: 'Cantidad',              visible: false, orden: true,  grupo: 'Pedimento', tipo: 'numero', sourceField: 'cantidad' },
@@ -310,15 +245,11 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'pesoKg',               label: 'Peso (Kg)',             visible: false, orden: true,  grupo: 'Pedimento', tipo: 'numero', sourceField: 'pesoKg' },
   { id: 'numDoda',              label: '# DODA',                visible: false, orden: true,  grupo: 'Pedimento', tipo: 'texto',  sourceField: 'numDoda' },
   { id: 'fechaEmisionDoda',     label: 'Fecha Emisión DODA',    visible: false, orden: true,  grupo: 'Pedimento', tipo: 'fecha',  sourceField: 'fechaEmisionDoda' },
-
-  // ─── Entry's y Manifiestos ───────────────────────────────────────
   { id: 'numeroEntrys',    label: "# Entry's",          visible: false, orden: false, grupo: 'Manifiestos', tipo: 'texto',  sourceField: 'numeroEntrys' },
   { id: 'cantEntrys',      label: "Cant. Entry's",      visible: false, orden: true,  grupo: 'Manifiestos', tipo: 'numero', sourceField: 'cantEntrys' },
   { id: 'numManifiesto',   label: '# Manifiesto',       visible: false, orden: false, grupo: 'Manifiestos', tipo: 'texto',  sourceField: 'numManifiesto' },
   { id: 'provServicios',   label: 'Prov. Servicios',    visible: false, orden: true,  grupo: 'Manifiestos', tipo: 'texto',  sourceField: ['provServiciosNombre', 'provServicios'] },
   { id: 'montoManifiesto', label: 'Costo Manifiesto',   visible: false, orden: true,  grupo: 'Manifiestos', tipo: 'monto',  sourceField: 'montoManifiesto' },
-
-  // ─── Unidad y Operador ───────────────────────────────────────────
   { id: 'proveedorUnidad',       label: 'Proveedor Transporte', visible: false, orden: true,  grupo: 'Unidad', tipo: 'texto', sourceField: ['proveedorUnidadNombre', 'proveedorUnidad'] },
   { id: 'monedaUnidad',          label: 'Moneda Prov.',         visible: false, orden: false, grupo: 'Unidad', tipo: 'texto', sourceField: ['monedaUnidadNombre', 'facturadoEnUnidad'] },
   { id: 'convenioProveedor',     label: 'Convenio Proveedor',   visible: false, orden: true,  grupo: 'Unidad', tipo: 'texto', sourceField: ['convenioProveedorNombre', 'convenioProveedor'] },
@@ -341,8 +272,6 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'unidadProveedor',       label: 'Unidad Externa',       visible: false, orden: true,  grupo: 'Unidad', tipo: 'texto', sourceField: 'unidadProveedor' },
   { id: 'operadorProveedor',     label: 'Operador Externo',     visible: false, orden: true,  grupo: 'Unidad', tipo: 'texto', sourceField: 'operadorProveedor' },
   { id: 'observacionesUnidad',   label: 'Obs. Unidad/Prov.',    visible: false, orden: false, grupo: 'Unidad', tipo: 'texto', sourceField: 'observacionesUnidad' },
-
-  // ─── Por Cobrar ──────────────────────────────────────────────────
   { id: 'monedaConvenioCliente', label: 'Moneda Convenio Cliente', visible: false, orden: false, grupo: 'Por Cobrar', tipo: 'moneda', sourceField: 'monedaConvenioCliente' },
   { id: 'montoConvenioCliente',  label: 'Monto Convenio Cliente',  visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'montoConvenioCliente' },
   { id: 'cargosAdicionales',     label: 'Cargos Adicionales',      visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'cargosAdicionales' },
@@ -355,9 +284,6 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'observacionesCobrar',   label: 'Obs. Facturación/Cobro',  visible: false, orden: false, grupo: 'Por Cobrar', tipo: 'texto',  sourceField: 'observacionesCobrar' },
 ];
 
-// ──────────────────────────────────────────────────────────────────────
-// Helpers de conversión (misma lógica que el formulario de Operaciones)
-// ──────────────────────────────────────────────────────────────────────
 const calcularConversionCliente = (op: any) => {
   const fact = op.facturadoEnCobrar;
   const tc = Number(op.tipoCambioAprobado) || 0;
@@ -393,117 +319,115 @@ export const FacturacionClientesDashboard = () => {
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [cargandoFacturas, setCargandoFacturas] = useState(false);
 
-  // Catálogos
   const [empresasList, setEmpresasList] = useState<any[]>([]);
 
-  // ✅ (1) Filtro principal: rango de fechas (obligatorio). Cliente opcional.
+  // ✅ Rango de fechas OPCIONAL. Cliente opcional.
   const [fechaDesdeOps, setFechaDesdeOps] = useState('');
   const [fechaHastaOps, setFechaHastaOps] = useState('');
-  // ✅ Fechas del HISTORIAL: independientes de "Asignar Operaciones". Por
-  //    defecto = HOY (para no listar miles de facturas al entrar).
-  const hoyISO = new Date().toISOString().split('T')[0];
-  const [fechaDesdeHist, setFechaDesdeHist] = useState(hoyISO);
-  const [fechaHastaHist, setFechaHastaHist] = useState(hoyISO);
-  // ✅ Búsqueda por # de remolque / referencia en "Asignar Operaciones".
+  // ✅ Historial: por defecto SIN filtro de fechas (TODAS).
+  const [fechaDesdeHist, setFechaDesdeHist] = useState('');
+  const [fechaHastaHist, setFechaHastaHist] = useState('');
   const [textoBuscarRemolqueOps, setTextoBuscarRemolqueOps] = useState('');
-  // ✅ Mostrar también las ya facturadas en "Asignar Operaciones" (por defecto NO).
-  const [mostrarFacturadas, setMostrarFacturadas] = useState(false);
-  // ✅ Bandera: se alcanzó el tope de lectura de operaciones del rango.
+  // ✅ (D) Vista de "Asignar Operaciones": separa pendientes de facturadas.
+  const [vistaOps, setVistaOps] = useState<'pendientes' | 'facturadas' | 'todas'>('pendientes');
   const [topeOpsAlcanzado, setTopeOpsAlcanzado] = useState(false);
   const [filtroCliente, setFiltroCliente] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
 
-  const ambasFechas = !!(fechaDesdeOps && fechaHastaOps);
-
-  // Orden
   const [ordenOps, setOrdenOps] = useState<{ campo: string; dir: 'asc' | 'desc' }>({ campo: 'fechaServicio', dir: 'desc' });
   const [ordenFac, setOrdenFac] = useState<{ campo: string; dir: 'asc' | 'desc' }>({ campo: 'fecha', dir: 'desc' });
 
-  // Buscador de cliente
   const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
   const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
 
-  // ✅ Buscador del Historial de Facturas (filtra en memoria)
   const [textoBuscarFactura, setTextoBuscarFactura] = useState('');
+  // ✅ (D) Filtro por status de la factura en el Historial.
+  const [filtroStatusFactura, setFiltroStatusFactura] = useState<string>('Todos');
 
-  // Paginación Historial
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
-  // Modal de facturación
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
 
-  // ✅ (A) Estado de guardado de la configuración de columnas (compartida)
   const [guardandoCols, setGuardandoCols] = useState(false);
 
-  // Columnas del historial
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasFactura, setColumnasFactura] = useState(COLUMNAS_FACTURA_BASE.map(c => ({ ...c })));
-  // Columnas de "Asignar Operaciones"
   const [modalColumnasOps, setModalColumnasOps] = useState(false);
   const [columnasOps, setColumnasOps] = useState(COLUMNAS_OPS_BASE.map(c => ({ ...c })));
   const [draggedColOpsIndex, setDraggedColOpsIndex] = useState<number | null>(null);
-  // ✅ Buscador dentro del modal "Configurar Columnas" de Operaciones
   const [busquedaColOps, setBusquedaColOps] = useState('');
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
-  // Detalle de operación
   const [operacionDetalle, setOperacionDetalle] = useState<any | null>(null);
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
 
-  // Campos del formulario de factura
   const [invoiceForm, setInvoiceForm] = useState('');
   const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
   const [facturaCcpForm, setFacturaCcpForm] = useState('');
-  // ✅ (C) Status de la factura (formulario "Generar Factura")
   const [statusFacturaForm, setStatusFacturaForm] = useState<string>('Facturado');
 
-  // ✅ Costo adicional al cliente (desde Asignar Operaciones)
   const [modalCostoAdic, setModalCostoAdic] = useState(false);
   const [costoAdicOpId, setCostoAdicOpId] = useState('');
   const [costoAdicMonto, setCostoAdicMonto] = useState('');
   const [costoAdicConcepto, setCostoAdicConcepto] = useState('');
   const [guardandoCostoAdic, setGuardandoCostoAdic] = useState(false);
 
-  // ✅ Info de operaciones resuelta bajo demanda (ref TR, remolque, moneda) para
-  //    las facturas visibles del historial. Se acumula para no re-pedir.
   const [opInfoMap, setOpInfoMap] = useState<Record<string, any>>({});
-  // ✅ Diagnóstico / verificación
   const [modalDiagnostico, setModalDiagnostico] = useState(false);
 
-  // ──────────────────────────────────────────────────────────────────
   // Formateadores
-  // ──────────────────────────────────────────────────────────────────
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
-
-  const formatearFechaSpanish = (fechaString: string) => {
+  // ✅ Fecha tolerante a varios formatos (ISO, DD/MM/YYYY, D/M/YY, con guiones,
+  //    Timestamp de Firestore). NUNCA muestra "Invalid Date": si no la entiende,
+  //    devuelve el valor crudo.
+  const formatearFechaSpanish = (fechaString: any) => {
     if (!fechaString) return '-';
-    try {
-      return new Date(fechaString + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
-    } catch { return fechaString; }
+    const fmt = (d: Date) => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+    // Firestore Timestamp u objeto con toDate()/seconds
+    if (typeof fechaString === 'object') {
+      try {
+        if (typeof fechaString.toDate === 'function') { const d = fechaString.toDate(); return isNaN(d.getTime()) ? '-' : fmt(d); }
+        if (typeof fechaString.seconds === 'number') { const d = new Date(fechaString.seconds * 1000); return isNaN(d.getTime()) ? '-' : fmt(d); }
+      } catch { /* noop */ }
+      return '-';
+    }
+    const s = String(fechaString).trim();
+    if (!s) return '-';
+    let y = '', mo = '', da = '';
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);            // ISO YYYY-MM-DD
+    if (m) { y = m[1]; mo = m[2]; da = m[3]; }
+    if (!y) { m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);     // YYYY/MM/DD
+      if (m) { y = m[1]; mo = m[2]; da = m[3]; } }
+    if (!y) { m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); // DD/MM/YYYY (o con -)
+      if (m) { da = m[1]; mo = m[2]; y = m[3]; } }
+    if (!y) { m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/); // DD/MM/YY → 20YY
+      if (m) { da = m[1]; mo = m[2]; y = '20' + m[3]; } }
+    if (y && mo && da) {
+      const d = new Date(`${y}-${mo.padStart(2, '0')}-${da.padStart(2, '0')}T00:00:00`);
+      if (!isNaN(d.getTime())) return fmt(d);
+    }
+    const d2 = new Date(s); // último intento (deja que JS lo interprete)
+    if (!isNaN(d2.getTime())) return fmt(d2);
+    return s; // valor crudo en lugar de "Invalid Date"
   };
-
   const formatearFechaHora = (isoString: string | undefined | null) => {
     if (!isoString) return '-';
     try { return new Date(isoString).toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
     catch { return isoString; }
   };
-
   const mostrarDato = (dato: any) => (dato && dato !== '' ? dato : '-');
-
   const mostrarMoneda = (val: string | null | undefined) => {
     if (val === ID_USD) return 'USD';
     if (val === ID_MXN) return 'MXN';
     return val || '-';
   };
-
-  // ✅ (C) Píldora de status de la factura
   const chipStatusFactura = (s: any) => {
     const texto = s || 'Facturado';
     const color = colorStatusFactura(texto);
@@ -514,29 +438,22 @@ export const FacturacionClientesDashboard = () => {
     );
   };
 
-  // ──────────────────────────────────────────────────────────────────
-  // ✅ (B) Resolución de NOMBRE a partir de un ID (catálogos cacheados)
-  // ──────────────────────────────────────────────────────────────────
   const mapaCatalogos = useMemo(() => {
     const m = construirMapaCatalogos();
-    // Empresas ya cargadas (clientes, proveedores, etc.)
     empresasList.forEach((e: any) => {
       if (e?.id) m[String(e.id)] = e.nombre || e.nombreCorto || m[String(e.id)] || String(e.id);
     });
-    // Monedas conocidas
     m[ID_USD] = 'USD';
     m[ID_MXN] = 'MXN';
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empresasList]);
 
-  // Devuelve el nombre si el valor es un ID conocido; si no, el valor tal cual.
   const resolverNombre = (val: any): any => {
     if (val === '' || val === null || val === undefined) return val;
     return mapaCatalogos[String(val)] || val;
   };
 
-  // Primer candidato con valor, resolviendo ID→nombre. '-' si todos vacíos.
   const txt = (...cands: any[]): string => {
     for (const c of cands) {
       if (c !== undefined && c !== null && c !== '') {
@@ -547,9 +464,7 @@ export const FacturacionClientesDashboard = () => {
     return '-';
   };
 
-  // ──────────────────────────────────────────────────────────────────
-  // ✅ (3) Empresas: caché-primero, getDocs UNA vez si falta. Sin onSnapshot.
-  // ──────────────────────────────────────────────────────────────────
+  // Empresas: caché-primero, getDocs una vez si falta.
   useEffect(() => {
     const cache = leerCacheLocal('empresas');
     if (cache && cache.length) { setEmpresasList(cache); return; }
@@ -566,16 +481,10 @@ export const FacturacionClientesDashboard = () => {
     return () => { activo = false; };
   }, []);
 
-  // ──────────────────────────────────────────────────────────────────
-  // ✅ (A) Cargar configuración de columnas COMPARTIDA (una sola lectura por
-  //     documento al montar). Si existe, se aplica para todos los usuarios.
-  // ──────────────────────────────────────────────────────────────────
+  // Config de columnas COMPARTIDA (Firestore + localStorage).
   useEffect(() => {
-    // 1) localStorage primero: persistencia local instantánea (sobrevive al refresco).
     const aplicarOps = (guardadas: any) => {
       let cols = aplicarConfigColumnasGuardada(COLUMNAS_OPS_BASE, guardadas);
-      // La columna "# Factura" siempre debe estar presente, visible y al frente
-      // (es clave para saber dónde se facturó cada operación).
       if (!cols.some((c: any) => c.id === 'factura')) {
         const base = COLUMNAS_OPS_BASE.find((c: any) => c.id === 'factura');
         if (base) cols = [{ ...base, visible: true }, ...cols];
@@ -597,7 +506,6 @@ export const FacturacionClientesDashboard = () => {
       if (lsHist) setColumnasFactura(aplicarHist(JSON.parse(lsHist)));
     } catch { /* noop */ }
 
-    // 2) Firestore: config COMPARTIDA (para todos). Sobrescribe y refresca caché local.
     let activo = true;
     (async () => {
       try {
@@ -623,17 +531,12 @@ export const FacturacionClientesDashboard = () => {
     return () => { activo = false; };
   }, []);
 
-  // ✅ (A) Guardar configuración de columnas de "Asignar Operaciones" para
-  //     TODOS los usuarios (Firestore).
   const guardarConfigColumnasOps = async () => {
     setGuardandoCols(true);
     try {
       const payload = columnasOps.map(c => ({ id: c.id, visible: !!c.visible }));
       try { localStorage.setItem(LS_COLS_OPS, JSON.stringify(payload)); } catch { /* noop */ }
-      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_OPS), {
-        columnas: payload,
-        updatedAt: new Date().toISOString(),
-      });
+      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_OPS), { columnas: payload, updatedAt: new Date().toISOString() });
       setModalColumnasOps(false);
       setBusquedaColOps('');
     } catch (e) {
@@ -644,17 +547,12 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ (A) Guardar configuración de columnas del "Historial de Facturas" para
-  //     TODOS los usuarios (Firestore).
   const guardarConfigColumnasHistorial = async () => {
     setGuardandoCols(true);
     try {
       const payload = columnasFactura.map(c => ({ id: c.id, visible: !!c.visible }));
       try { localStorage.setItem(LS_COLS_HIST, JSON.stringify(payload)); } catch { /* noop */ }
-      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_HISTORIAL), {
-        columnas: payload,
-        updatedAt: new Date().toISOString(),
-      });
+      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_COLUMNAS_HISTORIAL), { columnas: payload, updatedAt: new Date().toISOString() });
       setModalColumnas(false);
     } catch (e) {
       console.error('Error guardando columnas (historial):', e);
@@ -664,19 +562,13 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ──────────────────────────────────────────────────────────────────
-  // ✅ Cargar TODAS las facturas al MONTAR (paginado), para que el índice de
-  //    operaciones facturadas esté disponible en ambas pestañas. Se cachea en
-  //    sessionStorage (30 min) para no releer miles de documentos por montaje.
-  // ──────────────────────────────────────────────────────────────────
+  // Cargar TODAS las facturas al MONTAR (paginado + caché).
   const guardarCacheFacturas = (docs: any[]) => {
     try { sessionStorage.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
 
   useEffect(() => {
     if (facturasGlobales.length > 0) return;
-
-    // 1) Caché de sesión primero.
     try {
       const raw = sessionStorage.getItem(SS_FACTURAS);
       if (raw) {
@@ -693,7 +585,6 @@ export const FacturacionClientesDashboard = () => {
       try {
         const todas: any[] = [];
         let cursor: any = null;
-        // Paginar por documentId para traer TODAS (sin depender de 'fecha').
         for (let i = 0; i < Math.ceil(LIMITE_FACTURAS_TODAS / PAG_FACTURAS); i++) {
           const cons: any[] = [orderBy(documentId()), limit(PAG_FACTURAS)];
           if (cursor) cons.splice(1, 0, startAfter(cursor));
@@ -720,84 +611,103 @@ export const FacturacionClientesDashboard = () => {
       }
       setCargandoFacturas(false);
     };
-
     descargar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ Mantener la caché de sesión sincronizada cuando cambian las facturas
-  //    (crear, fusionar, eliminar, cambiar status, costo adicional).
   useEffect(() => {
     if (facturasGlobales.length > 0) guardarCacheFacturas(facturasGlobales);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facturasGlobales]);
-  // ──────────────────────────────────────────────────────────────────
+
+  // ✅ (D) Cargar TODAS las operaciones completadas (sin filtro de fecha).
+  const guardarCacheOps = (docs: any[]) => {
+    try { sessionStorage.setItem(SS_OPS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
+  };
+
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
-    if (!ambasFechas) { setOperacionesGlobales([]); return; }
+    if (operacionesGlobales.length > 0) return;
+    try {
+      const raw = sessionStorage.getItem(SS_OPS);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_OPS_TTL) {
+          setOperacionesGlobales(obj.data);
+          setTopeOpsAlcanzado(obj.data.length >= LIMITE_OPS_TODAS);
+          return;
+        }
+      }
+    } catch { /* noop */ }
 
     const descargar = async () => {
       setCargandoOperaciones(true);
-
-      const filtrarMem = (ops: any[]) => ops.filter(op =>
-        STATUS_COMPLETADOS.includes(String(op.status || '').trim()) &&
-        (!filtroCliente || String(op.clientePaga || op.clienteId || '') === filtroCliente)
-      );
-
-      let opsFinal: any[] = [];
-      let exito = false;
-
       try {
-        const cons: any[] = [
-          where('status', 'in', STATUS_COMPLETADOS),
-          where('fechaServicio', '>=', fechaDesdeOps),
-          where('fechaServicio', '<=', fechaHastaOps),
-          orderBy('fechaServicio', 'desc'),
-          limit(LIMITE_OPS_RANGO),
-        ];
-        if (filtroCliente) cons.unshift(where('clientePaga', '==', filtroCliente));
-        const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
-        opsFinal = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-        exito = true;
-      } catch (e1: any) {
-        const msg1 = String(e1?.message || e1?.code || e1 || '');
-        const esIndice = msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition');
-        if (esIndice) {
-          console.warn('[Facturación] Falta índice (status+fecha). Fallback por rango de fecha. Detalle:', msg1);
-          try {
-            const snap2 = await getDocs(query(
-              collection(db, 'operaciones'),
-              where('fechaServicio', '>=', fechaDesdeOps),
-              where('fechaServicio', '<=', fechaHastaOps),
-              orderBy('fechaServicio', 'desc'),
-              limit(LIMITE_OPS_RANGO * 2),
-            ));
-            const todas = snap2.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
-            opsFinal = filtrarMem(todas).slice(0, LIMITE_OPS_RANGO);
-            exito = true;
-          } catch (e2: any) {
-            console.error('[Facturación] Fallback falló:', e2);
-            alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${e2?.message || e2}`);
+        let todas: any[] = [];
+        let usarFallback = false;
+        try {
+          let cursor: any = null;
+          for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
+            const cons: any[] = [where('status', 'in', STATUS_COMPLETADOS), orderBy(documentId()), limit(PAG_OPS)];
+            if (cursor) cons.splice(2, 0, startAfter(cursor));
+            const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
+            if (snap.empty) break;
+            snap.docs.forEach(d => todas.push({ id: d.id, ...(d.data() as any) }));
+            cursor = snap.docs[snap.docs.length - 1];
+            if (snap.docs.length < PAG_OPS) break;
           }
-        } else {
-          console.error('[Facturación] Error inesperado:', e1);
-          alert(`Hubo un problema al cargar las operaciones.\n\nDetalle: ${msg1}`);
+        } catch (e1: any) {
+          const msg1 = String(e1?.message || e1?.code || e1 || '');
+          if (msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition')) {
+            console.warn('[Facturación] Falta índice (status+__name__). Fallback: traer todo y filtrar en memoria. Detalle:', msg1);
+            usarFallback = true;
+          } else {
+            throw e1;
+          }
         }
-      }
-
-      if (exito) {
-        setOperacionesGlobales(opsFinal);
-        setTopeOpsAlcanzado(opsFinal.length >= LIMITE_OPS_RANGO);
+        if (usarFallback) {
+          todas = [];
+          let cursor: any = null;
+          for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
+            const cons: any[] = [orderBy(documentId()), limit(PAG_OPS)];
+            if (cursor) cons.splice(1, 0, startAfter(cursor));
+            const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
+            if (snap.empty) break;
+            snap.docs.forEach(d => {
+              const o: any = { id: d.id, ...(d.data() as any) };
+              if (STATUS_COMPLETADOS.includes(String(o.status || '').trim())) todas.push(o);
+            });
+            cursor = snap.docs[snap.docs.length - 1];
+            if (snap.docs.length < PAG_OPS) break;
+          }
+        }
+        todas.sort((a: any, b: any) => String(b.fechaServicio || b.createdAt || '').localeCompare(String(a.fechaServicio || a.createdAt || '')));
+        setOperacionesGlobales(todas);
+        setTopeOpsAlcanzado(todas.length >= LIMITE_OPS_TODAS);
+        guardarCacheOps(todas);
+      } catch (e: any) {
+        const msg = String(e?.message || e?.code || e || '');
+        console.error('[Facturación] Error al cargar operaciones completadas:', e);
+        alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${msg}`);
       }
       setCargandoOperaciones(false);
     };
-
     descargar();
-  }, [fechaDesdeOps, fechaHastaOps, filtroCliente, activeTab, ambasFechas]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, operacionesGlobales.length]);
 
-  // ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (operacionesGlobales.length > 0) guardarCacheOps(operacionesGlobales);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesGlobales]);
+
+  const recargarOperaciones = () => {
+    try { sessionStorage.removeItem(SS_OPS); } catch { /* noop */ }
+    setOperacionesGlobales([]);
+    setSeleccionadas([]);
+  };
+
   // Traductor de clientes / buscador
-  // ──────────────────────────────────────────────────────────────────
   const getNombreCliente = (idOrName: string) => {
     if (!idOrName) return '-';
     const found = empresasList.find(e => e.id === idOrName || e.nombre === idOrName || e.nombreCorto === idOrName);
@@ -832,11 +742,6 @@ export const FacturacionClientesDashboard = () => {
     return cli?.nombre || filtroCliente;
   }, [filtroCliente, empresasList]);
 
-  // ──────────────────────────────────────────────────────────────────
-  // ✅ ÍNDICE de operaciones facturadas (a partir de las facturas). El vínculo
-  //    op↔factura vive en la factura (operacionesIds), por eso construimos aquí
-  //    un mapa opId → { invoice, facturaId, ... } para saber qué está facturado.
-  // ──────────────────────────────────────────────────────────────────
   const opIndex = useMemo(() => {
     const m = new Map<string, { invoice: string; facturaId: string; fecha: string; clienteId: string; moneda: string }>();
     facturasGlobales.forEach((f: any) => {
@@ -849,7 +754,6 @@ export const FacturacionClientesDashboard = () => {
     return m;
   }, [facturasGlobales]);
 
-  // ✅ Moneda que corresponde al cliente (desde su ficha de empresa).
   const monedaDeCliente = (clienteId: any): string => {
     if (!clienteId) return '';
     const empresa = empresasList.find(e => e.id === clienteId);
@@ -859,16 +763,12 @@ export const FacturacionClientesDashboard = () => {
     return idMoneda ? String(idMoneda) : '';
   };
 
-  // Moneda a mostrar para una factura: la propia, o si es N/A la del cliente.
   const monedaFacturaMostrar = (f: any): string => {
     const m = String(f.monedaFacturacion || '').trim();
     if (m && m.toUpperCase() !== 'N/A') return m;
     return monedaDeCliente(f.clienteId) || 'N/A';
   };
 
-  // ──────────────────────────────────────────────────────────────────
-  // (2) "Facturada" = ligada a una factura (índice) o marcada en su doc.
-  // ──────────────────────────────────────────────────────────────────
   const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado;
   const invoiceDeOp = (op: any): string => op.facturaClienteInvoice || opIndex.get(String(op.id))?.invoice || '';
 
@@ -916,9 +816,6 @@ export const FacturacionClientesDashboard = () => {
     return idMoneda || 'No definida en catálogo';
   }, [clienteFacturaId, empresasList, operacionesGlobales]);
 
-  // ──────────────────────────────────────────────────────────────────
-  // ✅ Helpers genéricos para columnas configurables (sourceField + tipo)
-  // ──────────────────────────────────────────────────────────────────
   const valorGenericoOp = (op: any, col: any): any => {
     if (!col?.sourceField) return '';
     const fields: string[] = Array.isArray(col.sourceField) ? col.sourceField : [col.sourceField];
@@ -968,10 +865,10 @@ export const FacturacionClientesDashboard = () => {
     return true;
   };
 
+  // ✅ (D) Filtro por cliente en memoria (antes se hacía en la consulta).
+  const coincideClienteOp = (op: any) => !filtroCliente || String(op.clientePaga || op.clienteId || '') === filtroCliente;
+
   const operacionesMostradas = useMemo(() => {
-    if (!ambasFechas) return [];
-    // Por defecto solo las PENDIENTES (no facturadas). Con el toggle se incluyen
-    // también las ya facturadas (que no son seleccionables).
     const q = textoBuscarRemolqueOps.trim().toLowerCase();
     const coincide = (op: any) => {
       if (!q) return true;
@@ -981,7 +878,14 @@ export const FacturacionClientesDashboard = () => {
       ];
       return campos.some(v => String(v ?? '').toLowerCase().includes(q));
     };
-    const lista = operacionesGlobales.filter(op => dentroRangoFecha(op) && (mostrarFacturadas || !esFacturada(op)) && coincide(op));
+    const coincideVista = (op: any) => {
+      if (vistaOps === 'todas') return true;
+      if (vistaOps === 'facturadas') return esFacturada(op);
+      return !esFacturada(op);
+    };
+    const lista = operacionesGlobales.filter(op =>
+      dentroRangoFecha(op) && coincideClienteOp(op) && coincideVista(op) && coincide(op)
+    );
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
       const va = valorOrdenOp(a, ordenOps.campo);
@@ -990,27 +894,20 @@ export const FacturacionClientesDashboard = () => {
       return String(va).localeCompare(String(vb)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ambasFechas, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, mostrarFacturadas, textoBuscarRemolqueOps, facturasGlobales]);
+  }, [operacionesGlobales, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, vistaOps, textoBuscarRemolqueOps, facturasGlobales, filtroCliente]);
 
-  // ✅ Conteos sobre TODO el rango cargado (no depende del toggle de visibilidad).
   const resumenOps = useMemo(() => {
-    if (!ambasFechas) return { porFacturar: 0, facturadas: 0 };
-    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op));
+    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op) && coincideClienteOp(op));
     const facturadas = enRango.filter(op => esFacturada(op)).length;
-    const porFacturar = enRango.length - facturadas;
-    return { porFacturar, facturadas };
+    const total = enRango.length;
+    const porFacturar = total - facturadas;
+    return { porFacturar, facturadas, total };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ambasFechas, fechaDesdeOps, fechaHastaOps, facturasGlobales]);
+  }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, facturasGlobales, filtroCliente]);
 
-  // ──────────────────────────────────────────────────────────────────
-  // ✅ DIAGNÓSTICO: verifica la consistencia de la facturación con los datos
-  //    cargados (sin lecturas extra). Útil para validar "¿está todo ok?".
-  // ──────────────────────────────────────────────────────────────────
   const diagnostico = useMemo(() => {
     const totalFacturas = facturasGlobales.length;
     const opsFacturadasUnicas = opIndex.size;
-
-    // Facturas duplicadas: mismo invoice + cliente en más de un documento.
     const porClave = new Map<string, number>();
     facturasGlobales.forEach((f: any) => {
       const k = `${String(f.invoice || '').trim().toLowerCase()}__${String(f.clienteId || '')}`;
@@ -1018,26 +915,17 @@ export const FacturacionClientesDashboard = () => {
     });
     let invoicesDuplicados = 0;
     porClave.forEach(v => { if (v > 1) invoicesDuplicados++; });
-
-    // Facturas sin moneda resuelta (ni propia ni por cliente).
-    let sinMoneda = 0;
-    let sinFecha = 0;
-    let sinTotal = 0;
+    let sinMoneda = 0, sinFecha = 0, sinTotal = 0;
     facturasGlobales.forEach((f: any) => {
       if (monedaFacturaMostrar(f) === 'N/A') sinMoneda++;
       if (!String(f.fecha || '').trim()) sinFecha++;
       if (!(Number(f.subtotalFactura) > 0)) sinTotal++;
     });
-
-    // En el rango cargado de operaciones (si aplica).
-    const enRango = ambasFechas ? operacionesGlobales.filter(op => dentroRangoFecha(op)) : [];
+    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op));
     const rangoTotal = enRango.length;
     const rangoFacturadas = enRango.filter(op => esFacturada(op)).length;
     const rangoPorFacturar = rangoTotal - rangoFacturadas;
-    // Operaciones marcadas como facturadas en su propio doc pero que NO aparecen
-    // en ninguna factura (posibles inconsistencias).
     const huerfanas = enRango.filter(op => (op.facturado || op.facturaClienteId) && !opIndex.has(String(op.id))).length;
-
     return {
       totalFacturas, opsFacturadasUnicas, invoicesDuplicados,
       sinMoneda, sinFecha, sinTotal,
@@ -1046,11 +934,10 @@ export const FacturacionClientesDashboard = () => {
       topeOps: topeOpsAlcanzado,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturasGlobales, opIndex, operacionesGlobales, ambasFechas, fechaDesdeOps, fechaHastaOps, empresasList, topeOpsAlcanzado]);
+  }, [facturasGlobales, opIndex, operacionesGlobales, fechaDesdeOps, fechaHastaOps, empresasList, topeOpsAlcanzado]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
-
   const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
   const valorCeldaOps = (op: any, key: string, m: any) => {
@@ -1132,29 +1019,23 @@ export const FacturacionClientesDashboard = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Ops_Por_Facturar');
     const cli = (filtroCliente ? (nombreClienteSeleccionado || 'cliente') : 'todos').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
-    XLSX.writeFile(wb, `Operaciones_PorFacturar_${cli}_${fechaDesdeOps}_a_${fechaHastaOps}.xlsx`);
+    const rango = (fechaDesdeOps || fechaHastaOps) ? `_${fechaDesdeOps || 'inicio'}_a_${fechaHastaOps || 'hoy'}` : '_todas';
+    XLSX.writeFile(wb, `Operaciones_${vistaOps}_${cli}${rango}.xlsx`);
   };
 
   const toggleSeleccion = (id: string) => {
     const op = operacionesGlobales.find(o => o.id === id);
-    if (op && esFacturada(op)) return; // las facturadas no se seleccionan
+    if (op && esFacturada(op)) return;
     setSeleccionadas(prev => prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]);
   };
 
-  // ✅ Abrir / guardar costo adicional al cliente en una operación seleccionada.
   const abrirModalCostoAdic = () => {
     setCostoAdicOpId(seleccionadas.length > 0 ? seleccionadas[0] : '');
-    setCostoAdicMonto('');
-    setCostoAdicConcepto('');
-    setModalCostoAdic(true);
+    setCostoAdicMonto(''); setCostoAdicConcepto(''); setModalCostoAdic(true);
   };
-
-  // ✅ Abrir el costo adicional directamente para UNA operación (botón en la fila).
   const abrirCostoAdicParaOp = (opId: string) => {
     setCostoAdicOpId(opId);
-    setCostoAdicMonto('');
-    setCostoAdicConcepto('');
-    setModalCostoAdic(true);
+    setCostoAdicMonto(''); setCostoAdicConcepto(''); setModalCostoAdic(true);
   };
 
   const handleGuardarCostoAdic = async () => {
@@ -1202,9 +1083,6 @@ export const FacturacionClientesDashboard = () => {
     return { subtotal, refs };
   }, [seleccionadas, operacionesGlobales]);
 
-  // ──────────────────────────────────────────────────────────────────
-  // Guardado de factura (cliente derivado; valida un solo cliente)
-  // ──────────────────────────────────────────────────────────────────
   const handleGuardarFactura = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!invoiceForm.trim()) return alert('El # de Invoice es obligatorio.');
@@ -1214,9 +1092,7 @@ export const FacturacionClientesDashboard = () => {
     setGuardando(true);
     try {
       const batch = writeBatch(db);
-
       const nuevoId = doc(collection(db, 'facturas_clientes')).id;
-
       const operacionesResumenEstable = seleccionadas.map(id => {
         const op = operacionesGlobales.find(o => o.id === id);
         const montos = op ? obtenerMontoOperacion(op) : { subtotal: 0, conv: 0, dol: 0, pes: 0 };
@@ -1225,14 +1101,12 @@ export const FacturacionClientesDashboard = () => {
           ref: op?.numReferencia || op?.referencia || op?.ref || id.substring(0, 6),
           monto: montos.conv,
           subtotalBase: montos.subtotal,
-          // ✅ remolque (para poder buscar por # de Remolque en el historial)
           remolque: op ? txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque) : '',
         };
       });
       const remolquesFactura = Array.from(new Set(
         operacionesResumenEstable.map((o: any) => String(o.remolque || '')).filter(r => r && r !== '-')
       ));
-
       const data = {
         invoice: invoiceForm.trim(),
         fecha: fechaForm,
@@ -1247,35 +1121,26 @@ export const FacturacionClientesDashboard = () => {
         subtotalFactura: resumenSeleccion.subtotal,
         createdAt: new Date().toISOString(),
       };
-
-      // ✅ ¿Ya existe una factura con el MISMO número (mismo cliente)? → fusionar.
       const invKey = invoiceForm.trim().toLowerCase();
       const existente = facturasGlobales.find(f =>
         String(f.invoice || '').trim().toLowerCase() === invKey &&
         String(f.clienteId || '') === String(clienteFacturaId)
       );
-
       let docId = nuevoId;
       let facturaResultante: any = data;
-
       if (existente) {
-        // Unir operaciones (dedup por id) y sumar totales sobre el doc existente.
         docId = existente.id;
         const idsPrev: string[] = Array.isArray(existente.operacionesIds) ? existente.operacionesIds.map(String) : [];
         const idsUnion = Array.from(new Set([...idsPrev, ...seleccionadas]));
-
         const guardadasPrev: any[] = Array.isArray(existente.operacionesGuardadas) ? existente.operacionesGuardadas : [];
         const mapaGuardadas = new Map<string, any>();
         [...guardadasPrev, ...operacionesResumenEstable].forEach((o: any) => { if (o?.id) mapaGuardadas.set(String(o.id), o); });
         const guardadasUnion = Array.from(mapaGuardadas.values());
-
         const remolquesUnion = Array.from(new Set([
           ...(Array.isArray(existente.remolques) ? existente.remolques : []),
           ...remolquesFactura,
         ].map((r: any) => String(r || '')).filter(r => r && r !== '-')));
-
         const subtotalUnion = Number(existente.subtotalFactura || 0) + Number(resumenSeleccion.subtotal || 0);
-
         const merge = {
           invoice: existente.invoice || invoiceForm.trim(),
           facturaCcp: facturaCcpForm.trim() || existente.facturaCcp || '',
@@ -1294,7 +1159,6 @@ export const FacturacionClientesDashboard = () => {
       } else {
         batch.set(doc(db, 'facturas_clientes', docId), data);
       }
-
       seleccionadas.forEach(id => {
         batch.update(doc(db, 'operaciones', id), {
           facturaClienteId: docId,
@@ -1302,7 +1166,6 @@ export const FacturacionClientesDashboard = () => {
           facturado: true,
         });
       });
-
       await batch.commit();
       setModalAbierto(false);
       const idsFacturadas = [...seleccionadas];
@@ -1329,7 +1192,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ (C) Cambiar el status de una factura existente (desde la ficha).
   const handleCambiarStatusFactura = async (factura: any, nuevoStatus: string) => {
     if (!factura?.id) return;
     const ids: string[] = Array.isArray(factura.__groupIds) && factura.__groupIds.length ? factura.__groupIds : [factura.id];
@@ -1381,9 +1243,7 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ──────────────────────────────────────────────────────────────────
   // Historial: orden + paginación
-  // ──────────────────────────────────────────────────────────────────
   const valorOrdenFac = (f: any, campo: string): string | number => {
     switch (campo) {
       case 'statusFactura': return String(f.statusFactura || '').toLowerCase();
@@ -1401,19 +1261,14 @@ export const FacturacionClientesDashboard = () => {
   const historialOrdenado = useMemo(() => {
     const dir = ordenFac.dir === 'asc' ? 1 : -1;
     const q = textoBuscarFactura.trim().toLowerCase();
-
     const coincideTexto = (f: any) => {
       if (!q) return true;
       if (String(f.invoice || '').toLowerCase().includes(q)) return true;
       if (String(f.clienteNombre || '').toLowerCase().includes(q)) return true;
       if (String(f.statusFactura || '').toLowerCase().includes(q)) return true;
-      if (f.clienteId) {
-        const nom = getNombreCliente(f.clienteId);
-        if (nom && nom.toLowerCase().includes(q)) return true;
-      }
+      if (f.clienteId) { const nom = getNombreCliente(f.clienteId); if (nom && nom.toLowerCase().includes(q)) return true; }
       if (String(f.facturaCcp || '').toLowerCase().includes(q)) return true;
       if (String(f.monedaFacturacion || '').toLowerCase().includes(q)) return true;
-      // ✅ búsqueda por # de Remolque y referencia TR (a nivel factura + por operación)
       if (Array.isArray(f.remolques) && f.remolques.some((r: any) => String(r || '').toLowerCase().includes(q))) return true;
       if (Array.isArray(f.operacionesGuardadas)) {
         if (f.operacionesGuardadas.some((op: any) => {
@@ -1426,24 +1281,16 @@ export const FacturacionClientesDashboard = () => {
       }
       return false;
     };
-
     const coincideCliente = (f: any) => !filtroCliente || String(f.clienteId || '') === filtroCliente;
-
     const coincideFechas = (f: any) => {
       if (!fechaDesdeHist && !fechaHastaHist) return true;
       const fc = String(f.fecha || '').slice(0, 10);
-      // Con filtro de fechas activo, las facturas SIN fecha (importadas) se
-      // ocultan; se ven al limpiar el filtro de fechas.
       if (!fc) return false;
       if (fechaDesdeHist && fc < fechaDesdeHist) return false;
       if (fechaHastaHist && fc > fechaHastaHist) return false;
       return true;
     };
-
     const filtradas = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideFechas(f));
-
-    // ✅ Agrupar facturas con el MISMO número (invoice) + mismo cliente en una
-    //    sola fila. Evita duplicados en el historial y combina sus operaciones.
     const grupos = new Map<string, any>();
     for (const f of filtradas) {
       const key = `${String(f.invoice || f.id).trim().toLowerCase()}__${String(f.clienteId || '')}`;
@@ -1461,40 +1308,33 @@ export const FacturacionClientesDashboard = () => {
         const g = grupos.get(key);
         g.__groupIds.push(f.id);
         g.__groupDocs.push(f);
-        // unir ids
         const setIds = new Set<string>([...(g.operacionesIds || []).map(String), ...((f.operacionesIds || []).map(String))]);
         g.operacionesIds = Array.from(setIds);
-        // unir operacionesGuardadas (dedup por id)
         const mapG = new Map<string, any>();
         [...(g.operacionesGuardadas || []), ...(f.operacionesGuardadas || [])].forEach((o: any) => { if (o?.id) mapG.set(String(o.id), o); });
         g.operacionesGuardadas = Array.from(mapG.values());
-        // unir remolques
         g.remolques = Array.from(new Set([...(g.remolques || []), ...((f.remolques) || [])].map((r: any) => String(r || '')).filter(Boolean)));
-        // sumar totales
         g.subtotalFactura = Number(g.subtotalFactura || 0) + (Number(f.subtotalFactura) || 0);
-        // conservar la fecha más reciente y createdAt más antiguo
         if (String(f.fecha || '') > String(g.fecha || '')) g.fecha = f.fecha;
         if (!g.createdAt || (f.createdAt && String(f.createdAt) < String(g.createdAt))) g.createdAt = f.createdAt || g.createdAt;
-        // si alguna no está "Facturado", reflejarlo (prioridad: Cancelado > No Facturado > Facturado)
         const rank = (s: any) => { const t = String(s || '').toLowerCase(); if (t.includes('cancel')) return 3; if (t.includes('no')) return 2; return 1; };
         if (rank(f.statusFactura) > rank(g.statusFactura)) g.statusFactura = f.statusFactura;
       }
     }
-    const agrupadas = Array.from(grupos.values());
-
+    let agrupadas = Array.from(grupos.values());
+    if (filtroStatusFactura && filtroStatusFactura !== 'Todos') {
+      agrupadas = agrupadas.filter(g => String(g.statusFactura || 'Facturado') === filtroStatusFactura);
+    }
     return agrupadas.sort((a, b) => {
       const va = valorOrdenFac(a, ordenFac.campo);
       const vb = valorOrdenFac(b, ordenFac.campo);
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap]);
+  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura]);
 
   const resumenHistorial = useMemo(() => {
-    let totalUSD = 0;
-    let totalMXN = 0;
-    let totalSinMoneda = 0;
-    let totalOps = 0;
+    let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
     historialOrdenado.forEach(f => {
       const monto = Number(f.subtotalFactura) || 0;
       const mon = String(f.monedaFacturacion || '').toUpperCase();
@@ -1506,9 +1346,42 @@ export const FacturacionClientesDashboard = () => {
     return { cuenta: historialOrdenado.length, totalUSD, totalMXN, totalSinMoneda, totalOps };
   }, [historialOrdenado]);
 
+  // ✅ (D) Conteos por status (sobre el historial filtrado salvo el status).
+  const conteoStatus = useMemo(() => {
+    const q = textoBuscarFactura.trim().toLowerCase();
+    const coincideTexto = (f: any) => {
+      if (!q) return true;
+      if (String(f.invoice || '').toLowerCase().includes(q)) return true;
+      if (String(f.clienteNombre || '').toLowerCase().includes(q)) return true;
+      if (String(f.statusFactura || '').toLowerCase().includes(q)) return true;
+      if (f.clienteId) { const nom = getNombreCliente(f.clienteId); if (nom && nom.toLowerCase().includes(q)) return true; }
+      if (String(f.facturaCcp || '').toLowerCase().includes(q)) return true;
+      if (String(f.monedaFacturacion || '').toLowerCase().includes(q)) return true;
+      if (Array.isArray(f.remolques) && f.remolques.some((r: any) => String(r || '').toLowerCase().includes(q))) return true;
+      return false;
+    };
+    const coincideCliente = (f: any) => !filtroCliente || String(f.clienteId || '') === filtroCliente;
+    const coincideFechas = (f: any) => {
+      if (!fechaDesdeHist && !fechaHastaHist) return true;
+      const fc = String(f.fecha || '').slice(0, 10);
+      if (!fc) return false;
+      if (fechaDesdeHist && fc < fechaDesdeHist) return false;
+      if (fechaHastaHist && fc > fechaHastaHist) return false;
+      return true;
+    };
+    const base = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideFechas(f));
+    const c = { Todos: base.length, Facturado: 0, 'No Facturado': 0, Cancelado: 0 } as Record<string, number>;
+    base.forEach((f: any) => {
+      const s = String(f.statusFactura || 'Facturado');
+      if (c[s] === undefined) c[s] = 0;
+      c[s]++;
+    });
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facturasGlobales, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist]);
+
   const toggleOrdenFac = (campo: string) =>
     setOrdenFac(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
-
   const flechaFac = (campo: string) => ordenFac.campo === campo ? (ordenFac.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
   const totalPaginas = Math.ceil(historialOrdenado.length / registrosPorPagina);
@@ -1516,10 +1389,6 @@ export const FacturacionClientesDashboard = () => {
   const indexFirst = indexLast - registrosPorPagina;
   const registrosVisibles = historialOrdenado.slice(indexFirst, indexLast);
 
-  // ✅ Resolver bajo demanda la info real (ref TR, remolque, moneda) de las
-  //    operaciones de las facturas visibles + la ficha abierta, en lotes por
-  //    documentId (máx 30). NOTA: los IDs legacy son cortos (ej. "0025a7f3"),
-  //    por eso NO exigimos longitud mínima, solo que no parezca un TR (guion).
   useEffect(() => {
     const fuentes: any[] = activeTab === 'historial' ? [...registrosVisibles] : [];
     if (facturaViendo) fuentes.push(facturaViendo);
@@ -1536,7 +1405,7 @@ export const FacturacionClientesDashboard = () => {
     if (faltantes.size === 0) return;
     let activo = true;
     (async () => {
-      const ids = Array.from(faltantes).slice(0, 150); // tope de seguridad por render
+      const ids = Array.from(faltantes).slice(0, 150);
       const nuevos: Record<string, any> = {};
       for (let i = 0; i < ids.length; i += 30) {
         const chunk = ids.slice(i, i + 30);
@@ -1559,24 +1428,19 @@ export const FacturacionClientesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registrosVisibles, facturaViendo, activeTab]);
 
-  // Ref real de una operación guardada en factura (resuelta o tal cual).
   const refDeOp = (op: any): string => {
     const id = String(op?.id || '');
     const info = opInfoMap[id];
     if (info?.ref) return String(info.ref);
     const r = String(op?.ref || '');
-    if (r && /[-\s]/.test(r)) return r; // ya es una referencia tipo TR-...
+    if (r && /[-\s]/.test(r)) return r;
     return r || id;
   };
 
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
+  useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeHist, fechaHastaHist, textoBuscarFactura, filtroStatusFactura]);
 
-  useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeHist, fechaHastaHist, textoBuscarFactura]);
-
-  // ──────────────────────────────────────────────────────────────────
-  // Columnas configurables — valor por columna + export
-  // ──────────────────────────────────────────────────────────────────
   const nombreClienteFactura_ = (f: any): string => {
     if (f.clienteNombre) return f.clienteNombre;
     if (f.cliente) return f.cliente;
@@ -1625,17 +1489,7 @@ export const FacturacionClientesDashboard = () => {
                 key={`${f.id}_ref_${op?.id || idx}`}
                 onClick={(e) => { e.stopPropagation(); if (op?.id) verDetalleOperacion(op.id); }}
                 title="Ver detalle de la operación"
-                style={{
-                  backgroundColor: '#21262d',
-                  border: '1px solid #58a6ff',
-                  color: '#58a6ff',
-                  padding: '3px 8px',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontSize: '0.78rem',
-                  fontFamily: 'monospace',
-                  fontWeight: 'bold',
-                }}>
+                style={{ backgroundColor: '#21262d', border: '1px solid #58a6ff', color: '#58a6ff', padding: '3px 8px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', fontFamily: 'monospace', fontWeight: 'bold' }}>
                 {refDeOp(op)}
               </button>
             ))}
@@ -1652,13 +1506,11 @@ export const FacturacionClientesDashboard = () => {
     if (historialOrdenado.length === 0) return alert('No hay datos para exportar.');
     const columnasVisibles = columnasFactura.filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
-
     const datosExcel = historialOrdenado.map(f => {
       const fila: any = {};
       columnasVisibles.forEach(col => { fila[col.label] = valorCeldaFactura(f, col.id); });
       return fila;
     });
-
     const worksheet = XLSX.utils.json_to_sheet(datosExcel);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Facturas_Clientes');
@@ -1680,9 +1532,6 @@ export const FacturacionClientesDashboard = () => {
     setColumnasFactura(nuevas);
   };
 
-  // ──────────────────────────────────────────────────────────────────
-  // Detalle de operación
-  // ──────────────────────────────────────────────────────────────────
   const verDetalleOperacion = async (opId: string) => {
     if (!opId) return;
     setCargandoDetalle(true);
@@ -1718,21 +1567,24 @@ export const FacturacionClientesDashboard = () => {
     { id: 'cobrar', label: 'Por Cobrar' },
   ];
 
-  // ──────────────────────────────────────────────────────────────────
-  // Estilos auxiliares
-  // ──────────────────────────────────────────────────────────────────
   const tabStyle = (active: boolean) => ({
     padding: '12px 24px', background: 'none', border: 'none', cursor: 'pointer',
     color: active ? '#f0f6fc' : '#8b949e', borderBottom: active ? '2px solid #D84315' : '2px solid transparent',
     fontWeight: active ? 'bold' : 'normal' as any,
   });
-
   const thOrdenStyle: React.CSSProperties = { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
   const selectOrdenStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 10px', fontSize: '0.85rem' };
   const btnDirStyle: React.CSSProperties = { backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
   const dateInputStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '9px 10px', fontSize: '0.9rem', colorScheme: 'dark' };
 
-  // Buscador de cliente reutilizable (opcional) para la barra de filtro
+  // ✅ (D) Botón de segmento reutilizable (vistas / status).
+  const segBtnStyle = (active: boolean, col: string): React.CSSProperties => ({
+    padding: '8px 14px', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 'bold', whiteSpace: 'nowrap',
+    backgroundColor: active ? `${col}22` : 'transparent',
+    color: active ? col : '#8b949e',
+    borderBottom: active ? `2px solid ${col}` : '2px solid transparent',
+  });
+
   const BuscadorCliente = () => (
     <div style={{ flex: 1, minWidth: '280px', position: 'relative' }}>
       <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>CLIENTE (opcional)</label>
@@ -1786,11 +1638,11 @@ export const FacturacionClientesDashboard = () => {
       {activeTab === 'operaciones' ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE ★</label>
+            <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE (opcional)</label>
             <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={dateInputStyle} />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA ★</label>
+            <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA (opcional)</label>
             <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={dateInputStyle} />
           </div>
           {(fechaDesdeOps || fechaHastaOps) && (
@@ -1809,6 +1661,9 @@ export const FacturacionClientesDashboard = () => {
             </div>
           </div>
           <BuscadorCliente />
+          <div style={{ flexBasis: '100%', color: '#6e7681', fontSize: '0.75rem' }}>
+            Por defecto se muestran <b style={{ color: '#8b949e' }}>todas</b> las operaciones completadas. El rango de fechas y el cliente son <b style={{ color: '#8b949e' }}>opcionales</b> para acotar.
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
@@ -1841,24 +1696,15 @@ export const FacturacionClientesDashboard = () => {
           )}
           <BuscadorCliente />
           <div style={{ flexBasis: '100%', color: '#6e7681', fontSize: '0.75rem' }}>
-            Por defecto se muestran las facturas de <b style={{ color: '#8b949e' }}>hoy</b>. Las facturas importadas sin fecha se ven al <b style={{ color: '#8b949e' }}>limpiar fechas</b>.
+            Por defecto se muestran <b style={{ color: '#8b949e' }}>todas</b> las facturas (sin filtro de fechas). Usa las fechas para acotar; las facturas importadas sin fecha se ocultan al filtrar por fecha.
           </div>
         </div>
       )}
 
-      {/* Aviso solo para "Asignar Operaciones": ambas fechas obligatorias */}
-      {activeTab === 'operaciones' && !ambasFechas ? (
-        <div style={{ padding: '48px 24px', textAlign: 'center', color: '#8b949e', backgroundColor: '#0d1117', border: '1px dashed #30363d', borderRadius: '8px' }}>
-          <div style={{ fontSize: '1.05rem', color: '#c9d1d9', marginBottom: '6px' }}>Selecciona <b style={{ color: '#D84315' }}>Fecha Desde</b> y <b style={{ color: '#D84315' }}>Fecha Hasta</b></div>
-          <div style={{ fontSize: '0.9rem' }}>
-            Las operaciones por facturar aparecerán al definir ambas fechas. El cliente es opcional.
-          </div>
-        </div>
-      ) : activeTab === 'operaciones' ? (
+      {activeTab === 'operaciones' ? (
         /* ════════════════════ ASIGNAR OPERACIONES ════════════════════ */
         <div className="animation-fade-in">
-          {/* ✅ Tarjetas: en espera por facturar vs ya facturadas (en el rango) */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px 20px' }}>
               <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones en espera por facturar</span>
               <span style={{ color: '#f59e0b', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenOps.porFacturar}</span>
@@ -1867,6 +1713,22 @@ export const FacturacionClientesDashboard = () => {
               <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones ya facturadas (en historial)</span>
               <span style={{ color: '#10b981', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenOps.facturadas}</span>
             </div>
+            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px 20px' }}>
+              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total completadas cargadas</span>
+              <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenOps.total}</span>
+            </div>
+          </div>
+
+          {/* ✅ (D) Segmentado: Pendientes / Facturadas / Todas */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '6px 8px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+              <button onClick={() => { setVistaOps('pendientes'); setSeleccionadas([]); }} style={segBtnStyle(vistaOps === 'pendientes', '#f59e0b')}>Pendientes ({resumenOps.porFacturar})</button>
+              <button onClick={() => { setVistaOps('facturadas'); setSeleccionadas([]); }} style={segBtnStyle(vistaOps === 'facturadas', '#10b981')}>Facturadas ({resumenOps.facturadas})</button>
+              <button onClick={() => { setVistaOps('todas'); setSeleccionadas([]); }} style={segBtnStyle(vistaOps === 'todas', '#58a6ff')}>Todas ({resumenOps.total})</button>
+            </div>
+            <span style={{ color: '#6e7681', fontSize: '0.78rem' }}>
+              {vistaOps === 'facturadas' ? 'Solo lectura (las facturadas no se seleccionan).' : vistaOps === 'todas' ? 'Pendientes seleccionables; facturadas marcadas en verde.' : 'Operaciones listas para generar factura.'}
+            </span>
           </div>
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
@@ -1881,15 +1743,12 @@ export const FacturacionClientesDashboard = () => {
                 {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
               </button>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
-                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'mostrada' : 'mostradas'} · <b style={{ color: '#f59e0b' }}>{resumenOps.porFacturar}</b> por facturar
+                {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'mostrada' : 'mostradas'}
               </span>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8b949e', fontSize: '0.8rem', cursor: 'pointer', userSelect: 'none' }} title="Mostrar también las operaciones ya facturadas">
-                <input type="checkbox" checked={mostrarFacturadas} onChange={(e) => setMostrarFacturadas(e.target.checked)} style={{ cursor: 'pointer' }} />
-                Mostrar facturadas
-              </label>
             </div>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button onClick={recargarOperaciones} style={btnDirStyle} title="Volver a leer todas las operaciones desde la base de datos">↻ Recargar</button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
@@ -1912,7 +1771,7 @@ export const FacturacionClientesDashboard = () => {
 
           {topeOpsAlcanzado && (
             <div style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.85rem' }}>
-              Se alcanzó el tope de <b>{LIMITE_OPS_RANGO}</b> operaciones cargadas para este rango, por lo que podría haber más que no se muestran. <b>Acota el rango de fechas</b> (o filtra por cliente) para ver el total real por facturar.
+              Se alcanzó el tope de <b>{LIMITE_OPS_TODAS}</b> operaciones cargadas, por lo que podría haber más que no se muestran. Usa el <b>rango de fechas</b> o el <b>cliente</b> para acotar.
             </div>
           )}
 
@@ -1962,9 +1821,9 @@ export const FacturacionClientesDashboard = () => {
               </thead>
               <tbody>
                 {cargandoOperaciones ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones completadas del rango...</td></tr>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando todas las operaciones completadas...</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones completadas en este rango de fechas{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
+                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones {vistaOps === 'facturadas' ? 'facturadas' : vistaOps === 'pendientes' ? 'pendientes' : 'completadas'} con los filtros actuales{filtroCliente ? ' para el cliente seleccionado' : ''}.</td></tr>
                 ) : (
                   operacionesMostradas.map(op => {
                     const m = obtenerMontoOperacion(op);
@@ -2020,6 +1879,21 @@ export const FacturacionClientesDashboard = () => {
             </div>
           </div>
 
+          {/* ✅ (D) Filtro segmentado por status de la factura */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '6px 8px', flexWrap: 'wrap' }}>
+            <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', paddingLeft: '4px' }}>Status:</span>
+            <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden', flexWrap: 'wrap' }}>
+              {(['Todos', 'Facturado', 'No Facturado', 'Cancelado']).map(s => {
+                const col = s === 'Todos' ? '#58a6ff' : colorStatusFactura(s);
+                return (
+                  <button key={s} onClick={() => setFiltroStatusFactura(s)} style={segBtnStyle(filtroStatusFactura === s, col)}>
+                    {s} ({conteoStatus[s] ?? 0})
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
@@ -2063,7 +1937,7 @@ export const FacturacionClientesDashboard = () => {
                   <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                     {facturasGlobales.length === 0
                       ? 'Aún no hay facturas registradas.'
-                      : `No se encontraron facturas con los filtros actuales${textoBuscarFactura ? ` (búsqueda: "${textoBuscarFactura}")` : ''}${filtroCliente ? ' para el cliente seleccionado' : ''}.`}
+                      : `No se encontraron facturas con los filtros actuales${textoBuscarFactura ? ` (búsqueda: "${textoBuscarFactura}")` : ''}${filtroStatusFactura !== 'Todos' ? ` (status: "${filtroStatusFactura}")` : ''}${filtroCliente ? ' para el cliente seleccionado' : ''}.`}
                   </td></tr>
                 ) : (
                   registrosVisibles.map(f => (
@@ -2136,7 +2010,6 @@ export const FacturacionClientesDashboard = () => {
               </div>
               <button onClick={() => { setModalColumnasOps(false); setBusquedaColOps(''); }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
                 <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -2150,7 +2023,6 @@ export const FacturacionClientesDashboard = () => {
             <p style={{ color: '#8b949e', fontSize: '0.8rem', marginBottom: '14px' }}>
               Arrastra para reordenar. Marca las que quieras ver en la tabla y en el Excel. El grupo entre paréntesis indica de qué pestaña del detalle viene el campo. <b style={{ color: '#58a6ff' }}>Esta configuración se guarda y se aplica para todos los usuarios.</b>
             </p>
-
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
               {columnasOps
                 .map((col, idx) => ({ col, idx }))
@@ -2173,7 +2045,6 @@ export const FacturacionClientesDashboard = () => {
                   </li>
                 ))}
             </ul>
-
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
               <button onClick={guardarConfigColumnasOps} disabled={guardandoCols} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: guardandoCols ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoCols ? 0.7 : 1 }}>{guardandoCols ? 'Guardando...' : 'Guardar para todos'}</button>
             </div>
@@ -2242,7 +2113,6 @@ export const FacturacionClientesDashboard = () => {
               <h2 style={{ color: '#f0f6fc', margin: 0 }}>Generar Factura</h2>
               <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d', marginBottom: '24px' }}>
               <div>
                 <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Cliente</span>
@@ -2297,7 +2167,6 @@ export const FacturacionClientesDashboard = () => {
               <button onClick={() => setFacturaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
             <div style={{ padding: '24px' }}>
-              {/* ✅ Status editable de la factura */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', marginBottom: '20px', flexWrap: 'wrap' }}>
                 <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Status de la factura</span>
                 <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', color: colorStatusFactura(facturaViendo.statusFactura), border: `1px solid ${colorStatusFactura(facturaViendo.statusFactura)}`, backgroundColor: `${colorStatusFactura(facturaViendo.statusFactura)}1a`, whiteSpace: 'nowrap' }}>{facturaViendo.statusFactura || 'Facturado'}</span>
@@ -2377,7 +2246,6 @@ export const FacturacionClientesDashboard = () => {
               {cargandoFacturas && (
                 <div style={{ color: '#f59e0b', fontSize: '0.85rem' }}>Cargando facturas… los números pueden cambiar al terminar.</div>
               )}
-
               <div>
                 <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Resumen global (facturas cargadas)</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
@@ -2393,32 +2261,26 @@ export const FacturacionClientesDashboard = () => {
                   ))}
                 </div>
               </div>
-
               <div>
-                <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Operaciones del rango (pestaña “Asignar Operaciones”)</div>
-                {ambasFechas ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                    {[
-                      { lbl: 'Completadas en rango', val: diagnostico.rangoTotal, col: '#c9d1d9' },
-                      { lbl: 'Ya facturadas', val: diagnostico.rangoFacturadas, col: '#3fb950' },
-                      { lbl: 'Por facturar', val: diagnostico.rangoPorFacturar, col: '#f59e0b' },
-                    ].map((c, i) => (
-                      <div key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px' }}>
-                        <div style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>{c.lbl}</div>
-                        <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ color: '#8b949e', fontSize: '0.85rem' }}>Selecciona un rango de fechas en “Asignar Operaciones” para ver el desglose por facturar.</div>
-                )}
+                <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Operaciones cargadas (pestaña “Asignar Operaciones”)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                  {[
+                    { lbl: (fechaDesdeOps || fechaHastaOps) ? 'Completadas en rango' : 'Completadas (todas)', val: diagnostico.rangoTotal, col: '#c9d1d9' },
+                    { lbl: 'Ya facturadas', val: diagnostico.rangoFacturadas, col: '#3fb950' },
+                    { lbl: 'Por facturar', val: diagnostico.rangoPorFacturar, col: '#f59e0b' },
+                  ].map((c, i) => (
+                    <div key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px' }}>
+                      <div style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>{c.lbl}</div>
+                      <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-
               <div>
                 <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Posibles pendientes a revisar</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem' }}>
                   {[
-                    { ok: diagnostico.huerfanas === 0, txt: diagnostico.huerfanas === 0 ? 'No hay operaciones marcadas como facturadas sin factura asociada (en el rango).' : `${diagnostico.huerfanas} operación(es) del rango marcadas como facturadas pero sin factura que las referencie.` },
+                    { ok: diagnostico.huerfanas === 0, txt: diagnostico.huerfanas === 0 ? 'No hay operaciones marcadas como facturadas sin factura asociada.' : `${diagnostico.huerfanas} operación(es) marcadas como facturadas pero sin factura que las referencie.` },
                     { ok: diagnostico.invoicesDuplicados === 0, txt: diagnostico.invoicesDuplicados === 0 ? 'No hay invoices duplicados (mismo # y cliente).' : `${diagnostico.invoicesDuplicados} invoice(s) aparecen duplicados (mismo # y cliente).` },
                     { ok: diagnostico.sinMoneda === 0, txt: diagnostico.sinMoneda === 0 ? 'Todas las facturas resuelven su moneda.' : `${diagnostico.sinMoneda} factura(s) sin moneda (ni propia ni por cliente).`, warn: true },
                     { ok: diagnostico.sinFecha === 0, txt: diagnostico.sinFecha === 0 ? 'Todas las facturas tienen fecha.' : `${diagnostico.sinFecha} factura(s) sin fecha de facturación.`, warn: true },
@@ -2432,9 +2294,8 @@ export const FacturacionClientesDashboard = () => {
                   ))}
                 </div>
               </div>
-
               <div style={{ backgroundColor: 'rgba(88,166,255,0.06)', border: '1px solid rgba(88,166,255,0.3)', borderRadius: '8px', padding: '12px 14px', color: '#8b949e', fontSize: '0.8rem' }}>
-                Nota: el total en $0 y la fecha vacía en muchas facturas vienen de la importación del sistema anterior (esos datos no se migraron). La moneda se completa con la del cliente cuando la factura no la trae. El # de referencia (TR) y el # de remolque se resuelven al ver cada página del historial.
+                Nota: el total en $0 y la fecha vacía en muchas facturas vienen de la importación del sistema anterior. La moneda se completa con la del cliente cuando la factura no la trae. El # de referencia (TR) y el # de remolque se resuelven al ver cada página del historial.
               </div>
             </div>
             <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
