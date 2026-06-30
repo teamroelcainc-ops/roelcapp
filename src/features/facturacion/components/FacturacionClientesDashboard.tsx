@@ -1770,17 +1770,29 @@ export const FacturacionClientesDashboard = () => {
   const indexFirst = indexLast - registrosPorPagina;
   const registrosVisibles = historialOrdenado.slice(indexFirst, indexLast);
 
+  // ✅ Una referencia "real" luce como LO-050226-19 / TR-080126-13 (letras + dígitos),
+  //    NO como un id/hex (79578f5d, a9e71d43...). Esto evita mostrar IDs crudos.
+  const pareceReferencia = (s: any): boolean => /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(String(s || '').trim());
+
   useEffect(() => {
     const fuentes: any[] = activeTab === 'historial' ? [...registrosVisibles] : [];
     if (facturaViendo) fuentes.push(facturaViendo);
+    if (agregarRefFactura) fuentes.push(agregarRefFactura);
     if (fuentes.length === 0) return;
     const faltantes = new Set<string>();
     const considerar = (id: string) => {
-      const k = String(id || '');
-      if (k && !opInfoMap[k] && !/[-\s]/.test(k) && k.length >= 4) faltantes.add(k);
+      const k = String(id || '').trim();
+      if (!k || opInfoMap[k]) return;
+      if (pareceReferencia(k)) return;   // ya es una referencia legible
+      if (k.length < 6) return;          // demasiado corto para ser un id de documento
+      faltantes.add(k);
     };
+    const considerarValor = (valor: any) => String(valor || '').split(/[,\s]+/).forEach(t => considerar(t));
     fuentes.forEach((f: any) => {
-      (Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => considerar(String(op?.id || '')));
+      (Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => {
+        considerar(String(op?.id || ''));
+        considerarValor(op?.ref);        // por si el "ref" guardado es en realidad uno o varios ids
+      });
       (Array.isArray(f.operacionesIds) ? f.operacionesIds : []).forEach((id: any) => considerar(String(id || '')));
     });
     if (faltantes.size === 0) return;
@@ -1807,15 +1819,25 @@ export const FacturacionClientesDashboard = () => {
     })();
     return () => { activo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [registrosVisibles, facturaViendo, activeTab]);
+  }, [registrosVisibles, facturaViendo, agregarRefFactura, activeTab]);
 
   const refDeOp = (op: any): string => {
     const id = String(op?.id || '');
+    // 1) Valores directos del op que ya parezcan referencia real.
+    const directos = [op?.numReferencia, op?.referencia, op?.ref].map((v: any) => String(v || '')).filter(Boolean);
+    const refDirecta = directos.find(pareceReferencia);
+    if (refDirecta) return refDirecta;
+    // 2) Referencia del documento principal resuelto.
     const info = opInfoMap[id];
-    if (info?.ref) return String(info.ref);
-    const r = String(op?.ref || '');
-    if (r && /[-\s]/.test(r)) return r;
-    return r || id;
+    if (info?.ref && pareceReferencia(String(info.ref))) return String(info.ref);
+    // 3) Resolver por tokens (ids) presentes en el id o en los valores directos.
+    const tokens = new Set<string>();
+    [id, ...directos].forEach(v => String(v).split(/[,\s]+/).forEach(t => { if (t) tokens.add(t); }));
+    const resueltas: string[] = [];
+    tokens.forEach(t => { const i = opInfoMap[t]; if (i?.ref && pareceReferencia(String(i.ref))) resueltas.push(String(i.ref)); });
+    if (resueltas.length) return Array.from(new Set(resueltas)).join(', ');
+    // 4) Último recurso: lo que haya (puede ser un id si la operación no tiene referencia).
+    return directos[0] || (info?.ref ? String(info.ref) : '') || id;
   };
 
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
