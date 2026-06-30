@@ -34,6 +34,11 @@ export interface CatalogSchema {
   details?: CatalogDetailSchema[];
 }
 
+// ✅ Opciones de "Cargada / Vacía". DEBEN ser las mismas que el selector de
+//    CARGA del Editor de Flujos (Reglas de Status): Cargada / Vacía / N/A.
+//    Mantener esta constante como única fuente para que coincidan siempre.
+export const OPCIONES_CARGA = ['Cargada', 'Vacía', 'N/A'];
+
 export const catalogosConfig: Record<string, CatalogSchema> = {
   aduanas: {
     id: 'aduanas', titulo: 'Aduanas',
@@ -231,7 +236,9 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
     fields: [
       { name: 'tipo_operacion', label: 'Tipo de Operación', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_tipos_tarifarios', labelField: 'descripcion', valueField: 'id' } },
       { name: 'tipo_remolque', label: 'Tipo de Remolque', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_tipo_remolque', labelField: 'nombre', valueField: 'id' } },
-      { name: 'estado_carga', label: 'Cargada / Vacía', type: 'select', required: true, options: ['Cargada', 'Vacía'] },
+      // ✅ MODIFICADO: "Cargada / Vacía" ahora usa las MISMAS opciones que la
+      //    CARGA del Editor de Flujos (Reglas de Status): Cargada / Vacía / N/A.
+      { name: 'estado_carga', label: 'Cargada / Vacía', type: 'select', required: true, options: OPCIONES_CARGA },
       { name: 'trompo', label: 'Trompo', type: 'select', required: true, options: ['Sí', 'No'] },
       { name: 'regular_hazmat', label: 'Regular / Hazmat', type: 'select', required: true, options: ['Regular', 'Hazmat'] },
       { name: 'aduana', label: 'Aduana', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_aduanas', labelField: 'aduana', valueField: 'id' } },
