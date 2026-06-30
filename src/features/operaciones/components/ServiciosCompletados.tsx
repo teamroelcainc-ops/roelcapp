@@ -221,6 +221,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [filterFechaFin, setFilterFechaFin] = useState('');
   const [filterRemolque, setFilterRemolque] = useState('');
   const [filterCliente, setFilterCliente] = useState('');
+  // ✅ NUEVO: filtro por tipo de operación (Transfer / Logística / Fletes).
+  const [filterTipoOperacion, setFilterTipoOperacion] = useState('');
 
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
@@ -481,7 +483,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterFechaInicio, filterFechaFin, filterCliente]);
 
-  useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
+  useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion]);
 
   // ✅ NUEVO: cada vez que cambian las columnas (orden o visibilidad), se guardan
   //   en localStorage para que la configuración se mantenga al recargar la página.
@@ -1025,6 +1027,23 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return m ? parseInt(m[1], 10) : 0;
   };
 
+  // ✅ NUEVO: clasifica el tipo de operación (transfer / fletes / logistica) a
+  //   partir del nombre desnormalizado o del catálogo. Se usa en el filtro nuevo.
+  const tipoOpTexto = (op: any): string => String(
+    op?.tipoOperacionNombre ||
+    mostrarDatoMapeado(op?.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op?.tipoOperacionNombre) ||
+    ''
+  ).toLowerCase();
+
+  const coincideTipoOperacion = (op: any, filtro: string): boolean => {
+    if (!filtro) return true;
+    const t = tipoOpTexto(op);
+    if (filtro === 'transfer') return t.includes('transfer');
+    if (filtro === 'fletes') return t.includes('flete');
+    if (filtro === 'logistica') return t.includes('logistica') || t.includes('logística');
+    return true;
+  };
+
   // ✅ MODIFICADO: el filtro de RANGO DE FECHAS ahora se aplica AQUÍ, en memoria,
   //   usando normalizarFechaServicioISO. Así funciona aunque fechaServicio venga
   //   como Timestamp, "DD/MM/YYYY", etc. (antes el filtro fallaba y salía vacío).
@@ -1042,6 +1061,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
     if (filterCliente) {
       filtradas = filtradas.filter(op => String(op.clientePaga || op.clienteId || '') === filterCliente);
+    }
+
+    // ✅ NUEVO: filtro por tipo de operación (Transfer / Logística / Fletes).
+    if (filterTipoOperacion) {
+      filtradas = filtradas.filter(op => coincideTipoOperacion(op, filterTipoOperacion));
     }
 
     if (filterRemolque) {
@@ -1068,7 +1092,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       if (fa !== fb) return fb.localeCompare(fa);
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
-  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente]);
+  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion, catalogosGlobales]);
 
   const resumenServicios = useMemo(() => {
     const base = operacionesFiltradas;
@@ -1559,6 +1583,21 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 )}
               </div>
             )}
+          </div>
+
+          {/* ✅ NUEVO: filtro por TIPO DE OPERACIÓN (Transfer / Logística / Fletes) */}
+          <div style={{ flex: '1 1 180px' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>TIPO DE OPERACIÓN (opcional)</label>
+            <select
+              value={filterTipoOperacion}
+              onChange={(e) => setFilterTipoOperacion(e.target.value)}
+              style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+            >
+              <option value="">Todas</option>
+              <option value="transfer">Transfer</option>
+              <option value="logistica">Logística</option>
+              <option value="fletes">Fletes</option>
+            </select>
           </div>
 
           <div style={{ flex: '1 1 200px' }}>
