@@ -2133,6 +2133,7 @@ export const FacturacionClientesDashboard = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
+                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>ACCIONES</th>
                   <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}></th>
                   {columnasOps.filter(c => c.visible).map(col => (
                     <th key={col.id}
@@ -2141,7 +2142,6 @@ export const FacturacionClientesDashboard = () => {
                       {col.label.toUpperCase()}{col.orden ? flechaOps(col.id) : ''}
                     </th>
                   ))}
-                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>ACCIONES</th>
                 </tr>
               </thead>
               <tbody>
@@ -2156,14 +2156,6 @@ export const FacturacionClientesDashboard = () => {
                     return (
                       <tr key={op.id} onClick={() => { if (!yaFacturada) toggleSeleccion(op.id); }}
                         style={{ cursor: yaFacturada ? 'default' : 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : (yaFacturada ? 'rgba(16,185,129,0.04)' : 'transparent') }}>
-                        <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {yaFacturada ? (
-                            <span title="Ya facturada" style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
-                          ) : (
-                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
-                          )}
-                        </td>
-                        {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
                         <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                           {yaFacturada ? (
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
@@ -2189,6 +2181,14 @@ export const FacturacionClientesDashboard = () => {
                             </button>
                           )}
                         </td>
+                        <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {yaFacturada ? (
+                            <span title="Ya facturada" style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                          ) : (
+                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                          )}
+                        </td>
+                        {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
                       </tr>
                     );
                   })
