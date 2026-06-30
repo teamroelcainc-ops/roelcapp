@@ -885,11 +885,35 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
+  // ✅ Clave de fecha ordenable (YYYYMMDD) tolerante a formatos (ISO, DD/MM/YYYY, etc.).
+  const fechaOrdenKey = (val: any): string => {
+    const s = String(val || '').trim();
+    if (!s) return '00000000';
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
+    m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+    if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+    if (m) return m[3] + m[2].padStart(2, '0') + m[1].padStart(2, '0');
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/);
+    if (m) return '20' + m[3] + m[2].padStart(2, '0') + m[1].padStart(2, '0');
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    return s;
+  };
+
+  // ✅ Clave "natural" de la referencia: rellena cada bloque de dígitos a 12,
+  //    para que el consecutivo se compare como número (…-009 < …-010 < …-011).
+  const refNaturalKey = (op: any): string => {
+    const r = String(op.numReferencia || op.referencia || op.ref || op.id || '');
+    return r.toLowerCase().replace(/\d+/g, (n) => n.padStart(12, '0'));
+  };
+
   const valorOrdenOp = (op: any, campo: string): string | number => {
     switch (campo) {
       case 'factura': return String(op.facturaClienteInvoice || '').toLowerCase();
-      case 'ref': return String(op.numReferencia || op.referencia || op.ref || op.id || '').toLowerCase();
-      case 'fechaServicio': return String(op.fechaServicio || op.createdAt || '');
+      case 'ref': return refNaturalKey(op);
+      case 'fechaServicio': return fechaOrdenKey(op.fechaServicio || op.createdAt);
       case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId).toLowerCase();
       case 'destino': return String(op.destinoNombre || op.destino || '').toLowerCase();
       case 'subtotal': return obtenerMontoOperacion(op).subtotal;
@@ -937,8 +961,12 @@ export const FacturacionClientesDashboard = () => {
     return [...lista].sort((a, b) => {
       const va = valorOrdenOp(a, ordenOps.campo);
       const vb = valorOrdenOp(b, ordenOps.campo);
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-      return String(va).localeCompare(String(vb)) * dir;
+      let cmp = (typeof va === 'number' && typeof vb === 'number') ? (va - vb) : String(va).localeCompare(String(vb));
+      cmp *= dir;
+      if (cmp !== 0) return cmp;
+      // ✅ Desempate SIEMPRE por referencia (consecutivo ascendente).
+      //    Así, con "Fecha Servicio ▼ Desc", dentro de cada fecha quedan en orden 001, 002, 003…
+      return refNaturalKey(a).localeCompare(refNaturalKey(b));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operacionesGlobales, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, vistaOps, textoBuscarRemolqueOps, facturasGlobales, filtroCliente]);
