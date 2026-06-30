@@ -379,6 +379,16 @@ export const FacturacionClientesDashboard = () => {
   const [opInfoMap, setOpInfoMap] = useState<Record<string, any>>({});
   const [modalDiagnostico, setModalDiagnostico] = useState(false);
 
+  // ✅ Edición de factura
+  const [facturaEditando, setFacturaEditando] = useState<any | null>(null);
+  const [guardandoEdit, setGuardandoEdit] = useState(false);
+  const [editInvoice, setEditInvoice] = useState('');
+  const [editFecha, setEditFecha] = useState('');
+  const [editCcp, setEditCcp] = useState('');
+  const [editStatus, setEditStatus] = useState('Facturado');
+  const [editMoneda, setEditMoneda] = useState('');
+  const [editTotal, setEditTotal] = useState('');
+
   // Formateadores
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
@@ -763,9 +773,20 @@ export const FacturacionClientesDashboard = () => {
     return idMoneda ? String(idMoneda) : '';
   };
 
+  // ✅ Resuelve un valor de moneda (ID, 'USD'/'MXN', N/A o nombre de catálogo).
+  const resolverMoneda = (val: any): string => {
+    const s = String(val || '').trim();
+    if (!s) return '';
+    if (s === ID_USD || s.toUpperCase() === 'USD') return 'USD';
+    if (s === ID_MXN || s.toUpperCase() === 'MXN') return 'MXN';
+    if (s.toUpperCase() === 'N/A') return '';
+    const nombre = mapaCatalogos[s];
+    return nombre || s;
+  };
+
   const monedaFacturaMostrar = (f: any): string => {
-    const m = String(f.monedaFacturacion || '').trim();
-    if (m && m.toUpperCase() !== 'N/A') return m;
+    const propia = resolverMoneda(f.monedaFacturacion);
+    if (propia) return propia;
     return monedaDeCliente(f.clienteId) || 'N/A';
   };
 
@@ -1207,6 +1228,56 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
+  // ✅ Abrir / guardar edición de una factura (datos generales).
+  const abrirEditarFactura = (e: React.MouseEvent, f: any) => {
+    e.stopPropagation();
+    setFacturaEditando(f);
+    setEditInvoice(String(f.invoice || ''));
+    setEditFecha(String(f.fecha || '').slice(0, 10));
+    setEditCcp(String(f.facturaCcp || ''));
+    setEditStatus(String(f.statusFactura || 'Facturado'));
+    setEditMoneda(resolverMoneda(f.monedaFacturacion) || '');
+    setEditTotal(String(Number(f.subtotalFactura) || 0));
+  };
+
+  const handleGuardarEdicionFactura = async () => {
+    if (!facturaEditando) return;
+    if (!editInvoice.trim()) return alert('El # de Invoice es obligatorio.');
+    setGuardandoEdit(true);
+    try {
+      const ids: string[] = Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length ? facturaEditando.__groupIds : [facturaEditando.id];
+      const totalNum = Number(editTotal) || 0;
+      const baseUpdate: any = {
+        invoice: editInvoice.trim(),
+        fecha: editFecha || '',
+        facturaCcp: editCcp.trim(),
+        statusFactura: editStatus,
+        monedaFacturacion: editMoneda || 'N/A',
+        updatedAt: new Date().toISOString(),
+      };
+      const batch = writeBatch(db);
+      // El total se coloca completo en el PRIMER doc del grupo y 0 en el resto,
+      // para que la suma del grupo coincida con lo capturado.
+      ids.forEach((id, idx) => {
+        batch.set(doc(db, 'facturas_clientes', id), { ...baseUpdate, subtotalFactura: idx === 0 ? totalNum : 0 }, { merge: true });
+      });
+      await batch.commit();
+      setFacturasGlobales(prev => prev.map(f => {
+        if (!ids.includes(f.id)) return f;
+        const esPrimero = f.id === ids[0];
+        return normalizarFactura({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0 });
+      }));
+      // Si la ficha de esa factura está abierta, refrescarla.
+      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? { ...prev, ...baseUpdate, subtotalFactura: totalNum } : prev);
+      setFacturaEditando(null);
+    } catch (e) {
+      console.error('Error guardando edición de factura:', e);
+      alert('No se pudo guardar la edición de la factura.');
+    } finally {
+      setGuardandoEdit(false);
+    }
+  };
+
   const handleEliminarFactura = async (e: React.MouseEvent, facData: any) => {
     e.stopPropagation();
     const ids: string[] = Array.isArray(facData.__groupIds) && facData.__groupIds.length ? facData.__groupIds : [facData.id];
@@ -1337,7 +1408,7 @@ export const FacturacionClientesDashboard = () => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
     historialOrdenado.forEach(f => {
       const monto = Number(f.subtotalFactura) || 0;
-      const mon = String(f.monedaFacturacion || '').toUpperCase();
+      const mon = monedaFacturaMostrar(f).toUpperCase();
       if (mon === 'USD') totalUSD += monto;
       else if (mon === 'MXN') totalMXN += monto;
       else totalSinMoneda += monto;
@@ -1370,15 +1441,27 @@ export const FacturacionClientesDashboard = () => {
       return true;
     };
     const base = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideFechas(f));
-    const c = { Todos: base.length, Facturado: 0, 'No Facturado': 0, Cancelado: 0 } as Record<string, number>;
+    const c = { Todos: base.length } as Record<string, number>;
     base.forEach((f: any) => {
-      const s = String(f.statusFactura || 'Facturado');
-      if (c[s] === undefined) c[s] = 0;
-      c[s]++;
+      const s = (String(f.statusFactura || 'Facturado').trim()) || 'Facturado';
+      c[s] = (c[s] || 0) + 1;
     });
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facturasGlobales, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist]);
+
+  // ✅ Lista de botones de status: 'Todos' + todos los status reales presentes
+  //    (orden canónico Facturado / No Facturado / Cancelado y luego el resto).
+  const statusBotones = useMemo(() => {
+    const orden = ['Facturado', 'No Facturado', 'Cancelado'];
+    const otros = Object.keys(conteoStatus).filter(k => k !== 'Todos');
+    otros.sort((a, b) => {
+      const ia = orden.indexOf(a); const ib = orden.indexOf(b);
+      if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      return a.localeCompare(b, 'es', { sensitivity: 'base' });
+    });
+    return ['Todos', ...otros];
+  }, [conteoStatus]);
 
   const toggleOrdenFac = (campo: string) =>
     setOrdenFac(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -1883,7 +1966,7 @@ export const FacturacionClientesDashboard = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '6px 8px', flexWrap: 'wrap' }}>
             <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', paddingLeft: '4px' }}>Status:</span>
             <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden', flexWrap: 'wrap' }}>
-              {(['Todos', 'Facturado', 'No Facturado', 'Cancelado']).map(s => {
+              {statusBotones.map(s => {
                 const col = s === 'Todos' ? '#58a6ff' : colorStatusFactura(s);
                 return (
                   <button key={s} onClick={() => setFiltroStatusFactura(s)} style={segBtnStyle(filtroStatusFactura === s, col)}>
@@ -1946,6 +2029,9 @@ export const FacturacionClientesDashboard = () => {
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                           <button title="Ver Ficha" onClick={() => setFacturaViendo(f)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                          </button>
+                          <button title="Editar Factura" onClick={(e) => abrirEditarFactura(e, f)} style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                           </button>
                           <button title="Eliminar Factura" onClick={(e) => handleEliminarFactura(e, f)} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
@@ -2302,6 +2388,70 @@ export const FacturacionClientesDashboard = () => {
               <button onClick={() => { try { sessionStorage.removeItem(SS_FACTURAS); } catch {} ; setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
                 style={{ ...btnDirStyle }} title="Volver a leer todas las facturas desde la base de datos">↻ Recargar facturas</button>
               <button onClick={() => setModalDiagnostico(false)} style={{ padding: '8px 24px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════ MODAL EDITAR FACTURA ════════════════════ */}
+      {facturaEditando && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1600, padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '16px' }}>
+              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Editar Factura</h2>
+              <button onClick={() => setFacturaEditando(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ backgroundColor: '#010409', border: '1px dashed #30363d', borderRadius: '8px', padding: '12px 14px', marginBottom: '18px', fontSize: '0.82rem', color: '#8b949e' }}>
+              Cliente: <b style={{ color: '#c9d1d9' }}>{facturaEditando.clienteNombre || getNombreCliente(facturaEditando.clienteId) || '-'}</b>
+              {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
+                <span> · <b style={{ color: '#f59e0b' }}>{facturaEditando.__groupIds.length} documentos agrupados</b> (el total se asigna al primero)</span>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>STATUS DE LA FACTURA</label>
+                <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: colorStatusFactura(editStatus), border: `1px solid ${colorStatusFactura(editStatus)}`, borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }}>
+                  {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {!STATUS_FACTURA_OPCIONES.includes(editStatus) && editStatus && <option value={editStatus}>{editStatus}</option>}
+                </select>
+              </div>
+              <div style={{ gridColumn: 'span 2' }}>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>NÚMERO DE INVOICE</label>
+                <input type="text" value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Ej. INV-2026-001"
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.05rem', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FECHA DE FACTURACIÓN</label>
+                <input type="date" value={editFecha} onChange={e => setEditFecha(e.target.value)}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box', colorScheme: 'dark' }} />
+              </div>
+              <div>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>MONEDA</label>
+                <select value={editMoneda} onChange={e => setEditMoneda(e.target.value)}
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#10b981', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }}>
+                  <option value="">(Sin definir / del cliente)</option>
+                  <option value="USD">USD</option>
+                  <option value="MXN">MXN</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>TOTAL FACTURADO</label>
+                <input type="number" step="any" value={editTotal} onChange={e => setEditTotal(e.target.value)} placeholder="0.00"
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#3fb950', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FACTURA CCP (Opcional)</label>
+                <input type="text" value={editCcp} onChange={e => setEditCcp(e.target.value)} placeholder="Referencia CCP..."
+                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box' }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
+              <button onClick={() => setFacturaEditando(null)} disabled={guardandoEdit} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={handleGuardarEdicionFactura} disabled={guardandoEdit} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoEdit ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoEdit ? 0.7 : 1 }}>{guardandoEdit ? 'Guardando...' : 'Guardar cambios'}</button>
             </div>
           </div>
         </div>
