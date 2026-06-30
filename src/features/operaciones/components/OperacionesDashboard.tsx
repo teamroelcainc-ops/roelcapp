@@ -79,6 +79,16 @@ const compararStatusPorNumero = (a: string, b: string): number => {
   return String(a).localeCompare(String(b), 'es', { numeric: true, sensitivity: 'base' });
 };
 
+// ✅ NUEVO: quita las claves cuyo valor sea `undefined` de un objeto antes de
+//    escribirlo en Firestore. Firestore RECHAZA cualquier campo `undefined`
+//    (lanza "Unsupported field value: undefined") y eso aborta el batch.commit
+//    completo → es una de las causas típicas de "Se revirtió el cambio".
+const limpiarUndefined = (obj: Record<string, any>): Record<string, any> => {
+  const out: Record<string, any> = {};
+  Object.keys(obj).forEach((k) => { if (obj[k] !== undefined) out[k] = obj[k]; });
+  return out;
+};
+
 const COLUMNAS_BASE = [
   { id: 'ref', label: '# Referencia', visible: true },
   { id: 'fechaServicio', label: 'Fecha Servicio', visible: true },
@@ -636,15 +646,15 @@ const OperacionesDashboard = () => {
 
       const batch = writeBatch(db);
       const horarioRef = doc(collection(db, 'horarios'));
-      batch.set(horarioRef, {
+      batch.set(horarioRef, limpiarUndefined({
         operacionId: operacionViendo.id,
         status: statusId,
         statusNombre: statusNombreResuelto,
         fechaHora: nuevaFechaHora,
         registradoEn: new Date().toISOString()
-      });
+      }));
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-      batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
+      batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto }));
 
       await batch.commit();
 
@@ -660,9 +670,9 @@ const OperacionesDashboard = () => {
 
       alert('Horario registrado y Estatus actualizado.');
       setModalHorarios('cerrado');
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error guardarHorario:', e);
-      alert("Error al actualizar la base de datos.");
+      alert("Error al actualizar la base de datos.\n\nDetalle técnico: " + (e?.message || e?.code || 'desconocido'));
     }
     setCargandoHorarios(false);
   };
@@ -699,6 +709,14 @@ const OperacionesDashboard = () => {
       const cadenaResuelta = cadenaStatus.map(resolverStatus);
       const statusFinal = cadenaResuelta[cadenaResuelta.length - 1];
 
+      // ✅ Validación defensiva: si por alguna razón no se resolvió un status
+      //    final válido, no intentamos el commit (evita escribir basura/undefined).
+      if (!statusFinal || !statusFinal.id) {
+        setGuardandoStatusRapido(null);
+        alert(`No se pudo resolver el status "${statusNombre}". Revisa la configuración de la cascada de estatus.`);
+        return;
+      }
+
       const operacionActualizada = {
         ...operacionViendo,
         status: statusFinal.id,
@@ -724,7 +742,9 @@ const OperacionesDashboard = () => {
 
           cadenaResuelta.forEach((statusPaso, idx) => {
             const horarioRef = doc(collection(db, 'horarios'));
-            batch.set(horarioRef, {
+            // ✅ limpiarUndefined: Firestore RECHAZA campos `undefined` y eso
+            //    aborta TODO el batch (causa típica de "Se revirtió el cambio").
+            batch.set(horarioRef, limpiarUndefined({
               operacionId: operacionViendo.id,
               status: statusPaso.id,
               statusNombre: statusPaso.nombre,
@@ -732,14 +752,14 @@ const OperacionesDashboard = () => {
               registradoEn: registradoEn,
               ordenCascada: idx,
               esAutomatico: idx > 0,
-            });
+            }));
           });
 
           const opRef = doc(db, 'operaciones', String(operacionViendo.id));
-          batch.update(opRef, {
+          batch.update(opRef, limpiarUndefined({
             status: statusFinal.id,
             statusNombre: statusFinal.nombre
-          });
+          }));
 
           await batch.commit();
 
@@ -749,25 +769,51 @@ const OperacionesDashboard = () => {
         } catch (e: any) {
           console.error("Error al registrar status:", e);
           setOperacionViendo(operacionPrevia);
-          setOperacionesGlobales(operacionesPrevias);setBotonesDisponibles(botonesPrevios);
+          setOperacionesGlobales(operacionesPrevias);
+          setBotonesDisponibles(botonesPrevios);
           setGuardandoStatusRapido(null);
 
+          // ✅ MEJORADO: en lugar de un mensaje genérico, mostramos la CAUSA real
+          //    (código + mensaje de Firebase) para poder diagnosticar el problema.
+          const code = String(e?.code || '').toLowerCase();
           const msg = String(e?.message || e?.code || e || '').toLowerCase();
+          const detalle = e?.message || e?.code || 'desconocido';
+
           if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
             alert(
               "⚠️ Cuota de Firestore agotada.\n\n" +
               "Tu proyecto superó el límite gratuito diario. La cuota se reinicia a las 2 AM (hora México).\n\n" +
               "Recomendación: activa el plan Blaze en Firebase Console para evitar este límite."
             );
+          } else if (code.includes('permission-denied') || msg.includes('permission') || msg.includes('insufficient') || msg.includes('missing or insufficient')) {
+            alert(
+              "🔒 Permiso denegado por Firestore.\n\n" +
+              "Tu usuario no tiene permiso para actualizar el estatus (escribir en 'operaciones' y/o 'horarios').\n\n" +
+              "Revisa las reglas de seguridad de Firestore para esas colecciones.\n\n" +
+              "Detalle técnico: " + detalle
+            );
+          } else if (code.includes('not-found') || msg.includes('no document to update') || msg.includes('not-found')) {
+            alert(
+              "La operación que intentas actualizar ya no existe en la base de datos (pudo eliminarse).\n\n" +
+              "Detalle técnico: " + detalle
+            );
+          } else if (code.includes('invalid-argument') || msg.includes('invalid') || msg.includes('undefined') || msg.includes('unsupported field value')) {
+            alert(
+              "Hubo un dato inválido al guardar el estatus (un campo vacío o con formato no permitido).\n\n" +
+              "Detalle técnico: " + detalle
+            );
           } else {
-            alert("Error al guardar el status. Se revirtió el cambio.");
+            alert(
+              "Error al guardar el status. Se revirtió el cambio.\n\n" +
+              "Detalle técnico: " + detalle
+            );
           }
         }
       })();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error resolviendo cascada:", e);
       setGuardandoStatusRapido(null);
-      alert("Error al procesar el cambio de status. Intenta de nuevo.");
+      alert("Error al procesar el cambio de status. Intenta de nuevo.\n\nDetalle técnico: " + (e?.message || e?.code || 'desconocido'));
     }
   };
 
