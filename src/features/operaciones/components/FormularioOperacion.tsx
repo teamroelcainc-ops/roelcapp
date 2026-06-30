@@ -594,7 +594,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   }, [modalCatalogo, recargarColeccion, aplicarColeccionRecargada]);
 
-  const labelEmpresa = (e: any) => e?.nombre || e?.empresa || e?.razonSocial || '';
+  // ✅ Nombre a mostrar para empresas: si tiene "Nombre Corto" se usa ese; si no,
+  //   se usa el nombre largo. Aplica a Cliente (Paga), Origen, Destino, Cliente
+  //   (Mercancía), Proveedor de Servicios y Proveedor de Transporte.
+  const nombreCortoEmpresa = (e: any): string => String(
+    e?.nombreCorto ?? e?.nombre_corto ?? e?.nombrecorto ?? e?.shortName ?? e?.alias ?? ''
+  ).trim();
+  const nombreEmpresaMostrar = (e: any): string =>
+    nombreCortoEmpresa(e) || e?.nombre || e?.empresa || e?.razonSocial || '';
+
+  const labelEmpresa = (e: any) => nombreEmpresaMostrar(e);
   const labelRemolque = (r: any) => `${r?.nombre || ''} ${r?.placas || r?.placa || ''}`.trim();
   const labelUnidad = (u: any) => u?.unidad || u?.nombre || '';
   const labelEmpleado = (o: any) => `${o?.firstName || ''} ${o?.lastNamePaternal || ''}`.trim();
@@ -640,6 +649,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const idGenerado = match ? match.id : idCrudo;
     console.log('🔑 configId generado:', idGenerado, match ? '(resuelto por índice)' : '(crudo)');
     return idGenerado;
+  };
+
+  // ✅ NUEVO: status previo a usar al calcular las reglas. Si el usuario CAMBIÓ el
+  //   Tipo de Operación respecto al guardado, el status anterior puede no existir
+  //   en el nuevo flujo, así que NO se reutiliza (se recalcula desde cero). Esto
+  //   permite cambiar el tipo de operación en cualquier momento sin que truene la
+  //   regla de status.
+  const statusPrevioParaCalculo = (): string | undefined => {
+    if (!initialData) return undefined;
+    const tipoCambiado = String(formData.tipoOperacionId || '') !== String(initialData.tipoOperacionId || '');
+    return tipoCambiado ? undefined : initialData?.status;
   };
 
   useEffect(() => {
@@ -694,7 +714,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       }
 
       try {
-        const statusCalculado = await calcularStatusDinamico(configId, formData, initialData?.status);
+        const statusCalculado = await calcularStatusDinamico(configId, formData, statusPrevioParaCalculo());
         const statusObj = statusServicio?.find((s:any) => s.id === statusCalculado);
         setStatusPreview(statusObj?.descripcion || statusObj?.nombre || statusCalculado);
         setStatusError(null);
@@ -850,7 +870,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const getNombreEmpresa = (id: string) => {
         if (!id) return '';
         const item = empresas.find((e: any) => e.id === id);
-        return item ? item.nombre : id;
+        return item ? (nombreEmpresaMostrar(item) || id) : id;
       };
       const getNombreRemolque = (id: string) => {
         if (!id) return '';
@@ -1156,9 +1176,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!pestanasVisibles.includes('unidad')) return;
     if (!formData.convenio) return;
 
-    // ✅ NUEVO: si es FLOTA PROPIA de Roelca (Transfer, o Logística/Fletes con
-    //   proveedor Roelca) NO se autosugiere convenio ni monto a pagar al
-    //   proveedor, para que no aparezca un costo de proveedor inexistente.
     const _tipoTxt = (tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '').toLowerCase();
     const _isTransfer = _tipoTxt.includes('transfer');
     const _isLog = _tipoTxt.includes('logistica') || _tipoTxt.includes('logística');
@@ -1166,7 +1183,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const _isRoelcaProv = searchProvTransporte.toLowerCase().includes('roelca');
     if (_isTransfer || ((_isLog || _isFle) && _isRoelcaProv)) return;
 
-    // Si el proveedor YA tiene un convenio elegido, no tocar nada (pueden diferir).
     if (formData.convenioProveedor) return;
 
     const convCliente = listaConveniosCliente.find((c: any) => c.id === formData.convenio);
@@ -1383,13 +1399,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const sConvenio = (searchConvenio || '').toLowerCase();
   const sConvenioProveedor = (searchConvenioProveedor || '').toLowerCase();
 
-  const resultadosOrigen = filOrigenesDestinos.filter((e:any) => (e.nombre || '').toLowerCase().includes(sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen));
-  const resultadosDestino = filOrigenesDestinos.filter((e:any) => (e.nombre || '').toLowerCase().includes(sDestino) || (e.direccion || '').toLowerCase().includes(sDestino));
-  const resultadosClientePaga = filClientesPaga.filter((e:any) => (e.nombre || '').toLowerCase().includes(sClientePaga));
+  // ✅ Coincide por nombre corto O por nombre largo (para los 6 campos de empresa).
+  const empresaCoincide = (e:any, q:string) =>
+    nombreEmpresaMostrar(e).toLowerCase().includes(q) || (e.nombre || '').toLowerCase().includes(q);
+
+  const resultadosOrigen = filOrigenesDestinos.filter((e:any) => empresaCoincide(e, sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen));
+  const resultadosDestino = filOrigenesDestinos.filter((e:any) => empresaCoincide(e, sDestino) || (e.direccion || '').toLowerCase().includes(sDestino));
+  const resultadosClientePaga = filClientesPaga.filter((e:any) => empresaCoincide(e, sClientePaga));
   const resultadosRemolque = remolques?.filter((e:any) => `${e.nombre || ''} ${e.placas || e.placa || ''}`.toLowerCase().trim().includes(sRemolque)) || [];
-  const resultadosClienteMercancia = filClientesMercancia.filter((e:any) => (e.nombre || '').toLowerCase().includes(sClienteMerc));
-  const resultadosProvServicios = filProveedoresServicios.filter((e:any) => (e.nombre || '').toLowerCase().includes(sProvServicios));
-  const resultadosProvTransporte = filProveedoresTransporte.filter((e:any) => (e.nombre || '').toLowerCase().includes(sProvTransp));
+  const resultadosClienteMercancia = filClientesMercancia.filter((e:any) => empresaCoincide(e, sClienteMerc));
+  const resultadosProvServicios = filProveedoresServicios.filter((e:any) => empresaCoincide(e, sProvServicios));
+  const resultadosProvTransporte = filProveedoresTransporte.filter((e:any) => empresaCoincide(e, sProvTransp));
   const resultadosUnidad = unidades?.filter((u:any) => (u.unidad || '').toLowerCase().includes(sUnidad)) || [];
   const resultadosOperador = listaEmpleadosLocal.filter((o:any) => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim().toLowerCase().includes(sOperador));
   const resultadosUnidadProveedor = listaUniProvLocal.filter((u:any) => String(u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || '').toLowerCase().includes(sUnidadProv));
@@ -1433,10 +1453,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const proveedorForzado = formData.tipoOperacionId === TIPO_OP_PROVEEDOR_FIJO;
   const showInternalFleet = isTransfer || ((isLogistica || isFletes) && isRoelca);
   const showExternalFleet = (isLogistica || isFletes) && !isRoelca;
-  // ✅ NUEVO: cuando es flota PROPIA de Roelca (Transfer, o Logística/Fletes con
-  //   proveedor Roelca) NO se le paga a un proveedor externo. Se ocultan el
-  //   "Convenio Proveedor" y la sección "Pago al Proveedor" (no se pide tarifa
-  //   ni se muestra lo que habría que pagarle).
   const esFlotaPropiaRoelca = showInternalFleet;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -1444,7 +1460,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setCargando(true);
     try {
       const configId = buildConfigId();
-      const statusCalculado = await calcularStatusDinamico(configId, formData, initialData?.status);
+      // ✅ El status se calcula con el "status previo" SOLO si el flujo no cambió.
+      //   Si se cambió el Tipo de Operación, se recalcula desde cero; y si las
+      //   reglas fallan, NO se bloquea el guardado (se usa un valor de respaldo).
+      let statusCalculado: string;
+      try {
+        statusCalculado = await calcularStatusDinamico(configId, formData, statusPrevioParaCalculo());
+      } catch (errStatus) {
+        console.warn('No se pudo calcular el status para el flujo actual; se usa un valor de respaldo.', errStatus);
+        statusCalculado = String((initialData as any)?.status || (formData as any).status || '');
+      }
       const detalleDoc = listaConveniosCliente.find((c:any) => c.id === formData.convenio);
       const { pdfCartaPorte, pdfDoda, pdfManifiesto, pdfsEntrys, ...datosLimpios } = formData;
       const tipoOpObj = tiposOperacion.find((t:any) => t.id === formData.tipoOperacionId);
@@ -1495,10 +1520,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         convenioProveedorNombre: convProvObj?.tipoConvenioNombre || ''
       };
 
-      // ✅ NUEVO: en flota PROPIA de Roelca no hay pago a proveedor externo.
-      //   Se limpian los campos del proveedor para que NO se guarde un costo
-      //   inexistente (que afectaría la utilidad). El gasto real de la flota
-      //   propia se calcula con sueldo + combustible + manifiesto.
       if (esFlotaPropiaRoelca) {
         operacionData.convenioProveedor = '';
         operacionData.convenioProveedorNombre = '';
@@ -1958,8 +1979,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownClientePaga && searchClientePaga && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClientePaga.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(c.nombre); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(nombreEmpresaMostrar(c)); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
@@ -2033,7 +2054,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('origen')}`} placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
-                            {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(o.nombre); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{o.nombre}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{o.direccion}</div></div>))}</div>)}
+                            {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(o)}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{o.direccion}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO },
@@ -2046,7 +2067,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('destino')}`} placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
-                            {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(d.nombre); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{d.nombre}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{d.direccion}</div></div>))}</div>)}
+                            {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(d)}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{d.direccion}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion(
                             { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO },
@@ -2075,8 +2096,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownClienteMercancia && searchClienteMercancia && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosClienteMercancia.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(c.nombre); setShowDropdownClienteMercancia(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(nombreEmpresaMostrar(c)); setShowDropdownClienteMercancia(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
@@ -2153,8 +2174,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownProvServicios && searchProvServicios && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id })); setSearchProvServicios(c.nombre); setShowDropdownProvServicios(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id })); setSearchProvServicios(nombreEmpresaMostrar(c)); setShowDropdownProvServicios(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
@@ -2193,8 +2214,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownProvTransporte && searchProvTransporte && !proveedorForzado && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, proveedorUnidad: c.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault || prev.facturadoEnUnidad })); setSearchProvTransporte(c.nombre); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.nombre}</div>
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, proveedorUnidad: c.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault || prev.facturadoEnUnidad })); setSearchProvTransporte(nombreEmpresaMostrar(c)); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}>
+                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
