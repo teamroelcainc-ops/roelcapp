@@ -389,6 +389,15 @@ export const FacturacionClientesDashboard = () => {
   const [editMoneda, setEditMoneda] = useState('');
   const [editTotal, setEditTotal] = useState('');
 
+  // ✅ Gestión de una operación FACTURADA (editar # de factura / quitar).
+  const [gestionOp, setGestionOp] = useState<any | null>(null);
+  const [gestionInvoice, setGestionInvoice] = useState('');
+  const [guardandoGestionOp, setGuardandoGestionOp] = useState(false);
+  // ✅ Agregar referencia (operación pendiente) a una factura desde el Historial.
+  const [agregarRefFactura, setAgregarRefFactura] = useState<any | null>(null);
+  const [busquedaRefPendiente, setBusquedaRefPendiente] = useState('');
+  const [agregandoRef, setAgregandoRef] = useState(false);
+
   // Formateadores
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
@@ -635,74 +644,79 @@ export const FacturacionClientesDashboard = () => {
     try { sessionStorage.setItem(SS_OPS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
 
+  // ✅ Descarga TODAS las operaciones completadas (paginado + caché). Reutilizable
+  //    desde el efecto y desde el Historial (para adjuntar referencias pendientes).
+  const descargarOpsCompletadas = async (forzar = false) => {
+    if (!forzar && operacionesGlobales.length > 0) return;
+    if (!forzar) {
+      try {
+        const raw = sessionStorage.getItem(SS_OPS);
+        if (raw) {
+          const obj = JSON.parse(raw);
+          if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_OPS_TTL) {
+            setOperacionesGlobales(obj.data);
+            setTopeOpsAlcanzado(obj.data.length >= LIMITE_OPS_TODAS);
+            return;
+          }
+        }
+      } catch { /* noop */ }
+    }
+    setCargandoOperaciones(true);
+    try {
+      let todas: any[] = [];
+      let usarFallback = false;
+      try {
+        let cursor: any = null;
+        for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
+          const cons: any[] = [where('status', 'in', STATUS_COMPLETADOS), orderBy(documentId()), limit(PAG_OPS)];
+          if (cursor) cons.splice(2, 0, startAfter(cursor));
+          const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
+          if (snap.empty) break;
+          snap.docs.forEach(d => todas.push({ id: d.id, ...(d.data() as any) }));
+          cursor = snap.docs[snap.docs.length - 1];
+          if (snap.docs.length < PAG_OPS) break;
+        }
+      } catch (e1: any) {
+        const msg1 = String(e1?.message || e1?.code || e1 || '');
+        if (msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition')) {
+          console.warn('[Facturación] Falta índice (status+__name__). Fallback: traer todo y filtrar en memoria. Detalle:', msg1);
+          usarFallback = true;
+        } else {
+          throw e1;
+        }
+      }
+      if (usarFallback) {
+        todas = [];
+        let cursor: any = null;
+        for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
+          const cons: any[] = [orderBy(documentId()), limit(PAG_OPS)];
+          if (cursor) cons.splice(1, 0, startAfter(cursor));
+          const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
+          if (snap.empty) break;
+          snap.docs.forEach(d => {
+            const o: any = { id: d.id, ...(d.data() as any) };
+            if (STATUS_COMPLETADOS.includes(String(o.status || '').trim())) todas.push(o);
+          });
+          cursor = snap.docs[snap.docs.length - 1];
+          if (snap.docs.length < PAG_OPS) break;
+        }
+      }
+      todas.sort((a: any, b: any) => String(b.fechaServicio || b.createdAt || '').localeCompare(String(a.fechaServicio || a.createdAt || '')));
+      setOperacionesGlobales(todas);
+      setTopeOpsAlcanzado(todas.length >= LIMITE_OPS_TODAS);
+      guardarCacheOps(todas);
+    } catch (e: any) {
+      const msg = String(e?.message || e?.code || e || '');
+      console.error('[Facturación] Error al cargar operaciones completadas:', e);
+      alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${msg}`);
+    }
+    setCargandoOperaciones(false);
+  };
+
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
     if (operacionesGlobales.length > 0) return;
-    try {
-      const raw = sessionStorage.getItem(SS_OPS);
-      if (raw) {
-        const obj = JSON.parse(raw);
-        if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_OPS_TTL) {
-          setOperacionesGlobales(obj.data);
-          setTopeOpsAlcanzado(obj.data.length >= LIMITE_OPS_TODAS);
-          return;
-        }
-      }
-    } catch { /* noop */ }
-
-    const descargar = async () => {
-      setCargandoOperaciones(true);
-      try {
-        let todas: any[] = [];
-        let usarFallback = false;
-        try {
-          let cursor: any = null;
-          for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
-            const cons: any[] = [where('status', 'in', STATUS_COMPLETADOS), orderBy(documentId()), limit(PAG_OPS)];
-            if (cursor) cons.splice(2, 0, startAfter(cursor));
-            const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
-            if (snap.empty) break;
-            snap.docs.forEach(d => todas.push({ id: d.id, ...(d.data() as any) }));
-            cursor = snap.docs[snap.docs.length - 1];
-            if (snap.docs.length < PAG_OPS) break;
-          }
-        } catch (e1: any) {
-          const msg1 = String(e1?.message || e1?.code || e1 || '');
-          if (msg1.toLowerCase().includes('index') || msg1.toLowerCase().includes('failed-precondition')) {
-            console.warn('[Facturación] Falta índice (status+__name__). Fallback: traer todo y filtrar en memoria. Detalle:', msg1);
-            usarFallback = true;
-          } else {
-            throw e1;
-          }
-        }
-        if (usarFallback) {
-          todas = [];
-          let cursor: any = null;
-          for (let i = 0; i < Math.ceil(LIMITE_OPS_TODAS / PAG_OPS); i++) {
-            const cons: any[] = [orderBy(documentId()), limit(PAG_OPS)];
-            if (cursor) cons.splice(1, 0, startAfter(cursor));
-            const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
-            if (snap.empty) break;
-            snap.docs.forEach(d => {
-              const o: any = { id: d.id, ...(d.data() as any) };
-              if (STATUS_COMPLETADOS.includes(String(o.status || '').trim())) todas.push(o);
-            });
-            cursor = snap.docs[snap.docs.length - 1];
-            if (snap.docs.length < PAG_OPS) break;
-          }
-        }
-        todas.sort((a: any, b: any) => String(b.fechaServicio || b.createdAt || '').localeCompare(String(a.fechaServicio || a.createdAt || '')));
-        setOperacionesGlobales(todas);
-        setTopeOpsAlcanzado(todas.length >= LIMITE_OPS_TODAS);
-        guardarCacheOps(todas);
-      } catch (e: any) {
-        const msg = String(e?.message || e?.code || e || '');
-        console.error('[Facturación] Error al cargar operaciones completadas:', e);
-        alert(`No se pudieron cargar las operaciones.\n\nDetalle: ${msg}`);
-      }
-      setCargandoOperaciones(false);
-    };
-    descargar();
+    descargarOpsCompletadas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, operacionesGlobales.length]);
 
@@ -713,8 +727,8 @@ export const FacturacionClientesDashboard = () => {
 
   const recargarOperaciones = () => {
     try { sessionStorage.removeItem(SS_OPS); } catch { /* noop */ }
-    setOperacionesGlobales([]);
     setSeleccionadas([]);
+    descargarOpsCompletadas(true);
   };
 
   // Traductor de clientes / buscador
@@ -1277,6 +1291,234 @@ export const FacturacionClientesDashboard = () => {
       setGuardandoEdit(false);
     }
   };
+
+  // ✅ Recalcula la lista de remolques a partir de las operaciones guardadas.
+  const remolquesDeGuardadas = (guardadas: any[]): string[] =>
+    Array.from(new Set((guardadas || []).map((o: any) => String(o?.remolque || '')).filter(r => r && r !== '-')));
+
+  // ✅ Construye el "resumen estable" de una operación para guardarla en la factura.
+  const buildResumenOp = (op: any) => {
+    const m = obtenerMontoOperacion(op);
+    return {
+      id: String(op.id),
+      ref: op.numReferencia || op.referencia || op.ref || String(op.id).substring(0, 6),
+      monto: m.conv,
+      subtotalBase: m.subtotal,
+      remolque: txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque),
+    };
+  };
+
+  // ✅ Aplica una lista de cambios { tipo:'update'|'delete'|'create', id, data } a las facturas en memoria.
+  const aplicarCambiosFacturas = (cambios: any[]) => {
+    setFacturasGlobales(prev => {
+      let arr = [...prev];
+      cambios.forEach((c: any) => {
+        if (c.tipo === 'delete') arr = arr.filter(f => f.id !== c.id);
+        else if (c.tipo === 'update') arr = arr.map(f => f.id === c.id ? normalizarFactura({ ...f, ...c.data }) : f);
+        else if (c.tipo === 'create') arr = [normalizarFactura({ id: c.id, ...c.data }), ...arr];
+      });
+      return arr;
+    });
+  };
+
+  // ✅ Abrir el modal de gestión para una operación facturada.
+  const abrirGestionOp = (e: React.MouseEvent, op: any) => {
+    e.stopPropagation();
+    setGestionOp(op);
+    setGestionInvoice(invoiceDeOp(op) || '');
+  };
+
+  // ✅ QUITAR una operación de su(s) factura(s): la libera (vuelve a Pendientes).
+  const quitarOpDeFactura = async (op: any) => {
+    const opId = String(op.id);
+    const refTxt = op.numReferencia || op.referencia || op.ref || opId.substring(0, 6);
+    if (!window.confirm(`¿Quitar la operación ${refTxt} de su factura? Volverá a "Pendientes" y se restará su monto de la factura.`)) return;
+    const facturasConOp = facturasGlobales.filter(f => (f.operacionesIds || []).map(String).includes(opId));
+    setGuardandoGestionOp(true);
+    try {
+      const batch = writeBatch(db);
+      const cambios: any[] = [];
+      for (const f of facturasConOp) {
+        const g = (f.operacionesGuardadas || []).find((o: any) => String(o.id) === opId);
+        const monto = g ? (Number(g.monto) || 0) : obtenerMontoOperacion(op).conv;
+        const ids = (f.operacionesIds || []).map(String).filter((id: string) => id !== opId);
+        const guardadas = (f.operacionesGuardadas || []).filter((o: any) => String(o.id) !== opId);
+        const subtotal = Math.max(0, Number(f.subtotalFactura || 0) - monto);
+        if (ids.length === 0) {
+          batch.delete(doc(db, 'facturas_clientes', f.id));
+          cambios.push({ tipo: 'delete', id: f.id });
+        } else {
+          const data = { operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), subtotalFactura: subtotal, updatedAt: new Date().toISOString() };
+          batch.set(doc(db, 'facturas_clientes', f.id), data, { merge: true });
+          cambios.push({ tipo: 'update', id: f.id, data });
+        }
+      }
+      batch.update(doc(db, 'operaciones', opId), { facturaClienteId: null, facturaClienteInvoice: null, facturado: false });
+      await batch.commit();
+      aplicarCambiosFacturas(cambios);
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, facturaClienteId: null, facturaClienteInvoice: null, facturado: false } : o));
+      setGestionOp(null);
+    } catch (e) {
+      console.error('Error quitando operación de la factura:', e);
+      alert('No se pudo quitar la operación de la factura.');
+    } finally {
+      setGuardandoGestionOp(false);
+    }
+  };
+
+  // ✅ EDITAR el # de factura de una operación: la mueve a la factura con ese
+  //    invoice (del mismo cliente). Si no existe, la crea; si la factura origen
+  //    queda vacía, se elimina. Si ya existe, fusiona (suma) la operación.
+  const editarInvoiceDeOp = async (op: any, nuevoInvoiceRaw: string) => {
+    const nuevoInvoice = String(nuevoInvoiceRaw || '').trim();
+    if (!nuevoInvoice) return alert('Captura un número de factura.');
+    const opId = String(op.id);
+    const clienteId = String(op.clientePaga || op.clienteId || '');
+    const facturasConOp = facturasGlobales.filter(f => (f.operacionesIds || []).map(String).includes(opId));
+    setGuardandoGestionOp(true);
+    try {
+      const batch = writeBatch(db);
+      const cambios: any[] = [];
+
+      // Resumen del op (de la factura origen si existe; si no, calculado)
+      let resumenOrigen: any = null;
+      let metaCarry: any = null;
+      for (const f of facturasConOp) {
+        if (!metaCarry) metaCarry = { statusFactura: f.statusFactura, monedaFacturacion: f.monedaFacturacion, facturaCcp: f.facturaCcp, fecha: f.fecha, clienteNombre: f.clienteNombre };
+        const g = (f.operacionesGuardadas || []).find((o: any) => String(o.id) === opId);
+        if (g && !resumenOrigen) resumenOrigen = g;
+      }
+      if (!resumenOrigen) resumenOrigen = buildResumenOp(op);
+      const montoOp = Number(resumenOrigen.monto) || 0;
+
+      // 1) Quitar de las facturas origen
+      for (const f of facturasConOp) {
+        const ids = (f.operacionesIds || []).map(String).filter((id: string) => id !== opId);
+        const guardadas = (f.operacionesGuardadas || []).filter((o: any) => String(o.id) !== opId);
+        const subtotal = Math.max(0, Number(f.subtotalFactura || 0) - montoOp);
+        if (ids.length === 0) {
+          batch.delete(doc(db, 'facturas_clientes', f.id));
+          cambios.push({ tipo: 'delete', id: f.id });
+        } else {
+          const data = { operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), subtotalFactura: subtotal, updatedAt: new Date().toISOString() };
+          batch.set(doc(db, 'facturas_clientes', f.id), data, { merge: true });
+          cambios.push({ tipo: 'update', id: f.id, data });
+        }
+      }
+
+      // 2) Agregar a la factura destino (existente con ese invoice + cliente, o nueva)
+      const target = facturasGlobales.find(f =>
+        String(f.invoice || '').trim().toLowerCase() === nuevoInvoice.toLowerCase() &&
+        String(f.clienteId || '') === clienteId &&
+        !facturasConOp.some(fc => fc.id === f.id)
+      );
+      let targetId: string;
+      if (target) {
+        const ids = Array.from(new Set([...(target.operacionesIds || []).map(String), opId]));
+        const mapG = new Map<string, any>();
+        [...(target.operacionesGuardadas || []), resumenOrigen].forEach((o: any) => { if (o?.id) mapG.set(String(o.id), o); });
+        const guardadas = Array.from(mapG.values());
+        const subtotal = Number(target.subtotalFactura || 0) + montoOp;
+        targetId = target.id;
+        const data = { invoice: target.invoice || nuevoInvoice, operacionesIds: ids, operacionesGuardadas: guardadas, remolques: remolquesDeGuardadas(guardadas), subtotalFactura: subtotal, updatedAt: new Date().toISOString() };
+        batch.set(doc(db, 'facturas_clientes', targetId), data, { merge: true });
+        cambios.push({ tipo: 'update', id: targetId, data });
+      } else {
+        targetId = doc(collection(db, 'facturas_clientes')).id;
+        const data: any = {
+          invoice: nuevoInvoice,
+          fecha: metaCarry?.fecha || '',
+          facturaCcp: metaCarry?.facturaCcp || '',
+          statusFactura: metaCarry?.statusFactura || 'Facturado',
+          clienteId,
+          clienteNombre: metaCarry?.clienteNombre || getNombreCliente(clienteId),
+          monedaFacturacion: metaCarry?.monedaFacturacion || 'N/A',
+          operacionesIds: [opId],
+          operacionesGuardadas: [resumenOrigen],
+          remolques: remolquesDeGuardadas([resumenOrigen]),
+          subtotalFactura: montoOp,
+          createdAt: new Date().toISOString(),
+        };
+        batch.set(doc(db, 'facturas_clientes', targetId), data);
+        cambios.push({ tipo: 'create', id: targetId, data });
+      }
+
+      // 3) Actualizar la operación
+      batch.update(doc(db, 'operaciones', opId), { facturaClienteId: targetId, facturaClienteInvoice: nuevoInvoice, facturado: true });
+      await batch.commit();
+      aplicarCambiosFacturas(cambios);
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, facturaClienteId: targetId, facturaClienteInvoice: nuevoInvoice, facturado: true } : o));
+      setGestionOp(null);
+    } catch (e) {
+      console.error('Error editando # de factura de la operación:', e);
+      alert('No se pudo cambiar el número de factura de la operación.');
+    } finally {
+      setGuardandoGestionOp(false);
+    }
+  };
+
+  // ✅ AGREGAR una operación PENDIENTE a una factura existente (desde el Historial).
+  const agregarOpAFactura = async (facturaGrupo: any, op: any) => {
+    const opId = String(op.id);
+    // Trabajamos sobre el documento RAW primario del grupo (no sobre la suma agrupada).
+    const rawId = (Array.isArray(facturaGrupo.__groupIds) && facturaGrupo.__groupIds.length) ? facturaGrupo.__groupIds[0] : facturaGrupo.id;
+    const rawDoc = facturasGlobales.find(f => f.id === rawId) || facturaGrupo;
+    const resumen = buildResumenOp(op);
+    const monto = Number(resumen.monto) || 0;
+    setAgregandoRef(true);
+    try {
+      const ids = Array.from(new Set([...(rawDoc.operacionesIds || []).map(String), opId]));
+      const mapG = new Map<string, any>();
+      [...(rawDoc.operacionesGuardadas || []), resumen].forEach((o: any) => { if (o?.id) mapG.set(String(o.id), o); });
+      const guardadas = Array.from(mapG.values());
+      const data = {
+        operacionesIds: ids,
+        operacionesGuardadas: guardadas,
+        remolques: remolquesDeGuardadas(guardadas),
+        subtotalFactura: Number(rawDoc.subtotalFactura || 0) + monto,
+        updatedAt: new Date().toISOString(),
+      };
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'facturas_clientes', rawId), data, { merge: true });
+      batch.update(doc(db, 'operaciones', opId), { facturaClienteId: rawId, facturaClienteInvoice: rawDoc.invoice || facturaGrupo.invoice, facturado: true });
+      await batch.commit();
+      setFacturasGlobales(prev => prev.map(f => f.id === rawId ? normalizarFactura({ ...f, ...data }) : f));
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, facturaClienteId: rawId, facturaClienteInvoice: rawDoc.invoice || facturaGrupo.invoice, facturado: true } : o));
+      // Refrescar la ficha/el modal de agregar en memoria (vista agrupada)
+      const aplicarEnGrupo = (g: any) => {
+        if (!g) return g;
+        const mismoGrupo = (Array.isArray(g.__groupIds) ? g.__groupIds : [g.id]).includes(rawId) || g.id === facturaGrupo.id;
+        if (!mismoGrupo) return g;
+        const mapG2 = new Map<string, any>();
+        [...(g.operacionesGuardadas || []), resumen].forEach((o: any) => { if (o?.id) mapG2.set(String(o.id), o); });
+        const guardadas2 = Array.from(mapG2.values());
+        return { ...g, operacionesIds: Array.from(new Set([...(g.operacionesIds || []).map(String), opId])), operacionesGuardadas: guardadas2, remolques: remolquesDeGuardadas(guardadas2), subtotalFactura: Number(g.subtotalFactura || 0) + monto };
+      };
+      setAgregarRefFactura((prev: any) => aplicarEnGrupo(prev));
+      setFacturaViendo((prev: any) => aplicarEnGrupo(prev));
+    } catch (e) {
+      console.error('Error agregando operación a la factura:', e);
+      alert('No se pudo agregar la operación a la factura.');
+    } finally {
+      setAgregandoRef(false);
+    }
+  };
+
+  // ✅ Candidatos pendientes (no facturados) para adjuntar a una factura.
+  const candidatosPendientes = useMemo(() => {
+    if (!agregarRefFactura) return [];
+    const clienteId = String(agregarRefFactura.clienteId || '');
+    const q = busquedaRefPendiente.trim().toLowerCase();
+    const lista = operacionesGlobales.filter(op => {
+      if (esFacturada(op)) return false;
+      if (clienteId && String(op.clientePaga || op.clienteId || '') !== clienteId) return false;
+      if (!q) return true;
+      const campos = [op.numReferencia, op.referencia, op.ref, op.remolqueNombre, op.remolquePlaca, op.numeroRemolque];
+      return campos.some(v => String(v ?? '').toLowerCase().includes(q));
+    });
+    return lista.slice(0, 50);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agregarRefFactura, operacionesGlobales, busquedaRefPendiente, facturasGlobales]);
 
   const handleEliminarFactura = async (e: React.MouseEvent, facData: any) => {
     e.stopPropagation();
@@ -1899,7 +2141,7 @@ export const FacturacionClientesDashboard = () => {
                       {col.label.toUpperCase()}{col.orden ? flechaOps(col.id) : ''}
                     </th>
                   ))}
-                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>COSTO ADIC.</th>
+                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>ACCIONES</th>
                 </tr>
               </thead>
               <tbody>
@@ -1923,12 +2165,29 @@ export const FacturacionClientesDashboard = () => {
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
                         <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }}
-                            title="Agregar costo adicional a esta operación"
-                            style={{ backgroundColor: 'transparent', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
-                            ＋ Costo
-                          </button>
+                          {yaFacturada ? (
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button
+                                onClick={(e) => abrirGestionOp(e, op)}
+                                title="Editar el # de factura de esta operación"
+                                style={{ backgroundColor: 'transparent', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                                ✎ #
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); quitarOpDeFactura(op); }}
+                                title="Quitar esta operación de la factura (vuelve a Pendientes)"
+                                style={{ backgroundColor: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                                ✕ Quitar
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }}
+                              title="Agregar costo adicional a esta operación"
+                              style={{ backgroundColor: 'transparent', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                              ＋ Costo
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -2296,9 +2555,17 @@ export const FacturacionClientesDashboard = () => {
                 <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
 
                 <div style={{ gridColumn: 'span 3', marginTop: '8px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
-                    Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0}) — haz clic para ver el detalle
-                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                    <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                      Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0}) — haz clic para ver el detalle
+                    </span>
+                    <button
+                      onClick={() => { setAgregarRefFactura(facturaViendo); setBusquedaRefPendiente(''); if (operacionesGlobales.length === 0) descargarOpsCompletadas(); }}
+                      title="Agregar una operación pendiente (sin facturar) a esta factura"
+                      style={{ backgroundColor: 'transparent', border: '1px solid #10b981', color: '#10b981', borderRadius: '6px', padding: '7px 14px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                      ＋ Agregar referencia
+                    </button>
+                  </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                     {facturaViendo.operacionesGuardadas?.map((op: any) => (
                       <button key={op.id} onClick={() => verDetalleOperacion(op.id)} title="Ver detalle de la operación"
@@ -2388,6 +2655,109 @@ export const FacturacionClientesDashboard = () => {
               <button onClick={() => { try { sessionStorage.removeItem(SS_FACTURAS); } catch {} ; setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
                 style={{ ...btnDirStyle }} title="Volver a leer todas las facturas desde la base de datos">↻ Recargar facturas</button>
               <button onClick={() => setModalDiagnostico(false)} style={{ padding: '8px 24px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════ MODAL GESTIONAR OPERACIÓN FACTURADA ════════════════ */}
+      {gestionOp && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1750, padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '520px', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '18px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.15rem' }}>Gestionar operación facturada</h2>
+              <button onClick={() => setGestionOp(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ backgroundColor: '#010409', border: '1px dashed #30363d', borderRadius: '8px', padding: '12px 14px', marginBottom: '18px', fontSize: '0.85rem', color: '#8b949e' }}>
+              Operación: <b style={{ color: '#58a6ff', fontFamily: 'monospace' }}>{gestionOp.numReferencia || gestionOp.referencia || gestionOp.ref || String(gestionOp.id).substring(0, 6)}</b><br />
+              Factura actual: <b style={{ color: '#D84315', fontFamily: 'monospace' }}>{invoiceDeOp(gestionOp) || '—'}</b>
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '6px' }}>NUEVO NÚMERO DE FACTURA</label>
+              <input type="text" value={gestionInvoice} onChange={e => setGestionInvoice(e.target.value)} placeholder="Ej. INV-2026-001"
+                style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.05rem', boxSizing: 'border-box' }} />
+              <p style={{ color: '#6e7681', fontSize: '0.75rem', marginTop: '8px' }}>
+                La operación se moverá a la factura con ese número (del mismo cliente). Si no existe, se crea; si la factura original queda sin operaciones, se elimina. El Historial se actualiza solo.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '16px', flexWrap: 'wrap' }}>
+              <button onClick={() => quitarOpDeFactura(gestionOp)} disabled={guardandoGestionOp}
+                style={{ padding: '8px 18px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: guardandoGestionOp ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoGestionOp ? 0.7 : 1 }}>
+                ✕ Quitar de la factura
+              </button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={() => setGestionOp(null)} disabled={guardandoGestionOp} style={{ padding: '8px 18px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={() => editarInvoiceDeOp(gestionOp, gestionInvoice)} disabled={guardandoGestionOp || !gestionInvoice.trim()}
+                  style={{ padding: '8px 18px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: (guardandoGestionOp || !gestionInvoice.trim()) ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: (guardandoGestionOp || !gestionInvoice.trim()) ? 0.7 : 1 }}>
+                  {guardandoGestionOp ? 'Guardando...' : 'Cambiar número'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════ MODAL AGREGAR REFERENCIA A FACTURA (Historial) ════════════════ */}
+      {agregarRefFactura && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1750, padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '640px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <div>
+                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.15rem' }}>Agregar referencia a la factura</h2>
+                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
+                  Factura <b style={{ color: '#D84315', fontFamily: 'monospace' }}>{agregarRefFactura.invoice}</b> · {agregarRefFactura.clienteNombre || getNombreCliente(agregarRefFactura.clienteId) || '-'}
+                </span>
+              </div>
+              <button onClick={() => setAgregarRefFactura(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ position: 'relative', marginBottom: '12px' }}>
+              <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="text" autoFocus placeholder="Buscar operación pendiente por referencia o # remolque..." value={busquedaRefPendiente} onChange={e => setBusquedaRefPendiente(e.target.value)}
+                style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #30363d', borderRadius: '8px', backgroundColor: '#010409' }}>
+              {cargandoOperaciones ? (
+                <div style={{ padding: '30px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones pendientes...</div>
+              ) : operacionesGlobales.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: '#8b949e' }}>
+                  No hay operaciones cargadas.
+                  <div style={{ marginTop: '12px' }}>
+                    <button onClick={() => descargarOpsCompletadas(true)} style={{ ...btnDirStyle, color: '#58a6ff', margin: '0 auto' }}>↻ Cargar operaciones</button>
+                  </div>
+                </div>
+              ) : candidatosPendientes.length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', color: '#8b949e' }}>
+                  No se encontraron operaciones pendientes{agregarRefFactura.clienteId ? ' de este cliente' : ''}{busquedaRefPendiente.trim() ? ` para "${busquedaRefPendiente}"` : ''}.
+                </div>
+              ) : (
+                candidatosPendientes.map((op: any) => {
+                  const mm = obtenerMontoOperacion(op);
+                  return (
+                    <div key={op.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '10px 14px', borderBottom: '1px solid #21262d' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.9rem' }}>{op.numReferencia || op.referencia || op.ref || String(op.id).substring(0, 6)}</div>
+                        <div style={{ color: '#8b949e', fontSize: '0.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {formatearFechaSpanish(op.fechaServicio || op.createdAt)} · {txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)} · {formatoMoneda(mm.conv)}
+                        </div>
+                      </div>
+                      <button onClick={() => agregarOpAFactura(agregarRefFactura, op)} disabled={agregandoRef}
+                        style={{ flexShrink: 0, backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', padding: '7px 14px', cursor: agregandoRef ? 'not-allowed' : 'pointer', fontSize: '0.8rem', fontWeight: 'bold', opacity: agregandoRef ? 0.7 : 1 }}>
+                        ＋ Agregar
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #30363d', paddingTop: '14px', marginTop: '14px' }}>
+              <span style={{ color: '#6e7681', fontSize: '0.78rem' }}>Solo se muestran operaciones <b style={{ color: '#8b949e' }}>sin facturar</b>{agregarRefFactura.clienteId ? ' del mismo cliente' : ''} (máx. 50).</span>
+              <button onClick={() => setAgregarRefFactura(null)} style={{ padding: '8px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Listo</button>
             </div>
           </div>
         </div>
