@@ -101,6 +101,10 @@ export const ReferenciasNominaDashboard = () => {
   //   EXCLUIR de la tabla de nómina las operaciones ya facturadas.
   const [opsFacturadasIds, setOpsFacturadasIds] = useState<Set<string>>(new Set());
 
+  // ✅ NUEVO: mapa id -> nombre de lugar/plaza para mostrar NOMBRES (no IDs) en
+  //   las columnas Origen/Destino. Se arma leyendo los catálogos de lugares.
+  const [mapaLugares, setMapaLugares] = useState<Record<string, string>>({});
+
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -318,7 +322,31 @@ export const ReferenciasNominaDashboard = () => {
     const unSubBancos = onSnapshot(collection(db, 'catalogo_bancos'), (snap) => {
       setBancosList(snap.docs.map(d => ({ id: d.id, ...(d.data() as any) })));
     }, (err) => console.warn('[Nómina] No se pudo leer catalogo_bancos:', err));
-    return () => { unSubNominas(); unSubEmpleados(); unSubEmpresas(); unSubConvenios(); unSubDeducciones(); unSubFormasPago(); unSubBancos(); };
+    // ✅ NUEVO: catálogos de lugares/plazas para resolver Origen/Destino a NOMBRE.
+    //   Se intentan varias colecciones candidatas; las que no existan simplemente
+    //   se ignoran (sin romper nada). Todos los ids encontrados se combinan en un
+    //   solo mapa id -> nombre.
+    const CANDIDATOS_LUGARES = ['catalogo_lugares', 'catalogo_plazas', 'catalogo_ciudades', 'catalogo_destinos', 'lugares', 'plazas'];
+    const acumLugares: Record<string, Record<string, string>> = {};
+    const recomputarLugares = () => {
+      const m: Record<string, string> = {};
+      Object.values(acumLugares).forEach(sub => Object.assign(m, sub));
+      setMapaLugares(m);
+    };
+    const unsubsLugares = CANDIDATOS_LUGARES.map(col =>
+      onSnapshot(collection(db, col), (snap) => {
+        const sub: Record<string, string> = {};
+        snap.docs.forEach(d => {
+          const data: any = d.data();
+          const nombre = data.nombre || data.lugar || data.ciudad || data.plaza || data.destino || data.descripcion || data.name || '';
+          if (nombre) sub[d.id] = String(nombre);
+        });
+        acumLugares[col] = sub;
+        recomputarLugares();
+      }, () => { /* colección inexistente o sin permiso: se ignora */ })
+    );
+
+    return () => { unSubNominas(); unSubEmpleados(); unSubEmpresas(); unSubConvenios(); unSubDeducciones(); unSubFormasPago(); unSubBancos(); unsubsLugares.forEach(u => u()); };
   }, []);
 
   // Operaciones: solo se necesitan en la pestaña "Asignar Operaciones".
@@ -392,6 +420,22 @@ export const ReferenciasNominaDashboard = () => {
   const getNombreEmpresa = (id: string) => {
     if (!id) return '';
     return empresasList.find(e => e.id === id)?.nombre || '';
+  };
+
+  // ✅ NUEVO: resuelve Origen/Destino a NOMBRE. Prioridad:
+  //   1) nombre guardado en la propia operación (origenNombre/origenLabel/…)
+  //   2) catálogo de lugares (mapaLugares) por id
+  //   3) el valor tal cual (por si ya venía como texto)
+  const getNombreLugar = (id: string) => (id && mapaLugares[id]) ? mapaLugares[id] : '';
+  const resolverLugar = (op: any, tipo: 'origen' | 'destino') => {
+    const valor = tipo === 'origen' ? op.origen : op.destino;
+    const nombreDirecto = tipo === 'origen'
+      ? (op.origenNombre || op.origenLabel || op.origen_nombre || op.origenTexto || '')
+      : (op.destinoNombre || op.destinoLabel || op.destino_nombre || op.destinoTexto || '');
+    if (nombreDirecto) return String(nombreDirecto);
+    const porCatalogo = getNombreLugar(valor);
+    if (porCatalogo) return porCatalogo;
+    return valor || '-';
   };
 
   const getNombreConvenio = (idOrName: string) => {
@@ -504,8 +548,8 @@ export const ReferenciasNominaDashboard = () => {
       case 'ref': return String(op.ref || op.id || '').toLowerCase();
       case 'fechaServicio': return parsearFechaSegura(op.fechaServicio || op.createdAt)?.getTime() || 0;
       case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador).toLowerCase();
-      case 'origen': return String(op.origen || '').toLowerCase();
-      case 'destino': return String(op.destino || '').toLowerCase();
+      case 'origen': return resolverLugar(op, 'origen').toLowerCase();
+      case 'destino': return resolverLugar(op, 'destino').toLowerCase();
       case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
       case 'sueldoExtra': return Number(op.sueldoExtra || 0);
       default: return '';
@@ -538,8 +582,8 @@ export const ReferenciasNominaDashboard = () => {
       case 'ref': return op.ref || op.id;
       case 'fechaServicio': return formatearFechaSpanish(op.fechaServicio || op.createdAt);
       case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador);
-      case 'origen': return op.origen || '-';
-      case 'destino': return op.destino || '-';
+      case 'origen': return resolverLugar(op, 'origen');
+      case 'destino': return resolverLugar(op, 'destino');
       case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
       case 'sueldoExtra': return Number(op.sueldoExtra || 0);
       default: return '-';
@@ -552,8 +596,8 @@ export const ReferenciasNominaDashboard = () => {
       case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.ref || op.id.substring(0, 6)}</td>;
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
       case 'operador': return <td key={key} style={tdBase}>{getNombreOperador(op.operadorNombre || op.operadorId || op.operador)}</td>;
-      case 'origen': return <td key={key} style={tdBase}>{op.origen || '-'}</td>;
-      case 'destino': return <td key={key} style={tdBase}>{op.destino || '-'}</td>;
+      case 'origen': return <td key={key} style={tdBase}>{resolverLugar(op, 'origen')}</td>;
+      case 'destino': return <td key={key} style={tdBase}>{resolverLugar(op, 'destino')}</td>;
       case 'sueldo': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(op.sueldoTotal || op.sueldoOperador)}</td>;
       case 'sueldoExtra': {
         const tieneExtra = Number(op.sueldoExtra || 0) > 0;
