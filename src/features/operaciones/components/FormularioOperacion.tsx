@@ -80,16 +80,9 @@ const sanitizarRutaOp = (s: string) =>
 const referenciaDeOperacion = (idOp: string, ref?: string): string =>
   (ref && String(ref).trim()) || (idOp ? String(idOp).substring(0, 6) : 'Operacion');
 
-// ✅ NUEVO: normaliza una clave (Servicio/Tráfico/Carga) para comparar de forma
-//   TOLERANTE: sin acentos, sin distinguir mayúsculas y con espacios colapsados.
-//   Así "Logística"=="Logistica" y "Movimiento LDO"=="Movimiento ldo".
 const normClave = (s: any): string =>
   String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
 
-// ✅ NUEVO: normaliza CUALQUIER formato de fecha a "YYYY-MM-DD" para que el
-//   <input type="date"> la muestre. Los registros viejos/migrados pueden guardar
-//   la fecha como Timestamp de Firestore, ISO con hora, "DD/MM/YYYY", etc. y por
-//   eso al editar el campo de fecha aparecía vacío. Devuelve '' si no se puede.
 const normalizarFechaISO = (valor: any): string => {
   if (valor === null || valor === undefined || valor === '') return '';
 
@@ -128,6 +121,54 @@ const normalizarFechaISO = (valor: any): string => {
   if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
 
   return '';
+};
+
+// ✅ FIX TIPO DE CAMBIO: respaldo del catálogo de "Tipo de Cambio Oficial"
+//   cargado DIRECTAMENTE de Firestore por si no viene en catalogosCacheados
+//   (causa de "Sin Registro"). Se cachea a nivel de módulo y se prueban varios
+//   nombres posibles de la colección.
+let catalogoTCRespaldo: any[] | null = null;
+const COLECCIONES_TC_POSIBLES = [
+  'tipo_cambio', 'tipos_cambio', 'catalogo_tipo_cambio', 'catalogo_tipos_cambio',
+  'catalogo_tc', 'tipo_cambio_oficial', 'tipoCambio', 'tc', 'tc_dof', 'tipos_de_cambio',
+];
+
+const cargarCatalogoTCRespaldo = async (): Promise<any[]> => {
+  if (catalogoTCRespaldo) return catalogoTCRespaldo;
+  for (const nombre of COLECCIONES_TC_POSIBLES) {
+    try {
+      const snap = await getDocs(collection(db, nombre));
+      if (!snap.empty) {
+        catalogoTCRespaldo = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        return catalogoTCRespaldo;
+      }
+    } catch { /* colección inexistente o sin acceso: se prueba la siguiente */ }
+  }
+  catalogoTCRespaldo = [];
+  return catalogoTCRespaldo;
+};
+
+const extraerRateDeFilaTC = (row: any): number | null => {
+  if (!row || typeof row !== 'object') return null;
+  const keys = Object.keys(row);
+  const valKey = keys.find((k) => {
+    const kk = String(k).toLowerCase();
+    return kk.includes('dof') || kk.includes('valor') || kk === 'tc' ||
+           kk.includes('cambio') || kk.includes('monto') || kk.includes('t.c');
+  });
+  if (valKey) {
+    const n = Number(String(row[valKey]).replace(/[^0-9.-]+/g, ''));
+    if (!isNaN(n) && n > 0) return n;
+  }
+  const posibles = Object.values(row)
+    .map((v: any) => parseFloat(String(v).replace(/[^0-9.-]+/g, '')))
+    .filter((n: any) => !isNaN(n) && n > 5 && n < 60);
+  return posibles.length > 0 ? posibles[0] : null;
+};
+
+const filaTCEsDeLaFecha = (row: any, objetivoISO: string): boolean => {
+  if (!objetivoISO || !row || typeof row !== 'object') return false;
+  return Object.values(row).some((v: any) => normalizarFechaISO(v) === objetivoISO);
 };
 
 const subirDocumentoOperacion = async (
@@ -219,6 +260,13 @@ const BotonAgregar = ({ onClick, title }: { onClick: () => void; title: string }
   </button>
 );
 
+// ✅ FIX ARRASTRE DE DOCUMENTOS:
+//   - Contenedor <div> con onClick explícito (el <label> re-disparaba un "click"
+//     al soltar y, si se cancelaba, borraba el archivo recién arrastrado).
+//   - input con ref + DataTransfer para asignar un FileList real.
+//   - onChange del input SOLO se propaga cuando de verdad hay archivos (cancelar
+//     el diálogo ya NO borra el archivo cargado).
+//   - dragDepth evita el parpadeo al pasar sobre elementos hijos.
 const CampoArchivo = ({
   label,
   file,
@@ -234,20 +282,62 @@ const CampoArchivo = ({
 }) => {
   const cargado = !!file;
   const [arrastrando, setArrastrando] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dragDepth = useRef(0);
 
-  const onDrop = (e: React.DragEvent<HTMLLabelElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setArrastrando(false);
-    const archivos = e.dataTransfer?.files;
-    if (archivos && archivos.length > 0) {
-      onChange({ target: { files: archivos } } as unknown as React.ChangeEvent<HTMLInputElement>);
+  const emitirArchivos = (lista: FileList | File[] | null) => {
+    const arr = lista ? Array.from(lista as any).filter(Boolean) : [];
+    if (arr.length === 0) {
+      if (inputRef.current) inputRef.current.value = '';
+      onChange({ target: { value: '', files: null } } as unknown as React.ChangeEvent<HTMLInputElement>);
+      return;
+    }
+    try {
+      const dt = new DataTransfer();
+      arr.forEach((f: any) => dt.items.add(f));
+      if (inputRef.current) inputRef.current.files = dt.files;
+      onChange({ target: { files: dt.files } } as unknown as React.ChangeEvent<HTMLInputElement>);
+    } catch {
+      onChange({ target: { files: lista as any } } as unknown as React.ChangeEvent<HTMLInputElement>);
     }
   };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+  };
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth.current += 1;
+    setArrastrando(true);
+  };
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth.current -= 1;
+    if (dragDepth.current <= 0) { dragDepth.current = 0; setArrastrando(false); }
+  };
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth.current = 0;
+    setArrastrando(false);
+    const archivos = e.dataTransfer?.files;
+    if (archivos && archivos.length > 0) emitirArchivos(archivos);
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) onChange(e);
+  };
+
+  const abrirDialogo = () => { inputRef.current?.click(); };
 
   const quitarArchivo = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (inputRef.current) inputRef.current.value = '';
     onChange({ target: { value: '', files: null } } as unknown as React.ChangeEvent<HTMLInputElement>);
   };
 
@@ -261,11 +351,13 @@ const CampoArchivo = ({
   return (
     <div className="form-group">
       <label className="form-label">{label}</label>
-      <label
-        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!arrastrando) setArrastrando(true); }}
-        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setArrastrando(true); }}
-        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setArrastrando(false); }}
-        onDrop={onDrop}
+      <div
+        role="button"
+        onClick={abrirDialogo}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s ease', backgroundColor: fondo, border: borde }}
       >
         <span style={{ flexShrink: 0, width: '26px', height: '26px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', backgroundColor: cargado ? '#238636' : '#21262d', color: cargado ? '#fff' : '#8b949e' }}>
@@ -284,8 +376,8 @@ const CampoArchivo = ({
             <IconX size={12} /> Quitar
           </button>
         )}
-        <input type="file" accept={accept} onChange={onChange} style={{ display: 'none' }} />
-      </label>
+        <input ref={inputRef} type="file" accept={accept} onChange={handleInputChange} style={{ display: 'none' }} />
+      </div>
     </div>
   );
 };
@@ -302,12 +394,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [mostrarCostosAdic, setMostrarCostosAdic] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
 
-  // ✅ NUEVO: ver / editar los convenios (tarifas) del cliente desde la operación.
   const [mostrarConveniosCliente, setMostrarConveniosCliente] = useState(false);
   const [detalleConvEditando, setDetalleConvEditando] = useState<any | null>(null);
   const [guardandoDetalleConv, setGuardandoDetalleConv] = useState(false);
 
-  // ✅ NUEVO: ver / editar los convenios (tarifas) del proveedor desde la operación.
   const [mostrarConveniosProveedor, setMostrarConveniosProveedor] = useState(false);
   const [detalleConvProvEditando, setDetalleConvProvEditando] = useState<any | null>(null);
   const [guardandoDetalleConvProv, setGuardandoDetalleConvProv] = useState(false);
@@ -324,9 +414,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [pestanasVisiblesConfig, setPestanasVisiblesConfig] = useState<TabType[] | null>(null);
   const [camposObligatoriosConfig, setCamposObligatoriosConfig] = useState<string[] | null>(null);
 
-  // ✅ NUEVO: índice de los flujos YA guardados (id real del documento + sus
-  //   claves Servicio/Tráfico/Carga). Sirve para resolver el flujo de forma
-  //   tolerante a mayúsculas/acentos en lugar de depender de un ID exacto.
   const [flujosIndex, setFlujosIndex] = useState<{ id: string; tipoServicio: string; trafico: string; carga: string }[]>([]);
 
   const [modalCatalogo, setModalCatalogo] = useState<{
@@ -447,6 +534,24 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     || catalogosCacheados?.trafico
     || [],
   [catalogosCacheados]);
+
+  // ✅ FIX TIPO DE CAMBIO: resuelve el catálogo de TC venga como venga en
+  //   catalogosCacheados (a veces la clave no es exactamente `catalogoTC`).
+  const catalogoTCResuelto = useMemo(() => {
+    if (Array.isArray(catalogoTC) && catalogoTC.length) return catalogoTC;
+    return (
+      catalogosCacheados?.tipoCambio
+      || catalogosCacheados?.tipo_cambio
+      || catalogosCacheados?.catalogo_tipo_cambio
+      || catalogosCacheados?.catalogoTipoCambio
+      || catalogosCacheados?.tiposCambio
+      || catalogosCacheados?.tipos_cambio
+      || catalogosCacheados?.tc
+      || catalogosCacheados?.catalogoTC
+      || catalogoTC
+      || []
+    );
+  }, [catalogoTC, catalogosCacheados]);
 
   const listaEmpleadosLocal: any[] = empleados;
   const listaUniProvLocal: any[] = unidadesProveedor;
@@ -594,9 +699,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   }, [modalCatalogo, recargarColeccion, aplicarColeccionRecargada]);
 
-  // ✅ Nombre a mostrar para empresas: si tiene "Nombre Corto" se usa ese; si no,
-  //   se usa el nombre largo. Aplica a Cliente (Paga), Origen, Destino, Cliente
-  //   (Mercancía), Proveedor de Servicios y Proveedor de Transporte.
   const nombreCortoEmpresa = (e: any): string => String(
     e?.nombreCorto ?? e?.nombre_corto ?? e?.nombrecorto ?? e?.shortName ?? e?.alias ?? ''
   ).trim();
@@ -608,8 +710,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const labelUnidad = (u: any) => u?.unidad || u?.nombre || '';
   const labelEmpleado = (o: any) => `${o?.firstName || ''} ${o?.lastNamePaternal || ''}`.trim();
 
-  // ✅ NUEVO: carga (una vez) la lista de flujos guardados para poder resolver
-  //   el flujo correcto aunque el texto difiera en mayúsculas/acentos.
   useEffect(() => {
     let activo = true;
     (async () => {
@@ -626,20 +726,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   }, []);
 
   const buildConfigId = () => {
-    // Valores CRUDOS, exactamente como los guarda el Editor de Flujos
-    //   (Servicio = tipo_operacion tal cual; Tráfico = nombre de catalogo_trafico;
-    //   Carga = "Cargada"/"Vacía"/"N/A"). NO se fuerza acento ni se cambia el
-    //   case, porque eso era justo lo que rompía la coincidencia del ID.
     const tipoOpText = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || 'N/A';
     const traficoTxt = formData.trafico || 'N/A';
     const cargaTxt = formData.carga || 'N/A';
 
     const idCrudo = `${tipoOpText}_${traficoTxt}_${cargaTxt}`;
 
-    // ✅ Resolución TOLERANTE: si ya existe un flujo guardado cuya combinación
-    //   coincide ignorando mayúsculas/acentos/espacios, se usa su ID REAL de
-    //   documento. Así "Logística/Movimiento ldo" encuentra el guardado como
-    //   "Logistica/Movimiento LDO". Si no hay match, se usa el id crudo.
     const match = flujosIndex.find(f =>
       normClave(f.tipoServicio) === normClave(tipoOpText) &&
       normClave(f.trafico) === normClave(traficoTxt) &&
@@ -651,11 +743,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return idGenerado;
   };
 
-  // ✅ NUEVO: status previo a usar al calcular las reglas. Si el usuario CAMBIÓ el
-  //   Tipo de Operación respecto al guardado, el status anterior puede no existir
-  //   en el nuevo flujo, así que NO se reutiliza (se recalcula desde cero). Esto
-  //   permite cambiar el tipo de operación en cualquier momento sin que truene la
-  //   regla de status.
   const statusPrevioParaCalculo = (): string | undefined => {
     if (!initialData) return undefined;
     const tipoCambiado = String(formData.tipoOperacionId || '') !== String(initialData.tipoOperacionId || '');
@@ -912,34 +999,52 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   }, [initialData, empresas, remolques, unidades, listaEmpleadosLocal, listaUniProvLocal, listaOpeProvLocal]);
 
+  // ✅ FIX TIPO DE CAMBIO: al colocar la fecha busca el TC de forma TOLERANTE al
+  //   formato (Timestamp/ISO/DD-MM-YYYY, etc.). Si no está en memoria lo trae
+  //   DIRECTO de Firestore y lo autocompleta.
   useEffect(() => {
-    if (!formData.fechaServicio || !catalogoTC || catalogoTC.length === 0) return;
+    if (!formData.fechaServicio) return;
+
+    let cancelado = false;
     setBuscandoTC(true);
-    const [y, m, d] = formData.fechaServicio.split('-');
-    const fechaLatina = `${d}/${m}/${y}`; 
-    const fechaUS = `${m}/${d}/${y}`; 
-    const fechaISO = `${y}-${m}-${d}`; 
-    let tcEncontrado = null;
-    for (const tc of catalogoTC) {
-      const valoresFila = Object.values(tc).map((v: any) => String(v).trim());
-      if (valoresFila.includes(fechaLatina) || valoresFila.includes(fechaUS) || valoresFila.includes(fechaISO)) {
-        const keys = Object.keys(tc);
-        const valKey = keys.find((k: any) => String(k).toLowerCase().includes('dof') || String(k).toLowerCase().includes('valor') || String(k).toLowerCase() === 'tc' || String(k).toLowerCase().includes('cambio'));
-        if (valKey) tcEncontrado = Number(String(tc[valKey]).replace(/[^0-9.-]+/g, ""));
-        else {
-          const posiblesRates = valoresFila.map((v: any) => parseFloat(v.replace(/[^0-9.-]+/g, ""))).filter((n: any) => !isNaN(n) && n > 15 && n < 25);
-          if (posiblesRates.length > 0) tcEncontrado = posiblesRates[0];
+
+    const objetivoISO = normalizarFechaISO(formData.fechaServicio);
+
+    const buscarEn = (fuente: any[]): number | null => {
+      for (const row of (Array.isArray(fuente) ? fuente : [])) {
+        if (filaTCEsDeLaFecha(row, objetivoISO)) {
+          const r = extraerRateDeFilaTC(row);
+          if (r !== null) return r;
         }
-        break;
       }
-    }
-    setTipoCambioDia(tcEncontrado);
-    const fechaInicialISO = normalizarFechaISO(initialData?.fechaServicio);
-    if(tcEncontrado && (!initialData || formData.fechaServicio !== fechaInicialISO)) {
-       setFormData(prev => ({...prev, tipoCambioAprobado: tcEncontrado}));
-    }
-    setBuscandoTC(false);
-  }, [formData.fechaServicio, catalogoTC, initialData]);
+      return null;
+    };
+
+    (async () => {
+      if (!objetivoISO) { if (!cancelado) { setTipoCambioDia(null); setBuscandoTC(false); } return; }
+
+      let tcEncontrado = buscarEn(catalogoTCResuelto);
+
+      if (tcEncontrado === null) {
+        try {
+          const respaldo = await cargarCatalogoTCRespaldo();
+          if (!cancelado) tcEncontrado = buscarEn(respaldo);
+        } catch { /* noop */ }
+      }
+
+      if (cancelado) return;
+
+      setTipoCambioDia(tcEncontrado);
+
+      const fechaInicialISO = normalizarFechaISO(initialData?.fechaServicio);
+      if (tcEncontrado !== null && (!initialData || objetivoISO !== fechaInicialISO)) {
+        setFormData(prev => ({ ...prev, tipoCambioAprobado: tcEncontrado as number }));
+      }
+      setBuscandoTC(false);
+    })();
+
+    return () => { cancelado = true; };
+  }, [formData.fechaServicio, catalogoTCResuelto, initialData]);
 
   const refMaestroDetalle = (d: any): string => String(
     d.convenioId ?? d.convenio ?? d.id_convenio ?? d.convenioClienteId ?? d.convenioProveedorId ??
@@ -1399,7 +1504,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const sConvenio = (searchConvenio || '').toLowerCase();
   const sConvenioProveedor = (searchConvenioProveedor || '').toLowerCase();
 
-  // ✅ Coincide por nombre corto O por nombre largo (para los 6 campos de empresa).
   const empresaCoincide = (e:any, q:string) =>
     nombreEmpresaMostrar(e).toLowerCase().includes(q) || (e.nombre || '').toLowerCase().includes(q);
 
@@ -1460,9 +1564,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setCargando(true);
     try {
       const configId = buildConfigId();
-      // ✅ El status se calcula con el "status previo" SOLO si el flujo no cambió.
-      //   Si se cambió el Tipo de Operación, se recalcula desde cero; y si las
-      //   reglas fallan, NO se bloquea el guardado (se usa un valor de respaldo).
       let statusCalculado: string;
       try {
         statusCalculado = await calcularStatusDinamico(configId, formData, statusPrevioParaCalculo());
@@ -1824,17 +1925,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       }
     >
       <style>{`
-        .roelca-form-shell {
-          width: 100vw;
-          height: 100vh;
-          max-width: 100vw;
-          background-color: #0a0d14;
-          border-radius: 0;
-          display: flex;
-          overflow: hidden;
-          box-shadow: none;
-          border: none;
-        }
+        .roelca-form-shell { width: 100vw; height: 100vh; max-width: 100vw; background-color: #0a0d14; border-radius: 0; display: flex; overflow: hidden; box-shadow: none; border: none; }
         .roelca-form-left { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background-color: #0a0d14; }
         .roelca-form-right { width: 400px; background-color: #0d1117; border-left: 1px solid #1f2733; display: flex; flex-direction: column; flex-shrink: 0; }
         .roelca-form-header { padding: 20px 32px; border-bottom: 1px solid #1f2733; display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; background-color: #0d1117; }
@@ -1887,16 +1978,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         .status-error-card { padding: 14px 16px; background: linear-gradient(135deg, rgba(248, 81, 73, 0.06), rgba(248, 81, 73, 0.02)); border: 1px solid rgba(248, 81, 73, 0.25); border-radius: 10px; margin-bottom: 14px; }
         .roelca-lookup-row { display: flex; gap: 8px; align-items: flex-start; }
         .roelca-lookup-row > .roelca-lookup-input { flex: 1; min-width: 0; position: relative; }
-        .campo-obligatorio-faltante,
-        .campo-obligatorio-faltante:focus {
-          border-color: #f85149 !important;
-          background-color: rgba(248, 81, 73, 0.06) !important;
-          box-shadow: 0 0 0 1px rgba(248, 81, 73, 0.35) !important;
-        }
-        @media (max-width: 1024px) {
-          .roelca-form-shell { flex-direction: column; }
-          .roelca-form-right { width: 100%; border-left: none; border-top: 1px solid #1f2733; max-height: 40vh; }
-        }
+        .campo-obligatorio-faltante, .campo-obligatorio-faltante:focus { border-color: #f85149 !important; background-color: rgba(248, 81, 73, 0.06) !important; box-shadow: 0 0 0 1px rgba(248, 81, 73, 0.35) !important; }
+        @media (max-width: 1024px) { .roelca-form-shell { flex-direction: column; } .roelca-form-right { width: 100%; border-left: none; border-top: 1px solid #1f2733; max-height: 40vh; } }
       `}</style>
 
       <div className="roelca-form-shell" style={{ display: estado === 'minimizado' ? 'none' : 'flex' }}>
@@ -1907,13 +1990,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               <p>{initialData ? 'Modifica los datos y guarda los cambios' : 'Completa el formulario para registrar una nueva operación'}</p>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => { if (!idOperacion) { alert('Guarda la operación primero para poder adjuntarle documentos.'); return; } setMostrarSubirDoc(true); }}
-                className="roelca-window-btn"
-                title={idOperacion ? 'Subir documentos de la operación' : 'Guarda la operación primero'}
-                style={{ width: 'auto', padding: '0 12px', gap: '6px', color: idOperacion ? '#fb923c' : '#6e7681', borderColor: idOperacion ? 'rgba(251,146,60,0.4)' : '#2d333b' }}
-              >
+              <button type="button" onClick={() => { if (!idOperacion) { alert('Guarda la operación primero para poder adjuntarle documentos.'); return; } setMostrarSubirDoc(true); }} className="roelca-window-btn" title={idOperacion ? 'Subir documentos de la operación' : 'Guarda la operación primero'} style={{ width: 'auto', padding: '0 12px', gap: '6px', color: idOperacion ? '#fb923c' : '#6e7681', borderColor: idOperacion ? 'rgba(251,146,60,0.4)' : '#2d333b' }}>
                 <IconFileText size={15} /> <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Documentos</span>
               </button>
               <button type="button" onClick={onMinimize} className="roelca-window-btn" title="Minimizar"><IconMinimize size={16} /></button>
@@ -1922,21 +1999,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           </div>
 
           <div className="roelca-tabs">
-            {pestanasVisibles.includes('general') && (
-              <button type="button" className={`roelca-tab ${pestañaActiva === 'general' ? 'active' : ''}`} onClick={() => setPestañaActiva('general')}><IconBriefcase size={15} /> Información General</button>
-            )}
-            {pestanasVisibles.includes('pedimento') && (
-              <button type="button" className={`roelca-tab ${pestañaActiva === 'pedimento' ? 'active' : ''}`} onClick={() => setPestañaActiva('pedimento')}><IconFileText size={15} /> Pedimento y CT</button>
-            )}
-            {pestanasVisibles.includes('manifiesto') && (
-              <button type="button" className={`roelca-tab ${pestañaActiva === 'manifiesto' ? 'active' : ''}`} onClick={() => setPestañaActiva('manifiesto')}><IconClipboard size={15} /> Entry's y Manifiestos</button>
-            )}
-            {pestanasVisibles.includes('unidad') && (
-              <button type="button" className={`roelca-tab ${pestañaActiva === 'unidad' ? 'active' : ''}`} onClick={() => setPestañaActiva('unidad')}><IconTruck size={15} /> Unidad y Operador</button>
-            )}
-            {pestanasVisibles.includes('cobrar') && (
-              <button type="button" className={`roelca-tab ${pestañaActiva === 'cobrar' ? 'active' : ''}`} onClick={() => setPestañaActiva('cobrar')}><IconDollar size={15} /> Por Cobrar</button>
-            )}
+            {pestanasVisibles.includes('general') && (<button type="button" className={`roelca-tab ${pestañaActiva === 'general' ? 'active' : ''}`} onClick={() => setPestañaActiva('general')}><IconBriefcase size={15} /> Información General</button>)}
+            {pestanasVisibles.includes('pedimento') && (<button type="button" className={`roelca-tab ${pestañaActiva === 'pedimento' ? 'active' : ''}`} onClick={() => setPestañaActiva('pedimento')}><IconFileText size={15} /> Pedimento y CT</button>)}
+            {pestanasVisibles.includes('manifiesto') && (<button type="button" className={`roelca-tab ${pestañaActiva === 'manifiesto' ? 'active' : ''}`} onClick={() => setPestañaActiva('manifiesto')}><IconClipboard size={15} /> Entry's y Manifiestos</button>)}
+            {pestanasVisibles.includes('unidad') && (<button type="button" className={`roelca-tab ${pestañaActiva === 'unidad' ? 'active' : ''}`} onClick={() => setPestañaActiva('unidad')}><IconTruck size={15} /> Unidad y Operador</button>)}
+            {pestanasVisibles.includes('cobrar') && (<button type="button" className={`roelca-tab ${pestañaActiva === 'cobrar' ? 'active' : ''}`} onClick={() => setPestañaActiva('cobrar')}><IconDollar size={15} /> Por Cobrar</button>)}
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -1949,16 +2016,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-group">
                         <label className="form-label orange">Referencia</label>
                         {initialData ? (
-                          <input type="text" name="referencia" className="form-control" value={referencia}
-                            onChange={(e) => setReferencia(e.target.value)} readOnly={!puedeEditarRef}
-                            title={puedeEditarRef ? 'Tienes permiso para corregir la referencia' : 'No tienes permiso para editar la referencia'}
-                            style={puedeEditarRef ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }} />
+                          <input type="text" name="referencia" className="form-control" value={referencia} onChange={(e) => setReferencia(e.target.value)} readOnly={!puedeEditarRef} title={puedeEditarRef ? 'Tienes permiso para corregir la referencia' : 'No tienes permiso para editar la referencia'} style={puedeEditarRef ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }} />
                         ) : (
                           <input type="text" className="form-control" value="Se generará al guardar" readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                         )}
-                        <small style={{ color: initialData ? (puedeEditarRef ? '#fb923c' : '#8b949e') : '#8b949e' }}>
-                          {initialData ? (puedeEditarRef ? 'Editable (Admin o permiso "Editar Referencia").' : 'No tienes permiso para editarla.') : 'Formato: TR/LO/FL-DDMMYY-### (consecutivo único del día).'}
-                        </small>
+                        <small style={{ color: initialData ? (puedeEditarRef ? '#fb923c' : '#8b949e') : '#8b949e' }}>{initialData ? (puedeEditarRef ? 'Editable (Admin o permiso "Editar Referencia").' : 'No tienes permiso para editarla.') : 'Formato: TR/LO/FL-DDMMYY-### (consecutivo único del día).'}</small>
                       </div>
                       <div className="form-group"><label className="form-label orange">Tipo de Operación</label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
                       <div className="form-group"><label className="form-label orange">Fecha de Servicio</label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
@@ -1973,9 +2035,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Cliente (Paga)</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('clientePaga')}`} placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga}
-                              onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }}
-                              onFocus={() => setShowDropdownClientePaga(true)} onBlur={() => setTimeout(() => setShowDropdownClientePaga(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('clientePaga')}`} placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga} onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }} onFocus={() => setShowDropdownClientePaga(true)} onBlur={() => setTimeout(() => setShowDropdownClientePaga(false), 200)} />
                             {showDropdownClientePaga && searchClientePaga && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClientePaga.map((c:any) => (
@@ -1986,30 +2046,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               </div>
                             )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Cliente (Paga)" onClick={() => abrirCreacion(
-                            { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_PAGA },
-                            (id, reg) => { setFormData(prev => ({ ...prev, clientePaga: id, convenio: '', facturadoEnCobrar: resolverMonedaIdDeEmpresa(reg) })); setSearchClientePaga(labelEmpresa(reg)); setSearchConvenio(''); }
-                          )} />
+                          <BotonAgregar title="Agregar nuevo Cliente (Paga)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_PAGA }, (id, reg) => { setFormData(prev => ({ ...prev, clientePaga: id, convenio: '', facturadoEnCobrar: resolverMonedaIdDeEmpresa(reg) })); setSearchClientePaga(labelEmpresa(reg)); setSearchConvenio(''); })} />
                         </div>
                       </div>
                       <div className="form-group">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                           <label className="form-label" style={{ margin: 0 }}>Convenio (Tarifa)</label>
                           {(formData.clientePaga || searchClientePaga) && (
-                            <button
-                              type="button"
-                              onClick={() => setMostrarConveniosCliente(true)}
-                              title="Ver y editar los convenios (tarifas) de este cliente"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}
-                            >
+                            <button type="button" onClick={() => setMostrarConveniosCliente(true)} title="Ver y editar los convenios (tarifas) de este cliente" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}>
                               <IconReceipt size={12} /> Ver / editar ({listaConveniosCliente.length})
                             </button>
                           )}
                         </div>
                         <div style={{ position: 'relative' }}>
-                          <input type="text" className={`form-control${claseSiFalta('convenio')}`} placeholder="Buscar por nombre o ID de tarifa..." required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio}
-                            onChange={e => { setSearchConvenio(e.target.value); setShowDropdownConvenio(true); if (formData.convenio) setFormData(prev => ({ ...prev, convenio: '' })); }}
-                            onFocus={() => setShowDropdownConvenio(true)} onBlur={() => setTimeout(() => setShowDropdownConvenio(false), 200)} />
+                          <input type="text" className={`form-control${claseSiFalta('convenio')}`} placeholder="Buscar por nombre o ID de tarifa..." required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio} onChange={e => { setSearchConvenio(e.target.value); setShowDropdownConvenio(true); if (formData.convenio) setFormData(prev => ({ ...prev, convenio: '' })); }} onFocus={() => setShowDropdownConvenio(true)} onBlur={() => setTimeout(() => setShowDropdownConvenio(false), 200)} />
                           {showDropdownConvenio && (
                             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                               {resultadosConvenio.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenio.map((c:any) => (
@@ -2024,9 +2074,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                         {listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}
                         {formData.convenio && tarifaIdCliente && (
-                          <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>
-                            ID tarifa: {tarifaIdCliente} · Monto: {fmtMoney(montoCliente)}{nombreMoneda(monedaClienteId) ? ` ${nombreMoneda(monedaClienteId)}` : ''}{tarifaIdProveedor && !esFlotaPropiaRoelca ? (tarifasCoinciden ? '  ✓ coincide con el del proveedor' : '  ✕ NO coincide con el del proveedor') : ''}
-                          </small>
+                          <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>ID tarifa: {tarifaIdCliente} · Monto: {fmtMoney(montoCliente)}{nombreMoneda(monedaClienteId) ? ` ${nombreMoneda(monedaClienteId)}` : ''}{tarifaIdProveedor && !esFlotaPropiaRoelca ? (tarifasCoinciden ? '  ✓ coincide con el del proveedor' : '  ✕ NO coincide con el del proveedor') : ''}</small>
                         )}
                       </div>
                       <div className="form-group">
@@ -2036,10 +2084,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <input type="text" className={`form-control${claseSiFalta('numeroRemolque')}`} placeholder="Buscar remolque..." value={searchRemolque} onChange={e => { setSearchRemolque(e.target.value); setShowDropdownRemolque(true); if (formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: '' })); }} onFocus={() => setShowDropdownRemolque(true)} onBlur={() => setTimeout(() => setShowDropdownRemolque(false), 200)} />
                             {showDropdownRemolque && searchRemolque && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosRemolque.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosRemolque.map((r:any) => (<div key={r.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(labelRemolque(r)); setShowDropdownRemolque(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelRemolque(r)}</div></div>))}</div>)}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Remolque" onClick={() => abrirCreacion(
-                            { tipo: 'remolque', coleccion: 'remolques' },
-                            (id, reg) => { setFormData(prev => ({ ...prev, numeroRemolque: id })); setSearchRemolque(labelRemolque(reg)); }
-                          )} />
+                          <BotonAgregar title="Agregar nuevo Remolque" onClick={() => abrirCreacion({ tipo: 'remolque', coleccion: 'remolques' }, (id, reg) => { setFormData(prev => ({ ...prev, numeroRemolque: id })); setSearchRemolque(labelRemolque(reg)); })} />
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Ref Cliente</label><input type="text" name="refCliente" className={`form-control${claseSiFalta('refCliente')}`} value={formData.refCliente || ''} onChange={handleChange} /></div>
@@ -2056,10 +2101,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <input type="text" className={`form-control${claseSiFalta('origen')}`} placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
                             {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(o)}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{o.direccion}</div></div>))}</div>)}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion(
-                            { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO },
-                            (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); }
-                          )} />
+                          <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); })} />
                         </div>
                       </div>
                       <div className="form-group">
@@ -2069,10 +2111,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <input type="text" className={`form-control${claseSiFalta('destino')}`} placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
                             {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(d)}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{d.direccion}</div></div>))}</div>)}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion(
-                            { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO },
-                            (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); }
-                          )} />
+                          <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>
                       </div>
                       <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Ejecutivo</label><input type="text" name="observacionesEjecutivo" className={`form-control${claseSiFalta('observacionesEjecutivo')}`} value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
@@ -2090,9 +2129,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Cliente (Mercancía)</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('clienteMercancia')}`} placeholder="Buscar cliente de mercancía..." value={searchClienteMercancia}
-                              onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }}
-                              onFocus={() => setShowDropdownClienteMercancia(true)} onBlur={() => setTimeout(() => setShowDropdownClienteMercancia(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('clienteMercancia')}`} placeholder="Buscar cliente de mercancía..." value={searchClienteMercancia} onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }} onFocus={() => setShowDropdownClienteMercancia(true)} onBlur={() => setTimeout(() => setShowDropdownClienteMercancia(false), 200)} />
                             {showDropdownClienteMercancia && searchClienteMercancia && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosClienteMercancia.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (
@@ -2103,19 +2140,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               </div>
                             )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion(
-                            { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_MERCANCIA },
-                            (id, reg) => { setFormData(prev => ({ ...prev, clienteMercancia: id })); setSearchClienteMercancia(labelEmpresa(reg)); }
-                          )} />
+                          <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_MERCANCIA }, (id, reg) => { setFormData(prev => ({ ...prev, clienteMercancia: id })); setSearchClienteMercancia(labelEmpresa(reg)); })} />
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Descripción de Mercancía</label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
                       <div className="form-group"><label className="form-label">Cantidad</label><input type="text" name="cantidad" className={`form-control${claseSiFalta('cantidad')}`} value={formData.cantidad || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{(embalajesLocal || [])
-                        .map((em:any) => ({ id: String(em.id), texto: String(em.clave ?? em.Clave ?? em.CLAVE ?? em.embalaje ?? em.nombre ?? em.descripcion ?? em.tipo ?? '').trim() }))
-                        .filter((o:any) => o.texto !== '')
-                        .sort((a:any, b:any) => a.texto.localeCompare(b.texto, 'es', { sensitivity: 'base' }))
-                        .map((o:any) => <option key={o.id} value={o.id}>{o.texto}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{(embalajesLocal || []).map((em:any) => ({ id: String(em.id), texto: String(em.clave ?? em.Clave ?? em.CLAVE ?? em.embalaje ?? em.nombre ?? em.descripcion ?? em.tipo ?? '').trim() })).filter((o:any) => o.texto !== '').sort((a:any, b:any) => a.texto.localeCompare(b.texto, 'es', { sensitivity: 'base' })).map((o:any) => <option key={o.id} value={o.id}>{o.texto}</option>)}</select></div>
                       <div className="form-group"><label className="form-label">Peso (Kg)</label><input type="number" name="pesoKg" className={`form-control${claseSiFalta('pesoKg')}`} value={formData.pesoKg || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
@@ -2140,15 +2170,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-group"><label className="form-label"># de Entry's</label><input type="text" name="numeroEntrys" className={`form-control${claseSiFalta('numeroEntrys')}`} value={formData.numeroEntrys || ''} onChange={handleChange} /></div>
                       <div className="form-group">
                         <label className="form-label">Cantidad de Entry's</label>
-                        <input type="number" min={0} name="cantEntrys" className={`form-control${claseSiFalta('cantEntrys')}`} value={formData.cantEntrys || 0}
-                          onChange={(e) => {
-                            const n = Math.max(0, parseInt(e.target.value || '0', 10) || 0);
-                            setFormData(prev => {
-                              const arr = [...(prev.pdfsEntrys || [])];
-                              arr.length = n;
-                              return { ...prev, cantEntrys: n, pdfsEntrys: arr };
-                            });
-                          }} />
+                        <input type="number" min={0} name="cantEntrys" className={`form-control${claseSiFalta('cantEntrys')}`} value={formData.cantEntrys || 0} onChange={(e) => { const n = Math.max(0, parseInt(e.target.value || '0', 10) || 0); setFormData(prev => { const arr = [...(prev.pdfsEntrys || [])]; arr.length = n; return { ...prev, cantEntrys: n, pdfsEntrys: arr }; }); }} />
                       </div>
                     </div>
                     {Number(formData.cantEntrys) > 0 && (
@@ -2168,9 +2190,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Proveedor de Servicios</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('provServicios')}`} placeholder="Buscar proveedor de servicios..." value={searchProvServicios}
-                              onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }}
-                              onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('provServicios')}`} placeholder="Buscar proveedor de servicios..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
                             {showDropdownProvServicios && searchProvServicios && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (
@@ -2181,10 +2201,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               </div>
                             )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Proveedor (Servicios)" onClick={() => abrirCreacion(
-                            { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_SERVICIOS },
-                            (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id })); setSearchProvServicios(labelEmpresa(reg)); }
-                          )} />
+                          <BotonAgregar title="Agregar nuevo Proveedor (Servicios)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_SERVICIOS }, (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id })); setSearchProvServicios(labelEmpresa(reg)); })} />
                         </div>
                       </div>
                       <div className="form-group">
@@ -2207,10 +2224,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Proveedor de Transporte</label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
-                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Buscar proveedor de transporte..." value={searchProvTransporte} disabled={proveedorForzado}
-                              onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }}
-                              onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)}
-                              style={proveedorForzado ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} />
+                            <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Buscar proveedor de transporte..." value={searchProvTransporte} disabled={proveedorForzado} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} style={proveedorForzado ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} />
                             {showDropdownProvTransporte && searchProvTransporte && !proveedorForzado && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((c:any) => (
@@ -2222,32 +2236,25 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             )}
                           </div>
                           {!proveedorForzado && (
-                            <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion(
-                              { tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE },
-                              (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: resolverMonedaIdDeEmpresa(reg) || prev.facturadoEnUnidad })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); }
-                            )} />
+                            <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE }, (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: resolverMonedaIdDeEmpresa(reg) || prev.facturadoEnUnidad })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); })} />
                           )}
                         </div>
                         {proveedorForzado && <small style={{ color: '#fb923c' }}>Este tipo de operación usa un proveedor fijo.</small>}
                         {esFlotaPropiaRoelca && <small style={{ color: '#3fb950' }}>Flota propia de Roelca: no se paga a un proveedor externo.</small>}
                       </div>
 
-                      {/* ✅ Convenio Proveedor: SOLO cuando NO es flota propia de Roelca. */}
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                           <label className="form-label" style={{ margin: 0 }}>Convenio Proveedor</label>
                           {(formData.proveedorUnidad || searchProvTransporte) && (
-                            <button type="button" onClick={() => setMostrarConveniosProveedor(true)} title="Ver y editar los convenios (tarifas) de este proveedor"
-                              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}>
+                            <button type="button" onClick={() => setMostrarConveniosProveedor(true)} title="Ver y editar los convenios (tarifas) de este proveedor" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}>
                               <IconReceipt size={12} /> Ver / editar ({listaConveniosProveedor.length})
                             </button>
                           )}
                         </div>
                         <div style={{ position: 'relative' }}>
-                          <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Buscar por nombre o ID de tarifa..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor}
-                            onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '' })); }}
-                            onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
+                          <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Buscar por nombre o ID de tarifa..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor} onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '' })); }} onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
                           {showDropdownConvenioProveedor && (
                             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                               {resultadosConvenioProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
@@ -2262,14 +2269,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                         {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios asignados</small>}
                         {formData.convenioProveedor && tarifaIdProveedor && (
-                          <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>
-                            ID tarifa: {tarifaIdProveedor} · Monto: {fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}{tarifaIdCliente ? (tarifasCoinciden ? '  ✓ coincide con el del cliente' : '  ✕ NO coincide con el del cliente') : ''}
-                          </small>
+                          <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>ID tarifa: {tarifaIdProveedor} · Monto: {fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}{tarifaIdCliente ? (tarifasCoinciden ? '  ✓ coincide con el del cliente' : '  ✕ NO coincide con el del cliente') : ''}</small>
                         )}
                       </div>
                       )}
 
-                      {/* ✅ Facturado En: SOLO cuando NO es flota propia (es parte del pago al proveedor). */}
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <label className="form-label">Facturado En</label>
@@ -2290,9 +2294,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <label className="form-label">Unidad</label>
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
-                              <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad}
-                                onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }}
-                                onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
+                              <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
                               {showDropdownUnidad && searchUnidad && (
                                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                   {resultadosUnidad.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosUnidad.map((u:any) => (
@@ -2303,19 +2305,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                                 </div>
                               )}
                             </div>
-                            <BotonAgregar title="Agregar nueva Unidad" onClick={() => abrirCreacion(
-                              { tipo: 'unidad', coleccion: 'unidades' },
-                              (id, reg) => { setFormData(prev => ({ ...prev, unidad: id })); setSearchUnidad(labelUnidad(reg)); }
-                            )} />
+                            <BotonAgregar title="Agregar nueva Unidad" onClick={() => abrirCreacion({ tipo: 'unidad', coleccion: 'unidades' }, (id, reg) => { setFormData(prev => ({ ...prev, unidad: id })); setSearchUnidad(labelUnidad(reg)); })} />
                           </div>
                         </div>
                         <div className="form-group">
                           <label className="form-label">Operador</label>
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
-                              <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador}
-                                onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }}
-                                onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
+                              <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
                               {showDropdownOperador && searchOperador && (
                                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                   {resultadosOperador.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosOperador.map((o:any) => (
@@ -2326,10 +2323,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                                 </div>
                               )}
                             </div>
-                            <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion(
-                              { tipo: 'empleado', coleccion: 'empleados' },
-                              (id, reg) => { setFormData(prev => ({ ...prev, operador: id })); setSearchOperador(labelEmpleado(reg)); }
-                            )} />
+                            <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion({ tipo: 'empleado', coleccion: 'empleados' }, (id, reg) => { setFormData(prev => ({ ...prev, operador: id })); setSearchOperador(labelEmpleado(reg)); })} />
                           </div>
                         </div>
                         <div className="form-group"><label className="form-label">Sueldo Operador</label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador || 0} onChange={handleChange} /></div>
@@ -2349,9 +2343,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="form-group">
                           <label className="form-label">Unidad del Proveedor</label>
                           <div style={{ position: 'relative' }}>
-                            <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} placeholder="Buscar/escribir unidad del proveedor..." value={searchUnidadProveedor}
-                              onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); setFormData(prev => ({ ...prev, unidadProveedor: e.target.value })); }}
-                              onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} placeholder="Buscar/escribir unidad del proveedor..." value={searchUnidadProveedor} onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); setFormData(prev => ({ ...prev, unidadProveedor: e.target.value })); }} onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
                             {showDropdownUnidadProveedor && searchUnidadProveedor && resultadosUnidadProveedor.length > 0 && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosUnidadProveedor.map((u:any) => { const txt = String(u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || ''); return (
@@ -2366,9 +2358,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="form-group">
                           <label className="form-label">Operador del Proveedor</label>
                           <div style={{ position: 'relative' }}>
-                            <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} placeholder="Buscar/escribir operador del proveedor..." value={searchOperadorProveedor}
-                              onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }}
-                              onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
+                            <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} placeholder="Buscar/escribir operador del proveedor..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
                             {showDropdownOperadorProveedor && searchOperadorProveedor && resultadosOperadorProveedor.length > 0 && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosOperadorProveedor.map((o:any) => { const txt = String(o.nombre || o.nombres || o.nombreCompleto || ''); return (
@@ -2384,7 +2374,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     </div>
                   )}
 
-                  {/* ✅ Pago al Proveedor: SOLO cuando NO es flota propia de Roelca. */}
                   {!esFlotaPropiaRoelca && (
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
@@ -2403,7 +2392,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   </div>
                   )}
 
-                  {/* ✅ Observaciones de Unidad: SIEMPRE visible (aplica también a flota propia). */}
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Observaciones de Unidad</h3></div>
                     <div className="form-grid">
@@ -2447,8 +2435,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       )}
                       <div className="form-group">
                         <label className="form-label">Utilidad Estimada (MXN)</label>
-                        <input type="number" className="form-control" value={Number(formData.utilidadEstimada || 0).toFixed(2)} readOnly
-                          style={{ opacity: 0.95, color: Number(formData.utilidadEstimada) >= 0 ? '#3fb950' : '#f85149', fontWeight: 700 }} />
+                        <input type="number" className="form-control" value={Number(formData.utilidadEstimada || 0).toFixed(2)} readOnly style={{ opacity: 0.95, color: Number(formData.utilidadEstimada) >= 0 ? '#3fb950' : '#f85149', fontWeight: 700 }} />
                       </div>
                       <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Cobranza</label><textarea name="observacionesCobrar" className="form-control" rows={2} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
                     </div>
@@ -2500,7 +2487,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     {tarifaIdCliente && <span style={{ display: 'block', fontSize: '0.66rem', color: '#7d8590', fontFamily: 'monospace', fontWeight: 400, marginTop: '2px' }}>ID: {tarifaIdCliente}</span>}
                   </span>
                 </div>
-                {/* ✅ Filas del proveedor: SOLO cuando NO es flota propia de Roelca. */}
                 {!esFlotaPropiaRoelca && (
                   <div className="roelca-money-row" style={{ alignItems: 'flex-start' }}>
                     <span className="lbl">Proveedor</span>
@@ -2517,9 +2503,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 {!esFlotaPropiaRoelca && (
                   <div className="roelca-money-row" style={{ borderTop: '1px solid #1f2733', marginTop: '4px', paddingTop: '8px' }}>
                     <span className="lbl">¿Tarifas coinciden?</span>
-                    <span className="val" style={{ color: tarifasCoinciden ? '#3fb950' : '#fb923c' }}>
-                      {tarifaIdCliente && tarifaIdProveedor ? (tarifasCoinciden ? '✓ Sí' : '✕ No') : '—'}
-                    </span>
+                    <span className="val" style={{ color: tarifasCoinciden ? '#3fb950' : '#fb923c' }}>{tarifaIdCliente && tarifaIdProveedor ? (tarifasCoinciden ? '✓ Sí' : '✕ No') : '—'}</span>
                   </div>
                 )}
               </div>
@@ -2529,9 +2513,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconUsers size={13} /></span> Cliente y Ruta</div>
               <div className="roelca-sidebar-value">{searchClientePaga || <span className="roelca-sidebar-muted">Sin cliente</span>}</div>
               {convenioNombreResumen && <div className="roelca-sidebar-secondary">Convenio: {convenioNombreResumen}</div>}
-              <div className="roelca-route-line">
-                <IconMapPin size={13} /> {searchOrigen || '—'} <IconArrowRight size={12} /> {searchDestino || '—'}
-              </div>
+              <div className="roelca-route-line"><IconMapPin size={13} /> {searchOrigen || '—'} <IconArrowRight size={12} /> {searchDestino || '—'}</div>
             </div>
 
             <div className="roelca-sidebar-section">
@@ -2554,7 +2536,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             <div className="roelca-sidebar-section">
               <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconTrendingUp size={13} /></span> Financiero</div>
               <div className="roelca-money-row"><span className="lbl">Subtotal Cliente</span><span className="val">{fmtMoney(formData.subtotalCliente)}</span></div>
-              {/* ✅ Subtotal Proveedor: SOLO cuando NO es flota propia de Roelca. */}
               {!esFlotaPropiaRoelca && (
                 <div className="roelca-money-row"><span className="lbl">Subtotal Proveedor</span><span className="val">{fmtMoney(formData.subtotalProv)}</span></div>
               )}
@@ -2578,14 +2559,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       </div>
 
       {estado === 'minimizado' && (
-        <div
-          onClick={onRestore}
-          style={{ position: 'fixed', bottom: '20px', right: '20px', backgroundColor: '#0d1117', border: '1px solid #fb923c', borderRadius: '10px', padding: '12px 18px', cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 1000 }}
-        >
+        <div onClick={onRestore} style={{ position: 'fixed', bottom: '20px', right: '20px', backgroundColor: '#0d1117', border: '1px solid #fb923c', borderRadius: '10px', padding: '12px 18px', cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 1000 }}>
           <span style={{ color: '#fb923c' }}><IconBriefcase size={18} /></span>
-          <div style={{ color: '#e6edf3', fontSize: '0.85rem', fontWeight: 600 }}>
-            {initialData ? `Editar ${initialData.ref || initialData.id?.substring(0,6)}` : 'Nueva Operación'}
-          </div>
+          <div style={{ color: '#e6edf3', fontSize: '0.85rem', fontWeight: 600 }}>{initialData ? `Editar ${initialData.ref || initialData.id?.substring(0,6)}` : 'Nueva Operación'}</div>
           <span style={{ color: '#8b949e' }}><IconArrowRight size={15} /></span>
         </div>
       )}
@@ -2605,33 +2581,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       {mostrarCostosAdic && (
         <div className="modal-overlay" style={{ zIndex: 1100 }}>
-          <CostosAdicionalesDashboard
-            onCerrar={() => setMostrarCostosAdic(false)}
-            onCostosActualizados={(totalProv?: any, totalCliente?: any) => {
-              const p = Number(totalProv);
-              const c = Number(totalCliente);
-              setFormData(prev => ({
-                ...prev,
-                ...(Number.isFinite(p) ? { cargosAdicionalesProv: p } : {}),
-                ...(Number.isFinite(c) ? { cargosAdicionales: c } : {}),
-              }));
-            }}
-          />
+          <CostosAdicionalesDashboard onCerrar={() => setMostrarCostosAdic(false)} onCostosActualizados={(totalProv?: any, totalCliente?: any) => { const p = Number(totalProv); const c = Number(totalCliente); setFormData(prev => ({ ...prev, ...(Number.isFinite(p) ? { cargosAdicionalesProv: p } : {}), ...(Number.isFinite(c) ? { cargosAdicionales: c } : {}), })); }} />
         </div>
       )}
 
       {mostrarSubirDoc && idOperacion && (
-        <DocumentoUploadModal
-          isOpen={true}
-          coleccionOrigen="operaciones"
-          registroId={idOperacion}
-          registroNombre={referenciaOperacion}
-          tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
-          onClose={() => setMostrarSubirDoc(false)}
-        />
+        <DocumentoUploadModal isOpen={true} coleccionOrigen="operaciones" registroId={idOperacion} registroNombre={referenciaOperacion} tiposDocumento={TIPOS_DOCUMENTO_OPERACION} onClose={() => setMostrarSubirDoc(false)} />
       )}
 
-      {/* === Ver / editar convenios (tarifas) del CLIENTE === */}
       {mostrarConveniosCliente && (
         <div className="modal-overlay" style={{ zIndex: 1100 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarConveniosCliente(false); }}>
           <div className="form-card" style={{ width: 'min(820px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
@@ -2678,7 +2635,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         </div>
       )}
 
-      {/* === Editor de un convenio del CLIENTE (crear/editar) === */}
       {detalleConvEditando && (
         <div className="modal-overlay" style={{ zIndex: 1200 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setDetalleConvEditando(null); }}>
           <div className="form-card" style={{ width: 'min(520px, 94vw)', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
@@ -2689,8 +2645,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div className="form-group">
                 <label className="form-label">Tarifa (catálogo)</label>
-                <select className="form-control" value={detalleConvEditando.tipoConvenioId || ''}
-                  onChange={(e) => { const id = e.target.value; const op = opcionesTarifasRef.find((o:any) => o.id === id); setDetalleConvEditando((prev:any) => ({ ...prev, tipoConvenioId: id, tipoConvenioNombre: op?.nombre || prev.tipoConvenioNombre })); }}>
+                <select className="form-control" value={detalleConvEditando.tipoConvenioId || ''} onChange={(e) => { const id = e.target.value; const op = opcionesTarifasRef.find((o:any) => o.id === id); setDetalleConvEditando((prev:any) => ({ ...prev, tipoConvenioId: id, tipoConvenioNombre: op?.nombre || prev.tipoConvenioNombre })); }}>
                   <option value="">-- Seleccionar tarifa --</option>
                   {opcionesTarifasRef.map((o:any) => <option key={o.id} value={o.id}>{etiquetaOpcionTarifa(o)}</option>)}
                 </select>
@@ -2712,7 +2667,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         </div>
       )}
 
-      {/* === Ver / editar convenios (tarifas) del PROVEEDOR === */}
       {mostrarConveniosProveedor && (
         <div className="modal-overlay" style={{ zIndex: 1100 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarConveniosProveedor(false); }}>
           <div className="form-card" style={{ width: 'min(820px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
@@ -2759,7 +2713,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         </div>
       )}
 
-      {/* === Editor de un convenio del PROVEEDOR (crear/editar) === */}
       {detalleConvProvEditando && (
         <div className="modal-overlay" style={{ zIndex: 1200 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setDetalleConvProvEditando(null); }}>
           <div className="form-card" style={{ width: 'min(520px, 94vw)', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
@@ -2770,8 +2723,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div className="form-group">
                 <label className="form-label">Tarifa (catálogo)</label>
-                <select className="form-control" value={detalleConvProvEditando.tipoConvenioId || ''}
-                  onChange={(e) => { const id = e.target.value; const op = opcionesTarifasRef.find((o:any) => o.id === id); setDetalleConvProvEditando((prev:any) => ({ ...prev, tipoConvenioId: id, tipoConvenioNombre: op?.nombre || prev.tipoConvenioNombre })); }}>
+                <select className="form-control" value={detalleConvProvEditando.tipoConvenioId || ''} onChange={(e) => { const id = e.target.value; const op = opcionesTarifasRef.find((o:any) => o.id === id); setDetalleConvProvEditando((prev:any) => ({ ...prev, tipoConvenioId: id, tipoConvenioNombre: op?.nombre || prev.tipoConvenioNombre })); }}>
                   <option value="">-- Seleccionar tarifa --</option>
                   {opcionesTarifasRef.map((o:any) => <option key={o.id} value={o.id}>{etiquetaOpcionTarifa(o)}</option>)}
                 </select>
