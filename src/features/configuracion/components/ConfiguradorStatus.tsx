@@ -24,7 +24,6 @@ interface FlujoGuardado {
   tipoServicio: string;
   trafico: string;
   carga: string;
-  trompo?: string;                // ✅ NUEVO: dimensión opcional "Trompo" (Sí/No)
   ultimaActualizacion: string;
   flujo: ReglaStatus[];
   // ✅ NUEVO: configuración del formulario por flujo (no por nodo)
@@ -33,7 +32,7 @@ interface FlujoGuardado {
 }
 
 type CombinacionEdicion =
-  | { tipoServicio: string; trafico: string; carga: string; trompo?: string; flujo?: ReglaStatus[] }
+  | { tipoServicio: string; trafico: string; carga: string; flujo?: ReglaStatus[] }
   | undefined;
 
 /* ============================================================
@@ -55,9 +54,8 @@ const TABS_FORMULARIO: { id: TabType; label: string }[] = [
 
 // ✅ Opciones del selector "Carga" (Reglas de Status). DEBEN coincidir con el
 //    campo `estado_carga` del catálogo de Tarifas de Referencia.
-const OPCIONES_CARGA = ['Cargada', 'Vacía', 'N/A'];
-// ✅ NUEVO: opciones del selector "Trompo" (igual que el catálogo).
-const OPCIONES_TROMPO = ['Sí', 'No'];
+//    "Trompo" va como una opción MÁS dentro de esta misma lista.
+const OPCIONES_CARGA = ['Cargada', 'Vacía', 'N/A', 'Trompo'];
 
 /* ============================================================
    CATÁLOGO COMPLETO DE CAMPOS DE OPERACIÓN
@@ -768,8 +766,6 @@ const EditorFlujoAppSheet = ({
   const [tipoServicio, setTipoServicio] = useState(flujoInicial?.tipoServicio || '');
   const [trafico, setTrafico]           = useState(flujoInicial?.trafico       || '');
   const [carga, setCarga]               = useState(flujoInicial?.carga         || '');
-  // ✅ NUEVO: dimensión opcional "Trompo" (Sí/No). Vacío = el flujo aplica sin importar el trompo.
-  const [trompo, setTrompo]             = useState(flujoInicial?.trompo        || '');
   const [reglas, setReglas]             = useState<ReglaStatus[]>([]);
   const [cargando, setCargando]         = useState(false);
   const [guardando, setGuardando]       = useState(false);
@@ -814,11 +810,7 @@ const EditorFlujoAppSheet = ({
   /* ---------- refs ---------- */
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
-  // ✅ MODIFICADO: el Trompo es una dimensión OPCIONAL del flujo. Si no se
-  //    selecciona, el configId conserva el formato anterior
-  //    (Servicio_Tráfico_Carga) para no romper los flujos ya guardados; si se
-  //    selecciona, se agrega como 4º segmento (Servicio_Tráfico_Carga_Trompo).
-  const configId = [tipoServicio, trafico, carga, trompo].filter(Boolean).join('_');
+  const configId = `${tipoServicio}_${trafico}_${carga}`;
   const configValido = !!tipoServicio && !!trafico && !!carga;
 
   /* ============================================================
@@ -898,7 +890,7 @@ const EditorFlujoAppSheet = ({
     };
     cargarReglas();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipoServicio, trafico, carga, trompo]);
+  }, [tipoServicio, trafico, carga]);
 
   /* posición automática inicial en cascada diagonal suave */
   const autoPosicion = (i: number): NodoPosicion => ({
@@ -1347,7 +1339,6 @@ const EditorFlujoAppSheet = ({
         tipoServicio,
         trafico,
         carga,
-        trompo,   // ✅ NUEVO: se guarda el Trompo (cadena vacía si no se seleccionó)
         ultimaActualizacion: new Date().toISOString(),
         flujo: flujoFinal,
         ...configFormulario,
@@ -1448,15 +1439,6 @@ const EditorFlujoAppSheet = ({
             onChange={setCarga}
             options={OPCIONES_CARGA}
             placeholder="Selecciona…"
-          />
-          {/* ✅ NUEVO: selector "Trompo" (opcional). Mismas opciones que el catálogo (Sí/No).
-              Vacío = el flujo aplica sin importar el trompo y conserva el configId de 3 partes. */}
-          <SelectorCampo
-            label="Trompo"
-            value={trompo}
-            onChange={setTrompo}
-            options={OPCIONES_TROMPO}
-            placeholder="— (cualquiera)"
           />
         </div>
 
@@ -2386,8 +2368,7 @@ export const ConfiguradorStatus = () => {
     return !t ||
       f.tipoServicio?.toLowerCase().includes(t) ||
       f.trafico?.toLowerCase().includes(t) ||
-      f.carga?.toLowerCase().includes(t) ||
-      f.trompo?.toLowerCase().includes(t);   // ✅ NUEVO: el filtro también busca por Trompo
+      f.carga?.toLowerCase().includes(t);
   });
 
   return (
@@ -2425,7 +2406,7 @@ export const ConfiguradorStatus = () => {
         </div>
 
         <input
-          placeholder="Buscar por servicio, tráfico, carga o trompo…"
+          placeholder="Buscar por servicio, tráfico o carga…"
           value={filtro}
           onChange={(e) => setFiltro(e.target.value)}
           style={{
@@ -2453,7 +2434,6 @@ export const ConfiguradorStatus = () => {
                 <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Servicio</th>
                 <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Tráfico</th>
                 <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Carga</th>
-                <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Trompo</th>
                 <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Pasos</th>
                 <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 600 }}>Acción</th>
               </tr>
@@ -2461,7 +2441,7 @@ export const ConfiguradorStatus = () => {
             <tbody>
               {filtrados.length === 0 && (
                 <tr>
-                  <td colSpan={6} style={{ padding: 36, textAlign: 'center', color: '#5f697d' }}>
+                  <td colSpan={5} style={{ padding: 36, textAlign: 'center', color: '#5f697d' }}>
                     No hay flujos guardados todavía.
                   </td>
                 </tr>
@@ -2471,19 +2451,6 @@ export const ConfiguradorStatus = () => {
                   <td style={{ padding: '14px 16px', fontWeight: 500 }}>{f.tipoServicio}</td>
                   <td style={{ padding: '14px 16px', color: '#a9b3c7' }}>{f.trafico}</td>
                   <td style={{ padding: '14px 16px', color: '#a9b3c7' }}>{f.carga}</td>
-                  <td style={{ padding: '14px 16px', color: '#a9b3c7' }}>
-                    {f.trompo
-                      ? <span style={{
-                          background: 'rgba(167,139,250,0.12)',
-                          color: '#cfc1ff',
-                          border: '1px solid rgba(167,139,250,0.3)',
-                          borderRadius: 999,
-                          padding: '2px 10px',
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}>{f.trompo}</span>
-                      : <span style={{ color: '#5f697d' }}>—</span>}
-                  </td>
                   <td style={{ padding: '14px 16px' }}>
                     <span style={{
                       background: 'rgba(96,165,250,0.12)',

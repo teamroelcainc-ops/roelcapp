@@ -35,9 +35,9 @@ export interface CatalogSchema {
 }
 
 // ✅ Opciones de "Cargada / Vacía". DEBEN ser las mismas que el selector de
-//    CARGA del Editor de Flujos (Reglas de Status): Cargada / Vacía / N/A.
+//    CARGA del Editor de Flujos (Reglas de Status): Cargada / Vacía / N/A / Trompo.
 //    Mantener esta constante como única fuente para que coincidan siempre.
-export const OPCIONES_CARGA = ['Cargada', 'Vacía', 'N/A'];
+export const OPCIONES_CARGA = ['Cargada', 'Vacía', 'N/A', 'Trompo'];
 
 export const catalogosConfig: Record<string, CatalogSchema> = {
   aduanas: {
