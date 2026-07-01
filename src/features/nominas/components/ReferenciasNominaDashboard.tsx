@@ -96,6 +96,11 @@ export const ReferenciasNominaDashboard = () => {
   const [ahorroNuevo, setAhorroNuevo] = useState<number | ''>('');
   const [pagoAhorro, setPagoAhorro] = useState<number | ''>('');
 
+  // ✅ NUEVO: set con TODOS los ids de operaciones que ya están dentro de alguna
+  //   factura de cliente creada (colección `facturas_clientes`). Se usa para
+  //   EXCLUIR de la tabla de nómina las operaciones ya facturadas.
+  const [opsFacturadasIds, setOpsFacturadasIds] = useState<Set<string>>(new Set());
+
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -196,6 +201,33 @@ export const ReferenciasNominaDashboard = () => {
     return [];
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // ✅ NUEVO: extractor DEFENSIVO de ids de operación dentro de una factura.
+  //   No conozco con certeza el nombre exacto del campo donde `facturas_clientes`
+  //   guarda sus operaciones, así que se revisan las formas más comunes:
+  //     - operacionesIds / opsIds / operaciones_ids  (array o string CSV)
+  //     - operaciones / ops / operacionesGuardadas    (array de ids o de objetos {id})
+  //   Si una factura no expone sus operaciones en ninguna de estas formas,
+  //   simplemente NO se excluye nada de ella (nunca oculta una op por error).
+  // ─────────────────────────────────────────────────────────────────────────
+  const extraerOpsIdsDeFactura = (f: any): string[] => {
+    if (!f || typeof f !== 'object') return [];
+    const ids = new Set<string>();
+    const pushVal = (v: any) => {
+      if (v == null) return;
+      if (typeof v === 'string') { v.split(',').forEach(s => { const t = s.trim(); if (t) ids.add(t); }); return; }
+      if (typeof v === 'object' && v.id) { ids.add(String(v.id).trim()); return; }
+      const s = String(v).trim(); if (s) ids.add(s);
+    };
+    const camposArray = ['operacionesIds', 'opsIds', 'operaciones_ids', 'operaciones', 'ops', 'operacionesGuardadas'];
+    camposArray.forEach(campo => {
+      const val = f[campo];
+      if (Array.isArray(val)) val.forEach(pushVal);
+      else if (typeof val === 'string') pushVal(val);
+    });
+    return Array.from(ids);
+  };
+
   const mapearOpDetalle = (op: any) => {
     const sueldoTotal = (op.sueldoTotal != null && op.sueldoTotal !== '')
       ? aNum(op.sueldoTotal)
@@ -290,13 +322,37 @@ export const ReferenciasNominaDashboard = () => {
   }, []);
 
   // Operaciones: solo se necesitan en la pestaña "Asignar Operaciones".
+  // ✅ FIX PRINCIPAL: se ELIMINÓ `limit(500)`.
+  //   Antes: query(collection(db,'operaciones'), limit(500)) — sin `orderBy`,
+  //   Firestore devuelve 500 documentos en orden ARBITRARIO (por ID), por lo
+  //   que las operaciones MÁS RECIENTES (p. ej. las de ayer) podían quedar
+  //   fuera del bloque traído y NO aparecían en la tabla. Ahora se cargan TODAS
+  //   las operaciones y el filtrado por operador + el orden se hace en memoria.
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
-    const qOps = query(collection(db, 'operaciones'), limit(500));
-    const unSub = onSnapshot(qOps, (snap) => {
+    const unSub = onSnapshot(collection(db, 'operaciones'), (snap) => {
       const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       ops.sort((a: any, b: any) => (parsearFechaSegura(b.fechaServicio || b.createdAt)?.getTime() || 0) - (parsearFechaSegura(a.fechaServicio || a.createdAt)?.getTime() || 0));
       setOperacionesGlobales(ops);
+    });
+    return () => unSub();
+  }, [activeTab]);
+
+  // ✅ NUEVO: cargar las facturas de cliente para saber qué operaciones YA están
+  //   facturadas y así EXCLUIRLAS de la tabla de nómina. Solo se necesita en la
+  //   pestaña "Asignar Operaciones". Si la colección no existe o no se puede leer,
+  //   el set queda vacío y no se excluye nada (comportamiento seguro).
+  useEffect(() => {
+    if (activeTab !== 'operaciones') return;
+    const unSub = onSnapshot(collection(db, 'facturas_clientes'), (snap) => {
+      const ids = new Set<string>();
+      snap.docs.forEach(d => {
+        extraerOpsIdsDeFactura({ id: d.id, ...(d.data() as any) }).forEach(opId => ids.add(opId));
+      });
+      setOpsFacturadasIds(ids);
+    }, (err) => {
+      console.warn('[Nómina] No se pudo leer facturas_clientes (no se excluirá nada):', err);
+      setOpsFacturadasIds(new Set());
     });
     return () => unSub();
   }, [activeTab]);
@@ -429,13 +485,19 @@ export const ReferenciasNominaDashboard = () => {
     });
   }, [operacionesGlobales, filtroOperador, fechaInicio, fechaFin, filtrosCompletos, operadoresList]);
 
+  // ✅ NUEVO: una operación cuenta como "asignada/no disponible" si ya está en una
+  //   nómina (referenciaNominaId) O si ya está dentro de una factura de cliente.
   const esAsignada = (op: any) => !!op.referenciaNominaId;
+  const esFacturada = (op: any) => opsFacturadasIds.has(op.id);
+  // "Pendiente" para nómina = NO está en nómina y NO está facturada.
+  const esPendienteNomina = (op: any) => !esAsignada(op) && !esFacturada(op);
 
   const conteoOps = useMemo(() => {
-    const pendientes = operacionesBaseFiltro.filter(op => !esAsignada(op)).length;
+    const pendientes = operacionesBaseFiltro.filter(esPendienteNomina).length;
     const asignadas = operacionesBaseFiltro.filter(esAsignada).length;
     return { pendientes, asignadas };
-  }, [operacionesBaseFiltro]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesBaseFiltro, opsFacturadasIds]);
 
   const valorOrdenOp = (op: any, campo: string): string | number => {
     switch (campo) {
@@ -452,8 +514,10 @@ export const ReferenciasNominaDashboard = () => {
 
   const operacionesMostradas = useMemo(() => {
     if (!filtrosCompletos) return [];
+    // ✅ MODIFICADO: "pendientes" ahora excluye también las operaciones ya
+    //   facturadas (esPendienteNomina = no en nómina y no en factura).
     const lista = operacionesBaseFiltro.filter(op =>
-      filtroEstadoOps === 'asignadas' ? esAsignada(op) : !esAsignada(op)
+      filtroEstadoOps === 'asignadas' ? esAsignada(op) : esPendienteNomina(op)
     );
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
@@ -462,7 +526,8 @@ export const ReferenciasNominaDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [operacionesBaseFiltro, filtrosCompletos, filtroEstadoOps, ordenOps]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesBaseFiltro, filtrosCompletos, filtroEstadoOps, ordenOps, opsFacturadasIds]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -1601,7 +1666,6 @@ export const ReferenciasNominaDashboard = () => {
             </button>
           </div>
 
-          {/* ✅ NUEVO (Fix 4): filtro por Fecha de Pago + botones de estado */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px', alignItems: 'flex-end' }}>
             <div style={{ display: 'flex', gap: '10px' }}>
               <button onClick={() => setFiltroEstadoHist('pendientes')}
@@ -1673,7 +1737,6 @@ export const ReferenciasNominaDashboard = () => {
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
                             </button>
                           )}
-                          {/* ✅ NUEVO (Fix 3): botón Editar nómina */}
                           <button title="Editar Nómina" onClick={(e) => abrirEditarNomina(e, r)} style={{ background: 'transparent', border: '1px solid #a371f7', borderRadius: '4px', color: '#a371f7', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
@@ -2027,7 +2090,6 @@ export const ReferenciasNominaDashboard = () => {
                     {campoTotal('Diferencia Aplicable', diferenciaAplicableCalc, '#58a6ff')}
                   </div>
 
-                  {/* ✅ referencias (operaciones) que se están pagando en esta nómina */}
                   <div style={{ marginTop: '20px' }}>
                     <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>
                       Referencias en esta nómina ({detalleSeleccionadas.length})
@@ -2092,7 +2154,6 @@ export const ReferenciasNominaDashboard = () => {
                     {' = saldo '}<b style={{ color: '#f59e0b' }}>{formatoMoneda(saldoPrestamoCalc)}</b>
                   </div>
 
-                  {/* ✅ ahorro con la misma lógica que el préstamo */}
                   {campoNumerico('Ahorro (esta nómina)', ahorroNuevo, setAhorroNuevo)}
                   {campoTotal('Ahorro Acumulado', ahorroAcumuladoTotal, '#c9d1d9')}
                   <div></div>
@@ -2306,7 +2367,6 @@ export const ReferenciasNominaDashboard = () => {
               </div>
             </div>
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
-              {/* ✅ NUEVO (Fix 3): editar desde la ficha */}
               <button onClick={(e) => abrirEditarNomina(e as any, nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#a371f7', cursor: 'pointer', fontWeight: 'bold' }}>✎ Editar Nómina</button>
               <button onClick={() => generarReciboNomina(nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#f37021', cursor: 'pointer', fontWeight: 'bold' }}>Descargar Recibo (PDF)</button>
               <button onClick={() => setNominaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
