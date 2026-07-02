@@ -3,16 +3,10 @@
 // ═══════════════════════════════════════════════════════════════════════
 // CAMBIOS EN ESTA VERSIÓN
 // ═══════════════════════════════════════════════════════════════════════
-// D) VER TODO POR DEFECTO + SEPARAR PENDIENTES/FACTURADAS + FILTRO STATUS:
-//    · "Asignar Operaciones": se cargan TODAS las operaciones completadas
-//      (sin filtro de fecha obligatorio) paginando + caché de sesión. El
-//      rango de fechas pasa a ser OPCIONAL y filtra en memoria.
-//    · Vista segmentada Pendientes / Facturadas / Todas (separa las listas).
-//    · "Historial de Facturas": sin filtro de fechas por defecto (ve TODO) y
-//      con un filtro por status de la factura (Facturado / No Facturado /
-//      Cancelado / Todos).
-// (Se conservan: columnas compartidas, nombres vs IDs, status de factura,
-//  conversión USD/MXN, exportación a Excel, ficha de factura y detalle.)
+// D) VER TODO POR DEFECTO + SEPARAR PENDIENTES/FACTURADAS + FILTRO STATUS.
+// E) EXPORTACIÓN A EXCEL PROFESIONAL (ExcelJS: estilos, colores, logo).
+// F) REMISIÓN EN PDF DESDE REACT (emisor por moneda: USD→Camila, MXN→Rolando)
+//    con encabezado editable ("⚙ Encabezado Remisión").
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -31,7 +25,9 @@ import {
   startAfter,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
-import * as XLSX from 'xlsx';
+import { exportarExcelProfesional } from './exportarExcelProfesional';
+import { generarRemisionPDF } from './generarRemisionPDF';
+import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -51,6 +47,27 @@ const SS_OPS_TTL = 30 * 60 * 1000; // 30 min
 const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
 const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops';
 const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial';
+
+// ✅ (REMISIÓN) Documento de encabezado de remisiones (emisores) en Firestore.
+//    Se guarda en la MISMA colección config_columnas para reusar sus reglas.
+const DOC_REMISION_EMISORES = 'facturacion_remision_emisores';
+const LS_REMISION_EMISORES = 'cfg_remision_emisores_v1';
+
+// Emisor por defecto para remisiones en PESOS (MXN) → Rolando.
+const EMISOR_MXN_DEFAULT: EmisorRemision = {
+  facturaNombre: 'ROLANDO ROBERTO MONTALVO CISNEROS',
+  direccion: 'MAR DE LAS ANTILLAS 947, COL. LA PAZ',
+  ciudadEstado: 'NUEVO LAREDO, TAMPS | (867) 196 4690',
+  email: 'COBRANZA@ROELCA.COM',
+};
+// Emisor por defecto para remisiones en DÓLARES (USD) → Camila.
+// ⚠️ EDITA el nombre y datos reales de Camila en "⚙ Encabezado Remisión".
+const EMISOR_USD_DEFAULT: EmisorRemision = {
+  facturaNombre: 'CAMILA (EDITAR NOMBRE REAL)',
+  direccion: 'MAR DE LAS ANTILLAS 947, COL. LA PAZ',
+  ciudadEstado: 'NUEVO LAREDO, TAMPS | (867) 196 4690',
+  email: 'COBRANZA@ROELCA.COM',
+};
 
 // ✅ Persistencia local (respaldo instantáneo que sobrevive al refresco).
 const LS_COLS_OPS = 'cfgcols_facturacion_ops_v1';
@@ -321,14 +338,11 @@ export const FacturacionClientesDashboard = () => {
 
   const [empresasList, setEmpresasList] = useState<any[]>([]);
 
-  // ✅ Rango de fechas OPCIONAL. Cliente opcional.
   const [fechaDesdeOps, setFechaDesdeOps] = useState('');
   const [fechaHastaOps, setFechaHastaOps] = useState('');
-  // ✅ Historial: por defecto SIN filtro de fechas (TODAS).
   const [fechaDesdeHist, setFechaDesdeHist] = useState('');
   const [fechaHastaHist, setFechaHastaHist] = useState('');
   const [textoBuscarRemolqueOps, setTextoBuscarRemolqueOps] = useState('');
-  // ✅ (D) Vista de "Asignar Operaciones": separa pendientes de facturadas.
   const [vistaOps, setVistaOps] = useState<'pendientes' | 'facturadas' | 'todas'>('pendientes');
   const [topeOpsAlcanzado, setTopeOpsAlcanzado] = useState(false);
   const [filtroCliente, setFiltroCliente] = useState('');
@@ -341,7 +355,6 @@ export const FacturacionClientesDashboard = () => {
   const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
 
   const [textoBuscarFactura, setTextoBuscarFactura] = useState('');
-  // ✅ (D) Filtro por status de la factura en el Historial.
   const [filtroStatusFactura, setFiltroStatusFactura] = useState<string>('Todos');
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   const [filtroTipoOp, setFiltroTipoOp] = useState('');
@@ -382,7 +395,6 @@ export const FacturacionClientesDashboard = () => {
   const [opInfoMap, setOpInfoMap] = useState<Record<string, any>>({});
   const [modalDiagnostico, setModalDiagnostico] = useState(false);
 
-  // ✅ Edición de factura
   const [facturaEditando, setFacturaEditando] = useState<any | null>(null);
   const [guardandoEdit, setGuardandoEdit] = useState(false);
   const [editInvoice, setEditInvoice] = useState('');
@@ -392,27 +404,29 @@ export const FacturacionClientesDashboard = () => {
   const [editMoneda, setEditMoneda] = useState('');
   const [editTotal, setEditTotal] = useState('');
 
-  // ✅ Gestión de una operación FACTURADA (editar # de factura / quitar).
   const [gestionOp, setGestionOp] = useState<any | null>(null);
   const [gestionInvoice, setGestionInvoice] = useState('');
   const [guardandoGestionOp, setGuardandoGestionOp] = useState(false);
-  // ✅ Agregar referencia (operación pendiente) a una factura desde el Historial.
   const [agregarRefFactura, setAgregarRefFactura] = useState<any | null>(null);
   const [busquedaRefPendiente, setBusquedaRefPendiente] = useState('');
   const [agregandoRef, setAgregandoRef] = useState(false);
+
+  // ✅ (REMISIÓN) Encabezados (emisores) por moneda + preview editable.
+  const [emisorMXN, setEmisorMXN] = useState<EmisorRemision>(EMISOR_MXN_DEFAULT);
+  const [emisorUSD, setEmisorUSD] = useState<EmisorRemision>(EMISOR_USD_DEFAULT);
+  const [modalEmisores, setModalEmisores] = useState(false);
+  const [guardandoEmisores, setGuardandoEmisores] = useState(false);
+  const [remisionPreview, setRemisionPreview] = useState<any | null>(null);
+  const [cargandoRemision, setCargandoRemision] = useState(false);
 
   // Formateadores
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
-  // ✅ Fecha tolerante a varios formatos (ISO, DD/MM/YYYY, D/M/YY, con guiones,
-  //    Timestamp de Firestore). NUNCA muestra "Invalid Date": si no la entiende,
-  //    devuelve el valor crudo.
   const formatearFechaSpanish = (fechaString: any) => {
     if (!fechaString) return '-';
     const fmt = (d: Date) => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
-    // Firestore Timestamp u objeto con toDate()/seconds
     if (typeof fechaString === 'object') {
       try {
         if (typeof fechaString.toDate === 'function') { const d = fechaString.toDate(); return isNaN(d.getTime()) ? '-' : fmt(d); }
@@ -423,21 +437,21 @@ export const FacturacionClientesDashboard = () => {
     const s = String(fechaString).trim();
     if (!s) return '-';
     let y = '', mo = '', da = '';
-    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);            // ISO YYYY-MM-DD
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (m) { y = m[1]; mo = m[2]; da = m[3]; }
-    if (!y) { m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);     // YYYY/MM/DD
+    if (!y) { m = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
       if (m) { y = m[1]; mo = m[2]; da = m[3]; } }
-    if (!y) { m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/); // DD/MM/YYYY (o con -)
+    if (!y) { m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
       if (m) { da = m[1]; mo = m[2]; y = m[3]; } }
-    if (!y) { m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/); // DD/MM/YY → 20YY
+    if (!y) { m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})(?!\d)/);
       if (m) { da = m[1]; mo = m[2]; y = '20' + m[3]; } }
     if (y && mo && da) {
       const d = new Date(`${y}-${mo.padStart(2, '0')}-${da.padStart(2, '0')}T00:00:00`);
       if (!isNaN(d.getTime())) return fmt(d);
     }
-    const d2 = new Date(s); // último intento (deja que JS lo interprete)
+    const d2 = new Date(s);
     if (!isNaN(d2.getTime())) return fmt(d2);
-    return s; // valor crudo en lugar de "Invalid Date"
+    return s;
   };
   const formatearFechaHora = (isoString: string | undefined | null) => {
     if (!isoString) return '-';
@@ -476,9 +490,6 @@ export const FacturacionClientesDashboard = () => {
     return mapaCatalogos[String(val)] || val;
   };
 
-  // ✅ Status que se deben FACTURAR: los completados/terminados (IDs conocidos)
-  //    MÁS cualquier status cuyo nombre en el catálogo sea "Falso" (falso flete),
-  //    que también se cobra. Se detecta dinámicamente para no depender de un ID fijo.
   const STATUS_FACTURABLES = useMemo(() => {
     const ids = new Set<string>(STATUS_COMPLETADOS);
     Object.entries(mapaCatalogos).forEach(([id, nombre]) => {
@@ -498,7 +509,6 @@ export const FacturacionClientesDashboard = () => {
     return '-';
   };
 
-  // Empresas: caché-primero, getDocs una vez si falta.
   useEffect(() => {
     const cache = leerCacheLocal('empresas');
     if (cache && cache.length) { setEmpresasList(cache); return; }
@@ -515,7 +525,6 @@ export const FacturacionClientesDashboard = () => {
     return () => { activo = false; };
   }, []);
 
-  // Config de columnas COMPARTIDA (Firestore + localStorage).
   useEffect(() => {
     const aplicarOps = (guardadas: any) => {
       let cols = aplicarConfigColumnasGuardada(COLUMNAS_OPS_BASE, guardadas);
@@ -565,6 +574,45 @@ export const FacturacionClientesDashboard = () => {
     return () => { activo = false; };
   }, []);
 
+  // ✅ (REMISIÓN) Cargar encabezados (emisores) desde localStorage + Firestore.
+  useEffect(() => {
+    try {
+      const ls = localStorage.getItem(LS_REMISION_EMISORES);
+      if (ls) {
+        const obj = JSON.parse(ls);
+        if (obj?.mxn) setEmisorMXN({ ...EMISOR_MXN_DEFAULT, ...obj.mxn });
+        if (obj?.usd) setEmisorUSD({ ...EMISOR_USD_DEFAULT, ...obj.usd });
+      }
+    } catch { /* noop */ }
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_REMISION_EMISORES));
+        if (!activo || !snap.exists()) return;
+        const data = snap.data() as any;
+        if (data?.mxn) setEmisorMXN({ ...EMISOR_MXN_DEFAULT, ...data.mxn });
+        if (data?.usd) setEmisorUSD({ ...EMISOR_USD_DEFAULT, ...data.usd });
+        try { localStorage.setItem(LS_REMISION_EMISORES, JSON.stringify({ mxn: data?.mxn, usd: data?.usd })); } catch { /* noop */ }
+      } catch (e) { console.error('Error cargando encabezados de remisión:', e); }
+    })();
+    return () => { activo = false; };
+  }, []);
+
+  const guardarEmisores = async () => {
+    setGuardandoEmisores(true);
+    try {
+      const payload = { mxn: emisorMXN, usd: emisorUSD, updatedAt: new Date().toISOString() };
+      try { localStorage.setItem(LS_REMISION_EMISORES, JSON.stringify({ mxn: emisorMXN, usd: emisorUSD })); } catch { /* noop */ }
+      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_REMISION_EMISORES), payload);
+      setModalEmisores(false);
+    } catch (e) {
+      console.error('Error guardando encabezados de remisión:', e);
+      alert('No se pudo guardar el encabezado de remisiones para todos los usuarios.\nRevisa tus permisos de escritura en Firestore (colección config_columnas).');
+    } finally {
+      setGuardandoEmisores(false);
+    }
+  };
+
   const guardarConfigColumnasOps = async () => {
     setGuardandoCols(true);
     try {
@@ -596,7 +644,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // Cargar TODAS las facturas al MONTAR (paginado + caché).
   const guardarCacheFacturas = (docs: any[]) => {
     try { sessionStorage.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
@@ -654,13 +701,10 @@ export const FacturacionClientesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facturasGlobales]);
 
-  // ✅ (D) Cargar TODAS las operaciones completadas (sin filtro de fecha).
   const guardarCacheOps = (docs: any[]) => {
     try { sessionStorage.setItem(SS_OPS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
 
-  // ✅ Descarga TODAS las operaciones completadas (paginado + caché). Reutilizable
-  //    desde el efecto y desde el Historial (para adjuntar referencias pendientes).
   const descargarOpsCompletadas = async (forzar = false) => {
     if (!forzar && operacionesGlobales.length > 0) return;
     if (!forzar) {
@@ -746,7 +790,6 @@ export const FacturacionClientesDashboard = () => {
     descargarOpsCompletadas(true);
   };
 
-  // Traductor de clientes / buscador
   const getNombreCliente = (idOrName: string) => {
     if (!idOrName) return '-';
     const found = empresasList.find(e => e.id === idOrName || e.nombre === idOrName || e.nombreCorto === idOrName);
@@ -802,7 +845,6 @@ export const FacturacionClientesDashboard = () => {
     return idMoneda ? String(idMoneda) : '';
   };
 
-  // ✅ Resuelve un valor de moneda (ID, 'USD'/'MXN', N/A o nombre de catálogo).
   const resolverMoneda = (val: any): string => {
     const s = String(val || '').trim();
     if (!s) return '';
@@ -888,7 +930,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ Clave de fecha ordenable (YYYYMMDD) tolerante a formatos (ISO, DD/MM/YYYY, etc.).
   const fechaOrdenKey = (val: any): string => {
     const s = String(val || '').trim();
     if (!s) return '00000000';
@@ -905,8 +946,6 @@ export const FacturacionClientesDashboard = () => {
     return s;
   };
 
-  // ✅ Clave "natural" de la referencia: rellena cada bloque de dígitos a 12,
-  //    para que el consecutivo se compare como número (…-009 < …-010 < …-011).
   const refNaturalKey = (op: any): string => {
     const r = String(op.numReferencia || op.referencia || op.ref || op.id || '');
     return r.toLowerCase().replace(/\d+/g, (n) => n.padStart(12, '0'));
@@ -939,10 +978,8 @@ export const FacturacionClientesDashboard = () => {
     return true;
   };
 
-  // ✅ (D) Filtro por cliente en memoria (antes se hacía en la consulta).
   const coincideClienteOp = (op: any) => !filtroCliente || String(op.clientePaga || op.clienteId || '') === filtroCliente;
 
-  // ✅ Filtro por TIPO DE OPERACIÓN (Logística, Fletes, Transfer, etc.).
   const tipoOpNombre = (op: any): string => txt(op.tipoOperacionNombre, op.tipoOperacionId);
   const tiposOperacionDisponibles = useMemo(() => {
     const set = new Set<string>();
@@ -980,8 +1017,6 @@ export const FacturacionClientesDashboard = () => {
       let cmp = (typeof va === 'number' && typeof vb === 'number') ? (va - vb) : String(va).localeCompare(String(vb));
       cmp *= dir;
       if (cmp !== 0) return cmp;
-      // ✅ Desempate SIEMPRE por referencia (consecutivo ascendente).
-      //    Así, con "Fecha Servicio ▼ Desc", dentro de cada fecha quedan en orden 001, 002, 003…
       return refNaturalKey(a).localeCompare(refNaturalKey(b));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1031,26 +1066,6 @@ export const FacturacionClientesDashboard = () => {
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
   const flechaOps = (campo: string) => ordenOps.campo === campo ? (ordenOps.dir === 'asc' ? ' ▲' : ' ▼') : '';
 
-  const valorCeldaOps = (op: any, key: string, m: any) => {
-    switch (key) {
-      case 'factura': { const inv = invoiceDeOp(op); return inv || (esFacturada(op) ? 'Facturada' : 'Por facturar'); }
-      case 'ref': return op.numReferencia || op.referencia || op.ref || op.id;
-      case 'fechaServicio': return formatearFechaSpanish(op.fechaServicio || op.createdAt);
-      case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId);
-      case 'cartaPorte': return op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-';
-      case 'destino': return op.destinoNombre || op.destino || '-';
-      case 'moneda': return op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar);
-      case 'subtotal': return m.subtotal;
-      case 'dolares': return m.dol;
-      case 'pesos': return m.pes;
-      case 'conv': return m.conv;
-      default: {
-        const col = columnasOps.find(c => c.id === key);
-        return formatearValorGenericoOp(valorGenericoOp(op, col), col?.tipo);
-      }
-    }
-  };
-
   const renderCeldaOps = (op: any, key: string, m: any) => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
@@ -1096,22 +1111,71 @@ export const FacturacionClientesDashboard = () => {
     setColumnasOps(nuevas);
   };
 
-  const exportarExcelOps = () => {
+  // ✅ (E) Exportación PROFESIONAL a Excel (ExcelJS con estilos + logo).
+  const exportarExcelOps = async () => {
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
     const cols = columnasOps.filter(c => c.visible);
     if (cols.length === 0) return alert('Selecciona al menos una columna para exportar.');
-    const datos = operacionesMostradas.map(op => {
+
+    const tipoExcel = (c: any): 'texto' | 'fecha' | 'fechaHora' | 'monto' | 'numero' => {
+      if (['subtotal', 'dolares', 'pesos', 'conv'].includes(c.id)) return 'monto';
+      if (c.id === 'fechaServicio') return 'fecha';
+      if (c.tipo === 'monto') return 'monto';
+      if (c.tipo === 'numero') return 'numero';
+      if (c.tipo === 'fecha') return 'fecha';
+      if (c.tipo === 'fechaHora') return 'fechaHora';
+      return 'texto';
+    };
+    const columnas = cols.map(c => ({ key: c.id, label: c.label, tipo: tipoExcel(c) }));
+
+    const valorRaw = (op: any, key: string, m: any): any => {
+      switch (key) {
+        case 'factura': { const inv = invoiceDeOp(op); return inv || (esFacturada(op) ? 'Facturada' : 'Por facturar'); }
+        case 'ref': return op.numReferencia || op.referencia || op.ref || op.id;
+        case 'fechaServicio': return op.fechaServicio || op.createdAt || '';
+        case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId);
+        case 'cartaPorte': return op.cartaPorte || op.numeroCartaPorte || op.numDoda || '';
+        case 'destino': return op.destinoNombre || op.destino || '';
+        case 'moneda': return op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar);
+        case 'subtotal': return Number(m.subtotal) || 0;
+        case 'dolares': return Number(m.dol) || 0;
+        case 'pesos': return Number(m.pes) || 0;
+        case 'conv': return Number(m.conv) || 0;
+        default: {
+          const col = columnasOps.find(c => c.id === key);
+          const raw = valorGenericoOp(op, col);
+          if (col?.tipo === 'monto' || col?.tipo === 'numero') return Number(raw) || 0;
+          if (col?.tipo === 'fecha' || col?.tipo === 'fechaHora') return raw || '';
+          return String(resolverNombre(raw) ?? '');
+        }
+      }
+    };
+
+    const filas = operacionesMostradas.map(op => {
       const m = obtenerMontoOperacion(op);
       const fila: any = {};
-      cols.forEach(col => { fila[col.label] = valorCeldaOps(op, col.id, m); });
+      cols.forEach(c => { fila[c.id] = valorRaw(op, c.id, m); });
       return fila;
     });
-    const ws = XLSX.utils.json_to_sheet(datos);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Ops_Por_Facturar');
-    const cli = (filtroCliente ? (nombreClienteSeleccionado || 'cliente') : 'todos').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
-    const rango = (fechaDesdeOps || fechaHastaOps) ? `_${fechaDesdeOps || 'inicio'}_a_${fechaHastaOps || 'hoy'}` : '_todas';
-    XLSX.writeFile(wb, `Operaciones_${vistaOps}_${cli}${rango}.xlsx`);
+
+    const cliTxt = filtroCliente ? (nombreClienteSeleccionado || 'Cliente') : 'Todos los clientes';
+    const rangoTxt = (fechaDesdeOps || fechaHastaOps) ? `${fechaDesdeOps || 'inicio'} a ${fechaHastaOps || 'hoy'}` : 'Todas las fechas';
+    const vistaTxt = vistaOps === 'facturadas' ? 'Facturadas' : vistaOps === 'todas' ? 'Todas' : 'Pendientes';
+    const cliFile = cliTxt.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+
+    try {
+      await exportarExcelProfesional({
+        nombreArchivo: `Facturacion_Operaciones_${vistaTxt}_${cliFile}_${new Date().toISOString().split('T')[0]}.xlsx`,
+        tituloReporte: 'Reporte de Facturación · Operaciones',
+        subtitulo: `${vistaTxt}  ·  Cliente: ${cliTxt}  ·  ${rangoTxt}  ·  ${filas.length} operaciones`,
+        nombreHoja: 'Operaciones',
+        columnas,
+        filas,
+      });
+    } catch (e) {
+      console.error('Error exportando Excel de operaciones:', e);
+      alert('No se pudo generar el Excel.');
+    }
   };
 
   const toggleSeleccion = (id: string) => {
@@ -1298,7 +1362,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ Abrir / guardar edición de una factura (datos generales).
   const abrirEditarFactura = (e: React.MouseEvent, f: any) => {
     e.stopPropagation();
     setFacturaEditando(f);
@@ -1326,8 +1389,6 @@ export const FacturacionClientesDashboard = () => {
         updatedAt: new Date().toISOString(),
       };
       const batch = writeBatch(db);
-      // El total se coloca completo en el PRIMER doc del grupo y 0 en el resto,
-      // para que la suma del grupo coincida con lo capturado.
       ids.forEach((id, idx) => {
         batch.set(doc(db, 'facturas_clientes', id), { ...baseUpdate, subtotalFactura: idx === 0 ? totalNum : 0 }, { merge: true });
       });
@@ -1337,7 +1398,6 @@ export const FacturacionClientesDashboard = () => {
         const esPrimero = f.id === ids[0];
         return normalizarFactura({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0 });
       }));
-      // Si la ficha de esa factura está abierta, refrescarla.
       setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? { ...prev, ...baseUpdate, subtotalFactura: totalNum } : prev);
       setFacturaEditando(null);
     } catch (e) {
@@ -1348,11 +1408,9 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ Recalcula la lista de remolques a partir de las operaciones guardadas.
   const remolquesDeGuardadas = (guardadas: any[]): string[] =>
     Array.from(new Set((guardadas || []).map((o: any) => String(o?.remolque || '')).filter(r => r && r !== '-')));
 
-  // ✅ Construye el "resumen estable" de una operación para guardarla en la factura.
   const buildResumenOp = (op: any) => {
     const m = obtenerMontoOperacion(op);
     return {
@@ -1364,7 +1422,6 @@ export const FacturacionClientesDashboard = () => {
     };
   };
 
-  // ✅ Aplica una lista de cambios { tipo:'update'|'delete'|'create', id, data } a las facturas en memoria.
   const aplicarCambiosFacturas = (cambios: any[]) => {
     setFacturasGlobales(prev => {
       let arr = [...prev];
@@ -1377,14 +1434,12 @@ export const FacturacionClientesDashboard = () => {
     });
   };
 
-  // ✅ Abrir el modal de gestión para una operación facturada.
   const abrirGestionOp = (e: React.MouseEvent, op: any) => {
     e.stopPropagation();
     setGestionOp(op);
     setGestionInvoice(invoiceDeOp(op) || '');
   };
 
-  // ✅ QUITAR una operación de su(s) factura(s): la libera (vuelve a Pendientes).
   const quitarOpDeFactura = async (op: any) => {
     const opId = String(op.id);
     const refTxt = op.numReferencia || op.referencia || op.ref || opId.substring(0, 6);
@@ -1422,9 +1477,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ EDITAR el # de factura de una operación: la mueve a la factura con ese
-  //    invoice (del mismo cliente). Si no existe, la crea; si la factura origen
-  //    queda vacía, se elimina. Si ya existe, fusiona (suma) la operación.
   const editarInvoiceDeOp = async (op: any, nuevoInvoiceRaw: string) => {
     const nuevoInvoice = String(nuevoInvoiceRaw || '').trim();
     if (!nuevoInvoice) return alert('Captura un número de factura.');
@@ -1436,7 +1488,6 @@ export const FacturacionClientesDashboard = () => {
       const batch = writeBatch(db);
       const cambios: any[] = [];
 
-      // Resumen del op (de la factura origen si existe; si no, calculado)
       let resumenOrigen: any = null;
       let metaCarry: any = null;
       for (const f of facturasConOp) {
@@ -1447,7 +1498,6 @@ export const FacturacionClientesDashboard = () => {
       if (!resumenOrigen) resumenOrigen = buildResumenOp(op);
       const montoOp = Number(resumenOrigen.monto) || 0;
 
-      // 1) Quitar de las facturas origen
       for (const f of facturasConOp) {
         const ids = (f.operacionesIds || []).map(String).filter((id: string) => id !== opId);
         const guardadas = (f.operacionesGuardadas || []).filter((o: any) => String(o.id) !== opId);
@@ -1462,7 +1512,6 @@ export const FacturacionClientesDashboard = () => {
         }
       }
 
-      // 2) Agregar a la factura destino (existente con ese invoice + cliente, o nueva)
       const target = facturasGlobales.find(f =>
         String(f.invoice || '').trim().toLowerCase() === nuevoInvoice.toLowerCase() &&
         String(f.clienteId || '') === clienteId &&
@@ -1499,7 +1548,6 @@ export const FacturacionClientesDashboard = () => {
         cambios.push({ tipo: 'create', id: targetId, data });
       }
 
-      // 3) Actualizar la operación
       batch.update(doc(db, 'operaciones', opId), { facturaClienteId: targetId, facturaClienteInvoice: nuevoInvoice, facturado: true });
       await batch.commit();
       aplicarCambiosFacturas(cambios);
@@ -1513,10 +1561,8 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ AGREGAR una operación PENDIENTE a una factura existente (desde el Historial).
   const agregarOpAFactura = async (facturaGrupo: any, op: any) => {
     const opId = String(op.id);
-    // Trabajamos sobre el documento RAW primario del grupo (no sobre la suma agrupada).
     const rawId = (Array.isArray(facturaGrupo.__groupIds) && facturaGrupo.__groupIds.length) ? facturaGrupo.__groupIds[0] : facturaGrupo.id;
     const rawDoc = facturasGlobales.find(f => f.id === rawId) || facturaGrupo;
     const resumen = buildResumenOp(op);
@@ -1540,7 +1586,6 @@ export const FacturacionClientesDashboard = () => {
       await batch.commit();
       setFacturasGlobales(prev => prev.map(f => f.id === rawId ? normalizarFactura({ ...f, ...data }) : f));
       setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, facturaClienteId: rawId, facturaClienteInvoice: rawDoc.invoice || facturaGrupo.invoice, facturado: true } : o));
-      // Refrescar la ficha/el modal de agregar en memoria (vista agrupada)
       const aplicarEnGrupo = (g: any) => {
         if (!g) return g;
         const mismoGrupo = (Array.isArray(g.__groupIds) ? g.__groupIds : [g.id]).includes(rawId) || g.id === facturaGrupo.id;
@@ -1560,7 +1605,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // ✅ Candidatos pendientes (no facturados) para adjuntar a una factura.
   const candidatosPendientes = useMemo(() => {
     if (!agregarRefFactura) return [];
     const clienteId = String(agregarRefFactura.clienteId || '');
@@ -1612,7 +1656,6 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  // Historial: orden + paginación
   const valorOrdenFac = (f: any, campo: string): string | number => {
     switch (campo) {
       case 'statusFactura': return String(f.statusFactura || '').toLowerCase();
@@ -1715,7 +1758,6 @@ export const FacturacionClientesDashboard = () => {
     return { cuenta: historialOrdenado.length, totalUSD, totalMXN, totalSinMoneda, totalOps };
   }, [historialOrdenado]);
 
-  // ✅ (D) Conteos por status (sobre el historial filtrado salvo el status).
   const conteoStatus = useMemo(() => {
     const q = textoBuscarFactura.trim().toLowerCase();
     const coincideTexto = (f: any) => {
@@ -1748,8 +1790,6 @@ export const FacturacionClientesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facturasGlobales, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist]);
 
-  // ✅ Lista de botones de status: 'Todos' + todos los status reales presentes
-  //    (orden canónico Facturado / No Facturado / Cancelado y luego el resto).
   const statusBotones = useMemo(() => {
     const orden = ['Facturado', 'No Facturado', 'Cancelado'];
     const otros = Object.keys(conteoStatus).filter(k => k !== 'Todos');
@@ -1770,8 +1810,6 @@ export const FacturacionClientesDashboard = () => {
   const indexFirst = indexLast - registrosPorPagina;
   const registrosVisibles = historialOrdenado.slice(indexFirst, indexLast);
 
-  // ✅ Una referencia "real" luce como LO-050226-19 / TR-080126-13 (letras + dígitos),
-  //    NO como un id/hex (79578f5d, a9e71d43...). Esto evita mostrar IDs crudos.
   const pareceReferencia = (s: any): boolean => /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(String(s || '').trim());
 
   useEffect(() => {
@@ -1783,15 +1821,15 @@ export const FacturacionClientesDashboard = () => {
     const considerar = (id: string) => {
       const k = String(id || '').trim();
       if (!k || opInfoMap[k]) return;
-      if (pareceReferencia(k)) return;   // ya es una referencia legible
-      if (k.length < 6) return;          // demasiado corto para ser un id de documento
+      if (pareceReferencia(k)) return;
+      if (k.length < 6) return;
       faltantes.add(k);
     };
     const considerarValor = (valor: any) => String(valor || '').split(/[,\s]+/).forEach(t => considerar(t));
     fuentes.forEach((f: any) => {
       (Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => {
         considerar(String(op?.id || ''));
-        considerarValor(op?.ref);        // por si el "ref" guardado es en realidad uno o varios ids
+        considerarValor(op?.ref);
       });
       (Array.isArray(f.operacionesIds) ? f.operacionesIds : []).forEach((id: any) => considerar(String(id || '')));
     });
@@ -1823,20 +1861,16 @@ export const FacturacionClientesDashboard = () => {
 
   const refDeOp = (op: any): string => {
     const id = String(op?.id || '');
-    // 1) Valores directos del op que ya parezcan referencia real.
     const directos = [op?.numReferencia, op?.referencia, op?.ref].map((v: any) => String(v || '')).filter(Boolean);
     const refDirecta = directos.find(pareceReferencia);
     if (refDirecta) return refDirecta;
-    // 2) Referencia del documento principal resuelto.
     const info = opInfoMap[id];
     if (info?.ref && pareceReferencia(String(info.ref))) return String(info.ref);
-    // 3) Resolver por tokens (ids) presentes en el id o en los valores directos.
     const tokens = new Set<string>();
     [id, ...directos].forEach(v => String(v).split(/[,\s]+/).forEach(t => { if (t) tokens.add(t); }));
     const resueltas: string[] = [];
     tokens.forEach(t => { const i = opInfoMap[t]; if (i?.ref && pareceReferencia(String(i.ref))) resueltas.push(String(i.ref)); });
     if (resueltas.length) return Array.from(new Set(resueltas)).join(', ');
-    // 4) Último recurso: lo que haya (puede ser un id si la operación no tiene referencia).
     return directos[0] || (info?.ref ? String(info.ref) : '') || id;
   };
 
@@ -1853,25 +1887,6 @@ export const FacturacionClientesDashboard = () => {
       if (nom && nom !== f.clienteId) return nom;
     }
     return '-';
-  };
-
-  const valorCeldaFactura = (f: any, colId: string): any => {
-    switch (colId) {
-      case 'statusFactura': return f.statusFactura || 'Facturado';
-      case 'invoice': return f.invoice || '';
-      case 'fecha': return formatearFechaSpanish(f.fecha);
-      case 'cliente': return nombreClienteFactura_(f);
-      case 'moneda': return monedaFacturaMostrar(f);
-      case 'facturaCcp': return f.facturaCcp || '-';
-      case 'cantOps': return f.operacionesIds?.length || 0;
-      case 'referencias':
-        return Array.isArray(f.operacionesGuardadas)
-          ? f.operacionesGuardadas.map((op: any) => refDeOp(op)).filter(Boolean).join(', ')
-          : '-';
-      case 'total': return Number(f.subtotalFactura) || 0;
-      case 'createdAt': return f.createdAt ? formatearFechaHora(f.createdAt) : '-';
-      default: return '-';
-    }
   };
 
   const renderCeldaFactura = (f: any, colId: string) => {
@@ -1906,20 +1921,191 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  const exportarCSV = () => {
+  // ✅ (E) Exportación PROFESIONAL a Excel del Historial (ExcelJS con estilos + logo).
+  const exportarCSV = async () => {
     if (historialOrdenado.length === 0) return alert('No hay datos para exportar.');
     const columnasVisibles = columnasFactura.filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
-    const datosExcel = historialOrdenado.map(f => {
+
+    const tipoExcel = (id: string): 'texto' | 'fecha' | 'fechaHora' | 'monto' | 'numero' => {
+      if (id === 'total') return 'monto';
+      if (id === 'fecha') return 'fecha';
+      if (id === 'createdAt') return 'fechaHora';
+      if (id === 'cantOps') return 'numero';
+      return 'texto';
+    };
+    const columnas = columnasVisibles.map(c => ({ key: c.id, label: c.label, tipo: tipoExcel(c.id) }));
+
+    const valorRaw = (f: any, colId: string): any => {
+      switch (colId) {
+        case 'statusFactura': return f.statusFactura || 'Facturado';
+        case 'invoice': return f.invoice || '';
+        case 'fecha': return f.fecha || '';
+        case 'cliente': return nombreClienteFactura_(f);
+        case 'moneda': return monedaFacturaMostrar(f);
+        case 'facturaCcp': return f.facturaCcp || '';
+        case 'cantOps': return Number(f.operacionesIds?.length || 0);
+        case 'referencias': return Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas.map((op: any) => refDeOp(op)).filter(Boolean).join(', ') : '';
+        case 'total': return Number(f.subtotalFactura) || 0;
+        case 'createdAt': return f.createdAt || '';
+        default: return '';
+      }
+    };
+
+    const filas = historialOrdenado.map(f => {
       const fila: any = {};
-      columnasVisibles.forEach(col => { fila[col.label] = valorCeldaFactura(f, col.id); });
+      columnasVisibles.forEach(col => { fila[col.id] = valorRaw(f, col.id); });
       return fila;
     });
-    const worksheet = XLSX.utils.json_to_sheet(datosExcel);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Facturas_Clientes');
-    XLSX.writeFile(workbook, `Facturas_Clientes_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+    const cliTxt = filtroCliente ? (nombreClienteSeleccionado || 'Cliente') : 'Todos los clientes';
+    const rangoTxt = (fechaDesdeHist || fechaHastaHist) ? `${fechaDesdeHist || 'inicio'} a ${fechaHastaHist || 'hoy'}` : 'Todas las fechas';
+    const statusTxt = filtroStatusFactura && filtroStatusFactura !== 'Todos' ? filtroStatusFactura : 'Todos los status';
+
+    try {
+      await exportarExcelProfesional({
+        nombreArchivo: `Facturas_Clientes_${new Date().toISOString().split('T')[0]}.xlsx`,
+        tituloReporte: 'Reporte de Facturación · Facturas',
+        subtitulo: `${statusTxt}  ·  Cliente: ${cliTxt}  ·  ${rangoTxt}  ·  ${filas.length} facturas`,
+        nombreHoja: 'Facturas',
+        columnas,
+        filas,
+      });
+    } catch (e) {
+      console.error('Error exportando Excel de facturas:', e);
+      alert('No se pudo generar el Excel.');
+    }
   };
+
+  // ✅ (F) Preparar la remisión de una factura → abre el modal de vista previa.
+  //    Emisor según moneda: USD → Camila (emisorUSD), MXN → Rolando (emisorMXN).
+  const abrirRemision = async (f: any) => {
+    if (!f) return;
+    setCargandoRemision(true);
+    try {
+      const monRaw = monedaFacturaMostrar(f).toUpperCase();
+      const esUSD = monRaw === 'USD';
+      const emisor = esUSD ? emisorUSD : emisorMXN;
+
+      const ids = (Array.from(new Set((f.operacionesIds || []).map((x: any) => String(x)))) as string[]).filter(Boolean).slice(0, 60);
+      const byId = new Map<string, any>();
+      for (let i = 0; i < ids.length; i += 30) {
+        const chunk = ids.slice(i, i + 30);
+        try {
+          const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
+          snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...(d.data() as any) }));
+        } catch (e) { console.warn('No se pudieron leer operaciones para la remisión:', e); }
+      }
+
+      const guardadas: any[] = Array.isArray(f.operacionesGuardadas) && f.operacionesGuardadas.length
+        ? f.operacionesGuardadas
+        : ids.map((id) => ({ id }));
+
+      const filas = guardadas.map((g: any) => {
+        const o = byId.get(String(g.id)) || {};
+        const equipoUnidad = txt(o.unidadNombre, o.unidad);
+        const equipo = equipoUnidad !== '-' ? equipoUnidad : txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque);
+        const importe = Number(g.monto) || (o.id ? obtenerMontoOperacion(o).conv : 0) || 0;
+        const ref = refDeOp({ ...g, ...o }) || o.numReferencia || g.ref || '';
+        const fechaFmt = formatearFechaSpanish(o.fechaServicio || o.createdAt || '');
+        const org = txt(o.origenNombre, o.origen);
+        const dst = txt(o.destinoNombre, o.destino);
+        return {
+          ref,
+          fecha: fechaFmt === '-' ? '' : fechaFmt,
+          equipo: equipo === '-' ? '' : equipo,
+          origen: org === '-' ? '' : org,
+          destino: dst === '-' ? '' : dst,
+          descripcion: o.descripcionServicio || o.observacionesEjecutivo || o.descripcionMercancia || '',
+          importe,
+        };
+      });
+
+      const totalCalc = filas.reduce((s: number, r: any) => s + (Number(r.importe) || 0), 0);
+      const total = totalCalc > 0 ? totalCalc : (Number(f.subtotalFactura) || 0);
+
+      const emp: any = empresasList.find(e => e.id === f.clienteId) || {};
+
+      setRemisionPreview({
+        esUSD,
+        emisorNombre: emisor.facturaNombre,
+        emisorDireccion: emisor.direccion,
+        emisorCiudadEstado: emisor.ciudadEstado,
+        emisorEmail: emisor.email,
+        numero: f.invoice || String(f.id || ''),
+        fecha: String(f.fecha || '').slice(0, 10),
+        clienteNombre: f.clienteNombre || getNombreCliente(f.clienteId) || '',
+        diasCredito: String(emp.diasCredito ?? emp.credito ?? emp.diasDeCredito ?? ''),
+        direccion: String(emp.direccion ?? emp.domicilio ?? emp.calle ?? ''),
+        numExtInt: String(emp.numExtInt ?? emp.numeroExterior ?? emp.numExt ?? ''),
+        colonia: String(emp.colonia ?? ''),
+        ciudad: String(emp.ciudad ?? emp.municipio ?? ''),
+        moneda: esUSD ? 'Dólares' : 'Pesos',
+        observaciones: '',
+        fechaTipoCambio: '',
+        tipoCambio: '',
+        total,
+        filas,
+      });
+    } catch (e) {
+      console.error('Error preparando la remisión:', e);
+      alert('No se pudo preparar la remisión.');
+    } finally {
+      setCargandoRemision(false);
+    }
+  };
+
+  const generarPDFDeRemision = () => {
+    if (!remisionPreview) return;
+    const data: RemisionData = {
+      emisor: {
+        facturaNombre: remisionPreview.emisorNombre || '',
+        direccion: remisionPreview.emisorDireccion || '',
+        ciudadEstado: remisionPreview.emisorCiudadEstado || '',
+        email: remisionPreview.emisorEmail || '',
+      },
+      numero: remisionPreview.numero || '',
+      fecha: remisionPreview.fecha || '',
+      clienteNombre: remisionPreview.clienteNombre || '',
+      diasCredito: remisionPreview.diasCredito || '',
+      direccion: remisionPreview.direccion || '',
+      numExtInt: remisionPreview.numExtInt || '',
+      colonia: remisionPreview.colonia || '',
+      ciudad: remisionPreview.ciudad || '',
+      moneda: remisionPreview.moneda || '',
+      observaciones: remisionPreview.observaciones || '',
+      fechaTipoCambio: remisionPreview.fechaTipoCambio || '',
+      tipoCambio: remisionPreview.tipoCambio || '',
+      total: Number(remisionPreview.total) || 0,
+      filas: (remisionPreview.filas || []).map((r: any) => ({
+        ref: r.ref || '',
+        fecha: r.fecha || '',
+        equipo: r.equipo || '',
+        origen: r.origen || '',
+        destino: r.destino || '',
+        descripcion: r.descripcion || '',
+        importe: Number(r.importe) || 0,
+      })),
+    };
+    generarRemisionPDF(data);
+  };
+
+  const setRP = (campo: string, valor: any) => setRemisionPreview((prev: any) => prev ? { ...prev, [campo]: valor } : prev);
+  const setRPFila = (idx: number, campo: string, valor: any) =>
+    setRemisionPreview((prev: any) => {
+      if (!prev) return prev;
+      const filas = [...(prev.filas || [])];
+      filas[idx] = { ...filas[idx], [campo]: valor };
+      const total = filas.reduce((s: number, r: any) => s + (Number(r.importe) || 0), 0);
+      return { ...prev, filas, total };
+    });
+  const quitarFilaRemision = (idx: number) =>
+    setRemisionPreview((prev: any) => {
+      if (!prev) return prev;
+      const filas = (prev.filas || []).filter((_: any, i: number) => i !== idx);
+      const total = filas.reduce((s: number, r: any) => s + (Number(r.importe) || 0), 0);
+      return { ...prev, filas, total };
+    });
 
   const handleDragStart = (_e: React.DragEvent, index: number) => setDraggedColIndex(index);
   const handleDragEnter = (index: number) => {
@@ -1981,13 +2167,17 @@ export const FacturacionClientesDashboard = () => {
   const btnDirStyle: React.CSSProperties = { backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
   const dateInputStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '9px 10px', fontSize: '0.9rem', colorScheme: 'dark' };
 
-  // ✅ (D) Botón de segmento reutilizable (vistas / status).
   const segBtnStyle = (active: boolean, col: string): React.CSSProperties => ({
     padding: '8px 14px', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 'bold', whiteSpace: 'nowrap',
     backgroundColor: active ? `${col}22` : 'transparent',
     color: active ? col : '#8b949e',
     borderBottom: active ? `2px solid ${col}` : '2px solid transparent',
   });
+
+  // Estilos reutilizables de los modales de remisión.
+  const rInputStyle: React.CSSProperties = { width: '100%', padding: '8px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.85rem', boxSizing: 'border-box' };
+  const rLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.72rem', display: 'block', marginBottom: '4px', fontWeight: 'bold' };
+  const rCellStyle: React.CSSProperties = { padding: '6px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '4px', color: '#c9d1d9', fontSize: '0.8rem', width: '100%', boxSizing: 'border-box' };
 
   const BuscadorCliente = () => (
     <div style={{ flex: 1, minWidth: '280px', position: 'relative' }}>
@@ -2029,14 +2219,11 @@ export const FacturacionClientesDashboard = () => {
     </div>
   );
 
-  // ✅ Paginación de la tabla de Asignar Operaciones (mejora de velocidad:
-  //    no se renderizan miles de filas, solo una página).
   const OPS_POR_PAGINA = 100;
   const totalPaginasOps = Math.max(1, Math.ceil(operacionesMostradas.length / OPS_POR_PAGINA));
   const paginaOpsSegura = Math.min(paginaOps, totalPaginasOps);
   const operacionesPagina = operacionesMostradas.slice((paginaOpsSegura - 1) * OPS_POR_PAGINA, paginaOpsSegura * OPS_POR_PAGINA);
 
-  // ✅ Resumen / limpieza de filtros del panel lateral (según la pestaña activa).
   const filtrosActivos = activeTab === 'operaciones'
     ? [fechaDesdeOps, fechaHastaOps, textoBuscarRemolqueOps, filtroTipoOp, filtroCliente].filter(Boolean).length
     : [textoBuscarFactura, fechaDesdeHist, fechaHastaHist, filtroCliente].filter(Boolean).length;
@@ -2055,7 +2242,6 @@ export const FacturacionClientesDashboard = () => {
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
       </div>
 
-      {/* ════════ BOTÓN PARA ABRIR EL PANEL DE FILTROS ════════ */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
         <button onClick={() => setFiltrosAbiertos(true)} title="Mostrar filtros"
           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${filtrosActivos > 0 ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
@@ -2080,7 +2266,6 @@ export const FacturacionClientesDashboard = () => {
         )}
       </div>
 
-      {/* ════════ PANEL LATERAL DE FILTROS (drawer) ════════ */}
       {filtrosAbiertos && (
         <div onClick={() => setFiltrosAbiertos(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '380px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
@@ -2174,7 +2359,6 @@ export const FacturacionClientesDashboard = () => {
       )}
 
       {activeTab === 'operaciones' ? (
-        /* ════════════════════ ASIGNAR OPERACIONES ════════════════════ */
         <div className="animation-fade-in">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px 20px' }}>
@@ -2191,7 +2375,6 @@ export const FacturacionClientesDashboard = () => {
             </div>
           </div>
 
-          {/* ✅ (D) Segmentado: Pendientes / Facturadas / Todas */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '6px 8px', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
               <button onClick={() => { setVistaOps('pendientes'); setSeleccionadas([]); }} style={segBtnStyle(vistaOps === 'pendientes', '#f59e0b')}>Pendientes ({resumenOps.porFacturar})</button>
@@ -2357,7 +2540,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
 
       ) : (
-        /* ════════════════════ HISTORIAL DE FACTURAS ════════════════════ */
         <div className="animation-fade-in">
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
@@ -2379,7 +2561,6 @@ export const FacturacionClientesDashboard = () => {
             </div>
           </div>
 
-          {/* ✅ (D) Filtro segmentado por status de la factura */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '6px 8px', flexWrap: 'wrap' }}>
             <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', paddingLeft: '4px' }}>Status:</span>
             <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden', flexWrap: 'wrap' }}>
@@ -2411,7 +2592,8 @@ export const FacturacionClientesDashboard = () => {
               </button>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button title="Editar el encabezado de las remisiones (emisor por moneda: USD→Camila, MXN→Rolando)" onClick={() => setModalEmisores(true)} style={{ ...btnDirStyle, borderColor: '#fb923c', color: '#fb923c' }}>⚙ Encabezado Remisión</button>
               <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>🩺 Verificar</button>
               <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
               <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>⬇ Exportar Excel</button>
@@ -2447,6 +2629,9 @@ export const FacturacionClientesDashboard = () => {
                           <button title="Ver Ficha" onClick={() => setFacturaViendo(f)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
+                          <button title="Generar Remisión (PDF)" onClick={() => abrirRemision(f)} style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                          </button>
                           <button title="Editar Factura" onClick={(e) => abrirEditarFactura(e, f)} style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                           </button>
@@ -2474,7 +2659,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ MODAL CONFIGURAR COLUMNAS (Historial) ════════════════════ */}
       {modalColumnas && (
         <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
@@ -2500,7 +2684,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ═══════════ MODAL CONFIGURAR COLUMNAS (Asignar Operaciones) ═══════════ */}
       {modalColumnasOps && (
         <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '860px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
@@ -2555,7 +2738,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ MODAL COSTO ADICIONAL (Cliente) ════════════════════ */}
       {modalCostoAdic && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1700, padding: '20px', backdropFilter: 'blur(6px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '520px', padding: '24px' }}>
@@ -2608,7 +2790,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ MODAL GENERAR FACTURA ════════════════════ */}
       {modalAbierto && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(8px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
@@ -2661,13 +2842,19 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ MODAL FICHA DE FACTURA ════════════════════ */}
       {facturaViendo && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>Ficha de Factura</h2>
-              <button onClick={() => setFacturaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
+                  title="Generar la Remisión en PDF de esta factura"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1 }}>
+                  🧾 {cargandoRemision ? 'Preparando...' : 'Remisión'}
+                </button>
+                <button onClick={() => setFacturaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              </div>
             </div>
             <div style={{ padding: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -2745,7 +2932,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ MODAL DIAGNÓSTICO / VERIFICACIÓN ════════════════════ */}
       {modalDiagnostico && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1900, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setModalDiagnostico(false)}>
           <div style={{ width: '720px', maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
@@ -2818,7 +3004,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════ MODAL GESTIONAR OPERACIÓN FACTURADA ════════════════ */}
       {gestionOp && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1750, padding: '20px', backdropFilter: 'blur(6px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '520px', padding: '24px' }}>
@@ -2858,7 +3043,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════ MODAL AGREGAR REFERENCIA A FACTURA (Historial) ════════════════ */}
       {agregarRefFactura && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1750, padding: '20px', backdropFilter: 'blur(6px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '640px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: '24px' }}>
@@ -2921,7 +3105,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ MODAL EDITAR FACTURA ════════════════════ */}
       {facturaEditando && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1600, padding: '20px', backdropFilter: 'blur(6px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
@@ -2985,7 +3168,6 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
-      {/* ════════════════════ MODAL DETALLE DE OPERACIÓN ════════════════════ */}
       {(operacionDetalle || cargandoDetalle) && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1800, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
           <div className="form-card detail-card" style={{ width: '1100px', maxWidth: '100%', maxHeight: '94vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
@@ -3154,6 +3336,172 @@ export const FacturacionClientesDashboard = () => {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════ MODAL ENCABEZADO DE REMISIONES (emisores) ════════════════ */}
+      {modalEmisores && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1900, padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '760px', maxHeight: '92vh', overflowY: 'auto', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Encabezado de las Remisiones</h2>
+              <button onClick={() => setModalEmisores(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.82rem', margin: '12px 0 20px' }}>
+              El nombre y los datos que van en la parte superior de la remisión dependen de la <b style={{ color: '#c9d1d9' }}>moneda</b> de la factura:
+              las remisiones en <b style={{ color: '#3b82f6' }}>PESOS (MXN)</b> salen a nombre de <b style={{ color: '#c9d1d9' }}>Rolando</b> y las de
+              <b style={{ color: '#10b981' }}> DÓLARES (USD)</b> a nombre de <b style={{ color: '#c9d1d9' }}>Camila</b>. Esta configuración se guarda para todos los usuarios.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+              {/* MXN → Rolando */}
+              <div style={{ border: '1px solid #3b82f6', borderRadius: '10px', padding: '16px', backgroundColor: 'rgba(59,130,246,0.05)' }}>
+                <div style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '12px' }}>PESOS (MXN) · Rolando</div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
+                  <input type="text" value={emisorMXN.facturaNombre} onChange={e => setEmisorMXN({ ...emisorMXN, facturaNombre: e.target.value })} style={rInputStyle} />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>DIRECCIÓN</label>
+                  <input type="text" value={emisorMXN.direccion} onChange={e => setEmisorMXN({ ...emisorMXN, direccion: e.target.value })} style={rInputStyle} />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
+                  <input type="text" value={emisorMXN.ciudadEstado} onChange={e => setEmisorMXN({ ...emisorMXN, ciudadEstado: e.target.value })} style={rInputStyle} />
+                </div>
+                <div>
+                  <label style={rLabelStyle}>EMAIL</label>
+                  <input type="text" value={emisorMXN.email} onChange={e => setEmisorMXN({ ...emisorMXN, email: e.target.value })} style={rInputStyle} />
+                </div>
+              </div>
+
+              {/* USD → Camila */}
+              <div style={{ border: '1px solid #10b981', borderRadius: '10px', padding: '16px', backgroundColor: 'rgba(16,185,129,0.05)' }}>
+                <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '12px' }}>DÓLARES (USD) · Camila</div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
+                  <input type="text" value={emisorUSD.facturaNombre} onChange={e => setEmisorUSD({ ...emisorUSD, facturaNombre: e.target.value })} style={rInputStyle} />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>DIRECCIÓN</label>
+                  <input type="text" value={emisorUSD.direccion} onChange={e => setEmisorUSD({ ...emisorUSD, direccion: e.target.value })} style={rInputStyle} />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
+                  <input type="text" value={emisorUSD.ciudadEstado} onChange={e => setEmisorUSD({ ...emisorUSD, ciudadEstado: e.target.value })} style={rInputStyle} />
+                </div>
+                <div>
+                  <label style={rLabelStyle}>EMAIL</label>
+                  <input type="text" value={emisorUSD.email} onChange={e => setEmisorUSD({ ...emisorUSD, email: e.target.value })} style={rInputStyle} />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px', marginTop: '20px' }}>
+              <button onClick={() => setModalEmisores(false)} disabled={guardandoEmisores} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={guardarEmisores} disabled={guardandoEmisores} style={{ padding: '8px 24px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoEmisores ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoEmisores ? 0.7 : 1 }}>{guardandoEmisores ? 'Guardando...' : 'Guardar para todos'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════ MODAL VISTA PREVIA DE REMISIÓN (editable) ════════════════ */}
+      {remisionPreview && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1850, padding: '20px', backdropFilter: 'blur(6px)', overflowY: 'auto' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '960px', margin: 'auto', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <div>
+                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Remisión · vista previa</h2>
+                <span style={{ color: remisionPreview.esUSD ? '#10b981' : '#3b82f6', fontSize: '0.82rem', fontWeight: 'bold' }}>
+                  {remisionPreview.esUSD ? 'DÓLARES (USD) → Camila' : 'PESOS (MXN) → Rolando'}
+                </span>
+              </div>
+              <button onClick={() => setRemisionPreview(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.8rem', margin: '10px 0 18px' }}>
+              Revisa y edita lo que necesites; luego pulsa <b style={{ color: '#fb923c' }}>Generar PDF</b>. Se abrirá el diálogo de impresión donde puedes elegir <b style={{ color: '#c9d1d9' }}>“Guardar como PDF”</b>.
+            </p>
+
+            {/* Emisor (encabezado) */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#fb923c', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>ENCABEZADO (EMISOR)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}>NOMBRE</label><input type="text" value={remisionPreview.emisorNombre} onChange={e => setRP('emisorNombre', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>EMAIL</label><input type="text" value={remisionPreview.emisorEmail} onChange={e => setRP('emisorEmail', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={remisionPreview.emisorDireccion} onChange={e => setRP('emisorDireccion', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label><input type="text" value={remisionPreview.emisorCiudadEstado} onChange={e => setRP('emisorCiudadEstado', e.target.value)} style={rInputStyle} /></div>
+              </div>
+            </div>
+
+            {/* Datos de la remisión y del cliente */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>DATOS DE LA REMISIÓN Y DEL CLIENTE</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}># REMISIÓN</label><input type="text" value={remisionPreview.numero} onChange={e => setRP('numero', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>FECHA</label><input type="text" value={remisionPreview.fecha} onChange={e => setRP('fecha', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>DENOMINACIÓN</label><input type="text" value={remisionPreview.moneda} onChange={e => setRP('moneda', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>DÍAS CRÉDITO</label><input type="text" value={remisionPreview.diasCredito} onChange={e => setRP('diasCredito', e.target.value)} style={rInputStyle} /></div>
+                <div style={{ gridColumn: 'span 2' }}><label style={rLabelStyle}>CLIENTE</label><input type="text" value={remisionPreview.clienteNombre} onChange={e => setRP('clienteNombre', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>NUM. EXT/INT</label><input type="text" value={remisionPreview.numExtInt} onChange={e => setRP('numExtInt', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>COLONIA</label><input type="text" value={remisionPreview.colonia} onChange={e => setRP('colonia', e.target.value)} style={rInputStyle} /></div>
+                <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={remisionPreview.direccion} onChange={e => setRP('direccion', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CIUDAD</label><input type="text" value={remisionPreview.ciudad} onChange={e => setRP('ciudad', e.target.value)} style={rInputStyle} /></div>
+              </div>
+            </div>
+
+            {/* Renglones de servicios */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>SERVICIOS ({(remisionPreview.filas || []).length})</div>
+              <div style={{ overflowX: 'auto', border: '1px solid #30363d', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#161b22', color: '#8b949e', fontSize: '0.72rem' }}>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>REF#</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>FECHA</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>EQ.</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>ORIGEN</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>DESTINO</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>DESCRIPCIÓN</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>IMPORTE</th>
+                      <th style={{ padding: '8px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(remisionPreview.filas || []).map((r: any, idx: number) => (
+                      <tr key={idx} style={{ borderTop: '1px solid #21262d' }}>
+                        <td style={{ padding: '4px' }}><input value={r.ref} onChange={e => setRPFila(idx, 'ref', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.fecha} onChange={e => setRPFila(idx, 'fecha', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.equipo} onChange={e => setRPFila(idx, 'equipo', e.target.value)} style={{ ...rCellStyle, minWidth: '60px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.origen} onChange={e => setRPFila(idx, 'origen', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.destino} onChange={e => setRPFila(idx, 'destino', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.descripcion} onChange={e => setRPFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '160px' }} /></td>
+                        <td style={{ padding: '4px' }}><input type="number" step="any" value={r.importe} onChange={e => setRPFila(idx, 'importe', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
+                        <td style={{ padding: '4px', textAlign: 'center' }}>
+                          <button onClick={() => quitarFilaRemision(idx)} title="Quitar renglón" style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '4px 8px', fontSize: '0.75rem' }}>✕</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {(remisionPreview.filas || []).length === 0 && (
+                      <tr><td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.82rem' }}>Sin renglones.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Pie: tipo de cambio, total, observaciones */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+              <div><label style={rLabelStyle}>FECHA TIPO DE CAMBIO (DOF)</label><input type="text" value={remisionPreview.fechaTipoCambio} onChange={e => setRP('fechaTipoCambio', e.target.value)} placeholder="Ej. 24/06/2026" style={rInputStyle} /></div>
+              <div><label style={rLabelStyle}>TIPO DE CAMBIO</label><input type="text" value={remisionPreview.tipoCambio} onChange={e => setRP('tipoCambio', e.target.value)} placeholder="Ej. 17.5505" style={rInputStyle} /></div>
+              <div><label style={rLabelStyle}>TOTAL</label><input type="number" step="any" value={remisionPreview.total} onChange={e => setRP('total', e.target.value)} style={{ ...rInputStyle, color: '#3fb950', fontWeight: 'bold' }} /></div>
+              <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>OBSERVACIONES</label><input type="text" value={remisionPreview.observaciones} onChange={e => setRP('observaciones', e.target.value)} style={rInputStyle} /></div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
+              <button onClick={() => setRemisionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
+              <button onClick={generarPDFDeRemision} style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🧾 Generar PDF</button>
+            </div>
           </div>
         </div>
       )}
