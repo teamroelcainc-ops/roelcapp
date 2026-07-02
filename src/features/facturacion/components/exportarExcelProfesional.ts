@@ -42,6 +42,13 @@ export interface ColExcel {
   label: string;
   tipo?: TipoColExcel;
   ancho?: number;
+  /**
+   * Si es true, en esta columna se muestra ÚNICAMENTE la caja (primer token),
+   * quitando las placas. Se activa también de forma automática cuando el
+   * `label` de la columna contiene "remolque" (p. ej. "# de Remolque").
+   * Ej.: "45209 4512KDD" -> "45209".
+   */
+  soloCaja?: boolean;
 }
 
 export interface OpcionesExcel {
@@ -52,6 +59,20 @@ export interface OpcionesExcel {
   columnas: ColExcel[];
   filas: Record<string, any>[];
 }
+
+// ── Caja sin placas ─────────────────────────────────────────────────────
+// El campo de remolque llega como "caja placas" (ej.: "45209 4512KDD").
+// Aquí dejamos solo la CAJA = primer token (texto antes del primer espacio).
+// Si la caja cambiara de formato, este es el único punto a ajustar.
+const soloCaja = (valor: any): string => {
+  const s = String(valor === null || valor === undefined ? '' : valor).trim();
+  if (!s) return '';
+  return s.split(/\s+/)[0];
+};
+
+// Detecta si una columna es la del remolque (por flag explícito o por su label).
+const esColumnaRemolque = (c: ColExcel): boolean =>
+  c.soloCaja === true || /remolque/i.test(c.label || '');
 
 // arrayBuffer → base64 (para el logo descargado por fetch)
 const bufferABase64 = (buf: ArrayBuffer): string => {
@@ -218,7 +239,8 @@ export const exportarExcelProfesional = async (opts: OpcionesExcel): Promise<voi
         else cell.value = raw ? String(raw) : '';
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
       } else {
-        const s = (raw === null || raw === undefined) ? '' : String(raw);
+        let s = (raw === null || raw === undefined) ? '' : String(raw);
+        if (esColumnaRemolque(c)) s = soloCaja(s); // deja solo la caja, sin placas
         cell.value = s;
         const largo = s.length > 45;
         cell.alignment = { horizontal: largo ? 'left' : 'center', vertical: 'middle', wrapText: largo };
@@ -258,8 +280,12 @@ export const exportarExcelProfesional = async (opts: OpcionesExcel): Promise<voi
     if (c.tipo === 'fecha') { col.width = 13; return; }
     if (c.tipo === 'fechaHora') { col.width = 18; return; }
     if (c.tipo === 'numero') { col.width = 11; return; }
+    const soloCajaCol = esColumnaRemolque(c);
     let max = c.label.length;
-    filas.forEach(f => { const s = String(f[c.key] ?? ''); if (s.length > max) max = s.length; });
+    filas.forEach(f => {
+      const s = soloCajaCol ? soloCaja(f[c.key]) : String(f[c.key] ?? '');
+      if (s.length > max) max = s.length;
+    });
     col.width = Math.min(Math.max(max + 2, 12), 48);
   });
 
