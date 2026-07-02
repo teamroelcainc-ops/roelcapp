@@ -15,6 +15,7 @@ import {
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
 // orden:true -> la cabecera es clicable para ordenar por ese campo.
@@ -216,6 +217,102 @@ export const ReferenciasDieselDashboard = () => {
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState('');
   const [costoDieselDiario, setCostoDieselDiario] = useState<number>(0);
   const [observacionesForm, setObservacionesForm] = useState('');
+
+  // ──────────────────────────────────────────────────────────────────
+  // ✅ FOTOS DE LA REFERENCIA (subida a Storage: consecutivo/unidad/foto)
+  // ──────────────────────────────────────────────────────────────────
+  const fotoInputRef = useRef<HTMLInputElement>(null);
+  const [fotosSeleccionadas, setFotosSeleccionadas] = useState<File[]>([]);
+  const [arrastrandoFoto, setArrastrandoFoto] = useState(false);
+  const [subiendoFotos, setSubiendoFotos] = useState(false);
+  const dragDepthFoto = useRef(0);
+
+  // Previews locales (se liberan al desmontar / cambiar la lista).
+  const previewsFotos = useMemo(
+    () => fotosSeleccionadas.map(f => URL.createObjectURL(f)),
+    [fotosSeleccionadas]
+  );
+  useEffect(() => {
+    return () => { previewsFotos.forEach(url => URL.revokeObjectURL(url)); };
+  }, [previewsFotos]);
+
+  // Limpia un segmento de ruta de Storage. Mantiene guiones (para el
+  // consecutivo tipo DIESEL-260626-001) y reemplaza lo demás por "_".
+  const sanitizarSegmentoRuta = (valor: string): string =>
+    String(valor || '')
+      .trim()
+      .replace(/[^a-zA-Z0-9\-_]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '') || 'sin_dato';
+
+  const sanitizarNombreArchivo = (nombre: string): string =>
+    String(nombre || 'foto')
+      .trim()
+      .replace(/[^a-zA-Z0-9.\-_]+/g, '_')
+      .replace(/_+/g, '_');
+
+  // Agrega solo imágenes a la lista (evita duplicados por nombre+tamaño).
+  const agregarFotos = (files: FileList | File[]) => {
+    const nuevas = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (nuevas.length === 0) return;
+    setFotosSeleccionadas(prev => {
+      const clave = (f: File) => `${f.name}_${f.size}`;
+      const existentes = new Set(prev.map(clave));
+      return [...prev, ...nuevas.filter(f => !existentes.has(clave(f)))];
+    });
+  };
+
+  const handleFotosInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) agregarFotos(e.target.files);
+    e.target.value = ''; // permite volver a elegir el mismo archivo
+  };
+
+  const quitarFoto = (index: number) => {
+    setFotosSeleccionadas(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Drag & drop (patrón dragDepth para que el borde no parpadee).
+  const handleDragEnterFoto = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    dragDepthFoto.current += 1;
+    setArrastrandoFoto(true);
+  };
+  const handleDragLeaveFoto = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    dragDepthFoto.current -= 1;
+    if (dragDepthFoto.current <= 0) { dragDepthFoto.current = 0; setArrastrandoFoto(false); }
+  };
+  const handleDragOverFoto = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); };
+  const handleDropFoto = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    dragDepthFoto.current = 0;
+    setArrastrandoFoto(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) agregarFotos(e.dataTransfer.files);
+  };
+
+  // Sube las fotos a Storage en la ruta: consecutivo/unidad/archivo
+  // y devuelve los metadatos {url, path, nombre} para guardar en Firestore.
+  const subirFotosReferencia = async (
+    consecutivo: string,
+    unidad: string,
+    archivos: File[]
+  ): Promise<{ url: string; path: string; nombre: string }[]> => {
+    const storage = getStorage();
+    const carpetaCons = sanitizarSegmentoRuta(consecutivo);
+    const carpetaUni = sanitizarSegmentoRuta(unidad);
+    const resultados: { url: string; path: string; nombre: string }[] = [];
+
+    for (let i = 0; i < archivos.length; i++) {
+      const file = archivos[i];
+      const nombreLimpio = sanitizarNombreArchivo(file.name);
+      const path = `${carpetaCons}/${carpetaUni}/${Date.now()}_${i}_${nombreLimpio}`;
+      const refFoto = storageRef(storage, path);
+      await uploadBytes(refFoto, file);
+      const url = await getDownloadURL(refFoto);
+      resultados.push({ url, path, nombre: file.name });
+    }
+    return resultados;
+  };
 
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
@@ -792,6 +889,21 @@ export const ReferenciasDieselDashboard = () => {
 
       const foundUni = unidadesList.find(u => u.unidad === filtroUnidad || u.nombre === filtroUnidad);
 
+      // ✅ Sube las fotos (si hay) a Storage: consecutivo/unidad/foto
+      let fotosSubidas: { url: string; path: string; nombre: string }[] = [];
+      if (fotosSeleccionadas.length > 0) {
+        try {
+          setSubiendoFotos(true);
+          fotosSubidas = await subirFotosReferencia(consecutivoFinal, filtroUnidad, fotosSeleccionadas);
+        } catch (errFotos) {
+          console.error('Error subiendo fotos:', errFotos);
+          const seguir = window.confirm('No se pudieron subir una o más fotos. ¿Deseas guardar la referencia SIN fotos?');
+          if (!seguir) { setSubiendoFotos(false); setGuardando(false); return; }
+        } finally {
+          setSubiendoFotos(false);
+        }
+      }
+
       const operadorRef = operadoresSeleccionados.length === 1
         ? operadoresSeleccionados[0]
         : (operadoresSeleccionados.length > 1 ? 'Varios' : '');
@@ -819,6 +931,7 @@ export const ReferenciasDieselDashboard = () => {
         totalCargado: Number(galonesCargados) * costoDieselDiario,
         observaciones: observacionesForm,
         status: statusReferenciaForm, 
+        fotos: fotosSubidas,
         createdAt: new Date().toISOString()
       };
 
@@ -838,6 +951,7 @@ export const ReferenciasDieselDashboard = () => {
       setGalonesCargados('');
       setObservacionesForm('');
       setProveedorSeleccionado('');
+      setFotosSeleccionadas([]);
       
       setActiveTab('referencias');
     } catch (error) {
@@ -1133,7 +1247,7 @@ export const ReferenciasDieselDashboard = () => {
             </div>
             <button 
               disabled={seleccionadas.length === 0 || filtroEstadoOps === 'cargadas'} 
-              onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setModalAbierto(true); }}
+              onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setFotosSeleccionadas([]); setModalAbierto(true); }}
               style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
             >
               Generar Referencia ({seleccionadas.length})
@@ -1468,7 +1582,7 @@ export const ReferenciasDieselDashboard = () => {
       {/* MODAL FORMULARIO */}
       {modalAbierto && (
         <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '600px', padding: '24px' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '600px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
               <h2 style={{ color: '#f0f6fc', margin: 0 }}>Nueva Referencia: <span style={{ color: '#D84315' }}>{consecutivoForm}</span></h2>
               <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
@@ -1541,9 +1655,69 @@ export const ReferenciasDieselDashboard = () => {
                 <textarea value={observacionesForm} onChange={e => setObservacionesForm(e.target.value)} style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px', height: '80px' }} />
               </div>
 
+              {/* ✅ FOTOS DE LA REFERENCIA */}
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '8px' }}>
+                  FOTOS <span style={{ color: '#484f58', fontWeight: 'normal' }}>(se guardan en {sanitizarSegmentoRuta(consecutivoForm)}/{sanitizarSegmentoRuta(filtroUnidad)}/)</span>
+                </label>
+
+                <input
+                  ref={fotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleFotosInput}
+                  style={{ display: 'none' }}
+                />
+
+                <div
+                  onClick={() => fotoInputRef.current?.click()}
+                  onDragEnter={handleDragEnterFoto}
+                  onDragLeave={handleDragLeaveFoto}
+                  onDragOver={handleDragOverFoto}
+                  onDrop={handleDropFoto}
+                  style={{
+                    border: `2px dashed ${arrastrandoFoto ? '#D84315' : '#30363d'}`,
+                    backgroundColor: arrastrandoFoto ? 'rgba(216,67,21,0.08)' : '#161b22',
+                    borderRadius: '8px',
+                    padding: '24px',
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={arrastrandoFoto ? '#D84315' : '#8b949e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '8px' }}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                  <div style={{ color: arrastrandoFoto ? '#D84315' : '#c9d1d9', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                    {arrastrandoFoto ? 'Suelta las fotos aquí' : 'Haz clic o arrastra fotos aquí'}
+                  </div>
+                  <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '4px' }}>Solo imágenes (JPG, PNG, etc.)</div>
+                </div>
+
+                {fotosSeleccionadas.length > 0 && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '10px', marginTop: '12px' }}>
+                    {previewsFotos.map((url, i) => (
+                      <div key={i} style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', border: '1px solid #30363d', backgroundColor: '#010409' }}>
+                        <img src={url} alt={fotosSeleccionadas[i]?.name || `foto-${i}`} style={{ width: '100%', height: '80px', objectFit: 'cover', display: 'block' }} />
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); quitarFoto(i); }}
+                          title="Quitar foto"
+                          style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', borderRadius: '50%', border: 'none', backgroundColor: 'rgba(239,68,68,0.9)', color: '#fff', cursor: 'pointer', fontSize: '0.85rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {fotosSeleccionadas.length > 0 && (
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginTop: '8px' }}>
+                    {fotosSeleccionadas.length} {fotosSeleccionadas.length === 1 ? 'foto seleccionada' : 'fotos seleccionadas'}
+                  </span>
+                )}
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" onClick={() => setModalAbierto(false)} disabled={guardando} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : 'Guardar Referencia'}</button>
+                <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{subiendoFotos ? 'Subiendo fotos...' : guardando ? 'Guardando...' : 'Guardar Referencia'}</button>
               </div>
             </form>
           </div>
@@ -1641,6 +1815,29 @@ export const ReferenciasDieselDashboard = () => {
                     {referenciaViendo.observaciones || '-'}
                   </div>
                 </div>
+
+                {/* ✅ FOTOS DE LA REFERENCIA */}
+                {Array.isArray(referenciaViendo.fotos) && referenciaViendo.fotos.length > 0 && (
+                  <div style={{ gridColumn: 'span 3' }}>
+                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
+                      Fotos ({referenciaViendo.fotos.length})
+                    </span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px' }}>
+                      {referenciaViendo.fotos.map((foto: any, i: number) => (
+                        <a
+                          key={i}
+                          href={foto.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={foto.nombre || `Foto ${i + 1}`}
+                          style={{ display: 'block', borderRadius: '6px', overflow: 'hidden', border: '1px solid #30363d', backgroundColor: '#010409' }}
+                        >
+                          <img src={foto.url} alt={foto.nombre || `foto-${i}`} style={{ width: '100%', height: '100px', objectFit: 'cover', display: 'block' }} />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ gridColumn: 'span 3' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>Operaciones Incluidas en esta Referencia</span>
