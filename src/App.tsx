@@ -342,9 +342,12 @@ function App() {
   const puede = (clave: string) => clavesPermitidas.has(clave);
 
   // Si el módulo activo no está permitido, saltar al primer módulo permitido.
+  // ⭐ 'importacion' es un módulo libre (visible para todos, sin permiso de rol),
+  //    por eso se excluye aquí: si no, al abrirlo el guard rebotaba a Operaciones.
   useEffect(() => {
     if (accesoTotal) return;
     if (clavesPermitidas.size === 0) return;
+    if (moduloActivo === 'importacion') return;
     if (!clavesPermitidas.has(moduloActivo)) {
       const primera = ORDEN_CLAVES.find(k => clavesPermitidas.has(k));
       if (primera) setModuloActivo(primera as any);
