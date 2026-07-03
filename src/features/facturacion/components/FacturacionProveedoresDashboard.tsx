@@ -32,6 +32,9 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
+import { exportarExcelProfesional } from './exportarExcelProfesional';
+import { generarRemisionPDF } from './generarRemisionPDF';
+import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -48,6 +51,25 @@ const SS_OPS = 'roelca_ops_prov_completadas_v2';
 const SS_OPS_TTL = 30 * 60 * 1000;
 
 const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
+
+// ✅ (REMISIÓN) Encabezados (emisores) por moneda — mismos docs que Clientes,
+// para que la configuración quede compartida entre ambos módulos.
+const DOC_REMISION_EMISORES = 'facturacion_remision_emisores';
+const LS_REMISION_EMISORES = 'cfg_remision_emisores_v1';
+// Emisor por defecto para remisiones en PESOS (MXN) → Rolando.
+const EMISOR_MXN_DEFAULT: EmisorRemision = {
+  facturaNombre: 'ROLANDO ROBERTO MONTALVO CISNEROS',
+  direccion: 'MAR DE LAS ANTILLAS 947, COL. LA PAZ',
+  ciudadEstado: 'NUEVO LAREDO, TAMPS | (867) 196 4690',
+  email: 'COBRANZA@ROELCA.COM',
+};
+// Emisor por defecto para remisiones en DÓLARES (USD) → Camila.
+const EMISOR_USD_DEFAULT: EmisorRemision = {
+  facturaNombre: 'CAMILA MONTALVO OSORIO',
+  direccion: 'MAR DE LAS ANTILLAS 947, COL. LA PAZ',
+  ciudadEstado: 'NUEVO LAREDO, TAMPS | (867) 196 4690',
+  email: 'COBRANZA@ROELCA.COM',
+};
 const DOC_COLUMNAS_OPS = 'facturacion_proveedores_ops';
 const DOC_COLUMNAS_HISTORIAL = 'facturacion_proveedores_historial';
 
@@ -1064,22 +1086,239 @@ export const FacturacionProveedoresDashboard = () => {
     setColumnasOps(nuevas);
   };
 
-  const exportarExcelOps = () => {
+  // ═══════════════════════════════════════════════════════════════════
+  // (REMISIÓN) Encabezados por moneda + vista previa editable + PDF.
+  // Portado de FacturacionClientesDashboard, adaptado a PROVEEDOR.
+  // ═══════════════════════════════════════════════════════════════════
+  const [emisorMXN, setEmisorMXN] = useState<EmisorRemision>(EMISOR_MXN_DEFAULT);
+  const [emisorUSD, setEmisorUSD] = useState<EmisorRemision>(EMISOR_USD_DEFAULT);
+  const [modalEmisores, setModalEmisores] = useState(false);
+  const [guardandoEmisores, setGuardandoEmisores] = useState(false);
+  const [remisionPreview, setRemisionPreview] = useState<any | null>(null);
+  const [cargandoRemision, setCargandoRemision] = useState(false);
+
+  // Cargar encabezados (emisores) desde localStorage + Firestore (compartido).
+  useEffect(() => {
+    try {
+      const ls = localStorage.getItem(LS_REMISION_EMISORES);
+      if (ls) {
+        const obj = JSON.parse(ls);
+        if (obj?.mxn) setEmisorMXN({ ...EMISOR_MXN_DEFAULT, ...obj.mxn });
+        if (obj?.usd) setEmisorUSD({ ...EMISOR_USD_DEFAULT, ...obj.usd });
+      }
+    } catch { /* noop */ }
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_REMISION_EMISORES));
+        if (!activo || !snap.exists()) return;
+        const data = snap.data() as any;
+        if (data?.mxn) setEmisorMXN({ ...EMISOR_MXN_DEFAULT, ...data.mxn });
+        if (data?.usd) setEmisorUSD({ ...EMISOR_USD_DEFAULT, ...data.usd });
+        try { localStorage.setItem(LS_REMISION_EMISORES, JSON.stringify({ mxn: data?.mxn, usd: data?.usd })); } catch { /* noop */ }
+      } catch (e) { console.error('Error cargando encabezados de remisión:', e); }
+    })();
+    return () => { activo = false; };
+  }, []);
+
+  const guardarEmisores = async () => {
+    setGuardandoEmisores(true);
+    try {
+      const payload = { mxn: emisorMXN, usd: emisorUSD, updatedAt: new Date().toISOString() };
+      try { localStorage.setItem(LS_REMISION_EMISORES, JSON.stringify({ mxn: emisorMXN, usd: emisorUSD })); } catch { /* noop */ }
+      await setDoc(doc(db, CONFIG_COLUMNAS_COLLECTION, DOC_REMISION_EMISORES), payload);
+      setModalEmisores(false);
+    } catch (e) {
+      console.error('Error guardando encabezados de remisión:', e);
+      alert('No se pudo guardar el encabezado de remisiones para todos los usuarios.\nRevisa tus permisos de escritura en Firestore (colección config_columnas).');
+    } finally {
+      setGuardandoEmisores(false);
+    }
+  };
+
+  // Preparar la remisión de una factura de PROVEEDOR → abre el modal editable.
+  const abrirRemision = async (f: any) => {
+    if (!f) return;
+    setCargandoRemision(true);
+    try {
+      const monRaw = monedaFacturaMostrar(f).toUpperCase();
+      const esUSD = monRaw === 'USD';
+      const emisor = esUSD ? emisorUSD : emisorMXN;
+
+      const ids = (Array.from(new Set((f.operacionesIds || []).map((x: any) => String(x)))) as string[]).filter(Boolean).slice(0, 60);
+      const byId = new Map<string, any>();
+      for (let i = 0; i < ids.length; i += 30) {
+        const chunk = ids.slice(i, i + 30);
+        try {
+          const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
+          snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...(d.data() as any) }));
+        } catch (e) { console.warn('No se pudieron leer operaciones para la remisión:', e); }
+      }
+
+      const guardadas: any[] = Array.isArray(f.operacionesGuardadas) && f.operacionesGuardadas.length
+        ? f.operacionesGuardadas
+        : ids.map((id) => ({ id }));
+
+      const filas = guardadas.map((g: any) => {
+        const o = byId.get(String(g.id)) || {};
+        const equipoUnidad = txt(o.unidadNombre, o.unidad);
+        const equipo = equipoUnidad !== '-' ? equipoUnidad : txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque);
+        const importe = Number(g.monto) || (o.id ? obtenerMontoOperacion(o).conv : 0) || 0;
+        const ref = refDeOp({ ...g, ...o }) || o.numReferencia || g.ref || '';
+        const fechaFmt = formatearFechaSpanish(o.fechaServicio || o.createdAt || '');
+        const org = txt(o.origenNombre, o.origen);
+        const dst = txt(o.destinoNombre, o.destino);
+        return {
+          ref,
+          fecha: fechaFmt === '-' ? '' : fechaFmt,
+          equipo: equipo === '-' ? '' : equipo,
+          origen: org === '-' ? '' : org,
+          destino: dst === '-' ? '' : dst,
+          descripcion: o.descripcionServicio || o.observacionesEjecutivo || o.descripcionMercancia || '',
+          importe,
+        };
+      });
+
+      const totalCalc = filas.reduce((s: number, r: any) => s + (Number(r.importe) || 0), 0);
+      const total = totalCalc > 0 ? totalCalc : (Number(f.subtotalFactura) || 0);
+
+      const emp: any = empresasList.find(e => e.id === f.proveedorId) || {};
+
+      setRemisionPreview({
+        esUSD,
+        emisorNombre: emisor.facturaNombre,
+        emisorDireccion: emisor.direccion,
+        emisorCiudadEstado: emisor.ciudadEstado,
+        emisorEmail: emisor.email,
+        numero: f.invoice || String(f.id || ''),
+        fecha: String(f.fecha || '').slice(0, 10),
+        clienteNombre: f.proveedorNombre || getNombreEmpresa(f.proveedorId) || '',
+        diasCredito: String(emp.diasCredito ?? emp.credito ?? emp.diasDeCredito ?? ''),
+        direccion: String(emp.direccion ?? emp.domicilio ?? emp.calle ?? ''),
+        numExtInt: String(emp.numExtInt ?? emp.numeroExterior ?? emp.numExt ?? ''),
+        colonia: String(emp.colonia ?? ''),
+        ciudad: String(emp.ciudad ?? emp.municipio ?? ''),
+        moneda: esUSD ? 'Dólares' : 'Pesos',
+        observaciones: '',
+        fechaTipoCambio: '',
+        tipoCambio: '',
+        total,
+        filas,
+      });
+    } catch (e) {
+      console.error('Error preparando la remisión:', e);
+      alert('No se pudo preparar la remisión.');
+    } finally {
+      setCargandoRemision(false);
+    }
+  };
+
+  const generarPDFDeRemision = () => {
+    if (!remisionPreview) return;
+    const data: RemisionData = {
+      emisor: {
+        facturaNombre: remisionPreview.emisorNombre || '',
+        direccion: remisionPreview.emisorDireccion || '',
+        ciudadEstado: remisionPreview.emisorCiudadEstado || '',
+        email: remisionPreview.emisorEmail || '',
+      },
+      numero: remisionPreview.numero || '',
+      fecha: remisionPreview.fecha || '',
+      clienteNombre: remisionPreview.clienteNombre || '',
+      diasCredito: remisionPreview.diasCredito || '',
+      direccion: remisionPreview.direccion || '',
+      numExtInt: remisionPreview.numExtInt || '',
+      colonia: remisionPreview.colonia || '',
+      ciudad: remisionPreview.ciudad || '',
+      moneda: remisionPreview.moneda || '',
+      observaciones: remisionPreview.observaciones || '',
+      fechaTipoCambio: remisionPreview.fechaTipoCambio || '',
+      tipoCambio: remisionPreview.tipoCambio || '',
+      total: Number(remisionPreview.total) || 0,
+      filas: (remisionPreview.filas || []).map((r: any) => ({
+        ref: r.ref || '',
+        fecha: r.fecha || '',
+        equipo: r.equipo || '',
+        origen: r.origen || '',
+        destino: r.destino || '',
+        descripcion: r.descripcion || '',
+        importe: Number(r.importe) || 0,
+      })),
+    };
+    generarRemisionPDF(data);
+  };
+
+  const setRP = (campo: string, valor: any) => setRemisionPreview((prev: any) => prev ? { ...prev, [campo]: valor } : prev);
+  const setRPFila = (idx: number, campo: string, valor: any) =>
+    setRemisionPreview((prev: any) => {
+      if (!prev) return prev;
+      const filas = [...(prev.filas || [])];
+      filas[idx] = { ...filas[idx], [campo]: valor };
+      const total = filas.reduce((s: number, r: any) => s + (Number(r.importe) || 0), 0);
+      return { ...prev, filas, total };
+    });
+  const quitarFilaRemision = (idx: number) =>
+    setRemisionPreview((prev: any) => {
+      if (!prev) return prev;
+      const filas = (prev.filas || []).filter((_: any, i: number) => i !== idx);
+      const total = filas.reduce((s: number, r: any) => s + (Number(r.importe) || 0), 0);
+      return { ...prev, filas, total };
+    });
+
+  // Estilos reutilizables de los modales de remisión.
+  const rInputStyle: React.CSSProperties = { width: '100%', padding: '8px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.85rem', boxSizing: 'border-box' };
+  const rLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.72rem', display: 'block', marginBottom: '4px', fontWeight: 'bold' };
+  const rCellStyle: React.CSSProperties = { padding: '6px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '4px', color: '#c9d1d9', fontSize: '0.8rem', width: '100%', boxSizing: 'border-box' };
+
+  // Exportación a Excel PROFESIONAL (con logo, igual que Clientes).
+  const exportarExcelOps = async () => {
     if (operacionesMostradas.length === 0) return alert('No hay operaciones para exportar con los filtros actuales.');
     const cols = columnasOps.filter(c => c.visible);
     if (cols.length === 0) return alert('Selecciona al menos una columna para exportar.');
-    const datos = operacionesMostradas.map(op => {
+
+    const mapTipo = (t: any): 'texto' | 'fecha' | 'fechaHora' | 'monto' | 'numero' =>
+      (t === 'monto' || t === 'numero' || t === 'fecha' || t === 'fechaHora') ? t : 'texto';
+    const aNum = (v: any): number | null => {
+      const n = Number(String(v ?? '').replace(/[^0-9.\-]/g, ''));
+      return isNaN(n) ? null : n;
+    };
+
+    const columnas = cols.map(c => ({
+      key: c.id,
+      label: c.label,
+      tipo: mapTipo((c as any).tipo),
+      soloCaja: /remolque/i.test(c.label || ''),
+    }));
+
+    const filas = operacionesMostradas.map(op => {
       const m = obtenerMontoOperacion(op);
       const fila: any = {};
-      cols.forEach(col => { fila[col.label] = valorCeldaOps(op, col.id, m); });
+      cols.forEach(c => {
+        const raw = valorCeldaOps(op, c.id, m);
+        const t = mapTipo((c as any).tipo);
+        fila[c.id] = (t === 'monto' || t === 'numero') ? aNum(raw) : raw;
+      });
       return fila;
     });
-    const ws = XLSX.utils.json_to_sheet(datos);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Ops_Por_Facturar');
-    const prov = (filtroProveedor ? (nombreProveedorSeleccionado || 'proveedor') : 'todos').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
-    const rango = (fechaDesdeOps || fechaHastaOps) ? `_${fechaDesdeOps || 'inicio'}_a_${fechaHastaOps || 'hoy'}` : '_todas';
-    XLSX.writeFile(wb, `Operaciones_${vistaOps}_${prov}${rango}.xlsx`);
+
+    const provTxt = filtroProveedor ? (nombreProveedorSeleccionado || 'Proveedor') : 'Todos los proveedores';
+    const rangoTxt = (fechaDesdeOps || fechaHastaOps) ? `${fechaDesdeOps || 'inicio'} a ${fechaHastaOps || 'hoy'}` : 'Todas las fechas';
+    const vistaTxt = vistaOps === 'facturadas' ? 'Facturadas' : vistaOps === 'todas' ? 'Todas' : 'Por facturar';
+    const provFile = provTxt.replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
+
+    try {
+      await exportarExcelProfesional({
+        nombreArchivo: `Facturacion_Proveedores_${vistaTxt}_${provFile}_${new Date().toISOString().split('T')[0]}.xlsx`,
+        tituloReporte: 'Reporte de Facturación · Operaciones (Proveedores)',
+        subtitulo: `${vistaTxt}  ·  Proveedor: ${provTxt}  ·  ${rangoTxt}  ·  ${filas.length} operaciones`,
+        nombreHoja: 'Operaciones',
+        columnas,
+        filas,
+      });
+    } catch (e) {
+      console.error('Error exportando Excel de operaciones:', e);
+      alert('No se pudo generar el Excel.');
+    }
   };
 
   const toggleSeleccion = (id: string) => {
@@ -2154,6 +2393,7 @@ export const FacturacionProveedoresDashboard = () => {
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <button onClick={recargarOperaciones} style={btnDirStyle} title="Volver a leer todas las operaciones desde la base de datos">↻ Recargar</button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
+              <button title="Editar el encabezado de las remisiones (emisor por moneda: USD→Camila, MXN→Rolando)" onClick={() => setModalEmisores(true)} style={{ ...btnDirStyle, borderColor: '#fb923c', color: '#fb923c' }}>⚙ Encabezado Remisión</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
                   cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
@@ -2651,6 +2891,11 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
             </div>
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
+              <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
+                title="Generar la Remisión en PDF de esta factura"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1, marginRight: '8px' }}>
+                🧾 {cargandoRemision ? 'Preparando...' : 'Remisión'}
+              </button>
               <button onClick={() => setFacturaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
             </div>
           </div>
@@ -3058,6 +3303,173 @@ export const FacturacionProveedoresDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* ════════════════ MODAL ENCABEZADO (EMISOR) DE REMISIONES ════════════════ */}
+      {modalEmisores && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1900, padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '760px', maxHeight: '92vh', overflowY: 'auto', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Encabezado de las Remisiones</h2>
+              <button onClick={() => setModalEmisores(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.82rem', margin: '12px 0 20px' }}>
+              El nombre y los datos que van en la parte superior de la remisión dependen de la <b style={{ color: '#c9d1d9' }}>moneda</b> de la factura:
+              las remisiones en <b style={{ color: '#3b82f6' }}>PESOS (MXN)</b> salen a nombre de <b style={{ color: '#c9d1d9' }}>Rolando</b> y las de
+              <b style={{ color: '#10b981' }}> DÓLARES (USD)</b> a nombre de <b style={{ color: '#c9d1d9' }}>Camila</b>. Esta configuración se guarda para todos los usuarios.
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+              {/* MXN → Rolando */}
+              <div style={{ border: '1px solid #3b82f6', borderRadius: '10px', padding: '16px', backgroundColor: 'rgba(59,130,246,0.05)' }}>
+                <div style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '12px' }}>PESOS (MXN) · Rolando</div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
+                  <input type="text" value={emisorMXN.facturaNombre} onChange={e => setEmisorMXN({ ...emisorMXN, facturaNombre: e.target.value })} style={rInputStyle} />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>DIRECCIÓN</label>
+                  <input type="text" value={emisorMXN.direccion} onChange={e => setEmisorMXN({ ...emisorMXN, direccion: e.target.value })} style={rInputStyle} />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
+                  <input type="text" value={emisorMXN.ciudadEstado} onChange={e => setEmisorMXN({ ...emisorMXN, ciudadEstado: e.target.value })} style={rInputStyle} />
+                </div>
+                <div>
+                  <label style={rLabelStyle}>EMAIL</label>
+                  <input type="text" value={emisorMXN.email} onChange={e => setEmisorMXN({ ...emisorMXN, email: e.target.value })} style={rInputStyle} />
+                </div>
+              </div>
+
+              {/* USD → Camila */}
+              <div style={{ border: '1px solid #10b981', borderRadius: '10px', padding: '16px', backgroundColor: 'rgba(16,185,129,0.05)' }}>
+                <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '12px' }}>DÓLARES (USD) · Camila</div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
+                  <input type="text" value={emisorUSD.facturaNombre} onChange={e => setEmisorUSD({ ...emisorUSD, facturaNombre: e.target.value })} style={rInputStyle} />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>DIRECCIÓN</label>
+                  <input type="text" value={emisorUSD.direccion} onChange={e => setEmisorUSD({ ...emisorUSD, direccion: e.target.value })} style={rInputStyle} />
+                </div>
+                <div style={{ marginBottom: '10px' }}>
+                  <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
+                  <input type="text" value={emisorUSD.ciudadEstado} onChange={e => setEmisorUSD({ ...emisorUSD, ciudadEstado: e.target.value })} style={rInputStyle} />
+                </div>
+                <div>
+                  <label style={rLabelStyle}>EMAIL</label>
+                  <input type="text" value={emisorUSD.email} onChange={e => setEmisorUSD({ ...emisorUSD, email: e.target.value })} style={rInputStyle} />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px', marginTop: '20px' }}>
+              <button onClick={() => setModalEmisores(false)} disabled={guardandoEmisores} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={guardarEmisores} disabled={guardandoEmisores} style={{ padding: '8px 24px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoEmisores ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoEmisores ? 0.7 : 1 }}>{guardandoEmisores ? 'Guardando...' : 'Guardar para todos'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════ MODAL VISTA PREVIA DE REMISIÓN (editable) ════════════════ */}
+      {remisionPreview && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1850, padding: '20px', backdropFilter: 'blur(6px)', overflowY: 'auto' }}>
+          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '960px', margin: 'auto', padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+              <div>
+                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Remisión · vista previa</h2>
+                <span style={{ color: remisionPreview.esUSD ? '#10b981' : '#3b82f6', fontSize: '0.82rem', fontWeight: 'bold' }}>
+                  {remisionPreview.esUSD ? 'DÓLARES (USD) → Camila' : 'PESOS (MXN) → Rolando'}
+                </span>
+              </div>
+              <button onClick={() => setRemisionPreview(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.8rem', margin: '10px 0 18px' }}>
+              Revisa y edita lo que necesites; luego pulsa <b style={{ color: '#fb923c' }}>Generar PDF</b>. Se descargará la remisión en PDF con el logo.
+            </p>
+
+            {/* Emisor (encabezado) */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#fb923c', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>ENCABEZADO (EMISOR)</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}>NOMBRE</label><input type="text" value={remisionPreview.emisorNombre} onChange={e => setRP('emisorNombre', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>EMAIL</label><input type="text" value={remisionPreview.emisorEmail} onChange={e => setRP('emisorEmail', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={remisionPreview.emisorDireccion} onChange={e => setRP('emisorDireccion', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label><input type="text" value={remisionPreview.emisorCiudadEstado} onChange={e => setRP('emisorCiudadEstado', e.target.value)} style={rInputStyle} /></div>
+              </div>
+            </div>
+
+            {/* Datos de la remisión y del proveedor */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>DATOS DE LA REMISIÓN Y DEL PROVEEDOR</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}># REMISIÓN</label><input type="text" value={remisionPreview.numero} onChange={e => setRP('numero', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>FECHA</label><input type="text" value={remisionPreview.fecha} onChange={e => setRP('fecha', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>DENOMINACIÓN</label><input type="text" value={remisionPreview.moneda} onChange={e => setRP('moneda', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>DÍAS CRÉDITO</label><input type="text" value={remisionPreview.diasCredito} onChange={e => setRP('diasCredito', e.target.value)} style={rInputStyle} /></div>
+                <div style={{ gridColumn: 'span 2' }}><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={remisionPreview.clienteNombre} onChange={e => setRP('clienteNombre', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>NUM. EXT/INT</label><input type="text" value={remisionPreview.numExtInt} onChange={e => setRP('numExtInt', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>COLONIA</label><input type="text" value={remisionPreview.colonia} onChange={e => setRP('colonia', e.target.value)} style={rInputStyle} /></div>
+                <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={remisionPreview.direccion} onChange={e => setRP('direccion', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CIUDAD</label><input type="text" value={remisionPreview.ciudad} onChange={e => setRP('ciudad', e.target.value)} style={rInputStyle} /></div>
+              </div>
+            </div>
+
+            {/* Renglones de servicios */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>SERVICIOS ({(remisionPreview.filas || []).length})</div>
+              <div style={{ overflowX: 'auto', border: '1px solid #30363d', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#161b22', color: '#8b949e', fontSize: '0.72rem' }}>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>REF#</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>FECHA</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>EQ.</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>ORIGEN</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>DESTINO</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>DESCRIPCIÓN</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>IMPORTE</th>
+                      <th style={{ padding: '8px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(remisionPreview.filas || []).map((r: any, idx: number) => (
+                      <tr key={idx} style={{ borderTop: '1px solid #21262d' }}>
+                        <td style={{ padding: '4px' }}><input value={r.ref} onChange={e => setRPFila(idx, 'ref', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.fecha} onChange={e => setRPFila(idx, 'fecha', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.equipo} onChange={e => setRPFila(idx, 'equipo', e.target.value)} style={{ ...rCellStyle, minWidth: '60px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.origen} onChange={e => setRPFila(idx, 'origen', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.destino} onChange={e => setRPFila(idx, 'destino', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                        <td style={{ padding: '4px' }}><input value={r.descripcion} onChange={e => setRPFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '160px' }} /></td>
+                        <td style={{ padding: '4px' }}><input type="number" step="any" value={r.importe} onChange={e => setRPFila(idx, 'importe', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
+                        <td style={{ padding: '4px', textAlign: 'center' }}>
+                          <button onClick={() => quitarFilaRemision(idx)} title="Quitar renglón" style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '4px 8px', fontSize: '0.75rem' }}>✕</button>
+                        </td>
+                      </tr>
+                    ))}
+                    {(remisionPreview.filas || []).length === 0 && (
+                      <tr><td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.82rem' }}>Sin renglones.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Pie: tipo de cambio, total, observaciones */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+              <div><label style={rLabelStyle}>FECHA TIPO DE CAMBIO (DOF)</label><input type="text" value={remisionPreview.fechaTipoCambio} onChange={e => setRP('fechaTipoCambio', e.target.value)} placeholder="Ej. 24/06/2026" style={rInputStyle} /></div>
+              <div><label style={rLabelStyle}>TIPO DE CAMBIO</label><input type="text" value={remisionPreview.tipoCambio} onChange={e => setRP('tipoCambio', e.target.value)} placeholder="Ej. 17.5505" style={rInputStyle} /></div>
+              <div><label style={rLabelStyle}>TOTAL</label><input type="number" step="any" value={remisionPreview.total} onChange={e => setRP('total', e.target.value)} style={{ ...rInputStyle, color: '#3fb950', fontWeight: 'bold' }} /></div>
+              <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>OBSERVACIONES</label><input type="text" value={remisionPreview.observaciones} onChange={e => setRP('observaciones', e.target.value)} style={rInputStyle} /></div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
+              <button onClick={() => setRemisionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
+              <button onClick={generarPDFDeRemision} style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🧾 Generar PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
