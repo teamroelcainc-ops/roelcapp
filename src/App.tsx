@@ -540,7 +540,7 @@ function App() {
                 {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => setModuloActivo('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>}
                 {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => setModuloActivo('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>}
                 {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => setModuloActivo('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>}
-                <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => setModuloActivo('importacion')}><span className="sidebar-icon">📥</span><span className="sidebar-label">Importar Datos</span></div>
+                <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => setModuloActivo('importacion')}><span className="sidebar-icon"><Ico><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Ico></span><span className="sidebar-label">Importar Datos</span></div>
               </div>
             )}
           </>

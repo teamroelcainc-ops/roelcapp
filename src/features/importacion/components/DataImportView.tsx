@@ -1,19 +1,58 @@
 import { useState, useRef, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
-import { collection, doc, writeBatch } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, query, limit } from 'firebase/firestore';
 
-// Iconos sin dependencias externas (esta app no tiene 'lucide-react' instalado).
-const Upload = (_p: any) => <span>⬆️</span>;
-const ArrowRight = (_p: any) => <span>➡️</span>;
-const AlertCircle = (_p: any) => <span>⚠️</span>;
-const CheckCircle = (_p: any) => <span>✅</span>;
-const Database = (_p: any) => <span>🗄️</span>;
-const Loader2 = (_p: any) => <span>⏳</span>;
-const RotateCcw = (_p: any) => <span>↺</span>;
-const FileSpreadsheet = (_p: any) => <span>📊</span>;
-const ChevronDown = (_p: any) => <span>▾</span>;
-const Download = (_p: any) => <span>⬇️</span>;
+// ── Paleta Roelca (GitHub dark + acento naranja) ──────────────────────────
+const C = {
+  bg: '#0d1117',          // base de tarjetas / inputs
+  panel: '#161b22',       // tarjeta elevada
+  border: '#30363d',
+  borderSoft: '#21262d',
+  text: '#e6edf3',
+  textMuted: '#8b949e',
+  textFaint: '#6e7681',
+  accent: '#D84315',      // naranja de marca
+  accentHover: '#bf360c',
+  accentSoft: 'rgba(216,67,21,0.14)',
+  accentBorder: 'rgba(216,67,21,0.45)',
+  green: '#3fb950',
+  greenSoft: 'rgba(63,185,80,0.12)',
+  greenBorder: 'rgba(63,185,80,0.40)',
+  blue: '#58a6ff',
+  blueSoft: 'rgba(88,166,255,0.12)',
+  blueBorder: 'rgba(88,166,255,0.40)',
+  amber: '#d29922',
+  amberText: '#e3b341',
+  amberSoft: 'rgba(210,153,34,0.10)',
+  amberBorder: 'rgba(210,153,34,0.35)',
+  red: '#f85149',
+  redText: '#ff7b72',
+  redSoft: 'rgba(248,81,73,0.10)',
+  redBorder: 'rgba(248,81,73,0.35)',
+};
+
+// ── Iconos SVG de línea (mismo estilo que el sidebar de Roelca) ───────────
+type IconProps = { size?: number; color?: string; strokeWidth?: number; style?: React.CSSProperties; className?: string };
+const mkIcon = (paths: React.ReactNode) =>
+  ({ size = 16, color = 'currentColor', strokeWidth = 2, style, className }: IconProps) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"
+      style={{ flexShrink: 0, ...style }} className={className}>
+      {paths}
+    </svg>
+  );
+
+const Upload = mkIcon(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></>);
+const Download = mkIcon(<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></>);
+const ArrowRight = mkIcon(<><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></>);
+const AlertCircle = mkIcon(<><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></>);
+const CheckCircle = mkIcon(<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>);
+const Database = mkIcon(<><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></>);
+const Loader2 = mkIcon(<><line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" /><line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" /><line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" /><line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" /></>);
+const RotateCcw = mkIcon(<><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></>);
+const FileSpreadsheet = mkIcon(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="16" y2="17" /><line x1="12" y1="13" x2="12" y2="21" /></>);
+const ChevronDown = mkIcon(<polyline points="6 9 12 15 18 9" />);
 
 type FieldType = 'string' | 'number' | 'boolean' | 'date' | 'array' | 'skip';
 
@@ -117,11 +156,17 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
   const [mappingFilter, setMappingFilter] = useState<'all' | 'matched' | 'custom' | 'skipped'>('all');
 
   // ⭐ Colección elegida SOLO para descargar la plantilla Excel (independiente de
-  //    la colección destino de importación).
+  //    la colección destino de importación). '__other__' habilita el campo libre.
   const [exportCollection, setExportCollection] = useState<string>('');
+  const [otherCollection, setOtherCollection] = useState('');   // nombre libre de colección
+  const [templateBusy, setTemplateBusy] = useState(false);      // leyendo esquema de Firestore
 
   const getExportDef = (): CollectionDef | undefined =>
     AVAILABLE_COLLECTIONS.find(c => c.id === exportCollection);
+
+  // ⭐ ID real de la colección a exportar (el elegido, o el escrito a mano).
+  const exportCollectionId = (): string =>
+    (exportCollection === '__other__' ? otherCollection.trim() : exportCollection).trim();
 
   // ⭐ Texto de ayuda por tipo de campo (fila 2 de la plantilla)
   const TYPE_EXAMPLE: Record<FieldType, string> = {
@@ -133,30 +178,99 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
     skip: '[texto]',
   };
 
-  // ⭐ Genera y descarga una plantilla .xlsx para la colección elegida:
-  //    Fila 1 = nombres de los campos (schema) · Fila 2 = formato esperado por tipo.
-  const handleDownloadTemplate = () => {
-    const def = getExportDef();
-    if (!def) {
-      alert('Selecciona una colección para descargar su plantilla.');
+  // ⭐ Infiere el tipo de un campo a partir de valores reales muestreados.
+  const inferTypeFromValues = (values: any[]): FieldType => {
+    const s = values.filter(v => v !== null && v !== '' && v !== undefined);
+    if (s.length === 0) return 'string';
+    if (s.some(v => Array.isArray(v))) return 'array';
+    if (s.every(v => typeof v === 'boolean')) return 'boolean';
+    if (s.every(v => typeof v === 'number' || (!isNaN(Number(v)) && String(v).trim() !== ''))) return 'number';
+    if (s.every(v => {
+      const str = String(v).trim();
+      if (!/[-/]/.test(str)) return false;
+      return !isNaN(Date.parse(str));
+    })) return 'date';
+    return 'string';
+  };
+
+  // ⭐ Genera y descarga una plantilla .xlsx para la colección elegida.
+  //    A diferencia de antes, NO usa una lista fija de campos: lee una MUESTRA de
+  //    documentos reales de Firestore y arma la plantilla con TODOS los campos que
+  //    existen de verdad en esa colección (unión de llaves de todos los documentos
+  //    muestreados). Así la plantilla siempre refleja el esquema real.
+  const handleDownloadTemplate = async () => {
+    const colId = exportCollectionId();
+    if (!colId) {
+      alert('Selecciona (o escribe) una colección para descargar su plantilla.');
       return;
     }
 
-    // ⭐ La primera columna es 'id': aquí va el ID de AppSheet, que será el ID
-    //    principal del documento en Firestore (marca "usar columna como ID" al importar).
-    const headers = ['id', ...def.fields.map(f => f.name)];
-    const exampleRow = ['[ID de AppSheet — será el ID del documento]', ...def.fields.map(f => TYPE_EXAMPLE[f.type] || '[texto]')];
+    const def = getExportDef(); // puede ser undefined si es colección libre
+    const displayName = def?.name || colId;
 
-    const worksheet = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
-    // Ancho de columnas cómodo según el header
-    worksheet['!cols'] = headers.map(h => ({ wch: Math.max(14, h.length + 4) }));
+    setTemplateBusy(true);
+    try {
+      // 1) Muestra de documentos reales para descubrir el esquema completo.
+      const MUESTRA = 400;
+      const snap = await getDocs(query(collection(db, colId), limit(MUESTRA)));
 
-    const workbook = XLSX.utils.book_new();
-    // Excel no permite estos caracteres en el nombre de la hoja: : \ / ? * [ ]
-    const safeSheetName = (def.name.replace(/[:\\/?*[\]]/g, ' ').trim().substring(0, 31)) || 'Plantilla';
-    XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
+      // 2) Unión de todas las llaves + valores de muestra por campo (para tipos).
+      const valoresPorCampo: Record<string, any[]> = {};
+      snap.forEach(d => {
+        const data = d.data() as any;
+        Object.keys(data).forEach(k => {
+          if (!valoresPorCampo[k]) valoresPorCampo[k] = [];
+          if (valoresPorCampo[k].length < 5) valoresPorCampo[k].push(data[k]);
+        });
+      });
+      const camposReales = Object.keys(valoresPorCampo);
 
-    XLSX.writeFile(workbook, `plantilla_${def.id}.xlsx`);
+      // 3) Orden de columnas: primero los campos "conocidos" del schema (en su
+      //    orden declarado, si existen en los datos reales), luego el resto
+      //    descubierto, alfabético. Si no hay def, todo alfabético.
+      const declarados = def ? def.fields.map(f => f.name) : [];
+      const declaradosPresentes = declarados.filter(n => camposReales.includes(n));
+      const extra = camposReales.filter(n => !declarados.includes(n)).sort((a, b) => a.localeCompare(b));
+      // Si la colección estaba vacía, cae al schema declarado (o solo 'id').
+      const ordenCampos = camposReales.length > 0
+        ? [...declaradosPresentes, ...extra]
+        : declarados;
+
+      if (ordenCampos.length === 0) {
+        alert(`La colección "${colId}" no devolvió documentos y no hay un esquema conocido para ella, así que no se pudieron determinar los campos.\n\nRevisa que el nombre de la colección sea correcto y que tengas permisos de lectura.`);
+        setTemplateBusy(false);
+        return;
+      }
+
+      // 4) Tipo por campo: usa el tipo declarado si existe; si no, lo infiere de
+      //    los valores reales muestreados.
+      const tipoDe = (campo: string): FieldType => {
+        const d = def?.fields.find(f => f.name === campo);
+        if (d) return d.type;
+        return inferTypeFromValues(valoresPorCampo[campo] || []);
+      };
+
+      // 5) La primera columna es 'id' (ID del documento en Firestore).
+      const headers = ['id', ...ordenCampos];
+      const exampleRow = ['[ID del documento en Firestore]', ...ordenCampos.map(c => TYPE_EXAMPLE[tipoDe(c)] || '[texto]')];
+
+      const worksheet = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
+      worksheet['!cols'] = headers.map(h => ({ wch: Math.max(14, h.length + 4) }));
+
+      const workbook = XLSX.utils.book_new();
+      const safeSheetName = (displayName.replace(/[:\\/?*[\]]/g, ' ').trim().substring(0, 31)) || 'Plantilla';
+      XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName);
+
+      XLSX.writeFile(workbook, `plantilla_${colId}.xlsx`);
+
+      if (camposReales.length === 0) {
+        alert(`Nota: la colección "${colId}" no tenía documentos, así que la plantilla se generó con el esquema conocido (${ordenCampos.length} campos).`);
+      }
+    } catch (err: any) {
+      alert(`No se pudo leer la colección "${colId}" desde Firestore.\n\n${err?.message || err}\n\nVerifica el nombre de la colección y tus permisos de lectura.`);
+    } finally {
+      setTemplateBusy(false);
+    }
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -378,7 +492,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           try {
             const transformedData = transformRow(row);
 
-            const hasAnyValue = Object.values(transformedData).some(v => 
+            const hasAnyValue = Object.values(transformedData).some(v =>
               v !== '' && v !== 0 && v !== false && (!Array.isArray(v) || v.length > 0)
             );
             if (!hasAnyValue) {
@@ -438,25 +552,25 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
   };
 
   // ─────────────────────────────────────────────────────────────
-  // ESTILOS
+  // ESTILOS (tema oscuro Roelca)
   // ─────────────────────────────────────────────────────────────
 
   const s = {
-    card: { backgroundColor: 'white', borderRadius: '10px', border: '1px solid #e5e7eb', padding: '20px' },
-    label: { fontSize: '0.7rem', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.6px', marginBottom: '6px', display: 'block' },
-    input: { backgroundColor: '#ffffff', padding: '7px 11px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.825rem', color: '#0f172a', width: '100%', boxSizing: 'border-box' as const, outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.15s, box-shadow 0.15s' },
-    select: { backgroundColor: '#ffffff', padding: '7px 11px', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.825rem', color: '#0f172a', width: '100%', boxSizing: 'border-box' as const, outline: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'border-color 0.15s' },
-    btnPrimary: { backgroundColor: '#1e293b', color: 'white', border: '1px solid #1e293b', padding: '8px 16px', borderRadius: '7px', fontWeight: 500, cursor: 'pointer', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.15s' },
-    btnSecondary: { backgroundColor: 'white', border: '1px solid #e2e8f0', color: '#475569', padding: '8px 16px', borderRadius: '7px', fontWeight: 500, cursor: 'pointer', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.15s' },
+    card: { backgroundColor: C.panel, borderRadius: '10px', border: `1px solid ${C.border}`, padding: '20px' },
+    label: { fontSize: '0.7rem', color: C.textMuted, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.6px', marginBottom: '6px', display: 'block' },
+    input: { backgroundColor: C.bg, padding: '7px 11px', border: `1px solid ${C.border}`, borderRadius: '6px', fontSize: '0.825rem', color: C.text, width: '100%', boxSizing: 'border-box' as const, outline: 'none', fontFamily: 'inherit', transition: 'border-color 0.15s, box-shadow 0.15s' },
+    select: { backgroundColor: C.bg, padding: '7px 11px', border: `1px solid ${C.border}`, borderRadius: '6px', fontSize: '0.825rem', color: C.text, width: '100%', boxSizing: 'border-box' as const, outline: 'none', cursor: 'pointer', fontFamily: 'inherit', transition: 'border-color 0.15s' },
+    btnPrimary: { backgroundColor: C.accent, color: '#ffffff', border: `1px solid ${C.accent}`, padding: '8px 16px', borderRadius: '7px', fontWeight: 500, cursor: 'pointer', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.15s' },
+    btnSecondary: { backgroundColor: C.panel, border: `1px solid ${C.border}`, color: C.text, padding: '8px 16px', borderRadius: '7px', fontWeight: 500, cursor: 'pointer', fontSize: '0.825rem', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.15s' },
     stepBadge: (active: boolean, complete: boolean) => ({
       width: '26px', height: '26px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, fontSize: '0.75rem',
-      backgroundColor: complete ? '#10b981' : (active ? '#0f172a' : '#f1f5f9'),
-      color: complete || active ? 'white' : '#94a3b8',
+      backgroundColor: complete ? C.green : (active ? C.accent : C.borderSoft),
+      color: complete || active ? '#ffffff' : C.textFaint,
       transition: 'all 0.2s',
       flexShrink: 0
     }),
-    th: { padding: '9px 12px', textAlign: 'left' as const, fontSize: '0.65rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: '1px solid #e2e8f0', backgroundColor: '#f8fafc', whiteSpace: 'nowrap' as const },
-    td: { padding: '8px 12px', borderBottom: '1px solid #f1f5f9', fontSize: '0.8rem', color: '#0f172a' }
+    th: { padding: '9px 12px', textAlign: 'left' as const, fontSize: '0.65rem', fontWeight: 600, color: C.textMuted, textTransform: 'uppercase' as const, letterSpacing: '0.05em', borderBottom: `1px solid ${C.border}`, backgroundColor: C.bg, whiteSpace: 'nowrap' as const },
+    td: { padding: '8px 12px', borderBottom: `1px solid ${C.borderSoft}`, fontSize: '0.8rem', color: C.text }
   };
 
   const STEPS = ['Upload CSV', 'Map Fields', 'Preview', 'Import'];
@@ -475,9 +589,9 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
 
   // ⭐ Estilo visual por estado (etiqueta + tinte de fila)
   const STATUS_UI: Record<'matched' | 'custom' | 'skipped', { bg: string; border: string; fg: string; label: string; rowBg: string; icon: string }> = {
-    matched: { bg: '#ecfdf5', border: '#a7f3d0', fg: '#047857', label: 'En la colección', rowBg: '#f6fefb', icon: '✓' },
-    custom:  { bg: '#eff6ff', border: '#bfdbfe', fg: '#1d4ed8', label: 'Campo nuevo', rowBg: '#f8fbff', icon: '✎' },
-    skipped: { bg: '#f1f5f9', border: '#e2e8f0', fg: '#94a3b8', label: 'No se importa', rowBg: '#ffffff', icon: '⊘' }
+    matched: { bg: C.greenSoft, border: C.greenBorder, fg: C.green, label: 'En la colección', rowBg: 'rgba(63,185,80,0.05)', icon: '✓' },
+    custom:  { bg: C.blueSoft, border: C.blueBorder, fg: C.blue, label: 'Campo nuevo', rowBg: 'rgba(88,166,255,0.05)', icon: '✎' },
+    skipped: { bg: C.borderSoft, border: C.border, fg: C.textFaint, label: 'No se importa', rowBg: 'transparent', icon: '⊘' }
   };
 
   const filterPill = (key: 'all' | 'matched' | 'custom' | 'skipped', label: string, count: number, color: string) => (
@@ -488,16 +602,16 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
         display: 'inline-flex', alignItems: 'center', gap: '6px',
         padding: '6px 12px', borderRadius: '999px', cursor: 'pointer',
         fontSize: '0.78rem', fontWeight: 600,
-        border: `1px solid ${mappingFilter === key ? color : '#e2e8f0'}`,
-        background: mappingFilter === key ? color : '#ffffff',
-        color: mappingFilter === key ? '#ffffff' : '#475569',
+        border: `1px solid ${mappingFilter === key ? color : C.border}`,
+        background: mappingFilter === key ? color : C.bg,
+        color: mappingFilter === key ? '#ffffff' : C.textMuted,
         transition: 'all 0.15s'
       }}
     >
       {label}
       <span style={{
-        background: mappingFilter === key ? 'rgba(255,255,255,0.25)' : '#f1f5f9',
-        color: mappingFilter === key ? '#ffffff' : '#64748b',
+        background: mappingFilter === key ? 'rgba(255,255,255,0.25)' : C.borderSoft,
+        color: mappingFilter === key ? '#ffffff' : C.textMuted,
         borderRadius: '999px', padding: '0 7px', fontSize: '0.72rem', fontWeight: 700, minWidth: '18px', textAlign: 'center'
       }}>{count}</span>
     </button>
@@ -512,12 +626,14 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       <style>{`
         .spin-import { animation: spin-import 1s linear infinite; }
         @keyframes spin-import { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .hamburger-btn { background: white; border: 1px solid #e5e7eb; border-radius: 7px; padding: 7px 10px; cursor: pointer; color: #475569; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
-        .hamburger-btn:hover { background-color: #f8fafc; border-color: #cbd5e1; }
-        .di-btn-primary:hover { background-color: #0f172a !important; }
-        .di-btn-secondary:hover { background-color: #f8fafc !important; border-color: #cbd5e1 !important; }
-        .di-input:focus { border-color: #0f172a !important; box-shadow: 0 0 0 3px rgba(15,23,42,0.06) !important; }
-        .di-row:hover { filter: brightness(0.985); }
+        .hamburger-btn { background: ${C.bg}; border: 1px solid ${C.border}; border-radius: 7px; padding: 7px 10px; cursor: pointer; color: ${C.textMuted}; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+        .hamburger-btn:hover { background-color: ${C.borderSoft}; border-color: ${C.textFaint}; color: ${C.text}; }
+        .di-btn-primary:hover { background-color: ${C.accentHover} !important; border-color: ${C.accentHover} !important; }
+        .di-btn-secondary:hover { background-color: ${C.borderSoft} !important; border-color: ${C.textFaint} !important; }
+        .di-input:focus { border-color: ${C.accent} !important; box-shadow: 0 0 0 3px ${C.accentSoft} !important; }
+        .di-input::placeholder { color: ${C.textFaint}; }
+        .di-row:hover { filter: brightness(1.25); }
+        .di-input option, .di-input optgroup { background-color: ${C.panel}; color: ${C.text}; }
       `}</style>
 
       {/* HEADER */}
@@ -526,19 +642,19 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
         <div>
-          <h1 style={{ margin: 0, fontSize: '1.35rem', color: '#0f172a', fontWeight: 600, letterSpacing: '-0.02em' }}>Data Import</h1>
-          <p style={{ margin: '2px 0 0 0', color: '#64748b', fontSize: '0.825rem' }}>Import CSV files from Google Sheets into Firestore</p>
+          <h1 style={{ margin: 0, fontSize: '1.35rem', color: C.text, fontWeight: 600, letterSpacing: '-0.02em' }}>Data Import</h1>
+          <p style={{ margin: '2px 0 0 0', color: C.textMuted, fontSize: '0.825rem' }}>Importa archivos CSV de Google Sheets hacia Firestore</p>
         </div>
       </header>
 
       {/* ⭐ PANEL: DESCARGAR PLANTILLA EXCEL (independiente de la importación) */}
-      <div style={{ ...s.card, marginBottom: '20px', borderColor: '#d1fae5', background: 'linear-gradient(180deg, #f6fefb, #ffffff)' }}>
+      <div style={{ ...s.card, marginBottom: '20px', borderColor: C.greenBorder }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-          <FileSpreadsheet size={16} color="#059669" />
-          <h2 style={{ margin: 0, fontSize: '0.95rem', color: '#0f172a', fontWeight: 600 }}>Descargar plantilla de Excel</h2>
+          <FileSpreadsheet size={16} color={C.green} />
+          <h2 style={{ margin: 0, fontSize: '0.95rem', color: C.text, fontWeight: 600 }}>Descargar plantilla de Excel</h2>
         </div>
-        <p style={{ margin: '0 0 14px 0', color: '#64748b', fontSize: '0.8rem', lineHeight: 1.5 }}>
-          Elige una colección y descarga una plantilla <strong>.xlsx</strong> con las columnas correctas. Llénala, expórtala como <strong>CSV</strong> (File → Download → CSV) y súbela abajo para importar.
+        <p style={{ margin: '0 0 14px 0', color: C.textMuted, fontSize: '0.8rem', lineHeight: 1.5 }}>
+          Elige una colección: la plantilla <strong style={{ color: C.text }}>.xlsx</strong> se genera leyendo una muestra de tus documentos reales en Firestore, así incluye <strong style={{ color: C.text }}>todos los campos</strong> que existen en esa colección. Llénala, expórtala como <strong style={{ color: C.text }}>CSV</strong> (File → Download → CSV) y súbela abajo para importar.
         </p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 280px', minWidth: '220px' }}>
@@ -546,26 +662,49 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
               <Database size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
               Colección de la plantilla
             </label>
-            <select className="di-input" style={s.select} value={exportCollection} onChange={(e) => setExportCollection(e.target.value)}>
+            <select
+              className="di-input"
+              style={s.select}
+              value={exportCollection}
+              onChange={(e) => { setExportCollection(e.target.value); if (e.target.value !== '__other__') setOtherCollection(''); }}
+            >
               <option value="">— Selecciona una colección —</option>
               {AVAILABLE_COLLECTIONS.map(c => (
                 <option key={c.id} value={c.id}>{c.name} ({c.description})</option>
               ))}
+              <option value="__other__">✎ Otra colección (escribir nombre)…</option>
             </select>
           </div>
+
+          {/* Campo libre para cualquier otra colección de Firestore */}
+          {exportCollection === '__other__' && (
+            <div style={{ flex: '1 1 240px', minWidth: '200px' }}>
+              <label style={s.label}>Nombre exacto de la colección en Firestore</label>
+              <input
+                className="di-input"
+                style={s.input}
+                placeholder="p. ej. contactos, unidades, remolques…"
+                value={otherCollection}
+                onChange={(e) => setOtherCollection(e.target.value)}
+              />
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleDownloadTemplate}
-            disabled={!exportCollection}
+            disabled={!exportCollectionId() || templateBusy}
             className="di-btn-secondary"
-            style={{ ...s.btnSecondary, background: '#ecfdf5', borderColor: '#a7f3d0', color: '#047857', opacity: !exportCollection ? 0.5 : 1, cursor: !exportCollection ? 'not-allowed' : 'pointer' }}
+            style={{ ...s.btnSecondary, background: C.greenSoft, borderColor: C.greenBorder, color: C.green, opacity: (!exportCollectionId() || templateBusy) ? 0.5 : 1, cursor: (!exportCollectionId() || templateBusy) ? 'not-allowed' : 'pointer' }}
           >
-            <Download size={14} /> Descargar Plantilla Excel
+            {templateBusy
+              ? <><Loader2 size={14} className="spin-import" /> Leyendo esquema…</>
+              : <><Download size={14} /> Descargar Plantilla Excel</>}
           </button>
         </div>
-        {exportCollection && (
-          <p style={{ margin: '10px 0 0 0', fontSize: '0.72rem', color: '#94a3b8' }}>
-            La plantilla tendrá <strong style={{ color: '#059669' }}>{(getExportDef()?.fields.length || 0) + 1}</strong> columna(s), incluyendo <strong style={{ color: '#0f172a' }}>id</strong> (el ID de AppSheet que se usará como ID principal del documento). La fila 2 indica el formato esperado de cada campo (p. ej. [YYYY-MM-DD], [número]).
+        {!!exportCollectionId() && (
+          <p style={{ margin: '10px 0 0 0', fontSize: '0.72rem', color: C.textFaint }}>
+            La primera columna es <strong style={{ color: C.text }}>id</strong> (el ID del documento en Firestore, que se usa como ID principal al importar). Las demás columnas se toman de los campos reales de <strong style={{ color: C.green }}>{exportCollectionId()}</strong>. La fila 2 indica el formato esperado de cada campo (p. ej. [YYYY-MM-DD], [número]).
           </p>
         )}
       </div>
@@ -575,12 +714,12 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
         {STEPS.map((label, idx) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '110px' }}>
             <div style={s.stepBadge(idx === currentStepIndex, idx < currentStepIndex)}>
-              {idx < currentStepIndex ? <CheckCircle size={14} /> : idx + 1}
+              {idx < currentStepIndex ? <CheckCircle size={14} color="#ffffff" /> : idx + 1}
             </div>
-            <div style={{ fontSize: '0.775rem', fontWeight: idx === currentStepIndex ? 600 : 500, color: idx === currentStepIndex ? '#0f172a' : '#94a3b8' }}>
+            <div style={{ fontSize: '0.775rem', fontWeight: idx === currentStepIndex ? 600 : 500, color: idx === currentStepIndex ? C.text : C.textFaint }}>
               {label}
             </div>
-            {idx < STEPS.length - 1 && <div style={{ flex: 1, height: '1px', backgroundColor: idx < currentStepIndex ? '#10b981' : '#e2e8f0', marginLeft: '6px' }} />}
+            {idx < STEPS.length - 1 && <div style={{ flex: 1, height: '1px', backgroundColor: idx < currentStepIndex ? C.green : C.border, marginLeft: '6px' }} />}
           </div>
         ))}
       </div>
@@ -588,9 +727,9 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       {/* ─────────── STEP 1: UPLOAD ─────────── */}
       {step === 'upload' && (
         <div style={s.card}>
-          <h2 style={{ margin: '0 0 4px 0', fontSize: '0.95rem', color: '#0f172a', fontWeight: 600 }}>Upload your CSV file</h2>
-          <p style={{ margin: '0 0 18px 0', color: '#64748b', fontSize: '0.825rem' }}>
-            Export your Google Sheet as CSV (File → Download → Comma Separated Values) and drop it here.
+          <h2 style={{ margin: '0 0 4px 0', fontSize: '0.95rem', color: C.text, fontWeight: 600 }}>Sube tu archivo CSV</h2>
+          <p style={{ margin: '0 0 18px 0', color: C.textMuted, fontSize: '0.825rem' }}>
+            Exporta tu Google Sheet como CSV (File → Download → Comma Separated Values) y suéltalo aquí.
           </p>
 
           <div
@@ -599,21 +738,21 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
             onDragLeave={() => setIsDragging(false)}
             onClick={() => fileInputRef.current?.click()}
             style={{
-              border: `1.5px dashed ${isDragging ? '#0f172a' : '#cbd5e1'}`,
+              border: `1.5px dashed ${isDragging ? C.accent : C.border}`,
               borderRadius: '10px',
               padding: '44px 20px',
               textAlign: 'center',
               cursor: 'pointer',
-              backgroundColor: isDragging ? '#f1f5f9' : '#fafbfc',
+              backgroundColor: isDragging ? C.accentSoft : C.bg,
               transition: 'all 0.18s'
             }}
           >
-            <Upload size={32} strokeWidth={1.5} style={{ color: isDragging ? '#0f172a' : '#94a3b8', margin: '0 auto 12px', display: 'block' }} />
-            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', marginBottom: '3px' }}>
-              {isDragging ? 'Drop the CSV here' : 'Click to select or drag a CSV file'}
+            <Upload size={32} strokeWidth={1.5} color={isDragging ? C.accent : C.textMuted} style={{ margin: '0 auto 12px', display: 'block' }} />
+            <div style={{ fontSize: '0.875rem', fontWeight: 600, color: C.text, marginBottom: '3px' }}>
+              {isDragging ? 'Suelta el CSV aquí' : 'Haz clic para seleccionar o arrastra un archivo CSV'}
             </div>
-            <div style={{ fontSize: '0.775rem', color: '#94a3b8' }}>
-              Only .csv files · First row must be column headers
+            <div style={{ fontSize: '0.775rem', color: C.textFaint }}>
+              Solo archivos .csv · La primera fila deben ser los encabezados de columna
             </div>
           </div>
 
@@ -629,15 +768,15 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
             }}
           />
 
-          <div style={{ marginTop: '18px', padding: '14px 16px', backgroundColor: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', display: 'flex', gap: '10px' }}>
-            <AlertCircle size={15} color="#a16207" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '0.8rem', color: '#78350f', lineHeight: 1.55 }}>
-              <strong style={{ fontWeight: 600 }}>How to export from Google Sheets:</strong>
+          <div style={{ marginTop: '18px', padding: '14px 16px', backgroundColor: C.amberSoft, border: `1px solid ${C.amberBorder}`, borderRadius: '8px', display: 'flex', gap: '10px' }}>
+            <AlertCircle size={15} color={C.amber} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.8rem', color: C.amberText, lineHeight: 1.55 }}>
+              <strong style={{ fontWeight: 600 }}>Cómo exportar desde Google Sheets:</strong>
               <ol style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                <li>Open your Google Sheet</li>
-                <li>Make sure the <strong>first row</strong> contains column names (e.g., "First Name", "Email", "Phone")</li>
-                <li>Click <strong>File → Download → Comma-separated values (.csv)</strong></li>
-                <li>Drag the downloaded file here</li>
+                <li>Abre tu Google Sheet</li>
+                <li>Asegúrate de que la <strong>primera fila</strong> contenga los nombres de columna (p. ej. "Nombre", "RFC", "Ciudad")</li>
+                <li>Haz clic en <strong>File → Download → Comma-separated values (.csv)</strong></li>
+                <li>Arrastra el archivo descargado aquí</li>
               </ol>
             </div>
           </div>
@@ -649,49 +788,49 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
         <div style={s.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 style={{ margin: '0 0 3px 0', fontSize: '0.95rem', color: '#0f172a', fontWeight: 600 }}>Map columns to Firestore fields</h2>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.775rem' }}>
+              <h2 style={{ margin: '0 0 3px 0', fontSize: '0.95rem', color: C.text, fontWeight: 600 }}>Asigna columnas a campos de Firestore</h2>
+              <p style={{ margin: 0, color: C.textMuted, fontSize: '0.775rem' }}>
                 <FileSpreadsheet size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
-                <strong style={{ color: '#0f172a', fontWeight: 600 }}>{csvFile?.name}</strong> · {csvData.length} rows · {csvHeaders.length} columns
+                <strong style={{ color: C.text, fontWeight: 600 }}>{csvFile?.name}</strong> · {csvData.length} filas · {csvHeaders.length} columnas
               </p>
             </div>
-            <button onClick={handleReset} className="di-btn-secondary" style={s.btnSecondary}><RotateCcw size={13} /> Start Over</button>
+            <button onClick={handleReset} className="di-btn-secondary" style={s.btnSecondary}><RotateCcw size={13} /> Empezar de nuevo</button>
           </div>
 
           {/* SELECCIONAR COLECCIÓN */}
           <div style={{ marginBottom: '16px' }}>
             <label style={s.label}>
               <Database size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
-              Target Firestore Collection
+              Colección destino en Firestore
             </label>
             <select className="di-input" style={s.select} value={selectedCollection} onChange={(e) => handleSelectCollection(e.target.value)}>
-              <option value="">— Select a collection —</option>
+              <option value="">— Selecciona una colección —</option>
               {AVAILABLE_COLLECTIONS.map(c => (
                 <option key={c.id} value={c.id}>{c.name} ({c.description})</option>
               ))}
             </select>
             {selectedCollection && (
-              <p style={{ margin: '6px 0 0 0', fontSize: '0.7rem', color: '#94a3b8' }}>
-                {getCollectionDef()?.fields.length} known fields for this collection. Matching columns were auto-mapped below.
+              <p style={{ margin: '6px 0 0 0', fontSize: '0.7rem', color: C.textFaint }}>
+                {getCollectionDef()?.fields.length} campos conocidos en esta colección. Las columnas coincidentes se auto-mapearon abajo.
               </p>
             )}
           </div>
 
           {/* OPCIÓN: USAR ID DEL CSV */}
-          <div style={{ marginBottom: '16px', padding: '14px 16px', backgroundColor: '#fafbfc', borderRadius: '8px', border: '1px solid #e5e7eb' }}>
+          <div style={{ marginBottom: '16px', padding: '14px 16px', backgroundColor: C.bg, borderRadius: '8px', border: `1px solid ${C.border}` }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: useExistingId ? '12px' : 0 }}>
-              <input type="checkbox" checked={useExistingId} onChange={(e) => setUseExistingId(e.target.checked)} style={{ accentColor: '#0f172a', cursor: 'pointer' }} />
-              <span style={{ fontWeight: 500, fontSize: '0.825rem', color: '#0f172a' }}>Use a column from CSV as the Firestore document ID</span>
+              <input type="checkbox" checked={useExistingId} onChange={(e) => setUseExistingId(e.target.checked)} style={{ accentColor: C.accent, cursor: 'pointer' }} />
+              <span style={{ fontWeight: 500, fontSize: '0.825rem', color: C.text }}>Usar una columna del CSV como ID del documento en Firestore</span>
             </label>
             {useExistingId && (
               <div>
-                <label style={s.label}>Column to use as document ID</label>
+                <label style={s.label}>Columna a usar como ID del documento</label>
                 <select className="di-input" style={s.select} value={idColumn} onChange={(e) => setIdColumn(e.target.value)}>
-                  <option value="">— Select column —</option>
+                  <option value="">— Selecciona columna —</option>
                   {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
-                <p style={{ margin: '6px 0 0 0', fontSize: '0.7rem', color: '#94a3b8' }}>
-                  If unchecked, Firestore will auto-generate random IDs (recommended).
+                <p style={{ margin: '6px 0 0 0', fontSize: '0.7rem', color: C.textFaint }}>
+                  Si no se marca, Firestore generará IDs aleatorios (recomendado).
                 </p>
               </div>
             )}
@@ -699,7 +838,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
 
           {/* ⭐ BARRA DE CONTROL: buscador + filtros por estado + acciones masivas */}
           {selectedCollection && (
-            <div style={{ marginBottom: '14px', padding: '14px 16px', backgroundColor: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ marginBottom: '14px', padding: '14px 16px', backgroundColor: C.bg, border: `1px solid ${C.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {/* Buscador */}
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '200px' }}>
@@ -710,17 +849,17 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                     value={columnSearch}
                     onChange={(e) => setColumnSearch(e.target.value)}
                   />
-                  <FileSpreadsheet size={14} color="#94a3b8" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <FileSpreadsheet size={14} color={C.textFaint} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
                 </div>
                 {/* Acciones masivas */}
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  <button type="button" onClick={reAutoMap} style={{ ...s.btnSecondary, padding: '7px 12px' }} title="Volver a emparejar automáticamente por nombre">
+                  <button type="button" onClick={reAutoMap} className="di-btn-secondary" style={{ ...s.btnSecondary, padding: '7px 12px' }} title="Volver a emparejar automáticamente por nombre">
                     <RotateCcw size={13} /> Auto-mapear
                   </button>
-                  <button type="button" onClick={bulkImportSkipped} style={{ ...s.btnSecondary, padding: '7px 12px', color: '#1d4ed8', borderColor: '#bfdbfe', background: '#eff6ff' }} title="Importar como campo nuevo todas las columnas omitidas">
+                  <button type="button" onClick={bulkImportSkipped} className="di-btn-secondary" style={{ ...s.btnSecondary, padding: '7px 12px', color: C.blue, borderColor: C.blueBorder, background: C.blueSoft }} title="Importar como campo nuevo todas las columnas omitidas">
                     Importar omitidas
                   </button>
-                  <button type="button" onClick={bulkSkipCustom} style={{ ...s.btnSecondary, padding: '7px 12px' }} title="No importar las columnas que crearían campos nuevos">
+                  <button type="button" onClick={bulkSkipCustom} className="di-btn-secondary" style={{ ...s.btnSecondary, padding: '7px 12px' }} title="No importar las columnas que crearían campos nuevos">
                     Omitir campos nuevos
                   </button>
                 </div>
@@ -728,16 +867,16 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
 
               {/* Filtros por estado (con conteos, clickeables) */}
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                {filterPill('all', 'Todas', counts.all, '#0f172a')}
-                {filterPill('matched', '✓ En la colección', counts.matched, '#10b981')}
-                {filterPill('custom', '✎ Campo nuevo', counts.custom, '#2563eb')}
-                {filterPill('skipped', '⊘ No se importa', counts.skipped, '#64748b')}
+                {filterPill('all', 'Todas', counts.all, C.accent)}
+                {filterPill('matched', '✓ En la colección', counts.matched, C.green)}
+                {filterPill('custom', '✎ Campo nuevo', counts.custom, C.blue)}
+                {filterPill('skipped', '⊘ No se importa', counts.skipped, C.textFaint)}
               </div>
             </div>
           )}
 
           {/* TABLA DE MAPEO */}
-          <div style={{ border: '1px solid #e5e7eb', borderRadius: '8px', overflowX: 'auto' }}>
+          <div style={{ border: `1px solid ${C.border}`, borderRadius: '8px', overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '680px' }}>
               <thead>
                 <tr>
@@ -758,7 +897,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
               <tbody>
                 {visibleHeaders.length === 0 ? (
                   <tr>
-                    <td colSpan={6} style={{ ...s.td, textAlign: 'center', color: '#94a3b8', padding: '28px', fontStyle: 'italic' }}>
+                    <td colSpan={6} style={{ ...s.td, textAlign: 'center', color: C.textFaint, padding: '28px', fontStyle: 'italic' }}>
                       {csvHeaders.length === 0 ? 'No hay columnas.' : 'Ninguna columna coincide con la búsqueda/filtro.'}
                     </td>
                   </tr>
@@ -784,12 +923,12 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                         </span>
                       </td>
                       {/* Columna del CSV */}
-                      <td style={{ ...s.td, fontWeight: 600, color: '#0f172a' }}>{header}</td>
+                      <td style={{ ...s.td, fontWeight: 600, color: C.text }}>{header}</td>
                       {/* Ejemplo */}
-                      <td style={{ ...s.td, color: '#94a3b8', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace', fontSize: '0.75rem' }}>
+                      <td style={{ ...s.td, color: C.textFaint, maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace', fontSize: '0.75rem' }}>
                         {String(sampleValue).substring(0, 50)}
                       </td>
-                      <td style={s.td}><ArrowRight size={13} color="#cbd5e1" strokeWidth={2} /></td>
+                      <td style={s.td}><ArrowRight size={13} color={C.textFaint} strokeWidth={2} /></td>
                       {/* Campo destino */}
                       <td style={s.td}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -813,9 +952,9 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                               }
                             }}
                           >
-                            <option value="">— Don't map this column —</option>
+                            <option value="">— No mapear esta columna —</option>
                             {collectionDef && knownFields.length > 0 && (
-                              <optgroup label={`📋 ${collectionDef.name} fields`}>
+                              <optgroup label={`Campos de ${collectionDef.name}`}>
                                 {knownFields.map(f => (
                                   <option key={f.name} value={f.name}>
                                     {f.name}{f.label ? ` · ${f.label}` : ''} ({f.type})
@@ -823,7 +962,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                                 ))}
                               </optgroup>
                             )}
-                            <option value="__custom__">✎ Custom field name…</option>
+                            <option value="__custom__">✎ Nombre de campo personalizado…</option>
                           </select>
 
                           {(dropdownValue === '__custom__' || (!collectionDef && mapping?.firestoreField)) && (
@@ -837,7 +976,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                                 [header]: { ...prev[header], firestoreField: e.target.value }
                               }))}
                               disabled={isSkipped}
-                              placeholder={collectionDef ? 'customFieldName' : 'Select collection above to use schema'}
+                              placeholder={collectionDef ? 'nombreCampoPersonalizado' : 'Selecciona colección arriba para usar el schema'}
                             />
                           )}
                         </div>
@@ -853,12 +992,12 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                             [header]: { ...prev[header], type: e.target.value as FieldType }
                           }))}
                         >
-                          <option value="string">Text (string)</option>
-                          <option value="number">Number</option>
-                          <option value="boolean">Yes/No (boolean)</option>
-                          <option value="date">Date (YYYY-MM-DD)</option>
-                          <option value="array">Array (comma-separated)</option>
-                          <option value="skip">⊘ Skip this column</option>
+                          <option value="string">Texto (string)</option>
+                          <option value="number">Número</option>
+                          <option value="boolean">Sí/No (boolean)</option>
+                          <option value="date">Fecha (YYYY-MM-DD)</option>
+                          <option value="array">Arreglo (separado por comas)</option>
+                          <option value="skip">⊘ Omitir esta columna</option>
                         </select>
                       </td>
                     </tr>
@@ -870,17 +1009,17 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
 
           {/* Resumen inferior + continuar */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '18px', gap: '10px', flexWrap: 'wrap' }}>
-            <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
-              Se importarán <strong style={{ color: '#0f172a' }}>{counts.matched + counts.custom}</strong> de {csvHeaders.length} columnas
+            <div style={{ fontSize: '0.78rem', color: C.textMuted }}>
+              Se importarán <strong style={{ color: C.text }}>{counts.matched + counts.custom}</strong> de {csvHeaders.length} columnas
               {counts.skipped > 0 && <span> · {counts.skipped} omitida(s)</span>}
             </div>
-            <button 
-              onClick={() => setStep('preview')} 
-              disabled={!selectedCollection} 
+            <button
+              onClick={() => setStep('preview')}
+              disabled={!selectedCollection}
               className="di-btn-primary"
               style={{ ...s.btnPrimary, opacity: !selectedCollection ? 0.4 : 1, cursor: !selectedCollection ? 'not-allowed' : 'pointer' }}
             >
-              Preview Data <ArrowRight size={14} />
+              Previsualizar datos <ArrowRight size={14} />
             </button>
           </div>
         </div>
@@ -891,29 +1030,29 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
         <div style={s.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
             <div>
-              <h2 style={{ margin: '0 0 3px 0', fontSize: '0.95rem', color: '#0f172a', fontWeight: 600 }}>Preview before importing</h2>
-              <p style={{ margin: 0, color: '#64748b', fontSize: '0.775rem' }}>
-                First 5 rows transformed as they will be saved in <strong style={{ color: '#0f172a', fontWeight: 600 }}>{selectedCollection}</strong>
+              <h2 style={{ margin: '0 0 3px 0', fontSize: '0.95rem', color: C.text, fontWeight: 600 }}>Previsualiza antes de importar</h2>
+              <p style={{ margin: 0, color: C.textMuted, fontSize: '0.775rem' }}>
+                Primeras 5 filas transformadas como se guardarán en <strong style={{ color: C.text, fontWeight: 600 }}>{selectedCollection}</strong>
               </p>
             </div>
             <button onClick={() => setStep('mapping')} className="di-btn-secondary" style={s.btnSecondary}>
-              <ChevronDown size={13} style={{ transform: 'rotate(90deg)' }} /> Back to Mapping
+              <ChevronDown size={13} style={{ transform: 'rotate(90deg)' }} /> Volver al mapeo
             </button>
           </div>
 
           <div style={{ display: 'grid', gap: '10px', marginBottom: '16px' }}>
             {csvData.slice(0, 5).map((row, idx) => {
               const transformed = transformRow(row);
-              const docId = useExistingId && idColumn ? String(row[idColumn] || '(empty!)').trim() : '(auto-generated)';
+              const docId = useExistingId && idColumn ? String(row[idColumn] || '(¡vacío!)').trim() : '(auto-generado)';
               return (
-                <div key={idx} style={{ backgroundColor: '#fafbfc', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px 14px' }}>
+                <div key={idx} style={{ backgroundColor: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px 14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Row {idx + 1}</span>
-                    <span style={{ fontSize: '0.7rem', color: '#475569', backgroundColor: '#f1f5f9', padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace' }}>
+                    <span style={{ fontSize: '0.65rem', color: C.textFaint, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fila {idx + 1}</span>
+                    <span style={{ fontSize: '0.7rem', color: C.textMuted, backgroundColor: C.borderSoft, padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace' }}>
                       ID: {docId}
                     </span>
                   </div>
-                  <pre style={{ margin: 0, fontSize: '0.75rem', color: '#0f172a', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace', lineHeight: 1.55 }}>
+                  <pre style={{ margin: 0, fontSize: '0.75rem', color: C.text, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace', lineHeight: 1.55 }}>
                     {JSON.stringify(transformed, null, 2)}
                   </pre>
                 </div>
@@ -922,28 +1061,28 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           </div>
 
           {csvData.length > 5 && (
-            <p style={{ textAlign: 'center', color: '#94a3b8', fontSize: '0.775rem', marginBottom: '16px' }}>
-              and <strong style={{ color: '#475569', fontWeight: 600 }}>{csvData.length - 5}</strong> more rows will be imported similarly
+            <p style={{ textAlign: 'center', color: C.textFaint, fontSize: '0.775rem', marginBottom: '16px' }}>
+              y <strong style={{ color: C.textMuted, fontWeight: 600 }}>{csvData.length - 5}</strong> filas más se importarán de forma similar
             </p>
           )}
 
-          <div style={{ padding: '14px 16px', backgroundColor: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', marginBottom: '18px', display: 'flex', gap: '10px' }}>
-            <AlertCircle size={16} color="#a16207" style={{ flexShrink: 0, marginTop: '2px' }} />
-            <div style={{ fontSize: '0.8rem', color: '#78350f', lineHeight: 1.5 }}>
-              <strong style={{ fontWeight: 600 }}>About to import {csvData.length} documents into "{selectedCollection}"</strong>
-              <div style={{ marginTop: '3px', fontSize: '0.75rem', opacity: 0.85 }}>This action cannot be undone from this view. Make sure the mapping is correct.</div>
+          <div style={{ padding: '14px 16px', backgroundColor: C.amberSoft, border: `1px solid ${C.amberBorder}`, borderRadius: '8px', marginBottom: '18px', display: 'flex', gap: '10px' }}>
+            <AlertCircle size={16} color={C.amber} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div style={{ fontSize: '0.8rem', color: C.amberText, lineHeight: 1.5 }}>
+              <strong style={{ fontWeight: 600 }}>A punto de importar {csvData.length} documentos en "{selectedCollection}"</strong>
+              <div style={{ marginTop: '3px', fontSize: '0.75rem', opacity: 0.85 }}>Esta acción no se puede deshacer desde esta vista. Verifica que el mapeo sea correcto.</div>
             </div>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-            <button onClick={handleReset} className="di-btn-secondary" style={s.btnSecondary}>Cancel</button>
-            <button 
-              onClick={handleImport} 
-              style={{ ...s.btnPrimary, backgroundColor: '#10b981', borderColor: '#10b981' }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#059669'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#10b981'}
+            <button onClick={handleReset} className="di-btn-secondary" style={s.btnSecondary}>Cancelar</button>
+            <button
+              onClick={handleImport}
+              style={{ ...s.btnPrimary, backgroundColor: C.green, borderColor: C.green }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#2ea043'; e.currentTarget.style.borderColor = '#2ea043'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = C.green; e.currentTarget.style.borderColor = C.green; }}
             >
-              <Upload size={14} /> Import {csvData.length} records
+              <Upload size={14} /> Importar {csvData.length} registros
             </button>
           </div>
         </div>
@@ -953,25 +1092,25 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       {step === 'importing' && (
         <div style={s.card}>
           <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <Loader2 size={32} strokeWidth={1.75} className="spin-import" style={{ color: '#0f172a', margin: '0 auto 16px', display: 'block' }} />
-            <h2 style={{ margin: '0 0 4px 0', fontSize: '1rem', color: '#0f172a', fontWeight: 600 }}>Importing data</h2>
-            <p style={{ margin: '0 0 22px 0', color: '#64748b', fontSize: '0.8rem' }}>
-              {importProgress.current} of {importProgress.total} records processed
+            <Loader2 size={32} strokeWidth={1.75} className="spin-import" color={C.accent} style={{ margin: '0 auto 16px', display: 'block' }} />
+            <h2 style={{ margin: '0 0 4px 0', fontSize: '1rem', color: C.text, fontWeight: 600 }}>Importando datos</h2>
+            <p style={{ margin: '0 0 22px 0', color: C.textMuted, fontSize: '0.8rem' }}>
+              {importProgress.current} de {importProgress.total} registros procesados
             </p>
 
             <div style={{ maxWidth: '360px', margin: '0 auto' }}>
-              <div style={{ height: '6px', backgroundColor: '#f1f5f9', borderRadius: '3px', overflow: 'hidden' }}>
+              <div style={{ height: '6px', backgroundColor: C.borderSoft, borderRadius: '3px', overflow: 'hidden' }}>
                 <div
                   style={{
                     width: `${(importProgress.current / importProgress.total) * 100}%`,
                     height: '100%',
-                    backgroundColor: '#0f172a',
+                    backgroundColor: C.accent,
                     transition: 'width 0.3s ease',
                     borderRadius: '3px'
                   }}
                 />
               </div>
-              <div style={{ marginTop: '8px', fontSize: '0.75rem', color: '#475569', fontWeight: 500, fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace' }}>
+              <div style={{ marginTop: '8px', fontSize: '0.75rem', color: C.textMuted, fontWeight: 500, fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace' }}>
                 {Math.round((importProgress.current / importProgress.total) * 100)}%
               </div>
             </div>
@@ -983,34 +1122,34 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       {step === 'done' && (
         <div style={s.card}>
           <div style={{ textAlign: 'center', padding: '20px 16px' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-              <CheckCircle size={26} strokeWidth={2} color="#10b981" />
+            <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: C.greenSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+              <CheckCircle size={26} strokeWidth={2} color={C.green} />
             </div>
-            <h2 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', color: '#0f172a', fontWeight: 600 }}>Import complete</h2>
-            <p style={{ margin: '0 0 22px 0', color: '#64748b', fontSize: '0.8rem' }}>
-              <strong style={{ color: '#10b981', fontWeight: 600 }}>{importProgress.successCount}</strong> records imported successfully to <strong style={{ color: '#0f172a', fontWeight: 600 }}>{selectedCollection}</strong>
+            <h2 style={{ margin: '0 0 6px 0', fontSize: '1.05rem', color: C.text, fontWeight: 600 }}>Importación completa</h2>
+            <p style={{ margin: '0 0 22px 0', color: C.textMuted, fontSize: '0.8rem' }}>
+              <strong style={{ color: C.green, fontWeight: 600 }}>{importProgress.successCount}</strong> registros importados con éxito a <strong style={{ color: C.text, fontWeight: 600 }}>{selectedCollection}</strong>
               {importProgress.errors.length > 0 && (
-                <span>, <strong style={{ color: '#ef4444', fontWeight: 600 }}>{importProgress.errors.length}</strong> errors</span>
+                <span>, <strong style={{ color: C.red, fontWeight: 600 }}>{importProgress.errors.length}</strong> errores</span>
               )}
             </p>
 
             {importProgress.errors.length > 0 && (
-              <details style={{ textAlign: 'left', maxWidth: '560px', margin: '0 auto 22px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '12px 14px' }}>
-                <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#991b1b', fontSize: '0.8rem' }}>
-                  Show {importProgress.errors.length} errors
+              <details style={{ textAlign: 'left', maxWidth: '560px', margin: '0 auto 22px', backgroundColor: C.redSoft, border: `1px solid ${C.redBorder}`, borderRadius: '8px', padding: '12px 14px' }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, color: C.redText, fontSize: '0.8rem' }}>
+                  Mostrar {importProgress.errors.length} errores
                 </summary>
                 <div style={{ marginTop: '10px', maxHeight: '200px', overflowY: 'auto' }}>
                   {importProgress.errors.map((err, i) => (
-                    <div key={i} style={{ fontSize: '0.75rem', color: '#7f1d1d', padding: '4px 0', borderBottom: i < importProgress.errors.length - 1 ? '1px solid #fecaca' : 'none' }}>
-                      <strong style={{ fontWeight: 600 }}>Row {err.row}:</strong> {err.message}
+                    <div key={i} style={{ fontSize: '0.75rem', color: C.redText, padding: '4px 0', borderBottom: i < importProgress.errors.length - 1 ? `1px solid ${C.redBorder}` : 'none' }}>
+                      <strong style={{ fontWeight: 600 }}>Fila {err.row}:</strong> {err.message}
                     </div>
                   ))}
                 </div>
               </details>
             )}
 
-            <button onClick={handleReset} className="di-btn-primary" style={s.btnPrimary}>
-              <RotateCcw size={14} /> Import Another File
+            <button onClick={handleReset} className="di-btn-primary" style={{ ...s.btnPrimary, margin: '0 auto' }}>
+              <RotateCcw size={14} /> Importar otro archivo
             </button>
           </div>
         </div>
