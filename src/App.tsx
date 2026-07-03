@@ -51,6 +51,7 @@ const FacturacionClientesDashboard = lazyWithRetry(() => import('./features/fact
 const FacturacionProveedoresDashboard = lazyWithRetry(() => import('./features/facturacion/components/FacturacionProveedoresDashboard').then(m => ({ default: m.FacturacionProveedoresDashboard })), 'FacturacionProveedoresDashboard');
 const CostosAdicionalesDashboard = lazyWithRetry(() => import('./features/costosAdicionales/CostosAdicionalesDashboard').then(m => ({ default: m.CostosAdicionalesDashboard })), 'CostosAdicionalesDashboard');
 const ConfiguracionEmpresa = lazyWithRetry(() => import('./features/configuracion/ConfiguracionEmpresa'), 'ConfiguracionEmpresa');
+const DataImportView = lazyWithRetry(() => import('./features/importacion/components/DataImportView'), 'DataImportView');
 
 import './App.css';
 
@@ -223,7 +224,7 @@ function App() {
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [miPerfilAbierto, setMiPerfilAbierto] = useState(false); // modal "Mi Perfil"
@@ -536,6 +537,7 @@ function App() {
                 {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => setModuloActivo('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>}
                 {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => setModuloActivo('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>}
                 {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => setModuloActivo('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>}
+                <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => setModuloActivo('importacion')}><span className="sidebar-icon">📥</span><span className="sidebar-label">Importar Datos</span></div>
               </div>
             )}
           </>
@@ -612,7 +614,8 @@ function App() {
             {moduloActivo === 'referenciasDiesel' && puede('referenciasDiesel') && <ReferenciasDieselDashboard />} 
             {moduloActivo === 'referenciasPuentes' && puede('referenciasPuentes') && <ReferenciasPuentesDashboard />} 
             {moduloActivo === 'costosAdicionales' && puede('costosAdicionales') && <CostosAdicionalesDashboard />} 
-            {moduloActivo === 'referenciasNomina' && puede('referenciasNomina') && <ReferenciasNominaDashboard />} 
+            {moduloActivo === 'referenciasNomina' && puede('referenciasNomina') && <ReferenciasNominaDashboard />}
+            {moduloActivo === 'importacion' && <DataImportView onOpenMenu={() => setMenuAbierto(true)} />} 
             {moduloActivo === 'deducciones' && puede('deducciones') && <DeduccionesDashboard />} 
             {moduloActivo === 'empresas' && puede('empresas') && <EmpresasDashboard />}
             {moduloActivo === 'contactos' && puede('contactos') && <ContactosDashboard />}
