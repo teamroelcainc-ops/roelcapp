@@ -20,7 +20,7 @@
 // Cómo se derivan los conteos especiales (ajustables por palabra clave):
 //   • TIPO DE SERVICIO  = agrupado por nombre de Convenio.
 //   • TROMPO            = ops cuyo Convenio/Tipo contiene "trompo".
-//   • CARGA DE DIESEL   = ops con combustible (diésel) > 0.
+//   • CARGA DE DIESEL   = suma TOTAL de diésel cargado (= DIESEL col., dieselTotal).
 //   • CARGA DE GASOLINA = ops cuyo Convenio/Tipo contiene "gasolina".
 //   • LOGISTICA ROELCA  = ops cuyo Convenio/Tipo contiene "logistica roelca".
 //   • CANCELADA         = ops cuyo estatus contiene "cancel".
@@ -297,7 +297,10 @@ export const ResumenDiarioOperaciones = () => {
       const dieselTotal = unidades.reduce((s, u) => s + u.diesel, 0);
 
       const trompo = ops.filter(o => matchKw(o, 'trompo')).length;
-      const cargaDiesel = ops.filter(o => dieselDe(o) > 0).length;
+      // ✅ CARGA DE DIESEL = cantidad TOTAL de diésel cargado (suma), NO el
+      //    número de operaciones que cargaron. Coincide con la columna DIESEL
+      //    de la tabla de unidades (dieselTotal).
+      const cargaDiesel = dieselTotal;
       const cargaGasolina = ops.filter(o => matchKw(o, 'gasolina')).length;
       const logisticaRoelca = ops.filter(o => matchKw(o, 'logistica roelca') || matchKw(o, 'logística roelca')).length;
 
