@@ -1291,7 +1291,7 @@ const OperacionesDashboard = () => {
   //    Entrega" (prueba). Ambos se generan con el logo mediante los generadores
   //    ya existentes (generarCartaInstruccionesPDF / generarPruebaEntregaPDF).
   const DOCS_POR_TIPO: Record<string, string[]> = {
-    '3e5b0035': ['checklist', 'solicitud', 'carta', 'prueba'],
+    '3e5b0035': ['checklist', 'solicitud', 'carta', 'prueba', 'instrucciones'],
   };
   const docsPermitidos = DOCS_POR_TIPO[evalTipoOpId] || null;
   const puedeMostrarDoc = (doc: string) => !docsPermitidos || docsPermitidos.includes(doc);
