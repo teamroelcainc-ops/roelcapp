@@ -1286,8 +1286,12 @@ const OperacionesDashboard = () => {
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
   const evalTipoOpId = String(operacionViendo?.tipoOperacionId || '').trim();
+  // ✅ Fletes (ID 3e5b0035): además de Check List y Solicitud de Retiro, ahora
+  //    también se muestran "Carta de Instrucciones" (carta) y "Prueba de
+  //    Entrega" (prueba). Ambos se generan con el logo mediante los generadores
+  //    ya existentes (generarCartaInstruccionesPDF / generarPruebaEntregaPDF).
   const DOCS_POR_TIPO: Record<string, string[]> = {
-    '3e5b0035': ['checklist', 'solicitud'],
+    '3e5b0035': ['checklist', 'solicitud', 'carta', 'prueba'],
   };
   const docsPermitidos = DOCS_POR_TIPO[evalTipoOpId] || null;
   const puedeMostrarDoc = (doc: string) => !docsPermitidos || docsPermitidos.includes(doc);

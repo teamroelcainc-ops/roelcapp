@@ -1,7 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
-import { collection, doc, writeBatch, getDocs, query, limit } from 'firebase/firestore';
+import { collection, doc, writeBatch, getDocs, query, limit, getDoc, setDoc, arrayUnion } from 'firebase/firestore';
 
 // ── Paleta Roelca (GitHub dark + acento naranja) ──────────────────────────
 const C = {
@@ -117,6 +117,30 @@ const AVAILABLE_COLLECTIONS: CollectionDef[] = [
   }
 ];
 
+// ⚠️ IMPORTANTE: el SDK web de Firestore NO puede listar las colecciones de un
+// proyecto (eso solo lo hace el Admin SDK del backend). Por eso el desplegable de
+// la plantilla arma su lista combinando TRES fuentes:
+//   1) AVAILABLE_COLLECTIONS (las 4 con nombre "bonito"),
+//   2) COLECCIONES_CONOCIDAS de aquí abajo (edítala para agregar/quitar a mano),
+//   3) el documento Firestore `config_import/config`, campo `colecciones` (array de
+//      strings) — puedes agregar nombres AHÍ sin volver a desplegar la app. El
+//      botón "Agregar a la lista" de la UI escribe justo en ese documento.
+// Además, siempre puedes elegir "Otra colección…" y escribir cualquier nombre.
+const COLECCIONES_CONOCIDAS: string[] = [
+  'operaciones',
+  'empresas',
+  'facturas_clientes',
+  'facturas_proveedores',
+  // 👇 Agrega aquí el resto de tus colecciones (una por línea), por ejemplo:
+  // 'contactos', 'direcciones', 'unidades', 'remolques', 'proveedoresUnidad',
+  // 'unidadesProveedor', 'conveniosClientes', 'conveniosProveedores', 'tiposEmpresa',
+  // 'monedas', 'combustible', 'empleados', 'deducciones', 'nominas', 'diesel',
+  // 'puentes', 'mtto', 'usuarios', 'roles',
+];
+
+// Documento donde se guarda la lista de colecciones editable sin redeploy.
+const CONFIG_IMPORT_DOC = { col: 'config_import', id: 'config' };
+
 type Step = 'upload' | 'mapping' | 'preview' | 'importing' | 'done';
 
 interface FieldMapping {
@@ -160,6 +184,59 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
   const [exportCollection, setExportCollection] = useState<string>('');
   const [otherCollection, setOtherCollection] = useState('');   // nombre libre de colección
   const [templateBusy, setTemplateBusy] = useState(false);      // leyendo esquema de Firestore
+  const [coleccionesExtra, setColeccionesExtra] = useState<string[]>([]); // desde config_import/config
+  const [savingList, setSavingList] = useState(false);          // guardando nombre en la lista
+
+  // ⭐ Carga la lista de colecciones guardada en Firestore (config_import/config).
+  //    Así el desplegable puede crecer sin volver a desplegar la app.
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, CONFIG_IMPORT_DOC.col, CONFIG_IMPORT_DOC.id));
+        const arr = (snap.exists() && Array.isArray((snap.data() as any)?.colecciones))
+          ? ((snap.data() as any).colecciones as any[]).map(String)
+          : [];
+        setColeccionesExtra(arr);
+      } catch {
+        /* silencioso: si no hay doc o no hay permisos, se usa solo la lista fija */
+      }
+    })();
+  }, []);
+
+  // ⭐ Lista final del desplegable = fijas + conocidas + guardadas en Firestore.
+  const nombresColecciones = Array.from(new Set([
+    ...AVAILABLE_COLLECTIONS.map(c => c.id),
+    ...COLECCIONES_CONOCIDAS,
+    ...coleccionesExtra,
+  ])).filter(Boolean).sort((a, b) => a.localeCompare(b));
+
+  // Etiqueta amigable si la colección es una de las "conocidas con descripción".
+  const labelColeccion = (id: string): string => {
+    const c = AVAILABLE_COLLECTIONS.find(x => x.id === id);
+    return c ? `${c.name} (${c.description})` : id;
+  };
+
+  // ⭐ Guarda un nombre de colección en config_import/config para que aparezca
+  //    siempre en el desplegable (para todos los usuarios), sin redeploy.
+  const agregarAListaColeccion = async () => {
+    const name = otherCollection.trim();
+    if (!name) { alert('Escribe el nombre de la colección primero.'); return; }
+    setSavingList(true);
+    try {
+      await setDoc(
+        doc(db, CONFIG_IMPORT_DOC.col, CONFIG_IMPORT_DOC.id),
+        { colecciones: arrayUnion(name) },
+        { merge: true }
+      );
+      setColeccionesExtra(prev => Array.from(new Set([...prev, name])));
+      setExportCollection(name);   // seleccionarla de una vez
+      setOtherCollection('');
+    } catch (err: any) {
+      alert(`No se pudo guardar en la lista: ${err?.message || err}`);
+    } finally {
+      setSavingList(false);
+    }
+  };
 
   const getExportDef = (): CollectionDef | undefined =>
     AVAILABLE_COLLECTIONS.find(c => c.id === exportCollection);
@@ -654,7 +731,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           <h2 style={{ margin: 0, fontSize: '0.95rem', color: C.text, fontWeight: 600 }}>Descargar plantilla de Excel</h2>
         </div>
         <p style={{ margin: '0 0 14px 0', color: C.textMuted, fontSize: '0.8rem', lineHeight: 1.5 }}>
-          Elige una colección: la plantilla <strong style={{ color: C.text }}>.xlsx</strong> se genera leyendo una muestra de tus documentos reales en Firestore, así incluye <strong style={{ color: C.text }}>todos los campos</strong> que existen en esa colección. Llénala, expórtala como <strong style={{ color: C.text }}>CSV</strong> (File → Download → CSV) y súbela abajo para importar.
+          La plantilla <strong style={{ color: C.text }}>.xlsx</strong> se genera leyendo una muestra de tus documentos reales en Firestore, así incluye <strong style={{ color: C.text }}>todos los campos</strong> de esa colección. ¿Falta alguna colección en la lista? Elige <strong style={{ color: C.text }}>"Otra colección…"</strong>, escribe su nombre y pulsa <strong style={{ color: C.text }}>Agregar a la lista</strong> para que aparezca siempre.
         </p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 280px', minWidth: '220px' }}>
@@ -669,8 +746,8 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
               onChange={(e) => { setExportCollection(e.target.value); if (e.target.value !== '__other__') setOtherCollection(''); }}
             >
               <option value="">— Selecciona una colección —</option>
-              {AVAILABLE_COLLECTIONS.map(c => (
-                <option key={c.id} value={c.id}>{c.name} ({c.description})</option>
+              {nombresColecciones.map(id => (
+                <option key={id} value={id}>{labelColeccion(id)}</option>
               ))}
               <option value="__other__">✎ Otra colección (escribir nombre)…</option>
             </select>
@@ -678,15 +755,27 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
 
           {/* Campo libre para cualquier otra colección de Firestore */}
           {exportCollection === '__other__' && (
-            <div style={{ flex: '1 1 240px', minWidth: '200px' }}>
+            <div style={{ flex: '1 1 260px', minWidth: '200px' }}>
               <label style={s.label}>Nombre exacto de la colección en Firestore</label>
-              <input
-                className="di-input"
-                style={s.input}
-                placeholder="p. ej. contactos, unidades, remolques…"
-                value={otherCollection}
-                onChange={(e) => setOtherCollection(e.target.value)}
-              />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  className="di-input"
+                  style={{ ...s.input, flex: 1 }}
+                  placeholder="p. ej. contactos, unidades, remolques…"
+                  value={otherCollection}
+                  onChange={(e) => setOtherCollection(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={agregarAListaColeccion}
+                  disabled={!otherCollection.trim() || savingList}
+                  className="di-btn-secondary"
+                  style={{ ...s.btnSecondary, padding: '7px 12px', whiteSpace: 'nowrap', opacity: (!otherCollection.trim() || savingList) ? 0.5 : 1, cursor: (!otherCollection.trim() || savingList) ? 'not-allowed' : 'pointer' }}
+                  title="Guardar este nombre en la lista para que aparezca siempre en el desplegable"
+                >
+                  {savingList ? <><Loader2 size={13} className="spin-import" /> Guardando…</> : '＋ Agregar a la lista'}
+                </button>
+              </div>
             </div>
           )}
 
