@@ -165,9 +165,36 @@ const ServiciosCancelados = () => {
     setCargandoOperaciones(false);
   };
 
-  // ✅ 2. CARGA PEREZOSA DE CATÁLOGOS (Solo cuando se necesitan para PDFs)
+  // ✅ CARGA LIGERA: solo lo que necesitan los buscadores de la barra (Cliente y
+  //    Remolque) y los botones de status. NO baja los catálogos pesados de PDF
+  //    (tarifas, convenios, unidades, empleados, etc.). Reduce mucho las lecturas
+  //    al abrir la vista. La tabla se pinta con los nombres ya guardados.
+  const cargarCatalogosFiltros = async () => {
+    if (Object.keys(catalogosGlobales).length > 0) return;
+    // Si existe la caché COMPLETA en sesión, úsala (gratis) y listo.
+    const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
+    if (cacheCatStr) { setCatalogosGlobales(JSON.parse(cacheCatStr)); return; }
+    try {
+      const [empSnap, remSnap, statusSnap] = await Promise.all([
+        getDocs(collection(db, 'empresas')),
+        getDocs(collection(db, 'remolques')),
+        getDocs(collection(db, 'catalogo_status_servicio')),
+      ]);
+      setCatalogosGlobales((prev: any) => ({
+        ...prev,
+        empresas: empSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+        remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+        statusServicio: statusSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
+      }));
+    } catch (e) {
+      console.error('Error cargando catálogos de filtros:', e);
+    }
+  };
+
+  // ✅ 2. CARGA COMPLETA DE CATÁLOGOS (solo cuando se generan PDFs).
+  //    El marcador de "set completo" es `tarifas`: si ya está, no repetimos.
   const cargarCatalogosSiEsNecesario = async () => {
-    if (Object.keys(catalogosGlobales).length > 0) return; 
+    if (catalogosGlobales.tarifas) return;
 
     const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
     if (cacheCatStr) {
@@ -216,10 +243,11 @@ const ServiciosCancelados = () => {
     setCatalogosGlobales(catGuardados);
   };
 
-  // ✅ Al montar solo cargamos catálogos (para poblar los buscadores de Cliente y
-  //    Remolque). Los registros NO se cargan hasta que se defina el rango de fechas.
+  // ✅ Al montar solo cargamos los catálogos LIGEROS (para poblar los buscadores
+  //    de Cliente y Remolque y el status). Los pesados se cargan bajo demanda al
+  //    generar un PDF. Los registros NO se cargan hasta definir el rango de fechas.
   useEffect(() => {
-    cargarCatalogosSiEsNecesario();
+    cargarCatalogosFiltros();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -253,7 +281,7 @@ const ServiciosCancelados = () => {
   useEffect(() => {
     const cargarBotones = async () => {
       if (operacionViendo) {
-        await cargarCatalogosSiEsNecesario();
+        await cargarCatalogosFiltros();
         let op = operacionViendo;
         if (!op.statusNombre && op.status) {
           const resuelto = resolverStatus(op.status);
@@ -282,66 +310,33 @@ const ServiciosCancelados = () => {
     return val || '-';
   };
 
-  // ✅ Función robusta para leer del catálogo si existe, o usar el dato desnormalizado
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
-    // Usar el valor desnormalizado solo si existe y NO es igual al propio ID
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) {
-      if (!(catalogo === 'statusServicio' && valorDesnormalizado.length > 30)) {
-        return valorDesnormalizado;
-      }
+  // ✅ Muestra ÚNICAMENTE el nombre desnormalizado ya guardado en la operación.
+  //    NO consulta otras colecciones (reduce lecturas) y NUNCA muestra un ID:
+  //    si no hay nombre guardado, devuelve '-'. Para monedas cae a la conversión
+  //    local ID→USD/MXN (sin catálogo).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    if ((catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') && id) {
+      const m = mostrarMoneda(id);
+      if (m && m !== '-') return m;
     }
-    if (!id) return '-';
-    if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
-
-    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => String(item.id).trim() === String(id).trim() || String(item.nombre).trim() === String(id).trim());
-    if (!elementoEncontrado) return id;
-
-    if (catalogo === 'empleados') {
-      return `${elementoEncontrado.firstName || ''} ${elementoEncontrado.lastNamePaternal || ''}`.trim() || elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'remolques') {
-      return `${elementoEncontrado.nombre || ''} ${elementoEncontrado.placas || elementoEncontrado.placa || ''}`.trim() || id;
-    }
-    if (catalogo === 'unidades') {
-      return elementoEncontrado.unidad || elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') {
-      return elementoEncontrado.moneda || id;
-    }
-    if (catalogo === 'statusServicio') {
-      return elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'tiposOperacion') {
-      return elementoEncontrado.tipo_operacion || id;
-    }
-
-    return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || elementoEncontrado.descripcion || elementoEncontrado.placa || id;
+    return '-';
   };
 
-  // ✅ NUEVO: resuelve el nombre del convenio de cliente (detalle → tarifa)
+  // ✅ Solo nombre desnormalizado (convenioNombre). Sin lecturas de catálogos.
   const obtenerNombreConvenioCliente = (id: string, valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvDetalles?.find((d: any) => String(d.id).trim() === String(id).trim());
-    if (detalle) {
-      const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio_id || detalle.tipoConvenio || detalle.tipo_convenio || detalle['TIPO DE CONVENIO'];
-      const tObj = catalogosGlobales.tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
-      return tObj?.descripcion || tObj?.nombre || id;
-    }
-    return id;
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    return '-';
   };
 
-  // ✅ NUEVO: resuelve el nombre del convenio de proveedor (detalle → tarifa)
+  // ✅ Solo nombre desnormalizado (convenioProveedorNombre). Sin lecturas.
   const obtenerNombreConvenioProv = (id: string, valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvProvDetalles?.find((d: any) => String(d.id).trim() === String(id).trim());
-    if (detalle) {
-      const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio || detalle.tarifaId || detalle['TIPO DE CONVENIO'];
-      const tObj = catalogosGlobales.tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
-      return tObj?.descripcion || tObj?.nombre || detalle.tipoConvenioNombre || id;
-    }
-    return id;
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    return '-';
   };
 
   const formatoMoneda = (monto: any) => {
@@ -1378,7 +1373,7 @@ const ServiciosCancelados = () => {
               {cargandoHorarios ? (<div>Descargando...</div>) : (
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr style={{ color: '#8b949e' }}><th style={{ textAlign: 'left' }}>Fecha y Hora</th><th style={{ textAlign: 'left' }}>Estatus</th></tr></thead>
-                  <tbody>{historialList.map((h: any) => (<tr key={h.id} style={{ borderBottom: '1px solid #21262d' }}><td style={{ padding: '12px' }}>{new Date(h.fechaHora).toLocaleString('es-MX')}</td><td style={{ padding: '12px', color: '#ef4444' }}>{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre')}</td></tr>))}</tbody>
+                  <tbody>{historialList.map((h: any) => (<tr key={h.id} style={{ borderBottom: '1px solid #21262d' }}><td style={{ padding: '12px' }}>{new Date(h.fechaHora).toLocaleString('es-MX')}</td><td style={{ padding: '12px', color: '#ef4444' }}>{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre', h.statusNombre)}</td></tr>))}</tbody>
                 </table>
               )}
             </div>

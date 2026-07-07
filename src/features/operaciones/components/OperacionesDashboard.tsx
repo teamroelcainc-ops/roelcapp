@@ -245,8 +245,15 @@ const OperacionesDashboard = () => {
 
   const catalogosEnVueloRef = useRef<Set<string>>(new Set());
 
-  const cargarCatalogosSiEsNecesario = async () => {
-    const pendientes = Object.entries(COLECCIONES_CATALOGOS)
+  // ✅ `soloAlias` permite cargar SOLO ciertos catálogos. Al abrir el dashboard
+  //    cargamos únicamente lo mínimo (status), y los catálogos pesados (empresas,
+  //    unidades, empleados, convenios, tarifas…) se cargan bajo demanda al abrir
+  //    el formulario o generar un PDF. Esto reduce mucho el consumo de lecturas.
+  const cargarCatalogosSiEsNecesario = async (soloAlias?: string[]) => {
+    const entradas = soloAlias
+      ? Object.entries(COLECCIONES_CATALOGOS).filter(([alias]) => soloAlias.includes(alias))
+      : Object.entries(COLECCIONES_CATALOGOS);
+    const pendientes = entradas
       .filter(([alias]) => !cacheVigente(alias) && !catalogosEnVueloRef.current.has(alias))
       .map(([alias, col]) => ({ alias, col }));
     if (pendientes.length === 0) return;
@@ -393,8 +400,12 @@ const OperacionesDashboard = () => {
       });
     } catch {}
 
+    // Hidrata TODO lo que ya esté en caché local (localStorage) sin costo de
+    // lecturas, y desde Firestore SOLO baja el catálogo de status (necesario
+    // para los botones de "siguiente paso" y el modal de registrar movimiento).
+    // La tabla se pinta con los nombres ya guardados en cada operación.
     hidratarCatalogosDesdeCache();
-    cargarCatalogosSiEsNecesario();
+    cargarCatalogosSiEsNecesario(['statusServicio']);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -473,69 +484,33 @@ const OperacionesDashboard = () => {
     return val || '-';
   };
 
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) {
-      if (catalogo === 'statusServicio' && valorDesnormalizado.length > 30) {
-        // Fallback
-      } else {
-        return valorDesnormalizado; 
-      }
+  // ✅ Muestra ÚNICAMENTE el nombre desnormalizado ya guardado en la operación.
+  //    NO consulta otras colecciones (reduce lecturas de Firestore) y NUNCA
+  //    muestra un ID: si no hay nombre guardado, devuelve '-'. Para monedas cae
+  //    a la conversión ID→USD/MXN, que es local (sin catálogo).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    if ((catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') && id) {
+      const m = mostrarMoneda(id);
+      if (m && m !== '-') return m;
     }
-
-    if (!id) return '-';
-    if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
-    
-    const objetivo = String(id).trim().toLowerCase();
-    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => {
-      const candidatos = [item.id, item.nombre, item.codigo, item.clave, item.uuid, item.uid, item._id, item.tipo_operacion];
-      return candidatos.some((c: any) => c != null && String(c).trim().toLowerCase() === objetivo);
-    });
-    if (!elementoEncontrado) return id;
-
-    if (catalogo === 'empleados') {
-      return `${elementoEncontrado.firstName || ''} ${elementoEncontrado.lastNamePaternal || ''}`.trim() || elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'remolques') {
-      return `${elementoEncontrado.nombre || ''} ${elementoEncontrado.placas || elementoEncontrado.placa || ''}`.trim() || id;
-    }
-    if (catalogo === 'unidades') {
-      return elementoEncontrado.unidad || elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') {
-      return elementoEncontrado.moneda || id;
-    }
-    if (catalogo === 'statusServicio') {
-      return elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'tiposOperacion') {
-      return elementoEncontrado.tipo_operacion || elementoEncontrado.nombre || elementoEncontrado.descripcion || elementoEncontrado.tipoOperacion || elementoEncontrado.tipo || id;
-    }
-
-    return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || elementoEncontrado.descripcion || id;
+    return '-';
   };
 
+  // ✅ Solo nombre desnormalizado (convenioNombre). Sin lecturas de catálogos.
   const obtenerNombreConvenioCliente = (id: string, valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvDetalles?.find((d:any) => String(d.id).trim() === String(id).trim());
-    if (detalle) {
-        const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio_id || detalle.tipoConvenio || detalle.tipo_convenio || detalle['TIPO DE CONVENIO'];
-        const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || id;
-    }
-    return id;
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    return '-';
   };
 
+  // ✅ Solo nombre desnormalizado (convenioProveedorNombre). Sin lecturas.
   const obtenerNombreConvenioProv = (id: string, valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvProvDetalles?.find((d:any) => String(d.id).trim() === String(id).trim());
-    if (detalle) {
-        const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio || detalle.tarifaId || detalle['TIPO DE CONVENIO'];
-        const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || detalle.tipoConvenioNombre || id;
-    }
-    return id;
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    return '-';
   };
 
   const formatoMoneda = (monto: any) => {
@@ -1198,7 +1173,7 @@ const OperacionesDashboard = () => {
   const exportarExcel = async () => {
     if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
     const columnasVisibles = columnasTabla.filter(c => c.visible);
-    await cargarCatalogosSiEsNecesario();
+    // La exportación usa los nombres ya guardados en cada operación (sin lecturas).
 
     const datosExcel = operacionesFiltradas.map(op => {
       const fila: any = {};

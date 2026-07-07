@@ -434,6 +434,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [convProvDetallesLocal, setConvProvDetallesLocal] = useState<any[]>(catalogosCacheados?.catalogoConvProvDetalles || []);
   const [gastosIncluidosLocal, setGastosIncluidosLocal] = useState<any[]>(catalogosCacheados?.tarifasGastosIncluidos || []);
   const [rendimientoLocal, setRendimientoLocal] = useState<any[]>(catalogosCacheados?.tarifasRendimiento || []);
+  const [tiposGastosLocal, setTiposGastosLocal] = useState<any[]>(catalogosCacheados?.tiposGastos || []);
 
   useEffect(() => { setEmpresasLocal(catalogosCacheados?.empresas || []); }, [catalogosCacheados?.empresas]);
   useEffect(() => { setRemolquesLocal(catalogosCacheados?.remolques || []); }, [catalogosCacheados?.remolques]);
@@ -461,6 +462,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       { alias: 'catalogoConvProvDetalles', coleccion: 'convenios_proveedores_detalles', setter: setConvProvDetallesLocal },
       { alias: 'tarifasGastosIncluidos',   coleccion: 'tarifas_gastos_incluidos',       setter: setGastosIncluidosLocal },
       { alias: 'tarifasRendimiento',       coleccion: 'tarifas_rendimiento',            setter: setRendimientoLocal },
+      { alias: 'tiposGastos',              coleccion: 'catalogo_tipos_gastos',          setter: setTiposGastosLocal },
     ];
     (async () => {await Promise.all(fuentes.map(async ({ alias, coleccion, setter }) => {
         try {
@@ -622,6 +624,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     dolaresProv: 0, pesosProv: 0, conversionProv: 0,
     unidad: '', operador: '', sueldoOperador: 0, sueldoExtra: 0, sueldoTotal: 0, 
     combustible: 0, combustibleExtra: 0, combustibleTotal: 0,
+    puenteId: '', puenteNombre: '', puenteMonto: 0,
     unidadProveedor: '', operadorProveedor: '', observacionesUnidad: '', observacionesCobrar: '',
     totalGastos: 0,
     facturadoEnCobrar: '', monedaConvenioCliente: '', montoConvenioCliente: 0,
@@ -950,6 +953,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         observacionesUnidad: initialData.observacionesUnidad || '',
         observacionesCobrar: initialData.observacionesCobrar || '',     
         totalGastos: Number(initialData.totalGastos) || 0,
+        puenteId: initialData.puenteId || initialData.puente || '',
+        puenteNombre: initialData.puenteNombre || '',
+        puenteMonto: Number(initialData.puenteMonto) || 0,
       };
 
       setFormData(prev => ({ ...prev, ...safeInitialData }));
@@ -1559,6 +1565,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const showExternalFleet = (isLogistica || isFletes) && !isRoelca;
   const esFlotaPropiaRoelca = showInternalFleet;
 
+  // ✅ Puente: se muestra SOLO en Transfer, o en Logística cuando el Proveedor
+  //    de Transporte es Roelca. En Fletes (o Logística con proveedor externo) no.
+  const mostrarPuente = isTransfer || (isLogistica && isRoelca);
+  // Opciones de puente desde catalogo_tipos_gastos (categoria_gasto === "Puente").
+  const opcionesPuente = (tiposGastosLocal || []).filter(
+    (g: any) => String(g.categoria_gasto || '').trim().toLowerCase() === 'puente'
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setCargando(true);
@@ -1578,6 +1592,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const monedaCobroObj = listaMonedasLocal.find((m:any) => m.id === formData.facturadoEnCobrar);
       const monedaUnidadObj = listaMonedasLocal.find((m:any) => m.id === formData.facturadoEnUnidad);
       const convProvObj = listaConveniosProveedor.find((c:any) => c.id === formData.convenioProveedor);
+      const monedaConvProvObj = listaMonedasLocal.find((m:any) => m.id === formData.monedaConvenioProv);
+      const embalajeObj = (embalajesLocal || []).find((em:any) => String(em.id) === String(formData.embalaje));
+      const embalajeNombreResuelto = embalajeObj
+        ? String(embalajeObj.clave ?? embalajeObj.embalaje ?? embalajeObj.nombre ?? embalajeObj.descripcion ?? embalajeObj.tipo ?? '').trim()
+        : ((initialData as any)?.embalajeNombre || '');
 
       let resolvedClientePaga = formData.clientePaga;
       if (!resolvedClientePaga && searchClientePaga) { const f = filClientesPaga.find((x:any) => x.nombre?.toLowerCase() === searchClientePaga.toLowerCase()); if (f) resolvedClientePaga = f.id; }
@@ -1618,19 +1637,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         proveedorUnidadNombre: searchProvTransporte || '', unidadNombre: searchUnidad || '',
         operadorNombre: searchOperador || '', tipoOperacionNombre: tipoOpObj?.tipo_operacion || '',
         monedaCobroNombre: monedaCobroObj?.moneda || '', monedaUnidadNombre: monedaUnidadObj?.moneda || '',
-        convenioProveedorNombre: convProvObj?.tipoConvenioNombre || ''
+        convenioProveedorNombre: convProvObj?.tipoConvenioNombre || '',
+        embalajeNombre: embalajeNombreResuelto,
+        monedaConvProvNombre: monedaConvProvObj?.moneda || ''
       };
 
       if (esFlotaPropiaRoelca) {
         operacionData.convenioProveedor = '';
         operacionData.convenioProveedorNombre = '';
         operacionData.monedaConvenioProv = '';
+        operacionData.monedaConvProvNombre = '';
         operacionData.totalAPagarProv = 0;
         operacionData.cargosAdicionalesProv = 0;
         operacionData.subtotalProv = 0;
         operacionData.dolaresProv = 0;
         operacionData.pesosProv = 0;
         operacionData.conversionProv = 0;
+      }
+
+      if (!mostrarPuente) {
+        operacionData.puenteId = '';
+        operacionData.puenteNombre = '';
+        operacionData.puenteMonto = 0;
       }
 
       Object.keys(operacionData).forEach(key => { if (operacionData[key] === undefined) delete operacionData[key]; });
@@ -1925,6 +1953,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       }
     >
       <style>{`
+        .campo-badge { display: inline-block; font-family: monospace; font-size: 0.62rem; font-weight: 400; color: #6e7681; background: rgba(110,118,129,0.14); padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; letter-spacing: 0; }
         .roelca-form-shell { width: 100vw; height: 100vh; max-width: 100vw; background-color: #0a0d14; border-radius: 0; display: flex; overflow: hidden; box-shadow: none; border: none; }
         .roelca-form-left { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background-color: #0a0d14; }
         .roelca-form-right { width: 400px; background-color: #0d1117; border-left: 1px solid #1f2733; display: flex; flex-direction: column; flex-shrink: 0; }
@@ -2014,7 +2043,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconBriefcase /></div><h3 className="roelca-card-title">Tipo de Servicio y Fechas</h3></div>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label orange">Referencia</label>
+                        <label className="form-label orange">Referencia <span className="campo-badge">ref</span></label>
                         {initialData ? (
                           <input type="text" name="referencia" className="form-control" value={referencia} onChange={(e) => setReferencia(e.target.value)} readOnly={!puedeEditarRef} title={puedeEditarRef ? 'Tienes permiso para corregir la referencia' : 'No tienes permiso para editar la referencia'} style={puedeEditarRef ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }} />
                         ) : (
@@ -2022,9 +2051,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         )}
                         <small style={{ color: initialData ? (puedeEditarRef ? '#fb923c' : '#8b949e') : '#8b949e' }}>{initialData ? (puedeEditarRef ? 'Editable (Admin o permiso "Editar Referencia").' : 'No tienes permiso para editarla.') : 'Formato: TR/LO/FL-DDMMYY-### (consecutivo único del día).'}</small>
                       </div>
-                      <div className="form-group"><label className="form-label orange">Tipo de Operación</label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label orange">Fecha de Servicio</label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
-                      {isFletes && (<div className="form-group"><label className="form-label orange">Fecha de Cita</label><input type="datetime-local" name="fechaCita" className={`form-control${claseSiFalta('fechaCita')}`} value={formData.fechaCita || ''} onChange={handleChange} /></div>)}
+                      <div className="form-group"><label className="form-label orange">Tipo de Operación <span className="campo-badge">tipoOperacionId</span></label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label orange">Fecha de Servicio <span className="campo-badge">fechaServicio</span></label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
+                      {isFletes && (<div className="form-group"><label className="form-label orange">Fecha de Cita <span className="campo-badge">fechaCita</span></label><input type="datetime-local" name="fechaCita" className={`form-control${claseSiFalta('fechaCita')}`} value={formData.fechaCita || ''} onChange={handleChange} /></div>)}
                     </div>
                   </div>
 
@@ -2032,7 +2061,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconUsers /></div><h3 className="roelca-card-title">Cliente y Convenio</h3></div>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Cliente (Paga)</label>
+                        <label className="form-label">Cliente (Paga) <span className="campo-badge">clientePaga</span></label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('clientePaga')}`} placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga} onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }} onFocus={() => setShowDropdownClientePaga(true)} onBlur={() => setTimeout(() => setShowDropdownClientePaga(false), 200)} />
@@ -2051,7 +2080,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
                       <div className="form-group">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                          <label className="form-label" style={{ margin: 0 }}>Convenio (Tarifa)</label>
+                          <label className="form-label" style={{ margin: 0 }}>Convenio (Tarifa) <span className="campo-badge">convenio</span></label>
                           {(formData.clientePaga || searchClientePaga) && (
                             <button type="button" onClick={() => setMostrarConveniosCliente(true)} title="Ver y editar los convenios (tarifas) de este cliente" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}>
                               <IconReceipt size={12} /> Ver / editar ({listaConveniosCliente.length})
@@ -2078,7 +2107,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         )}
                       </div>
                       <div className="form-group">
-                        <label className="form-label"># de Remolque</label>
+                        <label className="form-label">Importación / Exportación <span className="campo-badge">trafico</span></label>
+                        <input type="text" className="form-control" value={(formData.trafico && formData.trafico !== 'N/A') ? formData.trafico : ''} readOnly placeholder="Se define por el convenio" title="Se asigna automáticamente según el convenio (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Cargada / Vacía <span className="campo-badge">carga</span></label>
+                        <input type="text" className="form-control" value={(formData.carga && formData.carga !== 'N/A') ? formData.carga : ''} readOnly placeholder="Se define por el convenio" title="Se asigna automáticamente según el convenio (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} />
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label"># de Remolque <span className="campo-badge">numeroRemolque</span></label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('numeroRemolque')}`} placeholder="Buscar remolque..." value={searchRemolque} onChange={e => { setSearchRemolque(e.target.value); setShowDropdownRemolque(true); if (formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: '' })); }} onFocus={() => setShowDropdownRemolque(true)} onBlur={() => setTimeout(() => setShowDropdownRemolque(false), 200)} />
@@ -2087,7 +2124,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <BotonAgregar title="Agregar nuevo Remolque" onClick={() => abrirCreacion({ tipo: 'remolque', coleccion: 'remolques' }, (id, reg) => { setFormData(prev => ({ ...prev, numeroRemolque: id })); setSearchRemolque(labelRemolque(reg)); })} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Ref Cliente</label><input type="text" name="refCliente" className={`form-control${claseSiFalta('refCliente')}`} value={formData.refCliente || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Ref Cliente <span className="campo-badge">refCliente</span></label><input type="text" name="refCliente" className={`form-control${claseSiFalta('refCliente')}`} value={formData.refCliente || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
 
@@ -2095,7 +2132,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconRoute /></div><h3 className="roelca-card-title">Ruta y Observaciones</h3></div>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label orange">Origen</label>
+                        <label className="form-label orange">Origen <span className="campo-badge">origen</span></label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('origen')}`} placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
@@ -2105,7 +2142,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                       </div>
                       <div className="form-group">
-                        <label className="form-label orange">Destino</label>
+                        <label className="form-label orange">Destino <span className="campo-badge">destino</span></label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('destino')}`} placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
@@ -2114,7 +2151,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>
                       </div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Ejecutivo</label><input type="text" name="observacionesEjecutivo" className={`form-control${claseSiFalta('observacionesEjecutivo')}`} value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Ejecutivo <span className="campo-badge">observacionesEjecutivo</span></label><input type="text" name="observacionesEjecutivo" className={`form-control${claseSiFalta('observacionesEjecutivo')}`} value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                 </>
@@ -2126,7 +2163,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconPackage /></div><h3 className="roelca-card-title">Cliente y Mercancía</h3></div>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Cliente (Mercancía)</label>
+                        <label className="form-label">Cliente (Mercancía) <span className="campo-badge">clienteMercancia</span></label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('clienteMercancia')}`} placeholder="Buscar cliente de mercancía..." value={searchClienteMercancia} onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }} onFocus={() => setShowDropdownClienteMercancia(true)} onBlur={() => setTimeout(() => setShowDropdownClienteMercancia(false), 200)} />
@@ -2143,18 +2180,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_MERCANCIA }, (id, reg) => { setFormData(prev => ({ ...prev, clienteMercancia: id })); setSearchClienteMercancia(labelEmpresa(reg)); })} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Descripción de Mercancía</label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Cantidad</label><input type="text" name="cantidad" className={`form-control${claseSiFalta('cantidad')}`} value={formData.cantidad || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Embalaje</label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{(embalajesLocal || []).map((em:any) => ({ id: String(em.id), texto: String(em.clave ?? em.Clave ?? em.CLAVE ?? em.embalaje ?? em.nombre ?? em.descripcion ?? em.tipo ?? '').trim() })).filter((o:any) => o.texto !== '').sort((a:any, b:any) => a.texto.localeCompare(b.texto, 'es', { sensitivity: 'base' })).map((o:any) => <option key={o.id} value={o.id}>{o.texto}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label">Peso (Kg)</label><input type="number" name="pesoKg" className={`form-control${claseSiFalta('pesoKg')}`} value={formData.pesoKg || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Descripción de Mercancía <span className="campo-badge">descripcionMercancia</span></label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Cantidad <span className="campo-badge">cantidad</span></label><input type="text" name="cantidad" className={`form-control${claseSiFalta('cantidad')}`} value={formData.cantidad || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Embalaje <span className="campo-badge">embalaje</span></label><select name="embalaje" className={`form-control${claseSiFalta('embalaje')}`} value={formData.embalaje || ''} onChange={handleChange}><option value="">-- Seleccionar --</option>{(embalajesLocal || []).map((em:any) => ({ id: String(em.id), texto: String(em.clave ?? em.Clave ?? em.CLAVE ?? em.embalaje ?? em.nombre ?? em.descripcion ?? em.tipo ?? '').trim() })).filter((o:any) => o.texto !== '').sort((a:any, b:any) => a.texto.localeCompare(b.texto, 'es', { sensitivity: 'base' })).map((o:any) => <option key={o.id} value={o.id}>{o.texto}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label">Peso (Kg) <span className="campo-badge">pesoKg</span></label><input type="number" name="pesoKg" className={`form-control${claseSiFalta('pesoKg')}`} value={formData.pesoKg || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Documentación (Carta Porte / DODA)</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label"># DODA</label><input type="text" name="numDoda" className={`form-control${claseSiFalta('numDoda')}`} value={formData.numDoda || ''} onChange={handleChange} /></div>
-                      <div className="form-group"><label className="form-label">Fecha Emisión DODA</label><input type="date" name="fechaEmisionDoda" className={`form-control${claseSiFalta('fechaEmisionDoda')}`} value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label"># DODA <span className="campo-badge">numDoda</span></label><input type="text" name="numDoda" className={`form-control${claseSiFalta('numDoda')}`} value={formData.numDoda || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Fecha Emisión DODA <span className="campo-badge">fechaEmisionDoda</span></label><input type="date" name="fechaEmisionDoda" className={`form-control${claseSiFalta('fechaEmisionDoda')}`} value={formData.fechaEmisionDoda || ''} onChange={handleChange} /></div>
                       <CampoArchivo label="PDF Carta Porte" file={formData.pdfCartaPorte} resaltar={camposObligatoriosFaltantesSet.has('pdfCartaPorte')} onChange={(e) => handleFileChange(e, 'pdfCartaPorte')} />
                       <CampoArchivo label="PDF DODA" file={formData.pdfDoda} resaltar={camposObligatoriosFaltantesSet.has('pdfDoda')} onChange={(e) => handleFileChange(e, 'pdfDoda')} />
                     </div>
@@ -2167,9 +2204,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconClipboard /></div><h3 className="roelca-card-title">Entry's</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label"># de Entry's</label><input type="text" name="numeroEntrys" className={`form-control${claseSiFalta('numeroEntrys')}`} value={formData.numeroEntrys || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label"># de Entry's <span className="campo-badge">numeroEntrys</span></label><input type="text" name="numeroEntrys" className={`form-control${claseSiFalta('numeroEntrys')}`} value={formData.numeroEntrys || ''} onChange={handleChange} /></div>
                       <div className="form-group">
-                        <label className="form-label">Cantidad de Entry's</label>
+                        <label className="form-label">Cantidad de Entry's <span className="campo-badge">cantEntrys</span></label>
                         <input type="number" min={0} name="cantEntrys" className={`form-control${claseSiFalta('cantEntrys')}`} value={formData.cantEntrys || 0} onChange={(e) => { const n = Math.max(0, parseInt(e.target.value || '0', 10) || 0); setFormData(prev => { const arr = [...(prev.pdfsEntrys || [])]; arr.length = n; return { ...prev, cantEntrys: n, pdfsEntrys: arr }; }); }} />
                       </div>
                     </div>
@@ -2185,9 +2222,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconReceipt /></div><h3 className="roelca-card-title">Manifiesto</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label"># Manifiesto</label><input type="text" name="numManifiesto" className={`form-control${claseSiFalta('numManifiesto')}`} value={formData.numManifiesto || ''} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label"># Manifiesto <span className="campo-badge">numManifiesto</span></label><input type="text" name="numManifiesto" className={`form-control${claseSiFalta('numManifiesto')}`} value={formData.numManifiesto || ''} onChange={handleChange} /></div>
                       <div className="form-group">
-                        <label className="form-label">Proveedor de Servicios</label>
+                        <label className="form-label">Proveedor de Servicios <span className="campo-badge">provServicios</span></label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('provServicios')}`} placeholder="Buscar proveedor de servicios..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
@@ -2205,7 +2242,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                       </div>
                       <div className="form-group">
-                        <label className="form-label">Costo Manifiesto</label>
+                        <label className="form-label">Costo Manifiesto <span className="campo-badge">montoManifiesto</span></label>
                         <input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto || 0} onChange={handleChange} />
                         <small style={{ color: '#8b949e' }}>Costo por defecto: ${COSTO_MANIFIESTO_DEFAULT.toFixed(2)}</small>
                       </div>
@@ -2221,7 +2258,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Proveedor de Transporte</h3></div>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Proveedor de Transporte</label>
+                        <label className="form-label">Proveedor de Transporte <span className="campo-badge">proveedorUnidad</span></label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Buscar proveedor de transporte..." value={searchProvTransporte} disabled={proveedorForzado} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} style={proveedorForzado ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} />
@@ -2246,7 +2283,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                          <label className="form-label" style={{ margin: 0 }}>Convenio Proveedor</label>
+                          <label className="form-label" style={{ margin: 0 }}>Convenio Proveedor <span className="campo-badge">convenioProveedor</span></label>
                           {(formData.proveedorUnidad || searchProvTransporte) && (
                             <button type="button" onClick={() => setMostrarConveniosProveedor(true)} title="Ver y editar los convenios (tarifas) de este proveedor" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}>
                               <IconReceipt size={12} /> Ver / editar ({listaConveniosProveedor.length})
@@ -2276,7 +2313,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
-                        <label className="form-label">Facturado En</label>
+                        <label className="form-label">Facturado En <span className="campo-badge">facturadoEnUnidad</span></label>
                         <select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}>
                           <option value="">-- Seleccionar --</option>
                           {listaMonedasLocal?.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
@@ -2291,7 +2328,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Flota Interna (Roelca)</h3></div>
                       <div className="form-grid">
                         <div className="form-group">
-                          <label className="form-label">Unidad</label>
+                          <label className="form-label">Unidad <span className="campo-badge">unidad</span></label>
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
                               <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
@@ -2309,7 +2346,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                         </div>
                         <div className="form-group">
-                          <label className="form-label">Operador</label>
+                          <label className="form-label">Operador <span className="campo-badge">operador</span></label>
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
                               <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
@@ -2326,12 +2363,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion({ tipo: 'empleado', coleccion: 'empleados' }, (id, reg) => { setFormData(prev => ({ ...prev, operador: id })); setSearchOperador(labelEmpleado(reg)); })} />
                           </div>
                         </div>
-                        <div className="form-group"><label className="form-label">Sueldo Operador</label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador || 0} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Sueldo Extra</label><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Sueldo Total</label><input type="number" className="form-control" value={formData.sueldoTotal || 0} readOnly style={{ opacity: 0.75 }} /></div>
-                        <div className="form-group"><label className="form-label">Combustible</label><input type="number" step="0.01" name="combustible" className={`form-control${claseSiFalta('combustible')}`} value={formData.combustible || 0} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Combustible Extra</label><input type="number" step="0.01" name="combustibleExtra" className="form-control" value={formData.combustibleExtra || 0} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Combustible Total</label><input type="number" className="form-control" value={formData.combustibleTotal || 0} readOnly style={{ opacity: 0.75 }} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador || 0} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo Extra <span className="campo-badge">sueldoExtra</span></label><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><input type="number" className="form-control" value={formData.sueldoTotal || 0} readOnly style={{ opacity: 0.75 }} /></div>
+                        <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="0.01" name="combustible" className={`form-control${claseSiFalta('combustible')}`} value={formData.combustible || 0} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Extra <span className="campo-badge">combustibleExtra</span></label><input type="number" step="0.01" name="combustibleExtra" className="form-control" value={formData.combustibleExtra || 0} onChange={handleChange} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Total <span className="campo-badge">combustibleTotal</span></label><input type="number" className="form-control" value={formData.combustibleTotal || 0} readOnly style={{ opacity: 0.75 }} /></div>
                       </div>
                     </div>
                   )}
@@ -2341,7 +2378,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="roelca-card-header"><div className="roelca-card-icon"><IconTruck /></div><h3 className="roelca-card-title">Flota Externa (Proveedor)</h3></div>
                       <div className="form-grid">
                         <div className="form-group">
-                          <label className="form-label">Unidad del Proveedor</label>
+                          <label className="form-label">Unidad del Proveedor <span className="campo-badge">unidadProveedor</span></label>
                           <div style={{ position: 'relative' }}>
                             <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} placeholder="Buscar/escribir unidad del proveedor..." value={searchUnidadProveedor} onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); setFormData(prev => ({ ...prev, unidadProveedor: e.target.value })); }} onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
                             {showDropdownUnidadProveedor && searchUnidadProveedor && resultadosUnidadProveedor.length > 0 && (
@@ -2356,7 +2393,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                         </div>
                         <div className="form-group">
-                          <label className="form-label">Operador del Proveedor</label>
+                          <label className="form-label">Operador del Proveedor <span className="campo-badge">operadorProveedor</span></label>
                           <div style={{ position: 'relative' }}>
                             <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} placeholder="Buscar/escribir operador del proveedor..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
                             {showDropdownOperadorProveedor && searchOperadorProveedor && resultadosOperadorProveedor.length > 0 && (
@@ -2378,16 +2415,40 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor</label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span></label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} /></div>
                       <div className="form-group">
-                        <label className="form-label">Cargos Adicionales (Prov)</label>
+                        <label className="form-label">Cargos Adicionales (Prov) <span className="campo-badge">cargosAdicionalesProv</span></label>
                         <div className="roelca-lookup-row">
                           <input type="number" step="0.01" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || 0} onChange={handleChange} style={{ flex: 1, minWidth: 0 }} />
                           <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Subtotal Proveedor</label><input type="number" className="form-control" value={formData.subtotalProv || 0} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Conversión (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Subtotal Proveedor <span className="campo-badge">subtotalProv</span></label><input type="number" className="form-control" value={formData.subtotalProv || 0} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Dólares (Prov) <span className="campo-badge">dolaresProv</span></label><input type="number" className="form-control" value={Number(formData.dolaresProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Pesos (Prov) <span className="campo-badge">pesosProv</span></label><input type="number" className="form-control" value={Number(formData.pesosProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Conversión (MXN) <span className="campo-badge">conversionProv</span></label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                    </div>
+                  </div>
+                  )}
+
+                  {mostrarPuente && (
+                  <div className="roelca-card">
+                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Caseta / Puente</h3></div>
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label className="form-label">Puente <span className="campo-badge">puenteId</span></label>
+                        <select name="puenteId" className="form-control" value={formData.puenteId || ''} onChange={(e) => {
+                          const id = e.target.value;
+                          const row = opcionesPuente.find((g:any) => String(g.id) === id);
+                          const importe = row ? (Number(row.Importe ?? row.importe ?? 0) || 0) : 0;
+                          setFormData(prev => ({ ...prev, puenteId: id, puenteNombre: row ? String(row.nombre_gasto || '') : '', puenteMonto: id ? importe : 0 }));
+                        }}>
+                          <option value="">-- Seleccionar --</option>
+                          {opcionesPuente.map((g:any) => <option key={g.id} value={g.id}>{g.nombre_gasto}</option>)}
+                          {formData.puenteId && !opcionesPuente.some((g:any) => String(g.id) === String(formData.puenteId)) && (<option value={formData.puenteId}>{formData.puenteNombre || formData.puenteId}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly style={{ opacity: 0.75 }} title="Se toma del catálogo (Importe)" /></div>
                     </div>
                   </div>
                   )}
@@ -2395,7 +2456,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Observaciones de Unidad</h3></div>
                     <div className="form-grid">
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Unidad</label><textarea name="observacionesUnidad" className="form-control" rows={2} value={formData.observacionesUnidad || ''} onChange={handleChange} /></div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Unidad <span className="campo-badge">observacionesUnidad</span></label><textarea name="observacionesUnidad" className="form-control" rows={2} value={formData.observacionesUnidad || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                 </>
@@ -2407,37 +2468,39 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Facturación al Cliente</h3></div>
                     <div className="form-grid">
                       <div className="form-group">
-                        <label className="form-label">Facturado En</label>
+                        <label className="form-label">Facturado En <span className="campo-badge">facturadoEnCobrar</span></label>
                         <select name="facturadoEnCobrar" className={`form-control${claseSiFalta('facturadoEnCobrar')}`} value={formData.facturadoEnCobrar || ''} onChange={handleChange}>
                           <option value="">-- Seleccionar --</option>
                           {listaMonedasLocal?.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
                         </select>
                       </div>
-                      <div className="form-group"><label className="form-label">Monto Convenio Cliente</label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente || 0} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente || 0} onChange={handleChange} /></div>
                       <div className="form-group">
-                        <label className="form-label">Cargos Adicionales</label>
+                        <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
                         <div className="roelca-lookup-row">
                           <input type="number" step="0.01" name="cargosAdicionales" className={`form-control${claseSiFalta('cargosAdicionales')}`} value={formData.cargosAdicionales || 0} onChange={handleChange} style={{ flex: 1, minWidth: 0 }} />
                           <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado</label><input type="number" step="0.0001" name="tipoCambioAprobado" className={`form-control${claseSiFalta('tipoCambioAprobado')}`} value={formData.tipoCambioAprobado || 0} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado <span className="campo-badge">tipoCambioAprobado</span></label><input type="number" step="0.0001" name="tipoCambioAprobado" className={`form-control${claseSiFalta('tipoCambioAprobado')}`} value={formData.tipoCambioAprobado || 0} onChange={handleChange} /></div>
                     </div>
                   </div>
 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTrendingUp /></div><h3 className="roelca-card-title">Conversión y Utilidad</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Subtotal Cliente</label><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Subtotal Cliente <span className="campo-badge">subtotalCliente</span></label><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Dólares (Cliente) <span className="campo-badge">dolaresCliente</span></label><input type="number" className="form-control" value={Number(formData.dolaresCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Pesos (Cliente) <span className="campo-badge">pesosCliente</span></label><input type="number" className="form-control" value={Number(formData.pesosCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN) <span className="campo-badge">conversionCliente</span></label><input type="number" className="form-control" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
                       {!esFlotaPropiaRoelca && (
-                        <div className="form-group"><label className="form-label">Conversión Proveedor (MXN)</label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                        <div className="form-group"><label className="form-label">Conversión Proveedor (MXN) <span className="campo-badge">conversionProv</span></label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
                       )}
                       <div className="form-group">
-                        <label className="form-label">Utilidad Estimada (MXN)</label>
+                        <label className="form-label">Utilidad Estimada (MXN) <span className="campo-badge">utilidadEstimada</span></label>
                         <input type="number" className="form-control" value={Number(formData.utilidadEstimada || 0).toFixed(2)} readOnly style={{ opacity: 0.95, color: Number(formData.utilidadEstimada) >= 0 ? '#3fb950' : '#f85149', fontWeight: 700 }} />
                       </div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Cobranza</label><textarea name="observacionesCobrar" className="form-control" rows={2} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
+                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Cobranza <span className="campo-badge">observacionesCobrar</span></label><textarea name="observacionesCobrar" className="form-control" rows={2} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                 </>

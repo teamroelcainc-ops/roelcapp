@@ -542,75 +542,33 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return val || '-';
   };
 
-  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) {
-      if (catalogo === 'statusServicio' && valorDesnormalizado.length > 30) {
-      } else {
-        return valorDesnormalizado; 
-      }
+  // ✅ Muestra ÚNICAMENTE el nombre desnormalizado ya guardado en la operación.
+  //    NO consulta otras colecciones (reduce lecturas) y NUNCA muestra un ID:
+  //    si no hay nombre guardado, devuelve '-'. Para monedas cae a la conversión
+  //    local ID→USD/MXN (sin catálogo).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const mostrarDatoMapeado = (id: string | null | undefined, catalogo: keyof typeof catalogosGlobales, _campoRetorno: string = 'nombre', valorDesnormalizado?: string) => {
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    if ((catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') && id) {
+      const m = mostrarMoneda(id);
+      if (m && m !== '-') return m;
     }
-
-    if (!id) return '-';
-    if (!catalogosGlobales[catalogo] || !Array.isArray(catalogosGlobales[catalogo])) return id;
-    
-    const elementoEncontrado = catalogosGlobales[catalogo].find((item: any) => String(item.id).trim() === String(id).trim() || String(item.nombre).trim() === String(id).trim());
-    if (!elementoEncontrado) return id;
-
-    if (catalogo === 'empleados') {
-      return `${elementoEncontrado.firstName || ''} ${elementoEncontrado.lastNamePaternal || ''}`.trim() || id;
-    }
-    if (catalogo === 'remolques') {
-      return `${elementoEncontrado.nombre || ''} ${elementoEncontrado.placas || elementoEncontrado.placa || ''}`.trim() || id;
-    }
-    if (catalogo === 'unidades') {
-      return elementoEncontrado.unidad || elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'catalogoMoneda' || catalogo === 'catalogo_moneda') {
-      return elementoEncontrado.moneda || id;
-    }
-    if (catalogo === 'statusServicio') {
-      return elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'tiposOperacion') {
-      return elementoEncontrado.tipo_operacion || id;
-    }
-    // ✅ NUEVO: resolución de catálogos del proveedor (unidad / operador externos)
-    //   para que en la tabla y el detalle se vea el nombre/número, no el ID.
-    if (catalogo === 'embalajes') {
-      return elementoEncontrado.clave || elementoEncontrado.nombre || id;
-    }
-    if (catalogo === 'unidades_proveedor') {
-      return elementoEncontrado.numeroUnidad || elementoEncontrado.numero_unidad || elementoEncontrado.unidad || elementoEncontrado.placas || elementoEncontrado.placa || id;
-    }
-    if (catalogo === 'proveedores_unidad') {
-      return elementoEncontrado.nombre || elementoEncontrado.nombres || elementoEncontrado.nombreCompleto || id;
-    }
-
-    return elementoEncontrado[campoRetorno] || elementoEncontrado.nombre || id;
+    return '-';
   };
 
+  // ✅ Solo nombre desnormalizado (convenioNombre). Sin lecturas de catálogos.
   const obtenerNombreConvenioCliente = (id: string, valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvDetalles?.find((d:any) => String(d.id).trim() === String(id).trim());
-    if (detalle) {
-        const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio_id || detalle.tipoConvenio || detalle.tipo_convenio || detalle['TIPO DE CONVENIO'];
-        const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || id;
-    }
-    return id;
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    return '-';
   };
 
+  // ✅ Solo nombre desnormalizado (convenioProveedorNombre). Sin lecturas.
   const obtenerNombreConvenioProv = (id: string, valorDesnormalizado?: string) => {
-    if (valorDesnormalizado && valorDesnormalizado.trim() !== '' && valorDesnormalizado !== '-' && String(valorDesnormalizado).trim() !== String(id).trim()) return valorDesnormalizado;
-    if (!id) return '-';
-    const detalle = catalogosGlobales.catalogoConvProvDetalles?.find((d:any) => String(d.id).trim() === String(id).trim());
-    if (detalle) {
-        const tarifaId = detalle.tipoConvenioId || detalle.tipo_convenio || detalle.tarifaId || detalle['TIPO DE CONVENIO'];
-        const tObj = catalogosGlobales.tarifas?.find((t:any) => String(t.id).trim() === String(tarifaId).trim());
-        return tObj?.descripcion || tObj?.nombre || detalle.tipoConvenioNombre || id;
-    }
-    return id;
+    const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
+    if (v && v !== '-' && v !== String(id ?? '').trim()) return String(valorDesnormalizado);
+    return '-';
   };
 
   const formatoMoneda = (monto: any) => {
