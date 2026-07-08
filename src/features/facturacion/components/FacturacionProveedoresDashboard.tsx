@@ -186,6 +186,7 @@ const COLUMNAS_FACTURA_BASE = [
 const LIMITE_FACTURAS_TODAS = 12000;
 const PAG_FACTURAS = 1000;
 const SS_FACTURAS = 'roelca_facturas_proveedores_v1';
+const SS_FACTURAS_CLIENTES = 'roelca_facturas_clientes_xref_v1';
 const SS_FACTURAS_TTL = 30 * 60 * 1000;
 
 const parseFechaFactura = (val: any): string => {
@@ -273,6 +274,7 @@ const normalizarFactura = (raw: any): any => {
 
 const COLUMNAS_OPS_BASE: any[] = [
   { id: 'factura',       label: '# Factura',       visible: true,  orden: true,  grupo: 'General' },
+  { id: 'facturaRoelca', label: 'Factura Roelca',  visible: true,  orden: false, grupo: 'General' },
   { id: 'ref',           label: 'Ref. Operación',  visible: true,  orden: true,  grupo: 'General' },
   { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true,  orden: true,  grupo: 'General' },
   { id: 'proveedor',     label: 'Proveedor',       visible: true,  orden: true,  grupo: 'General' },
@@ -404,6 +406,9 @@ export const FacturacionProveedoresDashboard = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [facturaViendo, setFacturaViendo] = useState<any | null>(null);
+  // Cruce con Facturación de CLIENTES: para saber si la operación ya fue facturada a cliente.
+  const [facturasClientesGlobales, setFacturasClientesGlobales] = useState<any[]>([]);
+  const [facturaClienteViendo, setFacturaClienteViendo] = useState<any | null>(null);
 
   const [guardandoCols, setGuardandoCols] = useState(false);
 
@@ -674,6 +679,90 @@ export const FacturacionProveedoresDashboard = () => {
   const recargarFacturas = () => {
     try { sessionStorage.removeItem(SS_FACTURAS); } catch { /* noop */ }
     descargarFacturas();
+  };
+
+  // ── Cruce con Facturación de CLIENTES ────────────────────────────────────
+  // Carga (una vez, con caché) las facturas de clientes para saber si una
+  // operación ya fue facturada al cliente y con qué número de factura.
+  useEffect(() => {
+    if (facturasClientesGlobales.length > 0) return;
+    try {
+      const raw = sessionStorage.getItem(SS_FACTURAS_CLIENTES);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && Array.isArray(obj.data) && (Date.now() - (obj.ts || 0)) < SS_FACTURAS_TTL) {
+          setFacturasClientesGlobales(obj.data);
+          return;
+        }
+      }
+    } catch { /* noop */ }
+
+    const descargarClientes = async () => {
+      try {
+        const todas: any[] = [];
+        let cursor: any = null;
+        for (let i = 0; i < Math.ceil(LIMITE_FACTURAS_TODAS / PAG_FACTURAS); i++) {
+          const cons: any[] = [orderBy(documentId()), limit(PAG_FACTURAS)];
+          if (cursor) cons.splice(1, 0, startAfter(cursor));
+          const snap = await getDocs(query(collection(db, 'facturas_clientes'), ...cons));
+          if (snap.empty) break;
+          snap.docs.forEach(d => {
+            const f: any = d.data();
+            todas.push({
+              id: d.id,
+              invoice: f.invoice || f.facturas || '',
+              fecha: f.fecha || f.fechaFactura || '',
+              clienteNombre: f.clienteNombre || f.cliente || '',
+              statusFactura: f.statusFactura || f.status || '',
+              moneda: f.monedaFacturacion || f.moneda || '',
+              total: (f.subtotalFactura !== undefined ? f.subtotalFactura : (f.total !== undefined ? f.total : 0)),
+              operacionesIds: f.operacionesIds || [],
+              operaciones: f.operaciones || [],
+            });
+          });
+          cursor = snap.docs[snap.docs.length - 1];
+          if (snap.docs.length < PAG_FACTURAS) break;
+        }
+        setFacturasClientesGlobales(todas);
+        try { sessionStorage.setItem(SS_FACTURAS_CLIENTES, JSON.stringify({ ts: Date.now(), data: todas })); } catch { /* cuota */ }
+      } catch (e) {
+        console.error('[Proveedores] Error cargando facturas de clientes (cruce):', e);
+      }
+    };
+    descargarClientes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mapa: operacionId / ref  ->  info de la factura de cliente donde aparece.
+  const mapaFacturaClientePorOp = useMemo(() => {
+    const aArr = (v: any): string[] => Array.isArray(v)
+      ? v.map((x) => String(x || '').trim()).filter(Boolean)
+      : (typeof v === 'string' ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
+    const m = new Map<string, any>();
+    (facturasClientesGlobales || []).forEach((f: any) => {
+      const info = {
+        facturaId: f.id,
+        invoice: f.invoice || '',
+        fecha: f.fecha || '',
+        clienteNombre: f.clienteNombre || '',
+        statusFactura: f.statusFactura || '',
+        moneda: f.moneda || '',
+        total: f.total ?? 0,
+      };
+      [...aArr(f.operacionesIds), ...aArr(f.operaciones)].forEach((k) => {
+        if (k && !m.has(k)) m.set(k, info);
+      });
+    });
+    return m;
+  }, [facturasClientesGlobales]);
+
+  const getFacturaClienteDeOp = (op: any): any | null => {
+    if (!op) return null;
+    return mapaFacturaClientePorOp.get(String(op.id))
+      || mapaFacturaClientePorOp.get(String(op.ref || ''))
+      || mapaFacturaClientePorOp.get(String(op.numReferencia || ''))
+      || mapaFacturaClientePorOp.get(String(op.referencia || ''))
+      || null;
   };
 
   useEffect(() => {
@@ -1145,6 +1234,21 @@ export const FacturacionProveedoresDashboard = () => {
         const inv = invoiceDeOp(op);
         if (inv) return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', color: '#58a6ff', border: '1px solid #58a6ff', backgroundColor: 'rgba(88,166,255,0.1)', fontFamily: 'monospace' }}>{inv}</span></td>;
         return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Por facturar</span></td>;
+      }
+      case 'facturaRoelca': {
+        const fc = getFacturaClienteDeOp(op);
+        if (fc && (fc.invoice || fc.facturaId)) {
+          return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+            <button
+              onClick={(e) => { e.stopPropagation(); setFacturaClienteViendo({ ...fc, opRef: op.numReferencia || op.referencia || op.ref || op.id }); }}
+              title="Ver dónde fue facturada (Facturación de Clientes)"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', color: '#3fb950', border: '1px solid #3fb950', backgroundColor: 'rgba(63,185,80,0.12)', fontFamily: 'monospace', cursor: 'pointer' }}>
+              {fc.invoice || 'Facturada'}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </button>
+          </td>;
+        }
+        return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ color: '#8b949e', fontSize: '0.8rem' }}>No facturada</span></td>;
       }
       case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.numReferencia || op.referencia || op.ref || op.id.substring(0, 6)}</td>;
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
@@ -2922,6 +3026,40 @@ export const FacturacionProveedoresDashboard = () => {
                 <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : 'Confirmar Factura'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {facturaClienteViendo && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1850, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setFacturaClienteViendo(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '460px', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Factura Roelca (Cliente)</h3>
+              <button onClick={() => setFacturaClienteViendo(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ backgroundColor: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.4)', borderRadius: '8px', padding: '12px 14px', color: '#3fb950', fontSize: '0.85rem' }}>
+                Esta operación <strong>ya fue facturada al cliente</strong> en <strong>Facturación de Clientes</strong>.
+              </div>
+              {[
+                ['Operación', facturaClienteViendo.opRef],
+                ['# Factura Cliente', facturaClienteViendo.invoice || '-'],
+                ['Cliente', facturaClienteViendo.clienteNombre || '-'],
+                ['Fecha de la factura', facturaClienteViendo.fecha ? formatearFechaSpanish(facturaClienteViendo.fecha) : '-'],
+                ['Status', facturaClienteViendo.statusFactura || '-'],
+                ['Moneda', facturaClienteViendo.moneda || '-'],
+                ['Total facturado', formatoMoneda(facturaClienteViendo.total)],
+              ].map(([label, val]: any, i: number) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', borderBottom: '1px solid #21262d', paddingBottom: '8px' }}>
+                  <span style={{ color: '#8b949e', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</span>
+                  <span style={{ color: '#f0f6fc', fontSize: '0.92rem', fontWeight: 600, textAlign: 'right' }}>{val}</span>
+                </div>
+              ))}
+              <div style={{ color: '#6e7681', fontSize: '0.72rem' }}>Ref. factura (id): {facturaClienteViendo.facturaId}</div>
+            </div>
+            <div style={{ padding: '14px 22px', borderTop: '1px solid #30363d', textAlign: 'right' }}>
+              <button onClick={() => setFacturaClienteViendo(null)} style={{ padding: '9px 22px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Cerrar</button>
+            </div>
           </div>
         </div>
       )}
