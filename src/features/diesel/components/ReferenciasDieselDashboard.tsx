@@ -1795,19 +1795,49 @@ export const ReferenciasDieselDashboard = () => {
                   <span style={{ color: '#f0f6fc', fontSize: '1rem' }}>{Number(referenciaViendo.galonesExtras || 0).toFixed(2)} Gal.</span>
                 </div>
 
-                <div style={{ backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Galones Autorizados</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.2rem', fontWeight: 'bold' }}>{Number(referenciaViendo.galonesAutorizados || 0).toFixed(2)}</span>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '2px' }}>Operaciones + Extras</span>
-                  <span style={{ display: 'block', color: '#c9d1d9', fontSize: '0.85rem', marginTop: '4px' }}>Total: {formatoMoneda(referenciaViendo.totalAutorizado)}</span>
+                <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginTop: '4px' }}>
+                  {/* AUTORIZADO */}
+                  <div style={{ backgroundColor: '#0d1117', padding: '16px', borderRadius: '10px', border: '1px solid #30363d', borderTop: '3px solid #58a6ff', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Galones Autorizados</span>
+                    <span style={{ color: '#58a6ff', fontSize: '1.7rem', fontWeight: 'bold', lineHeight: 1.1 }}>{Number(referenciaViendo.galonesAutorizados || 0).toFixed(2)} <span style={{ fontSize: '0.9rem', color: '#8b949e', fontWeight: 'normal' }}>Gal.</span></span>
+                    <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>Operaciones + Extras</span>
+                    <div style={{ marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <span style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>Total</span>
+                      <span style={{ color: '#58a6ff', fontSize: '1.05rem', fontWeight: 'bold' }}>{formatoMoneda(referenciaViendo.totalAutorizado)}</span>
+                    </div>
+                  </div>
+                  {/* CARGADO */}
+                  <div style={{ backgroundColor: '#0d1117', padding: '16px', borderRadius: '10px', border: '1px solid #30363d', borderTop: '3px solid #3fb950', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Galones Cargados</span>
+                    <span style={{ color: '#3fb950', fontSize: '1.7rem', fontWeight: 'bold', lineHeight: 1.1 }}>{Number(referenciaViendo.galonesCargados || 0).toFixed(2)} <span style={{ fontSize: '0.9rem', color: '#8b949e', fontWeight: 'normal' }}>Gal.</span></span>
+                    <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>Diesel realmente cargado</span>
+                    <div style={{ marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                      <span style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>Total</span>
+                      <span style={{ color: '#3fb950', fontSize: '1.05rem', fontWeight: 'bold' }}>{formatoMoneda(referenciaViendo.totalCargado)}</span>
+                    </div>
+                  </div>
+                  {/* DIFERENCIA (aprovecha el espacio antes vacío) */}
+                  {(() => {
+                    const aut = Number(referenciaViendo.galonesAutorizados || 0);
+                    const car = Number(referenciaViendo.galonesCargados || 0);
+                    const difG = car - aut;
+                    const difT = Number(referenciaViendo.totalCargado || 0) - Number(referenciaViendo.totalAutorizado || 0);
+                    const excede = difG > 0.001;
+                    const color = excede ? '#f59e0b' : '#3fb950';
+                    const signo = (n: number) => n > 0.001 ? '+' : (n < -0.001 ? '\u2212' : '');
+                    return (
+                      <div style={{ backgroundColor: '#0d1117', padding: '16px', borderRadius: '10px', border: '1px solid #30363d', borderTop: `3px solid ${color}`, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Diferencia</span>
+                        <span style={{ color, fontSize: '1.7rem', fontWeight: 'bold', lineHeight: 1.1 }}>{signo(difG)}{Math.abs(difG).toFixed(2)} <span style={{ fontSize: '0.9rem', color: '#8b949e', fontWeight: 'normal' }}>Gal.</span></span>
+                        <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>{excede ? 'Cargó más de lo autorizado' : 'Dentro de lo autorizado'}</span>
+                        <div style={{ marginTop: 'auto', paddingTop: '8px', borderTop: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                          <span style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>Total</span>
+                          <span style={{ color, fontSize: '1.05rem', fontWeight: 'bold' }}>{signo(difT)}{formatoMoneda(Math.abs(difT))}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
-                
-                <div style={{ backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Galones Cargados</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>{Number(referenciaViendo.galonesCargados).toFixed(2)}</span>
-                  <span style={{ display: 'block', color: '#c9d1d9', fontSize: '0.85rem', marginTop: '4px' }}>Total: {formatoMoneda(referenciaViendo.totalCargado)}</span>
-                </div>
-                <div></div>
 
                 <div style={{ gridColumn: 'span 3' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Observaciones</span>

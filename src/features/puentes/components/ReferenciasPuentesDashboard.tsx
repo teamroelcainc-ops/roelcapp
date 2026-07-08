@@ -292,9 +292,21 @@ export const ReferenciasPuentesDashboard = () => {
   // No se muestra nada hasta que se ponga al menos una fecha de servicio
   const filtrosCompletos = !!(fechaInicio || fechaFin);
 
+  // ✅ Puentes solo aplica a flota propia Roelca: se muestran únicamente las
+  //    operaciones de Transfer, o de Logística cuyo proveedor sea Roelca.
+  //    (Fletes y Logística con proveedor externo se facturan al proveedor, no aquí.)
+  const esPuenteRoelca = (op: any): boolean => {
+    const tipo = String(op?.tipoOperacionNombre || op?.tipoOperacionId || '').toLowerCase();
+    const isTransfer = tipo.includes('transfer');
+    const isLogistica = tipo.includes('logistica') || tipo.includes('logística');
+    const esRoelca = String(op?.proveedorUnidadNombre || op?.proveedorUnidad || '').toLowerCase().includes('roelca');
+    return isTransfer || (isLogistica && esRoelca);
+  };
+
   const operacionesBaseFiltro = useMemo(() => {
     if (!filtrosCompletos) return [];
     return operacionesGlobales.filter(op => {
+      if (!esPuenteRoelca(op)) return false;
       const tr = getTrafico(op);
       const matchTrafico = filtroTrafico === 'todos' || sinAcentos(tr) === sinAcentos(filtroTrafico);
       return matchTrafico && dentroRangoFecha(op);
