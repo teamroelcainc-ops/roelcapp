@@ -208,25 +208,41 @@ const parseFechaFactura = (val: any): string => {
 
 const normalizarFactura = (raw: any): any => {
   const fechaNorm = parseFechaFactura(raw.fecha || raw.fechaFactura);
-  let opsIds: any = raw.operacionesIds;
-  if (typeof opsIds === 'string') opsIds = opsIds ? [opsIds] : [];
-  if (!Array.isArray(opsIds)) opsIds = [];
+
+  // Convierte a arreglo tanto si viene como arreglo, como si viene en texto
+  // separado por comas (así llegan las facturas importadas desde el CSV).
+  const aArray = (v: any): string[] => {
+    if (Array.isArray(v)) return v.map((x) => String(x || '').trim()).filter(Boolean);
+    if (typeof v === 'string') return v.split(',').map((x) => x.trim()).filter(Boolean);
+    return [];
+  };
+
+  const opsIds = aArray(raw.operacionesIds);
+  const opsRefs = aArray(raw.operaciones);
+
   let opsGuardadas: any = raw.operacionesGuardadas;
   if (!Array.isArray(opsGuardadas) || opsGuardadas.length === 0) {
-    opsGuardadas = opsIds.map((idOrRef: string) => ({
-      id: String(idOrRef || ''),
-      ref: String(idOrRef || ''),
-      monto: 0,
-      subtotalBase: 0,
-    }));
+    // Sin detalle (factura importada): combinamos IDs + referencias por posición.
+    const n = Math.max(opsIds.length, opsRefs.length);
+    opsGuardadas = [];
+    for (let i = 0; i < n; i++) {
+      opsGuardadas.push({
+        id: String(opsIds[i] || opsRefs[i] || ''),
+        ref: String(opsRefs[i] || opsIds[i] || ''),
+        monto: 0,
+        subtotalBase: 0,
+      });
+    }
   }
   return {
     ...raw,
     fecha: fechaNorm || String(raw.fecha || raw.fechaFactura || ''),
     operacionesIds: opsIds,
+    operaciones: opsRefs,
     operacionesGuardadas: opsGuardadas,
     subtotalFactura: Number(raw.subtotalFactura) || Number(raw.total) || 0,
     monedaFacturacion: raw.monedaFacturacion || raw.moneda || 'N/A',
+    monedaId: raw.monedaId || '',
     clienteNombre: raw.clienteNombre || raw.cliente || '',
     facturaCcp: raw.facturaCcp || raw.ccp || '',
     invoice: raw.invoice || raw.numeroInvoice || raw.numInvoice || raw.folio || String(raw.id || ''),
@@ -648,6 +664,44 @@ export const FacturacionClientesDashboard = () => {
     try { sessionStorage.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
 
+  // Descarga TODAS las facturas desde Firestore (reutilizable por el botón Refrescar).
+  const descargarFacturas = async () => {
+    setCargandoFacturas(true);
+    try {
+      const todas: any[] = [];
+      let cursor: any = null;
+      for (let i = 0; i < Math.ceil(LIMITE_FACTURAS_TODAS / PAG_FACTURAS); i++) {
+        const cons: any[] = [orderBy(documentId()), limit(PAG_FACTURAS)];
+        if (cursor) cons.splice(1, 0, startAfter(cursor));
+        const snap = await getDocs(query(collection(db, 'facturas_clientes'), ...cons));
+        if (snap.empty) break;
+        snap.docs.forEach(d => todas.push(normalizarFactura({ id: d.id, ...(d.data() as any) })));
+        cursor = snap.docs[snap.docs.length - 1];
+        if (snap.docs.length < PAG_FACTURAS) break;
+      }
+      todas.sort((a: any, b: any) => {
+        const fa = String(a.fecha || '');
+        const fb = String(b.fecha || '');
+        if (!fa && !fb) return 0;
+        if (!fa) return 1;
+        if (!fb) return -1;
+        return fb.localeCompare(fa);
+      });
+      setFacturasGlobales(todas);
+      guardarCacheFacturas(todas);
+    } catch (e: any) {
+      console.error('[Facturación Historial] Error al recargar facturas:', e);
+      alert('No se pudieron recargar las facturas. ' + String(e?.message || e?.code || e || ''));
+    }
+    setCargandoFacturas(false);
+  };
+
+  // Fuerza el refresco de la colección de facturas: limpia la caché y vuelve a leer.
+  const recargarFacturas = () => {
+    try { sessionStorage.removeItem(SS_FACTURAS); } catch { /* noop */ }
+    descargarFacturas();
+  };
+
   useEffect(() => {
     if (facturasGlobales.length > 0) return;
     try {
@@ -788,6 +842,12 @@ export const FacturacionClientesDashboard = () => {
     try { sessionStorage.removeItem(SS_OPS); } catch { /* noop */ }
     setSeleccionadas([]);
     descargarOpsCompletadas(true);
+  };
+
+  // Refresca AMBAS colecciones (operaciones + facturas) forzando lectura desde Firestore.
+  const recargarTodo = () => {
+    recargarOperaciones();
+    recargarFacturas();
   };
 
   const getNombreCliente = (idOrName: string) => {
@@ -1262,6 +1322,10 @@ export const FacturacionClientesDashboard = () => {
       const remolquesFactura = Array.from(new Set(
         operacionesResumenEstable.map((o: any) => String(o.remolque || '')).filter(r => r && r !== '-')
       ));
+      // Moneda para el esquema de facturación: ID + nombre legible.
+      const monedaIdFactura = monedaFacturacion === 'MXN' ? ID_MXN : (monedaFacturacion === 'USD' ? ID_USD : '');
+      const operacionesRefs = operacionesResumenEstable.map((o: any) => o.ref).filter(Boolean);
+
       const data = {
         invoice: invoiceForm.trim(),
         fecha: fechaForm,
@@ -1270,7 +1334,9 @@ export const FacturacionClientesDashboard = () => {
         clienteId: clienteFacturaId,
         clienteNombre: nombreClienteFactura || getNombreCliente(clienteFacturaId),
         monedaFacturacion,
+        monedaId: monedaIdFactura,                 // ← campo de la colección
         operacionesIds: seleccionadas,
+        operaciones: operacionesRefs,              // ← campo de la colección (refs)
         operacionesGuardadas: operacionesResumenEstable,
         remolques: remolquesFactura,
         subtotalFactura: resumenSeleccion.subtotal,
@@ -1303,7 +1369,9 @@ export const FacturacionClientesDashboard = () => {
           clienteId: clienteFacturaId,
           clienteNombre: existente.clienteNombre || data.clienteNombre,
           monedaFacturacion: existente.monedaFacturacion || monedaFacturacion,
+          monedaId: existente.monedaId || monedaIdFactura,
           operacionesIds: idsUnion,
+          operaciones: guardadasUnion.map((o: any) => o.ref).filter(Boolean),
           operacionesGuardadas: guardadasUnion,
           remolques: remolquesUnion,
           subtotalFactura: subtotalUnion,
@@ -1334,9 +1402,9 @@ export const FacturacionClientesDashboard = () => {
       ));
       setFacturasGlobales(prev => {
         if (existente) {
-          return prev.map(f => f.id === docId ? normalizarFactura({ id: docId, ...facturaResultante }) : f);
+          return prev.map(f => f.id === docId ? normalizarFactura({ ...facturaResultante, id: docId }) : f);
         }
-        return [normalizarFactura({ id: docId, ...data }), ...prev];
+        return [normalizarFactura({ ...data, id: docId }), ...prev];
       });
       setActiveTab('historial');
     } catch (error) {
@@ -2237,9 +2305,15 @@ export const FacturacionClientesDashboard = () => {
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
       <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Facturación de Clientes</h1>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', borderBottom: '1px solid #30363d', marginBottom: '24px' }}>
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
+        <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas}
+          title="Vuelve a leer operaciones y facturas desde la base de datos (limpia la caché)"
+          style={{ marginLeft: 'auto', marginBottom: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', cursor: (cargandoOperaciones || cargandoFacturas) ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: (cargandoOperaciones || cargandoFacturas) ? 0.6 : 1 }}>
+          <span style={{ fontSize: '1rem', lineHeight: 1 }}>↻</span>
+          {(cargandoOperaciones || cargandoFacturas) ? 'Refrescando…' : 'Refrescar'}
+        </button>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
