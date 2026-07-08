@@ -1084,6 +1084,8 @@ export const FacturacionClientesDashboard = () => {
       const campos = [
         op.remolqueNombre, op.remolquePlaca, op.numeroRemolque, op.remolque,
         op.numReferencia, op.referencia, op.ref, invoiceDeOp(op), op.refCliente,
+        op.clienteNombre, op.proveedorUnidadNombre, op.origenNombre, op.destinoNombre,
+        op.observacionesEjecutivo,
       ];
       return campos.some(v => String(v ?? '').toLowerCase().includes(q));
     };
@@ -2499,6 +2501,15 @@ export const FacturacionClientesDashboard = () => {
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
                 {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'mostrada' : 'mostradas'}
               </span>
+            </div>
+
+            <div style={{ position: 'relative', flex: '1 1 260px', minWidth: '180px', maxWidth: '440px' }}>
+              <input type="text" placeholder="Buscar operación (ref, remolque, cliente, origen...)" value={textoBuscarRemolqueOps}
+                onChange={(e) => setTextoBuscarRemolqueOps(e.target.value)}
+                style={{ width: '100%', padding: '8px 30px 8px 12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.85rem', boxSizing: 'border-box' }} />
+              {textoBuscarRemolqueOps && (
+                <button onClick={() => setTextoBuscarRemolqueOps('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>

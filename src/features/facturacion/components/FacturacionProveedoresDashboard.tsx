@@ -192,38 +192,78 @@ const parseFechaFactura = (val: any): string => {
   if (!val) return '';
   const s = String(val).trim();
   if (!s) return '';
+  // ISO (YYYY-MM-DD) → tal cual
   if (/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) {
     const [y, m, d] = s.slice(0, 10).split('-');
     return `${y}-${(m || '01').padStart(2, '0')}-${(d || '01').padStart(2, '0')}`;
   }
-  const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m1) return `${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}`;
-  const m2 = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-  if (m2) return `${m2[1]}-${m2[2].padStart(2, '0')}-${m2[3].padStart(2, '0')}`;
+  // YYYY/M/D
+  const mISO = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (mISO) return `${mISO[1]}-${mISO[2].padStart(2, '0')}-${mISO[3].padStart(2, '0')}`;
+
+  // A/B/YYYY (ambiguo: D/M/YYYY vs M/D/YYYY). Se resuelve evitando fechas
+  // imposibles y, si ambas son válidas, evitando fechas FUTURAS (una factura
+  // no puede tener fecha posterior a hoy). Las no ambiguas (día > 12) no cambian.
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (m) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    const y = m[3];
+    const hoy = new Date(); hoy.setHours(23, 59, 59, 999);
+    const arma = (dia: number, mes: number) => `${y}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    const valido = (dia: number, mes: number) => mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31;
+    const esPasada = (iso: string) => { const d = new Date(iso + 'T00:00:00'); return !isNaN(d.getTime()) && d <= hoy; };
+
+    const dm = valido(a, b) ? arma(a, b) : ''; // A = día, B = mes  (D/M/YYYY)
+    const md = valido(b, a) ? arma(b, a) : ''; // A = mes, B = día  (M/D/YYYY)
+
+    if (dm && !md) return dm;
+    if (md && !dm) return md;
+    if (dm && md) {
+      if (!esPasada(dm) && esPasada(md)) return md;
+      return dm;
+    }
+  }
   return s;
 };
 
 const normalizarFactura = (raw: any): any => {
   const fechaNorm = parseFechaFactura(raw.fecha || raw.fechaFactura);
-  let opsIds: any = raw.operacionesIds;
-  if (typeof opsIds === 'string') opsIds = opsIds ? [opsIds] : [];
-  if (!Array.isArray(opsIds)) opsIds = [];
+
+  // Convierte a arreglo tanto si viene como arreglo, como si viene en texto
+  // separado por comas (así llegan las facturas importadas desde el CSV).
+  const aArray = (v: any): string[] => {
+    if (Array.isArray(v)) return v.map((x) => String(x || '').trim()).filter(Boolean);
+    if (typeof v === 'string') return v.split(',').map((x) => x.trim()).filter(Boolean);
+    return [];
+  };
+
+  const opsIds = aArray(raw.operacionesIds);
+  const opsRefs = aArray(raw.operaciones);
+
   let opsGuardadas: any = raw.operacionesGuardadas;
   if (!Array.isArray(opsGuardadas) || opsGuardadas.length === 0) {
-    opsGuardadas = opsIds.map((idOrRef: string) => ({
-      id: String(idOrRef || ''),
-      ref: String(idOrRef || ''),
-      monto: 0,
-      subtotalBase: 0,
-    }));
+    // Sin detalle (factura importada): combinamos IDs + referencias por posición.
+    const n = Math.max(opsIds.length, opsRefs.length);
+    opsGuardadas = [];
+    for (let i = 0; i < n; i++) {
+      opsGuardadas.push({
+        id: String(opsIds[i] || opsRefs[i] || ''),
+        ref: String(opsRefs[i] || opsIds[i] || ''),
+        monto: 0,
+        subtotalBase: 0,
+      });
+    }
   }
   return {
     ...raw,
     fecha: fechaNorm || String(raw.fecha || raw.fechaFactura || ''),
     operacionesIds: opsIds,
+    operaciones: opsRefs,
     operacionesGuardadas: opsGuardadas,
     subtotalFactura: Number(raw.subtotalFactura) || Number(raw.total) || 0,
     monedaProveedor: raw.monedaProveedor || raw.moneda || 'N/A',
+    monedaId: raw.monedaId || '',
     proveedorNombre: raw.proveedorNombre || raw.proveedor || '',
     facturaCcp: raw.facturaCcp || raw.ccp || '',
     invoice: raw.invoice || raw.numeroInvoice || raw.numInvoice || raw.folio || String(raw.id || ''),
@@ -598,6 +638,44 @@ export const FacturacionProveedoresDashboard = () => {
     try { sessionStorage.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
 
+  // Descarga TODAS las facturas desde Firestore (reutilizable por el botón Refrescar).
+  const descargarFacturas = async () => {
+    setCargandoFacturas(true);
+    try {
+      const todas: any[] = [];
+      let cursor: any = null;
+      for (let i = 0; i < Math.ceil(LIMITE_FACTURAS_TODAS / PAG_FACTURAS); i++) {
+        const cons: any[] = [orderBy(documentId()), limit(PAG_FACTURAS)];
+        if (cursor) cons.splice(1, 0, startAfter(cursor));
+        const snap = await getDocs(query(collection(db, 'facturas_proveedores'), ...cons));
+        if (snap.empty) break;
+        snap.docs.forEach(d => todas.push(normalizarFactura({ id: d.id, ...(d.data() as any) })));
+        cursor = snap.docs[snap.docs.length - 1];
+        if (snap.docs.length < PAG_FACTURAS) break;
+      }
+      todas.sort((a: any, b: any) => {
+        const fa = String(a.fecha || '');
+        const fb = String(b.fecha || '');
+        if (!fa && !fb) return 0;
+        if (!fa) return 1;
+        if (!fb) return -1;
+        return fb.localeCompare(fa);
+      });
+      setFacturasGlobales(todas);
+      guardarCacheFacturas(todas);
+    } catch (e: any) {
+      console.error('[Facturación Proveedores] Error al recargar facturas:', e);
+      alert('No se pudieron recargar las facturas. ' + String(e?.message || e?.code || e || ''));
+    }
+    setCargandoFacturas(false);
+  };
+
+  // Fuerza el refresco de la colección de facturas: limpia la caché y vuelve a leer.
+  const recargarFacturas = () => {
+    try { sessionStorage.removeItem(SS_FACTURAS); } catch { /* noop */ }
+    descargarFacturas();
+  };
+
   useEffect(() => {
     if (facturasGlobales.length > 0) return;
     try {
@@ -738,6 +816,12 @@ export const FacturacionProveedoresDashboard = () => {
     try { sessionStorage.removeItem(SS_OPS); } catch { /* noop */ }
     setSeleccionadas([]);
     descargarOpsCompletadas(true);
+  };
+
+  // Refresca AMBAS colecciones (operaciones + facturas) forzando lectura desde Firestore.
+  const recargarTodo = () => {
+    recargarOperaciones();
+    recargarFacturas();
   };
 
   const getNombreEmpresa = (idOrName: string) => {
@@ -954,6 +1038,8 @@ export const FacturacionProveedoresDashboard = () => {
       const campos = [
         op.remolqueNombre, op.remolquePlaca, op.numeroRemolque, op.remolque,
         op.numReferencia, op.referencia, op.ref, invoiceDeOp(op), op.refCliente,
+        op.clienteNombre, op.proveedorUnidadNombre, op.origenNombre, op.destinoNombre,
+        op.observacionesEjecutivo,
       ];
       return campos.some(v => String(v ?? '').toLowerCase().includes(q));
     };
@@ -1405,6 +1491,8 @@ export const FacturacionProveedoresDashboard = () => {
       const remolquesFactura = Array.from(new Set(
         operacionesResumenEstable.map((o: any) => String(o.remolque || '')).filter(r => r && r !== '-')
       ));
+      const monedaIdFactura = monedaProveedor === 'MXN' ? ID_MXN : (monedaProveedor === 'USD' ? ID_USD : '');
+      const operacionesRefs = operacionesResumenEstable.map((o: any) => o.ref).filter(Boolean);
       const data = {
         invoice: invoiceForm.trim(),
         fecha: fechaForm,
@@ -1413,7 +1501,9 @@ export const FacturacionProveedoresDashboard = () => {
         proveedorId: proveedorFacturaId,
         proveedorNombre: nombreProveedorFactura || getNombreEmpresa(proveedorFacturaId),
         monedaProveedor,
+        monedaId: monedaIdFactura,                 // ← campo de la colección
         operacionesIds: seleccionadas,
+        operaciones: operacionesRefs,              // ← campo de la colección (refs)
         operacionesGuardadas: operacionesResumenEstable,
         remolques: remolquesFactura,
         subtotalFactura: resumenSeleccion.subtotal,
@@ -1446,7 +1536,9 @@ export const FacturacionProveedoresDashboard = () => {
           proveedorId: proveedorFacturaId,
           proveedorNombre: existente.proveedorNombre || data.proveedorNombre,
           monedaProveedor: existente.monedaProveedor || monedaProveedor,
+          monedaId: existente.monedaId || monedaIdFactura,
           operacionesIds: idsUnion,
+          operaciones: guardadasUnion.map((o: any) => o.ref).filter(Boolean),
           operacionesGuardadas: guardadasUnion,
           remolques: remolquesUnion,
           subtotalFactura: subtotalUnion,
@@ -1477,9 +1569,9 @@ export const FacturacionProveedoresDashboard = () => {
       ));
       setFacturasGlobales(prev => {
         if (existente) {
-          return prev.map(f => f.id === docId ? normalizarFactura({ id: docId, ...facturaResultante }) : f);
+          return prev.map(f => f.id === docId ? normalizarFactura({ ...facturaResultante, id: docId }) : f);
         }
-        return [normalizarFactura({ id: docId, ...data }), ...prev];
+        return [normalizarFactura({ ...data, id: docId }), ...prev];
       });
       setActiveTab('historial');
     } catch (error) {
@@ -2390,8 +2482,17 @@ export const FacturacionProveedoresDashboard = () => {
               </span>
             </div>
 
+            <div style={{ position: 'relative', flex: '1 1 260px', minWidth: '180px', maxWidth: '440px' }}>
+              <input type="text" placeholder="Buscar operación (ref, remolque, cliente, origen...)" value={textoBuscarRemolqueOps}
+                onChange={(e) => setTextoBuscarRemolqueOps(e.target.value)}
+                style={{ width: '100%', padding: '8px 30px 8px 12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.85rem', boxSizing: 'border-box' }} />
+              {textoBuscarRemolqueOps && (
+                <button onClick={() => setTextoBuscarRemolqueOps('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button onClick={recargarOperaciones} style={btnDirStyle} title="Volver a leer todas las operaciones desde la base de datos">↻ Recargar</button>
+              <button onClick={recargarTodo} disabled={cargandoFacturas} style={btnDirStyle} title="Volver a leer operaciones y facturas desde la base de datos (limpia la caché)">↻ Recargar</button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button title="Editar el encabezado de las remisiones (emisor por moneda: USD→Camila, MXN→Rolando)" onClick={() => setModalEmisores(true)} style={{ ...btnDirStyle, borderColor: '#fb923c', color: '#fb923c' }}>⚙ Encabezado Remisión</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
