@@ -1031,6 +1031,17 @@ export const FacturacionProveedoresDashboard = () => {
   }, [operacionesGlobales, mapaCatalogos]);
   const coincideTipoOp = (op: any) => !filtroTipoOp || tipoOpNombre(op) === filtroTipoOp;
 
+  // ✅ Proveedores solo factura a proveedores EXTERNOS: se muestran únicamente las
+  //    operaciones de Fletes, y las de Logística cuyo proveedor NO sea Roelca.
+  //    (Transfer y Logística-Roelca usan flota propia; no aplican en Proveedores.)
+  const esFacturableProveedor = (op: any): boolean => {
+    const tipo = String(op?.tipoOperacionNombre || op?.tipoOperacionId || '').toLowerCase();
+    const isFletes = tipo.includes('flete');
+    const isLogistica = tipo.includes('logistica') || tipo.includes('logística');
+    const esRoelca = String(op?.proveedorUnidadNombre || op?.proveedorUnidad || '').toLowerCase().includes('roelca');
+    return isFletes || (isLogistica && !esRoelca);
+  };
+
   const operacionesMostradas = useMemo(() => {
     const q = textoBuscarRemolqueOps.trim().toLowerCase();
     const coincide = (op: any) => {
@@ -1049,7 +1060,7 @@ export const FacturacionProveedoresDashboard = () => {
       return !esFacturada(op);
     };
     const lista = operacionesGlobales.filter(op =>
-      dentroRangoFecha(op) && coincideProveedorOp(op) && coincideTipoOp(op) && coincideVista(op) && coincide(op)
+      esFacturableProveedor(op) && dentroRangoFecha(op) && coincideProveedorOp(op) && coincideTipoOp(op) && coincideVista(op) && coincide(op)
     );
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
@@ -1064,7 +1075,7 @@ export const FacturacionProveedoresDashboard = () => {
   }, [operacionesGlobales, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, vistaOps, textoBuscarRemolqueOps, facturasGlobales, filtroProveedor, filtroTipoOp]);
 
   const resumenOps = useMemo(() => {
-    const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op) && coincideProveedorOp(op) && coincideTipoOp(op));
+    const enRango = operacionesGlobales.filter(op => esFacturableProveedor(op) && dentroRangoFecha(op) && coincideProveedorOp(op) && coincideTipoOp(op));
     const facturadas = enRango.filter(op => esFacturada(op)).length;
     const total = enRango.length;
     const porFacturar = total - facturadas;
