@@ -195,14 +195,39 @@ const parseFechaFactura = (val: any): string => {
   if (!val) return '';
   const s = String(val).trim();
   if (!s) return '';
+  // ISO (YYYY-MM-DD) → tal cual
   if (/^\d{4}-\d{1,2}-\d{1,2}/.test(s)) {
     const [y, m, d] = s.slice(0, 10).split('-');
     return `${y}-${(m || '01').padStart(2, '0')}-${(d || '01').padStart(2, '0')}`;
   }
-  const m1 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (m1) return `${m1[3]}-${m1[2].padStart(2, '0')}-${m1[1].padStart(2, '0')}`;
-  const m2 = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
-  if (m2) return `${m2[1]}-${m2[2].padStart(2, '0')}-${m2[3].padStart(2, '0')}`;
+  // YYYY/M/D
+  const mISO = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (mISO) return `${mISO[1]}-${mISO[2].padStart(2, '0')}-${mISO[3].padStart(2, '0')}`;
+
+  // A/B/YYYY (ambiguo: D/M/YYYY vs M/D/YYYY). Se resuelve evitando fechas
+  // imposibles y, si ambas son válidas, evitando fechas FUTURAS (una factura
+  // no puede tener fecha posterior a hoy). Las no ambiguas (día > 12) no cambian.
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if (m) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    const y = m[3];
+    const hoy = new Date(); hoy.setHours(23, 59, 59, 999);
+    const arma = (dia: number, mes: number) => `${y}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+    const valido = (dia: number, mes: number) => mes >= 1 && mes <= 12 && dia >= 1 && dia <= 31;
+    const esPasada = (iso: string) => { const d = new Date(iso + 'T00:00:00'); return !isNaN(d.getTime()) && d <= hoy; };
+
+    const dm = valido(a, b) ? arma(a, b) : ''; // A = día, B = mes  (D/M/YYYY)
+    const md = valido(b, a) ? arma(b, a) : ''; // A = mes, B = día  (M/D/YYYY)
+
+    if (dm && !md) return dm;
+    if (md && !dm) return md;
+    if (dm && md) {
+      // Ambas válidas: preferimos D/M/YYYY, salvo que dé futuro y M/D/YYYY sí sea pasada.
+      if (!esPasada(dm) && esPasada(md)) return md;
+      return dm;
+    }
+  }
   return s;
 };
 
