@@ -35,6 +35,9 @@ import * as XLSX from 'xlsx';
 import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
 import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
+import { generarConfirmacionTarifaPDF, generarRateProveedorPDF } from './generarDocumentosProveedorPDF';
+import type { ConfirmacionTarifaData, RateProveedorData } from './generarDocumentosProveedorPDF';
+import { getAuth } from 'firebase/auth';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -1466,6 +1469,240 @@ export const FacturacionProveedoresDashboard = () => {
       return { ...prev, filas, total };
     });
 
+  // ═══════════════════════════════════════════════════════════════════
+  // ✅ (CONFIRMACIÓN DE TARIFA) por operación → pestaña "Asignar Operaciones"
+  // ✅ (RATE DE PROVEEDOR) por factura → pestaña "Historial de Facturas"
+  // Ambos con vista previa editable antes de descargar el PDF (con logo).
+  // ═══════════════════════════════════════════════════════════════════
+  const [confirmacionPreview, setConfirmacionPreview] = useState<any | null>(null);
+  const [ratePreview, setRatePreview] = useState<any | null>(null);
+  const [cargandoRate, setCargandoRate] = useState(false);
+
+  // Nombre del usuario logueado (coordinador que emite la confirmación).
+  const nombreCoordinadorActual = (): string => {
+    try {
+      const u = getAuth().currentUser;
+      return u?.displayName || u?.email || '';
+    } catch { return ''; }
+  };
+
+  // Intenta armar la dirección de una bodega/dirección desde los catálogos cacheados.
+  const direccionDeCatalogo = (id: any): string => {
+    if (id === undefined || id === null || id === '') return '';
+    const alias = ['bodegas', 'direcciones', 'ubicaciones', 'clientesBodegas'];
+    for (const a of alias) {
+      const arr = leerCacheLocal(a);
+      if (!arr) continue;
+      const item = arr.find((x: any) => String(x.id) === String(id));
+      if (item) {
+        const partes = [
+          item.direccion || item.domicilio || item.calle,
+          item.colonia ? `Col. ${item.colonia}` : '',
+          item.cp || item.codigoPostal ? `C.P. ${item.cp || item.codigoPostal}` : '',
+          item.ciudad || item.municipio,
+          item.estado,
+        ].map((p: any) => String(p || '').trim()).filter(Boolean);
+        if (partes.length) return partes.join(', ');
+        if (item.label) return String(item.label);
+      }
+    }
+    return '';
+  };
+
+  const aTextoMoneda = (v: any): string => {
+    const m = String(v || '').toUpperCase();
+    if (m === 'USD' || m.includes('DOLAR') || m.includes('DÓLAR')) return 'Dólares';
+    if (m === 'MXN' || m.includes('PESO')) return 'Pesos';
+    return String(v || '');
+  };
+
+  const abrirConfirmacionTarifa = (e: React.MouseEvent, op: any) => {
+    e.stopPropagation();
+    const m = obtenerMontoOperacion(op);
+    const monedaFact = op.monedaUnidadNombre || mostrarMoneda(op.facturadoEnUnidad);
+    const monedaConvRaw = mostrarMoneda(op.monedaConvenioProv);
+    const monedaConv = monedaConvRaw !== '-' ? monedaConvRaw : monedaFact;
+    const limpiar = (v: string) => (v === '-' ? '' : v);
+    setConfirmacionPreview({
+      coordinador: nombreCoordinadorActual(),
+      referencia: refDeOp(op) || op.numReferencia || String(op.id || ''),
+      remolque: limpiar(txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)),
+      tipoUnidad: limpiar(txt(op.tipoUnidadNombre, op.tipoUnidad)),
+      placasRemolque: limpiar(txt(op.remolquePlaca, op.placasRemolque)),
+      unidad: limpiar(txt(op.unidadProveedor, op.unidadNombre, op.unidad)),
+      operador: limpiar(txt(op.operadorProveedor, op.operadorNombre, op.operador)),
+      fechaServicio: formatearFechaSpanish(op.fechaServicio || op.createdAt),
+      tipoCambio: String(op.tipoCambioAprobado || ''),
+      proveedor: getNombreEmpresa(provDeOp(op) || op.proveedorUnidadNombre) || '',
+      tipoOperacion: limpiar(txt(op.convenioProveedorNombre, op.convenioProveedor, op.convenioNombre, op.convenio)),
+      impoExpoMov: limpiar(tipoOpNombre(op)),
+      clienteOrigen: limpiar(txt(op.origenNombre, op.origen)),
+      ciudadOrigen: direccionDeCatalogo(op.origen),
+      clienteDestino: limpiar(txt(op.destinoNombre, op.destino)),
+      ciudadDestino: direccionDeCatalogo(op.destino),
+      refCliente: String(op.refCliente || ''),
+      facturadoEn: aTextoMoneda(monedaFact),
+      monedaConvenio: aTextoMoneda(monedaConv),
+      convenioProv: String(Number(op.totalAPagarProv) || 0),
+      costosAdic: String(Number(op.cargosAdicionalesProv) || 0),
+      subtotalProv: String(m.subtotal || 0),
+      totalAFacturar: String(m.conv || 0),
+      emisorDireccion: 'MAR DE LAS ANTILLAS #947, COL. LA PAZ, C.P. 88290',
+      emisorCiudad: 'NUEVO LAREDO, TAMPS',
+    });
+  };
+
+  const generarPDFDeConfirmacion = () => {
+    if (!confirmacionPreview) return;
+    const p = confirmacionPreview;
+    const data: ConfirmacionTarifaData = {
+      coordinador: p.coordinador || '',
+      referencia: p.referencia || '',
+      remolque: p.remolque || '',
+      tipoUnidad: p.tipoUnidad || '',
+      placasRemolque: p.placasRemolque || '',
+      unidad: p.unidad || '',
+      operador: p.operador || '',
+      fechaServicio: p.fechaServicio || '',
+      tipoCambio: p.tipoCambio || '',
+      proveedor: p.proveedor || '',
+      tipoOperacion: p.tipoOperacion || '',
+      impoExpoMov: p.impoExpoMov || '',
+      clienteOrigen: p.clienteOrigen || '',
+      ciudadOrigen: p.ciudadOrigen || '',
+      clienteDestino: p.clienteDestino || '',
+      ciudadDestino: p.ciudadDestino || '',
+      refCliente: p.refCliente || '',
+      facturadoEn: p.facturadoEn || '',
+      monedaConvenio: p.monedaConvenio || '',
+      convenioProv: p.convenioProv || '0',
+      costosAdic: p.costosAdic || '0',
+      subtotalProv: p.subtotalProv || '0',
+      totalAFacturar: p.totalAFacturar || '0',
+      emisorDireccion: p.emisorDireccion || '',
+      emisorCiudad: p.emisorCiudad || '',
+    };
+    generarConfirmacionTarifaPDF(data);
+  };
+
+  const setCT = (campo: string, valor: any) => setConfirmacionPreview((prev: any) => prev ? { ...prev, [campo]: valor } : prev);
+
+  // Fecha (YYYY-MM-DD o similar) + N días → DD/MM/YYYY.
+  const sumarDiasAFecha = (fechaISO: any, dias: number): string => {
+    const d = new Date(String(fechaISO || '').slice(0, 10) + 'T00:00:00');
+    if (isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + (Number(dias) || 0));
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+  };
+  const fechaDDMMYYYY = (fechaISO: any): string => sumarDiasAFecha(fechaISO, 0);
+
+  const abrirRate = async (f: any) => {
+    if (!f) return;
+    setCargandoRate(true);
+    try {
+      const ids = (Array.from(new Set((f.operacionesIds || []).map((x: any) => String(x)))) as string[]).filter(Boolean).slice(0, 60);
+      const byId = new Map<string, any>();
+      for (let i = 0; i < ids.length; i += 30) {
+        const chunk = ids.slice(i, i + 30);
+        try {
+          const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
+          snap.docs.forEach(d => byId.set(d.id, { id: d.id, ...(d.data() as any) }));
+        } catch (e) { console.warn('No se pudieron leer operaciones para el rate:', e); }
+      }
+
+      const guardadas: any[] = Array.isArray(f.operacionesGuardadas) && f.operacionesGuardadas.length
+        ? f.operacionesGuardadas
+        : ids.map((id) => ({ id }));
+
+      const filas = guardadas.map((g: any) => {
+        const o = byId.get(String(g.id)) || {};
+        const equipoUnidad = txt(o.unidadProveedor, o.unidadNombre, o.unidad);
+        const equipo = equipoUnidad !== '-' ? equipoUnidad : txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque);
+        const proveedorMonto = Number(g.monto) || (o.id ? obtenerMontoOperacion(o).conv : 0) || 0;
+        const cobrado = Number(o.conversionCliente) || 0;
+        const fc = o.id ? getFacturaClienteDeOp(o) : null;
+        const org = txt(o.origenNombre, o.origen);
+        const dst = txt(o.destinoNombre, o.destino);
+        const desc = txt(o.convenioProveedorNombre, o.convenioProveedor, o.convenioNombre, o.convenio);
+        return {
+          ref: refDeOp({ ...g, ...o }) || o.numReferencia || g.ref || '',
+          equipo: equipo === '-' ? '' : equipo,
+          origen: org === '-' ? '' : org,
+          destino: dst === '-' ? '' : dst,
+          descripcion: desc === '-' ? (o.descripcionServicio || o.observacionesEjecutivo || '') : desc,
+          facturaRoelca: (fc && fc.invoice) ? String(fc.invoice) : '',
+          cobrado,
+          proveedor: proveedorMonto,
+        };
+      });
+
+      const emp: any = empresasList.find(e => e.id === f.proveedorId) || {};
+      const dias = String(emp.diasCredito ?? emp.credito ?? emp.diasDeCredito ?? '');
+      const monRaw = monedaFacturaMostrar(f).toUpperCase();
+
+      setRatePreview({
+        fecha: fechaDDMMYYYY(f.fecha) || fechaDDMMYYYY(new Date().toISOString()),
+        facturaProveedor: f.invoice || String(f.id || ''),
+        proveedorNombre: f.proveedorNombre || getNombreEmpresa(f.proveedorId) || '',
+        diasCredito: dias,
+        vencimiento: sumarDiasAFecha(f.fecha, Number(dias) || 0),
+        direccion: String(emp.direccion ?? emp.domicilio ?? emp.calle ?? ''),
+        colonia: String(emp.colonia ?? ''),
+        ciudad: String(emp.ciudad ?? emp.municipio ?? ''),
+        moneda: monRaw === 'USD' ? 'DÓLARES' : 'PESOS',
+        observaciones: '',
+        filas,
+      });
+    } catch (e) {
+      console.error('Error preparando el rate de proveedor:', e);
+      alert('No se pudo preparar el Rate de Proveedor.');
+    } finally {
+      setCargandoRate(false);
+    }
+  };
+
+  const generarPDFDeRate = () => {
+    if (!ratePreview) return;
+    const data: RateProveedorData = {
+      fecha: ratePreview.fecha || '',
+      facturaProveedor: ratePreview.facturaProveedor || '',
+      proveedorNombre: ratePreview.proveedorNombre || '',
+      diasCredito: ratePreview.diasCredito || '',
+      vencimiento: ratePreview.vencimiento || '',
+      direccion: ratePreview.direccion || '',
+      colonia: ratePreview.colonia || '',
+      ciudad: ratePreview.ciudad || '',
+      moneda: ratePreview.moneda || 'PESOS',
+      observaciones: ratePreview.observaciones || '',
+      filas: (ratePreview.filas || []).map((r: any) => ({
+        ref: r.ref || '',
+        equipo: r.equipo || '',
+        origen: r.origen || '',
+        destino: r.destino || '',
+        descripcion: r.descripcion || '',
+        facturaRoelca: r.facturaRoelca || '',
+        cobrado: Number(r.cobrado) || 0,
+        proveedor: Number(r.proveedor) || 0,
+      })),
+    };
+    generarRateProveedorPDF(data);
+  };
+
+  const setRT = (campo: string, valor: any) => setRatePreview((prev: any) => prev ? { ...prev, [campo]: valor } : prev);
+  const setRTFila = (idx: number, campo: string, valor: any) =>
+    setRatePreview((prev: any) => {
+      if (!prev) return prev;
+      const filas = [...(prev.filas || [])];
+      filas[idx] = { ...filas[idx], [campo]: valor };
+      return { ...prev, filas };
+    });
+  const quitarFilaRate = (idx: number) =>
+    setRatePreview((prev: any) => {
+      if (!prev) return prev;
+      const filas = (prev.filas || []).filter((_: any, i: number) => i !== idx);
+      return { ...prev, filas };
+    });
+
   // Estilos reutilizables de los modales de remisión.
   const rInputStyle: React.CSSProperties = { width: '100%', padding: '8px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.85rem', boxSizing: 'border-box' };
   const rLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.72rem', display: 'block', marginBottom: '4px', fontWeight: 'bold' };
@@ -2694,14 +2931,20 @@ export const FacturacionProveedoresDashboard = () => {
                         <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                           {yaFacturada ? (
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF"
+                                style={{ backgroundColor: 'transparent', border: '1px solid #fb923c', color: '#fb923c', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>📋 Tarifa</button>
                               <button onClick={(e) => abrirGestionOp(e, op)} title="Editar el # de factura de esta operación"
                                 style={{ backgroundColor: 'transparent', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>✎ #</button>
                               <button onClick={(e) => { e.stopPropagation(); quitarOpDeFactura(op); }} title="Quitar esta operación de la factura (vuelve a Pendientes)"
                                 style={{ backgroundColor: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>✕ Quitar</button>
                             </div>
                           ) : (
-                            <button onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }} title="Agregar costo adicional a esta operación"
-                              style={{ backgroundColor: 'transparent', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>＋ Costo</button>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF"
+                                style={{ backgroundColor: 'transparent', border: '1px solid #fb923c', color: '#fb923c', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>📋 Tarifa</button>
+                              <button onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }} title="Agregar costo adicional a esta operación"
+                                style={{ backgroundColor: 'transparent', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>＋ Costo</button>
+                            </div>
                           )}
                         </td>
                         <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -2819,6 +3062,9 @@ export const FacturacionProveedoresDashboard = () => {
                         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                           <button title="Ver Ficha" onClick={() => setFacturaViendo(f)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                          </button>
+                          <button title="Generar el Rate de Proveedor en PDF (relación de referencias de esta factura)" disabled={cargandoRate} onClick={() => abrirRate(f)} style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: cargandoRate ? 'not-allowed' : 'pointer', padding: '6px', display: 'flex', opacity: cargandoRate ? 0.6 : 1 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
                           </button>
                           <button title="Editar Factura" onClick={(e) => abrirEditarFactura(e, f)} style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex' }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
@@ -3141,6 +3387,11 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
             </div>
             <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
+              <button onClick={() => abrirRate(facturaViendo)} disabled={cargandoRate}
+                title="Generar el Rate de Proveedor en PDF (relación de referencias de esta factura)"
+                style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#10b981', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRate ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRate ? 0.7 : 1, marginRight: '8px' }}>
+                📄 {cargandoRate ? 'Preparando...' : 'Rate Proveedor'}
+              </button>
               <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                 title="Generar la Remisión en PDF de esta factura"
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1, marginRight: '8px' }}>
@@ -3715,6 +3966,170 @@ export const FacturacionProveedoresDashboard = () => {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
               <button onClick={() => setRemisionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
               <button onClick={generarPDFDeRemision} style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🧾 Generar PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ (CONFIRMACIÓN DE TARIFA) Vista previa editable → PDF */}
+      {confirmacionPreview && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2600, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setConfirmacionPreview(null)}>
+          <div style={{ width: '860px', maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>📋 Confirmación de Tarifa a Proveedor</h2>
+                <span style={{ color: '#fb923c', fontSize: '0.82rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{confirmacionPreview.referencia}</span>
+              </div>
+              <button onClick={() => setConfirmacionPreview(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.8rem', margin: '10px 0 18px' }}>
+              Revisa y completa lo que falte (los campos vacíos salen en blanco en el documento); luego pulsa <b style={{ color: '#fb923c' }}>Generar PDF</b>. Se descargará la confirmación con el logo.
+            </p>
+
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#fb923c', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>DATOS GENERALES</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}>COORDINADOR</label><input type="text" value={confirmacionPreview.coordinador} onChange={e => setCT('coordinador', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>No. REFERENCIA</label><input type="text" value={confirmacionPreview.referencia} onChange={e => setCT('referencia', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>FECHA DEL SERVICIO</label><input type="text" value={confirmacionPreview.fechaServicio} onChange={e => setCT('fechaServicio', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={confirmacionPreview.proveedor} onChange={e => setCT('proveedor', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>TIPO DE OPER. (TARIFARIO)</label><input type="text" value={confirmacionPreview.tipoOperacion} onChange={e => setCT('tipoOperacion', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>IMPO / EXPO / MOV</label><input type="text" value={confirmacionPreview.impoExpoMov} onChange={e => setCT('impoExpoMov', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>TIPO DE CAMBIO DOF $</label><input type="text" value={confirmacionPreview.tipoCambio} onChange={e => setCT('tipoCambio', e.target.value)} style={rInputStyle} /></div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>UNIDAD / EQUIPO</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}>REMOLQUE</label><input type="text" value={confirmacionPreview.remolque} onChange={e => setCT('remolque', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>TIPO DE UNIDAD</label><input type="text" value={confirmacionPreview.tipoUnidad} onChange={e => setCT('tipoUnidad', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>PLACAS REMOLQUE</label><input type="text" value={confirmacionPreview.placasRemolque} onChange={e => setCT('placasRemolque', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>UNIDAD</label><input type="text" value={confirmacionPreview.unidad} onChange={e => setCT('unidad', e.target.value)} style={rInputStyle} /></div>
+                <div style={{ gridColumn: 'span 2' }}><label style={rLabelStyle}>OPERADOR</label><input type="text" value={confirmacionPreview.operador} onChange={e => setCT('operador', e.target.value)} style={rInputStyle} /></div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>RUTA</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}>CLIENTE ORIGEN</label><input type="text" value={confirmacionPreview.clienteOrigen} onChange={e => setCT('clienteOrigen', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CIUDAD ORIGEN (DIRECCIÓN)</label><input type="text" value={confirmacionPreview.ciudadOrigen} onChange={e => setCT('ciudadOrigen', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CLIENTE DESTINO</label><input type="text" value={confirmacionPreview.clienteDestino} onChange={e => setCT('clienteDestino', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CIUDAD DESTINO (DIRECCIÓN)</label><input type="text" value={confirmacionPreview.ciudadDestino} onChange={e => setCT('ciudadDestino', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>#REF CLIENTE</label><input type="text" value={confirmacionPreview.refCliente} onChange={e => setCT('refCliente', e.target.value)} style={rInputStyle} /></div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#f85149', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>MONTOS</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}>FACTURADO EN</label><input type="text" value={confirmacionPreview.facturadoEn} onChange={e => setCT('facturadoEn', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>MONEDA DEL CONVENIO</label><input type="text" value={confirmacionPreview.monedaConvenio} onChange={e => setCT('monedaConvenio', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CONVENIO PROV. $</label><input type="text" value={confirmacionPreview.convenioProv} onChange={e => setCT('convenioProv', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>COSTOS ADIC. $</label><input type="text" value={confirmacionPreview.costosAdic} onChange={e => setCT('costosAdic', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>SUBTOTAL PROV. $</label><input type="text" value={confirmacionPreview.subtotalProv} onChange={e => setCT('subtotalProv', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>TOTAL A FACT. $</label><input type="text" value={confirmacionPreview.totalAFacturar} onChange={e => setCT('totalAFacturar', e.target.value)} style={{ ...rInputStyle, color: '#f85149', fontWeight: 'bold' }} /></div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
+              <button onClick={() => setConfirmacionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
+              <button onClick={generarPDFDeConfirmacion} style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📋 Generar PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ (RATE DE PROVEEDOR) Vista previa editable → PDF */}
+      {ratePreview && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2600, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setRatePreview(null)}>
+          <div style={{ width: '1080px', maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>📄 Rate de Proveedor</h2>
+                <span style={{ color: '#10b981', fontSize: '0.82rem', fontWeight: 'bold', fontFamily: 'monospace' }}>Factura {ratePreview.facturaProveedor}</span>
+              </div>
+              <button onClick={() => setRatePreview(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <p style={{ color: '#8b949e', fontSize: '0.8rem', margin: '10px 0 18px' }}>
+              Relación de referencias amparadas con la factura del proveedor. La <b style={{ color: '#c9d1d9' }}>utilidad</b> se calcula sola (cobrado − proveedor). Pulsa <b style={{ color: '#10b981' }}>Generar PDF</b> para descargar en horizontal con el logo.
+            </p>
+
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>DATOS DEL PROVEEDOR Y DE LA FACTURA</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                <div><label style={rLabelStyle}>FACTURA DEL PROVEEDOR</label><input type="text" value={ratePreview.facturaProveedor} onChange={e => setRT('facturaProveedor', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>FECHA</label><input type="text" value={ratePreview.fecha} onChange={e => setRT('fecha', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>DÍAS DE CRÉDITO</label><input type="text" value={ratePreview.diasCredito} onChange={e => setRT('diasCredito', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>VENCIMIENTO</label><input type="text" value={ratePreview.vencimiento} onChange={e => setRT('vencimiento', e.target.value)} style={rInputStyle} /></div>
+                <div style={{ gridColumn: 'span 2' }}><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={ratePreview.proveedorNombre} onChange={e => setRT('proveedorNombre', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>MONEDA</label><input type="text" value={ratePreview.moneda} onChange={e => setRT('moneda', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>CIUDAD</label><input type="text" value={ratePreview.ciudad} onChange={e => setRT('ciudad', e.target.value)} style={rInputStyle} /></div>
+                <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={ratePreview.direccion} onChange={e => setRT('direccion', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>COLONIA</label><input type="text" value={ratePreview.colonia} onChange={e => setRT('colonia', e.target.value)} style={rInputStyle} /></div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>REFERENCIAS ({(ratePreview.filas || []).length})</div>
+              <div style={{ overflowX: 'auto', border: '1px solid #30363d', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '960px' }}>
+                  <thead>
+                    <tr style={{ backgroundColor: '#161b22', color: '#8b949e', fontSize: '0.72rem' }}>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>REF#</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>EQ.</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>ORIGEN</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>DESTINO</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>DESCRIPCIÓN</th>
+                      <th style={{ padding: '8px', textAlign: 'left' }}>FACTURA ROELCA</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>COBRADO</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>PROVEEDOR</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>UTILIDAD</th>
+                      <th style={{ padding: '8px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(ratePreview.filas || []).map((r: any, idx: number) => {
+                      const utilidad = (Number(r.cobrado) || 0) - (Number(r.proveedor) || 0);
+                      return (
+                        <tr key={idx} style={{ borderTop: '1px solid #21262d' }}>
+                          <td style={{ padding: '4px' }}><input value={r.ref} onChange={e => setRTFila(idx, 'ref', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                          <td style={{ padding: '4px' }}><input value={r.equipo} onChange={e => setRTFila(idx, 'equipo', e.target.value)} style={{ ...rCellStyle, minWidth: '80px' }} /></td>
+                          <td style={{ padding: '4px' }}><input value={r.origen} onChange={e => setRTFila(idx, 'origen', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                          <td style={{ padding: '4px' }}><input value={r.destino} onChange={e => setRTFila(idx, 'destino', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                          <td style={{ padding: '4px' }}><input value={r.descripcion} onChange={e => setRTFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '140px' }} /></td>
+                          <td style={{ padding: '4px' }}><input value={r.facturaRoelca} onChange={e => setRTFila(idx, 'facturaRoelca', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
+                          <td style={{ padding: '4px' }}><input type="number" step="any" value={r.cobrado} onChange={e => setRTFila(idx, 'cobrado', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
+                          <td style={{ padding: '4px' }}><input type="number" step="any" value={r.proveedor} onChange={e => setRTFila(idx, 'proveedor', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3b82f6' }} /></td>
+                          <td style={{ padding: '4px 10px', textAlign: 'right', color: utilidad < 0 ? '#f85149' : '#c9d1d9', fontSize: '0.82rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(utilidad)}</td>
+                          <td style={{ padding: '4px', textAlign: 'center' }}>
+                            <button onClick={() => quitarFilaRate(idx)} title="Quitar renglón" style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '4px 8px', fontSize: '0.75rem' }}>✕</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {(ratePreview.filas || []).length === 0 && (
+                      <tr><td colSpan={10} style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.82rem' }}>Sin renglones.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '24px', padding: '10px 12px', color: '#8b949e', fontSize: '0.82rem' }}>
+                <span>Cobrado: <b style={{ color: '#3fb950' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.cobrado) || 0), 0))}</b></span>
+                <span>Proveedor: <b style={{ color: '#3b82f6' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.proveedor) || 0), 0))}</b></span>
+                <span>Utilidad: <b style={{ color: '#f0f6fc' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + ((Number(r.cobrado) || 0) - (Number(r.proveedor) || 0)), 0))}</b></span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={rLabelStyle}>OBSERVACIONES</label>
+              <input type="text" value={ratePreview.observaciones} onChange={e => setRT('observaciones', e.target.value)} style={rInputStyle} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
+              <button onClick={() => setRatePreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
+              <button onClick={generarPDFDeRate} style={{ padding: '8px 24px', backgroundColor: '#10b981', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📄 Generar PDF</button>
             </div>
           </div>
         </div>

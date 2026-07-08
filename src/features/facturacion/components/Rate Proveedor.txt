@@ -1,0 +1,397 @@
+/**
+ * Función principal para AppSheet
+ */
+function doGet(e) {
+  try {
+    const buscarParametro = (nombre) => {
+      if (e.parameter[nombre]) return e.parameter[nombre];
+      for (let key in e.parameter) {
+        if (key.toLowerCase().indexOf(nombre.toLowerCase()) !== -1) {
+          return e.parameter[key];
+        }
+      }
+      return "";
+    };
+
+    // Recolectamos todos los parámetros enviados desde la URL de AppSheet
+    const data = {
+      Fecha: buscarParametro("Fecha"),
+      FacturaProveedor: buscarParametro("FacturaProveedor"),
+      ProveedorNombre: buscarParametro("ProveedorNombre"),
+      DiasCredito: buscarParametro("DiasCredito"),
+      Vencimiento: buscarParametro("Vencimiento"),
+      Direccion: buscarParametro("Direccion"),
+      Colonia: buscarParametro("Colonia"),
+      Ciudad: buscarParametro("Ciudad"),
+      Moneda: buscarParametro("Moneda"),
+      FilasDatos: buscarParametro("FilasDatos"), // Cadena comprimida separada por ^ y |
+      TotalCobrado: buscarParametro("TotalCobrado") || "0",
+      TotalProveedor: buscarParametro("TotalProveedor") || "0",
+      TotalUtilidad: buscarParametro("TotalUtilidad") || "0"
+    };
+
+    const fileData = generatePDF(data);
+    
+    const htmlOutput = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Descarga Factura Roelca</title>
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding-top: 50px; background-color: #f9f9f9; }
+            h2 { color: #00AEEF; }
+            p { color: #666; font-size: 14px; }
+            .btn-descarga { 
+                display: inline-block; margin-top: 20px; padding: 12px 24px; 
+                background-color: #F15A24; color: #fff; text-decoration: none; 
+                font-weight: bold; border-radius: 5px; 
+            }
+        </style>
+      </head>
+      <body>
+        <h2>Generando Documento...</h2>
+        <p>Tu documento debería descargarse automáticamente.</p>
+        <p>Si la descarga no inicia, haz clic en el botón:</p>
+        
+        <a id="btn-descarga" class="btn-descarga" href="data:application/pdf;base64,${fileData.base64}" download="${fileData.fileName}">
+          Descargar PDF Manualmente
+        </a>
+
+        <script>
+          setTimeout(function() {
+            document.getElementById('btn-descarga').click();
+          }, 800);
+        </script>
+      </body>
+      </html>
+    `;
+
+    return HtmlService.createHtmlOutput(htmlOutput);
+    
+  } catch (error) {
+    return ContentService.createTextOutput("Error en el script: " + error.toString());
+  }
+}
+
+/**
+ * Función que construye el HTML y genera el PDF
+ */
+function generatePDF(data) {
+  const folderId = "1gPGw8KCyQqY6Uj8U6fKq9S-dsSvtFieF"; 
+  const folder = DriveApp.getFolderById(folderId);
+  
+  // --- FUNCIÓN PARA FORMATEAR MONEDA ---
+  const formatearMoneda = (val) => {
+    if (!val || val.toString().trim() === "") return "0.00";
+    let str = val.toString().trim();
+    
+    // Si tiene punto decimal, evaluamos cuántos decimales tiene
+    if (str.includes('.')) {
+      let partes = str.split('.');
+      if (partes[1].length === 1) {
+        return str + '0'; // Ejemplo: .4 pasa a ser .40
+      }
+      return str; // Si tiene 2 o más decimales, se queda igual
+    } else {
+      return str + '.00'; // Si es un número entero sin punto, le agregamos .00
+    }
+  };
+
+  // Aplicar formato a los totales generales
+  const totalCobradoFormat = formatearMoneda(data.TotalCobrado);
+  const totalProveedorFormat = formatearMoneda(data.TotalProveedor);
+  const totalUtilidadFormat = formatearMoneda(data.TotalUtilidad);
+
+  // --- PROCESAMIENTO DE LA IMAGEN LOGO A BASE64 ---
+  const imageId = "1blNDWMQvvp7Xz3G7lm_whAxQw9krUOAz";
+  let base64Image = "";
+  try {
+    const imgBlob = DriveApp.getFileById(imageId).getBlob();
+    base64Image = "data:" + imgBlob.getContentType() + ";base64," + Utilities.base64Encode(imgBlob.getBytes());
+  } catch (e) { 
+    console.log("Error con la imagen: " + e); 
+  }
+
+  // --- GENERACIÓN DINÁMICA DE FILAS ---
+  let filasGeneradasHTML = "";
+  if (data.FilasDatos && data.FilasDatos.trim() !== "") {
+    const filas = data.FilasDatos.split("^"); 
+    filas.forEach(fila => {
+      const col = fila.split("|"); 
+      // Se asume el orden: REF | EQ | ORIGEN | DESTINO | ID_TARIFARIO | FACTURA | COBRADO | PROVEEDOR | UTILIDAD
+      if (col.length >= 9) {
+        // Formatear columnas de monedas antes de inyectarlas
+        const cobradoRow = formatearMoneda(col[6]);
+        const proveedorRow = formatearMoneda(col[7]);
+        const utilidadRow = formatearMoneda(col[8]);
+
+        filasGeneradasHTML += `
+          <tr class="data-row">
+              <td>${col[0]}</td>
+              <td>${col[1]}</td>
+              <td>${col[2]}</td>
+              <td>${col[3]}</td>
+              <td>${col[4]}</td>
+              <td>${col[5]}</td>
+              <td>
+                  <div class="currency-container">
+                      <span>$</span><span>${cobradoRow}</span>
+                  </div>
+              </td>
+              <td>
+                  <div class="currency-container">
+                      <span>$</span><span>${proveedorRow}</span>
+                  </div>
+              </td>
+              <td>
+                  <div class="currency-container">
+                      <span>$</span><span>${utilidadRow}</span>
+                  </div>
+              </td>
+          </tr>
+        `;
+      }
+    });
+  } else {
+    filasGeneradasHTML = `<tr class="data-row"><td colspan="9">No hay servicios registrados.</td></tr>`;
+  }
+
+  // --- CONSTRUCCIÓN DEL HTML ---
+  const htmlBody = `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Factura Roelca</title>
+    <style>
+        /* ==========================================================
+           Estilos Globales - DIMENSIONES ABSOLUTAS PARA 1 SOLA HOJA
+        ========================================================== */
+        @page { 
+            size: letter landscape; 
+            margin: 0; /* Controlamos los márgenes desde el contenedor para evitar saltos de hoja */
+        }
+
+        html, body { 
+            width: 1056px; 
+            height: 816px; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; /* Corta estrictamente cualquier desbordamiento de página */
+            background-color: #ffffff; 
+            font-family: Arial, Helvetica, sans-serif; 
+            font-size: 11px; 
+        }
+
+        .page-container { 
+            width: 100%; 
+            height: 100%; 
+            padding: 40px 50px; 
+            box-sizing: border-box; 
+            display: block; /* Flexbox removido para estabilizar el render de PDF */
+        }
+
+        /* ==========================================================
+           Estilos del Encabezado
+        ========================================================== */
+        .invoice-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        
+        .logo-section { width: 150px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+        .logo-img { max-width: 110px; margin-bottom: 2px; }
+        .logo-transporte { color: #00AEEF; font-weight: bold; font-size: 10px; text-transform: uppercase; margin-top: -5px; }
+        .logo-url { color: #F15A24; font-weight: bold; font-size: 10px; }
+
+        .title-area { flex-grow: 1; display: flex; justify-content: center; align-items: center; padding-top: 30px; }
+        .invoice-title { color: #2e7d32; font-size: 16px; font-weight: bold; text-align: center; margin: 0; }
+        
+        .top-tables-area { display: flex; flex-direction: column; gap: 10px; width: 150px; }
+        .small-table { width: 100%; border-collapse: collapse; border: 1px solid #000; text-align: center; }
+        .small-table th { background-color: #e0e0e0; border: 1px solid #000; padding: 4px; font-size: 10px; font-weight: bold; }
+        .small-table td { border: 1px solid #000; padding: 4px; font-weight: bold; }
+
+        /* ==========================================================
+           Estilos de la Información del Proveedor
+        ========================================================== */
+        .provider-info { border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 8px 0; margin-bottom: 15px; display: flex; flex-direction: column; gap: 4px; font-weight: bold; }
+        .provider-row { display: flex; width: 100%; align-items: center; }
+        .col-prov-label { width: 80px; }
+        .col-prov-value { width: 300px; font-weight: normal; text-transform: uppercase; }
+        .col-cred-label { width: 150px; text-align: right; padding-right: 15px; }
+        .col-cred-value { width: 50px; text-align: left; font-weight: normal; }
+        .col-venc-label { width: 150px; text-align: right; padding-right: 15px; }
+        .col-venc-value { width: 100px; text-align: left; text-transform: uppercase; }
+        .col-moneda-label { width: 350px; text-align: right; padding-right: 15px; }
+        .col-moneda-value { width: 100px; text-align: left; text-transform: uppercase; }
+
+        /* ==========================================================
+           Estilos de la Tabla Principal
+        ========================================================== */
+        .main-table-container { display: block; }
+        
+        .main-table { 
+            width: 100%; 
+            height: 460px; /* ALTURA FIJA CLAVE PARA EVITAR SALTO DE PÁGINA */
+            border-collapse: collapse; 
+            border: 1px solid #000; 
+            table-layout: fixed; 
+        }
+        
+        .main-table th { background-color: #e0e0e0; border: 1px solid #000; padding: 8px 4px; font-size: 10px; font-weight: bold; text-align: center; }
+        .main-table td { border: 1px solid #000; text-align: center; }
+        
+        .col-ref { width: 9%; }
+        .col-eq { width: 8%; }
+        .col-origen { width: 15%; }
+        .col-destino { width: 15%; }
+        .col-desc { width: 16%; }
+        .col-factura { width: 9%; }
+        .col-cobrado { width: 10%; }
+        .col-proveedor { width: 10%; }
+        .col-utilidad { width: 8%; }
+
+        .data-row td { 
+            vertical-align: top; 
+            padding: 8px 4px; 
+            font-size: 10px; 
+            height: 25px; /* Altura mínima para que no colapsen */
+        }
+        
+        .currency-container { display: flex; justify-content: space-between; padding: 0 5px; box-sizing: border-box; width: 100%; }
+
+        /* ==========================================================
+           Estilos del Pie de Tabla
+        ========================================================== */
+        /* La fila en blanco se estirará automáticamente dentro de los 460px de la tabla y dibujará las líneas */
+        .tfoot-blank td { border-bottom: 1px solid #000; }
+        
+        .tfoot-totals td { padding: 6px 4px; font-size: 10px; }
+        .tfoot-thanks td { height: 35px; font-size: 18px; padding: 8px 0; vertical-align: middle; }
+
+        /* Clases de Utilidad */
+        .text-red { color: #d32f2f; font-weight: bold; }
+        .text-center { text-align: center; }
+        .text-right { text-align: right; }
+        .bold { font-weight: bold; }
+        .bg-grey { background-color: #e0e0e0; }
+        .padding-right-val { padding-right: 5px; }
+
+        @media print {
+            body { background-color: transparent; }
+            .small-table th, .main-table th, .bg-grey { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
+    </style>
+</head>
+<body>
+    <div class="page-container">
+        <header class="invoice-header">
+            <div class="logo-section">
+                <img alt="Roelca Logo" class="logo-img" src="${base64Image}" />
+                <span class="logo-transporte">LOGISTICA</span>
+                <span class="logo-url">www.roelca.com</span>
+            </div>
+            
+            <div class="title-area">
+                <h1 class="invoice-title">RELACION DE REFERENCIAS AMPARADAS CON LA FACTURA DEL PROVEEDOR</h1>
+            </div>
+            
+            <div class="top-tables-area">
+                <table class="small-table">
+                    <thead><tr><th>FACTURA DEL PROVEEDOR</th></tr></thead>
+                    <tbody><tr><td class="text-red">${data.FacturaProveedor}</td></tr></tbody>
+                </table>
+                <table class="small-table">
+                    <thead><tr><th>FECHA</th></tr></thead>
+                    <tbody><tr><td>${data.Fecha}</td></tr></tbody>
+                </table>
+            </div>
+        </header>
+
+        <section class="provider-info">
+            <div class="provider-row">
+                <div class="col-prov-label">PROVEEDOR:</div>
+                <div class="col-prov-value">${data.ProveedorNombre}</div>
+                <div class="col-cred-label">DIAS DE CREDITO:</div>
+                <div class="col-cred-value">${data.DiasCredito}</div>
+                <div class="col-venc-label">VENCIMIENTO:</div>
+                <div class="col-venc-value text-red">${data.Vencimiento}</div>
+            </div>
+            <div class="provider-row">
+                <div class="col-prov-label">DIRECCION</div>
+                <div class="col-prov-value">${data.Direccion}</div>
+            </div>
+            <div class="provider-row">
+                <div class="col-prov-label">COLONIA</div>
+                <div class="col-prov-value">${data.Colonia}</div>
+            </div>
+            <div class="provider-row">
+                <div class="col-prov-label">CIUDAD</div>
+                <div class="col-prov-value">${data.Ciudad}</div>
+                <div class="col-moneda-label">MONEDA</div>
+                <div class="col-moneda-value text-red">${data.Moneda}</div>
+            </div>
+        </section>
+
+        <section class="main-table-container">
+            <table class="main-table">
+                <thead>
+                    <tr>
+                        <th class="col-ref">REF#</th>
+                        <th class="col-eq">EQ.</th>
+                        <th class="col-origen">ORIGEN</th>
+                        <th class="col-destino">DESTINO</th>
+                        <th class="col-desc">DESCRIPCION</th>
+                        <th class="col-factura">FACTURA ROELCA</th>
+                        <th class="col-cobrado">COBRADO EN PESOS</th>
+                        <th class="col-proveedor">PROVEEDOR EN PESOS</th>
+                        <th class="col-utilidad">UTILIDAD</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${filasGeneradasHTML}
+                </tbody>
+                <tfoot>
+                    <tr class="tfoot-blank">
+                        <td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+                    </tr>
+                    
+                    <tr class="tfoot-totals">
+                        <td colspan="5" class="bg-grey bold text-center">OBSERVACIONES</td>
+                        <td class="text-center">TOTAL</td>
+                        <td>
+                            <div class="currency-container">
+                                <span>$</span><span>${totalCobradoFormat}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="currency-container">
+                                <span>$</span><span>${totalProveedorFormat}</span>
+                            </div>
+                        </td>
+                        <td class="text-right padding-right-val">${totalUtilidadFormat}</td>
+                    </tr>
+                    <tr class="tfoot-thanks">
+                        <td colspan="9" class="bold text-center">GRACIAS POR USAR TRANSPORTES ROELCA</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </section>
+    </div>
+</body>
+</html>`;
+
+  const timestamp = Utilities.formatDate(new Date(), "GMT-4", "MMddyyyy_HHmmss");
+  const fileName = "Factura_Proveedor_" + timestamp;
+  
+  const blob = Utilities.newBlob(htmlBody, 'text/html', fileName + '.html');
+  const pdfBlob = blob.getAs('application/pdf');
+  
+  // Guardamos copia de respaldo
+  folder.createFile(pdfBlob).setName(fileName + ".pdf");
+  
+  // Convertimos a Base64
+  const base64Data = Utilities.base64Encode(pdfBlob.getBytes());
+  
+  return {
+    fileName: fileName + ".pdf",
+    base64: base64Data
+  };
+}
