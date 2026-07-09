@@ -807,9 +807,13 @@ export const ReferenciasNominaDashboard = () => {
   const dAhorroMonto      = Number(deduccionOperador?.ahorro || 0);
   const dAhorroAcumulado  = Number(deduccionOperador?.ahorroAcumulado || 0);
   // ✅ Saldos INICIALES (tomados directo de deducciones, esquema nuevo):
-  //   saldo del préstamo -> `saldoPrestamo` (con respaldo al legado `prestamo`);
-  //   ahorro inicial -> `ahorroInicial`.
-  const dPrestamoInicial   = Number(deduccionOperador?.saldoPrestamo ?? deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0);
+  //   PRÉSTAMO: el "Saldo inicial (heredado)" de la pestaña Préstamos es el
+  //   `prestamoInicial` de deducciones MENOS el `abonoInicial` (lo abonado
+  //   fuera de nómina), para que el corrido cuadre con los pagos registrados
+  //   en las nóminas: inicial − pagos en nómina = saldo de deducciones.
+  //   AHORRO: `ahorroInicial`.
+  const dPrestamoInicial   = Number(deduccionOperador?.prestamoInicial ?? deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0)
+                           - Number(deduccionOperador?.abonoInicial ?? 0);
   const dAhorroInicial     = Number(deduccionOperador?.ahorroInicial || 0);
 
   // ✅ Nómina fiscal efectiva: en edición, si no se resolvió desde deducciones,

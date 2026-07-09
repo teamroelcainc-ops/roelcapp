@@ -1500,25 +1500,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  const filClientesPaga = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb')) || [], [empresas]);
-  const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('51246232') && e.status === 'Activa') || [], [empresas]);
   // ✅ Helper: los campos de tipos pueden venir como arreglo de IDs o como texto.
   const contieneId = (campo: any, id: string): boolean => {
     if (!campo) return false;
     if (Array.isArray(campo)) return campo.map((x: any) => String(x)).includes(id);
     return String(campo).includes(id);
   };
-  // ✅ Solo empresas con tiposEmpresa 11894dfd Y tiposServicio 42afffd3 o 7e70a3f7.
+  // ✅ Los filtros aceptan el ID del catálogo O el nombre del tipo, porque en la
+  //   base conviven registros guardados en ambos formatos. Así, un cliente de
+  //   mercancía recién creado desde este formulario aparece de inmediato.
+  const filClientesPaga = useMemo(() => empresas?.filter((e:any) => contieneId(e.tiposEmpresa, '7eec9cbb') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_PAGA)) || [], [empresas]);
+  const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, '51246232') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_MERCANCIA)) && e.status === 'Activa') || [], [empresas]);
+  // ✅ Solo empresas con tiposEmpresa 11894dfd (o su nombre) Y tiposServicio 42afffd3 o 7e70a3f7.
   const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) =>
-    contieneId(e.tiposEmpresa, TIPO_EMPRESA_PROV_SERVICIOS_ID) &&
+    (contieneId(e.tiposEmpresa, TIPO_EMPRESA_PROV_SERVICIOS_ID) || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_SERVICIOS)) &&
     TIPOS_SERVICIO_PROV_MANIFIESTO.some(idServ => contieneId(e.tiposServicio, idServ))
   ) || [], [empresas]);
   // ✅ Costo del manifiesto automático según el tipo de servicio del proveedor:
   //   42afffd3 -> costo por defecto ($8.52); cualquier otro -> 0.
   const montoManifiestoDeProveedor = (emp: any): number =>
     contieneId(emp?.tiposServicio, TIPO_SERVICIO_CON_COSTO_MANIFIESTO) ? COSTO_MANIFIESTO_DEFAULT : 0;
-  const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('6e7af5ab') && e.status === 'Activa') || [], [empresas]);
-  const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('ca21ab07') && e.status === 'Activa') || [], [empresas]);
+  const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, '6e7af5ab') || contieneId(e.tiposEmpresa, TIPO_EMP_ORIGEN_DESTINO)) && e.status === 'Activa') || [], [empresas]);
+  const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, 'ca21ab07') || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_TRANSPORTE)) && e.status === 'Activa') || [], [empresas]);
 
   const sOrigen = (searchOrigen || '').toLowerCase();
   const sDestino = (searchDestino || '').toLowerCase();
@@ -2676,7 +2679,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       )}
 
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'empresa' && (
-        <FormularioEmpresa estado="abierto" registros={empresasLocal} onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
+        <FormularioEmpresa estado="abierto" registros={empresasLocal} tipoEmpresaPreseleccionado={modalCatalogo.catalogo.tipoEmpresaPreseleccionado} onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
       )}
       {modalCatalogo && modalCatalogo.catalogo.tipo === 'remolque' && (
         <FormularioRemolque estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />

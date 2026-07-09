@@ -372,9 +372,12 @@ interface FormProps {
   onClose: () => void;
   onMinimize: () => void;
   onRestore: () => void;
+  // ✅ Tipo de empresa que llega pre-marcado cuando el formulario se abre desde
+  //   otro módulo (ej. el botón + de "Cliente (Mercancía)" en Operaciones).
+  tipoEmpresaPreseleccionado?: string;
 }
 
-export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, registros, onClose, onMinimize, onRestore }) => {
+export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, registros, onClose, onMinimize, onRestore, tipoEmpresaPreseleccionado }) => {
   const [cargando, setCargando] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'fiscal' | 'contacto'>('general');
   
@@ -385,6 +388,11 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   
   const [catalogoTiposEmpresa, setCatalogoTiposEmpresa] = useState<string[]>([]);
   const [catalogoTiposServicio, setCatalogoTiposServicio] = useState<string[]>([]);
+  // ✅ Catálogos completos {id, nombre}: en la interfaz se trabaja con NOMBRES,
+  //   pero en Firestore se guardan los IDs del catálogo (que es lo que filtran
+  //   los buscadores del formulario de Operaciones).
+  const [catTiposEmpresaFull, setCatTiposEmpresaFull] = useState<{ id: string; nombre: string }[]>([]);
+  const [catTiposServicioFull, setCatTiposServicioFull] = useState<{ id: string; nombre: string }[]>([]);
 
   const [modalDireccionAbierto, setModalDireccionAbierto] = useState(false);
   const [modalRegimenAbierto, setModalRegimenAbierto] = useState(false);
@@ -442,10 +450,18 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     const fetchTiposLists = async () => {
       try {
         const tEmpresas = await getDocs(collection(db, 'catalogo_tipo_empresa'));
-        setCatalogoTiposEmpresa(tEmpresas.docs.map(doc => doc.data().tipo).filter(Boolean));
+        const emp = tEmpresas.docs
+          .map(doc => ({ id: doc.id, nombre: String((doc.data() as any).tipo || '') }))
+          .filter(x => x.nombre);
+        setCatTiposEmpresaFull(emp);
+        setCatalogoTiposEmpresa(emp.map(x => x.nombre));
 
         const tServicios = await getDocs(collection(db, 'catalogo_tipo_servicio'));
-        setCatalogoTiposServicio(tServicios.docs.map(doc => doc.data().nombre).filter(Boolean));
+        const serv = tServicios.docs
+          .map(doc => ({ id: doc.id, nombre: String((doc.data() as any).nombre || '') }))
+          .filter(x => x.nombre);
+        setCatTiposServicioFull(serv);
+        setCatalogoTiposServicio(serv.map(x => x.nombre));
 
         const monedaSnap = await getDocs(collection(db, 'catalogo_moneda'));
         setMonedas(monedaSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -462,6 +478,37 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
       unsubFacturas();
     };
   }, []);
+
+  // ✅ Conversión entre NOMBRES (interfaz) e IDs (Firestore) de los catálogos.
+  const idTipoEmpresaDeNombre = (nombre: string) => catTiposEmpresaFull.find(x => x.nombre === nombre)?.id || nombre;
+  const nombreTipoEmpresaDeId = (v: string) => catTiposEmpresaFull.find(x => x.id === String(v))?.nombre || v;
+  const idTipoServicioDeNombre = (nombre: string) => catTiposServicioFull.find(x => x.nombre === nombre)?.id || nombre;
+  const nombreTipoServicioDeId = (v: string) => catTiposServicioFull.find(x => x.id === String(v))?.nombre || v;
+
+  // ✅ Cuando cargan los catálogos, los tipos guardados como ID (formato de la
+  //   base) se convierten a nombre para que los checkboxes se marquen bien.
+  useEffect(() => {
+    if (catTiposEmpresaFull.length === 0 && catTiposServicioFull.length === 0) return;
+    setFormData(prev => {
+      const tiposEmp = (prev.tiposEmpresa || []).map(v => nombreTipoEmpresaDeId(String(v)));
+      const tiposServ = (prev.tiposServicio || []).map(v => nombreTipoServicioDeId(String(v)));
+      const cambioEmp = JSON.stringify(tiposEmp) !== JSON.stringify(prev.tiposEmpresa);
+      const cambioServ = JSON.stringify(tiposServ) !== JSON.stringify(prev.tiposServicio);
+      if (!cambioEmp && !cambioServ) return prev;
+      return { ...prev, tiposEmpresa: tiposEmp, tiposServicio: tiposServ };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catTiposEmpresaFull, catTiposServicioFull, initialData]);
+
+  // ✅ Si el formulario se abrió desde otro módulo con un tipo preseleccionado
+  //   (ej. "Cliente (Mercancía)" desde Operaciones), se marca de inicio.
+  useEffect(() => {
+    if (initialData || !tipoEmpresaPreseleccionado) return;
+    setFormData(prev => prev.tiposEmpresa.length === 0
+      ? { ...prev, tiposEmpresa: [tipoEmpresaPreseleccionado] }
+      : prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipoEmpresaPreseleccionado, initialData]);
 
   const generarSiguienteNumCliente = () => {
     if (registros.length === 0) return 'EMP-001';
@@ -582,12 +629,23 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
     setCargando(true);
     try {
+      // ✅ En Firestore los tipos se guardan como IDs del catálogo (el formato
+      //   que filtran los buscadores de Operaciones: Cliente Mercancía, Cliente
+      //   Paga, Proveedores, etc.). La interfaz trabaja con nombres, así que
+      //   aquí se convierten justo antes de guardar. Si algún nombre no está
+      //   en el catálogo, se conserva tal cual para no perder información.
+      const payload = {
+        ...formData,
+        tiposEmpresa: (formData.tiposEmpresa || []).map(n => idTipoEmpresaDeNombre(String(n))),
+        tiposServicio: (formData.tiposServicio || []).map(n => idTipoServicioDeNombre(String(n))),
+      };
+
       if (initialData && initialData.id) {
-        await actualizarRegistro('empresas', initialData.id, formData);
+        await actualizarRegistro('empresas', initialData.id, payload);
         await registrarLog('Empresas', 'Edición', `Actualizó los datos de la empresa: ${formData.nombre}`);
       } else {
         const correlativoFinal = generarSiguienteNumCliente();
-        await agregarRegistro('empresas', { ...formData, numCliente: correlativoFinal });
+        await agregarRegistro('empresas', { ...payload, numCliente: correlativoFinal });
         await registrarLog('Empresas', 'Creación', `Agregó la nueva empresa: ${formData.nombre} (${correlativoFinal})`);
       }
       onClose();
