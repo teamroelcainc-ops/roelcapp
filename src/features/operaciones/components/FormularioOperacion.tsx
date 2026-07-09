@@ -55,6 +55,16 @@ const ID_GASTO_SUELDO = '25b772d3';
 const TIPO_OP_PROVEEDOR_FIJO = '8ec24dfe';
 const PROVEEDOR_FIJO_ID = '349123';
 const COSTO_MANIFIESTO_DEFAULT = 8.52;
+// ✅ (Proveedor de Servicios / Manifiesto) El buscador solo muestra empresas con
+//   tiposEmpresa que contenga 11894dfd Y tiposServicio que contenga alguno de
+//   los dos servicios permitidos. Solo el servicio 42afffd3 coloca el costo
+//   por defecto del manifiesto; cualquier otro coloca 0.
+const TIPO_EMPRESA_PROV_SERVICIOS_ID = '11894dfd';
+const TIPOS_SERVICIO_PROV_MANIFIESTO = ['42afffd3', '7e70a3f7'];
+const TIPO_SERVICIO_CON_COSTO_MANIFIESTO = '42afffd3';
+// ✅ (Caseta/Puente automático según tráfico)
+const PUENTE_IMPORTACION_ID = '4614ec51'; // Caseta Avi
+const PUENTE_EXPORTACION_ID = '49ce0a0e'; // Caseta Puente III
 
 const TIPO_EMP_CLIENTE_PAGA      = 'Cliente (Paga)';
 const TIPO_EMP_CLIENTE_MERCANCIA = 'Cliente (Mercancía)';
@@ -1492,7 +1502,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
   const filClientesPaga = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('7eec9cbb')) || [], [empresas]);
   const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('51246232') && e.status === 'Activa') || [], [empresas]);
-  const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('11894dfd')) || [], [empresas]);
+  // ✅ Helper: los campos de tipos pueden venir como arreglo de IDs o como texto.
+  const contieneId = (campo: any, id: string): boolean => {
+    if (!campo) return false;
+    if (Array.isArray(campo)) return campo.map((x: any) => String(x)).includes(id);
+    return String(campo).includes(id);
+  };
+  // ✅ Solo empresas con tiposEmpresa 11894dfd Y tiposServicio 42afffd3 o 7e70a3f7.
+  const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) =>
+    contieneId(e.tiposEmpresa, TIPO_EMPRESA_PROV_SERVICIOS_ID) &&
+    TIPOS_SERVICIO_PROV_MANIFIESTO.some(idServ => contieneId(e.tiposServicio, idServ))
+  ) || [], [empresas]);
+  // ✅ Costo del manifiesto automático según el tipo de servicio del proveedor:
+  //   42afffd3 -> costo por defecto ($8.52); cualquier otro -> 0.
+  const montoManifiestoDeProveedor = (emp: any): number =>
+    contieneId(emp?.tiposServicio, TIPO_SERVICIO_CON_COSTO_MANIFIESTO) ? COSTO_MANIFIESTO_DEFAULT : 0;
   const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('6e7af5ab') && e.status === 'Activa') || [], [empresas]);
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) => e.tiposEmpresa?.includes('ca21ab07') && e.status === 'Activa') || [], [empresas]);
 
@@ -1572,6 +1596,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const opcionesPuente = (tiposGastosLocal || []).filter(
     (g: any) => String(g.categoria_gasto || '').trim().toLowerCase() === 'puente'
   );
+
+  // ✅ (Caseta/Puente automático) Importación -> Caseta Avi (4614ec51);
+  //   Exportación -> Caseta Puente III (49ce0a0e), cada una con el importe de
+  //   su catálogo. El listado del select sigue mostrando TODOS los puentes y
+  //   el usuario puede cambiarlo a mano: la auto-asignación solo aplica cuando
+  //   el puente está vacío o tiene la caseta automática del otro tráfico, y no
+  //   pisa el puente ya guardado al editar una operación existente.
+  useEffect(() => {
+    if (!mostrarPuente) return;
+    if (initialData && formData.puenteId) return;
+    const traficoTxt = String(formData.trafico || '').toLowerCase();
+    let idAuto = '';
+    if (traficoTxt.includes('impo')) idAuto = PUENTE_IMPORTACION_ID;
+    else if (traficoTxt.includes('expo')) idAuto = PUENTE_EXPORTACION_ID;
+    if (!idAuto || formData.puenteId === idAuto) return;
+    if (formData.puenteId && formData.puenteId !== PUENTE_IMPORTACION_ID && formData.puenteId !== PUENTE_EXPORTACION_ID) return;
+    const row = opcionesPuente.find((g: any) => String(g.id) === idAuto);
+    if (!row) return;
+    const importe = Number(row.Importe ?? row.importe ?? 0) || 0;
+    setFormData(prev => ({ ...prev, puenteId: idAuto, puenteNombre: String(row.nombre_gasto || ''), puenteMonto: importe }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.trafico, formData.puenteId, mostrarPuente, opcionesPuente.length, initialData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2231,14 +2277,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             {showDropdownProvServicios && searchProvServicios && (
                               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
                                 {resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id })); setSearchProvServicios(nombreEmpresaMostrar(c)); setShowDropdownProvServicios(false); }}>
+                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id, montoManifiesto: montoManifiestoDeProveedor(c) })); setSearchProvServicios(nombreEmpresaMostrar(c)); setShowDropdownProvServicios(false); }}>
                                     <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
                             )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Proveedor (Servicios)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_SERVICIOS }, (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id })); setSearchProvServicios(labelEmpresa(reg)); })} />
+                          <BotonAgregar title="Agregar nuevo Proveedor (Servicios)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_SERVICIOS }, (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id, montoManifiesto: montoManifiestoDeProveedor(reg) })); setSearchProvServicios(labelEmpresa(reg)); })} />
                         </div>
                       </div>
                       <div className="form-group">

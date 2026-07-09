@@ -112,6 +112,17 @@ export const ReferenciasNominaDashboard = () => {
 
   const aNum = (v: any) => Number(v) || 0;
 
+  // ✅ (ISR = 7.5%) El ISR es un PORCENTAJE (7.5 = 7.5%) y el monto retenido es
+  //   (Subtotal + Extras) x 7.5%. Normaliza representaciones heredadas:
+  //   0.075 (factor) -> 7.5 ; 75 (dato migrado de AppSheet) -> 7.5 ; 7.5 -> 7.5.
+  const normalizarISRPct = (v: any): number => {
+    const n = Number(v) || 0;
+    if (n <= 0) return 0;
+    if (n <= 1) return n * 100;
+    if (n > 20) return n / 10;
+    return n;
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // ✅ NUEVO (Fix 1): Parser de fechas ROBUSTO.
   //   Soporta: Timestamp de Firestore (.toDate()/.seconds), objetos Date,
@@ -186,7 +197,7 @@ export const ReferenciasNominaDashboard = () => {
     if (stored > 0) return stored;
     const subRef = aNum(n.subtotalPagar) > 0 ? aNum(n.subtotalPagar) : Math.max(aNum(n.subtotalAPagar) - aNum(n.extras), 0);
     const subAPagar = aNum(n.subtotalAPagar) > 0 ? aNum(n.subtotalAPagar) : (subRef + aNum(n.extras));
-    const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot));
+    const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot) + aNum(n.pagoPrestamo) + aNum(n.ahorro));
     const neto = aNum(n.total) > 0 ? aNum(n.total) : (subAPagar - totalDed);
     return neto + aNum(n.depositoGastos) + aNum(n.otrosDepositos);
   };
@@ -282,7 +293,7 @@ export const ReferenciasNominaDashboard = () => {
       ? ops.reduce((s: number, o: any) => s + aNum(o.importe ?? o.sueldo ?? o.sueldoTotal), 0)
       : (aNum(n.subtotalPagar) > 0 ? aNum(n.subtotalPagar) : Math.max(aNum(n.subtotalAPagar) - aNum(n.extras), 0));
     const subAPagar = aNum(n.subtotalAPagar) > 0 ? aNum(n.subtotalAPagar) : (subRef + aNum(n.extras));
-    const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot));
+    const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot) + aNum(n.pagoPrestamo) + aNum(n.ahorro));
     const neto = aNum(n.total) > 0 ? aNum(n.total) : (subAPagar - totalDed);
     const totalAPagar = aNum(n.totalAPagar) > 0 ? aNum(n.totalAPagar) : (neto + aNum(n.depositoGastos) + aNum(n.otrosDepositos));
     return { subRef, subAPagar, totalDed, neto, totalAPagar };
@@ -782,17 +793,23 @@ export const ReferenciasNominaDashboard = () => {
     return deduccionesList.find(d => String(d.empleadoId) === String(operadorIdSeleccionado)) || null;
   }, [deduccionesList, operadorIdSeleccionado]);
 
+  // ✅ TODAS las deducciones vienen de la colección `deducciones`, del registro
+  //   cuyo empleadoId coincide con el operador de la referencia (esquema nuevo):
+  //   nominaFiscal, infonavit, fonacot, imss, isr (7.5%), saldoPrestamo,
+  //   ahorro, ahorroInicial y ahorroAcumulado.
   const dNominaFiscal     = Number(deduccionOperador?.nominaFiscal || 0);
   const dInfonavit        = Number(deduccionOperador?.infonavit ?? deduccionOperador?.Infonavit ?? 0);
   const dFonacot          = Number(deduccionOperador?.fonacot ?? deduccionOperador?.Fonacot ?? 0);
   const dImss             = Number(deduccionOperador?.IMSS ?? deduccionOperador?.imss ?? 0);
-  const dIsr              = Number(deduccionOperador?.ISR ?? deduccionOperador?.isr ?? 0);
-  const dPrestamoAcumulado = Number(deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0);
+  // ✅ ISR: 7.5% por defecto; si la deducción trae otro valor, se normaliza a porcentaje.
+  const dIsr              = normalizarISRPct(deduccionOperador?.ISR ?? deduccionOperador?.isr ?? 0) || 7.5;
+  const dPrestamoAcumulado = Number(deduccionOperador?.saldoPrestamo ?? deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0);
   const dAhorroMonto      = Number(deduccionOperador?.ahorro || 0);
   const dAhorroAcumulado  = Number(deduccionOperador?.ahorroAcumulado || 0);
-  // ✅ Saldos INICIALES heredados de la app anterior (tomados directo de deducciones):
-  //   préstamo inicial -> campo `prestamo` ; ahorro inicial -> campo `ahorroInicial`.
-  const dPrestamoInicial   = Number(deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0);
+  // ✅ Saldos INICIALES (tomados directo de deducciones, esquema nuevo):
+  //   saldo del préstamo -> `saldoPrestamo` (con respaldo al legado `prestamo`);
+  //   ahorro inicial -> `ahorroInicial`.
+  const dPrestamoInicial   = Number(deduccionOperador?.saldoPrestamo ?? deduccionOperador?.prestamo ?? deduccionOperador?.prestamoAcumulado ?? 0);
   const dAhorroInicial     = Number(deduccionOperador?.ahorroInicial || 0);
 
   // ✅ Nómina fiscal efectiva: en edición, si no se resolvió desde deducciones,
@@ -811,10 +828,13 @@ export const ReferenciasNominaDashboard = () => {
   const subtotalReferencias     = resumenSeleccion.subtotal;
   const subtotalAPagarCalc      = subtotalReferencias + (Number(extras) || 0);
   const diferenciaAplicableCalc = subtotalAPagarCalc - nominaFiscalEfectiva;
-  const isrMontoCalc            = (Number(isr) || 0) * subtotalAPagarCalc;
+  // ✅ ISR TOTAL = (Subtotal + Extras) x ISR% (7.5% -> x 0.075).
+  const isrMontoCalc            = subtotalAPagarCalc * ((Number(isr) || 0) / 100);
   const prestamoAcumuladoTotal  = prestamoBaseCalc + (Number(prestamoNuevo) || 0);
   const saldoPrestamoCalc       = prestamoAcumuladoTotal - (Number(pagoPrestamo) || 0);
-  const totalDeduccionesCalc    = (Number(infonavit) || 0) + (Number(imss) || 0) + isrMontoCalc + (Number(fonacot) || 0);
+  // ✅ TOTAL DEDUCCIONES = Infonavit + Fonacot + IMSS + ISR TOTAL + Pago Préstamo + Ahorro
+  //   (igual que en AppSheet / BD_REFERENCIAS_NOMINA).
+  const totalDeduccionesCalc    = (Number(infonavit) || 0) + (Number(imss) || 0) + isrMontoCalc + (Number(fonacot) || 0) + (Number(pagoPrestamo) || 0) + (Number(ahorroNuevo) || 0);
   const totalNetoCalc           = subtotalAPagarCalc - totalDeduccionesCalc;
   // ✅ NUEVO: ahorro con la misma lógica que el préstamo.
   const ahorroAcumuladoTotal    = ahorroBaseCalc + (Number(ahorroNuevo) || 0);
@@ -878,7 +898,7 @@ export const ReferenciasNominaDashboard = () => {
       setInfonavit(nom.infonavit != null && nom.infonavit !== '' ? Number(nom.infonavit) : '');
       setFonacot(nom.fonacot != null && nom.fonacot !== '' ? Number(nom.fonacot) : '');
       setImss(nom.imss != null && nom.imss !== '' ? Number(nom.imss) : '');
-      setIsr(nom.isr != null && nom.isr !== '' ? Number(nom.isr) : '');
+      setIsr(nom.isr != null && nom.isr !== '' ? (normalizarISRPct(nom.isr) || '') : '');
       setPrestamoNuevo(nom.prestamoOtorgado != null && nom.prestamoOtorgado !== '' ? Number(nom.prestamoOtorgado) : '');
       setPagoPrestamo(nom.pagoPrestamo != null && nom.pagoPrestamo !== '' ? Number(nom.pagoPrestamo) : '');
       setDepositoGastos(nom.depositoGastos != null && nom.depositoGastos !== '' ? Number(nom.depositoGastos) : '');
@@ -993,9 +1013,14 @@ export const ReferenciasNominaDashboard = () => {
 
       const deduccionIdActualizar = nominaEditando?.deduccionId || deduccionOperador?.id || null;
       if (deduccionIdActualizar) {
+        // ✅ Actualiza la colección `deducciones` con el ESQUEMA NUEVO:
+        //   `saldoPrestamo` y `ahorroAcumulado` (se mantiene `prestamo` legado
+        //   sincronizado para lo que aún lo lea).
         batch.update(doc(db, 'deducciones', deduccionIdActualizar), {
+          saldoPrestamo: saldoPrestamoCalc,
           prestamo: saldoPrestamoCalc,
           ahorroAcumulado: saldoAhorroCalc,
+          updatedAt: new Date().toISOString(),
         });
       }
 
@@ -2181,8 +2206,8 @@ export const ReferenciasNominaDashboard = () => {
                   {campoNumerico('Infonavit', infonavit, setInfonavit)}
                   {campoNumerico('Fonacot', fonacot, setFonacot)}
                   {campoNumerico('IMSS', imss, setImss)}
-                  {campoNumerico('ISR (factor)', isr, setIsr, '0.0001')}
-                  {campoTotal('ISR Monto', isrMontoCalc, '#f85149')}
+                  {campoNumerico('ISR % (7.5)', isr, setIsr, '0.01')}
+                  {campoTotal('ISR Total', isrMontoCalc, '#f85149')}
                   <div></div>
 
                   {campoNumerico('Préstamo (esta nómina)', prestamoNuevo, setPrestamoNuevo)}

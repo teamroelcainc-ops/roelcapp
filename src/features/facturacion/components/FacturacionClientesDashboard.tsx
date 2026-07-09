@@ -2078,8 +2078,13 @@ export const FacturacionClientesDashboard = () => {
     if (!f) return;
     setCargandoRemision(true);
     try {
+      // ✅ El encabezado toma la MONEDA YA FACTURADA, la misma de la columna
+      //   "Moneda" del historial (monedaFacturaMostrar): si es Dólares/USD sale
+      //   Camila; si es Pesos/MXN sale Rolando. La columna resuelve el NOMBRE
+      //   del catálogo ("Dolares"/"Pesos"), por eso se detecta por texto y no
+      //   solo por el código USD.
       const monRaw = monedaFacturaMostrar(f).toUpperCase();
-      const esUSD = monRaw === 'USD';
+      const esUSD = monRaw.includes('USD') || monRaw.includes('DOLAR') || monRaw.includes('DÓLAR');
       const emisor = esUSD ? emisorUSD : emisorMXN;
 
       const ids = (Array.from(new Set((f.operacionesIds || []).map((x: any) => String(x)))) as string[]).filter(Boolean).slice(0, 60);
@@ -2188,6 +2193,22 @@ export const FacturacionClientesDashboard = () => {
   };
 
   const setRP = (campo: string, valor: any) => setRemisionPreview((prev: any) => prev ? { ...prev, [campo]: valor } : prev);
+
+  // ✅ Cambia el emisor de la remisión abierta (Rolando/MXN ↔ Camila/USD) sin
+  //   perder el resto de la captura; también actualiza la denominación. Los
+  //   campos del encabezado siguen siendo editables a mano después del cambio.
+  const aplicarEmisorEnPreview = (usarUSD: boolean) => {
+    const emisor = usarUSD ? emisorUSD : emisorMXN;
+    setRemisionPreview((prev: any) => prev ? {
+      ...prev,
+      esUSD: usarUSD,
+      emisorNombre: emisor.facturaNombre,
+      emisorDireccion: emisor.direccion,
+      emisorCiudadEstado: emisor.ciudadEstado,
+      emisorEmail: emisor.email,
+      moneda: usarUSD ? 'Dólares' : 'Pesos',
+    } : prev);
+  };
   const setRPFila = (idx: number, campo: string, valor: any) =>
     setRemisionPreview((prev: any) => {
       if (!prev) return prev;
@@ -3525,9 +3546,18 @@ export const FacturacionClientesDashboard = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
               <div>
                 <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Remisión · vista previa</h2>
-                <span style={{ color: remisionPreview.esUSD ? '#10b981' : '#3b82f6', fontSize: '0.82rem', fontWeight: 'bold' }}>
-                  {remisionPreview.esUSD ? 'DÓLARES (USD) → Camila' : 'PESOS (MXN) → Rolando'}
-                </span>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                  <button type="button" onClick={() => aplicarEmisorEnPreview(false)}
+                    title="Usar el encabezado de PESOS (Rolando)"
+                    style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', backgroundColor: !remisionPreview.esUSD ? '#1f3a5f' : 'transparent', color: !remisionPreview.esUSD ? '#58a6ff' : '#8b949e', border: `1px solid ${!remisionPreview.esUSD ? '#3b82f6' : '#30363d'}` }}>
+                    PESOS (MXN) · Rolando
+                  </button>
+                  <button type="button" onClick={() => aplicarEmisorEnPreview(true)}
+                    title="Usar el encabezado de DÓLARES (Camila)"
+                    style={{ padding: '4px 12px', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', backgroundColor: remisionPreview.esUSD ? '#12352a' : 'transparent', color: remisionPreview.esUSD ? '#10b981' : '#8b949e', border: `1px solid ${remisionPreview.esUSD ? '#10b981' : '#30363d'}` }}>
+                    DÓLARES (USD) · Camila
+                  </button>
+                </div>
               </div>
               <button onClick={() => setRemisionPreview(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>

@@ -89,11 +89,17 @@ export const DeduccionesDashboard = () => {
     const num = parseFloat(monto || 0);
     return isNaN(num) ? '$ 0.0000' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
   };
-  // Número a 4 decimales SIN signo de pesos (ISR), como en AppSheet.
-  const formatoNumero4 = (monto: any) => {
-    const num = parseFloat(monto || 0);
-    return isNaN(num) ? '0.0000' : num.toLocaleString('es-MX', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  // ✅ (ISR = 7.5%) El ISR es un PORCENTAJE, no un monto ni un factor.
+  //   Normaliza cualquier representación heredada al porcentaje real:
+  //   0.075 (factor) -> 7.5 ; 75 (dato migrado de AppSheet) -> 7.5 ; 7.5 -> 7.5.
+  const normalizarISRPct = (v: any): number => {
+    const n = Number(v) || 0;
+    if (n <= 0) return 0;
+    if (n <= 1) return n * 100;
+    if (n > 20) return n / 10;
+    return n;
   };
+  const formatoPorcentaje = (v: any) => `${normalizarISRPct(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 
   useEffect(() => {
     const unSubDeducciones = onSnapshot(collection(db, 'deducciones'), (snap) => {
@@ -135,6 +141,7 @@ export const DeduccionesDashboard = () => {
   const abrirModalNuevo = () => {
     setDeduccionEditando(null);
     resetFormulario();
+    setIsr(7.5); // ✅ El ISR es 7.5% por defecto.
     setModalAbierto(true);
   };
 
@@ -147,7 +154,7 @@ export const DeduccionesDashboard = () => {
     setFonacotInicial(d.fonacotInicial || '');
     setSaldoFonacot(d.saldoFonacot || '');
     setImss(d.imss || '');
-    setIsr(d.isr || '');
+    setIsr(normalizarISRPct(d.isr) || '');
     setDescuento(d.descuento || '');
     setNominaFiscal(d.nominaFiscal || '');
     setPrestamoInicial(d.prestamoInicial || '');
@@ -184,7 +191,7 @@ export const DeduccionesDashboard = () => {
         fonacotInicial: Number(fonacotInicial) || 0,
         saldoFonacot: Number(saldoFonacot) || 0,
         imss: Number(imss) || 0,
-        isr: Number(isr) || 0,
+        isr: normalizarISRPct(isr), // ✅ Siempre como porcentaje (7.5 = 7.5%).
         descuento: Number(descuento) || 0,
         nominaFiscal: Number(nominaFiscal) || 0,
         prestamoInicial: Number(prestamoInicial) || 0,
@@ -278,7 +285,7 @@ export const DeduccionesDashboard = () => {
       case 'fonacot': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.fonacot)}</span>;
       case 'fonacotInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.fonacotInicial)}</span>;
       case 'saldoFonacot': return <span style={{ color: '#f59e0b' }}>{formatoMoneda4(d.saldoFonacot)}</span>;
-      case 'isr': return <span style={{ color: '#c9d1d9' }}>{formatoNumero4(d.isr)}</span>;
+      case 'isr': return <span style={{ color: '#c9d1d9' }}>{formatoPorcentaje(d.isr)}</span>;
       case 'descuento': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.descuento)}</span>;
       case 'nominaFiscal': return <span style={{ color: '#58a6ff' }}>{formatoMoneda(d.nominaFiscal)}</span>;
       case 'prestamoInicial': return <span style={{ color: '#d2a8ff' }}>{formatoMoneda4(d.prestamoInicial)}</span>;
@@ -300,6 +307,8 @@ export const DeduccionesDashboard = () => {
       columnasVisibles.forEach(col => {
         if (col.id === 'empleadoNombre') {
           fila[col.label] = d._empleadoNombre;
+        } else if (col.id === 'isr') {
+          fila[col.label] = normalizarISRPct(d.isr); // ✅ Siempre como porcentaje (7.5).
         } else {
           fila[col.label] = Number(d[col.id] || 0);
         }
@@ -460,7 +469,7 @@ export const DeduccionesDashboard = () => {
                   {label: 'FONACOT INICIAL', val: fonacotInicial, setter: setFonacotInicial, conPeso: true, deshabilitado: false},
                   {label: 'SALDO FONACOT', val: saldoFonacot, setter: setSaldoFonacot, conPeso: true, deshabilitado: false},
                   {label: 'IMSS', val: imss, setter: setImss, conPeso: true, deshabilitado: false},
-                  {label: 'ISR', val: isr, setter: setIsr, conPeso: false, deshabilitado: false},
+                  {label: 'ISR (%)', val: isr, setter: setIsr, conPeso: false, esPorcentaje: true, deshabilitado: false},
                   {label: 'DESCUENTO', val: descuento, setter: setDescuento, conPeso: true, deshabilitado: false},
                   {label: 'NÓMINA FISCAL', val: nominaFiscal, setter: setNominaFiscal, conPeso: true, deshabilitado: false},
                   {label: 'PRÉSTAMO INICIAL', val: prestamoInicial, setter: setPrestamoInicial, conPeso: true, deshabilitado: false},
@@ -472,7 +481,8 @@ export const DeduccionesDashboard = () => {
                     <label style={{ color: '#8b949e', fontSize: '0.7rem', display: 'block', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{campo.label}{campo.deshabilitado ? ' (SOLO LECTURA)' : ''}</label>
                     <div style={{ position: 'relative' }}>
                       {campo.conPeso && <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>$</span>}
-                      <input type="number" step="0.0001" value={campo.val} disabled={campo.deshabilitado} onChange={e => campo.setter(e.target.valueAsNumber || '')} style={{ width: '100%', padding: campo.conPeso ? '8px 8px 8px 24px' : '8px', backgroundColor: '#010409', color: campo.deshabilitado ? '#8b949e' : '#3fb950', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold', boxSizing: 'border-box', cursor: campo.deshabilitado ? 'not-allowed' : 'text' }} />
+                      {(campo as any).esPorcentaje && <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>%</span>}
+                      <input type="number" step="0.0001" value={campo.val} disabled={campo.deshabilitado} onChange={e => campo.setter(e.target.valueAsNumber || '')} style={{ width: '100%', padding: campo.conPeso ? '8px 8px 8px 24px' : (campo as any).esPorcentaje ? '8px 24px 8px 8px' : '8px', backgroundColor: '#010409', color: campo.deshabilitado ? '#8b949e' : '#3fb950', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold', boxSizing: 'border-box', cursor: campo.deshabilitado ? 'not-allowed' : 'text' }} />
                     </div>
                   </div>
                 ))}
