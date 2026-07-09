@@ -2098,8 +2098,10 @@ export const FacturacionClientesDashboard = () => {
 
       const filas = guardadas.map((g: any) => {
         const o = byId.get(String(g.id)) || {};
-        const equipoUnidad = txt(o.unidadNombre, o.unidad);
-        const equipo = equipoUnidad !== '-' ? equipoUnidad : txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque);
+        // (REMISIÓN CLIENTES) En EQ va el # de REMOLQUE; la unidad solo como
+        // respaldo cuando la operación no tiene remolque capturado.
+        const equipoRemolque = txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque);
+        const equipo = equipoRemolque !== '-' ? equipoRemolque : txt(o.unidadNombre, o.unidad);
         const importe = Number(g.monto) || (o.id ? obtenerMontoOperacion(o).conv : 0) || 0;
         const ref = refDeOp({ ...g, ...o }) || o.numReferencia || g.ref || '';
         const fechaFmt = formatearFechaSpanish(o.fechaServicio || o.createdAt || '');
