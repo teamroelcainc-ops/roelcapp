@@ -1,4 +1,20 @@
 // src/features/empleados/components/DeduccionesDashboard.tsx
+//
+// ═══════════════════════════════════════════════════════════════════════
+// Deducciones y Saldos — réplica del formato de AppSheet:
+//   TABLA (todas visibles, en este orden): Colaborador, Gastos, Infonavit,
+//   IMSS, Fonacot, Fonacot Inicial, Saldo Fonacot, ISR, Descuento,
+//   Nómina Fiscal, Préstamo Inicial, Abono Inicial, Abonos, Saldo,
+//   Ahorro, Ahorro Inicial, Ahorro Acumulado.
+//   FORMULARIO: Colaborador, Gastos, Infonavit, Fonacot, Fonacot Inicial,
+//   Saldo Fonacot, IMSS, ISR, Descuento, Nómina Fiscal, Préstamo Inicial,
+//   Ahorro, Ahorro Inicial y Ahorro Acumulado (solo lectura).
+//   Abono Inicial, Abonos y Saldo NO se capturan en el formulario; se
+//   conservan tal cual en el documento (vienen de la migración / nómina).
+//   Formatos: $ con 2 decimales (Gastos, Infonavit, IMSS, Descuento,
+//   Nómina Fiscal); $ con 4 decimales (Fonacot, préstamos y ahorros);
+//   ISR como número a 4 decimales SIN signo de pesos.
+// ═══════════════════════════════════════════════════════════════════════
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   collection, 
@@ -12,28 +28,23 @@ import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 
 const COLUMNAS_BASE = [
-  { id: 'empleadoNombre', label: 'Empleado', visible: true },
-  { id: 'montoDeduccion', label: 'Monto Deducción', visible: true },
-  { id: 'prestamo', label: 'Préstamo', visible: true },
-  { id: 'pagoPrestamo', label: 'Pago Préstamo', visible: false },
-  { id: 'saldoPrestamo', label: 'Saldo Préstamo', visible: true },
-  { id: 'ahorroAcumulado', label: 'Ahorro Acumulado', visible: true },
-  { id: 'saldo', label: 'Saldo Total', visible: true },
-  { id: 'gastos', label: 'Gastos', visible: false },
-  { id: 'infonavit', label: 'Infonavit', visible: false },
-  { id: 'imss', label: 'IMSS', visible: false },
-  { id: 'isr', label: 'ISR', visible: false },
-  { id: 'descuento', label: 'Descuento', visible: false },
-  { id: 'nominaFiscal', label: 'Nómina Fiscal', visible: false },
-  { id: 'ahorro', label: 'Ahorro', visible: false },
-  { id: 'ahorroInicial', label: 'Ahorro Inicial', visible: false },
-  { id: 'fonacot', label: 'Fonacot', visible: false },
-  { id: 'pagoFonacot', label: 'Pago Fonacot', visible: false },
-  { id: 'saldoFonacot', label: 'Saldo Fonacot', visible: false },
-  { id: 'otrosDepositos', label: 'Otros Depósitos', visible: false },
-  { id: 'otrasDeducciones', label: 'Otras Deducciones', visible: false },
-  { id: 'abonosInicial', label: 'Abonos Inicial', visible: false },
-  { id: 'fonacotInicial', label: 'Fonacot Inicial', visible: false }
+  { id: 'empleadoNombre',  label: 'Colaborador',      visible: true },
+  { id: 'gastos',          label: 'Gastos',           visible: true },
+  { id: 'infonavit',       label: 'Infonavit',        visible: true },
+  { id: 'imss',            label: 'IMSS',             visible: true },
+  { id: 'fonacot',         label: 'Fonacot',          visible: true },
+  { id: 'fonacotInicial',  label: 'Fonacot Inicial',  visible: true },
+  { id: 'saldoFonacot',    label: 'Saldo Fonacot',    visible: true },
+  { id: 'isr',             label: 'ISR',              visible: true },
+  { id: 'descuento',       label: 'Descuento',        visible: true },
+  { id: 'nominaFiscal',    label: 'Nomina Fiscal',    visible: true },
+  { id: 'prestamoInicial', label: 'Prestamo Inicial', visible: true },
+  { id: 'abonoInicial',    label: 'Abono Inicial',    visible: true },
+  { id: 'abonos',          label: 'Abonos',           visible: true },
+  { id: 'saldoPrestamo',   label: 'Saldo',            visible: true },
+  { id: 'ahorro',          label: 'Ahorro',           visible: true },
+  { id: 'ahorroInicial',   label: 'Ahorro Inicial',   visible: true },
+  { id: 'ahorroAcumulado', label: 'Ahorro Acumulado', visible: true }
 ];
 
 export const DeduccionesDashboard = () => {
@@ -49,36 +60,39 @@ export const DeduccionesDashboard = () => {
   const [deduccionEditando, setDeduccionEditando] = useState<any | null>(null);
 
   const [empleadoSeleccionado, setEmpleadoSeleccionado] = useState('');
-  const [montoDeduccion, setMontoDeduccion] = useState<number | ''>('');
   const [gastos, setGastos] = useState<number | ''>('');
   const [infonavit, setInfonavit] = useState<number | ''>('');
+  const [fonacot, setFonacot] = useState<number | ''>('');
+  const [fonacotInicial, setFonacotInicial] = useState<number | ''>('');
+  const [saldoFonacot, setSaldoFonacot] = useState<number | ''>('');
   const [imss, setImss] = useState<number | ''>('');
   const [isr, setIsr] = useState<number | ''>('');
   const [descuento, setDescuento] = useState<number | ''>('');
   const [nominaFiscal, setNominaFiscal] = useState<number | ''>('');
-  const [prestamo, setPrestamo] = useState<number | ''>('');
-  const [pagoPrestamo, setPagoPrestamo] = useState<number | ''>('');
-  const [saldoPrestamo, setSaldoPrestamo] = useState<number | ''>('');
+  const [prestamoInicial, setPrestamoInicial] = useState<number | ''>('');
   const [ahorro, setAhorro] = useState<number | ''>('');
-  const [ahorroAcumulado, setAhorroAcumulado] = useState<number | ''>('');
   const [ahorroInicial, setAhorroInicial] = useState<number | ''>('');
-  const [fonacot, setFonacot] = useState<number | ''>('');
-  const [pagoFonacot, setPagoFonacot] = useState<number | ''>('');
-  const [saldoFonacot, setSaldoFonacot] = useState<number | ''>('');
-  const [otrosDepositos, setOtrosDepositos] = useState<number | ''>('');
-  const [otrasDeducciones, setOtrasDeducciones] = useState<number | ''>('');
-  const [abonosInicial, setAbonosInicial] = useState<number | ''>('');
-  const [fonacotInicial, setFonacotInicial] = useState<number | ''>('');
-  const [saldo, setSaldo] = useState<number | ''>('');
+  const [ahorroAcumulado, setAhorroAcumulado] = useState<number | ''>('');
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
+  // $ con 2 decimales (Gastos, Infonavit, IMSS, Descuento, Nómina Fiscal).
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
     return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  // $ con 4 decimales (Fonacot, préstamos y ahorros), como en AppSheet.
+  const formatoMoneda4 = (monto: any) => {
+    const num = parseFloat(monto || 0);
+    return isNaN(num) ? '$ 0.0000' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`;
+  };
+  // Número a 4 decimales SIN signo de pesos (ISR), como en AppSheet.
+  const formatoNumero4 = (monto: any) => {
+    const num = parseFloat(monto || 0);
+    return isNaN(num) ? '0.0000' : num.toLocaleString('es-MX', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
   };
 
   useEffect(() => {
@@ -127,38 +141,29 @@ export const DeduccionesDashboard = () => {
   const abrirModalEditar = (d: any) => {
     setDeduccionEditando(d);
     setEmpleadoSeleccionado(d.empleadoId || '');
-    setMontoDeduccion(d.montoDeduccion || '');
     setGastos(d.gastos || '');
     setInfonavit(d.infonavit || '');
+    setFonacot(d.fonacot || '');
+    setFonacotInicial(d.fonacotInicial || '');
+    setSaldoFonacot(d.saldoFonacot || '');
     setImss(d.imss || '');
     setIsr(d.isr || '');
     setDescuento(d.descuento || '');
     setNominaFiscal(d.nominaFiscal || '');
-    setPrestamo(d.prestamo || '');
-    setPagoPrestamo(d.pagoPrestamo || '');
-    setSaldoPrestamo(d.saldoPrestamo || '');
+    setPrestamoInicial(d.prestamoInicial || '');
     setAhorro(d.ahorro || '');
-    setAhorroAcumulado(d.ahorroAcumulado || '');
     setAhorroInicial(d.ahorroInicial || '');
-    setFonacot(d.fonacot || '');
-    setPagoFonacot(d.pagoFonacot || '');
-    setSaldoFonacot(d.saldoFonacot || '');
-    setOtrosDepositos(d.otrosDepositos || '');
-    setOtrasDeducciones(d.otrasDeducciones || '');
-    setAbonosInicial(d.abonosInicial || '');
-    setFonacotInicial(d.fonacotInicial || '');
-    setSaldo(d.saldo || '');
+    setAhorroAcumulado(d.ahorroAcumulado || '');
     setModalAbierto(true);
   };
 
   const resetFormulario = () => {
     setEmpleadoSeleccionado('');
-    setMontoDeduccion(''); setGastos(''); setInfonavit(''); setImss(''); setIsr('');
-    setDescuento(''); setNominaFiscal('');
-    setPrestamo(''); setPagoPrestamo(''); setSaldoPrestamo('');
-    setAhorro(''); setAhorroAcumulado(''); setAhorroInicial('');
-    setFonacot(''); setPagoFonacot(''); setSaldoFonacot('');
-    setOtrosDepositos(''); setOtrasDeducciones(''); setAbonosInicial(''); setFonacotInicial(''); setSaldo('');
+    setGastos(''); setInfonavit('');
+    setFonacot(''); setFonacotInicial(''); setSaldoFonacot('');
+    setImss(''); setIsr(''); setDescuento(''); setNominaFiscal('');
+    setPrestamoInicial('');
+    setAhorro(''); setAhorroInicial(''); setAhorroAcumulado('');
   };
 
   const handleGuardar = async (e: React.FormEvent) => {
@@ -167,30 +172,25 @@ export const DeduccionesDashboard = () => {
     setGuardando(true);
     
     try {
+      // Abono Inicial, Abonos y Saldo NO se capturan en el formulario:
+      // al EDITAR no se tocan (se conserva lo migrado / lo de nómina) y
+      // al CREAR se inicializan en 0.
       const data = {
         empleadoId: empleadoSeleccionado,
         empleadoNombre: getNombreEmpleado(empleadoSeleccionado),
-        montoDeduccion: Number(montoDeduccion) || 0,
         gastos: Number(gastos) || 0,
         infonavit: Number(infonavit) || 0,
+        fonacot: Number(fonacot) || 0,
+        fonacotInicial: Number(fonacotInicial) || 0,
+        saldoFonacot: Number(saldoFonacot) || 0,
         imss: Number(imss) || 0,
         isr: Number(isr) || 0,
         descuento: Number(descuento) || 0,
         nominaFiscal: Number(nominaFiscal) || 0,
-        prestamo: Number(prestamo) || 0,
-        pagoPrestamo: Number(pagoPrestamo) || 0,
-        saldoPrestamo: Number(saldoPrestamo) || 0,
+        prestamoInicial: Number(prestamoInicial) || 0,
         ahorro: Number(ahorro) || 0,
-        ahorroAcumulado: Number(ahorroAcumulado) || 0,
         ahorroInicial: Number(ahorroInicial) || 0,
-        fonacot: Number(fonacot) || 0,
-        pagoFonacot: Number(pagoFonacot) || 0,
-        saldoFonacot: Number(saldoFonacot) || 0,
-        otrosDepositos: Number(otrosDepositos) || 0,
-        otrasDeducciones: Number(otrasDeducciones) || 0,
-        abonosInicial: Number(abonosInicial) || 0,
-        fonacotInicial: Number(fonacotInicial) || 0,
-        saldo: Number(saldo) || 0,
+        ahorroAcumulado: Number(ahorroAcumulado) || 0,
         updatedAt: new Date().toISOString()
       };
 
@@ -199,6 +199,9 @@ export const DeduccionesDashboard = () => {
       } else {
         await setDoc(doc(collection(db, 'deducciones')), {
           ...data,
+          abonoInicial: 0,
+          abonos: 0,
+          saldoPrestamo: 0,
           createdAt: new Date().toISOString()
         });
       }
@@ -269,27 +272,22 @@ export const DeduccionesDashboard = () => {
   const renderCellContent = (d: any, colId: string) => {
     switch (colId) {
       case 'empleadoNombre': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{d._empleadoNombre}</span>;
-      case 'montoDeduccion': return <span style={{ color: '#58a6ff' }}>{formatoMoneda(d.montoDeduccion)}</span>;
-      case 'prestamo': return <span style={{ color: '#d2a8ff' }}>{formatoMoneda(d.prestamo)}</span>;
-      case 'pagoPrestamo': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.pagoPrestamo)}</span>;
-      case 'saldoPrestamo': return <span style={{ color: '#d2a8ff' }}>{formatoMoneda(d.saldoPrestamo)}</span>;
-      case 'ahorroAcumulado': return <span style={{ color: '#3fb950' }}>{formatoMoneda(d.ahorroAcumulado)}</span>;
-      case 'saldo': return <span style={{ color: '#D84315', fontWeight: 'bold' }}>{formatoMoneda(d.saldo)}</span>;
       case 'gastos': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.gastos)}</span>;
       case 'infonavit': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.infonavit)}</span>;
       case 'imss': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.imss)}</span>;
-      case 'isr': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.isr)}</span>;
+      case 'fonacot': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.fonacot)}</span>;
+      case 'fonacotInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.fonacotInicial)}</span>;
+      case 'saldoFonacot': return <span style={{ color: '#f59e0b' }}>{formatoMoneda4(d.saldoFonacot)}</span>;
+      case 'isr': return <span style={{ color: '#c9d1d9' }}>{formatoNumero4(d.isr)}</span>;
       case 'descuento': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.descuento)}</span>;
-      case 'nominaFiscal': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.nominaFiscal)}</span>;
-      case 'ahorro': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.ahorro)}</span>;
-      case 'ahorroInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.ahorroInicial)}</span>;
-      case 'fonacot': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.fonacot)}</span>;
-      case 'pagoFonacot': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.pagoFonacot)}</span>;
-      case 'saldoFonacot': return <span style={{ color: '#f59e0b' }}>{formatoMoneda(d.saldoFonacot)}</span>;
-      case 'otrosDepositos': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.otrosDepositos)}</span>;
-      case 'otrasDeducciones': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.otrasDeducciones)}</span>;
-      case 'abonosInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.abonosInicial)}</span>;
-      case 'fonacotInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.fonacotInicial)}</span>;
+      case 'nominaFiscal': return <span style={{ color: '#58a6ff' }}>{formatoMoneda(d.nominaFiscal)}</span>;
+      case 'prestamoInicial': return <span style={{ color: '#d2a8ff' }}>{formatoMoneda4(d.prestamoInicial)}</span>;
+      case 'abonoInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.abonoInicial)}</span>;
+      case 'abonos': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.abonos)}</span>;
+      case 'saldoPrestamo': return <span style={{ color: '#d2a8ff', fontWeight: 'bold' }}>{formatoMoneda4(d.saldoPrestamo)}</span>;
+      case 'ahorro': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.ahorro)}</span>;
+      case 'ahorroInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.ahorroInicial)}</span>;
+      case 'ahorroAcumulado': return <span style={{ color: '#3fb950', fontWeight: 'bold' }}>{formatoMoneda4(d.ahorroAcumulado)}</span>;
       default: return '-';
     }
   };
@@ -300,29 +298,10 @@ export const DeduccionesDashboard = () => {
     const datosExcel = registrosFiltrados.map(d => {
       const fila: any = {};
       columnasVisibles.forEach(col => {
-        switch (col.id) {
-          case 'empleadoNombre': fila[col.label] = d._empleadoNombre; break;
-          case 'montoDeduccion': fila[col.label] = Number(d.montoDeduccion || 0); break;
-          case 'prestamo': fila[col.label] = Number(d.prestamo || 0); break;
-          case 'pagoPrestamo': fila[col.label] = Number(d.pagoPrestamo || 0); break;
-          case 'saldoPrestamo': fila[col.label] = Number(d.saldoPrestamo || 0); break;
-          case 'ahorroAcumulado': fila[col.label] = Number(d.ahorroAcumulado || 0); break;
-          case 'saldo': fila[col.label] = Number(d.saldo || 0); break;
-          case 'gastos': fila[col.label] = Number(d.gastos || 0); break;
-          case 'infonavit': fila[col.label] = Number(d.infonavit || 0); break;
-          case 'imss': fila[col.label] = Number(d.imss || 0); break;
-          case 'isr': fila[col.label] = Number(d.isr || 0); break;
-          case 'descuento': fila[col.label] = Number(d.descuento || 0); break;
-          case 'nominaFiscal': fila[col.label] = Number(d.nominaFiscal || 0); break;
-          case 'ahorro': fila[col.label] = Number(d.ahorro || 0); break;
-          case 'ahorroInicial': fila[col.label] = Number(d.ahorroInicial || 0); break;
-          case 'fonacot': fila[col.label] = Number(d.fonacot || 0); break;
-          case 'pagoFonacot': fila[col.label] = Number(d.pagoFonacot || 0); break;
-          case 'saldoFonacot': fila[col.label] = Number(d.saldoFonacot || 0); break;
-          case 'otrosDepositos': fila[col.label] = Number(d.otrosDepositos || 0); break;
-          case 'otrasDeducciones': fila[col.label] = Number(d.otrasDeducciones || 0); break;
-          case 'abonosInicial': fila[col.label] = Number(d.abonosInicial || 0); break;
-          case 'fonacotInicial': fila[col.label] = Number(d.fonacotInicial || 0); break;
+        if (col.id === 'empleadoNombre') {
+          fila[col.label] = d._empleadoNombre;
+        } else {
+          fila[col.label] = Number(d[col.id] || 0);
         }
       });
       return fila;
@@ -475,33 +454,25 @@ export const DeduccionesDashboard = () => {
               
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
                 {[
-                  {label: 'MONTO DEDUCCIÓN', val: montoDeduccion, setter: setMontoDeduccion},
-                  {label: 'GASTOS', val: gastos, setter: setGastos},
-                  {label: 'INFONAVIT', val: infonavit, setter: setInfonavit},
-                  {label: 'IMSS', val: imss, setter: setImss},
-                  {label: 'ISR', val: isr, setter: setIsr},
-                  {label: 'DESCUENTO', val: descuento, setter: setDescuento},
-                  {label: 'NÓMINA FISCAL', val: nominaFiscal, setter: setNominaFiscal},
-                  {label: 'PRÉSTAMO', val: prestamo, setter: setPrestamo},
-                  {label: 'PAGO PRÉSTAMO', val: pagoPrestamo, setter: setPagoPrestamo},
-                  {label: 'SALDO PRÉSTAMO', val: saldoPrestamo, setter: setSaldoPrestamo},
-                  {label: 'AHORRO', val: ahorro, setter: setAhorro},
-                  {label: 'AHORRO ACUMULADO', val: ahorroAcumulado, setter: setAhorroAcumulado},
-                  {label: 'AHORRO INICIAL', val: ahorroInicial, setter: setAhorroInicial},
-                  {label: 'FONACOT', val: fonacot, setter: setFonacot},
-                  {label: 'PAGO FONACOT', val: pagoFonacot, setter: setPagoFonacot},
-                  {label: 'SALDO FONACOT', val: saldoFonacot, setter: setSaldoFonacot},
-                  {label: 'OTROS DEPÓSITOS', val: otrosDepositos, setter: setOtrosDepositos},
-                  {label: 'OTRAS DEDUCCIONES', val: otrasDeducciones, setter: setOtrasDeducciones},
-                  {label: 'ABONOS INICIAL', val: abonosInicial, setter: setAbonosInicial},
-                  {label: 'FONACOT INICIAL', val: fonacotInicial, setter: setFonacotInicial},
-                  {label: 'SALDO TOTAL', val: saldo, setter: setSaldo},
+                  {label: 'GASTOS', val: gastos, setter: setGastos, conPeso: true, deshabilitado: false},
+                  {label: 'INFONAVIT', val: infonavit, setter: setInfonavit, conPeso: true, deshabilitado: false},
+                  {label: 'FONACOT', val: fonacot, setter: setFonacot, conPeso: true, deshabilitado: false},
+                  {label: 'FONACOT INICIAL', val: fonacotInicial, setter: setFonacotInicial, conPeso: true, deshabilitado: false},
+                  {label: 'SALDO FONACOT', val: saldoFonacot, setter: setSaldoFonacot, conPeso: true, deshabilitado: false},
+                  {label: 'IMSS', val: imss, setter: setImss, conPeso: true, deshabilitado: false},
+                  {label: 'ISR', val: isr, setter: setIsr, conPeso: false, deshabilitado: false},
+                  {label: 'DESCUENTO', val: descuento, setter: setDescuento, conPeso: true, deshabilitado: false},
+                  {label: 'NÓMINA FISCAL', val: nominaFiscal, setter: setNominaFiscal, conPeso: true, deshabilitado: false},
+                  {label: 'PRÉSTAMO INICIAL', val: prestamoInicial, setter: setPrestamoInicial, conPeso: true, deshabilitado: false},
+                  {label: 'AHORRO', val: ahorro, setter: setAhorro, conPeso: true, deshabilitado: false},
+                  {label: 'AHORRO INICIAL', val: ahorroInicial, setter: setAhorroInicial, conPeso: true, deshabilitado: false},
+                  {label: 'AHORRO ACUMULADO', val: ahorroAcumulado, setter: setAhorroAcumulado, conPeso: true, deshabilitado: true},
                 ].map((campo, i) => (
-                  <div key={i} style={{ backgroundColor: '#161b22', padding: '12px', borderRadius: '6px', border: '1px solid #21262d' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.7rem', display: 'block', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{campo.label}</label>
+                  <div key={i} style={{ backgroundColor: '#161b22', padding: '12px', borderRadius: '6px', border: '1px solid #21262d', opacity: campo.deshabilitado ? 0.6 : 1 }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.7rem', display: 'block', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{campo.label}{campo.deshabilitado ? ' (SOLO LECTURA)' : ''}</label>
                     <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>$</span>
-                      <input type="number" step="0.01" value={campo.val} onChange={e => campo.setter(e.target.valueAsNumber || '')} style={{ width: '100%', padding: '8px 8px 8px 24px', backgroundColor: '#010409', color: '#3fb950', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold', boxSizing: 'border-box' }} />
+                      {campo.conPeso && <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>$</span>}
+                      <input type="number" step="0.0001" value={campo.val} disabled={campo.deshabilitado} onChange={e => campo.setter(e.target.valueAsNumber || '')} style={{ width: '100%', padding: campo.conPeso ? '8px 8px 8px 24px' : '8px', backgroundColor: '#010409', color: campo.deshabilitado ? '#8b949e' : '#3fb950', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold', boxSizing: 'border-box', cursor: campo.deshabilitado ? 'not-allowed' : 'text' }} />
                     </div>
                   </div>
                 ))}
