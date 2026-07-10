@@ -99,11 +99,6 @@ export const ReferenciasNominaDashboard = () => {
   const [ahorroNuevo, setAhorroNuevo] = useState<number | ''>('');
   const [pagoAhorro, setPagoAhorro] = useState<number | ''>('');
 
-  // ✅ NUEVO: set con TODOS los ids de operaciones que ya están dentro de alguna
-  //   factura de cliente creada (colección `facturas_clientes`). Se usa para
-  //   EXCLUIR de la tabla de nómina las operaciones ya facturadas.
-  const [opsFacturadasIds, setOpsFacturadasIds] = useState<Set<string>>(new Set());
-
   // ✅ NUEVO: mapa id -> nombre de lugar/plaza para mostrar NOMBRES (no IDs) en
   //   las columnas Origen/Destino. Se arma leyendo los catálogos de lugares.
   const [mapaLugares, setMapaLugares] = useState<Record<string, string>>({});
@@ -217,33 +212,6 @@ export const ReferenciasNominaDashboard = () => {
     if (Array.isArray(val)) return val.map((x: any) => String(x).trim()).filter(Boolean);
     if (typeof val === 'string') return val.split(',').map(s => s.trim()).filter(Boolean);
     return [];
-  };
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // ✅ NUEVO: extractor DEFENSIVO de ids de operación dentro de una factura.
-  //   No conozco con certeza el nombre exacto del campo donde `facturas_clientes`
-  //   guarda sus operaciones, así que se revisan las formas más comunes:
-  //     - operacionesIds / opsIds / operaciones_ids  (array o string CSV)
-  //     - operaciones / ops / operacionesGuardadas    (array de ids o de objetos {id})
-  //   Si una factura no expone sus operaciones en ninguna de estas formas,
-  //   simplemente NO se excluye nada de ella (nunca oculta una op por error).
-  // ─────────────────────────────────────────────────────────────────────────
-  const extraerOpsIdsDeFactura = (f: any): string[] => {
-    if (!f || typeof f !== 'object') return [];
-    const ids = new Set<string>();
-    const pushVal = (v: any) => {
-      if (v == null) return;
-      if (typeof v === 'string') { v.split(',').forEach(s => { const t = s.trim(); if (t) ids.add(t); }); return; }
-      if (typeof v === 'object' && v.id) { ids.add(String(v.id).trim()); return; }
-      const s = String(v).trim(); if (s) ids.add(s);
-    };
-    const camposArray = ['operacionesIds', 'opsIds', 'operaciones_ids', 'operaciones', 'ops', 'operacionesGuardadas'];
-    camposArray.forEach(campo => {
-      const val = f[campo];
-      if (Array.isArray(val)) val.forEach(pushVal);
-      else if (typeof val === 'string') pushVal(val);
-    });
-    return Array.from(ids);
   };
 
   const mapearOpDetalle = (op: any) => {
@@ -372,32 +340,24 @@ export const ReferenciasNominaDashboard = () => {
   //   las operaciones y el filtrado por operador + el orden se hace en memoria.
   useEffect(() => {
     if (activeTab !== 'operaciones') return;
-    const unSub = onSnapshot(collection(db, 'operaciones'), (snap) => {
+    // ✅ REGLA DE NÓMINA: se traen TODOS los registros de `operaciones` cuyo
+    //   status sea f557b751 o c2d57403 (completadas). La exclusión es solo por
+    //   estar en `operacionesIds` de `referencias_nomina` (ver esAsignada).
+    const qOps = query(collection(db, 'operaciones'), where('status', 'in', STATUS_COMPLETADOS_NOMINA));
+    const unSub = onSnapshot(qOps, (snap) => {
       const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
       ops.sort((a: any, b: any) => (parsearFechaSegura(b.fechaServicio || b.createdAt)?.getTime() || 0) - (parsearFechaSegura(a.fechaServicio || a.createdAt)?.getTime() || 0));
       setOperacionesGlobales(ops);
+    }, (err) => {
+      console.error('[Nómina] Error cargando operaciones completadas:', err);
     });
     return () => unSub();
   }, [activeTab]);
 
-  // ✅ NUEVO: cargar las facturas de cliente para saber qué operaciones YA están
-  //   facturadas y así EXCLUIRLAS de la tabla de nómina. Solo se necesita en la
-  //   pestaña "Asignar Operaciones". Si la colección no existe o no se puede leer,
-  //   el set queda vacío y no se excluye nada (comportamiento seguro).
-  useEffect(() => {
-    if (activeTab !== 'operaciones') return;
-    const unSub = onSnapshot(collection(db, 'facturas_clientes'), (snap) => {
-      const ids = new Set<string>();
-      snap.docs.forEach(d => {
-        extraerOpsIdsDeFactura({ id: d.id, ...(d.data() as any) }).forEach(opId => ids.add(opId));
-      });
-      setOpsFacturadasIds(ids);
-    }, (err) => {
-      console.warn('[Nómina] No se pudo leer facturas_clientes (no se excluirá nada):', err);
-      setOpsFacturadasIds(new Set());
-    });
-    return () => unSub();
-  }, [activeTab]);
+  // ✅ ELIMINADO: antes se cargaba `facturas_clientes` para excluir de nómina las
+  //   operaciones ya facturadas al cliente. La regla de nómina es únicamente:
+  //   status completado Y no estar en `operacionesIds` de `referencias_nomina`,
+  //   así que una operación facturada al cliente SÍ puede pagarse en nómina.
 
   const generarConsecutivo = (fechaStr: string) => {
     const [year, month, day] = fechaStr.split('-');
@@ -540,17 +500,50 @@ export const ReferenciasNominaDashboard = () => {
     return nombre.includes('complet');
   };
 
+  // ✅ Texto normalizado para comparar nombres (sin acentos, minúsculas).
+  const normalizarTxt = (s: any): string =>
+    String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
   const operacionesBaseFiltro = useMemo(() => {
     // ✅ DE INICIO (sin operador seleccionado) se muestran TODAS las operaciones
     //   completadas de TODOS los operadores; el rango de fechas sigue siendo
     //   opcional. Al elegir un operador, se acota a las suyas.
+    // ✅ CORREGIDO: el cruce operación↔operador se hace por ID del empleado y,
+    //   como respaldo, por nombre normalizado con tolerancia al apellido
+    //   materno (la operación puede traer "Alberto De Los Santos Rodriguez"
+    //   mientras el buscador arma "Alberto De Los Santos").
+    const empSel = filtroOperador
+      ? operadoresList.find(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() === filtroOperador.trim())
+      : null;
+    const idSel = empSel ? String(empSel.id) : '';
+    const nombreSel = normalizarTxt(filtroOperador);
+    const nombreSelCompleto = empSel
+      ? normalizarTxt(`${empSel.firstName || ''} ${empSel.lastNamePaternal || ''} ${empSel.lastNameMaternal || empSel.lastNameMaterno || ''}`)
+      : '';
+
+    const opEsDelOperador = (op: any): boolean => {
+      if (!filtroOperador) return true;
+      // 1) Por ID (operadorId / operador guardan el id del empleado).
+      const idsOp = [op.operadorId, op.operador].map(v => String(v || '')).filter(Boolean);
+      if (idSel && idsOp.includes(idSel)) return true;
+      // 2) Por nombre normalizado (exacto, con materno, o por prefijo en ambos sentidos).
+      const candidatos = [
+        op.operadorNombre,
+        getNombreOperador(op.operadorNombre || op.operadorId || op.operador || ''),
+      ].map(normalizarTxt).filter(Boolean);
+      return candidatos.some(n =>
+        n === nombreSel ||
+        (nombreSelCompleto && n === nombreSelCompleto) ||
+        n.startsWith(nombreSel + ' ') ||
+        nombreSel.startsWith(n + ' ')
+      );
+    };
+
     return operacionesGlobales.filter(op => {
       if (!esCompletada(op)) return false;
       const opFecha = op.fechaServicio || op.fecha || '';
       if (!dentroRangoFecha(opFecha)) return false;
-      if (!filtroOperador) return true;
-      const opOperador = getNombreOperador(op.operadorNombre || op.operadorId || op.operador || '');
-      return opOperador === filtroOperador;
+      return opEsDelOperador(op);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operacionesGlobales, filtroOperador, fechaInicio, fechaFin, operadoresList]);
@@ -568,16 +561,16 @@ export const ReferenciasNominaDashboard = () => {
   //   nómina (referenciaNominaId O aparece en el historial) O si ya está dentro de
   //   una factura de cliente.
   const esAsignada = (op: any) => !!op.referenciaNominaId || opsEnNominaIds.has(String(op.id));
-  const esFacturada = (op: any) => opsFacturadasIds.has(op.id);
-  // "Pendiente" para nómina = NO está en nómina y NO está facturada.
-  const esPendienteNomina = (op: any) => !esAsignada(op) && !esFacturada(op);
+  // ✅ "Pendiente" para nómina = NO está en ninguna nómina del historial.
+  //   (Estar facturada al cliente NO la excluye de nómina.)
+  const esPendienteNomina = (op: any) => !esAsignada(op);
 
   const conteoOps = useMemo(() => {
     const pendientes = operacionesBaseFiltro.filter(esPendienteNomina).length;
     const asignadas = operacionesBaseFiltro.filter(esAsignada).length;
     return { pendientes, asignadas };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesBaseFiltro, opsFacturadasIds, opsEnNominaIds]);
+  }, [operacionesBaseFiltro, opsEnNominaIds]);
 
   const valorOrdenOp = (op: any, campo: string): string | number => {
     switch (campo) {
@@ -606,7 +599,7 @@ export const ReferenciasNominaDashboard = () => {
       return String(va).localeCompare(String(vb)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, opsFacturadasIds, opsEnNominaIds]);
+  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, opsEnNominaIds]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });

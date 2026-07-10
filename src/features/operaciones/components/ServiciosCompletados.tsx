@@ -247,6 +247,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: buscador autocompletado de remolque (reemplaza el desplegable)
   const [textoBuscarRemolque, setTextoBuscarRemolque] = useState('');
   const [mostrarSugerenciasRemolque, setMostrarSugerenciasRemolque] = useState(false);
+  // ✅ NUEVO: filtro por OPERADOR (tipo búsqueda, igual que cliente/remolque).
+  const [filterOperador, setFilterOperador] = useState(''); // id del empleado
+  const [textoBuscarOperador, setTextoBuscarOperador] = useState('');
+  const [mostrarSugerenciasOperador, setMostrarSugerenciasOperador] = useState(false);
+  // Normalizador de texto (sin acentos/mayúsculas) y etiqueta del empleado.
+  const normalizarTxtOperador = (s: any): string =>
+    String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const etiquetaOperador = (emp: any) =>
+    `${emp?.firstName || ''} ${emp?.lastNamePaternal || ''} ${emp?.lastNameMaternal || emp?.lastNameMaterno || ''}`.replace(/\s+/g, ' ').trim();
 
   // ✅ NUEVO: editor integrado (fallback cuando NO se pasa la prop onEditar)
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
@@ -498,7 +507,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente, { ignorarCache: true });
   };
 
-  useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion]);
+  useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion, filterOperador]);
 
   // ✅ NUEVO: cada vez que cambian las columnas (orden o visibilidad), se guardan
   //   en localStorage para que la configuración se mantenga al recargar la página.
@@ -1047,6 +1056,22 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
     }
 
+    // ✅ NUEVO: filtro por OPERADOR. Cruza por ID del empleado (op.operador /
+    //   op.operadorId) y, como respaldo, por nombre normalizado con tolerancia
+    //   al apellido materno (las operaciones pueden traer el nombre completo).
+    if (filterOperador) {
+      const empSel = (catalogosGlobales.empleados || []).find((x: any) => String(x.id) === String(filterOperador));
+      const nombreSel = normalizarTxtOperador(empSel ? `${empSel.firstName || ''} ${empSel.lastNamePaternal || ''}` : '');
+      const nombreSelCompleto = normalizarTxtOperador(empSel ? `${empSel.firstName || ''} ${empSel.lastNamePaternal || ''} ${empSel.lastNameMaternal || empSel.lastNameMaterno || ''}` : '');
+      filtradas = filtradas.filter(op => {
+        const idsOp = [op.operador, op.operadorId].map(v => String(v || '')).filter(Boolean);
+        if (idsOp.includes(String(filterOperador))) return true;
+        const n = normalizarTxtOperador(op.operadorNombre);
+        if (!n || !nombreSel) return false;
+        return n === nombreSel || (nombreSelCompleto && n === nombreSelCompleto) || n.startsWith(nombreSel + ' ') || nombreSel.startsWith(n + ' ');
+      });
+    }
+
     if (busqueda.trim()) {
       const b = busqueda.toLowerCase();
       filtradas = filtradas.filter(op => {
@@ -1067,7 +1092,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       if (fa !== fb) return fb.localeCompare(fa);
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
-  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion, catalogosGlobales]);
+  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion, filterOperador, catalogosGlobales]);
 
   const resumenServicios = useMemo(() => {
     const base = operacionesFiltradas;
@@ -1178,6 +1203,25 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   // ✅ NUEVO: lista filtrada de remolques para el buscador (nombre o placa).
   const etiquetaRemolque = (rem: any) => `${rem?.nombre || ''} ${rem?.placas || rem?.placa || ''}`.trim();
+
+  // ✅ NUEVO (filtro operador): buscador de empleados para las sugerencias.
+  const operadoresFiltradosBuscador = useMemo(() => {
+    const lista = (catalogosGlobales.empleados || []) as any[];
+    const ordenados = lista
+      .filter((e: any) => etiquetaOperador(e))
+      .sort((a: any, b: any) => etiquetaOperador(a).localeCompare(etiquetaOperador(b), 'es', { sensitivity: 'base' }));
+    if (!textoBuscarOperador.trim()) return ordenados.slice(0, 30);
+    const q = normalizarTxtOperador(textoBuscarOperador);
+    return ordenados.filter((e: any) => normalizarTxtOperador(etiquetaOperador(e)).includes(q)).slice(0, 30);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogosGlobales.empleados, textoBuscarOperador]);
+
+  const nombreOperadorSeleccionado = useMemo(() => {
+    if (!filterOperador || !catalogosGlobales.empleados) return '';
+    const e = (catalogosGlobales.empleados as any[]).find((x: any) => String(x.id) === String(filterOperador));
+    return e ? (etiquetaOperador(e) || filterOperador) : filterOperador;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterOperador, catalogosGlobales.empleados]);
 
   const remolquesFiltradosBuscador = useMemo(() => {
     const lista = (catalogosGlobales.remolques || []) as any[];
@@ -1552,6 +1596,77 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                         onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
                         <div style={{ fontWeight: '500' }}>{etiquetaRemolque(rem) || rem.id}</div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ✅ NUEVO: filtro por OPERADOR (búsqueda con sugerencias) */}
+          <div style={{ flex: '1 1 240px', position: 'relative' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>OPERADOR (opcional)</label>
+
+            {filterOperador ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', minHeight: '20px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                <span style={{ color: '#c9d1d9', fontWeight: '500', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {nombreOperadorSeleccionado}
+                </span>
+                <button
+                  onClick={() => { setFilterOperador(''); setTextoBuscarOperador(''); setMostrarSugerenciasOperador(false); }}
+                  title="Quitar operador"
+                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <div style={{ position: 'relative' }}>
+                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input
+                  type="text"
+                  placeholder="Buscar operador por nombre..."
+                  value={textoBuscarOperador}
+                  onChange={(e) => { setTextoBuscarOperador(e.target.value); setMostrarSugerenciasOperador(true); }}
+                  onFocus={() => setMostrarSugerenciasOperador(true)}
+                  onBlur={() => setTimeout(() => setMostrarSugerenciasOperador(false), 180)}
+                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+
+            {!filterOperador && mostrarSugerenciasOperador && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0,
+                backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
+                maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px',
+                boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
+              }}>
+                {operadoresFiltradosBuscador.length === 0 ? (
+                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                    {textoBuscarOperador.trim() ? 'Sin coincidencias' : 'No hay operadores cargados'}
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                      {operadoresFiltradosBuscador.length} {operadoresFiltradosBuscador.length === 1 ? 'operador' : 'operadores'}{textoBuscarOperador.trim() ? '' : ' (primeros 30)'}
+                    </div>
+                    {operadoresFiltradosBuscador.map((emp: any) => (
+                      <div
+                        key={emp.id}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          setFilterOperador(String(emp.id));
+                          setTextoBuscarOperador('');
+                          setMostrarSugerenciasOperador(false);
+                        }}
+                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                        onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                        onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                      >
+                        <div style={{ fontWeight: '500' }}>{etiquetaOperador(emp) || emp.id}</div>
                       </div>
                     ))}
                   </>
