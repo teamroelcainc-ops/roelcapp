@@ -24,6 +24,25 @@ const ID_CARGO_OPERADOR = 'edda3a2b';
 //   de Clientes para su universo de operaciones facturables).
 const STATUS_COMPLETADOS_NOMINA = ['f557b751', 'c2d57403'];
 
+// ✅ Quita el MONTO al inicio del nombre del Convenio Tarifa (ej.
+//   "$5,700.00 - Transfer Nuevo Laredo" → "Transfer Nuevo Laredo";
+//   "1500 MXN - Mov Local" → "Mov Local"). Solo se elimina cuando el inicio es
+//   claramente un monto (con "$", con decimales estilo dinero, o número seguido
+//   de la moneda); códigos como "240 NLD" se respetan tal cual.
+const sinMontoConvenio = (nombre: any): string => {
+  const original = String(nombre || '').trim();
+  let s = original;
+  const patrones = [
+    /^\$\s*\d[\d.,]*\s*(mxn|usd|pesos|d[oó]lares|dlls?|dls)?\.?\s*[-–—:·|]?\s*/i,
+    /^\d[\d.,]*\s*(mxn|usd|pesos|d[oó]lares|dlls?|dls)\.?\s*[-–—:·|]?\s*/i,
+    /^\d{1,3}(?:,\d{3})*(?:\.\d{1,2})\s*[-–—:·|]?\s*/,
+  ];
+  for (const p of patrones) {
+    if (p.test(s)) { s = s.replace(p, '').trim(); break; }
+  }
+  return s || original;
+};
+
 const COLUMNAS_OPS_NOMINA_BASE = [
   { id: 'ref',           label: 'Ref. Operación', visible: true, orden: true },
   { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true, orden: true },
@@ -268,8 +287,8 @@ export const ReferenciasNominaDashboard = () => {
       fecha: op.fechaServicio || op.fecha || '',
       clientePagaId: op.clientePaga || op.cliente || '',
       cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '',
-      convenio: getNombreConvenio(op.convenioId || op.convenio) || op.convenioNombre || (typeof op.convenio === 'string' ? op.convenio : '') || '-',
-      tipoServicio: op.tarifaLabel || op.tarifarioLabel || op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-',
+      convenio: sinMontoConvenio(getNombreConvenio(op.convenioId || op.convenio) || op.convenioNombre || (typeof op.convenio === 'string' ? op.convenio : '') || '-'),
+      tipoServicio: sinMontoConvenio(op.tarifaLabel || op.tarifarioLabel || op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-'),
       sueldo: sueldoTotal,
       sueldoExtra: Number(op.sueldoExtra || 0),
       importe: sueldoTotal,
@@ -278,8 +297,16 @@ export const ReferenciasNominaDashboard = () => {
 
   const cargarOperacionesDeNomina = async (nom: any): Promise<any[]> => {
     if (!nom) return [];
+    // ✅ Las operaciones GUARDADAS dentro de la nómina traen el convenio congelado
+    //   tal como se capturó en su momento (con el monto al inicio, ej.
+    //   "$150 - Importación Caja Cargada..."). Se limpia aquí para que ni la
+    //   Ficha ni el PDF del recibo muestren el monto a los empleados.
     if (Array.isArray(nom.operacionesGuardadas) && nom.operacionesGuardadas.length > 0) {
-      return ordenarOpsRecientes(nom.operacionesGuardadas);
+      return ordenarOpsRecientes(nom.operacionesGuardadas.map((o: any) => ({
+        ...o,
+        convenio: sinMontoConvenio(o.convenio),
+        tipoServicio: sinMontoConvenio(o.tipoServicio),
+      })));
     }
     const vistos = new Set<string>();
     const encontradas: any[] = [];
@@ -472,7 +499,7 @@ export const ReferenciasNominaDashboard = () => {
     return mapaRemolques[id] || id;
   };
   const convenioDeOp = (op: any): string =>
-    getNombreConvenio(op.convenioId || op.convenio) || op.convenioNombre || (typeof op.convenio === 'string' ? op.convenio : '') || '-';
+    sinMontoConvenio(getNombreConvenio(op.convenioId || op.convenio) || op.convenioNombre || (typeof op.convenio === 'string' ? op.convenio : '') || '-');
 
   // ✅ Resuelven banco/forma de pago para mostrar (nombre guardado → catálogo → '').
   const resolverBancoNomina = (n: any) => n?.bancoPagoNombre || getNombreBanco(n?.bancoPagoId || n?.bancoPago || '') || '';
@@ -1052,8 +1079,8 @@ export const ReferenciasNominaDashboard = () => {
           fecha: op?.fechaServicio || op?.fecha || '',
           cliente: getNombreEmpresa(op?.clientePaga)
             || op?.cliente || op?.clienteNombre || op?.clientePagaNombre || op?.nombreCliente || '-',
-          convenio: getNombreConvenio(op?.convenioId || op?.convenio) || op?.convenioNombre || (typeof op?.convenio === 'string' ? op?.convenio : '') || '-',
-          tipoServicio: op?.tarifaLabel || op?.tarifarioLabel || op?.convenioNombre || op?.tipoOperacionNombre || op?.tipoServicio || '-',
+          convenio: sinMontoConvenio(getNombreConvenio(op?.convenioId || op?.convenio) || op?.convenioNombre || (typeof op?.convenio === 'string' ? op?.convenio : '') || '-'),
+          tipoServicio: sinMontoConvenio(op?.tarifaLabel || op?.tarifarioLabel || op?.convenioNombre || op?.tipoOperacionNombre || op?.tipoServicio || '-'),
           importe: base,
           sueldo: base,
           sueldoExtra: extraOp
@@ -1218,6 +1245,8 @@ export const ReferenciasNominaDashboard = () => {
       console.error('[Recibo] No se pudieron cargar las operaciones:', e);
       trips = Array.isArray(nom.operacionesGuardadas) ? nom.operacionesGuardadas : [];
     }
+    // ✅ Seguro adicional: el convenio del recibo NUNCA debe mostrar el monto.
+    trips = trips.map((t: any) => ({ ...t, convenio: sinMontoConvenio(t.convenio), tipoServicio: sinMontoConvenio(t.tipoServicio) }));
     const tot = reconstruirTotales(nom, trips);
     const operadorNombreRec = getNombreOperador(nom.operadorNombre || nom.operadorId);
     const consecutivoRec = getConsecutivoNomina(nom);
