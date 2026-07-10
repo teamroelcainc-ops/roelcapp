@@ -6,6 +6,7 @@ import {
   query, 
   writeBatch, 
   updateDoc,
+  setDoc,
   doc, 
   getDocs,
   where,
@@ -29,9 +30,25 @@ const COLUMNAS_OPS_NOMINA_BASE = [
   { id: 'operador',      label: 'Operador',        visible: true, orden: true },
   { id: 'origen',        label: 'Origen',          visible: true, orden: true },
   { id: 'destino',       label: 'Destino',         visible: true, orden: true },
-  { id: 'sueldo',        label: 'Sueldo Op.',      visible: true, orden: true },
+  { id: 'remolque',      label: '# Remolque',      visible: true, orden: true },
+  { id: 'convenio',      label: 'Convenio Tarifa', visible: true, orden: true },
+  { id: 'sueldo',        label: 'Sueldo Base',     visible: true, orden: true },
   { id: 'sueldoExtra',   label: 'Sueldo Extra',    visible: true, orden: true },
 ];
+
+// ✅ La configuración de columnas es COMPARTIDA para todos los usuarios: se
+//   guarda en Firestore (configuraciones/nomina_columnas_ops) y no se pierde al
+//   recargar. Al leerla se fusiona con la base para que columnas nuevas del
+//   código aparezcan aunque la configuración guardada sea anterior.
+const fusionarColumnasNominaGuardadas = (guardadas: any[]) => {
+  const res: any[] = [];
+  (guardadas || []).forEach((g: any) => {
+    const b = COLUMNAS_OPS_NOMINA_BASE.find(x => x.id === g?.id);
+    if (b && !res.some(r => r.id === b.id)) res.push({ ...b, visible: g.visible !== false });
+  });
+  COLUMNAS_OPS_NOMINA_BASE.forEach(b => { if (!res.some(r => r.id === b.id)) res.push({ ...b }); });
+  return res;
+};
 
 export const ReferenciasNominaDashboard = () => {
   const { config: empresaConfig } = useEmpresaConfig();
@@ -60,6 +77,33 @@ export const ReferenciasNominaDashboard = () => {
   const [modalColumnasOps, setModalColumnasOps] = useState(false);
   const [columnasOps, setColumnasOps] = useState(COLUMNAS_OPS_NOMINA_BASE.map(c => ({ ...c })));
   const [draggedColOpsIndex, setDraggedColOpsIndex] = useState<number | null>(null);
+  // ✅ Mapa id -> etiqueta de remolque (para la columna # Remolque cuando la
+  //   operación guarda solo el id del catálogo).
+  const [mapaRemolques, setMapaRemolques] = useState<Record<string, string>>({});
+
+  // ✅ Configuración de columnas COMPARTIDA: se escucha en vivo desde Firestore,
+  //   así lo que guarda un usuario lo ven todos y sobrevive a las recargas.
+  useEffect(() => {
+    const unSub = onSnapshot(doc(db, 'configuraciones', 'nomina_columnas_ops'), (snap) => {
+      const data = snap.data() as any;
+      if (data && Array.isArray(data.columnas) && data.columnas.length > 0) {
+        setColumnasOps(fusionarColumnasNominaGuardadas(data.columnas));
+      }
+    }, (err) => console.warn('[Nómina] No se pudo leer la configuración de columnas compartida:', err));
+    return () => unSub();
+  }, []);
+
+  useEffect(() => {
+    const unSub = onSnapshot(collection(db, 'remolques'), (snap) => {
+      const m: Record<string, string> = {};
+      snap.docs.forEach(d => {
+        const r: any = d.data();
+        m[d.id] = `${r?.nombre || ''} ${r?.placas || r?.placa || ''}`.trim() || d.id;
+      });
+      setMapaRemolques(m);
+    }, () => {});
+    return () => unSub();
+  }, []);
 
   const [busquedaHistorial, setBusquedaHistorial] = useState('');
   const [filtroEstadoHist, setFiltroEstadoHist] = useState<'pendientes' | 'pagadas'>('pendientes');
@@ -419,6 +463,17 @@ export const ReferenciasNominaDashboard = () => {
     return '';
   };
 
+  // ✅ (Columnas nuevas) # Remolque y Convenio Tarifa del cliente por operación.
+  const remolqueDeOp = (op: any): string => {
+    const directo = String(op.remolqueNombre || op.remolquePlaca || '').trim();
+    if (directo) return directo;
+    const id = String(op.numeroRemolque || op.remolque || '').trim();
+    if (!id) return '-';
+    return mapaRemolques[id] || id;
+  };
+  const convenioDeOp = (op: any): string =>
+    getNombreConvenio(op.convenioId || op.convenio) || op.convenioNombre || (typeof op.convenio === 'string' ? op.convenio : '') || '-';
+
   // ✅ Resuelven banco/forma de pago para mostrar (nombre guardado → catálogo → '').
   const resolverBancoNomina = (n: any) => n?.bancoPagoNombre || getNombreBanco(n?.bancoPagoId || n?.bancoPago || '') || '';
   const resolverFormaPagoNomina = (n: any) => n?.formaPagoNombre || getNombreFormaPago(n?.formaPagoId || n?.formaPago || '') || '';
@@ -579,6 +634,8 @@ export const ReferenciasNominaDashboard = () => {
       case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador).toLowerCase();
       case 'origen': return resolverLugar(op, 'origen').toLowerCase();
       case 'destino': return resolverLugar(op, 'destino').toLowerCase();
+      case 'remolque': return remolqueDeOp(op).toLowerCase();
+      case 'convenio': return convenioDeOp(op).toLowerCase();
       case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
       case 'sueldoExtra': return Number(op.sueldoExtra || 0);
       default: return '';
@@ -612,6 +669,8 @@ export const ReferenciasNominaDashboard = () => {
       case 'operador': return getNombreOperador(op.operadorNombre || op.operadorId || op.operador);
       case 'origen': return resolverLugar(op, 'origen');
       case 'destino': return resolverLugar(op, 'destino');
+      case 'remolque': return remolqueDeOp(op);
+      case 'convenio': return convenioDeOp(op);
       case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
       case 'sueldoExtra': return Number(op.sueldoExtra || 0);
       default: return '-';
@@ -626,6 +685,8 @@ export const ReferenciasNominaDashboard = () => {
       case 'operador': return <td key={key} style={tdBase}>{getNombreOperador(op.operadorNombre || op.operadorId || op.operador)}</td>;
       case 'origen': return <td key={key} style={tdBase}>{resolverLugar(op, 'origen')}</td>;
       case 'destino': return <td key={key} style={tdBase}>{resolverLugar(op, 'destino')}</td>;
+      case 'remolque': return <td key={key} style={{ padding: '16px', color: '#c9d1d9', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{remolqueDeOp(op)}</td>;
+      case 'convenio': return <td key={key} style={tdBase}>{convenioDeOp(op)}</td>;
       case 'sueldo': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(op.sueldoTotal || op.sueldoOperador)}</td>;
       case 'sueldoExtra': {
         const tieneExtra = Number(op.sueldoExtra || 0) > 0;
@@ -655,6 +716,21 @@ export const ReferenciasNominaDashboard = () => {
     setDraggedColOpsIndex(index);
     setColumnasOps(nuevas);
   };
+  // ✅ Guarda la configuración de columnas en Firestore para TODOS los usuarios
+  //   (no se restablece al recargar; los demás la reciben en vivo por onSnapshot).
+  const guardarColumnasCompartidas = async () => {
+    setModalColumnasOps(false);
+    try {
+      await setDoc(doc(db, 'configuraciones', 'nomina_columnas_ops'), {
+        columnas: columnasOps.map(c => ({ id: c.id, visible: !!c.visible })),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+    } catch (e) {
+      console.error('[Nómina] No se pudo guardar la configuración de columnas compartida:', e);
+      alert('No se pudo guardar la configuración de columnas para todos. Revisa tu conexión o permisos.');
+    }
+  };
+
   const toggleColumnaVisibleOps = (index: number) => {
     const nuevas = [...columnasOps];
     nuevas[index].visible = !nuevas[index].visible;
@@ -764,17 +840,22 @@ export const ReferenciasNominaDashboard = () => {
 
   const resumenSeleccion = useMemo(() => {
     let subtotal = 0;
+    let subtotalBase = 0;
     let subtotalExtra = 0;
     const refs: string[] = [];
     seleccionadas.forEach(id => {
       const op = operacionesGlobales.find(o => o.id === id);
       if (op) {
-        subtotal += Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0);
+        const base = Number(op.sueldoTotal || op.sueldoOperador || 0);
+        subtotal += base + Number(op.sueldoExtra || 0);
+        subtotalBase += base;
         subtotalExtra += Number(op.sueldoExtra || 0);
         refs.push(op.ref || op.id?.substring(0,6));
       }
     });
-    return { subtotal, subtotalExtra, refs };
+    // subtotal (base + extras) se sigue usando para el formulario de la nómina;
+    // subtotalBase y subtotalExtra son los que se MUESTRAN en las tarjetas.
+    return { subtotal, subtotalBase, subtotalExtra, refs };
   }, [seleccionadas, operacionesGlobales]);
 
   // ✅ NUEVO: detalle de las operaciones seleccionadas (para mostrarlas en la pestaña Referencia
@@ -1687,13 +1768,12 @@ export const ReferenciasNominaDashboard = () => {
                   <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{seleccionadas.length}</span>
                 </div>
                 <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Sueldo Extra (operaciones)</span>
-                  <span style={{ color: '#f59e0b', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotalExtra)}</span>
+                  <span style={{ display: 'block', color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Sueldo Base (sin extras)</span>
+                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotalBase)}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Sueldos a Pagar</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '2px' }}>Incluye el sueldo extra de cada operación</span>
+                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Sueldo Extra (operaciones)</span>
+                  <span style={{ color: '#f59e0b', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotalExtra)}</span>
                 </div>
               </div>
             </div>
@@ -2044,7 +2124,7 @@ export const ReferenciasNominaDashboard = () => {
               ))}
             </ul>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnasOps(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+              <button onClick={guardarColumnasCompartidas} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Guardar para todos</button>
             </div>
           </div>
         </div>
