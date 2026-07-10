@@ -53,6 +53,7 @@ const COLUMNAS_OPS_NOMINA_BASE = [
   { id: 'convenio',      label: 'Convenio Tarifa', visible: true, orden: true },
   { id: 'sueldo',        label: 'Sueldo Base',     visible: true, orden: true },
   { id: 'sueldoExtra',   label: 'Sueldo Extra',    visible: true, orden: true },
+  { id: 'sueldoTotal',   label: 'Sueldo Total',    visible: true, orden: true },
 ];
 
 // ✅ La configuración de columnas es COMPARTIDA para todos los usuarios: se
@@ -665,6 +666,7 @@ export const ReferenciasNominaDashboard = () => {
       case 'convenio': return convenioDeOp(op).toLowerCase();
       case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
       case 'sueldoExtra': return Number(op.sueldoExtra || 0);
+      case 'sueldoTotal': return Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0);
       default: return '';
     }
   };
@@ -700,6 +702,7 @@ export const ReferenciasNominaDashboard = () => {
       case 'convenio': return convenioDeOp(op);
       case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
       case 'sueldoExtra': return Number(op.sueldoExtra || 0);
+      case 'sueldoTotal': return Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0);
       default: return '-';
     }
   };
@@ -729,6 +732,10 @@ export const ReferenciasNominaDashboard = () => {
             </button>
           </td>
         );
+      }
+      case 'sueldoTotal': {
+        const totalOp = Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0);
+        return <td key={key} style={{ padding: '16px', color: '#f0f6fc', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(totalOp)}</td>;
       }
       default: return <td key={key} style={tdBase}>-</td>;
     }
@@ -815,16 +822,22 @@ export const ReferenciasNominaDashboard = () => {
 
   const guardarExtraOperacion = async () => {
     if (!editandoExtra) return;
+    const opId = editandoExtra.id;
     const nuevoValor = Number(editandoExtra.valor) || 0;
+    const previo = Number(operacionesGlobales.find(o => o.id === opId)?.sueldoExtra || 0);
+    // ✅ OPTIMISTA: la tabla y la tarjeta de SUELDO EXTRA se actualizan AL
+    //   INSTANTE (sin esperar a Firestore); si el guardado falla, se revierte.
+    setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: nuevoValor } : o));
+    setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: nuevoValor } : o));
+    setEditandoExtra(null);
     setGuardandoExtra(true);
     try {
-      await updateDoc(doc(db, 'operaciones', editandoExtra.id), { sueldoExtra: nuevoValor });
-      setOperacionesGlobales(prev => prev.map(o => o.id === editandoExtra.id ? { ...o, sueldoExtra: nuevoValor } : o));
-      setOpsFicha(prev => prev.map(o => o.id === editandoExtra.id ? { ...o, sueldoExtra: nuevoValor } : o));
-      setEditandoExtra(null);
+      await updateDoc(doc(db, 'operaciones', opId), { sueldoExtra: nuevoValor });
     } catch (error) {
       console.error('Error al guardar el sueldo extra:', error);
-      alert('No se pudo guardar el sueldo extra de la operación.');
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previo } : o));
+      setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previo } : o));
+      alert('No se pudo guardar el sueldo extra de la operación. Se revirtió el cambio.');
     } finally {
       setGuardandoExtra(false);
     }
@@ -849,19 +862,44 @@ export const ReferenciasNominaDashboard = () => {
   //   la Ficha y la tabla de asignación en vivo (incluye el recálculo de subtotales).
   const guardarSueldoOperacion = async () => {
     if (!editandoSueldo) return;
+    const opId = editandoSueldo.id;
     const nuevoValor = Number(editandoSueldo.valor) || 0;
+    const previo = Number(operacionesGlobales.find(o => o.id === opId)?.sueldoTotal || 0);
+    // ✅ OPTIMISTA: tabla y tarjeta de SUELDO BASE se actualizan al instante;
+    //   si el guardado falla, se revierte.
+    setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoTotal: nuevoValor } : o));
+    setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldo: nuevoValor, importe: nuevoValor, sueldoTotal: nuevoValor } : o));
+    setEditandoSueldo(null);
     setGuardandoSueldo(true);
     try {
-      await updateDoc(doc(db, 'operaciones', editandoSueldo.id), { sueldoTotal: nuevoValor });
-      setOperacionesGlobales(prev => prev.map(o => o.id === editandoSueldo.id ? { ...o, sueldoTotal: nuevoValor } : o));
-      // En la Ficha, el detalle usa sueldo/importe/sueldoTotal: se actualizan los tres.
-      setOpsFicha(prev => prev.map(o => o.id === editandoSueldo.id ? { ...o, sueldo: nuevoValor, importe: nuevoValor, sueldoTotal: nuevoValor } : o));
-      setEditandoSueldo(null);
+      await updateDoc(doc(db, 'operaciones', opId), { sueldoTotal: nuevoValor });
     } catch (error) {
       console.error('Error al guardar el sueldo:', error);
-      alert('No se pudo guardar el sueldo de la operación.');
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoTotal: previo } : o));
+      setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldo: previo, importe: previo, sueldoTotal: previo } : o));
+      alert('No se pudo guardar el sueldo de la operación. Se revirtió el cambio.');
     } finally {
       setGuardandoSueldo(false);
+    }
+  };
+
+  // ✅ NUEVO: refresco MANUAL. Vuelve a leer las operaciones completadas de
+  //   Firestore y recalcula todos los totales (por si algún monto se ve
+  //   desfasado). El botón vive junto a "Configurar Columnas".
+  const [refrescandoOps, setRefrescandoOps] = useState(false);
+  const refrescarOperacionesNomina = async () => {
+    if (refrescandoOps) return;
+    setRefrescandoOps(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'operaciones'), where('status', 'in', STATUS_COMPLETADOS_NOMINA)));
+      const ops = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      ops.sort((a: any, b: any) => (parsearFechaSegura(b.fechaServicio || b.createdAt)?.getTime() || 0) - (parsearFechaSegura(a.fechaServicio || a.createdAt)?.getTime() || 0));
+      setOperacionesGlobales(ops);
+    } catch (e) {
+      console.error('[Nómina] Error al refrescar operaciones:', e);
+      alert('No se pudieron refrescar las operaciones.');
+    } finally {
+      setRefrescandoOps(false);
     }
   };
 
@@ -1776,6 +1814,9 @@ export const ReferenciasNominaDashboard = () => {
                 {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}
               </span>
               <div style={{ display: 'flex', gap: '10px' }}>
+                <button onClick={refrescarOperacionesNomina} disabled={refrescandoOps} style={{ ...btnDirStyle, opacity: refrescandoOps ? 0.6 : 1, cursor: refrescandoOps ? 'wait' : 'pointer' }} title="Volver a leer las operaciones de la base y recalcular todos los totales">
+                  {refrescandoOps ? '⏳ Actualizando…' : '↻ Actualizar'}
+                </button>
                 <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
                 <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                   style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
