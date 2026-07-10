@@ -19,6 +19,9 @@ import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
+// ✅ IDs de status "completada" en el catálogo (los mismos que usa Facturación
+//   de Clientes para su universo de operaciones facturables).
+const STATUS_COMPLETADOS_NOMINA = ['f557b751', 'c2d57403'];
 
 const COLUMNAS_OPS_NOMINA_BASE = [
   { id: 'ref',           label: 'Ref. Operación', visible: true, orden: true },
@@ -519,8 +522,6 @@ export const ReferenciasNominaDashboard = () => {
     return unicos.filter(o => o.nombre.toLowerCase().includes(q)).slice(0, 30);
   }, [operadoresList, textoBuscarOperador]);
 
-  const filtrosCompletos = !!filtroOperador;
-
   const dentroRangoFecha = (opFecha: any) => {
     if (!fechaInicio && !fechaFin) return true;
     const f = fechaISO(opFecha);
@@ -530,19 +531,43 @@ export const ReferenciasNominaDashboard = () => {
     return true;
   };
 
+  // ✅ Solo operaciones COMPLETADAS entran al universo de nómina (mismos IDs de
+  //   status que usa Facturación de Clientes), con respaldo por nombre.
+  const esCompletada = (op: any) => {
+    const st = String(op.status || '').trim();
+    if (STATUS_COMPLETADOS_NOMINA.includes(st)) return true;
+    const nombre = `${op.statusNombre || ''} ${op.statusServicio || ''}`.toLowerCase();
+    return nombre.includes('complet');
+  };
+
   const operacionesBaseFiltro = useMemo(() => {
-    if (!filtrosCompletos) return [];
+    // ✅ DE INICIO (sin operador seleccionado) se muestran TODAS las operaciones
+    //   completadas de TODOS los operadores; el rango de fechas sigue siendo
+    //   opcional. Al elegir un operador, se acota a las suyas.
     return operacionesGlobales.filter(op => {
-      const opOperador = getNombreOperador(op.operadorNombre || op.operadorId || op.operador || '');
+      if (!esCompletada(op)) return false;
       const opFecha = op.fechaServicio || op.fecha || '';
-      const matchOperador = opOperador === filtroOperador;
-      return matchOperador && dentroRangoFecha(opFecha);
+      if (!dentroRangoFecha(opFecha)) return false;
+      if (!filtroOperador) return true;
+      const opOperador = getNombreOperador(op.operadorNombre || op.operadorId || op.operador || '');
+      return opOperador === filtroOperador;
     });
-  }, [operacionesGlobales, filtroOperador, fechaInicio, fechaFin, filtrosCompletos, operadoresList]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesGlobales, filtroOperador, fechaInicio, fechaFin, operadoresList]);
+
+  // ✅ Operaciones que YA aparecen en algún registro del HISTORIAL de nóminas.
+  //   Se arma desde nominasGlobales para cubrir también las nóminas migradas,
+  //   cuyas operaciones no traen referenciaNominaId estampado.
+  const opsEnNominaIds = useMemo(() => {
+    const s = new Set<string>();
+    (nominasGlobales || []).forEach((n: any) => parsearIdsNomina(n.operacionesIds).forEach((id: string) => s.add(String(id))));
+    return s;
+  }, [nominasGlobales]);
 
   // ✅ NUEVO: una operación cuenta como "asignada/no disponible" si ya está en una
-  //   nómina (referenciaNominaId) O si ya está dentro de una factura de cliente.
-  const esAsignada = (op: any) => !!op.referenciaNominaId;
+  //   nómina (referenciaNominaId O aparece en el historial) O si ya está dentro de
+  //   una factura de cliente.
+  const esAsignada = (op: any) => !!op.referenciaNominaId || opsEnNominaIds.has(String(op.id));
   const esFacturada = (op: any) => opsFacturadasIds.has(op.id);
   // "Pendiente" para nómina = NO está en nómina y NO está facturada.
   const esPendienteNomina = (op: any) => !esAsignada(op) && !esFacturada(op);
@@ -552,7 +577,7 @@ export const ReferenciasNominaDashboard = () => {
     const asignadas = operacionesBaseFiltro.filter(esAsignada).length;
     return { pendientes, asignadas };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesBaseFiltro, opsFacturadasIds]);
+  }, [operacionesBaseFiltro, opsFacturadasIds, opsEnNominaIds]);
 
   const valorOrdenOp = (op: any, campo: string): string | number => {
     switch (campo) {
@@ -568,9 +593,8 @@ export const ReferenciasNominaDashboard = () => {
   };
 
   const operacionesMostradas = useMemo(() => {
-    if (!filtrosCompletos) return [];
-    // ✅ MODIFICADO: "pendientes" ahora excluye también las operaciones ya
-    //   facturadas (esPendienteNomina = no en nómina y no en factura).
+    // ✅ MODIFICADO: ya no exige operador; "pendientes" excluye las operaciones
+    //   que están en el historial de nóminas y las ya facturadas.
     const lista = operacionesBaseFiltro.filter(op =>
       filtroEstadoOps === 'asignadas' ? esAsignada(op) : esPendienteNomina(op)
     );
@@ -582,7 +606,7 @@ export const ReferenciasNominaDashboard = () => {
       return String(va).localeCompare(String(vb)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesBaseFiltro, filtrosCompletos, filtroEstadoOps, ordenOps, opsFacturadasIds]);
+  }, [operacionesBaseFiltro, filtroEstadoOps, ordenOps, opsFacturadasIds, opsEnNominaIds]);
 
   const toggleOrdenOps = (campo: string) =>
     setOrdenOps(prev => prev.campo === campo ? { campo, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { campo, dir: 'asc' });
@@ -1609,7 +1633,7 @@ export const ReferenciasNominaDashboard = () => {
             </button>
           </div>
 
-          {filtrosCompletos && (
+          {true && (
             <>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -1687,7 +1711,7 @@ export const ReferenciasNominaDashboard = () => {
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>
-                    {filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
+                    {filtroEstadoOps === 'pendientes' && !!filtroOperador && operacionesMostradas.length > 0 && (
                       <input type="checkbox" checked={todasMostradasSeleccionadas} onChange={toggleSeleccionarTodo} title="Seleccionar todo" style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
                     )}
                   </th>
@@ -1701,23 +1725,27 @@ export const ReferenciasNominaDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {!filtrosCompletos ? (
-                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona un operador para ver sus operaciones (las fechas son opcionales).</td></tr>
-                ) : operacionesMostradas.length === 0 ? (
+                {operacionesMostradas.length === 0 ? (
                   <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
-                    {filtroEstadoOps === 'pendientes' ? 'No hay operaciones pendientes para este operador.' : 'No hay operaciones asignadas a nómina para este operador.'}
+                    {filtroEstadoOps === 'pendientes'
+                      ? (filtroOperador ? 'No hay operaciones completadas pendientes de nómina para este operador.' : 'No hay operaciones completadas pendientes de nómina.')
+                      : (filtroOperador ? 'No hay operaciones asignadas a nómina para este operador.' : 'No hay operaciones asignadas a nómina.')}
                   </td></tr>
                 ) : (
                   operacionesMostradas.map(op => {
-                    const seleccionable = filtroEstadoOps === 'pendientes';
+                    // ✅ Para SELECCIONAR (y generar la nómina) sí se requiere haber
+                    //   elegido un operador; sin operador la tabla es de consulta.
+                    const seleccionable = filtroEstadoOps === 'pendientes' && !!filtroOperador;
                     return (
                       <tr key={op.id} onClick={() => seleccionable && toggleSeleccion(op.id)}
                         style={{ cursor: seleccionable ? 'pointer' : 'default', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
                         <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                           {seleccionable ? (
                             <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
-                          ) : (
+                          ) : filtroEstadoOps === 'asignadas' ? (
                             <span title={op.referenciaNominaConsecutivo || 'Asignada'} style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                          ) : (
+                            <span title="Selecciona un operador para poder marcarla" style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#30363d' }} />
                           )}
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id))}
