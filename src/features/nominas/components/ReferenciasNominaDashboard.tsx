@@ -7,6 +7,7 @@ import {
   writeBatch, 
   updateDoc,
   setDoc,
+  getDoc,
   doc, 
   getDocs,
   where,
@@ -17,6 +18,8 @@ import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
+// ✅ Para abrir el DETALLE editable de una operación desde la nómina.
+import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
@@ -174,6 +177,112 @@ export const ReferenciasNominaDashboard = () => {
 
   const aNum = (v: any) => Number(v) || 0;
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ SEMÁNTICA DE SUELDOS (regla del negocio):
+  //   `sueldoOperador` = SUELDO BASE de la operación.
+  //   `sueldoExtra`    = extra de la operación.
+  //   `sueldoTotal`    = base + extra (se mantiene sincronizado al editar).
+  //   Legado: el editor anterior guardaba la BASE en `sueldoTotal`, por eso si
+  //   una operación no trae `sueldoOperador`, la base se toma de `sueldoTotal`.
+  //   Los editores de esta vista escriben SIEMPRE los tres campos coherentes.
+  // ═══════════════════════════════════════════════════════════════════════
+  const sueldoBaseDeOp = (op: any): number => {
+    if (!op) return 0;
+    if (op.sueldoOperador != null && op.sueldoOperador !== '') return aNum(op.sueldoOperador);
+    return aNum(op.sueldoTotal);
+  };
+  const sueldoTotalDeOp = (op: any): number => sueldoBaseDeOp(op) + aNum(op?.sueldoExtra);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ (Detalle de operación desde nómina) Estados y utilidades:
+  //   - opDetalle: operación abierta en el FormularioOperacion (editable).
+  //   - catalogosFormulario: catálogos que el formulario necesita; se cargan
+  //     UNA sola vez, bajo demanda, la primera vez que se abre un detalle.
+  // ═══════════════════════════════════════════════════════════════════════
+  const [opDetalle, setOpDetalle] = useState<any | null>(null);
+  const [catalogosFormulario, setCatalogosFormulario] = useState<any | null>(null);
+  const [cargandoDetalleOp, setCargandoDetalleOp] = useState(false);
+
+  const cargarCatalogosFormulario = async (): Promise<any> => {
+    if (catalogosFormulario) return catalogosFormulario;
+    const ALIAS: Record<string, string> = {
+      empresas: 'empresas', tiposOperacion: 'catalogo_tipo_operacion', embalajes: 'catalogo_embalaje',
+      remolques: 'remolques', tarifas: 'catalogo_tarifas_referencia', conveniosProv: 'convenios_proveedores',
+      catalogoConvProvDetalles: 'convenios_proveedores_detalles', catalogoTC: 'tipo_cambio',
+      catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
+      unidades: 'unidades', empleados: 'empleados', statusServicio: 'catalogo_status_servicio',
+      unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad', catalogoMoneda: 'catalogo_moneda',
+    };
+    const resultado: any = {};
+    await Promise.all(Object.entries(ALIAS).map(async ([alias, col]) => {
+      try {
+        const snap = await getDocs(collection(db, col));
+        resultado[alias] = snap.docs.map(d => ({ id: d.id, ...(d.data() as any) }));
+      } catch { resultado[alias] = []; }
+    }));
+    setCatalogosFormulario(resultado);
+    return resultado;
+  };
+
+  // Relee UNA operación de Firestore y sincroniza sueldos en memoria
+  // (tabla de asignación, tarjetas, modal de nómina y ficha).
+  const refrescarOpEnMemoria = async (opId: string) => {
+    if (!opId) return;
+    try {
+      const snap = await getDoc(doc(db, 'operaciones', opId));
+      if (!snap.exists()) return;
+      const v: any = snap.data();
+      const base = (v.sueldoOperador != null && v.sueldoOperador !== '') ? aNum(v.sueldoOperador) : aNum(v.sueldoTotal);
+      const extra = aNum(v.sueldoExtra);
+      const parche = { ...v, sueldoOperador: base, sueldoExtra: extra, sueldoTotal: base + extra };
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, ...parche } : o));
+      setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, ...parche, sueldo: base, importe: base } : o));
+    } catch (e) { console.warn('[Nómina] No se pudo refrescar la operación:', e); }
+  };
+
+  // ✅ Abre el DETALLE de la operación (FormularioOperacion) al oprimir la referencia.
+  const abrirDetalleOperacion = async (opId: string) => {
+    if (!opId || cargandoDetalleOp) return;
+    setCargandoDetalleOp(true);
+    try {
+      await cargarCatalogosFormulario();
+      const snap = await getDoc(doc(db, 'operaciones', opId));
+      if (!snap.exists()) { alert('No se encontró la operación en la base de datos.'); return; }
+      setOpDetalle({ id: snap.id, ...(snap.data() as any) });
+    } catch (e) {
+      console.error('[Nómina] Error abriendo el detalle de la operación:', e);
+      alert('No se pudo abrir el detalle de la operación.');
+    } finally {
+      setCargandoDetalleOp(false);
+    }
+  };
+
+  // ✅ Al abrir una nómina (edición o ficha), se SOBREPONEN los sueldos EN VIVO
+  //   de la colección `operaciones` sobre el resumen guardado: así los extras
+  //   agregados desde el detalle de operaciones aparecen siempre actualizados.
+  const overlaySueldosEnVivo = async (ops: any[]): Promise<any[]> => {
+    const ids = (ops || []).map(o => String(o.id)).filter(Boolean);
+    if (ids.length === 0) return ops;
+    const vivos = new Map<string, any>();
+    try {
+      for (let i = 0; i < ids.length; i += 30) {
+        const chunk = ids.slice(i, i + 30);
+        const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
+        snap.docs.forEach(d => vivos.set(d.id, d.data()));
+      }
+    } catch (e) {
+      console.warn('[Nómina] No se pudieron leer los sueldos en vivo; se usa el resumen guardado:', e);
+      return ops;
+    }
+    return ops.map(o => {
+      const v: any = vivos.get(String(o.id));
+      if (!v) return o;
+      const base = (v.sueldoOperador != null && v.sueldoOperador !== '') ? aNum(v.sueldoOperador) : aNum(v.sueldoTotal);
+      const extra = aNum(v.sueldoExtra);
+      return { ...o, sueldo: base, importe: base, sueldoOperador: base, sueldoExtra: extra, sueldoTotal: base + extra };
+    });
+  };
+
   // ✅ (ISR = 7.5%) El ISR es un PORCENTAJE (7.5 = 7.5%) y el monto retenido es
   //   (Subtotal + Extras) x 7.5%. Normaliza representaciones heredadas:
   //   0.075 (factor) -> 7.5 ; 75 (dato migrado de AppSheet) -> 7.5 ; 7.5 -> 7.5.
@@ -258,10 +367,11 @@ export const ReferenciasNominaDashboard = () => {
     const stored = aNum(n.totalAPagar);
     if (stored > 0) return stored;
     const subRef = aNum(n.subtotalPagar) > 0 ? aNum(n.subtotalPagar) : Math.max(aNum(n.subtotalAPagar) - aNum(n.extras), 0);
-    const subAPagar = aNum(n.subtotalAPagar) > 0 ? aNum(n.subtotalAPagar) : (subRef + aNum(n.extras));
+    // ✅ FÓRMULA NUEVA: Subtotal a Pagar = Referencias + Extras + Depósito de Gastos + Otros Depósitos.
+    const subAPagar = subRef + aNum(n.extras) + aNum(n.depositoGastos) + aNum(n.otrosDepositos);
     const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot) + aNum(n.pagoPrestamo) + aNum(n.ahorro));
-    const neto = aNum(n.total) > 0 ? aNum(n.total) : (subAPagar - totalDed);
-    return neto + aNum(n.depositoGastos) + aNum(n.otrosDepositos);
+    // Gastos y depósitos ya vienen dentro del subtotal: el total es el neto.
+    return subAPagar - totalDed;
   };
 
   const ordenarOpsRecientes = (arr: any[]) =>
@@ -279,9 +389,8 @@ export const ReferenciasNominaDashboard = () => {
   };
 
   const mapearOpDetalle = (op: any) => {
-    const sueldoTotal = (op.sueldoTotal != null && op.sueldoTotal !== '')
-      ? aNum(op.sueldoTotal)
-      : aNum(op.sueldoOperador);
+    // ✅ La BASE viene de sueldoOperador (con respaldo legado en sueldoTotal).
+    const sueldoBaseOp = sueldoBaseDeOp(op);
     return {
       id: op.id,
       ref: op.ref || op.id?.substring(0, 6),
@@ -290,9 +399,9 @@ export const ReferenciasNominaDashboard = () => {
       cliente: getNombreEmpresa(op.clientePaga) || op.clienteNombre || op.clientePagaNombre || op.nombreCliente || '',
       convenio: sinMontoConvenio(getNombreConvenio(op.convenioId || op.convenio) || op.convenioNombre || (typeof op.convenio === 'string' ? op.convenio : '') || '-'),
       tipoServicio: sinMontoConvenio(op.tarifaLabel || op.tarifarioLabel || op.convenioNombre || op.tipoOperacionNombre || op.tipoServicio || '-'),
-      sueldo: sueldoTotal,
+      sueldo: sueldoBaseOp,
       sueldoExtra: Number(op.sueldoExtra || 0),
-      importe: sueldoTotal,
+      importe: sueldoBaseOp,
     };
   };
 
@@ -332,13 +441,18 @@ export const ReferenciasNominaDashboard = () => {
 
   const reconstruirTotales = (n: any, ops?: any[]) => {
     if (!n) return { subRef: 0, subAPagar: 0, totalDed: 0, neto: 0, totalAPagar: 0 };
+    // ✅ Subtotal a Referencias = Σ (sueldo BASE + sueldo EXTRA) de cada operación.
     const subRef = (ops && ops.length > 0)
-      ? ops.reduce((s: number, o: any) => s + aNum(o.importe ?? o.sueldo ?? o.sueldoTotal), 0)
+      ? ops.reduce((s: number, o: any) => s + aNum(o.importe ?? o.sueldo ?? o.sueldoTotal) + aNum(o.sueldoExtra), 0)
       : (aNum(n.subtotalPagar) > 0 ? aNum(n.subtotalPagar) : Math.max(aNum(n.subtotalAPagar) - aNum(n.extras), 0));
-    const subAPagar = aNum(n.subtotalAPagar) > 0 ? aNum(n.subtotalAPagar) : (subRef + aNum(n.extras));
+    // ✅ FÓRMULA NUEVA (se recalcula SIEMPRE, también para nóminas guardadas con
+    //   el esquema anterior): Subtotal a Pagar = Referencias + Extras + Depósito
+    //   de Gastos + Otros Depósitos. El "Total Bruto" del recibo sale de aquí.
+    const subAPagar = subRef + aNum(n.extras) + aNum(n.depositoGastos) + aNum(n.otrosDepositos);
     const totalDed = aNum(n.totalDeducciones) > 0 ? aNum(n.totalDeducciones) : (aNum(n.imss) + aNum(n.isrMonto) + aNum(n.infonavit) + aNum(n.fonacot) + aNum(n.pagoPrestamo) + aNum(n.ahorro));
-    const neto = aNum(n.total) > 0 ? aNum(n.total) : (subAPagar - totalDed);
-    const totalAPagar = aNum(n.totalAPagar) > 0 ? aNum(n.totalAPagar) : (neto + aNum(n.depositoGastos) + aNum(n.otrosDepositos));
+    // Gastos/depósitos ya vienen dentro del subtotal: el neto ES el total a pagar.
+    const neto = subAPagar - totalDed;
+    const totalAPagar = aNum(n.totalAPagar) > 0 ? aNum(n.totalAPagar) : neto;
     return { subRef, subAPagar, totalDed, neto, totalAPagar };
   };
 
@@ -664,9 +778,9 @@ export const ReferenciasNominaDashboard = () => {
       case 'destino': return resolverLugar(op, 'destino').toLowerCase();
       case 'remolque': return remolqueDeOp(op).toLowerCase();
       case 'convenio': return convenioDeOp(op).toLowerCase();
-      case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
+      case 'sueldo': return sueldoBaseDeOp(op);
       case 'sueldoExtra': return Number(op.sueldoExtra || 0);
-      case 'sueldoTotal': return Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0);
+      case 'sueldoTotal': return sueldoTotalDeOp(op);
       default: return '';
     }
   };
@@ -700,9 +814,9 @@ export const ReferenciasNominaDashboard = () => {
       case 'destino': return resolverLugar(op, 'destino');
       case 'remolque': return remolqueDeOp(op);
       case 'convenio': return convenioDeOp(op);
-      case 'sueldo': return Number(op.sueldoTotal || op.sueldoOperador || 0);
+      case 'sueldo': return sueldoBaseDeOp(op);
       case 'sueldoExtra': return Number(op.sueldoExtra || 0);
-      case 'sueldoTotal': return Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0);
+      case 'sueldoTotal': return sueldoTotalDeOp(op);
       default: return '-';
     }
   };
@@ -710,14 +824,15 @@ export const ReferenciasNominaDashboard = () => {
   const renderCeldaOps = (op: any, key: string) => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
-      case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.ref || op.id.substring(0, 6)}</td>;
+      case 'ref': return <td key={key} onClick={(e) => { e.stopPropagation(); abrirDetalleOperacion(op.id); }} title="Abrir el detalle de la operación para editar"
+        style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline' }}>{op.ref || op.id.substring(0, 6)}</td>;
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
       case 'operador': return <td key={key} style={tdBase}>{getNombreOperador(op.operadorNombre || op.operadorId || op.operador)}</td>;
       case 'origen': return <td key={key} style={tdBase}>{resolverLugar(op, 'origen')}</td>;
       case 'destino': return <td key={key} style={tdBase}>{resolverLugar(op, 'destino')}</td>;
       case 'remolque': return <td key={key} style={{ padding: '16px', color: '#c9d1d9', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{remolqueDeOp(op)}</td>;
       case 'convenio': return <td key={key} style={tdBase}>{convenioDeOp(op)}</td>;
-      case 'sueldo': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(op.sueldoTotal || op.sueldoOperador)}</td>;
+      case 'sueldo': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(sueldoBaseDeOp(op))}</td>;
       case 'sueldoExtra': {
         const tieneExtra = Number(op.sueldoExtra || 0) > 0;
         return (
@@ -734,8 +849,7 @@ export const ReferenciasNominaDashboard = () => {
         );
       }
       case 'sueldoTotal': {
-        const totalOp = Number(op.sueldoTotal || op.sueldoOperador || 0) + Number(op.sueldoExtra || 0);
-        return <td key={key} style={{ padding: '16px', color: '#f0f6fc', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(totalOp)}</td>;
+        return <td key={key} style={{ padding: '16px', color: '#f0f6fc', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(sueldoTotalDeOp(op))}</td>;
       }
       default: return <td key={key} style={tdBase}>-</td>;
     }
@@ -807,7 +921,29 @@ export const ReferenciasNominaDashboard = () => {
   const [editandoExtra, setEditandoExtra] = useState<{ id: string; ref: string; valor: number | '' } | null>(null);
   const [guardandoExtra, setGuardandoExtra] = useState(false);
 
-  // ✅ NUEVO: edición rápida del SUELDO BASE por operación (campo sueldoTotal en operaciones).
+  // ✅ ELIMINAR el sueldo extra de una operación (lo deja en $0 y sincroniza
+  //   base/total en Firestore). Los totales se actualizan al instante.
+  const quitarExtraOperacion = async (e: React.MouseEvent, opId: string) => {
+    e.stopPropagation();
+    if (!opId) return;
+    if (!window.confirm('¿Eliminar el sueldo extra de esta operación?')) return;
+    const opActual = operacionesGlobales.find(o => o.id === opId) || opsFicha.find(o => o.id === opId) || null;
+    const base = sueldoBaseDeOp(opActual);
+    const previoExtra = Number(opActual?.sueldoExtra || 0);
+    const previoTotal = Number(opActual?.sueldoTotal ?? base + previoExtra);
+    setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: 0, sueldoOperador: base, sueldoTotal: base } : o));
+    setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: 0, sueldoOperador: base, sueldoTotal: base } : o));
+    try {
+      await updateDoc(doc(db, 'operaciones', opId), { sueldoExtra: 0, sueldoOperador: base, sueldoTotal: base });
+    } catch (error) {
+      console.error('Error al eliminar el sueldo extra:', error);
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previoExtra, sueldoTotal: previoTotal } : o));
+      setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previoExtra, sueldoTotal: previoTotal } : o));
+      alert('No se pudo eliminar el sueldo extra. Se revirtió el cambio.');
+    }
+  };
+
+  // ✅ Edición rápida del SUELDO BASE por operación (campo sueldoOperador; sueldoTotal se sincroniza).
   const [editandoSueldo, setEditandoSueldo] = useState<{ id: string; ref: string; valor: number | '' } | null>(null);
   const [guardandoSueldo, setGuardandoSueldo] = useState(false);
 
@@ -824,19 +960,24 @@ export const ReferenciasNominaDashboard = () => {
     if (!editandoExtra) return;
     const opId = editandoExtra.id;
     const nuevoValor = Number(editandoExtra.valor) || 0;
-    const previo = Number(operacionesGlobales.find(o => o.id === opId)?.sueldoExtra || 0);
-    // ✅ OPTIMISTA: la tabla y la tarjeta de SUELDO EXTRA se actualizan AL
-    //   INSTANTE (sin esperar a Firestore); si el guardado falla, se revierte.
-    setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: nuevoValor } : o));
-    setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: nuevoValor } : o));
+    const opActual = operacionesGlobales.find(o => o.id === opId) || opsFicha.find(o => o.id === opId) || null;
+    const base = sueldoBaseDeOp(opActual);
+    const previoExtra = Number(opActual?.sueldoExtra || 0);
+    const previoTotal = Number(opActual?.sueldoTotal ?? base);
+    const totalNuevo = base + nuevoValor;
+    // ✅ OPTIMISTA: la tabla y las tarjetas se actualizan AL INSTANTE; en
+    //   Firestore se sincronizan los TRES campos (base, extra y total) para que
+    //   toda la app vea el total correcto. Si falla, se revierte.
+    setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: nuevoValor, sueldoOperador: base, sueldoTotal: totalNuevo } : o));
+    setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: nuevoValor, sueldoOperador: base, sueldoTotal: totalNuevo } : o));
     setEditandoExtra(null);
     setGuardandoExtra(true);
     try {
-      await updateDoc(doc(db, 'operaciones', opId), { sueldoExtra: nuevoValor });
+      await updateDoc(doc(db, 'operaciones', opId), { sueldoExtra: nuevoValor, sueldoOperador: base, sueldoTotal: totalNuevo });
     } catch (error) {
       console.error('Error al guardar el sueldo extra:', error);
-      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previo } : o));
-      setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previo } : o));
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previoExtra, sueldoTotal: previoTotal } : o));
+      setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldoExtra: previoExtra, sueldoTotal: previoTotal } : o));
       alert('No se pudo guardar el sueldo extra de la operación. Se revirtió el cambio.');
     } finally {
       setGuardandoExtra(false);
@@ -850,7 +991,7 @@ export const ReferenciasNominaDashboard = () => {
       ? Number(op.sueldo)
       : (op.importe != null && op.importe !== '')
         ? Number(op.importe)
-        : Number(op.sueldoTotal ?? op.sueldoOperador ?? 0);
+        : sueldoBaseDeOp(op);
     setEditandoSueldo({
       id: op.id,
       ref: op.ref || op.id.substring(0, 6),
@@ -860,23 +1001,28 @@ export const ReferenciasNominaDashboard = () => {
 
   // ✅ NUEVO: guarda el SUELDO BASE en la operación (campo sueldoTotal) y refresca
   //   la Ficha y la tabla de asignación en vivo (incluye el recálculo de subtotales).
+  // ✅ Guarda el SUELDO BASE en `sueldoOperador` y sincroniza `sueldoTotal`
+  //   (= base + extra) para que toda la app vea los montos correctos.
   const guardarSueldoOperacion = async () => {
     if (!editandoSueldo) return;
     const opId = editandoSueldo.id;
     const nuevoValor = Number(editandoSueldo.valor) || 0;
-    const previo = Number(operacionesGlobales.find(o => o.id === opId)?.sueldoTotal || 0);
-    // ✅ OPTIMISTA: tabla y tarjeta de SUELDO BASE se actualizan al instante;
-    //   si el guardado falla, se revierte.
-    setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoTotal: nuevoValor } : o));
-    setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldo: nuevoValor, importe: nuevoValor, sueldoTotal: nuevoValor } : o));
+    const opActual = operacionesGlobales.find(o => o.id === opId) || opsFicha.find(o => o.id === opId) || null;
+    const extraActual = Number(opActual?.sueldoExtra || 0);
+    const previoBase = sueldoBaseDeOp(opActual);
+    const previoTotal = Number(opActual?.sueldoTotal ?? previoBase);
+    const totalNuevo = nuevoValor + extraActual;
+    // ✅ OPTIMISTA: se refleja al instante; si falla, se revierte.
+    setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoOperador: nuevoValor, sueldoTotal: totalNuevo } : o));
+    setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldo: nuevoValor, importe: nuevoValor, sueldoOperador: nuevoValor, sueldoTotal: totalNuevo } : o));
     setEditandoSueldo(null);
     setGuardandoSueldo(true);
     try {
-      await updateDoc(doc(db, 'operaciones', opId), { sueldoTotal: nuevoValor });
+      await updateDoc(doc(db, 'operaciones', opId), { sueldoOperador: nuevoValor, sueldoTotal: totalNuevo });
     } catch (error) {
       console.error('Error al guardar el sueldo:', error);
-      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoTotal: previo } : o));
-      setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldo: previo, importe: previo, sueldoTotal: previo } : o));
+      setOperacionesGlobales(prev => prev.map(o => o.id === opId ? { ...o, sueldoOperador: previoBase, sueldoTotal: previoTotal } : o));
+      setOpsFicha(prev => prev.map(o => o.id === opId ? { ...o, sueldo: previoBase, importe: previoBase, sueldoOperador: previoBase, sueldoTotal: previoTotal } : o));
       alert('No se pudo guardar el sueldo de la operación. Se revirtió el cambio.');
     } finally {
       setGuardandoSueldo(false);
@@ -911,7 +1057,7 @@ export const ReferenciasNominaDashboard = () => {
     seleccionadas.forEach(id => {
       const op = operacionesGlobales.find(o => o.id === id);
       if (op) {
-        const base = Number(op.sueldoTotal || op.sueldoOperador || 0);
+        const base = sueldoBaseDeOp(op);
         subtotal += base + Number(op.sueldoExtra || 0);
         subtotalBase += base;
         subtotalExtra += Number(op.sueldoExtra || 0);
@@ -930,7 +1076,7 @@ export const ReferenciasNominaDashboard = () => {
       .map(id => {
         const op = operacionesGlobales.find(o => o.id === id);
         if (!op) return null;
-        const base = Number(op.sueldoTotal || op.sueldoOperador || 0);
+        const base = sueldoBaseDeOp(op);
         const extra = Number(op.sueldoExtra || 0);
         return {
           id,
@@ -993,10 +1139,15 @@ export const ReferenciasNominaDashboard = () => {
     ? Number(nominaEditando.ahorroAcumuladoPrevio) : dAhorroAcumulado;
 
   const subtotalReferencias     = resumenSeleccion.subtotal;
-  const subtotalAPagarCalc      = subtotalReferencias + (Number(extras) || 0);
+  // ✅ NUEVA FÓRMULA:
+  //   Subtotal a Pagar = Subtotal a Referencias + Extras + Depósito de Gastos + Otros Depósitos.
+  //   El ISR se sigue calculando SOLO sobre (Referencias + Extras), igual que en
+  //   AppSheet, para no retener impuesto sobre gastos/depósitos reembolsados.
+  const baseISRCalc             = subtotalReferencias + (Number(extras) || 0);
+  const subtotalAPagarCalc      = baseISRCalc + (Number(depositoGastos) || 0) + (Number(otrosDepositos) || 0);
   const diferenciaAplicableCalc = subtotalAPagarCalc - nominaFiscalEfectiva;
-  // ✅ ISR TOTAL = (Subtotal + Extras) x ISR% (7.5% -> x 0.075).
-  const isrMontoCalc            = subtotalAPagarCalc * ((Number(isr) || 0) / 100);
+  // ✅ ISR TOTAL = (Referencias + Extras) x ISR% (7.5% -> x 0.075).
+  const isrMontoCalc            = baseISRCalc * ((Number(isr) || 0) / 100);
   const prestamoAcumuladoTotal  = prestamoBaseCalc + (Number(prestamoNuevo) || 0);
   const saldoPrestamoCalc       = prestamoAcumuladoTotal - (Number(pagoPrestamo) || 0);
   // ✅ TOTAL DEDUCCIONES = Infonavit + Fonacot + IMSS + ISR TOTAL + Pago Préstamo + Ahorro
@@ -1006,7 +1157,9 @@ export const ReferenciasNominaDashboard = () => {
   // ✅ NUEVO: ahorro con la misma lógica que el préstamo.
   const ahorroAcumuladoTotal    = ahorroBaseCalc + (Number(ahorroNuevo) || 0);
   const saldoAhorroCalc         = ahorroAcumuladoTotal - (Number(pagoAhorro) || 0);
-  const totalAPagarCalc         = totalNetoCalc + (Number(depositoGastos) || 0) + (Number(otrosDepositos) || 0);
+  // ✅ Gastos y otros depósitos YA vienen dentro del Subtotal a Pagar, por lo que
+  //   el Total a Pagar es simplemente el neto (no se vuelven a sumar).
+  const totalAPagarCalc         = totalNetoCalc;
 
   const abrirModalNomina = () => {
     setModoEdicion(false);
@@ -1038,7 +1191,10 @@ export const ReferenciasNominaDashboard = () => {
       setTextoBuscarOperador('');
       setMostrarSugerenciasOperador(false);
 
-      const opsCargadas = await cargarOperacionesDeNomina(nom);
+      const opsCargadas0 = await cargarOperacionesDeNomina(nom);
+      // ✅ Se sobreponen los sueldos EN VIVO (base/extra/total) de `operaciones`
+      //   para que los extras agregados desde otras vistas aparezcan aquí.
+      const opsCargadas = await overlaySueldosEnVivo(opsCargadas0);
       // Normalizamos para que los subtotales (que leen sueldoTotal/sueldoOperador) funcionen.
       const opsNorm = opsCargadas.map((o: any) => ({
         ...o,
@@ -1109,7 +1265,7 @@ export const ReferenciasNominaDashboard = () => {
 
       const operacionesResumenEstable = seleccionadas.map(id => {
         const op = operacionesGlobales.find(o => o.id === id);
-        const base = Number(op?.sueldoTotal || op?.sueldoOperador || 0);
+        const base = sueldoBaseDeOp(op);
         const extraOp = Number(op?.sueldoExtra || 0);
         return {
           id,
@@ -1474,7 +1630,8 @@ export const ReferenciasNominaDashboard = () => {
     (async () => {
       setCargandoOpsFicha(true);
       try {
-        const ops = await cargarOperacionesDeNomina(nominaViendo);
+        const ops0 = await cargarOperacionesDeNomina(nominaViendo);
+        const ops = await overlaySueldosEnVivo(ops0);
         if (!cancelado) setOpsFicha(ops);
       } catch (e) {
         console.error('[Nómina] Error al cargar operaciones de la ficha:', e);
@@ -2175,6 +2332,22 @@ export const ReferenciasNominaDashboard = () => {
       )}
 
       {/* MODAL CONFIGURAR COLUMNAS */}
+      {/* ✅ DETALLE editable de la operación (se abre al oprimir la referencia).
+          El contenedor con z-index alto lo pone POR ENCIMA del modal de nómina. */}
+      {opDetalle && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 3000 }}>
+          <FormularioOperacion
+            estado="abierto"
+            initialData={opDetalle}
+            catalogosCacheados={catalogosFormulario || {}}
+            onClose={() => { const id = String(opDetalle?.id || ''); setOpDetalle(null); if (id) refrescarOpEnMemoria(id); }}
+            onMinimize={() => {}}
+            onRestore={() => {}}
+            onSave={(opNueva: any) => { refrescarOpEnMemoria(String(opNueva?.id || opDetalle?.id || '')); }}
+          />
+        </div>
+      )}
+
       {modalColumnasOps && (
         <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
@@ -2330,6 +2503,8 @@ export const ReferenciasNominaDashboard = () => {
                   <div style={gridTres}>
                     {campoTotal('Subtotal a Referencias', subtotalReferencias, '#58a6ff')}
                     {campoNumerico('Extra', extras, setExtras)}
+                    {campoNumerico('Depósito de Gastos', depositoGastos, setDepositoGastos)}
+                    {campoNumerico('Otros Depósitos', otrosDepositos, setOtrosDepositos)}
                     {campoTotal('Subtotal a Pagar', subtotalAPagarCalc, '#3fb950')}
                     {campoTotal('Diferencia Aplicable', diferenciaAplicableCalc, '#58a6ff')}
                   </div>
@@ -2355,10 +2530,32 @@ export const ReferenciasNominaDashboard = () => {
                           ) : (
                             detalleSeleccionadas.map(d => (
                               <tr key={d.id} style={{ borderTop: '1px solid #21262d' }}>
-                                <td style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{d.ref}</td>
+                                <td onClick={() => abrirDetalleOperacion(d.id)} title="Abrir el detalle de la operación para editar"
+                                  style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline' }}>{d.ref}</td>
                                 <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{d.fecha ? formatearFechaSpanish(d.fecha) : '-'}</td>
-                                <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' }}>{formatoMoneda(d.sueldo)}</td>
-                                <td style={{ padding: '10px 12px', color: '#f59e0b', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' }}>{formatoMoneda(d.extra)}</td>
+                                <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                  <button type="button" onClick={(e) => abrirEditorSueldo(e, { id: d.id, ref: d.ref, sueldo: d.sueldo })} title="Editar sueldo base de esta operación"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', backgroundColor: 'rgba(63,185,80,0.12)', border: '1px solid #3fb950', color: '#3fb950' }}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                    {formatoMoneda(d.sueldo)}
+                                  </button>
+                                </td>
+                                <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                    <button type="button" onClick={(e) => abrirEditorExtra(e, { id: d.id, ref: d.ref, sueldoExtra: d.extra })} title="Agregar o editar el sueldo extra de esta operación"
+                                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem',
+                                        backgroundColor: d.extra > 0 ? 'rgba(245,158,11,0.12)' : 'transparent',
+                                        border: `1px solid ${d.extra > 0 ? '#f59e0b' : '#30363d'}`,
+                                        color: d.extra > 0 ? '#f59e0b' : '#8b949e' }}>
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                      {d.extra > 0 ? formatoMoneda(d.extra) : 'Agregar'}
+                                    </button>
+                                    {d.extra > 0 && (
+                                      <button type="button" onClick={(e) => quitarExtraOperacion(e, d.id)} title="Eliminar el sueldo extra"
+                                        style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '3px 7px', fontSize: '0.75rem', fontWeight: 'bold' }}>✕</button>
+                                    )}
+                                  </span>
+                                </td>
                                 <td style={{ padding: '10px 12px', color: '#58a6ff', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(d.total)}</td>
                               </tr>
                             ))
@@ -2417,9 +2614,6 @@ export const ReferenciasNominaDashboard = () => {
                 <>
                   <div style={{ ...gridTres, marginBottom: '20px' }}>
                     {campoTotal('Total Deducciones', totalDeduccionesCalc, '#f85149')}
-                    {campoTotal('Total', totalNetoCalc, '#58a6ff')}
-                    {campoNumerico('Depósito de Gastos', depositoGastos, setDepositoGastos)}
-                    {campoNumerico('Otros Depósitos', otrosDepositos, setOtrosDepositos)}
                     {campoTotal('Total a Pagar', totalAPagarCalc, '#3fb950', true)}
                   </div>
                   <div style={{ ...gridTres, marginBottom: '20px' }}>
@@ -2570,7 +2764,8 @@ export const ReferenciasNominaDashboard = () => {
                             const tieneExtra = extraOp > 0;
                             return (
                               <tr key={op.id} style={{ borderTop: '1px solid #21262d' }}>
-                                <td style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{op.ref}</td>
+                                <td onClick={() => abrirDetalleOperacion(op.id)} title="Abrir el detalle de la operación para editar"
+                                  style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline' }}>{op.ref}</td>
                                 <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.fecha ? formatearFechaSpanish(op.fecha) : '-'}</td>
                                 <td style={{ padding: '10px 12px', color: '#c9d1d9' }}>{op.cliente || getNombreEmpresa(op.clientePagaId) || '-'}</td>
                                 <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
