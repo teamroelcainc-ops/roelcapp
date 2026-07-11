@@ -1525,30 +1525,45 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }));
   }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData]);
 
-  useEffect(() => {
-    const fact = formData.facturadoEnUnidad; 
-    const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
-    const subtotal = Number(formData.totalAPagarProv || 0) + Number(formData.cargosAdicionalesProv || 0);
-    let dol = 0; let pes = 0; let conv = 0;
-    const esDolar = fact === ID_USD || (listaMonedasLocal.find((m: any) => m.id === fact)?.moneda || '').toUpperCase().includes('USD');
-    const esPeso = fact === ID_MXN || (listaMonedasLocal.find((m: any) => m.id === fact)?.moneda || '').toUpperCase().includes('MXN');
-    if (esDolar) { dol = subtotal; pes = 0; conv = subtotal * tc; } 
-    else if (esPeso) { dol = 0; pes = subtotal; conv = subtotal; }
-    setFormData(prev => ({ ...prev, subtotalProv: subtotal, dolaresProv: dol, pesosProv: pes, conversionProv: conv }));
-  }, [formData.facturadoEnUnidad, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, listaMonedasLocal]);
+  // ✅ Desglose Dólares/Pesos/Conversión considerando la MONEDA DEL CONVENIO y
+  //   la MONEDA DE LA FACTURA (pueden ser distintas):
+  //   - Convenio USD + Factura USD: Dólares = monto; Conversión = monto × TC.
+  //   - Convenio USD + Factura MXN: se CONVIERTE → Pesos = monto × TC y
+  //     Conversión = monto × TC (el monto en dólares NUNCA va en pesos directo).
+  //   - Convenio MXN + Factura MXN: Pesos = monto; Conversión = monto directo.
+  //   - Convenio MXN + Factura USD: Dólares = monto ÷ TC; Conversión = monto (ya es MXN).
+  //   Si la moneda del convenio no se identifica, se usa la de la factura (regla anterior).
+  const esMonedaUSD = (id: any) => id === ID_USD || (listaMonedasLocal.find((m: any) => m.id === id)?.moneda || '').toUpperCase().includes('USD') || (listaMonedasLocal.find((m: any) => m.id === id)?.moneda || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().includes('DOLAR');
+  const esMonedaMXN = (id: any) => id === ID_MXN || (listaMonedasLocal.find((m: any) => m.id === id)?.moneda || '').toUpperCase().includes('MXN') || (listaMonedasLocal.find((m: any) => m.id === id)?.moneda || '').toUpperCase().includes('PESO');
+  const desglosarPorMonedas = (subtotal: number, tc: number, monConvenio: any, monFactura: any) => {
+    let dol = 0, pes = 0, conv = 0;
+    const convUSD = esMonedaUSD(monConvenio), convMXN = esMonedaMXN(monConvenio);
+    const factUSD = esMonedaUSD(monFactura), factMXN = esMonedaMXN(monFactura);
+    const cUSD = convUSD || (!convMXN && factUSD);
+    const cMXN = convMXN || (!convUSD && factMXN);
+    if (cUSD && factMXN) { dol = 0; pes = subtotal * tc; conv = subtotal * tc; }
+    else if (cUSD) { dol = subtotal; pes = 0; conv = subtotal * tc; }
+    else if (cMXN && factUSD) { dol = tc > 0 ? subtotal / tc : 0; pes = 0; conv = subtotal; }
+    else if (cMXN) { dol = 0; pes = subtotal; conv = subtotal; }
+    return { dol, pes, conv };
+  };
 
   useEffect(() => {
-    const fact = formData.facturadoEnCobrar; 
+    const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
+    const subtotal = Number(formData.totalAPagarProv || 0) + Number(formData.cargosAdicionalesProv || 0);
+    const { dol, pes, conv } = desglosarPorMonedas(subtotal, tc, formData.monedaConvenioProv, formData.facturadoEnUnidad);
+    setFormData(prev => ({ ...prev, subtotalProv: subtotal, dolaresProv: dol, pesosProv: pes, conversionProv: conv }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.facturadoEnUnidad, formData.monedaConvenioProv, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, listaMonedasLocal]);
+
+  useEffect(() => {
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
     const subtotal = Number(formData.montoConvenioCliente || 0) + Number(formData.cargosAdicionales || 0);
-    let dol = 0; let pes = 0; let conv = 0;
-    const esDolar = fact === ID_USD || (listaMonedasLocal.find((m: any) => m.id === fact)?.moneda || '').toUpperCase().includes('USD');
-    const esPeso = fact === ID_MXN || (listaMonedasLocal.find((m: any) => m.id === fact)?.moneda || '').toUpperCase().includes('MXN');
-    if (esDolar) { dol = subtotal; pes = 0; conv = subtotal * tc; } 
-    else if (esPeso) { dol = 0; pes = subtotal; conv = subtotal; }
+    const { dol, pes, conv } = desglosarPorMonedas(subtotal, tc, formData.monedaConvenioCliente, formData.facturadoEnCobrar);
     const utilidad = conv - Number(formData.conversionProv || 0); 
     setFormData(prev => ({ ...prev, subtotalCliente: subtotal, dolaresCliente: dol, pesosCliente: pes, conversionCliente: conv, utilidadEstimada: utilidad }));
-  }, [formData.facturadoEnCobrar, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado, listaMonedasLocal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.facturadoEnCobrar, formData.monedaConvenioCliente, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado, listaMonedasLocal]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;

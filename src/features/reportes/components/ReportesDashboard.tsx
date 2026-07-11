@@ -37,6 +37,64 @@ import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from './ResumenDiarioOperaciones';
 
+// ═══════════════════════════════════════════════════════════════════════
+// ✅ (Conversiones del reporte de ventas) Se RECALCULAN SIEMPRE con la regla
+//   del negocio, considerando la MONEDA DEL CONVENIO y la MONEDA DE LA FACTURA
+//   (pueden ser distintas), porque hay operaciones con el desglose mal guardado:
+//   - Convenio USD + Factura USD: Dólares = monto; Conversión = monto × TC.
+//   - Convenio USD + Factura MXN: se CONVIERTE → Pesos = monto × TC y
+//     Conversión = monto × TC (el monto en dólares NUNCA va en pesos directo).
+//   - Convenio MXN + Factura MXN: Pesos = monto; Conversión = monto directo.
+//   - Convenio MXN + Factura USD: Dólares = monto ÷ TC; Conversión = monto (ya es MXN).
+//   Si la moneda del convenio no se identifica, se usa la de la factura; si
+//   ninguna se identifica, se respetan los valores guardados. Aplica al lado
+//   CLIENTE y PROVEEDOR; la utilidad = Conversión Cliente − Conversión Proveedor.
+// ═══════════════════════════════════════════════════════════════════════
+const ID_USD_REP = '7dca62b3';
+const ID_MXN_REP = 'f95d8894';
+const normalizarConversionesOp = (op: any, monedasPorId: Record<string, string>): any => {
+  const num = (v: any) => Number(v) || 0;
+  const tc = num(op.tipoCambioAprobado);
+  const nombreMon = (id: any) => String((monedasPorId && monedasPorId[String(id)]) || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  const esUSD = (id: any) => String(id) === ID_USD_REP || nombreMon(id).includes('USD') || nombreMon(id).includes('DOLAR');
+  const esMXN = (id: any) => String(id) === ID_MXN_REP || nombreMon(id).includes('MXN') || nombreMon(id).includes('PESO');
+
+  const desglosar = (subtotal: number, monConvenio: any, monFactura: any) => {
+    const convUSD = esUSD(monConvenio), convMXN = esMXN(monConvenio);
+    const factUSD = esUSD(monFactura), factMXN = esMXN(monFactura);
+    const cUSD = convUSD || (!convMXN && factUSD);
+    const cMXN = convMXN || (!convUSD && factMXN);
+    if (!cUSD && !cMXN) return null; // moneda no identificable: no tocar
+    if (cUSD && factMXN) return { dol: 0, pes: subtotal * tc, conv: subtotal * tc };
+    if (cUSD) return { dol: subtotal, pes: 0, conv: subtotal * tc };
+    if (cMXN && factUSD) return { dol: tc > 0 ? subtotal / tc : 0, pes: 0, conv: subtotal };
+    return { dol: 0, pes: subtotal, conv: subtotal };
+  };
+
+  const out: any = { ...op };
+  let toco = false;
+
+  const subC = num(op.subtotalCliente) || (num(op.montoConvenioCliente) + num(op.cargosAdicionales));
+  const dC = desglosar(subC, op.monedaConvenioCliente, op.facturadoEnCobrar);
+  if (dC) {
+    out.subtotalCliente = subC; out.dolaresCliente = dC.dol; out.pesosCliente = dC.pes;
+    out.conversionCliente = dC.conv > 0 ? dC.conv : num(op.conversionCliente);
+    toco = true;
+  }
+
+  const subP = num(op.subtotalProv) || (num(op.totalAPagarProv) + num(op.cargosAdicionalesProv));
+  const dP = desglosar(subP, op.monedaConvenioProv, op.facturadoEnUnidad);
+  if (dP) {
+    out.subtotalProv = subP; out.dolaresProv = dP.dol; out.pesosProv = dP.pes;
+    out.conversionProv = dP.conv > 0 ? dP.conv : num(op.conversionProv);
+    toco = true;
+  }
+
+  if (toco) out.utilidadEstimada = num(out.conversionCliente) - num(out.conversionProv);
+  return out;
+};
+
 // Palabras clave (normalizadas) que marcan una operación como NO COBRABLE
 const KEYWORDS_NO_COBRABLE = ['cancel', 'no cobrable'];
 
@@ -649,7 +707,10 @@ export const ReportesDashboard = () => {
       const opsTodas = snap.docs.map(d => {
         const data = d.data() as any;
         const iso = normalizarFechaISO(data[modulo.campoFecha]);
-        return { id: d.id, ...data, [modulo.campoFecha]: iso || data[modulo.campoFecha], _fechaISO: iso };
+        const base = { id: d.id, ...data, [modulo.campoFecha]: iso || data[modulo.campoFecha], _fechaISO: iso };
+        // ✅ Conversiones (Dólares/Pesos/Conversión/Utilidad) recalculadas con la
+        //   matriz convenio×factura; ver normalizarConversionesOp arriba.
+        return normalizarConversionesOp(base, monMap);
       });
       // Filtro de rango (inclusivo) sobre la fecha YA normalizada a ISO.
       const ops = opsTodas
