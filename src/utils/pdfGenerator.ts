@@ -527,11 +527,7 @@ export const generarPruebaEntregaPDF = (datos: DatosPruebaEntrega) => {
               </tr>
               <tr>
                 <td style="font-weight: bold; text-align: right; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; font-size:10px;">DIRECCIÓN:</td>
-                <td style="padding: 2px 0;">${datos.origenDireccion}</td>
-              </tr>
-              <tr>
-                <td style="font-weight: bold; text-align: right; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; font-size:10px;">C. POSTAL:</td>
-                <td style="padding: 2px 0;">${datos.origenCP}</td>
+                <td style="padding: 2px 0; line-height: 1.35;">${datos.origenDireccion}</td>
               </tr>
             </table>
           </td>
@@ -546,11 +542,7 @@ export const generarPruebaEntregaPDF = (datos: DatosPruebaEntrega) => {
               </tr>
               <tr>
                 <td style="font-weight: bold; text-align: right; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; font-size:10px;">DIRECCIÓN:</td>
-                <td style="padding: 2px 0;">${datos.destinoDireccion}</td>
-              </tr>
-              <tr>
-                <td style="font-weight: bold; text-align: right; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; font-size:10px;">C. POSTAL:</td>
-                <td style="padding: 2px 0;">${datos.destinoCP}</td>
+                <td style="padding: 2px 0; line-height: 1.35;">${datos.destinoDireccion}</td>
               </tr>
             </table>
           </td>
@@ -814,15 +806,7 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
               </tr>
               <tr>
                 <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">DIRECCION:</td>
-                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.origenDireccion}</td>
-              </tr>
-              <tr>
-                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">COLONIA:</td>
-                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.origenColonia}</td>
-              </tr>
-              <tr>
-                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">C.POSTAL:</td>
-                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.origenCP}</td>
+                <td style="font-size: 7.5pt; padding: 2px 0; line-height: 1.35;">${datos.origenDireccion}</td>
               </tr>
             </table>
           </td>
@@ -837,15 +821,7 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
               </tr>
               <tr>
                 <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">DIRECCION:</td>
-                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.destinoDireccion}</td>
-              </tr>
-              <tr>
-                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">COLONIA:</td>
-                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.destinoColonia}</td>
-              </tr>
-              <tr>
-                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">C.POSTAL:</td>
-                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.destinoCP}</td>
+                <td style="font-size: 7.5pt; padding: 2px 0; line-height: 1.35;">${datos.destinoDireccion}</td>
               </tr>
             </table>
           </td>

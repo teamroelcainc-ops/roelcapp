@@ -2572,6 +2572,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
                       <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span></label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} /></div>
+                      {/* ✅ Moneda del CONVENIO del proveedor: informativa, NO editable (viene del tarifario). */}
+                      <div className="form-group"><label className="form-label">Moneda del Convenio <span className="campo-badge">monedaConvenioProv</span></label><input type="text" readOnly disabled value={nombreMoneda(formData.monedaConvenioProv) || '—'} className="form-control" style={{ backgroundColor: '#010409', color: nombreMoneda(formData.monedaConvenioProv) ? '#e3b341' : '#6e7681', fontWeight: 'bold', cursor: 'not-allowed', opacity: 0.9 }} title="Se toma automáticamente del convenio/tarifario del proveedor" /></div>
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales (Prov) <span className="campo-badge">cargosAdicionalesProv</span></label>
                         <div className="roelca-lookup-row">
@@ -2631,6 +2633,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </select>
                       </div>
                       <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente || 0} onChange={handleChange} /></div>
+                      {/* ✅ Moneda del CONVENIO del cliente: informativa, NO editable (viene del tarifario). */}
+                      <div className="form-group"><label className="form-label">Moneda del Convenio <span className="campo-badge">monedaConvenioCliente</span></label><input type="text" readOnly disabled value={nombreMoneda(formData.monedaConvenioCliente) || '—'} className="form-control" style={{ backgroundColor: '#010409', color: nombreMoneda(formData.monedaConvenioCliente) ? '#e3b341' : '#6e7681', fontWeight: 'bold', cursor: 'not-allowed', opacity: 0.9 }} title="Se toma automáticamente del convenio/tarifario del cliente" /></div>
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
                         <div className="roelca-lookup-row">

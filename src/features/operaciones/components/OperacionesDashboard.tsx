@@ -252,6 +252,9 @@ const OperacionesDashboard = () => {
     catalogoConvClientes:      'convenios_clientes',
     catalogoConvDetalles:      'convenios_clientes_detalles',
     catalogoTC:                'tipo_cambio',
+    // ✅ Las EMPRESAS guardan solo direccionId; los datos estructurados de la
+    //   dirección (calle, colonia, C.P., ciudad) viven en esta colección.
+    direcciones:               'direcciones',
   };
 
   const catalogosEnVueloRef = useRef<Set<string>>(new Set());
@@ -915,13 +918,13 @@ const OperacionesDashboard = () => {
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
-      origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
-      origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
+      origenDireccion: datosDireccionEmpresa(origenObj).direccion,
+      origenCP: datosDireccionEmpresa(origenObj).cp,
+      origenCiudad: datosDireccionEmpresa(origenObj).ciudad,
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
-      destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
-      destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
+      destinoDireccion: datosDireccionEmpresa(destinoObj).direccion,
+      destinoCP: datosDireccionEmpresa(destinoObj).cp,
+      destinoCiudad: datosDireccionEmpresa(destinoObj).ciudad,
       tipoServicio: `${operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')} ${operacionViendo.trafico || ''}`,
       tipoUnidad: remolqueObj ? (remolqueObj.tipo || remolqueObj.descripcion || 'Remolque') : 'N/A',
       numeroEconomico: operacionViendo.remolqueNombre || (remolqueObj ? remolqueObj.nombre : 'N/A'),
@@ -931,6 +934,55 @@ const OperacionesDashboard = () => {
     });
   };
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ (Direcciones para PDFs) Las empresas guardan `direccionId` que apunta a
+  //   la colección `direcciones`. Este helper arma { direccion, colonia, cp,
+  //   ciudad } desde el registro estructurado y, si no existe, PARSEA el texto
+  //   libre de emp.direccion ("Calle #x, Col. Y, C.P. Z, Ciudad, ...").
+  // ═══════════════════════════════════════════════════════════════════════
+  const datosDireccionEmpresa = (emp: any): { direccion: string; colonia: string; cp: string; ciudad: string } => {
+    const vacio = { direccion: 'N/A', colonia: 'N/A', cp: 'N/A', ciudad: 'N/A' };
+    if (!emp) return vacio;
+    const v = (x: any) => String(x ?? '').trim();
+    const dir = (catalogosGlobales.direcciones || []).find((d: any) => String(d.id) === String(emp.direccionId)) || null;
+    if (dir) {
+      const calle = v(dir.calle || dir.direccion || dir.street);
+      const num = v(dir.numExterior ?? dir.numeroExterior ?? dir.numero ?? dir.numExt);
+      const interior = v(dir.numInterior ?? dir.numeroInterior ?? dir.interior);
+      const linea = [[calle, num ? `#${num}` : ''].filter(Boolean).join(' '), interior ? `Int. ${interior}` : ''].filter(Boolean).join(' ');
+      const colonia = v(dir.colonia);
+      const cp = v(dir.cp ?? dir.codigoPostal ?? dir.zip ?? dir.zipCode);
+      const ciudad = [v(dir.ciudad || dir.municipio || dir.city), v(dir.estado || dir.state)].filter(Boolean).join(', ');
+      if (linea || colonia || cp || ciudad) {
+        return {
+          direccion: linea || v(dir.direccionCompleta) || v(emp.direccion) || 'N/A',
+          colonia: colonia || 'N/A',
+          cp: cp || 'N/A',
+          ciudad: ciudad || 'N/A',
+        };
+      }
+    }
+    // Respaldo: parsear el texto libre guardado en la empresa.
+    const texto = v(emp.direccion || emp.direccionLabel || (dir ? dir.direccionCompleta : ''));
+    if (!texto) return vacio;
+    const mCol = texto.match(/col(?:onia)?\.?\s*([^,]+)/i);
+    const mCP = texto.match(/c\.?\s*p\.?\s*:?\s*(\d{4,6})/i) || texto.match(/(?:^|[\s,])(\d{5})(?![\d-])/);
+    const partes = texto.split(',').map(x => x.trim()).filter(Boolean);
+    const linea = partes[0] || texto;
+    // Ciudad/estado: las últimas partes que NO sean país, C.P. ni colonia.
+    const esPais = (t: string) => /^(m[e\u00e9]xico|estados unidos|usa|eua|united states)$/i.test(t.trim());
+    const esCPtxt = (t: string) => /c\.?\s*p\.?/i.test(t) || /^\d{5}$/.test(t.trim());
+    const esColTxt = (t: string) => /^col(?:onia)?\.?\s/i.test(t.trim());
+    const candidatas = partes.slice(1).filter(t => !esPais(t) && !esCPtxt(t) && !esColTxt(t));
+    const ciudadTxt = candidatas.slice(-2).join(', ');
+    return {
+      direccion: linea,
+      colonia: mCol ? mCol[1].trim() : 'N/A',
+      cp: mCP ? mCP[1] : 'N/A',
+      ciudad: ciudadTxt || 'N/A',
+    };
+  };
+
   const handleDescargarCartaInstrucciones = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
@@ -938,6 +990,8 @@ const OperacionesDashboard = () => {
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
     const empNombre = resolverOperadorParaPDF();
+    const dirOrigen = datosDireccionEmpresa(origenObj);
+    const dirDestino = datosDireccionEmpresa(destinoObj);
 
     generarCartaInstruccionesPDF({
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
@@ -951,12 +1005,13 @@ const OperacionesDashboard = () => {
       placas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
       operador: empNombre,
       descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A',
-      origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A', 
+      // ✅ Direcciones REALES desde la colección `empresas`/`direcciones`.
+      origenCiudad: dirOrigen.ciudad,
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: 'N/A', origenColonia: 'N/A', origenCP: 'N/A',
-      destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A', 
+      origenDireccion: dirOrigen.direccion, origenColonia: dirOrigen.colonia, origenCP: dirOrigen.cp,
+      destinoCiudad: dirDestino.ciudad,
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: 'N/A', destinoColonia: 'N/A', destinoCP: 'N/A',
+      destinoDireccion: dirDestino.direccion, destinoColonia: dirDestino.colonia, destinoCP: dirDestino.cp,
     });
   };
 
