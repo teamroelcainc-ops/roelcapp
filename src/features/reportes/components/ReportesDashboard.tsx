@@ -257,6 +257,8 @@ interface Ctx {
   // ✅ NUEVO: resolución de IDs → nombres
   nombreEmpresa: (id: any, desnorm?: any) => string;
   nombreConvenio: (id: any, desnorm?: any) => string;
+  // ✅ Catálogo de monedas por id (para las columnas Moneda Convenio Cliente/Prov.).
+  mon: Record<string, string>;
   // ✅ NUEVO: universo de campos crudos de la colección + lector formateado.
   camposColeccion: string[];
   valorCrudo: (op: any, campo: string) => any;
@@ -439,11 +441,19 @@ export const ReportesDashboard = () => {
       .sort(compararPorFechaYConsecutivo);
 
     // Columnas "bonitas" sugeridas (resuelven IDs→nombres). Visibles por defecto.
+    // ✅ Resolver del NOMBRE de la moneda del convenio (Dólares/Pesos) a partir
+    //   del ID guardado en la operación; usa el catálogo de monedas del contexto
+    //   con respaldo en los IDs conocidos (USD/MXN).
+    const nombreMonedaConv = (id: any): string => (id && ((c.mon && c.mon[String(id)]) || MONEDA_FALLBACK[String(id)])) || '-';
     const columnasBase: Columna[] = [
       { key: 'fecha', label: 'Fecha' },
       { key: 'ref', label: 'Referencia' },
       { key: 'cliente', label: 'Cliente' },
       { key: 'convenio', label: 'Convenio' },
+      // ✅ Moneda del convenio del CLIENTE y del PROVEEDOR en todos los
+      //   reportes de ventas (visibles por defecto; se pueden ocultar en Columnas).
+      { key: 'monedaConvCliente', label: 'Moneda Convenio Cliente' },
+      { key: 'monedaConvProv', label: 'Moneda Convenio Prov.' },
       { key: 'origen', label: 'Origen' },
       { key: 'destino', label: 'Destino' },
       { key: 'status', label: 'Estatus' },
@@ -455,6 +465,8 @@ export const ReportesDashboard = () => {
       op.ref || String(op.id || '').substring(0, 6),
       c.nombreEmpresa(op.clientePaga || op.clienteId, op.clienteNombre || op.nombreCliente) || '-',
       c.nombreConvenio(op.convenio, op.convenioNombre) || '-',
+      nombreMonedaConv(op.monedaConvenioCliente),
+      nombreMonedaConv(op.monedaConvenioProv),
       c.nombreEmpresa(op.origen, op.origenNombre) || '-',
       c.nombreEmpresa(op.destino, op.destinoNombre) || '-',
       c.statusNombreDe(op) || '-',
@@ -815,7 +827,7 @@ export const ReportesDashboard = () => {
         return typeof v === 'number' ? v : String(v);
       };
 
-      const ctx: Ctx = { ops, desde, hasta, clasificarTipo, esNoCobrable, statusNombreDe, pasaFiltroStatus, nombreEmpresa, nombreConvenio, camposColeccion, valorCrudo };
+      const ctx: Ctx = { ops, desde, hasta, clasificarTipo, esNoCobrable, statusNombreDe, pasaFiltroStatus, nombreEmpresa, nombreConvenio, camposColeccion, valorCrudo, mon: monMap };
       const def = reportesDelModulo.find(r => r.id === reporteId) || reportesDelModulo[0];
       setResultado(def.build(ctx));
       if (ops.length === 0) setError('No hay registros en ese rango de fechas para el módulo seleccionado.');
