@@ -1610,25 +1610,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const direccionDeEmpresaOD = (e: any) => mapaDirecciones[String(e?.direccionId || '')] || null;
   const direccionFormateadaOD = (e: any) => formatearDireccionPorPais(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
   const paisDeEmpresaOD = (e: any) => paisDeDireccion(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
-
-  // ✅ Filtro por PAÍS según el tráfico: Importación (Origen USA → Destino MX),
-  //   Exportación (Origen MX → Destino USA), Movimiento (todo). Las direcciones
-  //   sin país detectable NO se ocultan, para nunca bloquear una captura.
-  const modoTraficoOD = (() => {
-    const t = normalizarTxtDir(formData.trafico);
-    if (t.includes('impo')) return 'impo';
-    if (t.includes('expo')) return 'expo';
-    return 'todo';
-  })();
-  const empresaPermitidaOD = (e: any, lado: 'origen' | 'destino'): boolean => {
-    if (modoTraficoOD === 'todo') return true;
-    const pais = paisDeEmpresaOD(e);
-    if (!pais) return true;
-    const esperado = modoTraficoOD === 'impo'
-      ? (lado === 'origen' ? 'USA' : 'MX')
-      : (lado === 'origen' ? 'MX' : 'USA');
-    return pais === esperado;
-  };
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, 'ca21ab07') || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_TRANSPORTE)) && e.status === 'Activa') || [], [empresas]);
 
   const sOrigen = (searchOrigen || '').toLowerCase();
@@ -1648,8 +1629,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const empresaCoincide = (e:any, q:string) =>
     nombreEmpresaMostrar(e).toLowerCase().includes(q) || (e.nombre || '').toLowerCase().includes(q);
 
-  const resultadosOrigen = filOrigenesDestinos.filter((e:any) => empresaPermitidaOD(e, 'origen') && (empresaCoincide(e, sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen)));
-  const resultadosDestino = filOrigenesDestinos.filter((e:any) => empresaPermitidaOD(e, 'destino') && (empresaCoincide(e, sDestino) || (e.direccion || '').toLowerCase().includes(sDestino)));
+  // ✅ MODIFICADO (a petición): Origen y Destino muestran TODAS las direcciones,
+  //   sin filtrar por país/tráfico. Se conservan la etiqueta de país (EE.UU./MX)
+  //   y el formato de dirección por país en las sugerencias.
+  const resultadosOrigen = filOrigenesDestinos.filter((e:any) => empresaCoincide(e, sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen));
+  const resultadosDestino = filOrigenesDestinos.filter((e:any) => empresaCoincide(e, sDestino) || (e.direccion || '').toLowerCase().includes(sDestino));
   const resultadosClientePaga = filClientesPaga.filter((e:any) => empresaCoincide(e, sClientePaga));
   const resultadosRemolque = remolques?.filter((e:any) => `${e.nombre || ''} ${e.placas || e.placa || ''}`.toLowerCase().trim().includes(sRemolque)) || [];
   const resultadosClienteMercancia = filClientesMercancia.filter((e:any) => empresaCoincide(e, sClienteMerc));

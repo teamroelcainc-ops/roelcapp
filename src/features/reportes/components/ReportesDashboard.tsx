@@ -1037,22 +1037,46 @@ export const ReportesDashboard = () => {
         <div style="font-size:16px;font-weight:700;color:#c2410c">${r.valor}</div>
       </div>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${vista.titulo}</title>
-<style>@page{margin:14mm} body{margin:0}</style></head>
-<body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1f2328;padding:24px">
-  <div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #c2410c;padding-bottom:14px;margin-bottom:18px">
-    <img src="${LOGO_DEFAULT}" alt="Roelca Inc." style="height:64px;width:auto" />
+<style>
+  /* ✅ Hoja CARTA HORIZONTAL con márgenes cortos: cabe mucho más ancho de tabla. */
+  @page{ size: letter landscape; margin: 8mm }
+  body{ margin:0 }
+  /* ✅ El encabezado de la tabla se repite en cada página y las filas no se parten. */
+  thead{ display: table-header-group }
+  tr{ page-break-inside: avoid }
+</style></head>
+<body style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#1f2328;padding:16px">
+  <div style="display:flex;align-items:center;gap:16px;border-bottom:3px solid #c2410c;padding-bottom:12px;margin-bottom:14px">
+    <img src="${LOGO_DEFAULT}" alt="Roelca Inc." style="height:60px;width:auto" />
     <div style="flex:1">
       <div style="font-size:13px;font-weight:700;letter-spacing:.5px;color:#c2410c">ROELCA INC.</div>
       <div style="font-size:22px;font-weight:800;margin:2px 0 2px;color:#1f2328">${vista.titulo}</div>
       <div style="color:#57606a;font-size:13px">Periodo: <b>${fmtFechaCorta(desde)}</b> al <b>${fmtFechaCorta(hasta)}</b></div>
     </div>
   </div>
-  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">${resumenHtml}</div>
-  <table style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr>${ths}</tr></thead><tbody>${filasHtml}</tbody></table>
-  <div style="color:#8b949e;font-size:10px;margin-top:16px;border-top:1px solid #e6eaf0;padding-top:8px">
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">${resumenHtml}</div>
+  <table id="tablaReporte" style="border-collapse:collapse;width:100%;font-size:12px"><thead><tr>${ths}</tr></thead><tbody>${filasHtml}</tbody></table>
+  <div style="color:#8b949e;font-size:10px;margin-top:14px;border-top:1px solid #e6eaf0;padding-top:8px">
     Roelca Inc. · Reporte generado el ${new Date().toLocaleString('es-MX')}
   </div>
-  <script>window.onload=function(){setTimeout(function(){window.print();},200);}</script>
+  <script>
+    // ✅ AUTO-AJUSTE: si la tabla es más ancha que el área útil de la hoja
+    //   (carta horizontal ≈ 263mm ≈ 994px a 96dpi), se reduce el zoom del
+    //   documento EXACTAMENTE lo necesario para que salga COMPLETA en el PDF,
+    //   sin importar cuántas columnas tenga el reporte.
+    window.onload = function(){
+      try {
+        var ANCHO_UTIL_PX = 994;
+        var tabla = document.getElementById('tablaReporte');
+        var anchoReal = Math.max(tabla ? tabla.scrollWidth : 0, document.body.scrollWidth - 32);
+        if (anchoReal > ANCHO_UTIL_PX) {
+          var factor = Math.max(0.35, ANCHO_UTIL_PX / anchoReal);
+          document.body.style.zoom = String(factor);
+        }
+      } catch (e) { /* si algo falla, se imprime tal cual */ }
+      setTimeout(function(){ window.print(); }, 250);
+    }
+  </script>
 </body></html>`;
     const w = window.open('', '_blank');
     if (!w) { alert('Permite las ventanas emergentes para exportar a PDF.'); return; }
