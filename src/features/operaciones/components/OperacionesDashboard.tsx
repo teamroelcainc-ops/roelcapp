@@ -109,9 +109,10 @@ const COLUMNAS_BASE = [
   // ✅ # Remolque y Unidad al lado de Status (reubicadas a petición).
   { id: 'remolque', label: '# Remolque', visible: true },
   { id: 'unidad', label: 'Unidad Roelca', visible: true },
+  // ✅ Convenio después de la Unidad (reubicado a petición).
+  { id: 'convenioTarifa', label: 'Convenio Cliente (Tarifa)', visible: true },
   { id: 'trafico', label: 'Tráfico', visible: false },
   { id: 'cliente', label: 'Cliente (Paga)', visible: true },
-  { id: 'convenioTarifa', label: 'Convenio Cliente (Tarifa)', visible: true },
   { id: 'refCliente', label: 'Ref. Cliente', visible: false },
   { id: 'facturadoEnCobrar', label: 'Moneda Cobro', visible: false },
   { id: 'montoConvenioCliente', label: 'Monto Convenio (Cliente)', visible: false },
