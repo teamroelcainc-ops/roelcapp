@@ -54,6 +54,72 @@ const ID_GASTO_SUELDO = '25b772d3';
 
 const TIPO_OP_PROVEEDOR_FIJO = '8ec24dfe';
 const PROVEEDOR_FIJO_ID = '349123';
+
+// ═══════════════════════════════════════════════════════════════════════
+// ✅ (Origen/Destino por tráfico) Detección de PAÍS y FORMATO de dirección.
+//   Importación: Origen = Estados Unidos, Destino = México.
+//   Exportación: Origen = México, Destino = Estados Unidos.
+//   Movimiento: se muestra todo.
+//   Formato MX:  Calle #Num Int., Col. Colonia, C.P. 12345, Ciudad, Estado, México
+//   Formato USA: 123 Street, Suite X, City, ST 78041, Estados Unidos
+// ═══════════════════════════════════════════════════════════════════════
+const normalizarTxtDir = (s: any): string =>
+  String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+const paisDeDireccion = (dir: any, textoRespaldo?: any): 'USA' | 'MX' | '' => {
+  const p = normalizarTxtDir(dir?.pais || dir?.country || '');
+  if (p) {
+    if (p.includes('unido') || p.includes('united') || p === 'us' || p === 'usa' || p.includes('eua')) return 'USA';
+    if (p.includes('mex')) return 'MX';
+  }
+  const t = normalizarTxtDir(textoRespaldo || dir?.direccionCompleta || '');
+  if (!t) return '';
+  if (/(estados unidos|united states|\busa\b|\beua\b|\bu\.s\.a\b)/.test(t)) return 'USA';
+  if (/(mexico|\bmx\b|tamaulipas|nuevo leon|coahuila|c\.p\.)/.test(t)) return 'MX';
+  if (/\b(texas|tx|laredo, tx)\b/.test(t)) return 'USA';
+  return '';
+};
+
+const formatearDireccionPorPais = (dir: any, textoRespaldo?: any): string => {
+  const respaldo = String(textoRespaldo || '').trim();
+  if (!dir) return respaldo;
+  const v = (x: any) => String(x ?? '').trim();
+  const pais = paisDeDireccion(dir, textoRespaldo);
+  const calle = v(dir.calle || dir.direccion || dir.street);
+  const num = v(dir.numExterior ?? dir.numeroExterior ?? dir.numero ?? dir.numExt);
+  const interior = v(dir.numInterior ?? dir.numeroInterior ?? dir.interior);
+  const colonia = v(dir.colonia);
+  const cp = v(dir.cp ?? dir.codigoPostal ?? dir.zip ?? dir.zipCode);
+  const ciudad = v(dir.ciudad || dir.municipio || dir.city);
+  const estadoDir = v(dir.estado || dir.state);
+  if (!calle && !ciudad) return v(dir.direccionCompleta) || respaldo;
+
+  if (pais === 'USA') {
+    const linea1 = [[num, calle].filter(Boolean).join(' '), interior ? `Suite ${interior}` : ''].filter(Boolean).join(', ');
+    const linea2 = [ciudad, [estadoDir, cp].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    return [linea1, linea2, 'Estados Unidos'].filter(Boolean).join(', ') || v(dir.direccionCompleta) || respaldo;
+  }
+  const partes = [
+    [calle, num ? `#${num}` : ''].filter(Boolean).join(' ') + (interior ? ` Int. ${interior}` : ''),
+    colonia ? `Col. ${colonia}` : '',
+    cp ? `C.P. ${cp}` : '',
+    ciudad,
+    estadoDir,
+    pais === 'MX' ? 'México' : '',
+  ].map(x => String(x).trim()).filter(Boolean);
+  return partes.join(', ') || v(dir.direccionCompleta) || respaldo;
+};
+
+// ✅ Color por TIPO DE OPERACIÓN: Transfer → naranja, Logística → azul,
+//   Fletes → verde. Cualquier otro tipo conserva el color neutro.
+const colorTipoOperacion = (nombre: any): string => {
+  const n = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (n.includes('transfer')) return '#fb923c';
+  if (n.includes('logist')) return '#58a6ff';
+  if (n.includes('flete')) return '#3fb950';
+  return '#c9d1d9';
+};
+
 const COSTO_MANIFIESTO_DEFAULT = 8.52;
 // ✅ (Proveedor de Servicios / Manifiesto) El buscador solo muestra empresas con
 //   tiposEmpresa que contenga 11894dfd Y tiposServicio que contenga alguno de
@@ -1521,6 +1587,48 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const montoManifiestoDeProveedor = (emp: any): number =>
     contieneId(emp?.tiposServicio, TIPO_SERVICIO_CON_COSTO_MANIFIESTO) ? COSTO_MANIFIESTO_DEFAULT : 0;
   const filOrigenesDestinos = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, '6e7af5ab') || contieneId(e.tiposEmpresa, TIPO_EMP_ORIGEN_DESTINO)) && e.status === 'Activa') || [], [empresas]);
+
+  // ✅ Catálogo de DIRECCIONES por id (las empresas guardan direccionId).
+  //   Se lee UNA vez al abrir el formulario con getDocs (ya importado).
+  const [mapaDirecciones, setMapaDirecciones] = useState<Record<string, any>>({});
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'direcciones'));
+        if (cancelado) return;
+        const m: Record<string, any> = {};
+        snap.docs.forEach(d => { m[d.id] = { id: d.id, ...(d.data() as any) }; });
+        setMapaDirecciones(m);
+      } catch (e) {
+        console.warn('[FormularioOperacion] No se pudo leer el catálogo de direcciones:', e);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, []);
+
+  const direccionDeEmpresaOD = (e: any) => mapaDirecciones[String(e?.direccionId || '')] || null;
+  const direccionFormateadaOD = (e: any) => formatearDireccionPorPais(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
+  const paisDeEmpresaOD = (e: any) => paisDeDireccion(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
+
+  // ✅ Filtro por PAÍS según el tráfico: Importación (Origen USA → Destino MX),
+  //   Exportación (Origen MX → Destino USA), Movimiento (todo). Las direcciones
+  //   sin país detectable NO se ocultan, para nunca bloquear una captura.
+  const modoTraficoOD = (() => {
+    const t = normalizarTxtDir(formData.trafico);
+    if (t.includes('impo')) return 'impo';
+    if (t.includes('expo')) return 'expo';
+    return 'todo';
+  })();
+  const empresaPermitidaOD = (e: any, lado: 'origen' | 'destino'): boolean => {
+    if (modoTraficoOD === 'todo') return true;
+    const pais = paisDeEmpresaOD(e);
+    if (!pais) return true;
+    const esperado = modoTraficoOD === 'impo'
+      ? (lado === 'origen' ? 'USA' : 'MX')
+      : (lado === 'origen' ? 'MX' : 'USA');
+    return pais === esperado;
+  };
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, 'ca21ab07') || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_TRANSPORTE)) && e.status === 'Activa') || [], [empresas]);
 
   const sOrigen = (searchOrigen || '').toLowerCase();
@@ -1540,8 +1648,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const empresaCoincide = (e:any, q:string) =>
     nombreEmpresaMostrar(e).toLowerCase().includes(q) || (e.nombre || '').toLowerCase().includes(q);
 
-  const resultadosOrigen = filOrigenesDestinos.filter((e:any) => empresaCoincide(e, sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen));
-  const resultadosDestino = filOrigenesDestinos.filter((e:any) => empresaCoincide(e, sDestino) || (e.direccion || '').toLowerCase().includes(sDestino));
+  const resultadosOrigen = filOrigenesDestinos.filter((e:any) => empresaPermitidaOD(e, 'origen') && (empresaCoincide(e, sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen)));
+  const resultadosDestino = filOrigenesDestinos.filter((e:any) => empresaPermitidaOD(e, 'destino') && (empresaCoincide(e, sDestino) || (e.direccion || '').toLowerCase().includes(sDestino)));
   const resultadosClientePaga = filClientesPaga.filter((e:any) => empresaCoincide(e, sClientePaga));
   const resultadosRemolque = remolques?.filter((e:any) => `${e.nombre || ''} ${e.placas || e.placa || ''}`.toLowerCase().trim().includes(sRemolque)) || [];
   const resultadosClienteMercancia = filClientesMercancia.filter((e:any) => empresaCoincide(e, sClienteMerc));
@@ -2100,7 +2208,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         )}
                         <small style={{ color: initialData ? (puedeEditarRef ? '#fb923c' : '#8b949e') : '#8b949e' }}>{initialData ? (puedeEditarRef ? 'Editable (Admin o permiso "Editar Referencia").' : 'No tienes permiso para editarla.') : 'Formato: TR/LO/FL-DDMMYY-### (consecutivo único del día).'}</small>
                       </div>
-                      <div className="form-group"><label className="form-label orange">Tipo de Operación <span className="campo-badge">tipoOperacionId</span></label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id}>{op.tipo_operacion}</option>)}</select></div>
+                      <div className="form-group"><label className="form-label orange">Tipo de Operación <span className="campo-badge">tipoOperacionId</span></label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required style={{ color: formData.tipoOperacionId ? colorTipoOperacion(tiposOperacion?.find((op:any) => op.id === formData.tipoOperacionId)?.tipo_operacion) : undefined, fontWeight: formData.tipoOperacionId ? 'bold' : undefined }}><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id} style={{ color: colorTipoOperacion(op.tipo_operacion), fontWeight: 'bold' }}>{op.tipo_operacion}</option>)}</select></div>
                       <div className="form-group"><label className="form-label orange">Fecha de Servicio <span className="campo-badge">fechaServicio</span></label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
                       {isFletes && (<div className="form-group"><label className="form-label orange">Fecha de Cita <span className="campo-badge">fechaCita</span></label><input type="datetime-local" name="fechaCita" className={`form-control${claseSiFalta('fechaCita')}`} value={formData.fechaCita || ''} onChange={handleChange} /></div>)}
                     </div>
@@ -2185,7 +2293,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('origen')}`} placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
-                            {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(o)}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{o.direccion}</div></div>))}</div>)}
+                            {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>{nombreEmpresaMostrar(o)}{paisDeEmpresaOD(o) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950'}`, color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(o) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{direccionFormateadaOD(o)}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); })} />
                         </div>
@@ -2195,7 +2303,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('destino')}`} placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
-                            {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(d)}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{d.direccion}</div></div>))}</div>)}
+                            {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>{nombreEmpresaMostrar(d)}{paisDeEmpresaOD(d) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950'}`, color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(d) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{direccionFormateadaOD(d)}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>

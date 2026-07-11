@@ -89,6 +89,17 @@ const limpiarUndefined = (obj: Record<string, any>): Record<string, any> => {
   return out;
 };
 
+
+// ✅ Color por TIPO DE OPERACIÓN: Transfer → naranja, Logística → azul,
+//   Fletes → verde. Cualquier otro tipo conserva el color neutro.
+const colorTipoOperacion = (nombre: any): string => {
+  const n = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (n.includes('transfer')) return '#fb923c';
+  if (n.includes('logist')) return '#58a6ff';
+  if (n.includes('flete')) return '#3fb950';
+  return '#c9d1d9';
+};
+
 const COLUMNAS_BASE = [
   { id: 'ref', label: '# Referencia', visible: true },
   { id: 'fechaServicio', label: 'Fecha Servicio', visible: true },
@@ -1112,7 +1123,10 @@ const OperacionesDashboard = () => {
       case 'ref': return <span className="font-mono" style={{ color: '#58a6ff', fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}</span>;
       case 'fechaServicio': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.fechaServicio)}</span>;
       case 'fechaCita': return <span style={{ color: '#c9d1d9' }}>{formatearFechaHora(op.fechaCita)}</span>;
-      case 'tipoOperacion': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</span>;
+      case 'tipoOperacion': {
+        const nombreTipoOp = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre);
+        return <span style={{ color: colorTipoOperacion(nombreTipoOp), fontWeight: 'bold' }}>{nombreTipoOp}</span>;
+      }
       case 'status': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</span>;
       case 'trafico': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.trafico)}</span>;
       case 'cliente': return <span style={{ color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;

@@ -1,57 +1,27 @@
 // src/features/operaciones/services/operacionesService.ts
 //
-// Guarda una operación de forma SEGURA generando una referencia con un
-// CONSECUTIVO ÚNICO, IRREPETIBLE y SIN BRINCOS por (tipo + fecha de servicio).
+// Guarda una operación delegando la asignación del CONSECUTIVO a una Cloud
+// Function (`crearOperacion`), que lo genera de forma ATÓMICA en el backend.
+// Esto elimina de raíz los duplicados/brincos que ocurrían al calcularlo en el
+// cliente (condición de carrera + contador desincronizado).
 //
-// Formato de referencia: <PREFIJO>-<DDMMYY>-<NNN>   (ej. TR-270626-001)
-//   · PREFIJO : TR / LO / FL / OP según el tipo de operación.
-//   · DDMMYY  : tomado de la FECHA DE SERVICIO de la operación (respaldo: hoy).
-//   · NNN     : consecutivo por (tipo, fecha de servicio), empezando en 001.
+// Este archivo SOLO calcula, con tus utilidades de siempre:
+//   · el PREFIJO (TR/LO/FL/OP) del tipo de operación, y
+//   · la clave de fecha DDMMYY a partir de la FECHA DE SERVICIO,
+// y se los pasa a la función. El número, el formato final de la referencia y la
+// escritura del documento ocurren en el backend (ver functions/src/index.ts).
 //
-// ============================================================================
-// POR QUÉ ANTES SE REPETÍA O SE BRINCABA EL CONSECUTIVO
-// ============================================================================
-// El consecutivo se calculaba con `Math.max(contador, maxExistente)` donde
-// `maxExistente` se leía UNA sola vez ANTES de la transacción. Eso fallaba en
-// dos casos:
-//   1) Si el contador quedaba por DEBAJO de la realidad (p. ej. al migrar al
-//      contador por-tipo los contadores nuevos arrancaron en 0 aunque ya había
-//      operaciones 001..00N) y `maxExistente` fallaba en silencio (devolvía 0),
-//      el número nuevo nacía por debajo → REPETIDO.
-//   2) Nunca se VERIFICABA, después de asignar, que ese número no existiera ya.
-//
-// ============================================================================
-// CÓMO SE GARANTIZA AHORA (a prueba de repetidos y de brincos)
-// ============================================================================
-// Es un ciclo "reservar → verificar → escribir":
-//
-//   A) RESERVA ATÓMICA. Dentro de una `runTransaction` se lee el contador del
-//      (tipo, fecha) y se reserva  asignado = max(contador, pisoReal) + 1,
-//      dejando el contador en `asignado`. La transacción de Firestore es
-//      atómica y se reintenta sola si dos personas chocan, así que DOS GUARDADOS
-//      SIMULTÁNEOS NUNCA RESERVAN EL MISMO NÚMERO (esto elimina los repetidos
-//      por concurrencia).
-//
-//   B) VERIFICACIÓN CONTRA LA REALIDAD. Ya con el número reservado, se consulta
-//      por IGUALDAD (`ref == <referencia>`, consulta sólida y autoindexada) si
-//      ya existe alguna operación con esa referencia. Si existe (señal de que
-//      el contador venía por detrás de la realidad), se SUBE el piso y se
-//      REINTENTA con un número mayor. Esto elimina los repetidos por contador
-//      desincronizado, que era el caso grave.
-//
-//   C) ESCRITURA. Como el número ya quedó reservado en el contador (ningún otro
-//      guardado puede tomarlo) y se verificó que no existe, se escribe la
-//      operación. Además se guardan dos campos estructurados nuevos
-//      (`refPrefijo` y `refConsecutivo`) para que conocer "el último" sea
-//      siempre confiable a futuro.
-//
-// `pisoReal` (el máximo consecutivo REAL ya existente) se calcula una vez al
-// inicio para que el ciclo normalmente acierte al primer intento; la
-// verificación del paso (B) es la red de seguridad definitiva contra repetidos.
+// Formato de referencia (idéntico al anterior): <PREFIJO>-<DDMMYY>-<NNN>
+//   ej. TR-270626-001
 
-import { doc, getDoc, getDocs, runTransaction, setDoc, collection, query, where } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getApp } from 'firebase/app';
 import { db } from '../../../config/firebase';
-import { generarReferencia, fechaDDMMYY, prefijoTipoOperacion } from '../../../utils/generarReferencia';
+import { fechaDDMMYY, prefijoTipoOperacion } from '../../../utils/generarReferencia';
+
+// La región DEBE coincidir con la del deploy de la función (us-central1).
+const functions = getFunctions(getApp(), 'us-central1');
 
 // Caché de sesión del tipo de operación (evita releer el catálogo en cada guardado).
 const tipoOperacionCache = new Map<string, { clave?: string; acronimo?: string; tipo_operacion?: string }>();
@@ -69,7 +39,7 @@ const esErrorDeCuota = (error: any): boolean => {
 // Convierte la FECHA DE SERVICIO a DDMMYY para la referencia.
 // El formulario entrega la fecha como ISO `YYYY-MM-DD` (input type="date"),
 // pero también se aceptan respaldos como `DD/MM/YYYY` o `MM/DD/YYYY`. Devuelve
-// null si no se puede parsear (en ese caso el guardado usará la fecha de hoy).
+// null si no se puede parsear (en ese caso se usará la fecha de hoy).
 // ──────────────────────────────────────────────────────────────────────
 const ddmmyyDeFechaServicio = (fechaServicio: any): string | null => {
   const raw = String(fechaServicio || '').trim();
@@ -144,150 +114,36 @@ const resolverPrefijoCorto = async (operacionData: any): Promise<string> => {
 };
 
 // ──────────────────────────────────────────────────────────────────────
-// Extrae el consecutivo (NNN) de una referencia tipo "TR-270626-003".
-// Solo cuenta si la referencia EMPIEZA con el prefijo+fecha esperado.
+// Guarda la operación: calcula prefijo + fecha y delega el número atómico
+// a la Cloud Function `crearOperacion`. Devuelve { success, id, ref }.
 // ──────────────────────────────────────────────────────────────────────
-const consecutivoDeReferencia = (valorRef: any, prefijoRef: string): number => {
-  const s = String(valorRef || '').trim();
-  if (!s || !s.startsWith(prefijoRef)) return 0;
-  const resto = s.slice(prefijoRef.length);
-  const m = resto.match(/^(\d+)/);
-  return m ? (parseInt(m[1], 10) || 0) : 0;
-};
-
-// ──────────────────────────────────────────────────────────────────────
-// MÁXIMO consecutivo REAL ya existente para un (prefijo + fecha de servicio).
-//
-// "Conocer el último para saber el siguiente". Se calcula de forma redundante
-// para que sea confiable:
-//   • Por el campo numérico estructurado nuevo `refConsecutivo` filtrando por
-//     `refPrefijo == "<PREFIJO>-<DDMMYY>"` (consulta por IGUALDAD, sólida).
-//   • Por rango de texto sobre `ref` y `referencia` (cubre registros viejos que
-//     aún no tienen los campos estructurados).
-// Se toma el MAYOR de todos. Si una vía falla, las otras siguen aportando.
-// ──────────────────────────────────────────────────────────────────────
-const obtenerMaximoConsecutivoExistente = async (prefijoCorto: string, ddmmyy: string): Promise<number> => {
-  let maximo = 0;
-  const prefijoRef = `${prefijoCorto}-${ddmmyy}-`;
-  const refPrefijo = `${prefijoCorto}-${ddmmyy}`;
-
-  // 1) Vía estructurada (nueva): refPrefijo == ... → max(refConsecutivo)
-  try {
-    const qEstruct = query(collection(db, 'operaciones'), where('refPrefijo', '==', refPrefijo));
-    const snap = await getDocs(qEstruct);
-    snap.forEach((d) => {
-      const n = Number((d.data() as any).refConsecutivo) || 0;
-      if (n > maximo) maximo = n;
-    });
-  } catch (e) {
-    console.warn('Máximo por refConsecutivo no disponible; continúo con el texto.', e);
-  }
-
-  // 2) Vía texto (compatibilidad con registros viejos): rango sobre ref/referencia
-  for (const campo of ['ref', 'referencia']) {
-    try {
-      const qExist = query(
-        collection(db, 'operaciones'),
-        where(campo, '>=', prefijoRef),
-        where(campo, '<', prefijoRef + '\uf8ff'),
-      );
-      const snap = await getDocs(qExist);
-      snap.forEach((d) => {
-        const n = consecutivoDeReferencia((d.data() as any)[campo], prefijoRef);
-        if (n > maximo) maximo = n;
-      });
-    } catch (e) {
-      console.warn(`No se pudo calcular el máximo consecutivo existente por "${campo}"; continúo.`, e);
-    }
-  }
-
-  return maximo;
-};
-
-// ──────────────────────────────────────────────────────────────────────
-// ¿Ya existe una operación con esta referencia exacta? (consulta por IGUALDAD)
-// Es la red de seguridad definitiva contra repetidos: si el contador venía por
-// detrás de la realidad, aquí se detecta y se fuerza un número mayor.
-// ──────────────────────────────────────────────────────────────────────
-const existeReferenciaDuplicada = async (referencia: string): Promise<boolean> => {
-  for (const campo of ['ref', 'referencia']) {
-    try {
-      const snap = await getDocs(query(collection(db, 'operaciones'), where(campo, '==', referencia)));
-      if (!snap.empty) return true;
-    } catch (e) {
-      console.warn(`Verificación de duplicado por "${campo}" falló; continúo.`, e);
-    }
-  }
-  return false;
-};
-
 export const guardarOperacionSegura = async (operacionData: any) => {
-  // DDMMYY tomado de la FECHA DE SERVICIO (con respaldo a hoy).
+  // DDMMYY tomado de la FECHA DE SERVICIO (con respaldo a hoy) — igual que antes.
   const ddmmyy = ddmmyyDeFechaServicio(operacionData.fechaServicio) || fechaDDMMYY();
 
-  // Prefijo del tipo (TR/LO/FL/OP).
+  // Prefijo del tipo (TR/LO/FL/OP) — igual que antes.
   const prefijoCorto = await resolverPrefijoCorto(operacionData);
 
-  // Contador POR TIPO Y POR FECHA DE SERVICIO: cada (tipo, fecha) arranca en 001.
-  const counterRef = doc(db, 'counters', `operaciones_${prefijoCorto}_${ddmmyy}`);
-
-  // Piso = máximo consecutivo REAL ya existente (se calcula una vez; la
-  // verificación posterior es la garantía final).
-  let pisoReal = await obtenerMaximoConsecutivoExistente(prefijoCorto, ddmmyy);
-
-  const MAX_INTENTOS = 60;
+  // Id único por envío: si hay un reintento de red, la función NO duplica.
+  const clienteOpId =
+    (typeof crypto !== 'undefined' && (crypto as any).randomUUID?.())
+      ? (crypto as any).randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   try {
-    for (let intento = 0; intento < MAX_INTENTOS; intento++) {
-      // ===== A) RESERVA ATÓMICA del número (sólo el contador entra a la tx) =====
-      let asignado = 0;
-      await runTransaction(db, async (transaction) => {
-        const counterDoc = await transaction.get(counterRef);
-        const actual = counterDoc.exists() ? (Number(counterDoc.data().count) || 0) : 0;
-        // El consecutivo NUNCA baja ni se repite: parte del MAYOR entre el
-        // contador y el piso real. Si dos personas guardan a la vez, la
-        // transacción reintenta y cada quien recibe un número distinto.
-        asignado = Math.max(actual, pisoReal) + 1;
-        transaction.set(
-          counterRef,
-          { count: asignado, prefijo: prefijoCorto, fecha: ddmmyy },
-          { merge: true }
-        );
-      });
+    const crearOperacion = httpsCallable(functions, 'crearOperacion');
+    const res: any = await crearOperacion({
+      operacion: operacionData,
+      prefijo: prefijoCorto,
+      ddmmyy,
+      clienteOpId,
+    });
 
-      const referenciaFinal = generarReferencia(prefijoCorto, asignado, ddmmyy);
-
-      // ===== B) VERIFICACIÓN contra la realidad (anti-repetido definitivo) =====
-      const duplicada = await existeReferenciaDuplicada(referenciaFinal);
-      if (duplicada) {
-        // El contador venía por detrás: sube el piso y reintenta con uno mayor.
-        pisoReal = Math.max(pisoReal, asignado);
-        console.warn(`[Consecutivo] ${referenciaFinal} ya existía; reintento con un número mayor.`);
-        continue;
-      }
-
-      // ===== C) ESCRITURA (el número ya quedó reservado y verificado libre) =====
-      const nuevaOperacionRef = doc(collection(db, 'operaciones'));
-      await setDoc(nuevaOperacionRef, {
-        ...operacionData,
-        ref: referenciaFinal,
-        // Campos estructurados nuevos → permiten conocer "el último" con certeza.
-        refPrefijo: `${prefijoCorto}-${ddmmyy}`,
-        refConsecutivo: asignado,
-        createdAt: new Date().toISOString(),
-      });
-
-      return {
-        success: true,
-        id: nuevaOperacionRef.id,
-        ref: referenciaFinal,
-      };
+    const { id, ref } = (res?.data || {}) as { id: string; ref: string };
+    if (!id) {
+      throw new Error('La función no devolvió un id de operación válido.');
     }
-
-    throw new Error(
-      'No se pudo asignar un consecutivo único tras varios intentos. ' +
-      'Vuelve a intentar; si persiste, revisa el contador en la colección "counters".'
-    );
+    return { success: true, id, ref };
   } catch (error: any) {
     console.error('Guardado de operación fallido: ', error);
 
@@ -298,12 +154,13 @@ export const guardarOperacionSegura = async (operacionData: any) => {
         `Tu proyecto superó el límite gratuito diario de lecturas/escrituras.\n\n` +
         `Soluciones:\n` +
         `  • La cuota se reinicia automáticamente cada día a las 2 AM (hora México)\n` +
-        `  • Activa el plan Blaze en Firebase Console (sigue siendo gratis hasta cierto uso)\n\n` +
+        `  • Revisa el uso en Firebase Console\n\n` +
         `Por ahora no se puede guardar la operación. Intenta más tarde.`
       );
     }
 
-    throw error;
+    // El mensaje de la Cloud Function (HttpsError) viene en error.message.
+    throw new Error(error?.message || 'No se pudo guardar la operación.');
   }
 };
 

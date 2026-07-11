@@ -12,6 +12,17 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 // ✅ logo + nombre de la empresa removidos de esta vista (se quitó EmpresaBrand)
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 
+
+// ✅ Color por TIPO DE OPERACIÓN: Transfer → naranja, Logística → azul,
+//   Fletes → verde. Cualquier otro tipo conserva el color neutro.
+const colorTipoOperacion = (nombre: any): string => {
+  const n = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (n.includes('transfer')) return '#fb923c';
+  if (n.includes('logist')) return '#58a6ff';
+  if (n.includes('flete')) return '#3fb950';
+  return '#c9d1d9';
+};
+
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
@@ -1007,7 +1018,7 @@ const ServiciosCancelados = () => {
                         </td>
                         <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0,6)}</td>
                         <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</td>
+                        <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</td>
                         <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</td>
                         <td style={{ padding: '16px', color: '#c9d1d9' }}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</td>
                         <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</td>

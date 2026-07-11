@@ -1,55 +1,39 @@
 /**
- * Cloud Function: crearOperacion
- * ------------------------------------------------------------------
- * Asigna el consecutivo de forma ATÓMICA en el backend, eliminando los
- * duplicados que ocurren al generarlo en el cliente (condición de carrera).
+ * Cloud Function: crearOperacion  (versión alineada a tu operacionesService actual)
+ * ------------------------------------------------------------------------------
+ * Asigna el consecutivo en el BACKEND, de forma ATÓMICA, para eliminar los
+ * duplicados/brincos que ocurrían al generarlo en el cliente.
  *
- * Cómo funciona:
- *  - Usa una transacción de Firestore sobre un documento "contador" por
- *    prefijo+día (p.ej. contadores_operaciones/TR-010726). La transacción
- *    reintenta sola si hay conflicto => nunca entrega el mismo número dos veces.
- *  - Idempotencia opcional (clienteOpId): si un reintento de red vuelve a
- *    llamar con el mismo id, devuelve la operación ya creada en vez de duplicar.
+ * Compatible con lo que ya tienes:
+ *   · Contador:  counters/operaciones_<PREFIJO>_<DDMMYY>   (campo numérico "count")
+ *   · Formato:   <PREFIJO>-<DDMMYY>-<NNN>   (ej. TR-270626-001)
+ *   · Campos:    refPrefijo = "<PREFIJO>-<DDMMYY>",  refConsecutivo = <NNN>,
+ *                createdAt  = ISO string (igual que antes).
  *
- * Ubicación sugerida: functions/src/index.ts  (o impórtalo desde ahí)
- * Requiere: plan Blaze (las Cloud Functions necesitan facturación activa).
+ * El PREFIJO (TR/LO/FL/OP) y la clave de fecha (DDMMYY) los calcula el CLIENTE
+ * con tus utilidades actuales y los envía; así el criterio es idéntico al de hoy
+ * y esta función sólo se encarga del número atómico.
  *
- * Deploy:
- *   cd functions && npm install
- *   firebase deploy --only functions:crearOperacion
- * ------------------------------------------------------------------
+ * Seguridad anti-repetidos (todo DENTRO de una sola transacción):
+ *   1) Lee el contador "count".
+ *   2) Calcula el "piso real" = máximo refConsecutivo ya existente para ese
+ *      (prefijo, fecha). Si el contador viniera por detrás, se autocorrige.
+ *   3) asignado = max(count, pisoReal) + 1  → nunca repite ni baja.
+ *   4) Escribe contador + operación de forma atómica.
+ * Idempotencia opcional (clienteOpId): un reintento de red no crea duplicados.
+ *
+ * Ubicación: functions/src/index.ts
+ * Deploy:    firebase deploy --only functions:crearOperacion
+ * ------------------------------------------------------------------------------
  */
 
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { initializeApp, getApps } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 import type { DocumentReference } from 'firebase-admin/firestore';
 
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
-
-// Deriva el prefijo (TR/LO/FL) desde el nombre del tipo de operación.
-// Solo se usa si el cliente NO manda un prefijo explícito.
-function derivarPrefijo(tipoNombre: string): string {
-  const t = String(tipoNombre || '')
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  if (t.includes('transfer')) return 'TR';
-  if (t.includes('logistic')) return 'LO';
-  if (t.includes('flete')) return 'FL';
-  return 'OP';
-}
-
-// Convierte "YYYY-MM-DD" a "DDMMYY". Si no viene fecha válida, usa hoy.
-function fechaClaveDDMMYY(fechaServicio?: string): string {
-  const m = String(fechaServicio || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
-  const d = m
-    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
-    : new Date();
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yy = String(d.getFullYear()).slice(-2);
-  return `${dd}${mm}${yy}`;
-}
 
 export const crearOperacion = onCall({ region: 'us-central1' }, async (request) => {
   const uid = request.auth?.uid;
@@ -63,75 +47,77 @@ export const crearOperacion = onCall({ region: 'us-central1' }, async (request) 
     throw new HttpsError('invalid-argument', 'Falta el objeto "operacion".');
   }
 
-  // Prefijo y clave de fecha: se respetan los que mande el cliente si vienen;
-  // si no, se derivan aquí para conservar el formato TR/LO/FL-DDMMYY-###.
-  const prefijo = String(data.prefijo || derivarPrefijo(operacion.tipoOperacionNombre)).toUpperCase();
-  const fechaClave = String(data.fechaClave || fechaClaveDDMMYY(operacion.fechaServicio));
+  // Prefijo y clave de fecha: los calcula el cliente con tus utilidades actuales.
+  const prefijo = String(data.prefijo || 'OP').toUpperCase();
+  const ddmmyy = String(data.ddmmyy || '');
+  if (!/^\d{6}$/.test(ddmmyy)) {
+    throw new HttpsError('invalid-argument', 'Falta o es inválida la clave de fecha (ddmmyy).');
+  }
 
-  // ⚙️ Alcance del consecutivo. Por defecto: UNO POR PREFIJO POR DÍA.
-  //    Si quieres un consecutivo GLOBAL por día (compartido entre TR/LO/FL),
-  //    cambia por:  const counterId = fechaClave;
-  const counterId = `${prefijo}-${fechaClave}`;
-
-  // Idempotencia opcional: id único por envío del cliente.
+  const refPrefijo = `${prefijo}-${ddmmyy}`;                                  // ej. TR-010726
+  const counterRef = db.collection('counters').doc(`operaciones_${prefijo}_${ddmmyy}`);
   const clienteOpId = data.clienteOpId ? String(data.clienteOpId) : null;
 
   try {
     const resultado = await db.runTransaction(async (tx) => {
-      // 1) TODAS LAS LECTURAS PRIMERO (regla de las transacciones).
+      // ===================== LECTURAS (todas primero) =====================
+
+      // Idempotencia: si este envío ya se procesó, devolvemos lo existente.
       let idempRef: DocumentReference | null = null;
       if (clienteOpId) {
         idempRef = db.collection('operaciones_idempotencia').doc(clienteOpId);
         const idempSnap = await tx.get(idempRef);
         if (idempSnap.exists) {
           const prev = idempSnap.data() as any;
-          // Ya se creó antes con este mismo id: devolvemos lo existente.
           return { id: prev.operacionId, ref: prev.ref, yaExistia: true };
         }
       }
 
-      const counterRef = db.collection('contadores_operaciones').doc(counterId);
+      // Contador actual del (prefijo, fecha).
       const counterSnap = await tx.get(counterRef);
-      const ultimo = counterSnap.exists ? ((counterSnap.data() as any).ultimo || 0) : 0;
-      const siguiente = ultimo + 1;
+      const count = counterSnap.exists ? (Number((counterSnap.data() as any).count) || 0) : 0;
 
-      // 2) AHORA LAS ESCRITURAS.
+      // Piso real: máximo refConsecutivo YA existente para este (prefijo, fecha).
+      // Si el contador viene por detrás de la realidad, esto lo corrige.
+      const existentesSnap = await tx.get(
+        db.collection('operaciones').where('refPrefijo', '==', refPrefijo)
+      );
+      let pisoReal = 0;
+      existentesSnap.forEach((d) => {
+        const n = Number((d.data() as any).refConsecutivo) || 0;
+        if (n > pisoReal) pisoReal = n;
+      });
+
+      // El consecutivo nunca baja ni se repite.
+      const asignado = Math.max(count, pisoReal) + 1;
+      const ref = `${prefijo}-${ddmmyy}-${String(asignado).padStart(3, '0')}`;
+      const ahoraISO = new Date().toISOString();
+
+      // ===================== ESCRITURAS =====================
+
+      tx.set(counterRef, { count: asignado, prefijo, fecha: ddmmyy }, { merge: true });
+
       const nuevoRef = db.collection('operaciones').doc();
-      const ref = `${prefijo}-${fechaClave}-${String(siguiente).padStart(3, '0')}`;
-
-      tx.set(counterRef, {
-        ultimo: siguiente,
-        prefijo,
-        fechaClave,
-        actualizadoEn: FieldValue.serverTimestamp(),
-      }, { merge: true });
-
-      // Nunca confiar en un "id" que venga del cliente.
       const limpio: any = { ...operacion };
-      delete limpio.id;
+      delete limpio.id; // nunca confiar en un id del cliente
 
       tx.set(nuevoRef, {
         ...limpio,
         ref,
-        refPrefijo: prefijo,
-        refConsecutivo: siguiente,
+        refPrefijo,
+        refConsecutivo: asignado,
         creadoPor: uid,
-        createdAt: FieldValue.serverTimestamp(),
+        createdAt: ahoraISO,
       });
 
       if (idempRef) {
-        tx.set(idempRef, {
-          operacionId: nuevoRef.id,
-          ref,
-          creadoPor: uid,
-          createdAt: FieldValue.serverTimestamp(),
-        });
+        tx.set(idempRef, { operacionId: nuevoRef.id, ref, creadoPor: uid, createdAt: ahoraISO });
       }
 
       return { id: nuevoRef.id, ref, yaExistia: false };
     });
 
-    return resultado;
+    return { success: true, ...resultado };
   } catch (err: any) {
     console.error('Error creando operación:', err);
     throw new HttpsError('internal', err?.message || 'No se pudo crear la operación.');
