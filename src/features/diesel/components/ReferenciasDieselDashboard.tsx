@@ -163,6 +163,18 @@ const SelectorProveedorBuscable: React.FC<SelectorProveedorProps> = ({
   );
 };
 
+// ✅ Atributos de la caja de una operación, detectados desde el nombre del
+//   convenio/tarifa (ej. "Importación Caja Cargada Hazmat 240 - NLD"):
+//   CARGADA o VACÍA, y si es HAZMAT. Tolerante a acentos y mayúsculas.
+const atributosCajaOp = (op: any): { carga: 'CARGADA' | 'VACIA' | ''; hazmat: boolean } => {
+  const txt = [op?.convenioNombre, op?.tarifaLabel, op?.tarifarioLabel, op?.tipoServicio, op?.descripcionMercancia]
+    .map(x => String(x || '')).join(' ')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const carga = /vaci[ao]/.test(txt) ? 'VACIA' : (/cargad[ao]/.test(txt) ? 'CARGADA' : '');
+  const hazmat = /hazmat|peligros/.test(txt);
+  return { carga, hazmat };
+};
+
 export const ReferenciasDieselDashboard = () => {
   const [activeTab, setActiveTab] = useState<'operaciones' | 'referencias'>('referencias');
   
@@ -1888,6 +1900,26 @@ export const ReferenciasDieselDashboard = () => {
                           }}
                         >
                           {displayRef}
+                          {/* ✅ Caja Cargada / Vacía y Hazmat de la operación */}
+                          {match && (() => {
+                            const atrib = atributosCajaOp(match);
+                            return (
+                              <>
+                                {atrib.carga && (
+                                  <span style={{ fontSize: '0.62rem', fontWeight: 'bold', padding: '1px 7px', borderRadius: '999px', letterSpacing: '0.5px',
+                                    border: `1px solid ${atrib.carga === 'CARGADA' ? '#3fb950' : '#8b949e'}`,
+                                    color: atrib.carga === 'CARGADA' ? '#3fb950' : '#8b949e' }}>
+                                    {atrib.carga === 'CARGADA' ? 'CARGADA' : 'VACÍA'}
+                                  </span>
+                                )}
+                                {atrib.hazmat && (
+                                  <span style={{ fontSize: '0.62rem', fontWeight: 'bold', padding: '1px 7px', borderRadius: '999px', letterSpacing: '0.5px', border: '1px solid #f85149', color: '#f85149' }}>
+                                    ☣ HAZMAT
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
                           {match && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>}
                         </span>
                       );
