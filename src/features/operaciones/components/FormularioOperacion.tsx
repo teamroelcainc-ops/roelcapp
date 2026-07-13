@@ -55,11 +55,23 @@ const ID_GASTO_SUELDO = '25b772d3';
 const TIPO_OP_PROVEEDOR_FIJO = '8ec24dfe';
 const PROVEEDOR_FIJO_ID = '349123';
 
+// ✅ (Origen/Destino — regla AppSheet restaurada)
+//   Tipos de operación cuyo Origen/Destino se filtra por país según el tráfico:
+//     8ec24dfe y 24da3608  → Exportación: Origen MX / Destino USA;
+//                            Importación: Origen USA / Destino MX;
+//                            Movimiento: sin filtro.
+//   Tipo 3e5b0035 → sin filtro (todas las direcciones).
+//   Tipos con TrompoExpo/TrompoImpo = true → misma regla por país en su tráfico.
+const TIPOS_OP_FILTRO_PAIS = ['8ec24dfe', '24da3608'];
+const TIPO_OP_SIN_FILTRO_PAIS = '3e5b0035';
+const esTrueAppSheet = (v: any): boolean => v === true || String(v ?? '').trim().toLowerCase() === 'true';
+
 // ═══════════════════════════════════════════════════════════════════════
 // ✅ (Origen/Destino por tráfico) Detección de PAÍS y FORMATO de dirección.
 //   Importación: Origen = Estados Unidos, Destino = México.
 //   Exportación: Origen = México, Destino = Estados Unidos.
 //   Movimiento: se muestra todo.
+//   (La regla por tipo de operación está en TIPOS_OP_FILTRO_PAIS / TIPO_OP_SIN_FILTRO_PAIS.)
 //   Formato MX:  Calle #Num Int., Col. Colonia, C.P. 12345, Ciudad, Estado, México
 //   Formato USA: 123 Street, Suite X, City, ST 78041, Estados Unidos
 // ═══════════════════════════════════════════════════════════════════════
@@ -1644,11 +1656,45 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const empresaCoincide = (e:any, q:string) =>
     nombreEmpresaMostrar(e).toLowerCase().includes(q) || (e.nombre || '').toLowerCase().includes(q);
 
-  // ✅ MODIFICADO (a petición): Origen y Destino muestran TODAS las direcciones,
-  //   sin filtrar por país/tráfico. Se conservan la etiqueta de país (EE.UU./MX)
-  //   y el formato de dirección por país en las sugerencias.
-  const resultadosOrigen = filOrigenesDestinos.filter((e:any) => empresaCoincide(e, sOrigen) || (e.direccion || '').toLowerCase().includes(sOrigen));
-  const resultadosDestino = filOrigenesDestinos.filter((e:any) => empresaCoincide(e, sDestino) || (e.direccion || '').toLowerCase().includes(sDestino));
+  // ✅ RESTAURADO (regla AppSheet): Origen y Destino se filtran por PAÍS según
+  //   el tráfico y el tipo de operación, replicando el IFS(...) original:
+  //   · Tipos 8ec24dfe / 24da3608:
+  //       Exportación → Origen: México          / Destino: Estados Unidos.
+  //       Importación → Origen: Estados Unidos  / Destino: México.
+  //       Movimiento  → sin filtro (todas).
+  //   · Tipo 3e5b0035 → sin filtro (todas).
+  //   · Cualquier tipo con TrompoExpo=true (en Exportación) o TrompoImpo=true
+  //     (en Importación) aplica la misma regla por país.
+  //   · Si ninguna regla aplica (p. ej. aún no se elige tráfico/tipo), se
+  //     muestran todas para no dejar el buscador vacío. Los resultados se
+  //     ordenan alfabéticamente por nombre (ORDERBY(..., [nombre]) de AppSheet).
+  const paisRequeridoOD = useMemo((): { origen: 'USA' | 'MX' | ''; destino: 'USA' | 'MX' | '' } => {
+    const tipoId = String(formData.tipoOperacionId || '');
+    const tipoOp: any = tiposOperacion?.find((op: any) => String(op.id) === tipoId) || {};
+    const trompoExpo = esTrueAppSheet(tipoOp.TrompoExpo ?? tipoOp.trompoExpo ?? tipoOp.trompo_expo);
+    const trompoImpo = esTrueAppSheet(tipoOp.TrompoImpo ?? tipoOp.trompoImpo ?? tipoOp.trompo_impo);
+    const traf = normalizarTxtDir(formData.trafico);
+    const esExpo = traf.includes('expo');
+    const esImpo = traf.includes('impo');
+    if (TIPOS_OP_FILTRO_PAIS.includes(tipoId)) {
+      if (esExpo) return { origen: 'MX', destino: 'USA' };
+      if (esImpo) return { origen: 'USA', destino: 'MX' };
+      return { origen: '', destino: '' }; // Movimiento u otro tráfico → todas
+    }
+    if (tipoId === TIPO_OP_SIN_FILTRO_PAIS) return { origen: '', destino: '' };
+    if (esExpo && trompoExpo) return { origen: 'MX', destino: 'USA' };
+    if (esImpo && trompoImpo) return { origen: 'USA', destino: 'MX' };
+    return { origen: '', destino: '' };
+  }, [formData.tipoOperacionId, formData.trafico, tiposOperacion]);
+
+  const coincideOD = (e: any, q: string) =>
+    empresaCoincide(e, q) || (e.direccion || '').toLowerCase().includes(q) || direccionFormateadaOD(e).toLowerCase().includes(q);
+  const filtraPorPaisOD = (lista: any[], pais: 'USA' | 'MX' | '') =>
+    pais ? lista.filter((e: any) => paisDeEmpresaOD(e) === pais) : lista;
+  const ordenaPorNombreOD = (lista: any[]) =>
+    [...lista].sort((a: any, b: any) => nombreEmpresaMostrar(a).localeCompare(nombreEmpresaMostrar(b), 'es', { sensitivity: 'base' }));
+  const resultadosOrigen = ordenaPorNombreOD(filtraPorPaisOD(filOrigenesDestinos.filter((e:any) => coincideOD(e, sOrigen)), paisRequeridoOD.origen));
+  const resultadosDestino = ordenaPorNombreOD(filtraPorPaisOD(filOrigenesDestinos.filter((e:any) => coincideOD(e, sDestino)), paisRequeridoOD.destino));
   const resultadosClientePaga = filClientesPaga.filter((e:any) => empresaCoincide(e, sClientePaga));
   const resultadosRemolque = remolques?.filter((e:any) => `${e.nombre || ''} ${e.placas || e.placa || ''}`.toLowerCase().trim().includes(sRemolque)) || [];
   const resultadosClienteMercancia = filClientesMercancia.filter((e:any) => empresaCoincide(e, sClienteMerc));
@@ -2303,7 +2349,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('origen')}`} placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
-                            {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>{nombreEmpresaMostrar(o)}{paisDeEmpresaOD(o) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950'}`, color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(o) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{direccionFormateadaOD(o)}</div></div>))}</div>)}
+                            {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>{nombreEmpresaMostrar(o)}{paisDeEmpresaOD(o) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950'}`, backgroundColor: paisDeEmpresaOD(o) === 'USA' ? 'rgba(59,130,246,0.15)' : 'rgba(63,185,80,0.15)', color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(o) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', fontWeight: 500, color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : paisDeEmpresaOD(o) === 'MX' ? '#3fb950' : '#8b949e' }}>{direccionFormateadaOD(o)}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); })} />
                         </div>
@@ -2313,7 +2359,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('destino')}`} placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
-                            {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>{nombreEmpresaMostrar(d)}{paisDeEmpresaOD(d) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950'}`, color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(d) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', color: '#8b949e' }}>{direccionFormateadaOD(d)}</div></div>))}</div>)}
+                            {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>{nombreEmpresaMostrar(d)}{paisDeEmpresaOD(d) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950'}`, backgroundColor: paisDeEmpresaOD(d) === 'USA' ? 'rgba(59,130,246,0.15)' : 'rgba(63,185,80,0.15)', color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(d) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', fontWeight: 500, color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : paisDeEmpresaOD(d) === 'MX' ? '#3fb950' : '#8b949e' }}>{direccionFormateadaOD(d)}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>
