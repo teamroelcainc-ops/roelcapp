@@ -10,7 +10,8 @@ import {
   doc, 
   limit,
   orderBy,
-  getDoc
+  getDoc,
+  updateDoc
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -247,6 +248,86 @@ export const ReferenciasDieselDashboard = () => {
   useEffect(() => {
     return () => { previewsFotos.forEach(url => URL.revokeObjectURL(url)); };
   }, [previewsFotos]);
+
+  // ✅ NUEVO: AGREGAR FOTOS DESDE LA FICHA (modal de detalle de la referencia).
+  //   Mismo esquema que el alta: se suben a Storage (consecutivo/unidad/) y se
+  //   anexan al arreglo `fotos` del documento en Firestore.
+  const fotoDetalleInputRef = useRef<HTMLInputElement>(null);
+  const [fotosNuevasDetalle, setFotosNuevasDetalle] = useState<File[]>([]);
+  const [arrastrandoFotoDetalle, setArrastrandoFotoDetalle] = useState(false);
+  const [subiendoFotosDetalle, setSubiendoFotosDetalle] = useState(false);
+  const dragDepthFotoDetalle = useRef(0);
+
+  const previewsFotosDetalle = useMemo(
+    () => fotosNuevasDetalle.map(f => URL.createObjectURL(f)),
+    [fotosNuevasDetalle]
+  );
+  useEffect(() => {
+    return () => { previewsFotosDetalle.forEach(url => URL.revokeObjectURL(url)); };
+  }, [previewsFotosDetalle]);
+
+  // Al abrir/cambiar de referencia se limpia cualquier selección pendiente.
+  useEffect(() => {
+    setFotosNuevasDetalle([]);
+    setArrastrandoFotoDetalle(false);
+    dragDepthFotoDetalle.current = 0;
+  }, [referenciaViendo?.id]);
+
+  const agregarFotosDetalle = (files: FileList | File[]) => {
+    const nuevas = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (nuevas.length === 0) return;
+    setFotosNuevasDetalle(prev => {
+      const clave = (f: File) => `${f.name}_${f.size}`;
+      const existentes = new Set(prev.map(clave));
+      return [...prev, ...nuevas.filter(f => !existentes.has(clave(f)))];
+    });
+  };
+  const handleFotosDetalleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) agregarFotosDetalle(e.target.files);
+    e.target.value = '';
+  };
+  const quitarFotoDetalle = (index: number) => {
+    setFotosNuevasDetalle(prev => prev.filter((_, i) => i !== index));
+  };
+  const handleDragEnterFotoDetalle = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    dragDepthFotoDetalle.current += 1;
+    setArrastrandoFotoDetalle(true);
+  };
+  const handleDragLeaveFotoDetalle = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    dragDepthFotoDetalle.current -= 1;
+    if (dragDepthFotoDetalle.current <= 0) { dragDepthFotoDetalle.current = 0; setArrastrandoFotoDetalle(false); }
+  };
+  const handleDragOverFotoDetalle = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); };
+  const handleDropFotoDetalle = (e: React.DragEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    dragDepthFotoDetalle.current = 0;
+    setArrastrandoFotoDetalle(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) agregarFotosDetalle(e.dataTransfer.files);
+  };
+
+  // Sube las fotos seleccionadas y las anexa al documento de la referencia.
+  const subirFotosDesdeDetalle = async () => {
+    if (!referenciaViendo || fotosNuevasDetalle.length === 0 || subiendoFotosDetalle) return;
+    setSubiendoFotosDetalle(true);
+    try {
+      const consecutivo = referenciaViendo.consecutivo || referenciaViendo.id;
+      const unidad = referenciaViendo.unidadNombre || referenciaViendo.unidadId || referenciaViendo.unidad || 'unidad';
+      const subidas = await subirFotosReferencia(consecutivo, unidad, fotosNuevasDetalle);
+      const fotosFinales = [...(Array.isArray(referenciaViendo.fotos) ? referenciaViendo.fotos : []), ...subidas];
+      await updateDoc(doc(db, 'referencias_diesel', referenciaViendo.id), { fotos: fotosFinales });
+      // Refleja el cambio en la ficha y en la tabla sin recargar.
+      setReferenciaViendo((prev: any) => (prev && prev.id === referenciaViendo.id) ? { ...prev, fotos: fotosFinales } : prev);
+      setReferenciasGlobales((prev: any[]) => prev.map((r: any) => r.id === referenciaViendo.id ? { ...r, fotos: fotosFinales } : r));
+      setFotosNuevasDetalle([]);
+    } catch (error) {
+      console.error('Error subiendo fotos desde la ficha:', error);
+      alert('No se pudieron subir las fotos. Revisa tu conexión o permisos de Storage.');
+    } finally {
+      setSubiendoFotosDetalle(false);
+    }
+  };
 
   // Limpia un segmento de ruta de Storage. Mantiene guiones (para el
   // consecutivo tipo DIESEL-260626-001) y reemplaza lo demás por "_".
@@ -1858,13 +1939,14 @@ export const ReferenciasDieselDashboard = () => {
                   </div>
                 </div>
 
-                {/* ✅ FOTOS DE LA REFERENCIA */}
-                {Array.isArray(referenciaViendo.fotos) && referenciaViendo.fotos.length > 0 && (
-                  <div style={{ gridColumn: 'span 3' }}>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
-                      Fotos ({referenciaViendo.fotos.length})
-                    </span>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px' }}>
+                {/* ✅ FOTOS DE LA REFERENCIA (ver y AGREGAR desde la ficha) */}
+                <div style={{ gridColumn: 'span 3' }}>
+                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
+                    Fotos ({Array.isArray(referenciaViendo.fotos) ? referenciaViendo.fotos.length : 0})
+                  </span>
+
+                  {Array.isArray(referenciaViendo.fotos) && referenciaViendo.fotos.length > 0 && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '10px', marginBottom: '12px' }}>
                       {referenciaViendo.fotos.map((foto: any, i: number) => (
                         <a
                           key={i}
@@ -1878,8 +1960,72 @@ export const ReferenciasDieselDashboard = () => {
                         </a>
                       ))}
                     </div>
+                  )}
+
+                  {/* Zona para agregar fotos nuevas (clic o arrastrar) */}
+                  <input
+                    ref={fotoDetalleInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleFotosDetalleInput}
+                    style={{ display: 'none' }}
+                  />
+                  <div
+                    onClick={() => fotoDetalleInputRef.current?.click()}
+                    onDragEnter={handleDragEnterFotoDetalle}
+                    onDragLeave={handleDragLeaveFotoDetalle}
+                    onDragOver={handleDragOverFotoDetalle}
+                    onDrop={handleDropFotoDetalle}
+                    style={{
+                      border: `2px dashed ${arrastrandoFotoDetalle ? '#D84315' : '#30363d'}`,
+                      backgroundColor: arrastrandoFotoDetalle ? 'rgba(216,67,21,0.08)' : '#161b22',
+                      borderRadius: '8px',
+                      padding: '16px',
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={arrastrandoFotoDetalle ? '#D84315' : '#8b949e'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '6px' }}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+                    <div style={{ color: arrastrandoFotoDetalle ? '#D84315' : '#c9d1d9', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                      {arrastrandoFotoDetalle ? 'Suelta las fotos aquí' : 'Haz clic o arrastra fotos para agregarlas a esta referencia'}
+                    </div>
+                    <div style={{ color: '#8b949e', fontSize: '0.72rem', marginTop: '4px' }}>Solo imágenes (JPG, PNG, etc.)</div>
                   </div>
-                )}
+
+                  {fotosNuevasDetalle.length > 0 && (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: '10px', marginTop: '12px' }}>
+                        {previewsFotosDetalle.map((url, i) => (
+                          <div key={i} style={{ position: 'relative', borderRadius: '6px', overflow: 'hidden', border: '1px dashed #D84315', backgroundColor: '#010409' }}>
+                            <img src={url} alt={fotosNuevasDetalle[i]?.name || `foto-nueva-${i}`} style={{ width: '100%', height: '80px', objectFit: 'cover', display: 'block', opacity: subiendoFotosDetalle ? 0.5 : 1 }} />
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); quitarFotoDetalle(i); }}
+                              disabled={subiendoFotosDetalle}
+                              title="Quitar foto"
+                              style={{ position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px', borderRadius: '50%', border: 'none', backgroundColor: 'rgba(239,68,68,0.9)', color: '#fff', cursor: 'pointer', fontSize: '0.85rem', lineHeight: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            >✕</button>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                        <span style={{ color: '#8b949e', fontSize: '0.75rem' }}>
+                          {fotosNuevasDetalle.length} {fotosNuevasDetalle.length === 1 ? 'foto nueva por subir' : 'fotos nuevas por subir'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={subirFotosDesdeDetalle}
+                          disabled={subiendoFotosDetalle}
+                          style={{ padding: '8px 20px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: subiendoFotosDetalle ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: subiendoFotosDetalle ? 0.7 : 1 }}
+                        >
+                          {subiendoFotosDetalle ? 'Subiendo fotos...' : `Subir ${fotosNuevasDetalle.length} ${fotosNuevasDetalle.length === 1 ? 'foto' : 'fotos'}`}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
 
                 <div style={{ gridColumn: 'span 3' }}>
                   <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>Operaciones Incluidas en esta Referencia</span>
