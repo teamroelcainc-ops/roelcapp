@@ -693,11 +693,18 @@ export interface DatosCartaInstrucciones {
   origenDireccion: string;
   origenColonia: string;
   origenCP: string;
+  // ✅ Desglose estructurado (catálogo de direcciones).
+  origenMunicipio?: string;
+  origenEstado?: string;
+  origenPais?: string;
   destinoCiudad: string;
   destinoNombre: string;
   destinoDireccion: string;
   destinoColonia: string;
   destinoCP: string;
+  destinoMunicipio?: string;
+  destinoEstado?: string;
+  destinoPais?: string;
   logoBase64?: string;
 }
 
@@ -798,7 +805,7 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
         <tr>
           <td style="width: 48%; vertical-align: top; border: 0.5pt solid #eee; padding: 5px;">
             <div style="text-align:center; font-weight:bold; text-decoration:underline; margin-bottom:3px;">ORIGEN</div>
-            <div style="color: red; font-weight: bold; font-size: 10pt; text-align: center; padding-bottom: 4px;">${datos.origenCiudad}</div>
+            <div style="color: red; font-weight: bold; font-size: 7.5pt; text-align: center; padding-bottom: 4px; line-height: 1.3;">${datos.origenCiudad}</div>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
                 <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">REMITENTE:</td>
@@ -808,12 +815,32 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
                 <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">DIRECCION:</td>
                 <td style="font-size: 7.5pt; padding: 2px 0; line-height: 1.35;">${datos.origenDireccion}</td>
               </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">COLONIA:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.origenColonia || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">C.POSTAL:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.origenCP || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">MUNICIPIO:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.origenMunicipio || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">ESTADO:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.origenEstado || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">PAIS:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.origenPais || 'N/A'}</td>
+              </tr>
             </table>
           </td>
           <td style="width: 4%;"></td>
           <td style="width: 48%; vertical-align: top; border: 0.5pt solid #eee; padding: 5px;">
             <div style="text-align:center; font-weight:bold; text-decoration:underline; margin-bottom:3px;">DESTINO</div>
-            <div style="color: red; font-weight: bold; font-size: 10pt; text-align: center; padding-bottom: 4px;">${datos.destinoCiudad}</div>
+            <div style="color: red; font-weight: bold; font-size: 7.5pt; text-align: center; padding-bottom: 4px; line-height: 1.3;">${datos.destinoCiudad}</div>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
                 <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">DESTINATARIO:</td>
@@ -822,6 +849,26 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
               <tr>
                 <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">DIRECCION:</td>
                 <td style="font-size: 7.5pt; padding: 2px 0; line-height: 1.35;">${datos.destinoDireccion}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">COLONIA:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.destinoColonia || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">C.POSTAL:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.destinoCP || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">MUNICIPIO:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.destinoMunicipio || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">ESTADO:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.destinoEstado || 'N/A'}</td>
+              </tr>
+              <tr>
+                <td style="font-weight: bold; text-align: right; padding-right: 5px; width: 90px; vertical-align: top; font-size: 7.5pt;">PAIS:</td>
+                <td style="font-size: 7.5pt; padding: 2px 0;">${datos.destinoPais || 'N/A'}</td>
               </tr>
             </table>
           </td>

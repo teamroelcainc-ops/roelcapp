@@ -382,7 +382,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   const [activeTab, setActiveTab] = useState<'general' | 'fiscal' | 'contacto'>('general');
   
   const [regimenesFiscales, setRegimenesFiscales] = useState<{id: string, label: string}[]>([]);
-  const [direccionesDB, setDireccionesDB] = useState<{id: string, label: string}[]>([]);
+  const [direccionesDB, setDireccionesDB] = useState<any[]>([]);
   const [monedas, setMonedas] = useState<any[]>([]);
   const [tiposFacturas, setTiposFacturas] = useState<any[]>([]);
   
@@ -438,8 +438,10 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
     const unsubDirecciones = onSnapshot(collection(db, 'direcciones'), (snap) => {
       setDireccionesDB(snap.docs.map(doc => {
-        const d = doc.data();
-        return { id: doc.id, label: d.direccionCompleta || 'Dirección sin formato' };
+        const d: any = doc.data();
+        // ✅ Se conservan TODOS los campos estructurados (país, estado, colonia,
+        //   calle, C.P., números) para mostrarlos separados en el formulario.
+        return { id: doc.id, label: d.direccionCompleta || 'Dirección sin formato', ...d };
       }));
     });
 
@@ -891,6 +893,31 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                           + Añadir Nueva
                         </button>
                       </div>
+                      {/* ✅ Desglose de la dirección seleccionada (campos del catálogo de
+                          direcciones, SOLO LECTURA: se editan desde el catálogo). */}
+                      {(() => {
+                        const dirSel = direccionesDB.find((d: any) => String(d.id) === String(formData.direccionId));
+                        if (!dirSel) return null;
+                        const v = (x: any) => String(x ?? '').trim() || '—';
+                        const campoDir = (etiqueta: string, valor: any) => (
+                          <div>
+                            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>{etiqueta}</label>
+                            <input type="text" readOnly disabled value={v(valor)} className="form-control" style={{ backgroundColor: '#010409', color: '#c9d1d9', cursor: 'not-allowed', opacity: 0.9, width: '100%', boxSizing: 'border-box' }} />
+                          </div>
+                        );
+                        return (
+                          <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                            {campoDir('País', dirSel.paisNombre)}
+                            {campoDir('Estado', dirSel.estadoNombre)}
+                            {campoDir('Municipio', dirSel.municipioNombre)}
+                            {campoDir('Colonia', dirSel.coloniaNombre)}
+                            {campoDir('Calle', dirSel.calleNombre)}
+                            {campoDir('# Exterior', dirSel.numExterior)}
+                            {campoDir('# Interior', dirSel.numInterior)}
+                            {campoDir('Código Postal', dirSel.cpNombre)}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="form-group" style={{ gridColumn: 'span 2' }}>

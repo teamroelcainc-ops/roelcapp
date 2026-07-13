@@ -942,47 +942,89 @@ const OperacionesDashboard = () => {
   //   ciudad } desde el registro estructurado y, si no existe, PARSEA el texto
   //   libre de emp.direccion ("Calle #x, Col. Y, C.P. Z, Ciudad, ...").
   // ═══════════════════════════════════════════════════════════════════════
-  const datosDireccionEmpresa = (emp: any): { direccion: string; colonia: string; cp: string; ciudad: string } => {
-    const vacio = { direccion: 'N/A', colonia: 'N/A', cp: 'N/A', ciudad: 'N/A' };
-    if (!emp) return vacio;
-    const v = (x: any) => String(x ?? '').trim();
-    const dir = (catalogosGlobales.direcciones || []).find((d: any) => String(d.id) === String(emp.direccionId)) || null;
-    if (dir) {
-      const calle = v(dir.calle || dir.direccion || dir.street);
-      const num = v(dir.numExterior ?? dir.numeroExterior ?? dir.numero ?? dir.numExt);
-      const interior = v(dir.numInterior ?? dir.numeroInterior ?? dir.interior);
-      const linea = [[calle, num ? `#${num}` : ''].filter(Boolean).join(' '), interior ? `Int. ${interior}` : ''].filter(Boolean).join(' ');
-      const colonia = v(dir.colonia);
-      const cp = v(dir.cp ?? dir.codigoPostal ?? dir.zip ?? dir.zipCode);
-      const ciudad = [v(dir.ciudad || dir.municipio || dir.city), v(dir.estado || dir.state)].filter(Boolean).join(', ');
-      if (linea || colonia || cp || ciudad) {
-        return {
-          direccion: linea || v(dir.direccionCompleta) || v(emp.direccion) || 'N/A',
-          colonia: colonia || 'N/A',
-          cp: cp || 'N/A',
-          ciudad: ciudad || 'N/A',
-        };
-      }
-    }
-    // Respaldo: parsear el texto libre guardado en la empresa.
-    const texto = v(emp.direccion || emp.direccionLabel || (dir ? dir.direccionCompleta : ''));
-    if (!texto) return vacio;
-    const mCol = texto.match(/col(?:onia)?\.?\s*([^,]+)/i);
-    const mCP = texto.match(/c\.?\s*p\.?\s*:?\s*(\d{4,6})/i) || texto.match(/(?:^|[\s,])(\d{5})(?![\d-])/);
-    const partes = texto.split(',').map(x => x.trim()).filter(Boolean);
-    const linea = partes[0] || texto;
-    // Ciudad/estado: las últimas partes que NO sean país, C.P. ni colonia.
+  // ✅ Parser de una dirección en TEXTO libre ("Calle #x, Col. Y, C.P. Z,
+  //   Municipio, Estado, País") → partes separadas. Se usa como respaldo.
+  const parsearDireccionTexto = (texto: string) => {
+    const partes = String(texto || '').split(',').map(x => x.trim()).filter(Boolean);
+    const mCol = String(texto || '').match(/col(?:onia)?\.?\s*([^,]+)/i);
+    const mCP = String(texto || '').match(/c\.?\s*p\.?\s*:?\s*(\d{4,6})/i) || String(texto || '').match(/(?:^|[\s,])(\d{5})(?![\d-])/);
     const esPais = (t: string) => /^(m[e\u00e9]xico|estados unidos|usa|eua|united states)$/i.test(t.trim());
     const esCPtxt = (t: string) => /c\.?\s*p\.?/i.test(t) || /^\d{5}$/.test(t.trim());
     const esColTxt = (t: string) => /^col(?:onia)?\.?\s/i.test(t.trim());
     const candidatas = partes.slice(1).filter(t => !esPais(t) && !esCPtxt(t) && !esColTxt(t));
-    const ciudadTxt = candidatas.slice(-2).join(', ');
     return {
-      direccion: linea,
-      colonia: mCol ? mCol[1].trim() : 'N/A',
-      cp: mCP ? mCP[1] : 'N/A',
-      ciudad: ciudadTxt || 'N/A',
+      direccion: partes[0] || String(texto || '').trim(),
+      colonia: mCol ? mCol[1].trim() : '',
+      cp: mCP ? mCP[1] : '',
+      municipio: candidatas.length >= 2 ? candidatas[candidatas.length - 2] : '',
+      estado: candidatas.length >= 1 ? candidatas[candidatas.length - 1] : '',
+      pais: partes.find(t => esPais(t)) || '',
     };
+  };
+
+  // ✅ Desglose de la dirección de una empresa para los PDFs.
+  //   Orden de resolución:
+  //   1. Registro del catálogo `direcciones` por direccionId (o por coincidencia
+  //      de texto con direccionCompleta, por si el id quedó desactualizado).
+  //   2. Campos estructurados del registro (calleNombre, coloniaNombre, ...);
+  //      lo que falte se completa parseando su direccionCompleta.
+  //   3. Sin registro: se parsea el texto guardado en la empresa.
+  //   `completa` SIEMPRE trae la dirección de facturación en una línea.
+  const datosDireccionEmpresa = (emp: any, listaDirecciones?: any[]) => {
+    const vacio = { direccion: 'N/A', colonia: 'N/A', cp: 'N/A', ciudad: 'N/A', municipio: 'N/A', estado: 'N/A', pais: 'N/A', completa: 'N/A' };
+    if (!emp) return vacio;
+    const v = (x: any) => String(x ?? '').trim();
+    const lista = (Array.isArray(listaDirecciones) && listaDirecciones.length > 0) ? listaDirecciones : (catalogosGlobales.direcciones || []);
+    const textoEmp = v(emp.direccion) || v(emp.direccionLabel);
+    let dir = lista.find((d: any) => String(d.id) === String(emp.direccionId)) || null;
+    if (!dir && textoEmp) {
+      dir = lista.find((d: any) => v(d.direccionCompleta) && v(d.direccionCompleta).toLowerCase() === textoEmp.toLowerCase()) || null;
+    }
+    const completa = v(dir?.direccionCompleta) || textoEmp;
+    if (dir) {
+      const respaldo = parsearDireccionTexto(completa);
+      const calleLinea = [v(dir.calleNombre), v(dir.numExterior) ? `#${v(dir.numExterior)}` : '', v(dir.numInterior) ? `Int. ${v(dir.numInterior)}` : ''].filter(Boolean).join(' ');
+      const municipio = v(dir.municipioNombre) || respaldo.municipio;
+      const estadoDir = v(dir.estadoNombre) || respaldo.estado;
+      return {
+        direccion: calleLinea || respaldo.direccion || 'N/A',
+        colonia: v(dir.coloniaNombre) || respaldo.colonia || 'N/A',
+        cp: v(dir.cpNombre) || respaldo.cp || 'N/A',
+        municipio: municipio || 'N/A',
+        estado: estadoDir || 'N/A',
+        pais: v(dir.paisNombre) || respaldo.pais || 'N/A',
+        ciudad: [municipio, estadoDir].filter(Boolean).join(', ') || 'N/A',
+        completa: completa || 'N/A',
+      };
+    }
+    if (!textoEmp) return vacio;
+    const r = parsearDireccionTexto(textoEmp);
+    return {
+      direccion: r.direccion || 'N/A',
+      colonia: r.colonia || 'N/A',
+      cp: r.cp || 'N/A',
+      municipio: r.municipio || 'N/A',
+      estado: r.estado || 'N/A',
+      pais: r.pais || 'N/A',
+      ciudad: [r.municipio, r.estado].filter(Boolean).join(', ') || 'N/A',
+      completa: textoEmp,
+    };
+  };
+
+  // ✅ Garantiza el catálogo de direcciones FRESCO dentro del mismo clic
+  //   (setCatalogosGlobales es asíncrono y el closure no ve el estado nuevo).
+  const obtenerDireccionesFrescas = async (): Promise<any[]> => {
+    const actual = catalogosGlobales.direcciones;
+    if (Array.isArray(actual) && actual.length > 0) return actual;
+    try {
+      const snap = await getDocs(collection(db, 'direcciones'));
+      const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      setCatalogosGlobales((prev: any) => ({ ...prev, direcciones: data }));
+      return data;
+    } catch (e) {
+      console.error('[PDF] No se pudo leer el catálogo de direcciones:', e);
+      return [];
+    }
   };
 
   const handleDescargarCartaInstrucciones = async () => {
@@ -992,8 +1034,9 @@ const OperacionesDashboard = () => {
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
     const empNombre = resolverOperadorParaPDF();
-    const dirOrigen = datosDireccionEmpresa(origenObj);
-    const dirDestino = datosDireccionEmpresa(destinoObj);
+    const listaDirs = await obtenerDireccionesFrescas();
+    const dirOrigen = datosDireccionEmpresa(origenObj, listaDirs);
+    const dirDestino = datosDireccionEmpresa(destinoObj, listaDirs);
 
     generarCartaInstruccionesPDF({
       referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
@@ -1008,12 +1051,15 @@ const OperacionesDashboard = () => {
       operador: empNombre,
       descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A',
       // ✅ Direcciones REALES desde la colección `empresas`/`direcciones`.
-      origenCiudad: dirOrigen.ciudad,
+      // ✅ La línea roja bajo ORIGEN muestra la dirección de facturación COMPLETA.
+      origenCiudad: dirOrigen.completa,
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
       origenDireccion: dirOrigen.direccion, origenColonia: dirOrigen.colonia, origenCP: dirOrigen.cp,
-      destinoCiudad: dirDestino.ciudad,
+      origenMunicipio: dirOrigen.municipio, origenEstado: dirOrigen.estado, origenPais: dirOrigen.pais,
+      destinoCiudad: dirDestino.completa,
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
       destinoDireccion: dirDestino.direccion, destinoColonia: dirDestino.colonia, destinoCP: dirDestino.cp,
+      destinoMunicipio: dirDestino.municipio, destinoEstado: dirDestino.estado, destinoPais: dirDestino.pais,
     });
   };
 
