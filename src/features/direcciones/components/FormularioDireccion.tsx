@@ -48,11 +48,6 @@ const NIVELES: Record<NivelKey, {
   calle:     { label: 'Calle',         coleccion: 'catalogo_calles',        campoNombre: 'calle',         padre: 'cp',        campoPadre: 'codigo_postal', keyId: 'calleId',     keyNombre: 'calleNombre' },
 };
 const ORDEN_NIVELES: NivelKey[] = ['pais', 'estado', 'municipio', 'colonia', 'cp', 'calle'];
-// Mapa keyId de formulario → nivel (para validación de obligatorios).
-const NIVEL_POR_KEYID: Record<string, NivelKey> = {
-  paisId: 'pais', estadoId: 'estado', municipioId: 'municipio',
-  coloniaId: 'colonia', cpId: 'cp', calleId: 'calle',
-};
 
 // ✅ Normalización para comparar sin acentos/mayúsculas (evita duplicados
 //   tipo "México" vs "mexico" en los catálogos).
