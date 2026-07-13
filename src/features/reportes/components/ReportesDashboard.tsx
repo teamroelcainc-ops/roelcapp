@@ -285,7 +285,9 @@ export const ReportesDashboard = () => {
   // ✅ NUEVO: configuración de columnas POR reporte (cuáles se ven y en qué
   //   orden). Se guarda por id de reporte para que cada reporte recuerde su
   //   propia selección. Se aplica en la tabla, el Excel y el PDF.
-  type ColCfg = { key: string; label: string; align?: 'left' | 'right' | 'center'; visible: boolean };
+  // ✅ label = nombre a MOSTRAR (editable por el usuario); labelOriginal = el
+  //   nombre real de la columna (para restablecer y para fusionar configs).
+  type ColCfg = { key: string; label: string; labelOriginal: string; align?: 'left' | 'right' | 'center'; visible: boolean };
   const [colConfigs, setColConfigs] = useState<Record<string, ColCfg[]>>({});
   const [modalColumnas, setModalColumnas] = useState(false);
   // ✅ NUEVO: modal de Resúmenes Diarios (Transfer / Logística / Fletes).
@@ -847,16 +849,17 @@ export const ReportesDashboard = () => {
   // Fusiona una config guardada (orden + visibilidad por key) con las columnas
   //   REALES del reporte: respeta el orden guardado, conserva la visibilidad y
   //   agrega al final cualquier columna nueva que aún no estuviera guardada.
-  const fusionarConfig = (reales: Columna[], guardada?: { key: string; visible: boolean }[] | null): ColCfg[] => {
+  const fusionarConfig = (reales: Columna[], guardada?: { key: string; visible: boolean; label?: string }[] | null): ColCfg[] => {
     const mapReal = new Map(reales.map(c => [c.key, c]));
     const ordenadas: ColCfg[] = [];
     const usados = new Set<string>();
     (guardada || []).forEach(g => {
       const real = mapReal.get(g.key);
-      if (real) { ordenadas.push({ key: real.key, label: real.label, align: real.align, visible: !!g.visible }); usados.add(real.key); }
+      // ✅ Respeta el nombre personalizado guardado (g.label); si no hay, usa el real.
+      if (real) { ordenadas.push({ key: real.key, label: String(g.label || real.label), labelOriginal: real.label, align: real.align, visible: !!g.visible }); usados.add(real.key); }
     });
     reales.forEach(real => {
-      if (!usados.has(real.key)) ordenadas.push({ key: real.key, label: real.label, align: real.align, visible: !real.defaultHidden });
+      if (!usados.has(real.key)) ordenadas.push({ key: real.key, label: real.label, labelOriginal: real.label, align: real.align, visible: !real.defaultHidden });
     });
     return ordenadas;
   };
@@ -887,12 +890,12 @@ export const ReportesDashboard = () => {
         if (prev[cfgKey] && prev[cfgKey].length && !guardada) {
           const existentes = new Set(prev[cfgKey].map(c => c.key));
           const faltantes = reales.filter(c => !existentes.has(c.key))
-            .map(c => ({ key: c.key, label: c.label, align: c.align, visible: !c.defaultHidden }));
+            .map(c => ({ key: c.key, label: c.label, labelOriginal: c.label, align: c.align, visible: !c.defaultHidden }));
           if (faltantes.length === 0) return prev;
           return { ...prev, [cfgKey]: [...prev[cfgKey], ...faltantes] };
         }
         // Hay config de Firestore (o no había local): fusionar.
-        const fuente = guardada || (prev[cfgKey] ? prev[cfgKey].map(c => ({ key: c.key, visible: c.visible })) : null);
+        const fuente = guardada || (prev[cfgKey] ? prev[cfgKey].map(c => ({ key: c.key, visible: c.visible, label: c.label })) : null);
         return { ...prev, [cfgKey]: fusionarConfig(reales, fuente) };
       });
     })();
@@ -914,8 +917,10 @@ export const ReportesDashboard = () => {
     const cfg = colConfigs[cfgKey];
     let columnas: Columna[] = base;
     if (cfg && cfg.length) {
+      // ✅ Se usa el label de la config (nombre personalizado del encabezado);
+      //   aplica en pantalla, Excel y PDF porque todos leen vista.columnas.
       const visibles = cfg.filter(c => c.visible)
-        .map(c => base.find(b => b.key === c.key))
+        .map(c => { const b = base.find(x => x.key === c.key); return b ? { ...b, label: c.label || b.label } : undefined; })
         .filter((c): c is Columna => !!c);
       if (visibles.length > 0) columnas = visibles; // si todo está oculto, mostramos todo
     }
@@ -954,6 +959,36 @@ export const ReportesDashboard = () => {
     setDraggedColIndex(idx);
   };
   const colConfigActual = colConfigs[cfgKey] || [];
+  // ✅ NUEVO: renombrar el encabezado de una columna (se guarda con "Guardar
+  //   para todos" y aplica en la tabla, el Excel y el PDF).
+  const [editandoColKey, setEditandoColKey] = useState<string | null>(null);
+  const renombrarColumna = (idx: number, nuevoLabel: string) => {
+    setColConfigs(prev => {
+      const lista = (prev[cfgKey] || []).map(c => ({ ...c }));
+      if (!lista[idx]) return prev;
+      lista[idx].label = nuevoLabel;
+      return { ...prev, [cfgKey]: lista };
+    });
+  };
+  const confirmarRenombre = (idx: number) => {
+    setColConfigs(prev => {
+      const lista = (prev[cfgKey] || []).map(c => ({ ...c }));
+      if (!lista[idx]) return prev;
+      // Si quedó vacío, vuelve al nombre original para no dejar encabezados en blanco.
+      if (!String(lista[idx].label || '').trim()) lista[idx].label = lista[idx].labelOriginal || lista[idx].key;
+      else lista[idx].label = String(lista[idx].label).trim();
+      return { ...prev, [cfgKey]: lista };
+    });
+    setEditandoColKey(null);
+  };
+  const restablecerNombre = (idx: number) => {
+    setColConfigs(prev => {
+      const lista = (prev[cfgKey] || []).map(c => ({ ...c }));
+      if (!lista[idx]) return prev;
+      lista[idx].label = lista[idx].labelOriginal || lista[idx].key;
+      return { ...prev, [cfgKey]: lista };
+    });
+  };
 
   // ✅ NUEVO: reordenar rápido con flechas (sube/baja una posición).
   const moverColumna = (idx: number, dir: -1 | 1) => {
@@ -976,7 +1011,9 @@ export const ReportesDashboard = () => {
         cfgKey,
         moduloId,
         reporteId,
-        columnas: cfg.map(c => ({ key: c.key, visible: c.visible })),
+        // ✅ Se guarda también el label para que el nombre personalizado del
+        //   encabezado lo vean TODOS los usuarios.
+        columnas: cfg.map(c => ({ key: c.key, visible: c.visible, label: c.label })),
         updatedAt: new Date().toISOString(),
       });
     } catch (e) {
@@ -1319,7 +1356,7 @@ export const ReportesDashboard = () => {
             </div>
 
           <div style={{ padding: '10px 12px 4px', color: '#7d8590', fontSize: '0.76rem' }}>
-            Marca las columnas a incluir y ordénalas con las flechas <span style={{ color: '#fb923c' }}>▲▼</span> (o arrastrando). Pulsa <b style={{ color: '#fb923c' }}>Guardar para todos</b> para que el orden quede fijo y lo vean los demás usuarios.
+            Marca las columnas a incluir, ordénalas con las flechas <span style={{ color: '#fb923c' }}>▲▼</span> (o arrastrando) y renómbralas con el lápiz <span style={{ color: '#fb923c' }}>✎</span>. Pulsa <b style={{ color: '#fb923c' }}>Guardar para todos</b> para que el orden y los nombres queden fijos y los vean los demás usuarios.
           </div>
 
           {/* Buscador de columnas (útil cuando hay muchos campos) */}
@@ -1363,11 +1400,42 @@ export const ReportesDashboard = () => {
                     </button>
                   </div>
                   <span style={{ color: '#6e7681', cursor: 'grab', fontSize: '1rem', lineHeight: 1 }} title="Arrastrar para reordenar">⠿</span>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, cursor: 'pointer', userSelect: 'none' }}>
-                    <input type="checkbox" checked={col.visible} onChange={() => toggleColumna(idx)} style={{ width: 16, height: 16, accentColor: '#ea580c', cursor: 'pointer' }} />
-                    <span style={{ color: col.visible ? '#e6edf3' : '#6e7681', fontSize: '0.9rem', fontWeight: 500 }}>{col.label}</span>
-                  </label>
-                  <span style={{ color: '#6e7681', fontSize: '0.7rem' }}>{idx + 1}</span>
+                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumna(idx)} style={{ width: 16, height: 16, accentColor: '#ea580c', cursor: 'pointer', flexShrink: 0 }} />
+                  {editandoColKey === col.key ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={col.label}
+                      onChange={(e) => renombrarColumna(idx, e.target.value)}
+                      onBlur={() => confirmarRenombre(idx)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarRenombre(idx); } if (e.key === 'Escape') { restablecerNombre(idx); setEditandoColKey(null); } }}
+                      style={{ flex: 1, minWidth: 0, background: '#010409', border: '1px solid #ea580c', borderRadius: 6, color: '#e6edf3', fontSize: '0.9rem', padding: '5px 8px', outline: 'none' }}
+                    />
+                  ) : (
+                    <span
+                      onClick={() => toggleColumna(idx)}
+                      title={col.labelOriginal && col.label !== col.labelOriginal ? `Nombre original: ${col.labelOriginal}` : undefined}
+                      style={{ flex: 1, minWidth: 0, color: col.visible ? '#e6edf3' : '#6e7681', fontSize: '0.9rem', fontWeight: 500, cursor: 'pointer', userSelect: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    >
+                      {col.label}
+                      {col.labelOriginal && col.label !== col.labelOriginal && (
+                        <span style={{ color: '#fb923c', fontSize: '0.68rem', marginLeft: 6 }}>(renombrada)</span>
+                      )}
+                    </span>
+                  )}
+                  {editandoColKey !== col.key && (
+                    <button type="button" title="Renombrar encabezado" onClick={() => setEditandoColKey(col.key)}
+                      style={{ background: 'transparent', border: '1px solid #2d333b', color: '#8b949e', borderRadius: 5, width: 26, height: 24, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                    </button>
+                  )}
+                  {col.labelOriginal && col.label !== col.labelOriginal && editandoColKey !== col.key && (
+                    <button type="button" title={`Restablecer nombre original: ${col.labelOriginal}`} onClick={() => restablecerNombre(idx)}
+                      style={{ background: 'transparent', border: '1px solid #2d333b', color: '#fb923c', borderRadius: 5, width: 26, height: 24, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0, fontSize: '0.85rem', lineHeight: 1 }}>
+                      ↺
+                    </button>
+                  )}
+                  <span style={{ color: '#6e7681', fontSize: '0.7rem', flexShrink: 0 }}>{idx + 1}</span>
                 </div>
               ))}
               {colConfigActual.length === 0 && (
