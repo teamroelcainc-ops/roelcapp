@@ -1093,7 +1093,10 @@ const OperacionesDashboard = () => {
       case 'fechaServicio': return String(op.fechaServicio || '');
       case 'fechaCita': return formatearFechaHora(op.fechaCita);
       case 'tipoOperacion': return String(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre));
-      case 'status': return String(mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre));
+      case 'status': {
+        const nombreStatus = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre);
+        return String((nombreStatus && nombreStatus !== '-') ? nombreStatus : (resolverStatus(op.status || op.statusNombre).nombre || '-'));
+      }
       case 'trafico': return String(op.trafico || '');
       case 'cliente': return String(mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente));
       case 'convenioTarifa': return String(obtenerNombreConvenioCliente(op.convenio, op.convenioNombre));
@@ -1230,7 +1233,16 @@ const OperacionesDashboard = () => {
         const nombreTipoOp = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre);
         return <span style={{ color: colorTipoOperacion(nombreTipoOp), fontWeight: 'bold' }}>{nombreTipoOp}</span>;
       }
-      case 'status': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</span>;
+      case 'status': {
+        // ✅ Respaldo doble: primero el catálogo (por id, con statusNombre como
+        //   alterno) y, si no resuelve, resolverStatus acepta id O nombre
+        //   (operaciones migradas o guardadas con el nombre en el campo status).
+        let nombreStatus = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre);
+        if (!nombreStatus || nombreStatus === '-') {
+          nombreStatus = resolverStatus(op.status || op.statusNombre).nombre || '-';
+        }
+        return <span style={{ color: nombreStatus === '-' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{nombreStatus}</span>;
+      }
       case 'trafico': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.trafico)}</span>;
       case 'cliente': return <span style={{ color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
       case 'convenioTarifa': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
@@ -1301,7 +1313,7 @@ const OperacionesDashboard = () => {
           case 'fechaServicio': val = op.fechaServicio || ''; break;
           case 'fechaCita': val = formatearFechaHora(op.fechaCita); break;
           case 'tipoOperacion': val = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre); break;
-          case 'status': val = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre); break; 
+          case 'status': { const nSt = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre); val = (nSt && nSt !== '-') ? nSt : (resolverStatus(op.status || op.statusNombre).nombre || '-'); break; } 
           case 'trafico': val = op.trafico || ''; break;
           case 'cliente': val = mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente); break;
           case 'convenioTarifa': val = obtenerNombreConvenioCliente(op.convenio, op.convenioNombre); break;

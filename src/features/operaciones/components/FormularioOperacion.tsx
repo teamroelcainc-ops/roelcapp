@@ -1741,6 +1741,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         console.warn('No se pudo calcular el status para el flujo actual; se usa un valor de respaldo.', errStatus);
         statusCalculado = String((initialData as any)?.status || (formData as any).status || '');
       }
+      // ✅ Si aun así quedó vacío (operación NUEVA con flujo sin configurar),
+      //   se asigna el status INICIAL del catálogo (el que empieza con "1")
+      //   para que la operación nunca quede sin status en la tabla.
+      if (!statusCalculado) {
+        const statusInicial = (statusServicio || []).find((st: any) =>
+          /^\s*1(?![\d.])|^\s*1\.\s*/.test(String(st.nombre || st.descripcion || '')));
+        if (statusInicial) {
+          statusCalculado = statusInicial.id;
+          console.warn('[Status] Operación sin flujo calculable; se asignó el status inicial:', statusInicial.nombre || statusInicial.descripcion);
+        }
+      }
       const detalleDoc = listaConveniosCliente.find((c:any) => c.id === formData.convenio);
       const { pdfCartaPorte, pdfDoda, pdfManifiesto, pdfsEntrys, ...datosLimpios } = formData;
       const tipoOpObj = tiposOperacion.find((t:any) => t.id === formData.tipoOperacionId);
