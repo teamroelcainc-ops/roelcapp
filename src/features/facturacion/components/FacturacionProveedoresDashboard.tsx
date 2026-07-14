@@ -1543,6 +1543,10 @@ export const FacturacionProveedoresDashboard = () => {
       refCliente: String(op.refCliente || ''),
       facturadoEn: aTextoMoneda(monedaFact),
       monedaConvenio: aTextoMoneda(monedaConv),
+      // ✅ MONEDA DE PAGO: por defecto es la moneda de facturación, con lo que
+      //   el total inicial (m.conv) coincide con la lógica actual. Al cambiarla
+      //   se recalculan los montos a pagar (ver setCTMonto).
+      monedaPago: aTextoMoneda(monedaFact),
       convenioProv: String(Number(op.totalAPagarProv) || 0),
       costosAdic: String(Number(op.cargosAdicionalesProv) || 0),
       subtotalProv: String(m.subtotal || 0),
@@ -1555,7 +1559,7 @@ export const FacturacionProveedoresDashboard = () => {
   const generarPDFDeConfirmacion = () => {
     if (!confirmacionPreview) return;
     const p = confirmacionPreview;
-    const data: ConfirmacionTarifaData = {
+    const data = {
       coordinador: p.coordinador || '',
       referencia: p.referencia || '',
       remolque: p.remolque || '',
@@ -1581,11 +1585,50 @@ export const FacturacionProveedoresDashboard = () => {
       totalAFacturar: p.totalAFacturar || '0',
       emisorDireccion: p.emisorDireccion || '',
       emisorCiudad: p.emisorCiudad || '',
-    };
+      // ✅ Moneda de pago (el generador del PDF puede mostrarla junto al total).
+      monedaPago: p.monedaPago || '',
+    } as ConfirmacionTarifaData;
     generarConfirmacionTarifaPDF(data);
   };
 
   const setCT = (campo: string, valor: any) => setConfirmacionPreview((prev: any) => prev ? { ...prev, [campo]: valor } : prev);
+
+  // ✅ MONEDA DE PAGO — normaliza cualquier texto de moneda a USD/MXN.
+  const claveMoneda = (v: any): '' | 'USD' | 'MXN' => {
+    const m = String(v || '').toUpperCase();
+    if (m.includes('USD') || m.includes('DOLAR') || m.includes('DÓLAR')) return 'USD';
+    if (m.includes('MXN') || m.includes('PESO')) return 'MXN';
+    return '';
+  };
+  const redondear2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+
+  // ✅ Recalcula SUBTOTAL y TOTAL A PAGAR según la MONEDA DE PAGO, manteniendo
+  //   la lógica de la moneda de facturación (que sigue siendo el default):
+  //   · subtotal (en moneda del convenio) = convenio prov. + costos adicionales.
+  //   · pago == convenio            → total = subtotal (sin conversión).
+  //   · convenio USD → pago Pesos   → total = subtotal × tipo de cambio.
+  //   · convenio Pesos → pago USD   → total = subtotal ÷ tipo de cambio.
+  //   Se dispara al cambiar: moneda de pago, moneda del convenio, convenio,
+  //   costos adicionales o tipo de cambio. El subtotal y el total siguen
+  //   siendo editables a mano por si se necesita forzar un monto.
+  const setCTMonto = (campo: string, valor: any) => {
+    setConfirmacionPreview((prev: any) => {
+      if (!prev) return prev;
+      const p: any = { ...prev, [campo]: valor };
+      const subtotal = (Number(p.convenioProv) || 0) + (Number(p.costosAdic) || 0);
+      const tc = Number(p.tipoCambio) || 0;
+      const mConv = claveMoneda(p.monedaConvenio);
+      const mPago = claveMoneda(p.monedaPago) || claveMoneda(p.facturadoEn);
+      let total = subtotal;
+      if (mConv && mPago && mConv !== mPago) {
+        if (mConv === 'USD' && mPago === 'MXN') total = subtotal * tc;
+        else if (mConv === 'MXN' && mPago === 'USD') total = tc > 0 ? subtotal / tc : subtotal;
+      }
+      p.subtotalProv = String(redondear2(subtotal));
+      p.totalAFacturar = String(redondear2(total));
+      return p;
+    });
+  };
 
   // Fecha (YYYY-MM-DD o similar) + N días → DD/MM/YYYY.
   const sumarDiasAFecha = (fechaISO: any, dias: number): string => {
@@ -3995,7 +4038,7 @@ export const FacturacionProveedoresDashboard = () => {
                 <div><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={confirmacionPreview.proveedor} onChange={e => setCT('proveedor', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>TIPO DE OPER. (TARIFARIO)</label><input type="text" value={confirmacionPreview.tipoOperacion} onChange={e => setCT('tipoOperacion', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>IMPO / EXPO / MOV</label><input type="text" value={confirmacionPreview.impoExpoMov} onChange={e => setCT('impoExpoMov', e.target.value)} style={rInputStyle} /></div>
-                <div><label style={rLabelStyle}>TIPO DE CAMBIO DOF $</label><input type="text" value={confirmacionPreview.tipoCambio} onChange={e => setCT('tipoCambio', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>TIPO DE CAMBIO DOF $</label><input type="text" value={confirmacionPreview.tipoCambio} onChange={e => setCTMonto('tipoCambio', e.target.value)} style={rInputStyle} /></div>
               </div>
             </div>
 
@@ -4024,12 +4067,20 @@ export const FacturacionProveedoresDashboard = () => {
             <div style={{ marginBottom: '16px' }}>
               <div style={{ color: '#f85149', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>MONTOS</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
-                <div><label style={rLabelStyle}>FACTURADO EN</label><input type="text" value={confirmacionPreview.facturadoEn} onChange={e => setCT('facturadoEn', e.target.value)} style={rInputStyle} /></div>
-                <div><label style={rLabelStyle}>MONEDA DEL CONVENIO</label><input type="text" value={confirmacionPreview.monedaConvenio} onChange={e => setCT('monedaConvenio', e.target.value)} style={rInputStyle} /></div>
-                <div><label style={rLabelStyle}>CONVENIO PROV. $</label><input type="text" value={confirmacionPreview.convenioProv} onChange={e => setCT('convenioProv', e.target.value)} style={rInputStyle} /></div>
-                <div><label style={rLabelStyle}>COSTOS ADIC. $</label><input type="text" value={confirmacionPreview.costosAdic} onChange={e => setCT('costosAdic', e.target.value)} style={rInputStyle} /></div>
-                <div><label style={rLabelStyle}>SUBTOTAL PROV. $</label><input type="text" value={confirmacionPreview.subtotalProv} onChange={e => setCT('subtotalProv', e.target.value)} style={rInputStyle} /></div>
-                <div><label style={rLabelStyle}>TOTAL A FACT. $</label><input type="text" value={confirmacionPreview.totalAFacturar} onChange={e => setCT('totalAFacturar', e.target.value)} style={{ ...rInputStyle, color: '#f85149', fontWeight: 'bold' }} /></div>
+                <div><label style={rLabelStyle}>FACTURADO EN</label><input type="text" value={confirmacionPreview.facturadoEn} onChange={e => setCTMonto('facturadoEn', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>MONEDA DEL CONVENIO</label><input type="text" value={confirmacionPreview.monedaConvenio} onChange={e => setCTMonto('monedaConvenio', e.target.value)} style={rInputStyle} /></div>
+                {/* ✅ MONEDA DE PAGO: define en qué moneda se pagan los montos */}
+                <div>
+                  <label style={{ ...rLabelStyle, color: '#fb923c' }}>MONEDA DE PAGO</label>
+                  <select value={confirmacionPreview.monedaPago || ''} onChange={e => setCTMonto('monedaPago', e.target.value)} style={{ ...rInputStyle, cursor: 'pointer' }}>
+                    <option value="Pesos">Pesos</option>
+                    <option value="Dólares">Dólares</option>
+                  </select>
+                </div>
+                <div><label style={rLabelStyle}>CONVENIO PROV. $</label><input type="text" value={confirmacionPreview.convenioProv} onChange={e => setCTMonto('convenioProv', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>COSTOS ADIC. $</label><input type="text" value={confirmacionPreview.costosAdic} onChange={e => setCTMonto('costosAdic', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={rLabelStyle}>SUBTOTAL PROV. $ {claveMoneda(confirmacionPreview.monedaConvenio) ? `(${claveMoneda(confirmacionPreview.monedaConvenio)})` : ''}</label><input type="text" value={confirmacionPreview.subtotalProv} onChange={e => setCT('subtotalProv', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={{ ...rLabelStyle, color: '#f85149' }}>TOTAL A PAGAR $ {claveMoneda(confirmacionPreview.monedaPago) ? `(${claveMoneda(confirmacionPreview.monedaPago)})` : ''}</label><input type="text" value={confirmacionPreview.totalAFacturar} onChange={e => setCT('totalAFacturar', e.target.value)} style={{ ...rInputStyle, color: '#f85149', fontWeight: 'bold' }} /></div>
               </div>
             </div>
 
