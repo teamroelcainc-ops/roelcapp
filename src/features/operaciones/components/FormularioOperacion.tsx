@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 'react';
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db, storage, auth } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
@@ -131,6 +131,14 @@ const colorTipoOperacion = (nombre: any): string => {
   if (n.includes('flete')) return '#3fb950';
   return '#c9d1d9';
 };
+
+// ✅ Envuelve un input de dinero y le antepone el símbolo "$" dentro del campo.
+const ConSimboloMoneda = ({ children, style }: { children: any; style?: any }) => (
+  <div style={{ position: 'relative', ...(style || {}) }}>
+    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 700, pointerEvents: 'none', zIndex: 2, fontSize: '0.9rem' }}>$</span>
+    {cloneElement(children, { style: { ...((children.props as any)?.style || {}), paddingLeft: '24px' } })}
+  </div>
+);
 
 const COSTO_MANIFIESTO_DEFAULT = 8.52;
 // ✅ (Proveedor de Servicios / Manifiesto) El buscador solo muestra empresas con
@@ -712,6 +720,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     dolaresProv: 0, pesosProv: 0, conversionProv: 0,
     unidad: '', operador: '', sueldoOperador: 0, sueldoExtra: 0, sueldoTotal: 0, 
     combustible: 0, combustibleExtra: 0, combustibleTotal: 0,
+    sueldoExtraNotas: '', combustibleExtraNotas: '',
     puenteId: '', puenteNombre: '', puenteMonto: 0,
     unidadProveedor: '', operadorProveedor: '', observacionesUnidad: '', observacionesCobrar: '',
     totalGastos: 0,
@@ -1007,8 +1016,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   }, [formData.tipoOperacionId, empresas]);
 
   useEffect(() => {
-    const cBase = Number(formData.combustible) || 0;
-    const cExt = Number(formData.combustibleExtra) || 0;
+    // ✅ Combustible siempre en números ENTEROS.
+    const cBase = Math.round(Number(formData.combustible) || 0);
+    const cExt = Math.round(Number(formData.combustibleExtra) || 0);
     setFormData(prev => ({ ...prev, combustibleTotal: cBase + cExt }));
   }, [formData.combustible, formData.combustibleExtra]);
 
@@ -1034,10 +1044,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         cargosAdicionales: Number(initialData.cargosAdicionales) || 0,
         sueldoOperador: Number(initialData.sueldoOperador) || 0, 
         sueldoExtra: Number(initialData.sueldoExtra) || 0,        
-        combustible: Number(initialData.combustible) || 0,        
-        combustibleExtra: Number(initialData.combustibleExtra) || 0,  
+        combustible: Math.round(Number(initialData.combustible) || 0),        
+        combustibleExtra: Math.round(Number(initialData.combustibleExtra) || 0),  
         unidadProveedor: initialData.unidadProveedor || '',
         operadorProveedor: initialData.operadorProveedor || '',
+        sueldoExtraNotas: initialData.sueldoExtraNotas || '',
+        combustibleExtraNotas: initialData.combustibleExtraNotas || '',
         observacionesUnidad: initialData.observacionesUnidad || '',
         observacionesCobrar: initialData.observacionesCobrar || '',     
         totalGastos: Number(initialData.totalGastos) || 0,
@@ -1533,7 +1545,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     setFormData(prev => ({
       ...prev,
       ...(sueldo !== null && !isNaN(sueldo) ? { sueldoOperador: sueldo } : {}),
-      ...(combustible !== null && !isNaN(combustible) ? { combustible } : {}),
+      ...(combustible !== null && !isNaN(combustible) ? { combustible: Math.round(combustible) } : {}),
     }));
   }, [formData.convenio, listaConveniosCliente, gastosIncluidosLocal, rendimientoLocal, initialData]);
 
@@ -1724,6 +1736,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const tarifasCoinciden = !!tarifaIdCliente && tarifaIdCliente === tarifaIdProveedor;
   const nombreMoneda = (monedaId: any) =>
     listaMonedasLocal.find((m:any) => String(m.id) === String(monedaId))?.moneda || '';
+
+  // ✅ Color de los montos según la moneda de facturación:
+  //   Dólares → azul (#58a6ff)   ·   Pesos → verde (#3fb950).
+  const colorPorMonedaId = (idMoneda: any): string | undefined => {
+    const n = String(nombreMoneda(idMoneda) || '').toUpperCase();
+    if (n.includes('USD') || n.includes('DOLAR') || n.includes('DÓLAR')) return '#58a6ff';
+    if (n.includes('MXN') || n.includes('PESO')) return '#3fb950';
+    return undefined;
+  };
+  const colorMonedaProv = colorPorMonedaId(formData.facturadoEnUnidad);
+  const colorMonedaCliente = colorPorMonedaId(formData.facturadoEnCobrar);
 
   const nombreTarifaPorId = (tarifaId: any): string => {
     const id = String(tarifaId || '').trim();
@@ -2258,11 +2281,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-group">
                         <label className="form-label orange">Referencia <span className="campo-badge">ref</span></label>
                         {initialData ? (
-                          <input type="text" name="referencia" className="form-control" value={referencia} onChange={(e) => setReferencia(e.target.value)} readOnly={!puedeEditarRef} title={puedeEditarRef ? 'Tienes permiso para corregir la referencia' : 'No tienes permiso para editar la referencia'} style={puedeEditarRef ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }} />
+                          <input type="text" name="referencia" className="form-control" value={referencia} onChange={(e) => setReferencia(e.target.value)} readOnly={!puedeEditarRef} title={puedeEditarRef ? 'Tienes permiso para corregir la referencia' : 'No tienes permiso para editar la referencia'} style={{ color: colorTipoOperacion(tiposOperacion?.find((op:any) => op.id === formData.tipoOperacionId)?.tipo_operacion), fontWeight: 'bold', ...(puedeEditarRef ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }) }} />
                         ) : (
                           <input type="text" className="form-control" value="Se generará al guardar" readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} />
                         )}
-                        <small style={{ color: initialData ? (puedeEditarRef ? '#fb923c' : '#8b949e') : '#8b949e' }}>{initialData ? (puedeEditarRef ? 'Editable (Admin o permiso "Editar Referencia").' : 'No tienes permiso para editarla.') : 'Formato: TR/LO/FL-DDMMYY-### (consecutivo único del día).'}</small>
                       </div>
                       <div className="form-group"><label className="form-label orange">Tipo de Operación <span className="campo-badge">tipoOperacionId</span></label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required style={{ color: formData.tipoOperacionId ? colorTipoOperacion(tiposOperacion?.find((op:any) => op.id === formData.tipoOperacionId)?.tipo_operacion) : undefined, fontWeight: formData.tipoOperacionId ? 'bold' : undefined }}><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id} style={{ color: colorTipoOperacion(op.tipo_operacion), fontWeight: 'bold' }}>{op.tipo_operacion}</option>)}</select></div>
                       <div className="form-group"><label className="form-label orange">Fecha de Servicio <span className="campo-badge">fechaServicio</span></label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
@@ -2307,7 +2329,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               {resultadosConvenio.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenio.map((c:any) => (
                                 <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(c.descripcion); setShowDropdownConvenio(false); }}>
                                   <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.descripcion}</div>
-                                  <div style={{ fontSize: '0.72rem', color: '#fb923c', fontFamily: 'monospace', marginTop: '2px' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
                                   <div style={{ fontSize: '0.72rem', color: '#3fb950', fontFamily: 'monospace', marginTop: '1px' }}>Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}</div>
                                 </div>
                               ))}
@@ -2315,9 +2336,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )}
                         </div>
                         {listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}
-                        {formData.convenio && tarifaIdCliente && (
-                          <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>ID tarifa: {tarifaIdCliente} · Monto: {fmtMoney(montoCliente)}{nombreMoneda(monedaClienteId) ? ` ${nombreMoneda(monedaClienteId)}` : ''}{tarifaIdProveedor && !esFlotaPropiaRoelca ? (tarifasCoinciden ? '  ✓ coincide con el del proveedor' : '  ✕ NO coincide con el del proveedor') : ''}</small>
-                        )}
                       </div>
                       <div className="form-group">
                         <label className="form-label">Importación / Exportación <span className="campo-badge">trafico</span></label>
@@ -2456,7 +2474,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
                       <div className="form-group">
                         <label className="form-label">Costo Manifiesto <span className="campo-badge">montoManifiesto</span></label>
-                        <input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto || 0} onChange={handleChange} />
+                        <ConSimboloMoneda><input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto || 0} onChange={handleChange} /></ConSimboloMoneda>
                         <small style={{ color: '#8b949e' }}>Costo por defecto: ${COSTO_MANIFIESTO_DEFAULT.toFixed(2)}</small>
                       </div>
                       <CampoArchivo label="PDF Manifiesto" file={formData.pdfManifiesto} resaltar={camposObligatoriosFaltantesSet.has('pdfManifiesto')} onChange={(e) => handleFileChange(e, 'pdfManifiesto')} />
@@ -2489,8 +2507,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE }, (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: resolverMonedaIdDeEmpresa(reg) || prev.facturadoEnUnidad })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); })} />
                           )}
                         </div>
-                        {proveedorForzado && <small style={{ color: '#fb923c' }}>Este tipo de operación usa un proveedor fijo.</small>}
-                        {esFlotaPropiaRoelca && <small style={{ color: '#3fb950' }}>Flota propia de Roelca: no se paga a un proveedor externo.</small>}
                       </div>
 
                       {!esFlotaPropiaRoelca && (
@@ -2510,7 +2526,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               {resultadosConvenioProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
                                 <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
                                   <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.tipoConvenioNombre}</div>
-                                  <div style={{ fontSize: '0.72rem', color: '#fb923c', fontFamily: 'monospace', marginTop: '2px' }}>ID tarifa: {c.tarifaBaseId || '—'}</div>
                                   <div style={{ fontSize: '0.72rem', color: '#3fb950', fontFamily: 'monospace', marginTop: '1px' }}>Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}</div>
                                 </div>
                               ))}
@@ -2518,19 +2533,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )}
                         </div>
                         {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios asignados</small>}
-                        {formData.convenioProveedor && tarifaIdProveedor && (
-                          <small style={{ display: 'block', marginTop: '4px', color: tarifasCoinciden ? '#3fb950' : '#fb923c', fontFamily: 'monospace', fontWeight: 600 }}>ID tarifa: {tarifaIdProveedor} · Monto: {fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}{tarifaIdCliente ? (tarifasCoinciden ? '  ✓ coincide con el del cliente' : '  ✕ NO coincide con el del cliente') : ''}</small>
-                        )}
                       </div>
                       )}
 
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnUnidad</span></label>
-                        <select name="facturadoEnUnidad" className={`form-control${claseSiFalta('facturadoEnUnidad')}`} value={formData.facturadoEnUnidad || ''} onChange={handleChange}>
-                          <option value="">-- Seleccionar --</option>
-                          {listaMonedasLocal?.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
-                        </select>
+                        {/* ✅ NO editable: se asigna automáticamente según el proveedor. */}
+                        <input type="text" className="form-control" value={nombreMoneda(formData.facturadoEnUnidad) || ''} readOnly placeholder="Se asigna según el proveedor" title="Se asigna automáticamente según el proveedor (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaProv, fontWeight: colorMonedaProv ? 700 : undefined }} />
                       </div>
                       )}
                     </div>
@@ -2576,12 +2586,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion({ tipo: 'empleado', coleccion: 'empleados' }, (id, reg) => { setFormData(prev => ({ ...prev, operador: id })); setSearchOperador(labelEmpleado(reg)); })} />
                           </div>
                         </div>
-                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><input type="number" step="0.01" name="sueldoOperador" className={`form-control${claseSiFalta('sueldoOperador')}`} value={formData.sueldoOperador || 0} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Sueldo Extra <span className="campo-badge">sueldoExtra</span></label><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><input type="number" className="form-control" value={formData.sueldoTotal || 0} readOnly style={{ opacity: 0.75 }} /></div>
-                        <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="0.01" name="combustible" className={`form-control${claseSiFalta('combustible')}`} value={formData.combustible || 0} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Combustible Extra <span className="campo-badge">combustibleExtra</span></label><input type="number" step="0.01" name="combustibleExtra" className="form-control" value={formData.combustibleExtra || 0} onChange={handleChange} /></div>
-                        <div className="form-group"><label className="form-label">Combustible Total <span className="campo-badge">combustibleTotal</span></label><input type="number" className="form-control" value={formData.combustibleTotal || 0} readOnly style={{ opacity: 0.75 }} /></div>
+                        {/* ✅ Sueldo/Combustible base: BLOQUEADOS (vienen del tarifario de rendimientos). Los totales son calculados. */}
+                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly title="Se toma automáticamente del tarifario de rendimientos (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} /></ConSimboloMoneda></div>
+                        <div className="form-group"><label className="form-label">Sueldo Extra <span className="campo-badge">sueldoExtra</span></label><ConSimboloMoneda><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></ConSimboloMoneda></div>
+                        <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoTotal || 0} readOnly style={{ opacity: 0.75, cursor: 'not-allowed' }} /></ConSimboloMoneda></div>
+                        {/* ✅ Notas del Sueldo Extra: solo aparecen cuando el extra es distinto de 0. */}
+                        {Number(formData.sueldoExtra) !== 0 && (
+                          <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label" style={{ color: '#fb923c' }}>Notas del Sueldo Extra <span className="campo-badge">sueldoExtraNotas</span></label><input type="text" name="sueldoExtraNotas" className="form-control" placeholder="Motivo del sueldo extra..." value={formData.sueldoExtraNotas || ''} onChange={handleChange} /></div>
+                        )}
+                        <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustible) || 0)} readOnly title="Se toma automáticamente del tarifario de rendimientos (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Extra <span className="campo-badge">combustibleExtra</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustibleExtra) || 0)} onChange={(e) => setFormData(prev => ({ ...prev, combustibleExtra: Math.round(Number(e.target.value) || 0) }))} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Total <span className="campo-badge">combustibleTotal</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustibleTotal) || 0)} readOnly style={{ opacity: 0.75, cursor: 'not-allowed' }} /></div>
+                        {/* ✅ Notas del Combustible Extra: solo aparecen cuando el extra es distinto de 0. */}
+                        {Number(formData.combustibleExtra) !== 0 && (
+                          <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label" style={{ color: '#fb923c' }}>Notas del Combustible Extra <span className="campo-badge">combustibleExtraNotas</span></label><input type="text" name="combustibleExtraNotas" className="form-control" placeholder="Motivo del combustible extra..." value={formData.combustibleExtraNotas || ''} onChange={handleChange} /></div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -2628,23 +2647,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span></label><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} /></div>
-                      {/* ✅ Moneda del CONVENIO del proveedor: informativa, NO editable (viene del tarifario). */}
-                      <div className="form-group"><label className="form-label">Moneda del Convenio <span className="campo-badge">monedaConvenioProv</span></label><input type="text" readOnly disabled value={nombreMoneda(formData.monedaConvenioProv) || '—'} className="form-control" style={{ backgroundColor: '#010409', color: nombreMoneda(formData.monedaConvenioProv) ? '#e3b341' : '#6e7681', fontWeight: 'bold', cursor: 'not-allowed', opacity: 0.9 }} title="Se toma automáticamente del convenio/tarifario del proveedor" /></div>
+                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span></label><ConSimboloMoneda><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda></div>
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales (Prov) <span className="campo-badge">cargosAdicionalesProv</span></label>
                         <div className="roelca-lookup-row">
-                          <input type="number" step="0.01" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || 0} onChange={handleChange} style={{ flex: 1, minWidth: 0 }} />
+                          <ConSimboloMoneda style={{ flex: 1, minWidth: 0 }}><input type="number" step="0.01" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || 0} onChange={handleChange} style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda>
                           <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Subtotal Proveedor <span className="campo-badge">subtotalProv</span></label><input type="number" className="form-control" value={formData.subtotalProv || 0} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Dólares (Prov) <span className="campo-badge">dolaresProv</span></label><input type="number" className="form-control" value={Number(formData.dolaresProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Pesos (Prov) <span className="campo-badge">pesosProv</span></label><input type="number" className="form-control" value={Number(formData.pesosProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Conversión (MXN) <span className="campo-badge">conversionProv</span></label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Subtotal Proveedor <span className="campo-badge">subtotalProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalProv || 0} readOnly style={{ opacity: 0.9, color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Dólares (Prov) <span className="campo-badge">dolaresProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.dolaresProv || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#58a6ff' }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Pesos (Prov) <span className="campo-badge">pesosProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.pesosProv || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Conversión (MXN) <span className="campo-badge">conversionProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
                     </div>
                   </div>
                   )}
+
 
                   {mostrarPuente && (
                   <div className="roelca-card">
@@ -2663,17 +2681,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {formData.puenteId && !opcionesPuente.some((g:any) => String(g.id) === String(formData.puenteId)) && (<option value={formData.puenteId}>{formData.puenteNombre || formData.puenteId}</option>)}
                         </select>
                       </div>
-                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly style={{ opacity: 0.75 }} title="Se toma del catálogo (Importe)" /></div>
+                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly style={{ opacity: 0.75 }} title="Se toma del catálogo (Importe)" /></ConSimboloMoneda></div>
                     </div>
                   </div>
                   )}
-
-                  <div className="roelca-card">
-                    <div className="roelca-card-header"><div className="roelca-card-icon"><IconFileText /></div><h3 className="roelca-card-title">Observaciones de Unidad</h3></div>
-                    <div className="form-grid">
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Unidad <span className="campo-badge">observacionesUnidad</span></label><textarea name="observacionesUnidad" className="form-control" rows={2} value={formData.observacionesUnidad || ''} onChange={handleChange} /></div>
-                    </div>
-                  </div>
                 </>
               )}
 
@@ -2684,38 +2695,34 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnCobrar</span></label>
-                        <select name="facturadoEnCobrar" className={`form-control${claseSiFalta('facturadoEnCobrar')}`} value={formData.facturadoEnCobrar || ''} onChange={handleChange}>
-                          <option value="">-- Seleccionar --</option>
-                          {listaMonedasLocal?.map((m:any) => <option key={m.id} value={m.id}>{m.moneda}</option>)}
-                        </select>
+                        {/* ✅ NO editable: se asigna automáticamente según el cliente. */}
+                        <input type="text" className="form-control" value={nombreMoneda(formData.facturadoEnCobrar) || ''} readOnly placeholder="Se asigna según el cliente" title="Se asigna automáticamente según el cliente (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 700 : undefined }} />
                       </div>
-                      <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><input type="number" step="0.01" name="montoConvenioCliente" className={`form-control${claseSiFalta('montoConvenioCliente')}`} value={formData.montoConvenioCliente || 0} onChange={handleChange} /></div>
-                      {/* ✅ Moneda del CONVENIO del cliente: informativa, NO editable (viene del tarifario). */}
-                      <div className="form-group"><label className="form-label">Moneda del Convenio <span className="campo-badge">monedaConvenioCliente</span></label><input type="text" readOnly disabled value={nombreMoneda(formData.monedaConvenioCliente) || '—'} className="form-control" style={{ backgroundColor: '#010409', color: nombreMoneda(formData.monedaConvenioCliente) ? '#e3b341' : '#6e7681', fontWeight: 'bold', cursor: 'not-allowed', opacity: 0.9 }} title="Se toma automáticamente del convenio/tarifario del cliente" /></div>
+                      <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.montoConvenioCliente || 0} readOnly title="Se toma del convenio (tarifario) del cliente (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
                         <div className="roelca-lookup-row">
-                          <input type="number" step="0.01" name="cargosAdicionales" className={`form-control${claseSiFalta('cargosAdicionales')}`} value={formData.cargosAdicionales || 0} onChange={handleChange} style={{ flex: 1, minWidth: 0 }} />
+                          <ConSimboloMoneda style={{ flex: 1, minWidth: 0 }}><input type="number" step="0.01" name="cargosAdicionales" className={`form-control${claseSiFalta('cargosAdicionales')}`} value={formData.cargosAdicionales || 0} onChange={handleChange} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda>
                           <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado <span className="campo-badge">tipoCambioAprobado</span></label><input type="number" step="0.0001" name="tipoCambioAprobado" className={`form-control${claseSiFalta('tipoCambioAprobado')}`} value={formData.tipoCambioAprobado || 0} onChange={handleChange} /></div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado <span className="campo-badge">tipoCambioAprobado</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.tipoCambioAprobado || 0} readOnly title="Se toma del TC oficial del día (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} /></ConSimboloMoneda></div>
                     </div>
                   </div>
 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTrendingUp /></div><h3 className="roelca-card-title">Conversión y Utilidad</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Subtotal Cliente <span className="campo-badge">subtotalCliente</span></label><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Dólares (Cliente) <span className="campo-badge">dolaresCliente</span></label><input type="number" className="form-control" value={Number(formData.dolaresCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Pesos (Cliente) <span className="campo-badge">pesosCliente</span></label><input type="number" className="form-control" value={Number(formData.pesosCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
-                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN) <span className="campo-badge">conversionCliente</span></label><input type="number" className="form-control" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                      <div className="form-group"><label className="form-label">Subtotal Cliente <span className="campo-badge">subtotalCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.9, color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Dólares (Cliente) <span className="campo-badge">dolaresCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.dolaresCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#58a6ff' }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Pesos (Cliente) <span className="campo-badge">pesosCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.pesosCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN) <span className="campo-badge">conversionCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
                       {!esFlotaPropiaRoelca && (
-                        <div className="form-group"><label className="form-label">Conversión Proveedor (MXN) <span className="campo-badge">conversionProv</span></label><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.75 }} /></div>
+                        <div className="form-group"><label className="form-label">Conversión Proveedor (MXN) <span className="campo-badge">conversionProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
                       )}
                       <div className="form-group">
                         <label className="form-label">Utilidad Estimada (MXN) <span className="campo-badge">utilidadEstimada</span></label>
-                        <input type="number" className="form-control" value={Number(formData.utilidadEstimada || 0).toFixed(2)} readOnly style={{ opacity: 0.95, color: Number(formData.utilidadEstimada) >= 0 ? '#3fb950' : '#f85149', fontWeight: 700 }} />
+                        <ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.utilidadEstimada || 0).toFixed(2)} readOnly style={{ opacity: 0.95, color: Number(formData.utilidadEstimada) >= 0 ? '#3fb950' : '#f85149', fontWeight: 700 }} /></ConSimboloMoneda>
                       </div>
                       <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Cobranza <span className="campo-badge">observacionesCobrar</span></label><textarea name="observacionesCobrar" className="form-control" rows={2} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
                     </div>
@@ -2890,7 +2897,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <thead>
                     <tr style={{ color: '#7d8590', textAlign: 'left' }}>
                       <th style={{ padding: '8px 16px', fontWeight: 600 }}>Tarifa</th>
-                      <th style={{ padding: '8px 16px', fontWeight: 600 }}>ID</th>
                       <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Monto</th>
                       <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Acciones</th>
                     </tr>
@@ -2899,7 +2905,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     {listaConveniosCliente.map((c:any) => (
                       <tr key={c.id} style={{ borderTop: '1px solid #1f2733', color: '#c9d1d9' }}>
                         <td style={{ padding: '10px 16px', fontWeight: 600 }}>{c.descripcion}</td>
-                        <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: '#fb923c' }}>{c.tarifaBaseId || '—'}</td>
                         <td style={{ padding: '10px 16px', textAlign: 'right', color: '#3fb950', fontFamily: 'monospace' }}>{fmtMoney(c.tarifaMonto)}</td>
                         <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           <button type="button" onClick={() => abrirEditorConvenio(c)} title="Editar" style={{ background: 'transparent', border: '1px solid #2d333b', color: '#58a6ff', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', marginRight: '6px' }}><IconEdit size={13} /></button>
@@ -2968,7 +2973,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <thead>
                     <tr style={{ color: '#7d8590', textAlign: 'left' }}>
                       <th style={{ padding: '8px 16px', fontWeight: 600 }}>Tarifa</th>
-                      <th style={{ padding: '8px 16px', fontWeight: 600 }}>ID</th>
                       <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Monto</th>
                       <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Acciones</th>
                     </tr>
@@ -2977,7 +2981,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     {listaConveniosProveedor.map((c:any) => (
                       <tr key={c.id} style={{ borderTop: '1px solid #1f2733', color: '#c9d1d9' }}>
                         <td style={{ padding: '10px 16px', fontWeight: 600 }}>{c.tipoConvenioNombre}</td>
-                        <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: '#fb923c' }}>{c.tarifaBaseId || '—'}</td>
                         <td style={{ padding: '10px 16px', textAlign: 'right', color: '#3fb950', fontFamily: 'monospace' }}>{fmtMoney(c.tarifaMonto)}</td>
                         <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           <button type="button" onClick={() => abrirEditorConvenioProv(c)} title="Editar" style={{ background: 'transparent', border: '1px solid #2d333b', color: '#58a6ff', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', marginRight: '6px' }}><IconEdit size={13} /></button>
