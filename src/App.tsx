@@ -291,22 +291,44 @@ function App() {
     }
   };
 
-  // ✅ CIERRE POR INACTIVIDAD (1 hora), a prueba de pestañas en segundo plano.
-  //   Antes se usaba un solo setTimeout, pero los navegadores lo CONGELAN cuando
-  //   la pestaña queda en segundo plano o la computadora se suspende, así que
-  //   podía no dispararse nunca. Ahora se guarda la marca de tiempo de la
-  //   última actividad y se verifica cada 30 s y al volver a la pestaña:
-  //   si pasó 1 hora o más sin actividad, se cierra la sesión.
+  // ✅ CIERRE POR INACTIVIDAD (1 hora), COMPARTIDO ENTRE PESTAÑAS.
+  //   La sesión de Firebase es una sola para todas las pestañas: si una pestaña
+  //   olvidada en segundo plano llegaba a su hora de inactividad y hacía
+  //   signOut, tumbaba la sesión de la pestaña que SÍ se estaba usando
+  //   ("me saca de repente"). Por eso la última actividad ahora se guarda en
+  //   localStorage (compartido entre pestañas): mientras CUALQUIER pestaña
+  //   tenga actividad, ninguna cierra la sesión. Solo se cierra cuando pasa
+  //   1 hora sin actividad en TODAS.
   useEffect(() => {
     if (!estaAutenticado) return;
     const LIMITE_INACTIVIDAD_MS = 60 * 60 * 1000; // 1 hora
-    let ultimaActividad = Date.now();
+    const CLAVE_ACTIVIDAD = 'roelca_ultima_actividad';
     let cerrando = false;
+    let ultimoRegistroLocal = 0;
 
-    const registrarActividad = () => { ultimaActividad = Date.now(); };
+    const ahora = () => Date.now();
+    const leerActividadGlobal = (): number => {
+      try { return Number(localStorage.getItem(CLAVE_ACTIVIDAD)) || 0; } catch { return 0; }
+    };
+    const escribirActividadGlobal = (t: number) => {
+      try { localStorage.setItem(CLAVE_ACTIVIDAD, String(t)); } catch { /* sin storage: no pasa nada */ }
+    };
+
+    // Al entrar, se marca actividad para no heredar una marca vieja.
+    escribirActividadGlobal(ahora());
+
+    // Registra actividad como máximo una vez cada 5 s (para no saturar storage).
+    const registrarActividad = () => {
+      const t = ahora();
+      if (t - ultimoRegistroLocal < 5000) return;
+      ultimoRegistroLocal = t;
+      escribirActividadGlobal(t);
+    };
+
     const verificar = () => {
       if (cerrando) return;
-      if (Date.now() - ultimaActividad >= LIMITE_INACTIVIDAD_MS) {
+      const ultima = Math.max(leerActividadGlobal(), ultimoRegistroLocal);
+      if (ultima > 0 && ahora() - ultima >= LIMITE_INACTIVIDAD_MS) {
         cerrando = true;
         handleCerrarSesion('inactividad');
       }
@@ -318,6 +340,7 @@ function App() {
     window.addEventListener('keydown', registrarActividad);
     window.addEventListener('mousedown', registrarActividad);
     window.addEventListener('touchstart', registrarActividad);
+    window.addEventListener('wheel', registrarActividad, { passive: true });
     window.addEventListener('scroll', registrarActividad, true);
     document.addEventListener('visibilitychange', alVolverVisible);
     window.addEventListener('focus', verificar);
@@ -328,6 +351,7 @@ function App() {
       window.removeEventListener('keydown', registrarActividad);
       window.removeEventListener('mousedown', registrarActividad);
       window.removeEventListener('touchstart', registrarActividad);
+      window.removeEventListener('wheel', registrarActividad);
       window.removeEventListener('scroll', registrarActividad, true);
       document.removeEventListener('visibilitychange', alVolverVisible);
       window.removeEventListener('focus', verificar);
