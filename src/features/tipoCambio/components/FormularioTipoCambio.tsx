@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
+// ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
+import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, crearSolicitudAutorizacion, obtenerUsuarioAut } from '../../autorizaciones/autorizaciones';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -172,6 +174,38 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
     setGuardando(true);
     try {
+      // ── ✅ AUTORIZACIONES: si la acción o algún campo modificado está
+      //    controlado (y el usuario no es Admin), NO se guarda: se crea una
+      //    solicitud pendiente que el Admin aprueba desde "Autorizaciones". ──
+      const accionAut: 'crear' | 'editar' = esEdicion ? 'editar' : 'crear';
+      const camposCambiadosAut = esEdicion ? camposModificadosDe(formData as any, initialData || {}) : [];
+      const usuarioA = await obtenerUsuarioAut();
+      const configA = await cargarConfigModulo('tipoCambio');
+      const evalAut = evaluarAutorizacion(configA, accionAut, usuarioA, camposCambiadosAut, { fecha: 'Fecha', tcDof: 'T.C. DOF' });
+      if (evalAut.requiere) {
+        const datosAnterioresAut: Record<string, any> = {};
+        camposCambiadosAut.forEach(k => { datosAnterioresAut[k] = (initialData as any)?.[k] ?? ''; });
+        await crearSolicitudAutorizacion({
+          modulo: 'tipoCambio',
+          moduloLabel: 'Tipo de Cambio',
+          accion: accionAut,
+          coleccion: 'tipo_cambio',
+          docId: esEdicion ? String(initialData.id) : '',
+          referencia: `T.C. ${formData.fecha}`,
+          camposAfectados: camposCambiadosAut,
+          datosPropuestos: formData as any,
+          datosAnteriores: datosAnterioresAut,
+          motivosControl: evalAut.motivos,
+          solicitanteUid: usuarioA.uid,
+          solicitanteNombre: usuarioA.nombre,
+          solicitanteRoles: usuarioA.roles,
+          estrategiaCrear: 'directa',
+        });
+        alert(`🔒 Este cambio requiere autorización del administrador.\n\n${evalAut.motivos.join('\n')}\n\nSe envió la solicitud. Los cambios NO se guardaron todavía; se aplicarán cuando el Admin los apruebe.`);
+        onClose();
+        return;
+      }
+
       // ✅ Candado final contra duplicados: verificación directa en Firestore
       //   por si otro usuario registró la misma fecha hace un instante.
       const dupSnap = await getDocs(query(collection(db, 'tipo_cambio'), where('fecha', '==', formData.fecha)));

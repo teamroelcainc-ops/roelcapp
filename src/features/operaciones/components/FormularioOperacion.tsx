@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db, storage, auth } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
+// ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
+import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, crearSolicitudAutorizacion, obtenerUsuarioAut, MODULOS_AUTORIZABLES } from '../../autorizaciones/autorizaciones';
 import { calcularStatusDinamico } from '../config/statusRules';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -499,6 +501,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [guardandoDetalleConvProv, setGuardandoDetalleConvProv] = useState(false);
 
   const [puedeEditarRef, setPuedeEditarRef] = useState(false);
+
+  // ✅ AUTORIZACIONES: config del módulo 'operaciones' y usuario actual.
+  const [configAut, setConfigAut] = useState<any>(undefined); // undefined = aún cargando
+  const [usuarioAut, setUsuarioAut] = useState<any>(null);
+  useEffect(() => {
+    cargarConfigModulo('operaciones').then(setConfigAut).catch(() => setConfigAut(null));
+    obtenerUsuarioAut().then(setUsuarioAut).catch(() => {});
+  }, []);
   const [referencia, setReferencia] = useState('');
 
   const [statusPreview, setStatusPreview] = useState<string>('');
@@ -1901,6 +1911,40 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       if (initialData && puedeEditarRef && referencia.trim() && referencia.trim() !== String((initialData as any).ref || '')) {
         operacionData.ref = referencia.trim();
+      }
+
+      // ── ✅ AUTORIZACIONES: si la acción o algún campo modificado está
+      //    controlado (y el usuario no es Admin), NO se guarda: se crea una
+      //    solicitud pendiente que el Admin aprueba desde "Autorizaciones". ──
+      const etiquetasCamposAut: Record<string, string> = {};
+      (MODULOS_AUTORIZABLES.find(m => m.clave === 'operaciones')?.campos || []).forEach(c => { etiquetasCamposAut[c.key] = c.label; });
+      const accionAut: 'crear' | 'editar' = initialData ? 'editar' : 'crear';
+      const camposCambiadosAut = initialData ? camposModificadosDe(operacionData, initialData as any) : [];
+      const usuarioA = usuarioAut || await obtenerUsuarioAut();
+      const configA = configAut !== undefined ? configAut : await cargarConfigModulo('operaciones');
+      const evalAut = evaluarAutorizacion(configA, accionAut, usuarioA, camposCambiadosAut, etiquetasCamposAut);
+      if (evalAut.requiere) {
+        const datosAnterioresAut: Record<string, any> = {};
+        camposCambiadosAut.forEach(k => { datosAnterioresAut[k] = (initialData as any)?.[k] ?? ''; });
+        await crearSolicitudAutorizacion({
+          modulo: 'operaciones',
+          moduloLabel: 'Operaciones',
+          accion: accionAut,
+          coleccion: 'operaciones',
+          docId: initialData ? String((initialData as any).id) : '',
+          referencia: initialData ? String((initialData as any).ref || (initialData as any).id) : 'Nueva operación',
+          camposAfectados: camposCambiadosAut,
+          datosPropuestos: operacionData,
+          datosAnteriores: datosAnterioresAut,
+          motivosControl: evalAut.motivos,
+          solicitanteUid: usuarioA.uid,
+          solicitanteNombre: usuarioA.nombre,
+          solicitanteRoles: usuarioA.roles,
+          estrategiaCrear: initialData ? 'directa' : 'segura',
+        });
+        alert(`🔒 Este cambio requiere autorización del administrador.\n\n${evalAut.motivos.join('\n')}\n\nSe envió la solicitud. Los cambios NO se guardaron todavía; se aplicarán cuando el Admin los apruebe.`);
+        onClose();
+        return;
       }
 
       let idGuardado = '';

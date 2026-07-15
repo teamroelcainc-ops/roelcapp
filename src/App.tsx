@@ -52,6 +52,8 @@ const FacturacionProveedoresDashboard = lazyWithRetry(() => import('./features/f
 const CostosAdicionalesDashboard = lazyWithRetry(() => import('./features/costosAdicionales/CostosAdicionalesDashboard').then(m => ({ default: m.CostosAdicionalesDashboard })), 'CostosAdicionalesDashboard');
 const ConfiguracionEmpresa = lazyWithRetry(() => import('./features/configuracion/ConfiguracionEmpresa'), 'ConfiguracionEmpresa');
 const DataImportView = lazyWithRetry(() => import('./features/importacion/components/DataImportView'), 'DataImportView');
+// ✅ Módulo de AUTORIZACIONES: SOLO visible para Admin.
+const AutorizacionesDashboard = lazyWithRetry(() => import('./features/autorizaciones/components/AutorizacionesDashboard').then(m => ({ default: m.AutorizacionesDashboard })), 'AutorizacionesDashboard');
 
 import './App.css';
 
@@ -92,6 +94,8 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Historial de Actividad': 'logs',
   'Reglas de Estatus': 'flujosOperacion',
   'Datos de la Empresa': 'datosEmpresa',
+  // ✅ Autorizaciones: visible para quien tenga el módulo asignado en su rol.
+  'Autorizaciones': 'autorizaciones',
 };
 
 const ORDEN_CLAVES = Object.values(MODULOS_A_CLAVE);
@@ -224,7 +228,7 @@ function App() {
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [miPerfilAbierto, setMiPerfilAbierto] = useState(false); // modal "Mi Perfil"
@@ -273,7 +277,7 @@ function App() {
   const handleCerrarSesion = async (motivo: 'manual' | 'inactividad' = 'manual') => {
     if (auth.currentUser) {
       try {
-        const detalle = motivo === 'inactividad' ? 'Cierre de sesión automático por inactividad (10 min)' : 'Cierre de sesión manual voluntario';
+        const detalle = motivo === 'inactividad' ? 'Cierre de sesión automático por inactividad (1 hora)' : 'Cierre de sesión manual voluntario';
         await registrarLog('Sesión', 'Cierre de Sesión', detalle);
         await updateDoc(doc(db, 'usuarios', auth.currentUser.uid), { isOnline: false });
       } catch (error) {
@@ -283,28 +287,50 @@ function App() {
     }
     setEstaAutenticado(false);
     if (motivo === 'inactividad') {
-      alert("Tu sesión se ha cerrado automáticamente por seguridad tras 60 minutos de inactividad.");
+      alert("Tu sesión se ha cerrado automáticamente por seguridad tras 1 hora de inactividad.");
     }
   };
 
+  // ✅ CIERRE POR INACTIVIDAD (1 hora), a prueba de pestañas en segundo plano.
+  //   Antes se usaba un solo setTimeout, pero los navegadores lo CONGELAN cuando
+  //   la pestaña queda en segundo plano o la computadora se suspende, así que
+  //   podía no dispararse nunca. Ahora se guarda la marca de tiempo de la
+  //   última actividad y se verifica cada 30 s y al volver a la pestaña:
+  //   si pasó 1 hora o más sin actividad, se cierra la sesión.
   useEffect(() => {
     if (!estaAutenticado) return;
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const resetTimer = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => { handleCerrarSesion('inactividad'); }, 3600000); 
+    const LIMITE_INACTIVIDAD_MS = 60 * 60 * 1000; // 1 hora
+    let ultimaActividad = Date.now();
+    let cerrando = false;
+
+    const registrarActividad = () => { ultimaActividad = Date.now(); };
+    const verificar = () => {
+      if (cerrando) return;
+      if (Date.now() - ultimaActividad >= LIMITE_INACTIVIDAD_MS) {
+        cerrando = true;
+        handleCerrarSesion('inactividad');
+      }
     };
-    window.addEventListener('mousemove', resetTimer);
-    window.addEventListener('keydown', resetTimer);
-    window.addEventListener('mousedown', resetTimer);
-    window.addEventListener('touchstart', resetTimer);
-    resetTimer(); 
+    const alVolverVisible = () => { if (document.visibilityState === 'visible') verificar(); };
+
+    const intervalo = setInterval(verificar, 30000);
+    window.addEventListener('mousemove', registrarActividad);
+    window.addEventListener('keydown', registrarActividad);
+    window.addEventListener('mousedown', registrarActividad);
+    window.addEventListener('touchstart', registrarActividad);
+    window.addEventListener('scroll', registrarActividad, true);
+    document.addEventListener('visibilitychange', alVolverVisible);
+    window.addEventListener('focus', verificar);
+
     return () => {
-      clearTimeout(timeoutId);
-      window.removeEventListener('mousemove', resetTimer);
-      window.removeEventListener('keydown', resetTimer);
-      window.removeEventListener('mousedown', resetTimer);
-      window.removeEventListener('touchstart', resetTimer);
+      clearInterval(intervalo);
+      window.removeEventListener('mousemove', registrarActividad);
+      window.removeEventListener('keydown', registrarActividad);
+      window.removeEventListener('mousedown', registrarActividad);
+      window.removeEventListener('touchstart', registrarActividad);
+      window.removeEventListener('scroll', registrarActividad, true);
+      document.removeEventListener('visibilitychange', alVolverVisible);
+      window.removeEventListener('focus', verificar);
     };
   }, [estaAutenticado]);
 
@@ -366,7 +392,7 @@ function App() {
   const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes';
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
-  const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion' || moduloActivo === 'datosEmpresa';
+  const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion' || moduloActivo === 'datosEmpresa' || moduloActivo === 'autorizaciones';
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel' || moduloActivo === 'referenciasPuentes' || moduloActivo === 'costosAdicionales';
 
   // Visibilidad de cada grupo: se muestra si al menos un hijo está permitido.
@@ -375,7 +401,7 @@ function App() {
   const verProveedores = puede('conveniosProveedores') || puede('facturacionProveedores');
   const verEmpleados = puede('colaboradores') || puede('historialAsistencia') || puede('referenciasNomina') || puede('deducciones');
   const verBasesDatos = puede('empresas') || puede('contactos') || puede('direcciones') || puede('tipoCambio') || puede('combustible') || puede('unidades') || puede('remolques') || puede('proveedoresUnidad') || puede('unidadesProveedor');
-  const verConfiguracion = puede('usuarios') || puede('roles') || puede('logs') || puede('flujosOperacion') || puede('datosEmpresa');
+  const verConfiguracion = puede('usuarios') || puede('roles') || puede('logs') || puede('flujosOperacion') || puede('datosEmpresa') || puede('autorizaciones');
 
   const sinModulos = !accesoTotal && clavesPermitidas.size === 0;
 
@@ -540,6 +566,8 @@ function App() {
                 {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => setModuloActivo('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>}
                 {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => setModuloActivo('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>}
                 {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => setModuloActivo('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>}
+                {/* ✅ AUTORIZACIONES: lo ve quien tenga el módulo asignado en su rol (Admin siempre). */}
+                {puede('autorizaciones') && <div className={`sidebar-subitem ${moduloActivo === 'autorizaciones' ? 'active' : ''}`} title="Autorizaciones" onClick={() => setModuloActivo('autorizaciones')}><span className="sidebar-icon"><Ico><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></Ico></span><span className="sidebar-label">Autorizaciones</span></div>}
                 <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => setModuloActivo('importacion')}><span className="sidebar-icon"><Ico><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Ico></span><span className="sidebar-label">Importar Datos</span></div>
               </div>
             )}
@@ -613,6 +641,7 @@ function App() {
             {moduloActivo === 'serviciosCompletados' && puede('serviciosCompletados') && <ServiciosCompletados />}
             {moduloActivo === 'serviciosCancelados' && puede('serviciosCancelados') && <ServiciosCancelados />}
             {moduloActivo === 'reportes' && puede('reportes') && <ReportesDashboard />}
+            {moduloActivo === 'autorizaciones' && puede('autorizaciones') && <AutorizacionesDashboard />}
             {moduloActivo === 'mtto' && puede('mtto') && <MttoDashboard />} 
             {moduloActivo === 'referenciasDiesel' && puede('referenciasDiesel') && <ReferenciasDieselDashboard />} 
             {moduloActivo === 'referenciasPuentes' && puede('referenciasPuentes') && <ReferenciasPuentesDashboard />} 

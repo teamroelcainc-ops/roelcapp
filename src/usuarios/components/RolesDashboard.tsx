@@ -16,7 +16,7 @@ const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
   { grupo: 'Proveedores', modulos: ['Convenio de Proveedores', 'Facturación de Proveedores'] },
   { grupo: 'Empleados', modulos: ['Colaboradores', 'Historial de Chequeo', 'Nómina', 'Deducciones'] },
   { grupo: 'Bases de Datos', modulos: ['Empresas', 'Contactos', 'Direcciones', 'Tipo de Cambio', 'Combustible', 'Unidades Propias', 'Remolques', 'Proveedores de Unidad', 'Unidades del Proveedor'] },
-  { grupo: 'Configuración', modulos: ['Usuarios', 'Roles y Permisos', 'Historial de Actividad', 'Reglas de Estatus', 'Datos de la Empresa'] },
+  { grupo: 'Configuración', modulos: ['Usuarios', 'Roles y Permisos', 'Historial de Actividad', 'Reglas de Estatus', 'Datos de la Empresa', 'Autorizaciones'] },
   // ✅ NUEVO: permisos especiales de acción (no son items de menú; habilitan
   // capacidades puntuales). "Editar Referencia" permite editar la referencia
   // (# Ref) de una operación al editarla, igual que un ADMIN.
