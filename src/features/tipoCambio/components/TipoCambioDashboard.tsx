@@ -1,6 +1,6 @@
 // src/features/tipoCambio/components/TipoCambioDashboard.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore'; 
+import { collection, onSnapshot, doc, deleteDoc, getDoc, setDoc } from 'firebase/firestore'; 
 import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { FormularioTipoCambio } from './FormularioTipoCambio';
@@ -26,6 +26,58 @@ export const TipoCambioDashboard = () => {
   const registrosPorPagina = 50;
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+
+  // ── ✅ DÍAS FESTIVOS (compartidos para todos): config_dias_festivos/general.
+  //   En estos días no se trabaja y el tipo de cambio toma el valor del día
+  //   anterior; el formulario los usa para auto-generar esos registros. ──
+  const [modalFestivos, setModalFestivos] = useState(false);
+  const [festivos, setFestivos] = useState<{ fecha: string; nombre: string }[]>([]);
+  const [nuevoFestivo, setNuevoFestivo] = useState<{ fecha: string; nombre: string }>({ fecha: '', nombre: '' });
+  const [guardandoFestivos, setGuardandoFestivos] = useState(false);
+
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'config_dias_festivos', 'general'));
+        if (activo && snap.exists()) {
+          const lista = ((snap.data() as any).festivos || []).map((f: any) => ({ fecha: String(f.fecha || ''), nombre: String(f.nombre || '') })).filter((f: any) => f.fecha);
+          lista.sort((a: any, b: any) => a.fecha.localeCompare(b.fecha));
+          setFestivos(lista);
+        }
+      } catch (e) { console.error('Error cargando días festivos:', e); }
+    })();
+    return () => { activo = false; };
+  }, []);
+
+  const agregarFestivo = () => {
+    const fecha = nuevoFestivo.fecha;
+    if (!fecha) { alert('Selecciona la fecha del día festivo.'); return; }
+    if (festivos.some(f => f.fecha === fecha)) { alert('Esa fecha ya está en la lista de festivos.'); return; }
+    const lista = [...festivos, { fecha, nombre: nuevoFestivo.nombre.trim() || 'Día festivo' }];
+    lista.sort((a, b) => a.fecha.localeCompare(b.fecha));
+    setFestivos(lista);
+    setNuevoFestivo({ fecha: '', nombre: '' });
+  };
+
+  const quitarFestivo = (fecha: string) => setFestivos(prev => prev.filter(f => f.fecha !== fecha));
+
+  const guardarFestivos = async () => {
+    setGuardandoFestivos(true);
+    try {
+      await setDoc(doc(db, 'config_dias_festivos', 'general'), { festivos, updatedAt: new Date().toISOString() }, { merge: true });
+      await registrarLog('Tipo de Cambio', 'Configuración', `Actualizó la lista de días festivos (${festivos.length} fechas)`);
+      alert('Días festivos guardados. Aplican para todos los usuarios.');
+      setModalFestivos(false);
+    } catch (e) {
+      console.error(e);
+      alert('No se pudieron guardar los días festivos. Revisa tu conexión.');
+    } finally { setGuardandoFestivos(false); }
+  };
+
+  const formatoFechaFestivo = (iso: string) => {
+    try { return new Date(iso + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }); } catch { return iso; }
+  };
 
   // ✅ ESTADOS PARA CONFIGURACIÓN DE COLUMNAS (DRAG & DROP)
   const [modalColumnas, setModalColumnas] = useState(false);
@@ -222,6 +274,14 @@ export const TipoCambioDashboard = () => {
           <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '150px' }}>
             <button 
               className="btn btn-outline" 
+              title="Días Festivos (el T.C. toma el valor del día anterior)"
+              onClick={() => setModalFestivos(true)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M12 14l1.1 2.2 2.4.35-1.75 1.7.4 2.4L12 19.5l-2.15 1.15.4-2.4-1.75-1.7 2.4-.35z"></path></svg>
+            </button>
+            <button 
+              className="btn btn-outline" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
@@ -350,6 +410,47 @@ export const TipoCambioDashboard = () => {
       </div>
 
       {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* ✅ MODAL DE DÍAS FESTIVOS */}
+      {modalFestivos && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2600, padding: '20px' }}>
+          <div style={{ maxWidth: '560px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
+            <div style={{ padding: '18px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Días Festivos</h3>
+              <button onClick={() => setModalFestivos(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+            <div style={{ padding: '18px 24px', overflowY: 'auto' }}>
+              <p style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: 0, marginBottom: '16px' }}>
+                En estos días no se trabaja: el tipo de cambio <b style={{ color: '#c9d1d9' }}>toma el valor del día anterior</b> y se genera automáticamente al capturar ese día anterior. La lista aplica para <b style={{ color: '#fb923c' }}>todos los usuarios</b>.
+              </p>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                <input type="date" value={nuevoFestivo.fecha} onChange={e => setNuevoFestivo(prev => ({ ...prev, fecha: e.target.value }))} style={{ padding: '8px 10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px' }} />
+                <input type="text" placeholder="Nombre (ej. 4 de Julio)" value={nuevoFestivo.nombre} onChange={e => setNuevoFestivo(prev => ({ ...prev, nombre: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); agregarFestivo(); } }} style={{ flex: 1, minWidth: '160px', padding: '8px 10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px' }} />
+                <button type="button" onClick={agregarFestivo} style={{ padding: '8px 18px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Agregar</button>
+              </div>
+              {festivos.length === 0 ? (
+                <div style={{ color: '#8b949e', textAlign: 'center', padding: '20px', border: '1px dashed #30363d', borderRadius: '8px' }}>Sin días festivos registrados.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {festivos.map(f => (
+                    <div key={f.fecha} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '9px 12px', backgroundColor: '#161b22', border: '1px solid #21262d', borderRadius: '8px' }}>
+                      <div>
+                        <span style={{ color: '#f0f6fc', fontWeight: 600, fontSize: '0.9rem' }}>{f.nombre}</span>
+                        <span style={{ color: '#8b949e', fontSize: '0.78rem', marginLeft: '10px' }}>{formatoFechaFestivo(f.fecha)}</span>
+                      </div>
+                      <button type="button" title="Quitar" onClick={() => quitarFestivo(f.fecha)} style={{ background: 'transparent', border: '1px solid #f85149', color: '#f85149', borderRadius: '6px', width: '26px', height: '24px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '10px', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
+              <button type="button" onClick={() => setModalFestivos(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <button type="button" onClick={guardarFestivos} disabled={guardandoFestivos} style={{ padding: '8px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoFestivos ? 'Guardando...' : 'Guardar para todos'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalColumnas && (
         <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
           <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>

@@ -38,6 +38,20 @@ const hoyLocalISO = (): string => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
+// ✅ Helpers de calendario (para propagar el T.C. a días inhábiles).
+const DIAS_SEMANA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const sumarDias = (fechaISO: string, n: number): string => {
+  const d = new Date(fechaISO + 'T12:00:00');
+  d.setDate(d.getDate() + n);
+  const p = (x: number) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+const nombreDiaDe = (fechaISO: string): string => DIAS_SEMANA[new Date(fechaISO + 'T12:00:00').getDay()];
+const esFinDeSemana = (fechaISO: string): boolean => {
+  const dow = new Date(fechaISO + 'T12:00:00').getDay();
+  return dow === 0 || dow === 6;
+};
+
 export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, onMinimize, onRestore }: FormProps) => {
   const [formData, setFormData] = useState({
     dia: '', 
@@ -54,6 +68,24 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
   const [guardandoConfig, setGuardandoConfig] = useState(false);
 
   const esOblig = (campo: string) => !!obligatorios[campo];
+
+  // ✅ DÍAS FESTIVOS (compartidos): se administran desde el dashboard
+  //   (botón "Días Festivos") y se guardan en config_dias_festivos/general.
+  const [festivos, setFestivos] = useState<string[]>([]);
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'config_dias_festivos', 'general'));
+        if (activo && snap.exists()) {
+          const lista = (snap.data() as any).festivos || [];
+          setFestivos(lista.map((f: any) => String(f.fecha || f)).filter(Boolean));
+        }
+      } catch (e) { console.error('Error cargando días festivos:', e); }
+    })();
+    return () => { activo = false; };
+  }, []);
+  const esFestivo = (fechaISO: string) => festivos.includes(fechaISO);
 
   const esEdicion = !!(initialData && initialData.id);
   const hoy = hoyLocalISO();
@@ -158,10 +190,11 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
       return;
     }
 
-    // ✅ REGLA: solo se puede AGREGAR el tipo de cambio de HOY.
-    //   El futuro no se conoce y el pasado ya debería estar registrado.
-    if (!esEdicion && formData.fecha !== hoy) {
-      alert(`Solo se puede registrar el tipo de cambio de HOY (${hoy}).\n\nNo se permiten fechas futuras ni pasadas.`);
+    // ✅ REGLA: se puede registrar HOY o completar días PASADOS faltantes
+    //   (para no dejar días en blanco). Lo único prohibido es el FUTURO,
+    //   porque el tipo de cambio aún no se conoce.
+    if (!esEdicion && formData.fecha > hoy) {
+      alert(`No se puede registrar un tipo de cambio de una fecha FUTURA.\n\nPuedes registrar el de hoy (${hoy}) o completar días pasados que falten.`);
       setFormData(prev => ({ ...prev, fecha: hoy }));
       return;
     }
@@ -221,6 +254,45 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
       } else {
         await agregarRegistro('tipo_cambio', formData);
         await registrarLog('Tipo de Cambio', 'Creación', `Agregó el T.C. del día ${formData.fecha} (${formData.tcDof})`);
+
+        // ── ✅ PROPAGACIÓN A DÍAS INHÁBILES ──
+        //   Los días siguientes que sean sábado, domingo o festivo toman el
+        //   MISMO tipo de cambio (el DOF no publica en días inhábiles):
+        //   · Viernes → crea sábado y domingo automáticamente.
+        //   · Día anterior a un festivo → crea el festivo (encadena si hay
+        //     festivo + fin de semana seguidos, p. ej. viernes festivo).
+        const creados: string[] = [];
+        try {
+          let f = sumarDias(formData.fecha, 1);
+          let seguridad = 0;
+          while ((esFinDeSemana(f) || esFestivo(f)) && seguridad < 14) {
+            seguridad++;
+            const existeLocal = registros.some(r => String(r.fecha) === f);
+            let existeRemoto = false;
+            if (!existeLocal) {
+              const snapDia = await getDocs(query(collection(db, 'tipo_cambio'), where('fecha', '==', f)));
+              existeRemoto = !snapDia.empty;
+            }
+            if (!existeLocal && !existeRemoto) {
+              const motivo = esFestivo(f) ? 'día festivo' : 'fin de semana';
+              await agregarRegistro('tipo_cambio', {
+                dia: nombreDiaDe(f),
+                fecha: f,
+                tcDof: formData.tcDof,
+                tendencia: `Sin cambio (${motivo}: mismo T.C. del día anterior)`,
+                tipoTendencia: 'igual',
+              });
+              await registrarLog('Tipo de Cambio', 'Creación', `Auto-generó el T.C. del ${nombreDiaDe(f)} ${f} (${motivo}) con el valor ${formData.tcDof}`);
+              creados.push(`${nombreDiaDe(f)} ${f}`);
+            }
+            f = sumarDias(f, 1);
+          }
+        } catch (ePropaga) {
+          console.error('Error propagando T.C. a días inhábiles:', ePropaga);
+        }
+        if (creados.length > 0) {
+          alert(`T.C. guardado. Se agregó automáticamente el mismo valor para:\n\n• ${creados.join('\n• ')}`);
+        }
       }
       onClose();
     } catch (error) {
@@ -272,14 +344,13 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
                   value={formData.fecha} 
                   onChange={handleChange}
                   required={esOblig('fecha')}
-                  min={esEdicion ? undefined : hoy}
                   max={esEdicion ? undefined : hoy}
                   disabled={esEdicion}
-                  title={esEdicion ? 'La fecha no se puede modificar al editar' : `Solo se puede registrar el T.C. de hoy (${hoy})`}
+                  title={esEdicion ? 'La fecha no se puede modificar al editar' : 'Puedes registrar hoy o completar días pasados faltantes (futuro no)'}
                   style={esEdicion ? { backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed' } : undefined}
                 />
                 {!esEdicion && (
-                  <small style={{ color: '#8b949e' }}>Solo se puede registrar el tipo de cambio de hoy.</small>
+                  <small style={{ color: '#8b949e' }}>Puedes registrar el de hoy o completar días pasados faltantes. No se permiten fechas futuras. Los sábados, domingos y festivos siguientes se agregan solos con el mismo valor.</small>
                 )}
                 {fechaDuplicada && (
                   <small style={{ color: '#f85149', fontWeight: 600, display: 'block', marginTop: '4px' }}>
