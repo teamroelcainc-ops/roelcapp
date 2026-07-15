@@ -283,7 +283,7 @@ function App() {
     }
     setEstaAutenticado(false);
     if (motivo === 'inactividad') {
-      alert("Tu sesión se ha cerrado automáticamente por seguridad tras 10 minutos de inactividad.");
+      alert("Tu sesión se ha cerrado automáticamente por seguridad tras 60 minutos de inactividad.");
     }
   };
 
@@ -292,7 +292,7 @@ function App() {
     let timeoutId: ReturnType<typeof setTimeout>;
     const resetTimer = () => {
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => { handleCerrarSesion('inactividad'); }, 600000); 
+      timeoutId = setTimeout(() => { handleCerrarSesion('inactividad'); }, 3600000); 
     };
     window.addEventListener('mousemove', resetTimer);
     window.addEventListener('keydown', resetTimer);
