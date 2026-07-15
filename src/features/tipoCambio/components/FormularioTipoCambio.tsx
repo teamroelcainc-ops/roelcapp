@@ -1,6 +1,6 @@
 // src/features/tipoCambio/components/FormularioTipoCambio.tsx
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 
@@ -29,14 +29,22 @@ const esVacioValor = (v: any): boolean => {
   return String(v).trim() === '';
 };
 
+// ✅ Fecha de HOY en horario LOCAL (no UTC, para no brincar de día por la noche).
+const hoyLocalISO = (): string => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
 export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, onMinimize, onRestore }: FormProps) => {
   const [formData, setFormData] = useState({
     dia: '', 
-    fecha: new Date().toISOString().split('T')[0], 
+    fecha: hoyLocalISO(), 
     tcDof: '', 
     tendencia: 'Sin cambio', 
     tipoTendencia: 'igual'
   });
+  const [guardando, setGuardando] = useState(false);
 
   // ✅ NUEVO: configuración de campos obligatorios (compartida)
   const [obligatorios, setObligatorios] = useState<Record<string, boolean>>(OBLIGATORIOS_DEFAULT);
@@ -44,6 +52,15 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
   const [guardandoConfig, setGuardandoConfig] = useState(false);
 
   const esOblig = (campo: string) => !!obligatorios[campo];
+
+  const esEdicion = !!(initialData && initialData.id);
+  const hoy = hoyLocalISO();
+
+  // ✅ REGLA: la fecha NO puede repetirse. Se valida contra todos los registros
+  //   cargados (excluyendo el propio registro cuando se edita).
+  const fechaDuplicada = registros.some(
+    r => String(r.fecha) === String(formData.fecha) && r.id !== initialData?.id
+  );
 
   // Carga la config compartida al montar (1 lectura)
   useEffect(() => {
@@ -130,6 +147,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (guardando) return;
 
     // ✅ Validación según la configuración compartida de campos obligatorios
     const faltantes = CAMPOS_CONFIGURABLES.filter(c => esOblig(c.key) && esVacioValor((formData as any)[c.key]));
@@ -138,8 +156,32 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
       return;
     }
 
+    // ✅ REGLA: solo se puede AGREGAR el tipo de cambio de HOY.
+    //   El futuro no se conoce y el pasado ya debería estar registrado.
+    if (!esEdicion && formData.fecha !== hoy) {
+      alert(`Solo se puede registrar el tipo de cambio de HOY (${hoy}).\n\nNo se permiten fechas futuras ni pasadas.`);
+      setFormData(prev => ({ ...prev, fecha: hoy }));
+      return;
+    }
+
+    // ✅ REGLA: la fecha no puede estar repetida (validación en memoria).
+    if (fechaDuplicada) {
+      alert(`Ya existe un registro del tipo de cambio para la fecha ${formData.fecha}.\n\nNo se puede agregar de nuevo. Si necesitas corregir el valor, edita el registro existente.`);
+      return;
+    }
+
+    setGuardando(true);
     try {
-      if (initialData && initialData.id) {
+      // ✅ Candado final contra duplicados: verificación directa en Firestore
+      //   por si otro usuario registró la misma fecha hace un instante.
+      const dupSnap = await getDocs(query(collection(db, 'tipo_cambio'), where('fecha', '==', formData.fecha)));
+      const hayDuplicadoRemoto = dupSnap.docs.some(d => d.id !== initialData?.id);
+      if (hayDuplicadoRemoto) {
+        alert(`Ya existe un registro del tipo de cambio para la fecha ${formData.fecha} (registrado por otro usuario).\n\nNo se guardará un duplicado.`);
+        return;
+      }
+
+      if (esEdicion) {
         await actualizarRegistro('tipo_cambio', initialData.id, formData);
         await registrarLog('Tipo de Cambio', 'Edición', `Actualizó el T.C. del día ${formData.fecha} a ${formData.tcDof}`);
       } else {
@@ -150,6 +192,8 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
     } catch (error) {
       console.error("Error al guardar en Firebase:", error);
       alert('Error al guardar. Revisa tu conexión a internet.');
+    } finally {
+      setGuardando(false);
     }
   };
 
@@ -185,6 +229,8 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
               <div className="form-group">
                 <label className="form-label">Fecha {esOblig('fecha') ? '*' : ''}</label>
+                {/* ✅ Al AGREGAR: solo se permite la fecha de HOY (min = max = hoy).
+                    Al EDITAR: la fecha queda bloqueada; solo se corrige el valor. */}
                 <input 
                   type="date" 
                   name="fecha" 
@@ -192,7 +238,20 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
                   value={formData.fecha} 
                   onChange={handleChange}
                   required={esOblig('fecha')}
+                  min={esEdicion ? undefined : hoy}
+                  max={esEdicion ? undefined : hoy}
+                  disabled={esEdicion}
+                  title={esEdicion ? 'La fecha no se puede modificar al editar' : `Solo se puede registrar el T.C. de hoy (${hoy})`}
+                  style={esEdicion ? { backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed' } : undefined}
                 />
+                {!esEdicion && (
+                  <small style={{ color: '#8b949e' }}>Solo se puede registrar el tipo de cambio de hoy.</small>
+                )}
+                {fechaDuplicada && (
+                  <small style={{ color: '#f85149', fontWeight: 600, display: 'block', marginTop: '4px' }}>
+                    ⚠ Ya existe un registro para esta fecha. No se puede guardar duplicado.
+                  </small>
+                )}
               </div>
 
               <div className="form-group">
@@ -227,7 +286,9 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
             <div className="form-actions" style={{ marginTop: '24px' }}>
               <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
-              <button type="submit" className="btn btn-primary">{initialData ? 'Guardar Cambios' : 'Guardar'}</button>
+              <button type="submit" className="btn btn-primary" disabled={guardando || fechaDuplicada} style={{ opacity: (guardando || fechaDuplicada) ? 0.6 : 1, cursor: (guardando || fechaDuplicada) ? 'not-allowed' : 'pointer' }}>
+                {guardando ? 'Guardando...' : (initialData ? 'Guardar Cambios' : 'Guardar')}
+              </button>
             </div>
           </form>
         </div>
