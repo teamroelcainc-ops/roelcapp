@@ -1969,6 +1969,17 @@ export const FacturacionClientesDashboard = () => {
     return directos[0] || (info?.ref ? String(info.ref) : '') || id;
   };
 
+  // ✅ Número de caja (# remolque) de una operación de la factura: usa el valor
+  //    guardado en el resumen y, si falta (facturas viejas), cae al opInfoMap
+  //    que se resuelve bajo demanda al abrir la ficha.
+  const remolqueDeOp = (op: any): string => {
+    const directo = String(op?.remolque || '').trim();
+    if (directo && directo !== '-') return directo;
+    const info = opInfoMap[String(op?.id || '')];
+    const resuelto = String(info?.remolque || '').trim();
+    return resuelto && resuelto !== '-' ? resuelto : '';
+  };
+
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
   useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeHist, fechaHastaHist, textoBuscarFactura, filtroStatusFactura]);
@@ -3045,15 +3056,23 @@ export const FacturacionClientesDashboard = () => {
                     </button>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                    {facturaViendo.operacionesGuardadas?.map((op: any) => (
-                      <button key={op.id} onClick={() => verDetalleOperacion(op.id)} title="Ver detalle de la operación"
-                        style={{ backgroundColor: '#21262d', border: '1px solid #58a6ff', padding: '8px 14px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '4px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
-                        onMouseEnter={(e: any) => { e.currentTarget.style.backgroundColor = '#1f2d44'; e.currentTarget.style.borderColor = '#79b8ff'; }}
-                        onMouseLeave={(e: any) => { e.currentTarget.style.backgroundColor = '#21262d'; e.currentTarget.style.borderColor = '#58a6ff'; }}>
-                        <span style={{ color: '#58a6ff', fontSize: '0.9rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{refDeOp(op)}</span>
-                        <span style={{ color: '#3fb950', fontSize: '0.85rem' }}>{formatoMoneda(op.monto)}</span>
-                      </button>
-                    )) || <span style={{ color: '#8b949e' }}>Sin detalle de operaciones.</span>}
+                    {facturaViendo.operacionesGuardadas?.map((op: any) => {
+                      const numeroCaja = remolqueDeOp(op);
+                      return (
+                        <button key={op.id} onClick={() => verDetalleOperacion(op.id)} title="Ver detalle de la operación"
+                          style={{ backgroundColor: '#21262d', border: '1px solid #58a6ff', padding: '8px 14px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '4px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
+                          onMouseEnter={(e: any) => { e.currentTarget.style.backgroundColor = '#1f2d44'; e.currentTarget.style.borderColor = '#79b8ff'; }}
+                          onMouseLeave={(e: any) => { e.currentTarget.style.backgroundColor = '#21262d'; e.currentTarget.style.borderColor = '#58a6ff'; }}>
+                          <span style={{ color: '#58a6ff', fontSize: '0.9rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{refDeOp(op)}</span>
+                          {numeroCaja && (
+                            <span style={{ color: '#c9d1d9', fontSize: '0.78rem' }}>
+                              <span style={{ color: '#8b949e' }}>Caja:</span> {numeroCaja}
+                            </span>
+                          )}
+                          <span style={{ color: '#3fb950', fontSize: '0.85rem' }}>{formatoMoneda(op.monto)}</span>
+                        </button>
+                      );
+                    }) || <span style={{ color: '#8b949e' }}>Sin detalle de operaciones.</span>}
                   </div>
                 </div>
               </div>
