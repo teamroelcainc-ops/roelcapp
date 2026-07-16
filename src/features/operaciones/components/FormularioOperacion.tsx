@@ -870,6 +870,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return tipoCambiado ? undefined : initialData?.status;
   };
 
+  // ✅ NUEVO: nombre del status GUARDADO de la operación, siempre visible al editar.
+  //    Resuelve por id -> nombre del catálogo; si statusNombre quedó guardado con la
+  //    DESCRIPCIÓN (bug previo), la mapea de regreso al nombre correcto.
+  const statusActualGuardado = useMemo(() => {
+    if (!initialData) return '';
+    const lista: any[] = statusServicio || [];
+    const idOp = String(initialData.status || '').trim();
+    const porId = lista.find((st: any) => String(st.id || '').trim() === idOp);
+    if (porId?.nombre) return String(porId.nombre);
+    const den = String(initialData.statusNombre || '').trim();
+    if (den) {
+      const porNombre = lista.find((st: any) => String(st.nombre || '').trim().toLowerCase() === den.toLowerCase());
+      if (porNombre?.nombre) return String(porNombre.nombre);
+      const porDescripcion = lista.find((st: any) => String(st.descripcion || '').trim() === den);
+      if (porDescripcion?.nombre) return String(porDescripcion.nombre);
+    }
+    const idComoNombre = lista.find((st: any) => String(st.nombre || '').trim().toLowerCase() === idOp.toLowerCase());
+    if (idComoNombre?.nombre) return String(idComoNombre.nombre);
+    return den || idOp;
+  }, [initialData, statusServicio]);
+
   useEffect(() => {
     let cancelado = false;
     const configId = buildConfigId();
@@ -924,7 +945,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       try {
         const statusCalculado = await calcularStatusDinamico(configId, formData, statusPrevioParaCalculo());
         const statusObj = statusServicio?.find((s:any) => s.id === statusCalculado);
-        setStatusPreview(statusObj?.descripcion || statusObj?.nombre || statusCalculado);
+        setStatusPreview(statusObj?.nombre || statusObj?.descripcion || statusCalculado);
         setStatusError(null);
 
         await calcularCamposSiguienteAuto(configId, statusCalculado);
@@ -934,6 +955,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         setNombreSiguienteAuto('');
         const msjLimpio = error.message.replace('⛔ BLOQUEO: ', '').replace('⛔ ', '');
         setStatusError(msjLimpio);
+        // ✅ Aunque el cálculo dinámico falle, al EDITAR se arma el checklist
+        //    del siguiente status partiendo del status GUARDADO de la operación,
+        //    para que "qué falta para avanzar" siempre esté visible.
+        if (initialData && statusActualGuardado) {
+          try { await calcularCamposSiguienteAuto(configId, statusActualGuardado); } catch { /* sin flujo configurado */ }
+        }
       }
     }, 800);
 
@@ -1887,7 +1914,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         unidadProveedor: resolvedUnidadProv, operadorProveedor: resolvedOperadorProv,
         convenioNombre: detalleDoc?.descripcion || formData.convenioNombre || 'Sin descripción', 
         status: statusCalculado || 'Pendiente', 
-        statusNombre: statusObj?.descripcion || statusObj?.nombre || statusCalculado || 'Pendiente',
+        // ✅ FIX: se guarda el NOMBRE del status (la descripción larga del catálogo
+        //    solo es texto de ayuda y estaba filtrándose a la tabla del dashboard)
+        statusNombre: statusObj?.nombre || statusObj?.descripcion || statusCalculado || 'Pendiente',
         tienePdfDoda: !!pdfDoda, cantPdfsEntrys: (pdfsEntrys || []).filter(Boolean).length,
         clienteNombre: searchClientePaga || '', origenNombre: searchOrigen || '',
         destinoNombre: searchDestino || '', remolqueNombre: searchRemolque || '',clienteMercanciaNombre: searchClienteMercancia || '', provServiciosNombre: searchProvServicios || '',
@@ -2223,13 +2252,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}
       style={
         estado === 'minimizado'
-          ? { padding: 0, background: 'transparent', pointerEvents: 'none' }
-          : { padding: 0 }
+          ? { padding: 0, background: 'transparent', pointerEvents: 'none', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, margin: 0 }
+          : { padding: 0, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, margin: 0 }
       }
     >
       <style>{`
         .campo-badge { display: inline-block; font-family: monospace; font-size: 0.62rem; font-weight: 400; color: #6e7681; background: rgba(110,118,129,0.14); padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; letter-spacing: 0; }
-        .roelca-form-shell { width: 100vw; height: 100vh; max-width: 100vw; background-color: #0a0d14; border-radius: 0; display: flex; overflow: hidden; box-shadow: none; border: none; }
+        .roelca-form-shell { width: 100%; height: 100%; max-width: 100%; background-color: #0a0d14; border-radius: 0; display: flex; overflow: hidden; box-shadow: none; border: none; }
         .roelca-form-left { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; background-color: #0a0d14; }
         .roelca-form-right { width: 400px; background-color: #0d1117; border-left: 1px solid #1f2733; display: flex; flex-direction: column; flex-shrink: 0; }
         .roelca-form-header { padding: 20px 32px; border-bottom: 1px solid #1f2733; display: flex; align-items: flex-start; justify-content: space-between; flex-shrink: 0; background-color: #0d1117; }
@@ -2774,17 +2803,41 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
         <aside className="roelca-form-right">
           <div className="roelca-scroll" style={{ padding: '20px' }}>
-            {statusError ? (
-              <div className="status-error-card">
+            {initialData && statusActualGuardado && (
+              <div className="status-preview-card" style={{ background: 'linear-gradient(135deg, rgba(88,166,255,0.08), rgba(88,166,255,0.02))', border: '1px solid rgba(88,166,255,0.3)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <span className="status-badge-error"><IconAlert size={12} /> Estatus</span>
+                  <span className="status-badge-ok" style={{ backgroundColor: 'rgba(88,166,255,0.1)', color: '#58a6ff', borderColor: 'rgba(88,166,255,0.25)' }}><IconCheck size={12} /> Status de la operación</span>
                 </div>
-                <div style={{ color: '#f0a3a0', fontSize: '0.82rem', lineHeight: 1.4 }}>{statusError}</div>
+                <div style={{ color: '#e6edf3', fontSize: '1rem', fontWeight: 700 }}>{statusActualGuardado}</div>
+                {nombreSiguienteAuto && camposSiguienteStatus.length > 0 && (
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(88,166,255,0.18)' }}>
+                    <div style={{ fontSize: '0.68rem', color: '#7d8590', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, marginBottom: '6px' }}>
+                      Para avanzar a "{nombreSiguienteAuto}":
+                    </div>
+                    {camposSiguienteStatus.map((c) => (
+                      <div key={c.campo} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: c.cumplido ? '#3fb950' : '#8b949e', padding: '2px 0' }}>
+                        <span style={{ width: '14px', display: 'inline-flex' }}>{c.cumplido ? <IconCheck size={12} /> : <IconArrowRight size={12} />}</span>
+                        {c.etiqueta}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : statusPreview ? (
+            )}
+
+            {statusError ? (
+              (!initialData || camposSiguienteStatus.length === 0) && (
+                <div className="status-error-card">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <span className="status-badge-error"><IconAlert size={12} /> Estatus</span>
+                  </div>
+                  <div style={{ color: '#f0a3a0', fontSize: '0.82rem', lineHeight: 1.4 }}>{statusError}</div>
+                </div>
+              )
+            ) : statusPreview && !initialData ? (
               <div className="status-preview-card">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <span className="status-badge-ok"><IconCheck size={12} /> Estatus actual</span>
+                  <span className="status-badge-ok"><IconCheck size={12} /> Estatus calculado</span>
                 </div>
                 <div style={{ color: '#e6edf3', fontSize: '1rem', fontWeight: 700 }}>{statusPreview}</div>
                 {nombreSiguienteAuto && camposSiguienteStatus.length > 0 && (

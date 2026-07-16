@@ -212,12 +212,17 @@ const OperacionesDashboard = () => {
     const lista = (catalogosGlobales.statusServicio || []) as any[];
     const porId: Record<string, { id: string; nombre: string }> = {};
     const porNombre: Record<string, { id: string; nombre: string }> = {};
+    // ✅ NUEVO: índice por descripción — operaciones guardadas con el bug que
+    //    escribía la DESCRIPCIÓN del catálogo en statusNombre se curan en pantalla.
+    const porDescripcion: Record<string, { id: string; nombre: string }> = {};
     lista.forEach(s => {
       const entry = { id: String(s.id || ''), nombre: String(s.nombre || s.id || '') };
       if (entry.id) porId[entry.id] = entry;
       if (entry.nombre) porNombre[entry.nombre.trim().toLowerCase()] = entry;
+      const desc = String(s.descripcion || '').trim().toLowerCase();
+      if (desc) porDescripcion[desc] = entry;
     });
-    return { porId, porNombre };
+    return { porId, porNombre, porDescripcion };
   }, [catalogosGlobales.statusServicio]);
 
   // ✅ NUEVO: lista de status ORDENADA (numérico → alfabético, ascendente) para
@@ -235,6 +240,8 @@ const OperacionesDashboard = () => {
     if (mapaStatus.porId[v]) return mapaStatus.porId[v];
     const porNom = mapaStatus.porNombre[v.toLowerCase()];
     if (porNom) return porNom;
+    const porDesc = mapaStatus.porDescripcion[v.toLowerCase()];
+    if (porDesc) return porDesc;
     return { id: v, nombre: v };
   };
 
@@ -1095,8 +1102,13 @@ const OperacionesDashboard = () => {
       case 'fechaCita': return formatearFechaHora(op.fechaCita);
       case 'tipoOperacion': return String(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre));
       case 'status': {
-        const nombreStatus = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre);
-        return String((nombreStatus && nombreStatus !== '-') ? nombreStatus : (resolverStatus(op.status || op.statusNombre).nombre || '-'));
+        // ✅ El catálogo por ID tiene prioridad: siempre muestra el NOMBRE oficial
+        //    aunque statusNombre haya quedado guardado con la descripción larga.
+        const porId = mapaStatus.porId[String(op.status || '').trim()];
+        if (porId?.nombre) return porId.nombre;
+        const den = String(op.statusNombre || '').trim();
+        if (den) return resolverStatus(den).nombre || den;
+        return resolverStatus(op.status).nombre || '-';
       }
       case 'trafico': return String(op.trafico || '');
       case 'cliente': return String(mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente));
@@ -1638,7 +1650,7 @@ const OperacionesDashboard = () => {
                       {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
                     </span>
                     <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>
-                      {mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}
+                      {valorTextoColumna(operacionViendo, 'status')}
                     </span>
                   </div>
                 </div>
