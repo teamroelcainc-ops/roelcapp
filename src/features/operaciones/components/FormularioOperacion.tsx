@@ -3,7 +3,7 @@ import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc 
 import { db, storage, auth } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
-import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, crearSolicitudAutorizacion, obtenerUsuarioAut, MODULOS_AUTORIZABLES } from '../../autorizaciones/autorizaciones';
+import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, obtenerUsuarioAut, MODULOS_AUTORIZABLES } from '../../autorizaciones/autorizaciones';
 import { calcularStatusDinamico } from '../config/statusRules';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -509,6 +509,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     cargarConfigModulo('operaciones').then(setConfigAut).catch(() => setConfigAut(null));
     obtenerUsuarioAut().then(setUsuarioAut).catch(() => {});
   }, []);
+
+  // ✅ Bloqueo proactivo en la UI: campos que autorizaciones marca como
+  //    controlados para los roles del usuario actual. Admin nunca se bloquea.
+  //    (El guardado sigue validando TODO como respaldo.)
+  const camposBloqueadosAut = useMemo(() => {
+    if (!configAut || !usuarioAut || usuarioAut.esAdmin) return new Set<string>();
+    const claves = Object.keys(configAut.campos || {});
+    const r = evaluarAutorizacion(configAut, 'editar', usuarioAut, claves, {});
+    return new Set(r.camposControlados);
+  }, [configAut, usuarioAut]);
+  const campoBloqueadoAut = (k: string) => camposBloqueadosAut.has(k);
   const [referencia, setReferencia] = useState('');
 
   const [statusPreview, setStatusPreview] = useState<string>('');
@@ -1913,9 +1924,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         operacionData.ref = referencia.trim();
       }
 
-      // ── ✅ AUTORIZACIONES: si la acción o algún campo modificado está
-      //    controlado (y el usuario no es Admin), NO se guarda: se crea una
-      //    solicitud pendiente que el Admin aprueba desde "Autorizaciones". ──
+      // ── ✅ AUTORIZACIONES (modelo de bloqueo directo): si la acción o algún
+      //    campo modificado está controlado para los roles del usuario (y no
+      //    es Admin), el guardado se RECHAZA. Los roles no seleccionados en el
+      //    configurador editan libremente. No se crean solicitudes.
+      //    El formulario NO se cierra: el usuario puede revertir los campos
+      //    bloqueados y guardar el resto de su captura. ──
       const etiquetasCamposAut: Record<string, string> = {};
       (MODULOS_AUTORIZABLES.find(m => m.clave === 'operaciones')?.campos || []).forEach(c => { etiquetasCamposAut[c.key] = c.label; });
       const accionAut: 'crear' | 'editar' = initialData ? 'editar' : 'crear';
@@ -1924,26 +1938,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const configA = configAut !== undefined ? configAut : await cargarConfigModulo('operaciones');
       const evalAut = evaluarAutorizacion(configA, accionAut, usuarioA, camposCambiadosAut, etiquetasCamposAut);
       if (evalAut.requiere) {
-        const datosAnterioresAut: Record<string, any> = {};
-        camposCambiadosAut.forEach(k => { datosAnterioresAut[k] = (initialData as any)?.[k] ?? ''; });
-        await crearSolicitudAutorizacion({
-          modulo: 'operaciones',
-          moduloLabel: 'Operaciones',
-          accion: accionAut,
-          coleccion: 'operaciones',
-          docId: initialData ? String((initialData as any).id) : '',
-          referencia: initialData ? String((initialData as any).ref || (initialData as any).id) : 'Nueva operación',
-          camposAfectados: camposCambiadosAut,
-          datosPropuestos: operacionData,
-          datosAnteriores: datosAnterioresAut,
-          motivosControl: evalAut.motivos,
-          solicitanteUid: usuarioA.uid,
-          solicitanteNombre: usuarioA.nombre,
-          solicitanteRoles: usuarioA.roles,
-          estrategiaCrear: initialData ? 'directa' : 'segura',
-        });
-        alert(`🔒 Este cambio requiere autorización del administrador.\n\n${evalAut.motivos.join('\n')}\n\nSe envió la solicitud. Los cambios NO se guardaron todavía; se aplicarán cuando el Admin los apruebe.`);
-        onClose();
+        alert(`🔒 No tienes permiso para realizar esta modificación:\n\n${evalAut.motivos.join('\n')}\n\nRevierte esos campos para poder guardar el resto de los cambios.`);
         return;
       }
 
@@ -2631,14 +2626,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                         </div>
                         {/* ✅ Sueldo/Combustible base: BLOQUEADOS (vienen del tarifario de rendimientos). Los totales son calculados. */}
-                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly title="Se toma automáticamente del tarifario de rendimientos (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} /></ConSimboloMoneda></div>
+                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly={campoBloqueadoAut('sueldoOperador')} onChange={e => setFormData(prev => ({ ...prev, sueldoOperador: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('sueldoOperador') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('sueldoOperador') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                         <div className="form-group"><label className="form-label">Sueldo Extra <span className="campo-badge">sueldoExtra</span></label><ConSimboloMoneda><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></ConSimboloMoneda></div>
                         <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoTotal || 0} readOnly style={{ opacity: 0.75, cursor: 'not-allowed' }} /></ConSimboloMoneda></div>
                         {/* ✅ Notas del Sueldo Extra: solo aparecen cuando el extra es distinto de 0. */}
                         {Number(formData.sueldoExtra) !== 0 && (
                           <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label" style={{ color: '#fb923c' }}>Notas del Sueldo Extra <span className="campo-badge">sueldoExtraNotas</span></label><input type="text" name="sueldoExtraNotas" className="form-control" placeholder="Motivo del sueldo extra..." value={formData.sueldoExtraNotas || ''} onChange={handleChange} /></div>
                         )}
-                        <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustible) || 0)} readOnly title="Se toma automáticamente del tarifario de rendimientos (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} /></div>
+                        <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustible) || 0)} readOnly={campoBloqueadoAut('combustible')} onChange={e => setFormData(prev => ({ ...prev, combustible: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('combustible') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('combustible') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></div>
                         <div className="form-group"><label className="form-label">Combustible Extra <span className="campo-badge">combustibleExtra</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustibleExtra) || 0)} onChange={(e) => setFormData(prev => ({ ...prev, combustibleExtra: Math.round(Number(e.target.value) || 0) }))} /></div>
                         <div className="form-group"><label className="form-label">Combustible Total <span className="campo-badge">combustibleTotal</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustibleTotal) || 0)} readOnly style={{ opacity: 0.75, cursor: 'not-allowed' }} /></div>
                         {/* ✅ Notas del Combustible Extra: solo aparecen cuando el extra es distinto de 0. */}
@@ -2725,7 +2720,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {formData.puenteId && !opcionesPuente.some((g:any) => String(g.id) === String(formData.puenteId)) && (<option value={formData.puenteId}>{formData.puenteNombre || formData.puenteId}</option>)}
                         </select>
                       </div>
-                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly style={{ opacity: 0.75 }} title="Se toma del catálogo (Importe)" /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly={campoBloqueadoAut('puenteMonto')} onChange={e => setFormData(prev => ({ ...prev, puenteMonto: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('puenteMonto') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del catálogo (Importe); puedes ajustarlo manualmente'} style={campoBloqueadoAut('puenteMonto') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                     </div>
                   </div>
                   )}
@@ -2742,7 +2737,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {/* ✅ NO editable: se asigna automáticamente según el cliente. */}
                         <input type="text" className="form-control" value={nombreMoneda(formData.facturadoEnCobrar) || ''} readOnly placeholder="Se asigna según el cliente" title="Se asigna automáticamente según el cliente (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 700 : undefined }} />
                       </div>
-                      <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.montoConvenioCliente || 0} readOnly title="Se toma del convenio (tarifario) del cliente (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.montoConvenioCliente || 0} readOnly={campoBloqueadoAut('montoConvenioCliente')} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda></div>
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
                         <div className="roelca-lookup-row">
@@ -2750,7 +2745,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado <span className="campo-badge">tipoCambioAprobado</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.tipoCambioAprobado || 0} readOnly title="Se toma del TC oficial del día (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado <span className="campo-badge">tipoCambioAprobado</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.tipoCambioAprobado || 0} readOnly={campoBloqueadoAut('tipoCambioAprobado')} onChange={e => setFormData(prev => ({ ...prev, tipoCambioAprobado: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('tipoCambioAprobado') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del TC oficial del día; puedes ajustarlo manualmente'} style={campoBloqueadoAut('tipoCambioAprobado') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                     </div>
                   </div>
 
