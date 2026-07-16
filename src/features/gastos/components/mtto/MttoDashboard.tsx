@@ -1,7 +1,7 @@
 // src/features/gastos/components/mtto/MttoDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { FormularioMtto } from './FormularioMtto';
-import { collection, query, getDocs, limit, doc, deleteDoc, writeBatch } from 'firebase/firestore'; 
+import { collection, query, getDocs, limit, orderBy, doc, deleteDoc, writeBatch } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase'; 
 import MttoAgrupadosInvoice from './MttoAgrupadosInvoice';
 import * as XLSX from 'xlsx';
@@ -133,7 +133,11 @@ const MttoDashboard = () => {
         setCatalogosCacheados(catGuardados);
       }
 
-      const q = query(collection(db, 'gastos_mtto'), limit(300));
+      // ✅ orderBy('createdAt','desc') garantiza que los 300 registros devueltos
+      //    sean los MÁS RECIENTES. Antes, limit(300) sin orden traía los primeros
+      //    300 por ID de documento (aleatorio), y los gastos nuevos podían quedar
+      //    fuera de la ventana: se guardaban en Firestore pero no aparecían aquí.
+      const q = query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(300));
       const snap = await getDocs(q);
       
       let mttoData = snap.docs.map((d: any) => {

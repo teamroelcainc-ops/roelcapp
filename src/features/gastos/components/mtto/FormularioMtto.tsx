@@ -336,9 +336,10 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         
       } else {
         // ✅ SI ES UN REGISTRO NUEVO, USAMOS TU FUNCIÓN NORMAL
-        await guardarMttoSeguro(dataLista);
+        //    (ahora regresa el id REAL del documento creado en Firestore)
+        const nuevoId = await guardarMttoSeguro(dataLista);
         alert("Gasto guardado con éxito.");
-        if (onSave) onSave({ id: Date.now().toString(), ...dataLista });
+        if (onSave) onSave({ id: nuevoId, ...dataLista });
       }
 
     } catch (error) {

@@ -1,6 +1,6 @@
 // src/features/gastos/components/mtto/MttoAgrupadosInvoice.tsx
 import { useState, useEffect, useMemo } from 'react';
-import { collection, query, getDocs, limit } from 'firebase/firestore'; 
+import { collection, query, getDocs, limit, orderBy } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase';
 // ✅ Logo incrustado (base64) usado en TODOS los PDF de la app: prioridad al logo
 //    dinámico registrado con setLogoPdf() y respaldo al logo por defecto.
@@ -83,7 +83,9 @@ const MttoAgrupadosInvoice = () => {
     const cargarGastos = async () => {
       setCargando(true);
       try {
-        const q = query(collection(db, 'gastos_mtto'), limit(500));
+        // ✅ Mismo fix que el dashboard: sin orderBy, limit(500) traía 500 docs
+        //    por ID aleatorio y los gastos nuevos podían no aparecer.
+        const q = query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(500));
         const snap = await getDocs(q);
         
         let data = snap.docs.map(d => {
