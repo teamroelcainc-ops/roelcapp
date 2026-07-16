@@ -78,6 +78,9 @@ const MttoDashboard = () => {
   const [cargando, setCargando] = useState(true);
   const [catalogosCacheados, setCatalogosCacheados] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
+  // ✅ Filtro por rango de fechas (sobre el campo `fecha` del gasto)
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
   const [mttoViendo, setMttoViendo] = useState<any | null>(null);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const [paginaActual, setPaginaActual] = useState(1);
@@ -141,18 +144,29 @@ const MttoDashboard = () => {
         return { id: d.id, ...data };
       });
 
-      // ✅ ORDEN: 1) Fecha de la más reciente a la más antigua. 2) Por referencia (folio).
-      const obtenerTiempo = (m: any) => {
-        if (m.fecha) { const t = new Date(m.fecha).getTime(); if (!isNaN(t)) return t; }
-        if (m.createdAt) { const t = new Date(m.createdAt).getTime(); if (!isNaN(t)) return t; }
+      // ✅ ORDEN: 1) Fecha (campo `fecha`) de la más reciente a la más antigua.
+      //           2) Empate de fecha: hora de captura (createdAt) más reciente primero.
+      //           3) Último desempate: consecutivo del folio más alto primero.
+      const tiempoFecha = (m: any) => {
+        const p = partesFechaISO(m?.fecha);
+        if (p) return parseInt(`${p.yyyy}${p.mm}${p.dd}`, 10);
+        // Sin fecha ISO confiable: intenta parseo genérico y, si no, cae a createdAt
+        if (m?.fecha) { const t = new Date(m.fecha).getTime(); if (!isNaN(t)) return t; }
+        const pc = partesFechaISO(m?.createdAt);
+        if (pc) return parseInt(`${pc.yyyy}${pc.mm}${pc.dd}`, 10);
+        return 0;
+      };
+      const tiempoCaptura = (m: any) => {
+        if (m?.createdAt) { const t = new Date(m.createdAt).getTime(); if (!isNaN(t)) return t; }
         return 0;
       };
       mttoData.sort((a, b) => {
-        // 1) Fecha del gasto (más reciente primero)
-        const tA = obtenerTiempo(a);
-        const tB = obtenerTiempo(b);
+        const tA = tiempoFecha(a);
+        const tB = tiempoFecha(b);
         if (tA !== tB) return tB - tA;
-        // 2) Referencia / folio del mismo día: consecutivo más alto primero
+        const cA = tiempoCaptura(a);
+        const cB = tiempoCaptura(b);
+        if (cA !== cB) return cB - cA;
         return consecutivoDe(b) - consecutivoDe(a);
       });
 
@@ -171,7 +185,7 @@ const MttoDashboard = () => {
   useEffect(() => {
     setPaginaActual(1);
     setGastosSeleccionados([]); 
-  }, [busqueda, estatusVista]);
+  }, [busqueda, estatusVista, fechaDesde, fechaHasta]);
 
   const handleNuevo = () => { setMttoEditando(null); setEstadoFormulario('abierto'); };
   const editarMtto = (mtto: any) => { setMttoEditando(mtto); setEstadoFormulario('abierto'); };
@@ -276,17 +290,42 @@ const MttoDashboard = () => {
     }
   };
 
+  // ✅ Texto buscable: concatena TODOS los campos del documento (incluye arrays y
+  //    objetos anidados) más los valores legibles derivados (folio formateado y
+  //    nombres resueltos vía catálogos: unidad, proveedor, servicios, moneda,
+  //    forma de pago y operación asignada).
+  const textoBuscableDe = (m: any): string => {
+    const partes: string[] = [];
+    const agregar = (v: any) => {
+      if (v === undefined || v === null) return;
+      if (Array.isArray(v)) { v.forEach(agregar); return; }
+      if (typeof v === 'object') { Object.values(v).forEach(agregar); return; }
+      partes.push(String(v));
+    };
+    Object.values(m).forEach(agregar);
+    partes.push(formatearFolio(m));
+    partes.push(String(mostrarNombreUnidad(m.unidadId || m.unidad)));
+    partes.push(String(mostrarDatoMapeado(m.proveedorId, 'empresas')));
+    partes.push(String(mostrarDatoMapeado(m.tipoServicioId, 'servicios')));
+    partes.push(String(mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda')));
+    partes.push(String(mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago')));
+    partes.push(String(mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')));
+    return partes.join(' ').toLowerCase();
+  };
+
   const registrosFiltrados = useMemo(() => {
-    const b = busqueda.toLowerCase();
-    return mttoGlobales.filter(m => (
-      String(m.numeroGasto || '').toLowerCase().includes(b) ||
-      String(formatearFolio(m)).toLowerCase().includes(b) ||
-      String(m.invoice || '').toLowerCase().includes(b) ||
-      String(m.estatus || '').toLowerCase().includes(b) ||
-      String(m.operadorNombre || m.operador || '').toLowerCase().includes(b) ||
-      String(m.proveedorNombre || '').toLowerCase().includes(b)
-    ));
-  }, [busqueda, mttoGlobales]);
+    const b = busqueda.trim().toLowerCase();
+    return mttoGlobales.filter(m => {
+      // 1) Filtro por rango de fechas (campo `fecha`, respaldo `createdAt`)
+      const fechaISO = String(m.fecha || m.createdAt || '').slice(0, 10);
+      if (fechaDesde && (!fechaISO || fechaISO < fechaDesde)) return false;
+      if (fechaHasta && (!fechaISO || fechaISO > fechaHasta)) return false;
+      // 2) Búsqueda en cada campo de la colección
+      if (!b) return true;
+      return textoBuscableDe(m).includes(b);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busqueda, fechaDesde, fechaHasta, mttoGlobales, catalogosCacheados]);
 
   // ✅ CÁLCULO DEL SUMARIO DE GASTOS EN TIEMPO REAL
   const resumenSeleccion = useMemo(() => {
@@ -510,13 +549,35 @@ const MttoDashboard = () => {
 
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
             
-            <div style={{ display: 'flex', gap: '12px', flex: '1 1 auto', maxWidth: '600px' }}>
-              <div style={{ width: '150px' }}>
-                <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }}><option>Filtro: Todo</option></select>
+            <div style={{ display: 'flex', gap: '12px', flex: '1 1 auto', maxWidth: '820px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* ✅ FILTRO POR RANGO DE FECHAS */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', padding: '4px 10px' }}>
+                <span style={{ color: '#8b949e', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Desde</span>
+                <input
+                  type="date"
+                  value={fechaDesde}
+                  onChange={(e) => setFechaDesde(e.target.value)}
+                  style={{ backgroundColor: 'transparent', border: 'none', color: '#c9d1d9', padding: '4px 0', colorScheme: 'dark', outline: 'none' }}
+                />
+                <span style={{ color: '#8b949e', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Hasta</span>
+                <input
+                  type="date"
+                  value={fechaHasta}
+                  onChange={(e) => setFechaHasta(e.target.value)}
+                  style={{ backgroundColor: 'transparent', border: 'none', color: '#c9d1d9', padding: '4px 0', colorScheme: 'dark', outline: 'none' }}
+                />
+                {(fechaDesde || fechaHasta) && (
+                  <button
+                    type="button"
+                    title="Limpiar fechas"
+                    onClick={() => { setFechaDesde(''); setFechaHasta(''); }}
+                    style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1rem', padding: '0 2px' }}
+                  >✕</button>
+                )}
               </div>
-              <div style={{ position: 'relative', width: '100%' }}>
+              <div style={{ position: 'relative', flex: '1 1 260px', minWidth: '220px' }}>
                 <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Buscar por # Gasto, Invoice, Operador..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+                <input type="text" placeholder="Buscar en todos los campos (folio, unidad, proveedor, montos, observaciones...)" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '8px 12px 8px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
               </div>
             </div>
 

@@ -2,6 +2,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, query, getDocs, limit } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase';
+// ✅ Logo incrustado (base64) usado en TODOS los PDF de la app: prioridad al logo
+//    dinámico registrado con setLogoPdf() y respaldo al logo por defecto.
+import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
 
 interface GastoMtto {
   id: string;
@@ -30,14 +33,51 @@ interface GrupoInvoice {
   sumaRetIva: number;
   sumaRetIsr: number;
   sumaTotal: number;
+  /** Fecha (timestamp) del gasto más reciente del grupo; ordena el historial. */
+  tiempoReciente: number;
 }
 
 const MttoAgrupadosInvoice = () => {
   const [cargando, setCargando] = useState(true);
   const [gastosGlobales, setGastosGlobales] = useState<GastoMtto[]>([]);
   const [busqueda, setBusqueda] = useState('');
-  
+  // ✅ Filtro por rango de fechas (sobre el campo `fecha` del gasto)
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+  // ✅ Catálogo de unidades para mostrar el NOMBRE de la unidad (no el ID) en
+  //    la búsqueda y en el documento PDF. Se toma del caché compartido de la
+  //    app (sessionStorage 'roelca_catalogos_v1') con respaldo a Firestore.
+  const [unidadesCat, setUnidadesCat] = useState<any[]>([]);
+
   const [acordeonesAbiertos, setAcordeonesAbiertos] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const cargarUnidades = async () => {
+      try {
+        const cacheStr = sessionStorage.getItem('roelca_catalogos_v1');
+        if (cacheStr) {
+          const cache = JSON.parse(cacheStr);
+          if (Array.isArray(cache?.unidades) && cache.unidades.length > 0) {
+            setUnidadesCat(cache.unidades);
+            return;
+          }
+        }
+        const snap = await getDocs(collection(db, 'unidades'));
+        setUnidadesCat(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })));
+      } catch (error) {
+        console.error('Error al cargar catálogo de unidades:', error);
+      }
+    };
+    cargarUnidades();
+  }, []);
+
+  const mostrarNombreUnidad = (unidadValor: any): string => {
+    if (!unidadValor) return '-';
+    if (unidadValor === 'Oficina') return 'Oficina';
+    const uni = unidadesCat.find((u: any) => u.id === unidadValor);
+    if (uni) return uni.unidad || uni.numeroEconomico || uni.nombre || String(unidadValor);
+    return String(unidadValor);
+  };
 
   useEffect(() => {
     const cargarGastos = async () => {
@@ -56,22 +96,34 @@ const MttoAgrupadosInvoice = () => {
           } as GastoMtto;
         });
 
+        // ✅ ORDEN: más recientes primero por el campo `fecha` (respaldo createdAt
+        //    y, en empate, la fecha codificada en el folio).
+        const tiempoDe = (g: GastoMtto): number => {
+          const m = String(g.fecha || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (m) return parseInt(`${m[1]}${m[2]}${m[3]}`, 10) * 1000000;
+          const mc = String(g.createdAt || '').slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (mc) return parseInt(`${mc[1]}${mc[2]}${mc[3]}`, 10) * 1000000;
+          return 0;
+        };
+        const parseGasto = (str: string) => {
+          if (!str) return 0;
+          const match = String(str).match(/[A-Za-z]+-(\d{2})(\d{2})(\d{4})-(\d+)/);
+          if (match) {
+              const [ , mm, dd, yyyy, seq ] = match;
+              return parseInt(`${yyyy}${mm}${dd}${seq.padStart(4, '0')}`, 10);
+          }
+          return 0;
+        };
+
         data.sort((a, b) => {
-          const parseGasto = (str: string) => {
-            if (!str) return 0;
-            const match = String(str).match(/[A-Za-z]+-(\d{2})(\d{2})(\d{4})-(\d+)/);
-            if (match) {
-                const [ , mm, dd, yyyy, seq ] = match;
-                return parseInt(`${yyyy}${mm}${dd}${seq.padStart(4, '0')}`, 10);
-            }
-            return 0;
-          };
+          const tA = tiempoDe(a);
+          const tB = tiempoDe(b);
+          if (tA !== tB) return tB - tA;
 
           const valA = parseGasto(a.numeroGasto);
           const valB = parseGasto(b.numeroGasto);
-
           if (valA !== valB) return valB - valA;
-          
+
           const dateA = a.createdAt ? new Date(a.createdAt).getTime() : new Date(a.fecha || 0).getTime();
           const dateB = b.createdAt ? new Date(b.createdAt).getTime() : new Date(b.fecha || 0).getTime();
           return dateB - dateA;
@@ -86,17 +138,39 @@ const MttoAgrupadosInvoice = () => {
     cargarGastos();
   }, []);
 
+  // ✅ Texto buscable: TODOS los campos del gasto (incluye anidados) más el
+  //    nombre resuelto de la unidad.
+  const textoBuscableDe = (g: GastoMtto): string => {
+    const partes: string[] = [];
+    const agregar = (v: any) => {
+      if (v === undefined || v === null) return;
+      if (Array.isArray(v)) { v.forEach(agregar); return; }
+      if (typeof v === 'object') { Object.values(v).forEach(agregar); return; }
+      partes.push(String(v));
+    };
+    Object.values(g).forEach(agregar);
+    partes.push(mostrarNombreUnidad(g.unidadId || (g as any).unidad));
+    return partes.join(' ').toLowerCase();
+  };
+
   const gruposFacturados = useMemo(() => {
     const gruposMapa: Record<string, GrupoInvoice> = {};
+    const b = busqueda.trim().toLowerCase();
 
     const gastosFiltrados = gastosGlobales.filter(g => {
-      const b = busqueda.toLowerCase();
-      return (
-        (g.invoice || '').toLowerCase().includes(b) ||
-        (g.numeroGasto || '').toLowerCase().includes(b) ||
-        (g.proveedorNombre || '').toLowerCase().includes(b)
-      );
+      // 1) Filtro por rango de fechas (campo `fecha`, respaldo `createdAt`)
+      const fechaISO = String(g.fecha || g.createdAt || '').slice(0, 10);
+      if (fechaDesde && (!fechaISO || fechaISO < fechaDesde)) return false;
+      if (fechaHasta && (!fechaISO || fechaISO > fechaHasta)) return false;
+      // 2) Búsqueda en cada campo de la colección
+      if (!b) return true;
+      return textoBuscableDe(g).includes(b);
     });
+
+    const tiempoDe = (g: GastoMtto): number => {
+      const t = new Date(String(g.fecha || g.createdAt || 0)).getTime();
+      return isNaN(t) ? 0 : t;
+    };
 
     gastosFiltrados.forEach(gasto => {
       const invoiceKey = gasto.invoice?.trim() ? gasto.invoice.trim() : 'SIN INVOICE (No Facturados)';
@@ -109,7 +183,8 @@ const MttoAgrupadosInvoice = () => {
           sumaIva: 0,
           sumaRetIva: 0,
           sumaRetIsr: 0,
-          sumaTotal: 0
+          sumaTotal: 0,
+          tiempoReciente: 0
         };
       }
 
@@ -119,15 +194,20 @@ const MttoAgrupadosInvoice = () => {
       gruposMapa[invoiceKey].sumaRetIva += Number(gasto.retIva) || 0;
       gruposMapa[invoiceKey].sumaRetIsr += Number(gasto.retIsr) || 0;
       gruposMapa[invoiceKey].sumaTotal += Number(gasto.total) || 0;
+      gruposMapa[invoiceKey].tiempoReciente = Math.max(gruposMapa[invoiceKey].tiempoReciente, tiempoDe(gasto));
     });
 
+    // ✅ ORDEN DEL HISTORIAL: grupos con el gasto más reciente primero.
+    //    "SIN INVOICE" siempre al final. Empate: por número de invoice.
     return Object.values(gruposMapa).sort((a, b) => {
       if (a.invoice.includes('SIN INVOICE')) return 1; 
       if (b.invoice.includes('SIN INVOICE')) return -1;
-      return a.invoice.localeCompare(b.invoice); 
+      if (a.tiempoReciente !== b.tiempoReciente) return b.tiempoReciente - a.tiempoReciente;
+      return b.invoice.localeCompare(a.invoice); 
     });
 
-  }, [gastosGlobales, busqueda]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gastosGlobales, busqueda, fechaDesde, fechaHasta, unidadesCat]);
 
   const toggleAcordeon = (invoiceKey: string) => {
     setAcordeonesAbiertos(prev => ({
@@ -175,7 +255,7 @@ const MttoAgrupadosInvoice = () => {
         <tr>
           <td class="text-center">${g.numeroGasto || '-'}</td>
           <td class="text-center" style="text-transform: capitalize;">${fechaFmt}</td>
-          <td class="text-center">${g.unidadId || '-'}</td>
+          <td class="text-center">${escaparHTML(mostrarNombreUnidad(g.unidadId || (g as any).unidad))}</td>
           <td class="col-desc">${descripcionFmt}</td>
           <td class="text-right">${formatoMoneda(g.total)}</td>
         </tr>
@@ -188,7 +268,9 @@ const MttoAgrupadosInvoice = () => {
     const rfc = primerGasto.estatus || "FACTURADO";
     const fechaActual = formatearFechaEspañol(new Date());
 
-    const logoBase64 = "";
+    // ✅ Logo: primero el registrado dinámicamente (setLogoPdf), si no, el logo
+    //    por defecto incrustado en base64 — así el logo aparece SIEMPRE.
+    const logoBase64 = getLogoPdf() || LOGO_DEFAULT;
 
     const htmlDocument = `
       <!DOCTYPE html>
@@ -339,16 +421,41 @@ const MttoAgrupadosInvoice = () => {
 
   return (
     <div style={{ animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', backgroundColor: '#0d1117', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-        <div style={{ position: 'relative', width: '100%', maxWidth: '400px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', backgroundColor: '#0d1117', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ position: 'relative', flex: '1 1 280px', maxWidth: '400px' }}>
           <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           <input 
             type="text" 
-            placeholder="Buscar Invoice, # Gasto o Proveedor..." 
+            placeholder="Buscar en todos los campos (Invoice, folio, unidad, proveedor...)" 
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem' }}
+            style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }}
           />
+        </div>
+        {/* ✅ FILTRO POR RANGO DE FECHAS */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '6px 10px' }}>
+          <span style={{ color: '#8b949e', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Desde</span>
+          <input
+            type="date"
+            value={fechaDesde}
+            onChange={(e) => setFechaDesde(e.target.value)}
+            style={{ backgroundColor: 'transparent', border: 'none', color: '#c9d1d9', padding: '2px 0', colorScheme: 'dark', outline: 'none' }}
+          />
+          <span style={{ color: '#8b949e', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>Hasta</span>
+          <input
+            type="date"
+            value={fechaHasta}
+            onChange={(e) => setFechaHasta(e.target.value)}
+            style={{ backgroundColor: 'transparent', border: 'none', color: '#c9d1d9', padding: '2px 0', colorScheme: 'dark', outline: 'none' }}
+          />
+          {(fechaDesde || fechaHasta) && (
+            <button
+              type="button"
+              title="Limpiar fechas"
+              onClick={() => { setFechaDesde(''); setFechaHasta(''); }}
+              style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1rem', padding: '0 2px' }}
+            >✕</button>
+          )}
         </div>
         <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
           {gruposFacturados.length} Grupos Encontrados
