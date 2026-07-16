@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, updateDoc, getDoc, collection, onSnapshot } from 'firebase/firestore'; 
+import { doc, updateDoc, getDoc, collection, onSnapshot, query, where, getDocs } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger'; 
 import { lazyWithRetry } from './utils/lazyWithRetry';
@@ -243,6 +243,70 @@ function App() {
 
   const [modalChecadorAbierto, setModalChecadorAbierto] = useState(false);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // ✅ VISTA PREVIA "VER COMO": permite a un administrador ver la app con los
+  //    permisos de otro ROL o de otro USUARIO (por correo), para verificar que
+  //    todo esté en orden. Es SOLO visual y por pestaña (sessionStorage): la
+  //    sesión de Firebase Auth sigue siendo la del admin, así que las security
+  //    rules del servidor no cambian y la simulación no otorga permisos reales.
+  // ══════════════════════════════════════════════════════════════════════════
+  type VistaComo = { tipo: 'rol' | 'usuario'; etiqueta: string; roles: string[] };
+  const CLAVE_VISTA_COMO = 'roelca_vista_como';
+  const [vistaComo, setVistaComo] = useState<VistaComo | null>(() => {
+    try { const g = sessionStorage.getItem(CLAVE_VISTA_COMO); return g ? JSON.parse(g) : null; } catch { return null; }
+  });
+  const [modalVerComo, setModalVerComo] = useState(false);
+  const [verComoModo, setVerComoModo] = useState<'rol' | 'usuario'>('rol');
+  const [verComoRol, setVerComoRol] = useState('');
+  const [verComoCorreo, setVerComoCorreo] = useState('');
+  const [verComoBuscando, setVerComoBuscando] = useState(false);
+  const [verComoError, setVerComoError] = useState('');
+
+  const activarVistaComo = (v: VistaComo) => {
+    setVistaComo(v);
+    try { sessionStorage.setItem(CLAVE_VISTA_COMO, JSON.stringify(v)); } catch { /* sin storage */ }
+    setModalVerComo(false);
+    setPerfilAbierto(false);
+    setVerComoError('');
+    registrarLog('Seguridad', 'Vista Previa', `Activó la vista previa como ${v.tipo === 'rol' ? 'rol' : 'usuario'}: ${v.etiqueta}`).catch(() => {});
+  };
+
+  const salirVistaComo = () => {
+    setVistaComo(null);
+    try { sessionStorage.removeItem(CLAVE_VISTA_COMO); } catch { /* sin storage */ }
+    registrarLog('Seguridad', 'Vista Previa', 'Salió de la vista previa y regresó a sus permisos.').catch(() => {});
+  };
+
+  const aplicarVerComoRol = () => {
+    if (!verComoRol) { setVerComoError('Selecciona un rol.'); return; }
+    activarVistaComo({ tipo: 'rol', etiqueta: `Rol: ${verComoRol}`, roles: [verComoRol] });
+  };
+
+  const aplicarVerComoUsuario = async () => {
+    const correo = verComoCorreo.trim().toLowerCase();
+    if (!correo) { setVerComoError('Escribe el correo del usuario.'); return; }
+    setVerComoBuscando(true);
+    setVerComoError('');
+    try {
+      const snap = await getDocs(query(collection(db, 'usuarios'), where('email', '==', correo)));
+      if (snap.empty) {
+        setVerComoError('No se encontró ningún usuario con ese correo.');
+        return;
+      }
+      const u: any = { id: snap.docs[0].id, ...snap.docs[0].data() };
+      activarVistaComo({
+        tipo: 'usuario',
+        etiqueta: `${u.nombre || correo} (${(u.roles || []).join(', ') || 'sin roles'})`,
+        roles: u.roles || []
+      });
+    } catch (e) {
+      console.error('Error buscando usuario para vista previa:', e);
+      setVerComoError('No se pudo buscar el usuario. Revisa tu conexión o permisos.');
+    } finally {
+      setVerComoBuscando(false);
+    }
+  };
+
   const toggleGrupo = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     if (!menuAbierto) setMenuAbierto(true);
     setter(prev => !prev);
@@ -372,22 +436,32 @@ function App() {
   const debeChecar = usuarioActualDB && !rolesExentosChequeo.includes(usuarioActualDB.rol);
 
   // ── PERMISOS: claves de módulos que el usuario puede ver ──
-  // Acceso total si: entró por Bypass (sin doc) o tiene un rol llamado ADMIN.
-  const accesoTotal = !usuarioActualDB || (usuarioActualDB.roles || []).some((r: string) => String(r).toUpperCase() === 'ADMIN');
+  // Acceso total REAL si: entró por Bypass (sin doc) o tiene un rol llamado ADMIN.
+  const accesoTotalReal = !usuarioActualDB || (usuarioActualDB.roles || []).some((r: string) => String(r).toUpperCase() === 'ADMIN');
+
+  // ✅ La vista previa solo se aplica si el usuario REAL es administrador
+  //    (evita que una entrada manual en sessionStorage eleve permisos de UI).
+  const vistaComoAplicada = accesoTotalReal ? vistaComo : null;
+
+  // Roles EFECTIVOS: los simulados si hay vista previa activa; si no, los reales.
+  const rolesEfectivos: string[] = vistaComoAplicada ? (vistaComoAplicada.roles || []) : (usuarioActualDB?.roles || []);
+  const accesoTotal = vistaComoAplicada
+    ? rolesEfectivos.some((r: string) => String(r).toUpperCase() === 'ADMIN')
+    : accesoTotalReal;
 
   const clavesPermitidas = useMemo(() => {
     if (accesoTotal) return new Set<string>(ORDEN_CLAVES);
-    const rolesUsuario: string[] = usuarioActualDB?.roles || [];
     const etiquetas = new Set<string>();
     rolesCatalogo.forEach((rol: any) => {
-      if (rolesUsuario.includes(rol.nombre)) {
+      if (rolesEfectivos.includes(rol.nombre)) {
         (rol.modulosPermitidos || []).forEach((m: string) => etiquetas.add(m));
       }
     });
     const claves = new Set<string>();
     etiquetas.forEach((et) => { const k = MODULOS_A_CLAVE[et]; if (k) claves.add(k); });
     return claves;
-  }, [accesoTotal, usuarioActualDB, rolesCatalogo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accesoTotal, usuarioActualDB, rolesCatalogo, vistaComoAplicada]);
 
   const puede = (clave: string) => clavesPermitidas.has(clave);
 
@@ -437,6 +511,73 @@ function App() {
     <div className="app-wrapper">
       
       <RelojChecadorModal isOpen={modalChecadorAbierto} onClose={() => setModalChecadorAbierto(false)} usuario={usuarioActualDB} />
+
+      {/* ✅ BANNER DE VISTA PREVIA: siempre visible mientras se está "viendo como" */}
+      {vistaComoAplicada && (
+        <div style={{ position: 'fixed', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: 3000, display: 'flex', alignItems: 'center', gap: '14px', backgroundColor: '#3b0764', border: '1px solid #a855f7', borderRadius: '999px', padding: '8px 10px 8px 18px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', maxWidth: '92vw' }}>
+          <span style={{ color: '#e9d5ff', fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            👁 Vista previa — {vistaComoAplicada.etiqueta}
+          </span>
+          <button onClick={salirVistaComo} style={{ backgroundColor: '#a855f7', color: '#fff', border: 'none', borderRadius: '999px', padding: '6px 16px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+            Salir de la vista
+          </button>
+        </div>
+      )}
+
+      {/* ✅ MODAL "VER COMO": elegir un rol del catálogo o buscar un usuario por correo */}
+      {modalVerComo && (
+        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: '20px', backdropFilter: 'blur(6px)' }}>
+          <div className="form-card" style={{ maxWidth: '480px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
+            <div className="form-header" style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ fontSize: '1.1rem', color: '#f0f6fc', margin: 0, fontWeight: 500 }}>👁 Ver la app como...</h2>
+              <button onClick={() => setModalVerComo(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '24px' }}>
+              <p style={{ color: '#8b949e', fontSize: '0.82rem', margin: '0 0 16px 0' }}>
+                Verás el menú y los módulos exactamente como los ve ese rol o usuario. Tu sesión no cambia y puedes salir de la vista en cualquier momento.
+              </p>
+
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+                <button onClick={() => { setVerComoModo('rol'); setVerComoError(''); }} style={{ flex: 1, padding: '9px', borderRadius: '6px', cursor: 'pointer', border: '1px solid ' + (verComoModo === 'rol' ? '#a855f7' : '#30363d'), backgroundColor: verComoModo === 'rol' ? 'rgba(168,85,247,0.15)' : 'transparent', color: verComoModo === 'rol' ? '#e9d5ff' : '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>Por Rol</button>
+                <button onClick={() => { setVerComoModo('usuario'); setVerComoError(''); }} style={{ flex: 1, padding: '9px', borderRadius: '6px', cursor: 'pointer', border: '1px solid ' + (verComoModo === 'usuario' ? '#a855f7' : '#30363d'), backgroundColor: verComoModo === 'usuario' ? 'rgba(168,85,247,0.15)' : 'transparent', color: verComoModo === 'usuario' ? '#e9d5ff' : '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>Por Usuario (correo)</button>
+              </div>
+
+              {verComoError && (
+                <div style={{ backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', padding: '10px 12px', borderRadius: '6px', marginBottom: '14px', fontSize: '0.82rem' }}>{verComoError}</div>
+              )}
+
+              {verComoModo === 'rol' ? (
+                <>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', display: 'block', marginBottom: '6px' }}>Rol a simular</label>
+                  <select value={verComoRol} onChange={(e) => setVerComoRol(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box', marginBottom: '18px' }}>
+                    <option value="">-- Seleccionar rol --</option>
+                    {rolesCatalogo.map((r: any) => (
+                      <option key={r.id} value={r.nombre}>{r.nombre}</option>
+                    ))}
+                  </select>
+                  <button onClick={aplicarVerComoRol} style={{ width: '100%', padding: '11px', backgroundColor: '#a855f7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Activar vista previa</button>
+                </>
+              ) : (
+                <>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', display: 'block', marginBottom: '6px' }}>Correo del usuario</label>
+                  <input
+                    type="email"
+                    value={verComoCorreo}
+                    onChange={(e) => setVerComoCorreo(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') aplicarVerComoUsuario(); }}
+                    placeholder="usuario@roelca.com"
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box', marginBottom: '18px' }}
+                  />
+                  <button onClick={aplicarVerComoUsuario} disabled={verComoBuscando} style={{ width: '100%', padding: '11px', backgroundColor: '#a855f7', color: '#fff', border: 'none', borderRadius: '6px', cursor: verComoBuscando ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.9rem', opacity: verComoBuscando ? 0.6 : 1 }}>
+                    {verComoBuscando ? 'Buscando usuario...' : 'Buscar y activar vista previa'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {miPerfilAbierto && usuarioActualDB && (
         <MiPerfil
@@ -610,6 +751,21 @@ function App() {
           </div>
           
           <div className="topbar-right" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '20px' }}>
+            {accesoTotalReal && !vistaComoAplicada && (
+              <button
+                onClick={() => setModalVerComo(true)}
+                title="Ver la app como otro rol o usuario"
+                style={{
+                  backgroundColor: 'rgba(168, 85, 247, 0.15)', border: '1px solid #a855f7', color: '#e9d5ff',
+                  padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold',
+                  display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s ease', whiteSpace: 'nowrap'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.35)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.15)'}
+              >
+                👁 Ver como
+              </button>
+            )}
             {debeChecar && (
               <button 
                 onClick={() => setModalChecadorAbierto(true)}
@@ -646,6 +802,12 @@ function App() {
                 </div>
                 <div className="profile-actions">
                   <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setMiPerfilAbierto(true); }}>Mi Perfil (Foto y Contraseña)</button>
+                  {accesoTotalReal && !vistaComoAplicada && (
+                    <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setModalVerComo(true); }}>👁 Ver como (rol o usuario)</button>
+                  )}
+                  {vistaComoAplicada && (
+                    <button className="btn-profile" onClick={() => { setPerfilAbierto(false); salirVistaComo(); }}>👁 Salir de la vista previa</button>
+                  )}
                   <button className="btn-profile logout" onClick={() => handleCerrarSesion('manual')}>Cerrar Sesión</button>
                 </div>
               </div>
