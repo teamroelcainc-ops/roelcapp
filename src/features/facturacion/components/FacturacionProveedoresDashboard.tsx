@@ -1657,11 +1657,18 @@ export const FacturacionProveedoresDashboard = () => {
         ? f.operacionesGuardadas
         : ids.map((id) => ({ id }));
 
+      // TC sugerido: primer tipoCambioAprobado > 0 entre las operaciones de la factura.
+      let tcSugerido = 0;
+
       const filas = guardadas.map((g: any) => {
         const o = byId.get(String(g.id)) || {};
         const equipoUnidad = txt(o.unidadProveedor, o.unidadNombre, o.unidad);
         const equipo = equipoUnidad !== '-' ? equipoUnidad : txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque);
-        const proveedorMonto = Number(g.monto) || (o.id ? obtenerMontoOperacion(o).conv : 0) || 0;
+        const m = o.id ? obtenerMontoOperacion(o) : { subtotal: 0, dol: 0, pes: 0, conv: 0 };
+        const tcOp = Number(o.tipoCambioAprobado) || 0;
+        if (!tcSugerido && tcOp > 0) tcSugerido = tcOp;
+        const convenioUsd = Number(m.dol) || 0; // Convenio del proveedor en dólares (0 si la op es en pesos)
+        const proveedorMonto = Number(g.monto) || m.conv || 0;
         const cobrado = Number(o.conversionCliente) || 0;
         const fc = o.id ? getFacturaClienteDeOp(o) : null;
         const org = txt(o.origenNombre, o.origen);
@@ -1675,6 +1682,7 @@ export const FacturacionProveedoresDashboard = () => {
           descripcion: desc === '-' ? (o.descripcionServicio || o.observacionesEjecutivo || '') : desc,
           facturaRoelca: (fc && fc.invoice) ? String(fc.invoice) : '',
           cobrado,
+          convenioUsd,
           proveedor: proveedorMonto,
         };
       });
@@ -1693,6 +1701,7 @@ export const FacturacionProveedoresDashboard = () => {
         colonia: String(emp.colonia ?? ''),
         ciudad: String(emp.ciudad ?? emp.municipio ?? ''),
         moneda: monRaw === 'USD' ? 'DÓLARES' : 'PESOS',
+        tipoCambio: tcSugerido > 0 ? String(tcSugerido) : '',
         observaciones: '',
         filas,
       });
@@ -1706,7 +1715,7 @@ export const FacturacionProveedoresDashboard = () => {
 
   const generarPDFDeRate = () => {
     if (!ratePreview) return;
-    const data: RateProveedorData = {
+    const data = {
       fecha: ratePreview.fecha || '',
       facturaProveedor: ratePreview.facturaProveedor || '',
       proveedorNombre: ratePreview.proveedorNombre || '',
@@ -1716,6 +1725,7 @@ export const FacturacionProveedoresDashboard = () => {
       colonia: ratePreview.colonia || '',
       ciudad: ratePreview.ciudad || '',
       moneda: ratePreview.moneda || 'PESOS',
+      tipoCambio: ratePreview.tipoCambio || '',
       observaciones: ratePreview.observaciones || '',
       filas: (ratePreview.filas || []).map((r: any) => ({
         ref: r.ref || '',
@@ -1725,9 +1735,10 @@ export const FacturacionProveedoresDashboard = () => {
         descripcion: r.descripcion || '',
         facturaRoelca: r.facturaRoelca || '',
         cobrado: Number(r.cobrado) || 0,
+        convenioUsd: Number(r.convenioUsd) || 0,
         proveedor: Number(r.proveedor) || 0,
       })),
-    };
+    } as RateProveedorData;
     generarRateProveedorPDF(data);
   };
 
@@ -1737,7 +1748,25 @@ export const FacturacionProveedoresDashboard = () => {
       if (!prev) return prev;
       const filas = [...(prev.filas || [])];
       filas[idx] = { ...filas[idx], [campo]: valor };
+      // Al editar el convenio en USD, la conversión (PROVEEDOR) se recalcula con el TC vigente.
+      if (campo === 'convenioUsd') {
+        const tc = Number(prev.tipoCambio) || 0;
+        const usd = Number(valor) || 0;
+        if (tc > 0 && usd > 0) filas[idx] = { ...filas[idx], proveedor: Number((usd * tc).toFixed(2)) };
+      }
       return { ...prev, filas };
+    });
+  // Cambiar el TIPO DE CAMBIO recalcula la conversión de TODAS las filas con convenio en USD.
+  // Las filas en pesos (convenioUsd = 0) conservan su monto tal cual.
+  const setTipoCambioRate = (valor: string) =>
+    setRatePreview((prev: any) => {
+      if (!prev) return prev;
+      const tc = Number(valor) || 0;
+      const filas = (prev.filas || []).map((r: any) => {
+        const usd = Number(r.convenioUsd) || 0;
+        return (usd > 0 && tc > 0) ? { ...r, proveedor: Number((usd * tc).toFixed(2)) } : r;
+      });
+      return { ...prev, tipoCambio: valor, filas };
     });
   const quitarFilaRate = (idx: number) =>
     setRatePreview((prev: any) => {
@@ -4116,6 +4145,7 @@ export const FacturacionProveedoresDashboard = () => {
                 <div><label style={rLabelStyle}>VENCIMIENTO</label><input type="text" value={ratePreview.vencimiento} onChange={e => setRT('vencimiento', e.target.value)} style={rInputStyle} /></div>
                 <div style={{ gridColumn: 'span 2' }}><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={ratePreview.proveedorNombre} onChange={e => setRT('proveedorNombre', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>MONEDA</label><input type="text" value={ratePreview.moneda} onChange={e => setRT('moneda', e.target.value)} style={rInputStyle} /></div>
+                <div><label style={{ ...rLabelStyle, color: '#f59e0b' }}>TIPO DE CAMBIO</label><input type="text" value={ratePreview.tipoCambio || ''} onChange={e => setTipoCambioRate(e.target.value)} placeholder="Ej. 17.5505" style={{ ...rInputStyle, borderColor: '#f59e0b' }} /></div>
                 <div><label style={rLabelStyle}>CIUDAD</label><input type="text" value={ratePreview.ciudad} onChange={e => setRT('ciudad', e.target.value)} style={rInputStyle} /></div>
                 <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={ratePreview.direccion} onChange={e => setRT('direccion', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>COLONIA</label><input type="text" value={ratePreview.colonia} onChange={e => setRT('colonia', e.target.value)} style={rInputStyle} /></div>
@@ -4135,6 +4165,7 @@ export const FacturacionProveedoresDashboard = () => {
                       <th style={{ padding: '8px', textAlign: 'left' }}>DESCRIPCIÓN</th>
                       <th style={{ padding: '8px', textAlign: 'left' }}>FACTURA ROELCA</th>
                       <th style={{ padding: '8px', textAlign: 'right' }}>COBRADO</th>
+                      <th style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>CONVENIO USD</th>
                       <th style={{ padding: '8px', textAlign: 'right' }}>PROVEEDOR</th>
                       <th style={{ padding: '8px', textAlign: 'right' }}>UTILIDAD</th>
                       <th style={{ padding: '8px' }}></th>
@@ -4152,6 +4183,7 @@ export const FacturacionProveedoresDashboard = () => {
                           <td style={{ padding: '4px' }}><input value={r.descripcion} onChange={e => setRTFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '140px' }} /></td>
                           <td style={{ padding: '4px' }}><input value={r.facturaRoelca} onChange={e => setRTFila(idx, 'facturaRoelca', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
                           <td style={{ padding: '4px' }}><input type="number" step="any" value={r.cobrado} onChange={e => setRTFila(idx, 'cobrado', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
+                          <td style={{ padding: '4px' }}><input type="number" step="any" value={r.convenioUsd} onChange={e => setRTFila(idx, 'convenioUsd', e.target.value)} title="Convenio del proveedor en dólares; PROVEEDOR = USD × Tipo de Cambio" style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#f59e0b' }} /></td>
                           <td style={{ padding: '4px' }}><input type="number" step="any" value={r.proveedor} onChange={e => setRTFila(idx, 'proveedor', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3b82f6' }} /></td>
                           <td style={{ padding: '4px 10px', textAlign: 'right', color: utilidad < 0 ? '#f85149' : '#c9d1d9', fontSize: '0.82rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(utilidad)}</td>
                           <td style={{ padding: '4px', textAlign: 'center' }}>
@@ -4161,13 +4193,14 @@ export const FacturacionProveedoresDashboard = () => {
                       );
                     })}
                     {(ratePreview.filas || []).length === 0 && (
-                      <tr><td colSpan={10} style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.82rem' }}>Sin renglones.</td></tr>
+                      <tr><td colSpan={11} style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.82rem' }}>Sin renglones.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '24px', padding: '10px 12px', color: '#8b949e', fontSize: '0.82rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '24px', padding: '10px 12px', color: '#8b949e', fontSize: '0.82rem', flexWrap: 'wrap' }}>
                 <span>Cobrado: <b style={{ color: '#3fb950' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.cobrado) || 0), 0))}</b></span>
+                <span>Convenio USD: <b style={{ color: '#f59e0b' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.convenioUsd) || 0), 0))}</b></span>
                 <span>Proveedor: <b style={{ color: '#3b82f6' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.proveedor) || 0), 0))}</b></span>
                 <span>Utilidad: <b style={{ color: '#f0f6fc' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + ((Number(r.cobrado) || 0) - (Number(r.proveedor) || 0)), 0))}</b></span>
               </div>
