@@ -621,7 +621,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
           if (!activo) return;
           setter(docs);
-          try { localStorage.setItem(`cat_v1__${alias}`, JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
+          // ✅ CORREGIDO: los dashboards leen las cachés con clave "cat_v2__" (las
+          //   v1 se ELIMINAN en cada arranque). Antes se escribía en v1 y por eso
+          //   los clientes/proveedores/bodegas nuevos tardaban hasta 24 h (TTL) en
+          //   verse en tablas y documentos. Nunca se cachean listas vacías.
+          try { if (docs.length > 0) localStorage.setItem(`cat_v2__${alias}`, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* noop */ }
         } catch (e) {
           console.error(`Error refrescando catálogo "${coleccion}":`, e);
         }
@@ -809,7 +813,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     } catch { /* noop */ }
 
     try {
-      localStorage.setItem(`cat_v1__${coleccion}`, JSON.stringify({ data: docs, ts: Date.now() }));
+      // ✅ CORREGIDO: clave v2 (la que leen los dashboards) y sin cachear vacíos.
+      if (docs.length > 0) localStorage.setItem(`cat_v2__${coleccion}`, JSON.stringify({ ts: Date.now(), data: docs }));
     } catch { /* noop */ }
   }, []);
 
@@ -2138,7 +2143,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const snap = await getDocs(collection(db, 'convenios_clientes_detalles'));
       const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       setConvDetallesLocal(docs);
-      try { localStorage.setItem('cat_v1__catalogoConvDetalles', JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
+      try { if (docs.length > 0) localStorage.setItem('cat_v2__catalogoConvDetalles', JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* noop */ }
     } catch (e) {
       console.error('Error refrescando detalles de convenios:', e);
     }
@@ -2216,7 +2221,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const snap = await getDocs(collection(db, 'convenios_proveedores_detalles'));
       const docs = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
       setConvProvDetallesLocal(docs);
-      try { localStorage.setItem('cat_v1__catalogoConvProvDetalles', JSON.stringify({ data: docs, ts: Date.now() })); } catch { /* noop */ }
+      try { if (docs.length > 0) localStorage.setItem('cat_v2__catalogoConvProvDetalles', JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* noop */ }
     } catch (e) {
       console.error('Error refrescando detalles de convenios de proveedor:', e);
     }

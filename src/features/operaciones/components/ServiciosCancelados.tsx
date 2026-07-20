@@ -321,6 +321,31 @@ const ServiciosCancelados = () => {
     setCatalogosGlobales(catGuardados);
   };
 
+  // ✅ NUEVO: re-sincroniza los catálogos EN MEMORIA con lo más fresco disponible.
+  //   FormularioOperacion actualiza la caché de sesión (roelca_catalogos_v2) y las
+  //   cachés locales cat_v2__ al crear clientes/proveedores/bodegas; sin este paso
+  //   los registros nuevos no aparecían en la tabla ni en los documentos PDF hasta
+  //   recargar la página.
+  const resincronizarCatalogosDesdeCache = () => {
+    try {
+      const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
+      if (cacheCatStr) {
+        const cache = JSON.parse(cacheCatStr);
+        setCatalogosGlobales((prev: any) => ({ ...prev, ...cache }));
+      }
+      // Las colecciones con alta rápida desde el formulario siempre quedan más
+      // frescas en cat_v2__ (el formulario las re-descarga al abrir y al crear).
+      ['empresas', 'remolques', 'unidades', 'empleados'].forEach((alias) => {
+        const raw = localStorage.getItem(`cat_v2__${alias}`);
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj && Array.isArray(obj.data) && obj.data.length > 0) {
+          setCatalogosGlobales((prev: any) => ({ ...prev, [alias]: obj.data }));
+        }
+      });
+    } catch { /* caché corrupta: ignorar */ }
+  };
+
   // ✅ Al montar solo cargamos los catálogos LIGEROS (para poblar los buscadores
   //    de Cliente y Remolque y el status). Los pesados se cargan bajo demanda al
   //    generar un PDF. Los registros NO se cargan hasta definir el rango de fechas.
@@ -1082,6 +1107,8 @@ const ServiciosCancelados = () => {
 
   // ✅ NUEVO: tras guardar, cerrar el formulario y refrescar la lista (si hay rango activo)
   const handleOperacionGuardada = () => {
+    // ✅ NUEVO: refleja al instante los catálogos recién creados desde el formulario.
+    resincronizarCatalogosDesdeCache();
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
     setOperacionViendo(null);
@@ -1110,7 +1137,7 @@ const ServiciosCancelados = () => {
         <FormularioOperacion
           estado={estadoFormulario}
           initialData={operacionEditando}
-          onClose={() => { setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
+          onClose={() => { resincronizarCatalogosDesdeCache(); setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
           onMinimize={() => setEstadoFormulario('minimizado')}
           onRestore={() => setEstadoFormulario('abierto')}
           catalogosCacheados={catalogosGlobales}

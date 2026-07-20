@@ -828,6 +828,10 @@ const OperacionesDashboard = () => {
   };
 
   const handleOperacionGuardada = () => {
+    // ✅ NUEVO: el formulario refresca las cachés cat_v2 (incluye clientes,
+    //   proveedores y bodegas recién creados) — se re-hidratan EN MEMORIA para
+    //   que la tabla y los documentos PDF los muestren al instante.
+    hidratarCatalogosDesdeCache();
     descargarOperaciones();
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
@@ -1491,7 +1495,7 @@ const OperacionesDashboard = () => {
       {estadoFormulario !== 'cerrado' && (
         <FormularioOperacion 
           estado={estadoFormulario} initialData={operacionEditando}
-          onClose={() => { setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
+          onClose={() => { hidratarCatalogosDesdeCache(); setEstadoFormulario('cerrado'); setOperacionEditando(null); }}
           onMinimize={() => setEstadoFormulario('minimizado')} onRestore={() => setEstadoFormulario('abierto')}
           catalogosCacheados={catalogosGlobales} 
           onSave={handleOperacionGuardada}
