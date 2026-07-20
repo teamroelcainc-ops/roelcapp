@@ -4,6 +4,8 @@ import { db, storage, auth } from '../../../config/firebase';
 import { guardarOperacionSegura } from '../services/operacionesService';
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
 import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, obtenerUsuarioAut, MODULOS_AUTORIZABLES } from '../../autorizaciones/autorizaciones';
+// ✅ NUEVO: historial de actividad (colección historial_actividad)
+import { registrarLog } from '../../../utils/logger';
 import { calcularStatusDinamico } from '../config/statusRules';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -13,6 +15,38 @@ import { FormularioRemolque } from '../../remolques/components/FormularioRemolqu
 import { FormularioUnidad } from '../../unidades/components/FormularioUnidad';
 import { EmployeeForm } from '../../empleados/components/EmployeeForm';
 import { CostosAdicionalesDashboard } from '../../costosAdicionales/CostosAdicionalesDashboard';
+
+// ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
+//   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
+const truncarValorLog = (v: any): string => {
+  if (v === null || v === undefined || String(v).trim() === '') return '(vacío)';
+  const t = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  return t.length > 60 ? t.slice(0, 57) + '...' : t;
+};
+
+const describirCambiosLog = (nuevo: any, anterior: any, etiquetas: Record<string, string> = {}): string => {
+  const cmp = (x: any) => (typeof x === 'object' && x !== null ? JSON.stringify(x) : String(x ?? ''));
+  const cambios: string[] = [];
+  Object.keys(nuevo || {}).forEach((k) => {
+    const a = anterior ? anterior[k] : undefined;
+    if (cmp(a) === cmp(nuevo[k])) return;
+    cambios.push(`${etiquetas[k] || k}: "${truncarValorLog(a)}" → "${truncarValorLog(nuevo[k])}"`);
+  });
+  if (cambios.length === 0) return 'sin cambios de valor detectados';
+  const visibles = cambios.slice(0, 15);
+  const resto = cambios.length - visibles.length;
+  return visibles.join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
+};
+
+const describirCamposCapturadosLog = (datos: any, etiquetas: Record<string, string> = {}): string => {
+  const claves = Object.keys(datos || {}).filter((k) => {
+    const v = datos[k];
+    return v !== '' && v !== null && v !== undefined && v !== false;
+  });
+  const visibles = claves.slice(0, 20);
+  const resto = claves.length - visibles.length;
+  return visibles.map((k) => `${etiquetas[k] || k}: "${truncarValorLog(datos[k])}"`).join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
+};
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -1985,6 +2019,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         refGuardado = referenciaDeOperacion(idGuardado, (resultado as any)?.ref || operacionData.ref);
         if (onSave) onSave({ id: nuevoId, ...operacionData });
       }
+
+      // ── ✅ HISTORIAL DE ACTIVIDAD: constancia de quién guardó, qué campos
+      //    capturó (creación) o qué campos cambió con anterior → nuevo (edición)
+      //    y cuándo. El usuario y la fecha los resuelve registrarLog. ──
+      try {
+        if (initialData) {
+          registrarLog('Operaciones', 'Edición', `Editó la operación ${refGuardado}. Cambios → ${describirCambiosLog(operacionData, initialData as any, etiquetasCamposAut)}`).catch(() => {});
+        } else {
+          registrarLog('Operaciones', 'Creación', `Creó la operación ${refGuardado} con los campos → ${describirCamposCapturadosLog(operacionData, etiquetasCamposAut)}`).catch(() => {});
+        }
+      } catch { /* el log nunca debe romper el guardado */ }
 
       const archivosPorCampo: { file: File; campo: string; sufijo?: string }[] = [];
       if (pdfCartaPorte) archivosPorCampo.push({ file: pdfCartaPorte, campo: 'Carta Porte' });

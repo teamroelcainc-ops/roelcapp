@@ -18,6 +18,7 @@ export const LogsDashboard = () => {
   // Estados para los filtros
   const [filtroUsuario, setFiltroUsuario] = useState('');
   const [filtroModulo, setFiltroModulo] = useState('');
+  const [filtroAccion, setFiltroAccion] = useState(''); // ✅ NUEVO: Creación / Edición / Eliminación / Búsqueda / etc.
   const [filtroFecha, setFiltroFecha] = useState(''); // Formato YYYY-MM-DD
 
   useEffect(() => {
@@ -32,7 +33,7 @@ export const LogsDashboard = () => {
   }, []);
 
   // Verificar si hay al menos un filtro activo
-  const hayFiltrosActivos = filtroUsuario !== '' || filtroModulo !== '' || filtroFecha !== '';
+  const hayFiltrosActivos = filtroUsuario !== '' || filtroModulo !== '' || filtroFecha !== '' || filtroAccion !== '';
 
   // Lógica de Filtrado Múltiple
   const logsFiltrados = useMemo(() => {
@@ -42,11 +43,12 @@ export const LogsDashboard = () => {
     return logs.filter(log => {
       const coincideUsuario = filtroUsuario ? log.usuario.toLowerCase().includes(filtroUsuario.toLowerCase()) : true;
       const coincideModulo = filtroModulo ? log.modulo.toLowerCase().includes(filtroModulo.toLowerCase()) : true;
+      const coincideAccion = filtroAccion ? log.accion === filtroAccion : true;
       const coincideFecha = filtroFecha ? log.fecha.startsWith(filtroFecha) : true;
-      
-      return coincideUsuario && coincideModulo && coincideFecha;
+
+      return coincideUsuario && coincideModulo && coincideAccion && coincideFecha;
     });
-  }, [logs, filtroUsuario, filtroModulo, filtroFecha, hayFiltrosActivos]);
+  }, [logs, filtroUsuario, filtroModulo, filtroAccion, filtroFecha, hayFiltrosActivos]);
 
   // Formatear la fecha estrictamente en español
   const formatearFechaHora = (fechaIso: string) => {
@@ -64,6 +66,16 @@ export const LogsDashboard = () => {
 
   // Extraer lista de módulos únicos para el selector (basado en los logs recientes)
   const modulosUnicos = Array.from(new Set(logs.map(log => log.modulo))).sort();
+  const accionesUnicas = Array.from(new Set(logs.map(log => log.accion))).sort();
+
+  // ✅ NUEVO: color por tipo de acción (rojo destructivo, ámbar ediciones,
+  //   azul búsquedas, verde creaciones/aprobaciones).
+  const colorAccion = (accion: string): { bg: string; fg: string } => {
+    if (accion === 'Eliminación' || accion === 'Rechazo') return { bg: 'rgba(239, 68, 68, 0.1)', fg: '#ef4444' };
+    if (accion === 'Edición' || accion === 'Configuración') return { bg: 'rgba(245, 158, 11, 0.1)', fg: '#f59e0b' };
+    if (accion === 'Búsqueda') return { bg: 'rgba(59, 130, 246, 0.1)', fg: '#58a6ff' };
+    return { bg: 'rgba(16, 185, 129, 0.1)', fg: '#10b981' };
+  };
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
@@ -109,9 +121,22 @@ export const LogsDashboard = () => {
             ))}
           </select>
         </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ display: 'block', fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', marginBottom: '8px' }}>Filtrar por Acción</label>
+          <select
+            value={filtroAccion}
+            onChange={(e) => setFiltroAccion(e.target.value)}
+            style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}
+          >
+            <option value="">Todas las acciones</option>
+            {accionesUnicas.map(a => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </select>
+        </div>
         <div style={{ display: 'flex', alignItems: 'flex-end' }}>
           <button 
-            onClick={() => { setFiltroFecha(''); setFiltroUsuario(''); setFiltroModulo(''); }}
+            onClick={() => { setFiltroFecha(''); setFiltroUsuario(''); setFiltroModulo(''); setFiltroAccion(''); }}
             style={{ padding: '10px 16px', backgroundColor: '#21262d', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer' }}
           >
             Limpiar
@@ -165,10 +190,10 @@ export const LogsDashboard = () => {
                     </span>
                   </td>
                   <td style={{ padding: '16px' }}>
-                    <span style={{ 
-                      backgroundColor: log.accion === 'Eliminación' ? 'rgba(239, 68, 68, 0.1)' : log.accion === 'Edición' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)', 
-                      color: log.accion === 'Eliminación' ? '#ef4444' : log.accion === 'Edición' ? '#f59e0b' : '#10b981', 
-                      padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid transparent' 
+                    <span style={{
+                      backgroundColor: colorAccion(log.accion).bg,
+                      color: colorAccion(log.accion).fg,
+                      padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid transparent', whiteSpace: 'nowrap'
                     }}>
                       {log.accion}
                     </span>

@@ -206,6 +206,11 @@ const OperacionesDashboard = () => {
   // ✅ NUEVO: controla el modal de Resúmenes Diarios (Transfer/Logística/Fletes).
   const [mostrarResumenDiario, setMostrarResumenDiario] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
+
+  // ✅ NUEVO: ordenamiento por columna al hacer clic en el encabezado.
+  //   1er clic = ascendente (▲), 2do clic = descendente (▼), 3er clic = orden original.
+  const [ordenColumna, setOrdenColumna] = useState<string | null>(null);
+  const [ordenDireccion, setOrdenDireccion] = useState<'asc' | 'desc' | null>(null);
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
   const mapaStatus = useMemo(() => {
@@ -1209,10 +1214,68 @@ const OperacionesDashboard = () => {
     });
   }, [busqueda, operacionesGlobales, catalogosGlobales, columnasTabla, filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque]);
 
-  const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
+  // ✅ NUEVO: valor de una celda para ORDENAR. Reusa valorTextoColumna, pero las
+  //   fechas se convierten a un valor cronológico real (timestamp) para que el
+  //   orden no dependa del formato en que se guardó la fecha.
+  const valorOrdenColumna = (op: any, colId: string): string => {
+    if (colId === 'fechaServicio') {
+      const t = fechaOrdenOp(op.fechaServicio);
+      return t ? String(t) : '';
+    }
+    if (colId === 'fechaCita') {
+      const t = fechaOrdenOp(op.fechaCita);
+      return t ? String(t) : '';
+    }
+    const v = valorTextoColumna(op, colId);
+    return v === '-' ? '' : v;
+  };
+
+  // ✅ NUEVO: comparador tolerante — numérico cuando ambos valores son números
+  //   (montos, cantidades, timestamps) y alfabético con colación española en
+  //   el resto. Los valores vacíos siempre van al final.
+  const compararValoresOrden = (va: string, vb: string): number => {
+    const na = Number(va);
+    const nb = Number(vb);
+    if (va.trim() !== '' && vb.trim() !== '' && !isNaN(na) && !isNaN(nb)) return na - nb;
+    return va.localeCompare(vb, 'es', { numeric: true, sensitivity: 'base' });
+  };
+
+  // ✅ NUEVO: ciclo de ordenamiento del encabezado: asc → desc → original.
+  const manejarOrdenColumna = (colId: string) => {
+    if (ordenColumna !== colId) {
+      setOrdenColumna(colId);
+      setOrdenDireccion('asc');
+    } else if (ordenDireccion === 'asc') {
+      setOrdenDireccion('desc');
+    } else {
+      setOrdenColumna(null);
+      setOrdenDireccion(null);
+    }
+    setPaginaActual(1);
+  };
+
+  // ✅ NUEVO: lista final que ve la tabla. Sin columna de orden activa se respeta
+  //   el orden original (fecha desc + consecutivo) de operacionesFiltradas.
+  const operacionesOrdenadas = useMemo(() => {
+    if (!ordenColumna || !ordenDireccion) return operacionesFiltradas;
+    const dir = ordenDireccion === 'asc' ? 1 : -1;
+    return [...operacionesFiltradas].sort((a: any, b2: any) => {
+      const va = valorOrdenColumna(a, ordenColumna);
+      const vb = valorOrdenColumna(b2, ordenColumna);
+      const vaVacio = va.trim() === '';
+      const vbVacio = vb.trim() === '';
+      if (vaVacio && vbVacio) return 0;
+      if (vaVacio) return 1;   // vacíos siempre al final
+      if (vbVacio) return -1;
+      return compararValoresOrden(va, vb) * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesFiltradas, ordenColumna, ordenDireccion, catalogosGlobales]);
+
+  const totalPaginas = Math.ceil(operacionesOrdenadas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const operacionesEnPantalla = operacionesFiltradas.slice(indicePrimerRegistro, indiceUltimoRegistro);
+  const operacionesEnPantalla = operacionesOrdenadas.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -1314,11 +1377,11 @@ const OperacionesDashboard = () => {
   };
 
   const exportarExcel = async () => {
-    if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
+    if (operacionesOrdenadas.length === 0) return alert("No hay datos para exportar.");
     const columnasVisibles = columnasTabla.filter(c => c.visible);
     // La exportación usa los nombres ya guardados en cada operación (sin lecturas).
 
-    const datosExcel = operacionesFiltradas.map(op => {
+    const datosExcel = operacionesOrdenadas.map(op => {
       const fila: any = {};
       columnasVisibles.forEach(col => {
         let val: any = '-';
@@ -1522,8 +1585,18 @@ const OperacionesDashboard = () => {
                       Acciones
                     </th>
                     {columnasTabla.filter(c => c.visible).map(col => (
-                      <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                      <th
+                        key={`th_${col.id}`}
+                        onClick={() => manejarOrdenColumna(col.id)}
+                        title={ordenColumna === col.id ? (ordenDireccion === 'asc' ? 'Clic: ordenar descendente' : 'Clic: quitar ordenamiento') : 'Clic: ordenar ascendente'}
+                        style={{ padding: '16px', color: ordenColumna === col.id ? '#f0f6fc' : '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', cursor: 'pointer', userSelect: 'none' }}
+                      >
                         {col.label}
+                        {ordenColumna === col.id && (
+                          <span style={{ marginLeft: '6px', color: '#58a6ff', fontSize: '0.7rem' }}>
+                            {ordenDireccion === 'asc' ? '▲' : '▼'}
+                          </span>
+                        )}
                       </th>
                     ))}
                   </tr>

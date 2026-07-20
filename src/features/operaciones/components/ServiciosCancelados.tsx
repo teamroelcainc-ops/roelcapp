@@ -1,7 +1,10 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, startAfter } from 'firebase/firestore';
-import { db } from '../../../config/firebase'; 
+import { db, auth } from '../../../config/firebase'; 
+import * as XLSX from 'xlsx';
+// ✅ NUEVO: historial de actividad (colección historial_actividad)
+import { registrarLog } from '../../../utils/logger';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
@@ -27,6 +30,39 @@ const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
 // ID hex del status "Cancelado" en catalogo_status_servicio
+// ✅ NUEVO: utilidad para el Historial de Actividad (historial_actividad).
+//   Nunca debe romper el flujo principal: los llamados a registrarLog van con .catch.
+const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; remolque?: string; remolqueNombre?: string; busqueda?: string }): string => {
+  const partes: string[] = [`Fechas: ${f.fechaInicio} a ${f.fechaFin}`];
+  if (f.cliente) partes.push(`Cliente: ${f.clienteNombre || f.cliente}`);
+  if (f.remolque) partes.push(`Remolque: ${f.remolqueNombre || f.remolque}`);
+  if (f.busqueda && f.busqueda.trim()) partes.push(`Filtro general: "${f.busqueda.trim()}"`);
+  return partes.join(' | ');
+};
+
+// ✅ NUEVO: el último filtro buscado se guarda POR USUARIO en localStorage y se
+//   restaura (con búsqueda automática) al volver a entrar al módulo.
+const FILTROS_STORAGE_PREFIX = 'roelca_canceladas_filtros_v1_';
+const claveFiltrosGuardados = () => FILTROS_STORAGE_PREFIX + (auth.currentUser?.uid || 'anon');
+
+// ✅ NUEVO: columnas de la tabla (única fuente para encabezados, ordenamiento y Excel).
+const COLUMNAS_TABLA_CANCELADOS = [
+  { id: 'ref', label: '# Ref' },
+  { id: 'fecha', label: 'Fecha' },
+  { id: 'tipoOperacion', label: 'Tipo de Operación' },
+  { id: 'status', label: 'Status' },
+  { id: 'convenio', label: 'Convenio (Tarifa)' },
+  { id: 'remolque', label: '# Remolque' },
+  { id: 'proveedor', label: 'Proveedor' },
+  { id: 'unidad', label: 'Unidad' },
+  { id: 'cliente', label: 'Cliente (Paga)' },
+  { id: 'subtotal', label: 'Subtotal' },
+];
+
+// ✅ NUEVO: la selección y el ORDEN de columnas del Excel se recuerdan POR USUARIO.
+const EXPORT_STORAGE_PREFIX = 'roelca_canceladas_export_v1_';
+const claveExportGuardado = () => EXPORT_STORAGE_PREFIX + (auth.currentUser?.uid || 'anon');
+
 const STATUS_CANCELADO_ID = '7607f692';
 // ID del tipo de empresa "Cliente (Paga)" para el buscador de clientes
 const ID_TIPO_CLIENTE_PAGA = '7eec9cbb';
@@ -113,6 +149,37 @@ const ServiciosCancelados = () => {
   const registrosPorPagina = 50;
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+
+  // ✅ NUEVO: ordenamiento por columna al hacer clic en el encabezado.
+  //   1er clic = ascendente (▲), 2do clic = descendente (▼), 3er clic = orden original.
+  const [ordenColumna, setOrdenColumna] = useState<string | null>(null);
+  const [ordenDireccion, setOrdenDireccion] = useState<'asc' | 'desc' | null>(null);
+
+  // ✅ NUEVO: los filtros de la barra superior YA NO se aplican en vivo — se
+  //   "congelan" aquí al presionar el botón BUSCAR y la tabla solo muestra
+  //   resultados cuando este snapshot existe. El rango de fechas es obligatorio.
+  const [filtrosAplicados, setFiltrosAplicados] = useState<{
+    fechaInicio: string;
+    fechaFin: string;
+    cliente: string;
+    clienteNombre: string;
+    remolque: string;
+    remolqueNombre: string;
+    busqueda: string;
+  } | null>(null);
+
+  // ✅ NUEVO: sidebar FLOTANTE del lado DERECHO donde viven TODOS los filtros.
+  //   Cerrado por defecto; se abre con el botón "Filtros" de la barra superior.
+  const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
+
+  // ✅ NUEVO: modal de exportación a Excel con columnas seleccionables y ordenables.
+  const [modalExportar, setModalExportar] = useState(false);
+  const [columnasExport, setColumnasExport] = useState<{ id: string; label: string; visible: boolean }[]>([]);
+  const dragExportIdx = useRef<number | null>(null);
+
+  // ✅ NUEVO: evita re-descargar todas las canceladas en cada búsqueda — la
+  //   descarga por status trae TODO el conjunto y los filtros van en memoria.
+  const yaDescargado = useRef(false);
 
   // ✅ NUEVO: resolución bidireccional ID ↔ Nombre de catalogo_status_servicio.
   const mapaStatus = useMemo(() => {
@@ -262,17 +329,95 @@ const ServiciosCancelados = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ✅ MODIFICADO: los registros solo se cargan/muestran cuando el rango de fechas
-  //    (inicio + fin) está completo. La carga sigue siendo por status 7607f692.
-  useEffect(() => {
-    if (filterFechaInicio && filterFechaFin) {
-      descargarOperaciones();
-    } else {
-      setOperacionesGlobales([]);
-      setErrorCarga(null);
+  // ✅ MODIFICADO: ya NO se descarga automáticamente al cambiar las fechas.
+  //   La descarga y la aplicación de filtros ocurren SOLO al presionar BUSCAR.
+  //   El rango de fechas (inicio + fin) es el requisito mínimo del botón.
+  //   La carga sigue siendo por status 7607f692 (una sola descarga por sesión).
+  const ejecutarBusqueda = () => {
+    if (!filterFechaInicio || !filterFechaFin) {
+      alert('Selecciona Fecha Inicio y Fecha Fin para buscar.');
+      return;
     }
+    const snapshot = {
+      fechaInicio: filterFechaInicio,
+      fechaFin: filterFechaFin,
+      cliente: filterCliente,
+      clienteNombre: nombreClienteSeleccionado,
+      remolque: filterRemolque,
+      remolqueNombre: nombreRemolqueSeleccionado,
+      busqueda,
+    };
+    setFiltrosAplicados(snapshot);
+    setPaginaActual(1);
+    setDrawerFiltrosAbierto(false);
+    // ✅ NUEVO: recuerda el último filtro de ESTE usuario para restaurarlo después.
+    try { localStorage.setItem(claveFiltrosGuardados(), JSON.stringify(snapshot)); } catch { /* almacenamiento lleno: ignorar */ }
+    if (!yaDescargado.current) {
+      yaDescargado.current = true;
+      descargarOperaciones();
+    }
+    // ✅ HISTORIAL: deja constancia de la búsqueda y de los filtros usados.
+    registrarLog('Servicios Cancelados', 'Búsqueda', `Buscó operaciones canceladas con filtros → ${describirFiltrosLog(snapshot)}`).catch(() => {});
+  };
+
+  // ✅ MODIFICADO: Limpiar borra los campos del panel Y quita el filtro aplicado
+  //   (la tabla vuelve al estado inicial) además del filtro recordado del usuario.
+  const limpiarFiltrosPanel = () => {
+    setFilterFechaInicio('');
+    setFilterFechaFin('');
+    setFilterCliente('');
+    setTextoBuscarCliente('');
+    setFilterRemolque('');
+    setTextoBuscarRemolque('');
+    setBusqueda('');
+    setFiltrosAplicados(null);
+    setPaginaActual(1);
+    try { localStorage.removeItem(claveFiltrosGuardados()); } catch { /* ignorar */ }
+  };
+
+  // ✅ NUEVO: al entrar al módulo se restaura el último filtro buscado por este
+  //   usuario y se ejecuta la búsqueda automáticamente (sin registrar log, ya
+  //   que no es una búsqueda nueva sino la restauración de la anterior).
+  useEffect(() => {
+    try {
+      const str = localStorage.getItem(claveFiltrosGuardados());
+      if (!str) return;
+      const f = JSON.parse(str);
+      if (!f?.fechaInicio || !f?.fechaFin) return;
+      setFilterFechaInicio(f.fechaInicio);
+      setFilterFechaFin(f.fechaFin);
+      setFilterCliente(f.cliente || '');
+      setFilterRemolque(f.remolque || '');
+      setBusqueda(f.busqueda || '');
+      setFiltrosAplicados({
+        fechaInicio: f.fechaInicio,
+        fechaFin: f.fechaFin,
+        cliente: f.cliente || '',
+        clienteNombre: f.clienteNombre || '',
+        remolque: f.remolque || '',
+        remolqueNombre: f.remolqueNombre || '',
+        busqueda: f.busqueda || '',
+      });
+      if (!yaDescargado.current) {
+        yaDescargado.current = true;
+        descargarOperaciones();
+      }
+    } catch { /* filtro guardado corrupto: ignorar */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterFechaInicio, filterFechaFin]);
+  }, []);
+
+  // ✅ NUEVO: cuántos filtros están definidos en el panel (para el contador del botón).
+  const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, busqueda.trim()].filter(Boolean).length;
+
+  // ✅ NUEVO: chips con el resumen del último criterio buscado.
+  const resumenFiltrosChips = useMemo(() => {
+    if (!filtrosAplicados) return [] as string[];
+    const chips: string[] = [`📅 ${filtrosAplicados.fechaInicio} → ${filtrosAplicados.fechaFin}`];
+    if (filtrosAplicados.cliente) chips.push(`Cliente: ${filtrosAplicados.clienteNombre || filtrosAplicados.cliente}`);
+    if (filtrosAplicados.remolque) chips.push(`Remolque: ${filtrosAplicados.remolqueNombre || filtrosAplicados.remolque}`);
+    if (filtrosAplicados.busqueda.trim()) chips.push(`Ref: "${filtrosAplicados.busqueda.trim()}"`);
+    return chips;
+  }, [filtrosAplicados]);
 
   // ✅ Logo para los PDF: si en la config hay un logo en base64 (data:...), úsalo;
   // si no, dejamos el global vacío para que el generador use el logo INCRUSTADO por
@@ -284,7 +429,7 @@ const ServiciosCancelados = () => {
 
   useEffect(() => {
     setPaginaActual(1);
-  }, [busqueda, filterFechaInicio, filterFechaFin, filterCliente, filterRemolque]);
+  }, [filtrosAplicados]);
 
   // ✅ NUEVO: cargar los botones de "Siguiente Paso" para la operación abierta.
   // Como en este módulo los catálogos son perezosos, primero garantizamos que
@@ -406,6 +551,11 @@ const ServiciosCancelados = () => {
       batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
       await batch.commit();
 
+      // ✅ HISTORIAL: cambio de status con el valor anterior y el nuevo.
+      const refLogH = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
+      const statusAnteriorH = operacionViendo.statusNombre || operacionViendo.status || '(sin status)';
+      registrarLog('Servicios Cancelados', 'Edición', `Cambió el status de la operación ${refLogH}: "${statusAnteriorH}" → "${statusNombreResuelto}" (horario del evento: ${nuevaFechaHora})`).catch(() => {});
+
       aplicarStatusEnMemoria(operacionViendo.id, statusId, statusNombreResuelto);
       alert('Horario registrado y Estatus actualizado.');
       setModalHorarios('cerrado');
@@ -477,6 +627,12 @@ const ServiciosCancelados = () => {
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre });
       await batch.commit();
+
+      // ✅ HISTORIAL: status rápido (incluye la cascada de status automáticos).
+      const refLogR = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
+      const statusAnteriorR = operacionPrevia.statusNombre || operacionPrevia.status || '(sin status)';
+      const cascadaTxt = cadenaResuelta.length > 1 ? ` (cascada: ${cadenaResuelta.map(c => c.nombre).join(' → ')})` : '';
+      registrarLog('Servicios Cancelados', 'Edición', `Cambió el status de la operación ${refLogR}: "${statusAnteriorR}" → "${statusFinal.nombre}"${cascadaTxt}`).catch(() => {});
 
       setGuardandoStatusRapido(null);
       setUltimoStatusGuardado(statusNombre);
@@ -702,27 +858,33 @@ const ServiciosCancelados = () => {
   // ✅ MODIFICADO: TODOS los filtros son opcionales y se aplican en memoria sobre
   //   las canceladas ya descargadas. El rango de fechas usa la fecha NORMALIZADA
   //   para tolerar formatos legacy (Timestamp / DD-MM-YYYY / ISO con hora).
+  // ✅ MODIFICADO: la tabla se filtra con el SNAPSHOT de filtros congelado al
+  //   presionar BUSCAR (filtrosAplicados), no con los campos en vivo de la barra.
+  //   El rango de fechas es obligatorio; el resto sigue siendo opcional.
   const operacionesFiltradas = useMemo(() => {
-    const b = busqueda.toLowerCase();
-    const ini = filterFechaInicio || '';
-    const fin = filterFechaFin || '';
+    if (!filtrosAplicados) return [];
+    const b = filtrosAplicados.busqueda.toLowerCase();
+    const ini = filtrosAplicados.fechaInicio;
+    const fin = filtrosAplicados.fechaFin;
+    const fCliente = filtrosAplicados.cliente;
+    const fRemolque = filtrosAplicados.remolque;
+    const fRemolqueNombre = filtrosAplicados.remolqueNombre;
 
     return operacionesGlobales.filter(op => {
-      // Rango de fechas (opcional)
-      if (ini || fin) {
+      // Rango de fechas (obligatorio)
+      {
         const f = normalizarFechaISO(op.fechaServicio);
-        if (ini && (!f || f < ini)) return false;
-        if (fin && (!f || f > fin)) return false;
+        if (!f || f < ini || f > fin) return false;
       }
 
       // Cliente (opcional)
-      if (filterCliente && String(op.clientePaga || op.clienteId || '') !== filterCliente) return false;
+      if (fCliente && String(op.clientePaga || op.clienteId || '') !== fCliente) return false;
 
       // Remolque (opcional) — por ID o por nombre desnormalizado
-      if (filterRemolque) {
+      if (fRemolque) {
         const coincideRem =
-          String(op.numeroRemolque || '') === filterRemolque ||
-          String(op.remolqueNombre || '').toLowerCase().includes(nombreRemolqueSeleccionado.toLowerCase());
+          String(op.numeroRemolque || '') === fRemolque ||
+          (fRemolqueNombre && String(op.remolqueNombre || '').toLowerCase().includes(fRemolqueNombre.toLowerCase()));
         if (!coincideRem) return false;
       }
 
@@ -741,12 +903,173 @@ const ServiciosCancelados = () => {
 
       return true;
     });
-  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterCliente, filterRemolque, nombreRemolqueSeleccionado]);
+  }, [filtrosAplicados, operacionesGlobales]);
 
-  const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
+  // ✅ NUEVO: valor de una celda para ORDENAR. Espeja lo que se pinta en cada
+  //   columna; la fecha usa el valor ISO normalizado para orden cronológico.
+  const valorOrdenColumna = (op: any, colId: string): string => {
+    const limpiar = (v: any): string => {
+      const t = String(v ?? '').trim();
+      return t === '-' ? '' : t;
+    };
+    switch (colId) {
+      case 'ref': return limpiar(op.ref || op.id?.substring(0, 6));
+      case 'fecha': return limpiar(normalizarFechaISO(op.fechaServicio));
+      case 'tipoOperacion': return limpiar(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre));
+      case 'status': return limpiar(mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre));
+      case 'convenio': return limpiar(obtenerNombreConvenioCliente(op.convenio, op.convenioNombre));
+      case 'remolque': return limpiar(mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre));
+      case 'proveedor': return limpiar(mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre));
+      case 'unidad': return limpiar(mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre));
+      case 'cliente': return limpiar(mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente));
+      case 'subtotal': return limpiar(op.subtotalCliente);
+      default: return '';
+    }
+  };
+
+  // ✅ NUEVO: comparador tolerante — numérico cuando ambos valores son números
+  //   (Subtotal) y alfabético con colación española en el resto.
+  const compararValoresOrden = (va: string, vb: string): number => {
+    const na = Number(va);
+    const nb = Number(vb);
+    if (va !== '' && vb !== '' && !isNaN(na) && !isNaN(nb)) return na - nb;
+    return va.localeCompare(vb, 'es', { numeric: true, sensitivity: 'base' });
+  };
+
+  // ✅ NUEVO: por defecto el Excel usa las columnas de la tabla en su orden.
+  const columnasExportPorDefecto = () =>
+    COLUMNAS_TABLA_CANCELADOS.map(c => ({ id: c.id, label: c.label, visible: true }));
+
+  // ✅ NUEVO: abre el modal restaurando la última configuración guardada del
+  //   usuario (tolerante a columnas nuevas: se agregan al final desmarcadas).
+  const abrirModalExportar = () => {
+    if (operacionesOrdenadas.length === 0) {
+      alert('No hay datos para exportar. Realiza una búsqueda primero.');
+      return;
+    }
+    try {
+      const str = localStorage.getItem(claveExportGuardado());
+      if (str) {
+        const guardadas = JSON.parse(str) as { id: string; visible: boolean }[];
+        const porId = new Map(COLUMNAS_TABLA_CANCELADOS.map(c => [c.id, c] as const));
+        const lista: { id: string; label: string; visible: boolean }[] = [];
+        guardadas.forEach(g => {
+          const c = porId.get(g.id);
+          if (c) { lista.push({ id: c.id, label: c.label, visible: !!g.visible }); porId.delete(g.id); }
+        });
+        porId.forEach(c => lista.push({ id: c.id, label: c.label, visible: false }));
+        setColumnasExport(lista);
+      } else {
+        setColumnasExport(columnasExportPorDefecto());
+      }
+    } catch { setColumnasExport(columnasExportPorDefecto()); }
+    setModalExportar(true);
+  };
+
+  // ✅ NUEVO: mover una columna con las flechas ▲▼.
+  const moverColumnaExport = (idx: number, delta: number) => {
+    setColumnasExport(prev => {
+      const j = idx + delta;
+      if (j < 0 || j >= prev.length) return prev;
+      const arr = [...prev];
+      [arr[idx], arr[j]] = [arr[j], arr[idx]];
+      return arr;
+    });
+  };
+
+  // ✅ NUEVO: soltar una columna arrastrada sobre la posición destino.
+  const soltarColumnaExport = (destino: number) => {
+    const origen = dragExportIdx.current;
+    dragExportIdx.current = null;
+    if (origen === null || origen === destino) return;
+    setColumnasExport(prev => {
+      const arr = [...prev];
+      const [item] = arr.splice(origen, 1);
+      arr.splice(destino, 0, item);
+      return arr;
+    });
+  };
+
+  // ✅ NUEVO: valor de cada celda para el Excel. Usa los catálogos (nombres
+  //   canónicos, evita variantes como "Dolares"/"Dólares"), fecha normalizada
+  //   a AAAA-MM-DD y Subtotal como número real.
+  const valorExcelColumna = (op: any, colId: string): any => {
+    switch (colId) {
+      case 'ref': return op.ref || op.id?.substring(0, 6) || '';
+      case 'fecha': return normalizarFechaISO(op.fechaServicio) || op.fechaServicio || '';
+      case 'tipoOperacion': return mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre);
+      case 'status': return mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre);
+      case 'convenio': return obtenerNombreConvenioCliente(op.convenio, op.convenioNombre);
+      case 'remolque': return mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre);
+      case 'proveedor': return mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre);
+      case 'unidad': return mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre);
+      case 'cliente': return mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente);
+      case 'subtotal': return Number(op.subtotalCliente) || 0;
+      default: return '';
+    }
+  };
+
+  // ✅ NUEVO: exportación a Excel de las canceladas con el orden elegido.
+  const exportarExcel = async () => {
+    if (operacionesOrdenadas.length === 0) return alert('No hay datos para exportar.');
+    const columnasVisibles = columnasExport.filter(c => c.visible);
+    if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
+
+    await cargarCatalogosSiEsNecesario();
+
+    const datosExcel = operacionesOrdenadas.map((op: any) => {
+      const fila: any = {};
+      columnasVisibles.forEach(col => {
+        const v = valorExcelColumna(op, col.id);
+        fila[col.label] = v === '-' ? '' : v;
+      });
+      return fila;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(datosExcel);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Cancelados');
+    XLSX.writeFile(workbook, `Servicios_Cancelados_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+    // ✅ NUEVO: recuerda la selección/orden de columnas de ESTE usuario y cierra el modal.
+    try { localStorage.setItem(claveExportGuardado(), JSON.stringify(columnasExport.map(c => ({ id: c.id, visible: c.visible })))); } catch { /* ignorar */ }
+    setModalExportar(false);
+  };
+
+  // ✅ NUEVO: ciclo de ordenamiento del encabezado: asc → desc → original.
+  const manejarOrdenColumna = (colId: string) => {
+    if (ordenColumna !== colId) {
+      setOrdenColumna(colId);
+      setOrdenDireccion('asc');
+    } else if (ordenDireccion === 'asc') {
+      setOrdenDireccion('desc');
+    } else {
+      setOrdenColumna(null);
+      setOrdenDireccion(null);
+    }
+    setPaginaActual(1);
+  };
+
+  // ✅ NUEVO: lista final que ve la tabla. Sin columna de orden activa se
+  //   respeta el orden original (fecha de servicio descendente).
+  const operacionesOrdenadas = useMemo(() => {
+    if (!ordenColumna || !ordenDireccion) return operacionesFiltradas;
+    const dir = ordenDireccion === 'asc' ? 1 : -1;
+    return [...operacionesFiltradas].sort((a: any, b2: any) => {
+      const va = valorOrdenColumna(a, ordenColumna);
+      const vb = valorOrdenColumna(b2, ordenColumna);
+      if (va === '' && vb === '') return 0;
+      if (va === '') return 1;   // vacíos siempre al final
+      if (vb === '') return -1;
+      return compararValoresOrden(va, vb) * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesFiltradas, ordenColumna, ordenDireccion, catalogosGlobales]);
+
+  const totalPaginas = Math.ceil(operacionesOrdenadas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const operacionesEnPantalla = operacionesFiltradas.slice(indicePrimerRegistro, indiceUltimoRegistro);
+  const operacionesEnPantalla = operacionesOrdenadas.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -762,7 +1085,7 @@ const ServiciosCancelados = () => {
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
     setOperacionViendo(null);
-    if (filterFechaInicio && filterFechaFin) descargarOperaciones();
+    if (filtrosAplicados) descargarOperaciones();
   };
 
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
@@ -799,22 +1122,37 @@ const ServiciosCancelados = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
           <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: 0, fontWeight: 'bold' }}>Servicios Cancelados</h1>
         </div>
-        {/* Barra de filtros. Todos los filtros son OPCIONALES y se aplican en memoria. */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+
+          {/* ✅ NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
+              pantalla, con fondo oscurecido; se abre con el botón Filtros. */}
+          {drawerFiltrosAbierto && (
+            <>
+              <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1200, animation: 'fadeIn 0.2s ease' }} />
+              <aside style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92vw', backgroundColor: '#161b22', borderLeft: '1px solid #30363d', zIndex: 1201, display: 'flex', flexDirection: 'column', boxShadow: '-10px 0 30px rgba(0, 0, 0, 0.55)', animation: 'fadeIn 0.2s ease' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                  <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>Filtros</span>
+                </div>
+                <button onClick={() => setDrawerFiltrosAbierto(false)} title="Cerrar filtros" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '4px' }}>✕</button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
           {/* Fecha Inicio (requerida para mostrar registros) */}
-          <div style={{ flex: '1 1 180px' }}>
+          <div style={{ width: '100%' }}>
             <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO *</label>
             <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
           </div>
 
           {/* Fecha Fin (requerida para mostrar registros) */}
-          <div style={{ flex: '1 1 180px' }}>
+          <div style={{ width: '100%' }}>
             <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN *</label>
             <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
           </div>
 
           {/* Cliente que paga (buscador con autocompletado) */}
-          <div style={{ flex: '1 1 280px', position: 'relative' }}>
+          <div style={{ width: '100%', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
 
             {filterCliente ? (
@@ -873,7 +1211,7 @@ const ServiciosCancelados = () => {
           </div>
 
           {/* Remolque (buscador con autocompletado) */}
-          <div style={{ flex: '1 1 280px', position: 'relative' }}>
+          <div style={{ width: '100%', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE (opcional)</label>
 
             {filterRemolque ? (
@@ -931,16 +1269,135 @@ const ServiciosCancelados = () => {
           </div>
 
           {/* Filtro general (opcional) */}
-          <div style={{ flex: '1 1 200px' }}>
+          <div style={{ width: '100%' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
             <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
           </div>
+              </div>
+
+              <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', flexShrink: 0 }}>
+                <button
+                  onClick={limpiarFiltrosPanel}
+                  style={{ flex: 1, padding: '11px', backgroundColor: 'transparent', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Limpiar
+                </button>
+                <button
+                  onClick={ejecutarBusqueda}
+                  disabled={cargandoOperaciones}
+                  title={(!filterFechaInicio || !filterFechaFin) ? 'Selecciona Fecha Inicio y Fecha Fin para buscar' : 'Buscar con los filtros seleccionados'}
+                  style={{ flex: 2, padding: '11px', backgroundColor: (!filterFechaInicio || !filterFechaFin) ? '#21262d' : '#ef4444', color: (!filterFechaInicio || !filterFechaFin) ? '#8b949e' : '#f0f6fc', border: '1px solid ' + ((!filterFechaInicio || !filterFechaFin) ? '#30363d' : '#ef4444'), borderRadius: '6px', cursor: cargandoOperaciones ? 'wait' : 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  Buscar
+                </button>
+              </div>
+              </aside>
+            </>
+          )}
+
+        {/* ✅ NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
+            Arrastrando ⋮⋮ (o con las flechas) se cambia el orden; el checkbox
+            incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
+        {modalExportar && (
+          <>
+            <div onClick={() => setModalExportar(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1300, animation: 'fadeIn 0.2s ease' }} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '480px', maxWidth: '94vw', maxHeight: '86vh', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', zIndex: 1301, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>Exportar a Excel</span>
+                  <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>({columnasExport.filter(c => c.visible).length} columnas)</span>
+                </div>
+                <button onClick={() => setModalExportar(false)} title="Cerrar" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '4px' }}>✕</button>
+              </div>
+
+              <div style={{ padding: '10px 16px', color: '#8b949e', fontSize: '0.78rem', borderBottom: '1px solid #21262d', flexShrink: 0 }}>
+                Arrastra <span style={{ color: '#c9d1d9' }}>⋮⋮</span> o usa las flechas para cambiar el orden. Marca las columnas que quieres incluir.
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+                {columnasExport.map((c, idx) => (
+                  <div
+                    key={c.id}
+                    draggable
+                    onDragStart={() => { dragExportIdx.current = idx; }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => soltarColumnaExport(idx)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', marginBottom: '4px', backgroundColor: c.visible ? '#0d1117' : 'rgba(13, 17, 23, 0.5)', border: '1px solid #21262d', borderRadius: '6px', cursor: 'grab', opacity: c.visible ? 1 : 0.55 }}
+                  >
+                    <span title="Arrastrar para reordenar" style={{ color: '#484f58', fontSize: '0.85rem', letterSpacing: '-2px', userSelect: 'none' }}>⋮⋮</span>
+                    <input
+                      type="checkbox"
+                      checked={c.visible}
+                      onChange={() => setColumnasExport(prev => prev.map((x, i) => (i === idx ? { ...x, visible: !x.visible } : x)))}
+                      style={{ accentColor: '#ef4444', cursor: 'pointer', width: '15px', height: '15px', flexShrink: 0 }}
+                    />
+                    <span style={{ flex: 1, color: c.visible ? '#c9d1d9' : '#8b949e', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
+                    <button onClick={() => moverColumnaExport(idx, -1)} disabled={idx === 0} title="Subir" style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '4px', color: idx === 0 ? '#30363d' : '#8b949e', cursor: idx === 0 ? 'default' : 'pointer', padding: '2px 7px', fontSize: '0.7rem' }}>▲</button>
+                    <button onClick={() => moverColumnaExport(idx, 1)} disabled={idx === columnasExport.length - 1} title="Bajar" style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '4px', color: idx === columnasExport.length - 1 ? '#30363d' : '#8b949e', cursor: idx === columnasExport.length - 1 ? 'default' : 'pointer', padding: '2px 7px', fontSize: '0.7rem' }}>▼</button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+                <button
+                  onClick={() => setColumnasExport(columnasExportPorDefecto())}
+                  title="Restablecer con las columnas visibles de la tabla, en su orden actual"
+                  style={{ padding: '9px 12px', backgroundColor: 'transparent', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                >
+                  Columnas de la tabla
+                </button>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => setModalExportar(false)} style={{ padding: '9px 14px', backgroundColor: 'transparent', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>Cancelar</button>
+                <button
+                  onClick={exportarExcel}
+                  style={{ padding: '9px 16px', backgroundColor: '#ef4444', color: '#f0f6fc', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  Exportar
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Barra de filtros. Todos los filtros son OPCIONALES y se aplican en memoria. */}
+        {/* ✅ NUEVO: barra compacta — los filtros viven en un panel lateral
+            izquierdo; aquí solo queda el botón Filtros y el resumen de la
+            última búsqueda. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+          <button
+            onClick={() => setDrawerFiltrosAbierto(v => !v)}
+            title={drawerFiltrosAbierto ? 'Ocultar el panel de filtros' : 'Mostrar el panel de filtros'}
+            style={{ padding: '9px 16px', backgroundColor: drawerFiltrosAbierto ? '#ef4444' : 'transparent', color: drawerFiltrosAbierto ? '#f0f6fc' : '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, fontSize: '0.85rem' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            Filtros
+            {contadorFiltrosActivos > 0 && (
+              <span style={{ backgroundColor: '#f0f6fc', color: '#ef4444', borderRadius: '999px', padding: '1px 8px', fontSize: '0.75rem', fontWeight: 'bold' }}>{contadorFiltrosActivos}</span>
+            )}
+          </button>
+
+          {filtrosAplicados ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', flex: 1, minWidth: '200px' }}>
+              {resumenFiltrosChips.map((chip, i) => (
+                <span key={`chip_${i}`} style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.35)', color: '#fca5a5', padding: '4px 10px', borderRadius: '999px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{chip}</span>
+              ))}
+            </div>
+          ) : (
+            <span style={{ color: '#8b949e', fontSize: '0.82rem', flex: 1, minWidth: '200px' }}>Presiona Filtros para definir el rango de fechas y buscar.</span>
+          )}
+
+          <button className="btn btn-outline" onClick={abrirModalExportar} style={{ padding: '10px 12px', marginLeft: 'auto', flexShrink: 0 }} title="Exportar a Excel (elegir y ordenar columnas)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </button>
         </div>
+
         <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          {(!filterFechaInicio || !filterFechaFin) ? (
+          {!filtrosAplicados ? (
             <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
-              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>Selecciona un rango de fechas</div>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Define <span style={{ color: '#ef4444' }}>Fecha Inicio</span> y <span style={{ color: '#ef4444' }}>Fecha Fin</span> para ver las operaciones canceladas.</div>
+              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>Realiza una búsqueda</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Define <span style={{ color: '#ef4444' }}>Fecha Inicio</span> y <span style={{ color: '#ef4444' }}>Fecha Fin</span> y presiona <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Buscar</span> para ver las operaciones canceladas.</div>
             </div>
           ) : cargandoOperaciones ? (
             <div style={{ border: '1px solid #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones canceladas...</div>
@@ -966,16 +1423,22 @@ const ServiciosCancelados = () => {
                 <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
                   <tr>
                     <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Ref</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Tipo de Operación</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Status</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Convenio (Tarifa)</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># Remolque</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Proveedor</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Unidad</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Cliente (Paga)</th>
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Subtotal</th>
+                    {/* ✅ NUEVO: encabezados clicables para ordenar (asc ▲ / desc ▼ / original) */}
+                    {COLUMNAS_TABLA_CANCELADOS.map(col => (
+                      <th
+                        key={`th_${col.id}`}
+                        onClick={() => manejarOrdenColumna(col.id)}
+                        title={ordenColumna === col.id ? (ordenDireccion === 'asc' ? 'Clic: ordenar descendente' : 'Clic: quitar ordenamiento') : 'Clic: ordenar ascendente'}
+                        style={{ padding: '16px', color: ordenColumna === col.id ? '#f0f6fc' : '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', cursor: 'pointer', userSelect: 'none' }}
+                      >
+                        {col.label}
+                        {ordenColumna === col.id && (
+                          <span style={{ marginLeft: '6px', color: '#ef4444', fontSize: '0.7rem' }}>
+                            {ordenDireccion === 'asc' ? '▲' : '▼'}
+                          </span>
+                        )}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -1032,9 +1495,9 @@ const ServiciosCancelados = () => {
                 </tbody>
               </table>
           </div>
-          {operacionesFiltradas.length > 0 && (
+          {operacionesOrdenadas.length > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones canceladas</div>
+              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones canceladas</div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button 
                   title="Página Anterior"

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { collection, query, getDocs, getCountFromServer, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
-import { db } from '../../../config/firebase'; 
+import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { db, auth } from '../../../config/firebase'; 
+// ✅ NUEVO: historial de actividad (colección historial_actividad)
+import { registrarLog } from '../../../utils/logger';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
@@ -22,6 +24,38 @@ const colorTipoOperacion = (nombre: any): string => {
   if (n.includes('logist')) return '#58a6ff';
   if (n.includes('flete')) return '#3fb950';
   return '#c9d1d9';
+};
+
+// ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
+//   Nunca deben romper el flujo principal: los llamados a registrarLog van con .catch.
+const truncarValorLog = (v: any): string => {
+  if (v === null || v === undefined || String(v).trim() === '') return '(vacío)';
+  const t = typeof v === 'object' ? JSON.stringify(v) : String(v);
+  return t.length > 60 ? t.slice(0, 57) + '...' : t;
+};
+
+const describirCambiosLog = (nuevo: any, anterior: any, etiquetas: Record<string, string> = {}): string => {
+  const cmp = (x: any) => (typeof x === 'object' && x !== null ? JSON.stringify(x) : String(x ?? ''));
+  const cambios: string[] = [];
+  Object.keys(nuevo || {}).forEach((k) => {
+    const a = anterior ? anterior[k] : undefined;
+    if (cmp(a) === cmp(nuevo[k])) return;
+    cambios.push(`${etiquetas[k] || k}: "${truncarValorLog(a)}" → "${truncarValorLog(nuevo[k])}"`);
+  });
+  if (cambios.length === 0) return 'sin cambios de valor detectados';
+  const visibles = cambios.slice(0, 15);
+  const resto = cambios.length - visibles.length;
+  return visibles.join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
+};
+
+const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; tipoOperacion?: string; remolque?: string; remolqueNombre?: string; operador?: string; operadorNombre?: string; busqueda?: string }): string => {
+  const partes: string[] = [`Fechas: ${f.fechaInicio} a ${f.fechaFin}`];
+  if (f.cliente) partes.push(`Cliente: ${f.clienteNombre || f.cliente}`);
+  if (f.tipoOperacion) partes.push(`Tipo de operación: ${f.tipoOperacion}`);
+  if (f.remolque) partes.push(`Remolque: ${f.remolqueNombre || f.remolque}`);
+  if (f.operador) partes.push(`Operador: ${f.operadorNombre || f.operador}`);
+  if (f.busqueda && f.busqueda.trim()) partes.push(`Filtro general: "${f.busqueda.trim()}"`);
+  return partes.join(' | ');
 };
 
 const COLUMNAS_BASE = [
@@ -108,6 +142,26 @@ const CACHE_KEY_TODOS = CACHE_PREFIX + 'all_v3';
 // ✅ NUEVO: clave para PERSISTIR la configuración de columnas (orden + visibles)
 //   en localStorage, para que NO se pierda al recargar la página.
 const COLUMNAS_STORAGE_KEY = 'roelca_completadas_columnas_v1';
+
+// ✅ NUEVO: el último filtro buscado se guarda POR USUARIO en localStorage y se
+//   restaura (con búsqueda automática) al volver a entrar al módulo.
+const FILTROS_STORAGE_PREFIX = 'roelca_completadas_filtros_v1_';
+const claveFiltrosGuardados = () => FILTROS_STORAGE_PREFIX + (auth.currentUser?.uid || 'anon');
+
+// ✅ NUEVO: la selección y el ORDEN de columnas del Excel se recuerdan POR USUARIO.
+const EXPORT_STORAGE_PREFIX = 'roelca_completadas_export_v1_';
+const claveExportGuardado = () => EXPORT_STORAGE_PREFIX + (auth.currentUser?.uid || 'anon');
+
+// ✅ NUEVO: normaliza nombres de moneda inconsistentes en la base
+//   ("Dolares" / "Dólares" / "DOLARES" → "Dólares"; "pesos" → "Pesos").
+const normalizarMoneda = (txt: any): string => {
+  const t = String(txt ?? '').trim();
+  if (!t || t === '-') return t;
+  const plano = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (plano.includes('dolar')) return 'Dólares';
+  if (plano.includes('peso')) return 'Pesos';
+  return t;
+};
 
 // ✅ NUEVO: carga la configuración guardada y la reconcilia con COLUMNAS_BASE:
 //   · respeta el ORDEN y la VISIBILIDAD guardados,
@@ -243,6 +297,36 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(cargarColumnasGuardadas);
+
+  // ✅ NUEVO: ordenamiento por columna al hacer clic en el encabezado.
+  //   1er clic = ascendente (▲), 2do clic = descendente (▼), 3er clic = orden original.
+  const [ordenColumna, setOrdenColumna] = useState<string | null>(null);
+  const [ordenDireccion, setOrdenDireccion] = useState<'asc' | 'desc' | null>(null);
+
+  // ✅ NUEVO: los filtros de la barra superior YA NO se aplican en vivo — se
+  //   "congelan" aquí al presionar el botón BUSCAR y la tabla solo muestra
+  //   resultados cuando este snapshot existe. El rango de fechas es obligatorio.
+  const [filtrosAplicados, setFiltrosAplicados] = useState<{
+    fechaInicio: string;
+    fechaFin: string;
+    cliente: string;
+    clienteNombre: string;
+    tipoOperacion: string;
+    remolque: string;
+    remolqueNombre: string;
+    operador: string;
+    operadorNombre: string;
+    busqueda: string;
+  } | null>(null);
+
+  // ✅ NUEVO: sidebar FLOTANTE del lado DERECHO donde viven TODOS los filtros.
+  //   Cerrado por defecto; se abre con el botón "Filtros" de la barra superior.
+  const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
+
+  // ✅ NUEVO: modal de exportación a Excel con columnas seleccionables y ordenables.
+  const [modalExportar, setModalExportar] = useState(false);
+  const [columnasExport, setColumnasExport] = useState<{ id: string; label: string; visible: boolean }[]>([]);
+  const dragExportIdx = useRef<number | null>(null);
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
   // ✅ NUEVO: buscador dentro del modal "Configurar Columnas".
   const [busquedaColumnas, setBusquedaColumnas] = useState('');
@@ -277,16 +361,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: estado del FormularioOperacion COMPLETO (mismo que Operaciones Activas).
   //   Al editar se abre este formulario en lugar del editor rápido reducido.
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
-
-  // ✅ NUEVO: conteos EXACTOS desde el servidor (getCountFromServer).
-  const [conteosServidor, setConteosServidor] = useState<{
-    completados: number | null;   // completados reales (sin falsos)
-    falsos: number | null;
-    total: number | null;         // completados + falsos
-    cargando: boolean;
-    error: string | null;
-    alcance: 'rango' | 'global' | null;
-  }>({ completados: null, falsos: null, total: null, cargando: false, error: null, alcance: null });
 
   // ✅ NUEVO: resolución bidireccional ID ↔ Nombre de catalogo_status_servicio.
   const mapaStatus = useMemo(() => {
@@ -499,26 +573,120 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   //   Cambiar cualquier filtro después es instantáneo (no vuelve a consultar la BD).
   const yaDescargado = useRef(false);
 
+  // ✅ MODIFICADO: ya NO se descarga automáticamente al cambiar las fechas.
+  //   La descarga y la aplicación de filtros ocurren SOLO al presionar BUSCAR.
+  //   El rango de fechas (inicio + fin) es el requisito mínimo del botón.
+  const ejecutarBusqueda = () => {
+    if (!filterFechaInicio || !filterFechaFin) {
+      alert('Selecciona Fecha Inicio y Fecha Fin para buscar.');
+      return;
+    }
+    const snapshot = {
+      fechaInicio: filterFechaInicio,
+      fechaFin: filterFechaFin,
+      cliente: filterCliente,
+      clienteNombre: nombreClienteSeleccionado,
+      tipoOperacion: filterTipoOperacion,
+      remolque: filterRemolque,
+      remolqueNombre: nombreRemolqueSeleccionado,
+      operador: filterOperador,
+      operadorNombre: nombreOperadorSeleccionado,
+      busqueda,
+    };
+    setFiltrosAplicados(snapshot);
+    setPaginaActual(1);
+    setDrawerFiltrosAbierto(false);
+    // ✅ NUEVO: recuerda el último filtro de ESTE usuario para restaurarlo después.
+    try { localStorage.setItem(claveFiltrosGuardados(), JSON.stringify(snapshot)); } catch { /* almacenamiento lleno: ignorar */ }
+    if (!yaDescargado.current) {
+      yaDescargado.current = true;
+      descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
+    }
+    // ✅ HISTORIAL: deja constancia de la búsqueda y de los filtros usados.
+    registrarLog('Servicios Completados', 'Búsqueda', `Buscó operaciones completadas con filtros → ${describirFiltrosLog(snapshot)}`).catch(() => {});
+  };
+
+  // ✅ MODIFICADO: Limpiar borra los campos del panel Y quita el filtro aplicado
+  //   (la tabla vuelve al estado inicial) además del filtro recordado del usuario.
+  const limpiarFiltrosPanel = () => {
+    setFilterFechaInicio('');
+    setFilterFechaFin('');
+    setFilterCliente('');
+    setTextoBuscarCliente('');
+    setFilterRemolque('');
+    setTextoBuscarRemolque('');
+    setFilterOperador('');
+    setTextoBuscarOperador('');
+    setFilterTipoOperacion('');
+    setBusqueda('');
+    setFiltrosAplicados(null);
+    setPaginaActual(1);
+    try { localStorage.removeItem(claveFiltrosGuardados()); } catch { /* ignorar */ }
+  };
+
+  // ✅ NUEVO: al entrar al módulo se restaura el último filtro buscado por este
+  //   usuario y se ejecuta la búsqueda automáticamente (sin registrar log, ya
+  //   que no es una búsqueda nueva sino la restauración de la anterior).
   useEffect(() => {
-    if (!filterFechaInicio || !filterFechaFin) return;   // se requiere rango para mostrar
-    if (yaDescargado.current) return;                    // ya tenemos los datos en memoria
-    yaDescargado.current = true;
-    descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente);
+    try {
+      const str = localStorage.getItem(claveFiltrosGuardados());
+      if (!str) return;
+      const f = JSON.parse(str);
+      if (!f?.fechaInicio || !f?.fechaFin) return;
+      setFilterFechaInicio(f.fechaInicio);
+      setFilterFechaFin(f.fechaFin);
+      setFilterCliente(f.cliente || '');
+      setFilterTipoOperacion(f.tipoOperacion || '');
+      setFilterRemolque(f.remolque || '');
+      setFilterOperador(f.operador || '');
+      setBusqueda(f.busqueda || '');
+      setFiltrosAplicados({
+        fechaInicio: f.fechaInicio,
+        fechaFin: f.fechaFin,
+        cliente: f.cliente || '',
+        clienteNombre: f.clienteNombre || '',
+        tipoOperacion: f.tipoOperacion || '',
+        remolque: f.remolque || '',
+        remolqueNombre: f.remolqueNombre || '',
+        operador: f.operador || '',
+        operadorNombre: f.operadorNombre || '',
+        busqueda: f.busqueda || '',
+      });
+      if (!yaDescargado.current) {
+        yaDescargado.current = true;
+        descargarOperaciones(f.fechaInicio, f.fechaFin, f.cliente || '');
+      }
+    } catch { /* filtro guardado corrupto: ignorar */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterFechaInicio, filterFechaFin]);
+  }, []);
+
+  // ✅ NUEVO: cuántos filtros están definidos en el panel (para el contador del botón).
+  const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, filterOperador, filterTipoOperacion, busqueda.trim()].filter(Boolean).length;
+
+  // ✅ NUEVO: chips con el resumen del último criterio buscado.
+  const resumenFiltrosChips = useMemo(() => {
+    if (!filtrosAplicados) return [] as string[];
+    const chips: string[] = [`📅 ${filtrosAplicados.fechaInicio} → ${filtrosAplicados.fechaFin}`];
+    if (filtrosAplicados.cliente) chips.push(`Cliente: ${filtrosAplicados.clienteNombre || filtrosAplicados.cliente}`);
+    if (filtrosAplicados.tipoOperacion) chips.push(`Tipo: ${filtrosAplicados.tipoOperacion}`);
+    if (filtrosAplicados.remolque) chips.push(`Remolque: ${filtrosAplicados.remolqueNombre || filtrosAplicados.remolque}`);
+    if (filtrosAplicados.operador) chips.push(`Operador: ${filtrosAplicados.operadorNombre || filtrosAplicados.operador}`);
+    if (filtrosAplicados.busqueda.trim()) chips.push(`Ref: "${filtrosAplicados.busqueda.trim()}"`);
+    return chips;
+  }, [filtrosAplicados]);
 
   // ✅ NUEVO: fuerza una recarga desde Firestore (ignora caché). Para el botón "Actualizar".
   const refrescarDatos = () => {
-    if (!filterFechaInicio || !filterFechaFin) {
-      alert('Selecciona Fecha Inicio y Fecha Fin primero.');
+    if (!filtrosAplicados) {
+      alert('Primero realiza una búsqueda con Fecha Inicio y Fecha Fin.');
       return;
     }
     try { sessionStorage.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
     yaDescargado.current = true;
-    descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente, { ignorarCache: true });
+    descargarOperaciones(filtrosAplicados.fechaInicio, filtrosAplicados.fechaFin, filtrosAplicados.cliente, { ignorarCache: true });
   };
 
-  useEffect(() => { setPaginaActual(1); }, [busqueda, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion, filterOperador]);
+  useEffect(() => { setPaginaActual(1); }, [filtrosAplicados]);
 
   // ✅ NUEVO: cada vez que cambian las columnas (orden o visibilidad), se guardan
   //   en localStorage para que la configuración se mantenga al recargar la página.
@@ -623,7 +791,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const aplicarStatusEnMemoria = (opId: string, statusId: string, statusNombre: string) => {
     setOperacionesGlobales(prev => {
       const next = prev.map((o: any) => (o.id === opId ? { ...o, status: statusId, statusNombre } : o));
-      if (filterFechaInicio && filterFechaFin) {
+      if (filtrosAplicados) {
         try { sessionStorage.setItem(claveCacheActual(), JSON.stringify({ ts: Date.now(), ops: next })); } catch { /* ignorar */ }
       }
       return next;
@@ -649,6 +817,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
       await batch.commit();
+
+      // ✅ HISTORIAL: cambio de status con el valor anterior y el nuevo.
+      const refLogH = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
+      const statusAnteriorH = operacionViendo.statusNombre || operacionViendo.status || '(sin status)';
+      registrarLog('Servicios Completados', 'Edición', `Cambió el status de la operación ${refLogH}: "${statusAnteriorH}" → "${statusNombreResuelto}" (horario del evento: ${nuevaFechaHora})`).catch(() => {});
 
       aplicarStatusEnMemoria(operacionViendo.id, statusId, statusNombreResuelto);
       alert('Horario registrado y Estatus actualizado.');
@@ -719,6 +892,12 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre });
       await batch.commit();
+
+      // ✅ HISTORIAL: status rápido (incluye la cascada de status automáticos).
+      const refLogR = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
+      const statusAnteriorR = operacionPrevia.statusNombre || operacionPrevia.status || '(sin status)';
+      const cascadaTxt = cadenaResuelta.length > 1 ? ` (cascada: ${cadenaResuelta.map(c => c.nombre).join(' → ')})` : '';
+      registrarLog('Servicios Completados', 'Edición', `Cambió el status de la operación ${refLogR}: "${statusAnteriorR}" → "${statusFinal.nombre}"${cascadaTxt}`).catch(() => {});
 
       setGuardandoStatusRapido(null);
       setUltimoStatusGuardado(statusNombre);
@@ -909,8 +1088,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
 
   const handleOperacionGuardada = () => {
-    if (filterFechaInicio && filterFechaFin) {
-      descargarOperaciones(filterFechaInicio, filterFechaFin, filterCliente, { ignorarCache: true });
+    if (filtrosAplicados) {
+      descargarOperaciones(filtrosAplicados.fechaInicio, filtrosAplicados.fechaFin, filtrosAplicados.cliente, { ignorarCache: true });
     }
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
@@ -960,6 +1139,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
       await updateDoc(doc(db, 'operaciones', operacionEditando.id), payload);
 
+      // ✅ HISTORIAL: qué campos cambió, valores anterior → nuevo.
+      const refLog = operacionEditando.ref || operacionEditando.id?.substring(0, 6) || operacionEditando.id;
+      registrarLog('Servicios Completados', 'Edición', `Editó la operación ${refLog}. Cambios → ${describirCambiosLog(payload, operacionEditando)}`).catch(() => {});
+
       const aplicar = (o: any) => (o.id === operacionEditando.id ? { ...o, ...payload } : o);
       const nuevasGlobales = operacionesGlobales.map(aplicar);
       setOperacionesGlobales(nuevasGlobales);
@@ -967,7 +1150,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         setOperacionViendo({ ...operacionViendo, ...payload });
       }
 
-      if (filterFechaInicio && filterFechaFin) {
+      if (filtrosAplicados) {
         try {
           sessionStorage.setItem(
             claveCacheActual(),
@@ -997,10 +1180,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
     try {
       await deleteDoc(doc(db, 'operaciones', op.id));
+
+      // ✅ HISTORIAL: constancia de la eliminación con los datos clave del registro.
+      registrarLog('Servicios Completados', 'Eliminación', `Eliminó la operación ${refTxt} (Fecha servicio: ${truncarValorLog(op.fechaServicio)}, Cliente: ${truncarValorLog(op.clienteNombre || op.nombreCliente || op.clientePaga)}, Status: ${truncarValorLog(op.statusNombre || op.status)})`).catch(() => {});
+
       const restantes = operacionesGlobales.filter((o: any) => o.id !== op.id);
       setOperacionesGlobales(restantes);
       if (operacionViendo?.id === op.id) setOperacionViendo(null);
-      if (filterFechaInicio && filterFechaFin) {
+      if (filtrosAplicados) {
         try {
           sessionStorage.setItem(
             claveCacheActual(),
@@ -1040,8 +1227,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ MODIFICADO: el filtro de RANGO DE FECHAS ahora se aplica AQUÍ, en memoria,
   //   usando normalizarFechaServicioISO. Así funciona aunque fechaServicio venga
   //   como Timestamp, "DD/MM/YYYY", etc. (antes el filtro fallaba y salía vacío).
+  // ✅ MODIFICADO: la tabla se filtra con el SNAPSHOT de filtros congelado al
+  //   presionar BUSCAR (filtrosAplicados), no con los campos en vivo de la barra.
   const operacionesFiltradas = useMemo(() => {
-    if (!filterFechaInicio || !filterFechaFin) return [];
+    if (!filtrosAplicados) return [];
+    const { fechaInicio: fIni, fechaFin: fFin, cliente: fCliente, tipoOperacion: fTipoOp, remolque: fRemolque, operador: fOperador, busqueda: fBusqueda } = filtrosAplicados;
 
     let filtradas = operacionesGlobales;
 
@@ -1051,40 +1241,40 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     filtradas = filtradas.filter(op => {
       const f = op._fechaISO != null ? op._fechaISO : normalizarFechaServicioISO(op.fechaServicio);
       if (!f) return false;
-      return f >= filterFechaInicio && f <= filterFechaFin;
+      return f >= fIni && f <= fFin;
     });
 
-    if (filterCliente) {
-      filtradas = filtradas.filter(op => String(op.clientePaga || op.clienteId || '') === filterCliente);
+    if (fCliente) {
+      filtradas = filtradas.filter(op => String(op.clientePaga || op.clienteId || '') === fCliente);
     }
 
     // ✅ NUEVO: filtro por tipo de operación (Transfer / Logística / Fletes).
-    if (filterTipoOperacion) {
-      filtradas = filtradas.filter(op => coincideTipoOperacion(op, filterTipoOperacion));
+    if (fTipoOp) {
+      filtradas = filtradas.filter(op => coincideTipoOperacion(op, fTipoOp));
     }
 
-    if (filterRemolque) {
-      filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === filterRemolque || String(op.remolqueNombre || '').toLowerCase().includes(filterRemolque.toLowerCase()));
+    if (fRemolque) {
+      filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === fRemolque || String(op.remolqueNombre || '').toLowerCase().includes(fRemolque.toLowerCase()));
     }
 
     // ✅ NUEVO: filtro por OPERADOR. Cruza por ID del empleado (op.operador /
     //   op.operadorId) y, como respaldo, por nombre normalizado con tolerancia
     //   al apellido materno (las operaciones pueden traer el nombre completo).
-    if (filterOperador) {
-      const empSel = (catalogosGlobales.empleados || []).find((x: any) => String(x.id) === String(filterOperador));
+    if (fOperador) {
+      const empSel = (catalogosGlobales.empleados || []).find((x: any) => String(x.id) === String(fOperador));
       const nombreSel = normalizarTxtOperador(empSel ? `${empSel.firstName || ''} ${empSel.lastNamePaternal || ''}` : '');
       const nombreSelCompleto = normalizarTxtOperador(empSel ? `${empSel.firstName || ''} ${empSel.lastNamePaternal || ''} ${empSel.lastNameMaternal || empSel.lastNameMaterno || ''}` : '');
       filtradas = filtradas.filter(op => {
         const idsOp = [op.operador, op.operadorId].map(v => String(v || '')).filter(Boolean);
-        if (idsOp.includes(String(filterOperador))) return true;
+        if (idsOp.includes(String(fOperador))) return true;
         const n = normalizarTxtOperador(op.operadorNombre);
         if (!n || !nombreSel) return false;
         return n === nombreSel || (nombreSelCompleto && n === nombreSelCompleto) || n.startsWith(nombreSel + ' ') || nombreSel.startsWith(n + ' ');
       });
     }
 
-    if (busqueda.trim()) {
-      const b = busqueda.toLowerCase();
+    if (fBusqueda.trim()) {
+      const b = fBusqueda.toLowerCase();
       filtradas = filtradas.filter(op => {
         return (
           String(op.ref || op.id || '').toLowerCase().includes(b) ||
@@ -1103,7 +1293,122 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       if (fa !== fb) return fb.localeCompare(fa);
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
-  }, [busqueda, operacionesGlobales, filterFechaInicio, filterFechaFin, filterRemolque, filterCliente, filterTipoOperacion, filterOperador, catalogosGlobales]);
+  }, [filtrosAplicados, operacionesGlobales, catalogosGlobales]);
+
+  // ✅ NUEVO: valor de una celda para ORDENAR. Espeja renderCellContent pero
+  //   devuelve texto plano; las fechas usan el valor ISO normalizado para que
+  //   el orden sea cronológico sin importar el formato guardado.
+  const valorOrdenColumna = (op: any, colId: string): string => {
+    const limpiar = (v: any): string => {
+      const s = String(v ?? '').trim();
+      return s === '-' ? '' : s;
+    };
+    switch (colId) {
+      case 'ref': return limpiar(op.ref || op.id?.substring(0, 6));
+      case 'fechaServicio': return limpiar(op._fechaISO != null ? op._fechaISO : normalizarFechaServicioISO(op.fechaServicio));
+      case 'fechaCita': return limpiar(op.fechaCita);
+      case 'tipoOperacion': return limpiar(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre));
+      case 'status': return limpiar(mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre));
+      case 'refDiesel': return limpiar(op.referenciaDieselConsecutivo);
+      case 'refNomina': return limpiar(op.referenciaNominaConsecutivo);
+      case 'invoiceCliente': return limpiar((op.facturaClienteInvoice || op.facturado) ? (op.facturaClienteInvoice || 'Facturada') : '');
+      case 'invoiceProveedor': return limpiar((op.facturaProveedorFolio || op.facturadoProveedor) ? (op.facturaProveedorFolio || 'Facturada') : '');
+      case 'trafico': return limpiar(op.trafico);
+      case 'cliente': return limpiar(mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente));
+      case 'convenioTarifa': return limpiar(obtenerNombreConvenioCliente(op.convenio, op.convenioNombre));
+      case 'refCliente': return limpiar(op.refCliente);
+      case 'facturadoEnCobrar': return limpiar(mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre));
+      case 'montoConvenioCliente': return limpiar(op.montoConvenioCliente);
+      case 'cargosAdicionales': return limpiar(op.cargosAdicionales);
+      case 'subtotal': return limpiar(op.subtotalCliente);
+      case 'tipoCambioAprobado': return limpiar(op.tipoCambioAprobado);
+      case 'dolaresCliente': return limpiar(op.dolaresCliente);
+      case 'pesosCliente': return limpiar(op.pesosCliente);
+      case 'conversionCliente': return limpiar(op.conversionCliente);
+      case 'origen': return limpiar(mostrarDatoMapeado(op.origen, 'empresas', 'nombre', op.origenNombre));
+      case 'destino': return limpiar(mostrarDatoMapeado(op.destino, 'empresas', 'nombre', op.destinoNombre));
+      case 'remolque': return limpiar(mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre));
+      case 'proveedor': return limpiar(mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre));
+      case 'unidadProveedor': return limpiar(mostrarDatoMapeado(op.unidadProveedor, 'unidades_proveedor', 'numeroUnidad', op.unidadProveedorNombre));
+      case 'operadorProveedor': return limpiar(mostrarDatoMapeado(op.operadorProveedor, 'proveedores_unidad', 'nombre', op.operadorProveedorNombre));
+      case 'convenioProv': return limpiar(obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre));
+      case 'facturadoEnUnidad': return limpiar(mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre));
+      case 'monedaConvenioProv': return limpiar(mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre));
+      case 'totalAPagarProv': return limpiar(op.totalAPagarProv);
+      case 'cargosAdicionalesProv': return limpiar(op.cargosAdicionalesProv);
+      case 'subtotalProv': return limpiar(op.subtotalProv);
+      case 'dolaresProv': return limpiar(op.dolaresProv);
+      case 'pesosProv': return limpiar(op.pesosProv);
+      case 'conversionProv': return limpiar(op.conversionProv);
+      case 'unidad': return limpiar(mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre));
+      case 'operador': return limpiar(mostrarDatoMapeado(op.operador, 'empleados', 'nombre', op.operadorNombre));
+      case 'sueldoOperador': return limpiar(op.sueldoOperador);
+      case 'sueldoExtra': return limpiar(op.sueldoExtra);
+      case 'sueldoTotal': return limpiar(op.sueldoTotal);
+      case 'combustible': return limpiar(op.combustible);
+      case 'combustibleExtra': return limpiar(op.combustibleExtra);
+      case 'combustibleTotal': return limpiar(op.combustibleTotal);
+      case 'clienteMercancia': return limpiar(mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre));
+      case 'descripcionMercancia': return limpiar(op.descripcionMercancia);
+      case 'cantidad': return limpiar(op.cantidad);
+      case 'embalaje': return limpiar(mostrarDatoMapeado(op.embalaje, 'embalajes', 'clave', op.embalajeNombre));
+      case 'pesoKg': return limpiar(op.pesoKg);
+      case 'numDoda': return limpiar(op.numDoda);
+      case 'fechaEmisionDoda': return limpiar(op.fechaEmisionDoda);
+      case 'numeroEntrys': return limpiar(op.numeroEntrys);
+      case 'cantEntrys': return limpiar(op.cantEntrys);
+      case 'numManifiesto': return limpiar(op.numManifiesto);
+      case 'provServicios': return limpiar(mostrarDatoMapeado(op.provServicios, 'empresas', 'nombre', op.provServiciosNombre));
+      case 'montoManifiesto': return limpiar(op.montoManifiesto);
+      case 'totalGastos': return limpiar(op.totalGastos);
+      case 'utilidadEstimada': return limpiar(op.utilidadEstimada);
+      case 'observacionesEjecutivo': return limpiar(op.observacionesEjecutivo);
+      case 'observacionesUnidad': return limpiar(op.observacionesUnidad);
+      case 'observacionesCobrar': return limpiar(op.observacionesCobrar);
+      default: return '';
+    }
+  };
+
+  // ✅ NUEVO: comparador tolerante — numérico cuando ambos valores son números
+  //   (montos, cantidades) y alfabético con colación española en el resto.
+  const compararValoresOrden = (va: string, vb: string): number => {
+    const na = Number(va);
+    const nb = Number(vb);
+    if (va.trim() !== '' && vb.trim() !== '' && !isNaN(na) && !isNaN(nb)) return na - nb;
+    return va.localeCompare(vb, 'es', { numeric: true, sensitivity: 'base' });
+  };
+
+  // ✅ NUEVO: ciclo de ordenamiento del encabezado: asc → desc → original.
+  const manejarOrdenColumna = (colId: string) => {
+    if (ordenColumna !== colId) {
+      setOrdenColumna(colId);
+      setOrdenDireccion('asc');
+    } else if (ordenDireccion === 'asc') {
+      setOrdenDireccion('desc');
+    } else {
+      setOrdenColumna(null);
+      setOrdenDireccion(null);
+    }
+    setPaginaActual(1);
+  };
+
+  // ✅ NUEVO: lista final que ve la tabla. Sin columna de orden activa se respeta
+  //   el orden original (fecha desc + consecutivo) de operacionesFiltradas.
+  const operacionesOrdenadas = useMemo(() => {
+    if (!ordenColumna || !ordenDireccion) return operacionesFiltradas;
+    const dir = ordenDireccion === 'asc' ? 1 : -1;
+    return [...operacionesFiltradas].sort((a: any, b2: any) => {
+      const va = valorOrdenColumna(a, ordenColumna);
+      const vb = valorOrdenColumna(b2, ordenColumna);
+      const vaVacio = va === '';
+      const vbVacio = vb === '';
+      if (vaVacio && vbVacio) return 0;
+      if (vaVacio) return 1;   // vacíos siempre al final
+      if (vbVacio) return -1;
+      return compararValoresOrden(va, vb) * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesFiltradas, ordenColumna, ordenDireccion, catalogosGlobales]);
 
   const resumenServicios = useMemo(() => {
     const base = operacionesFiltradas;
@@ -1126,58 +1431,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operacionesFiltradas, mapaStatus]);
 
-  const totalPaginas = Math.ceil(operacionesFiltradas.length / registrosPorPagina);
+  const totalPaginas = Math.ceil(operacionesOrdenadas.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const operacionesEnPantalla = operacionesFiltradas.slice(indicePrimerRegistro, indiceUltimoRegistro);
-
-  const idStatusFalso = useMemo(() => {
-    const lista = (catalogosGlobales.statusServicio || []) as any[];
-    const found = lista.find((s: any) => String(s.nombre || '').toLowerCase().includes('falso'));
-    return found ? String(found.id) : '';
-  }, [catalogosGlobales.statusServicio]);
-
-  const calcularTotalesServidor = async (alcance: 'rango' | 'global') => {
-    if (alcance === 'rango' && (!filterFechaInicio || !filterFechaFin)) {
-      alert('Selecciona Fecha Inicio y Fecha Fin para los totales del rango.');
-      return;
-    }
-    setConteosServidor(prev => ({ ...prev, cargando: true, error: null, alcance }));
-    try {
-      const col = collection(db, 'operaciones');
-
-      const baseConstraints: any[] = [];
-      if (alcance === 'rango') {
-        if (filterCliente) baseConstraints.push(where('clientePaga', '==', filterCliente));
-        baseConstraints.push(where('fechaServicio', '>=', filterFechaInicio));
-        baseConstraints.push(where('fechaServicio', '<=', filterFechaFin + '\uf8ff'));
-      }
-
-      const qTotal = query(col, where('status', 'in', STATUS_COMPLETADOS_VALORES), ...baseConstraints);
-      const snapTotal = await getCountFromServer(qTotal);
-      const total = snapTotal.data().count;
-
-      let falsos: number | null = null;
-      if (idStatusFalso) {
-        const qFalsos = query(col, where('status', '==', idStatusFalso), ...baseConstraints);
-        const snapFalsos = await getCountFromServer(qFalsos);
-        falsos = snapFalsos.data().count;
-      }
-
-      const completados = falsos !== null ? total - falsos : total;
-      setConteosServidor({ completados, falsos, total, cargando: false, error: null, alcance });
-    } catch (e: any) {
-      const msg = String(e?.message || e || '');
-      console.error('[ServiciosCompletados] Error en conteo de servidor:', e);
-      setConteosServidor(prev => ({
-        ...prev,
-        cargando: false,
-        error: msg.toLowerCase().includes('index')
-          ? 'Falta un índice en Firestore para este conteo. Revisa la consola para el enlace de creación.'
-          : (msg || 'No se pudo calcular el total.'),
-      }));
-    }
-  };
+  const operacionesEnPantalla = operacionesOrdenadas.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -1341,20 +1598,80 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     }
   };
 
+  // ✅ NUEVO: por defecto el Excel usa las columnas VISIBLES de la tabla en su
+  //   orden actual; las ocultas quedan listadas al final, desmarcadas.
+  const columnasExportPorDefecto = () => {
+    const visibles = columnasTabla.filter(c => c.visible).map(c => ({ id: c.id, label: c.label, visible: true }));
+    const ocultas = columnasTabla.filter(c => !c.visible).map(c => ({ id: c.id, label: c.label, visible: false }));
+    return [...visibles, ...ocultas];
+  };
+
+  // ✅ NUEVO: abre el modal restaurando la última configuración guardada del
+  //   usuario (tolerante a columnas nuevas: se agregan al final desmarcadas).
+  const abrirModalExportar = () => {
+    if (operacionesOrdenadas.length === 0) {
+      alert('No hay datos para exportar. Realiza una búsqueda primero.');
+      return;
+    }
+    try {
+      const str = localStorage.getItem(claveExportGuardado());
+      if (str) {
+        const guardadas = JSON.parse(str) as { id: string; visible: boolean }[];
+        const porId = new Map(columnasTabla.map(c => [c.id, c] as const));
+        const lista: { id: string; label: string; visible: boolean }[] = [];
+        guardadas.forEach(g => {
+          const c = porId.get(g.id);
+          if (c) { lista.push({ id: c.id, label: c.label, visible: !!g.visible }); porId.delete(g.id); }
+        });
+        porId.forEach(c => lista.push({ id: c.id, label: c.label, visible: false }));
+        setColumnasExport(lista);
+      } else {
+        setColumnasExport(columnasExportPorDefecto());
+      }
+    } catch { setColumnasExport(columnasExportPorDefecto()); }
+    setModalExportar(true);
+  };
+
+  // ✅ NUEVO: mover una columna con las flechas ▲▼.
+  const moverColumnaExport = (idx: number, delta: number) => {
+    setColumnasExport(prev => {
+      const j = idx + delta;
+      if (j < 0 || j >= prev.length) return prev;
+      const arr = [...prev];
+      [arr[idx], arr[j]] = [arr[j], arr[idx]];
+      return arr;
+    });
+  };
+
+  // ✅ NUEVO: soltar una columna arrastrada sobre la posición destino.
+  const soltarColumnaExport = (destino: number) => {
+    const origen = dragExportIdx.current;
+    dragExportIdx.current = null;
+    if (origen === null || origen === destino) return;
+    setColumnasExport(prev => {
+      const arr = [...prev];
+      const [item] = arr.splice(origen, 1);
+      arr.splice(destino, 0, item);
+      return arr;
+    });
+  };
+
   const exportarExcel = async () => {
-    if (operacionesFiltradas.length === 0) return alert("No hay datos para exportar.");
-    
-    const columnasVisibles = columnasTabla.filter(c => c.visible);
-    
+    if (operacionesOrdenadas.length === 0) return alert("No hay datos para exportar.");
+
+    // ✅ MODIFICADO: usa la selección y el ORDEN elegidos en el modal.
+    const columnasVisibles = columnasExport.filter(c => c.visible);
+    if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
+
     await cargarCatalogosSiEsNecesario();
 
-    const datosExcel = operacionesFiltradas.map(op => {
+    const datosExcel = operacionesOrdenadas.map(op => {
       const fila: any = {};
       columnasVisibles.forEach(col => {
         let val: any = '-';
         switch (col.id) {
           case 'ref': val = op.ref || op.id?.substring(0,6) || ''; break;
-          case 'fechaServicio': val = op.fechaServicio || ''; break;
+          case 'fechaServicio': val = (op._fechaISO != null ? op._fechaISO : normalizarFechaServicioISO(op.fechaServicio)) || op.fechaServicio || ''; break;
           case 'fechaCita': val = formatearFechaHora(op.fechaCita); break;
           case 'tipoOperacion': val = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre); break;
           case 'status': val = mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre); break; 
@@ -1366,7 +1683,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           case 'cliente': val = mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente); break;
           case 'convenioTarifa': val = obtenerNombreConvenioCliente(op.convenio, op.convenioNombre); break;
           case 'refCliente': val = op.refCliente || ''; break;
-          case 'facturadoEnCobrar': val = mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre); break;
+          case 'facturadoEnCobrar': val = normalizarMoneda(mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)); break;
           case 'montoConvenioCliente': val = Number(op.montoConvenioCliente) || 0; break;
           case 'cargosAdicionales': val = Number(op.cargosAdicionales) || 0; break;
           case 'subtotal': val = Number(op.subtotalCliente) || 0; break;
@@ -1381,8 +1698,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           case 'unidadProveedor': val = mostrarDatoMapeado(op.unidadProveedor, 'unidades_proveedor', 'numeroUnidad', op.unidadProveedorNombre); break;
           case 'operadorProveedor': val = mostrarDatoMapeado(op.operadorProveedor, 'proveedores_unidad', 'nombre', op.operadorProveedorNombre); break;
           case 'convenioProv': val = obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre); break;
-          case 'facturadoEnUnidad': val = mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre); break;
-          case 'monedaConvenioProv': val = mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre); break;
+          case 'facturadoEnUnidad': val = normalizarMoneda(mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre)); break;
+          case 'monedaConvenioProv': val = normalizarMoneda(mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre)); break;
           case 'totalAPagarProv': val = Number(op.totalAPagarProv) || 0; break;
           case 'cargosAdicionalesProv': val = Number(op.cargosAdicionalesProv) || 0; break;
           case 'subtotalProv': val = Number(op.subtotalProv) || 0; break;
@@ -1425,6 +1742,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Completados');
     XLSX.writeFile(workbook, `Servicios_Completados_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+    // ✅ NUEVO: recuerda la selección/orden de columnas de ESTE usuario y cierra el modal.
+    try { localStorage.setItem(claveExportGuardado(), JSON.stringify(columnasExport.map(c => ({ id: c.id, visible: c.visible })))); } catch { /* ignorar */ }
+    setModalExportar(false);
   };
 
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
@@ -1443,9 +1764,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
-  const cardResumenStyle: React.CSSProperties = { backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '4px' };
-  const cardLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase' };
-  const cardValueStyle: React.CSSProperties = { fontSize: '1.6rem', fontWeight: 'bold', lineHeight: 1.1 };
+  // ✅ MODIFICADO: tarjetas de resumen COMPACTAS (menos alto, tipografía menor,
+  //   más tarjetas por fila) para que el resumen no domine la pantalla.
+  const cardResumenStyle: React.CSSProperties = { backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 };
+  const cardLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.62rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+  const cardValueStyle: React.CSSProperties = { fontSize: '1.05rem', fontWeight: 'bold', lineHeight: 1.15 };
 
   return (
     <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
@@ -1467,18 +1790,33 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           ✓ Servicios Completados
         </h1>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-          <div style={{ flex: '1 1 180px' }}>
+          {/* ✅ NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
+              pantalla, con fondo oscurecido; se abre con el botón Filtros. */}
+          {drawerFiltrosAbierto && (
+            <>
+              <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1200, animation: 'fadeIn 0.2s ease' }} />
+              <aside style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92vw', backgroundColor: '#161b22', borderLeft: '1px solid #30363d', zIndex: 1201, display: 'flex', flexDirection: 'column', boxShadow: '-10px 0 30px rgba(0, 0, 0, 0.55)', animation: 'fadeIn 0.2s ease' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                  <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>Filtros</span>
+                </div>
+                <button onClick={() => setDrawerFiltrosAbierto(false)} title="Cerrar filtros" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '4px' }}>✕</button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+          <div style={{ width: '100%' }}>
             <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO ★</label>
-            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
+            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
           </div>
 
-          <div style={{ flex: '1 1 180px' }}>
+          <div style={{ width: '100%' }}>
             <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN ★</label>
-            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
+            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
           </div>
 
-          <div style={{ flex: '1 1 280px', position: 'relative' }}>
+          <div style={{ width: '100%', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
 
             {filterCliente ? (
@@ -1549,7 +1887,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
           </div>
 
-          <div style={{ flex: '1 1 240px', position: 'relative' }}>
+          <div style={{ width: '100%', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE (opcional)</label>
 
             {filterRemolque ? (
@@ -1620,7 +1958,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
 
           {/* ✅ NUEVO: filtro por OPERADOR (búsqueda con sugerencias) */}
-          <div style={{ flex: '1 1 240px', position: 'relative' }}>
+          <div style={{ width: '100%', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>OPERADOR (opcional)</label>
 
             {filterOperador ? (
@@ -1691,7 +2029,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
 
           {/* ✅ NUEVO: filtro por TIPO DE OPERACIÓN (Transfer / Logística / Fletes) */}
-          <div style={{ flex: '1 1 180px' }}>
+          <div style={{ width: '100%' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>TIPO DE OPERACIÓN (opcional)</label>
             <select
               value={filterTipoOperacion}
@@ -1705,30 +2043,145 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             </select>
           </div>
 
-          <div style={{ flex: '1 1 200px' }}>
+          <div style={{ width: '100%' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
             <div style={{ position: 'relative' }}>
               <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 36px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
             </div>
           </div>
+              </div>
 
-          <div style={{ display: 'flex', gap: '8px', alignSelf: 'flex-end', marginLeft: 'auto', paddingBottom: '2px' }}>
+              <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', flexShrink: 0 }}>
+                <button
+                  onClick={limpiarFiltrosPanel}
+                  style={{ flex: 1, padding: '11px', backgroundColor: 'transparent', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
+                >
+                  Limpiar
+                </button>
+                <button
+                  onClick={ejecutarBusqueda}
+                  disabled={cargandoOperaciones}
+                  title={(!filterFechaInicio || !filterFechaFin) ? 'Selecciona Fecha Inicio y Fecha Fin para buscar' : 'Buscar con los filtros seleccionados'}
+                  style={{ flex: 2, padding: '11px', backgroundColor: (!filterFechaInicio || !filterFechaFin) ? '#21262d' : '#10b981', color: (!filterFechaInicio || !filterFechaFin) ? '#8b949e' : '#0d1117', border: '1px solid ' + ((!filterFechaInicio || !filterFechaFin) ? '#30363d' : '#10b981'), borderRadius: '6px', cursor: cargandoOperaciones ? 'wait' : 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                  Buscar
+                </button>
+              </div>
+              </aside>
+            </>
+          )}
+
+        {/* ✅ NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
+            Arrastrando ⋮⋮ (o con las flechas) se cambia el orden; el checkbox
+            incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
+        {modalExportar && (
+          <>
+            <div onClick={() => setModalExportar(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1300, animation: 'fadeIn 0.2s ease' }} />
+            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '480px', maxWidth: '94vw', maxHeight: '86vh', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', zIndex: 1301, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>Exportar a Excel</span>
+                  <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>({columnasExport.filter(c => c.visible).length} columnas)</span>
+                </div>
+                <button onClick={() => setModalExportar(false)} title="Cerrar" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '4px' }}>✕</button>
+              </div>
+
+              <div style={{ padding: '10px 16px', color: '#8b949e', fontSize: '0.78rem', borderBottom: '1px solid #21262d', flexShrink: 0 }}>
+                Arrastra <span style={{ color: '#c9d1d9' }}>⋮⋮</span> o usa las flechas para cambiar el orden. Marca las columnas que quieres incluir.
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+                {columnasExport.map((c, idx) => (
+                  <div
+                    key={c.id}
+                    draggable
+                    onDragStart={() => { dragExportIdx.current = idx; }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => soltarColumnaExport(idx)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', marginBottom: '4px', backgroundColor: c.visible ? '#0d1117' : 'rgba(13, 17, 23, 0.5)', border: '1px solid #21262d', borderRadius: '6px', cursor: 'grab', opacity: c.visible ? 1 : 0.55 }}
+                  >
+                    <span title="Arrastrar para reordenar" style={{ color: '#484f58', fontSize: '0.85rem', letterSpacing: '-2px', userSelect: 'none' }}>⋮⋮</span>
+                    <input
+                      type="checkbox"
+                      checked={c.visible}
+                      onChange={() => setColumnasExport(prev => prev.map((x, i) => (i === idx ? { ...x, visible: !x.visible } : x)))}
+                      style={{ accentColor: '#10b981', cursor: 'pointer', width: '15px', height: '15px', flexShrink: 0 }}
+                    />
+                    <span style={{ flex: 1, color: c.visible ? '#c9d1d9' : '#8b949e', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
+                    <button onClick={() => moverColumnaExport(idx, -1)} disabled={idx === 0} title="Subir" style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '4px', color: idx === 0 ? '#30363d' : '#8b949e', cursor: idx === 0 ? 'default' : 'pointer', padding: '2px 7px', fontSize: '0.7rem' }}>▲</button>
+                    <button onClick={() => moverColumnaExport(idx, 1)} disabled={idx === columnasExport.length - 1} title="Bajar" style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '4px', color: idx === columnasExport.length - 1 ? '#30363d' : '#8b949e', cursor: idx === columnasExport.length - 1 ? 'default' : 'pointer', padding: '2px 7px', fontSize: '0.7rem' }}>▼</button>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+                <button
+                  onClick={() => setColumnasExport(columnasExportPorDefecto())}
+                  title="Restablecer con las columnas visibles de la tabla, en su orden actual"
+                  style={{ padding: '9px 12px', backgroundColor: 'transparent', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
+                >
+                  Columnas de la tabla
+                </button>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => setModalExportar(false)} style={{ padding: '9px 14px', backgroundColor: 'transparent', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>Cancelar</button>
+                <button
+                  onClick={exportarExcel}
+                  style={{ padding: '9px 16px', backgroundColor: '#10b981', color: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  Exportar
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+
+        {/* ✅ NUEVO: barra compacta — los filtros viven en un panel lateral
+            izquierdo; aquí solo queda el botón Filtros, el resumen de la última
+            búsqueda y las acciones de la tabla. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+          <button
+            onClick={() => setDrawerFiltrosAbierto(v => !v)}
+            title={drawerFiltrosAbierto ? 'Ocultar el panel de filtros' : 'Mostrar el panel de filtros'}
+            style={{ padding: '9px 16px', backgroundColor: drawerFiltrosAbierto ? '#10b981' : 'transparent', color: drawerFiltrosAbierto ? '#0d1117' : '#10b981', border: '1px solid #10b981', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, fontSize: '0.85rem' }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            Filtros
+            {contadorFiltrosActivos > 0 && (
+              <span style={{ backgroundColor: '#0d1117', color: '#10b981', borderRadius: '999px', padding: '1px 8px', fontSize: '0.75rem', fontWeight: 'bold' }}>{contadorFiltrosActivos}</span>
+            )}
+          </button>
+
+          {filtrosAplicados ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', flex: 1, minWidth: '200px' }}>
+              {resumenFiltrosChips.map((chip, i) => (
+                <span key={`chip_${i}`} style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.35)', color: '#7ee2b8', padding: '4px 10px', borderRadius: '999px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{chip}</span>
+              ))}
+            </div>
+          ) : (
+            <span style={{ color: '#8b949e', fontSize: '0.82rem', flex: 1, minWidth: '200px' }}>Presiona Filtros para definir el rango de fechas y buscar.</span>
+          )}
+
+          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', flexShrink: 0 }}>
             <button className="btn btn-outline" onClick={refrescarDatos} disabled={cargandoOperaciones} style={{ padding: '10px 12px', cursor: cargandoOperaciones ? 'wait' : 'pointer' }} title="Actualizar (recargar desde la base de datos)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
             </button>
             <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ padding: '10px 12px' }} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
-            <button className="btn btn-outline" onClick={exportarExcel} style={{ padding: '10px 12px' }} title="Exportar a Excel">
+            <button className="btn btn-outline" onClick={abrirModalExportar} style={{ padding: '10px 12px' }} title="Exportar a Excel (elegir y ordenar columnas)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
         </div>
 
-        {(filterFechaInicio && filterFechaFin) && (
-          <div style={{ marginBottom: '20px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
+
+        {filtrosAplicados && (
+          <div style={{ marginBottom: '14px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))', gap: '8px' }}>
               <div style={cardResumenStyle}>
                 <span style={cardLabelStyle}>Servicios (rango)</span>
                 <span style={{ ...cardValueStyle, color: '#f0f6fc' }}>{resumenServicios.total}</span>
@@ -1770,65 +2223,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               </div>
             </div>
 
-            <div style={{ marginTop: '14px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px' }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
-                <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.9rem' }}>Totales exactos (servidor)</span>
-                <span style={{ color: '#8b949e', fontSize: '0.78rem', flex: '1 1 200px' }}>
-                  Cuenta TODA la base sin importar el límite de descarga. No descarga operaciones.
-                </span>
-                <button
-                  onClick={() => calcularTotalesServidor('rango')}
-                  disabled={conteosServidor.cargando}
-                  style={{ padding: '8px 14px', backgroundColor: conteosServidor.cargando ? '#0d1117' : '#238636', color: conteosServidor.cargando ? '#484f58' : '#fff', border: 'none', borderRadius: '6px', cursor: conteosServidor.cargando ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.82rem' }}
-                  title="Cuenta exactamente los completados del rango/cliente seleccionado"
-                >
-                  Σ Total del rango
-                </button>
-                <button
-                  onClick={() => calcularTotalesServidor('global')}
-                  disabled={conteosServidor.cargando}
-                  style={{ padding: '8px 14px', backgroundColor: conteosServidor.cargando ? '#0d1117' : '#1f6feb', color: conteosServidor.cargando ? '#484f58' : '#fff', border: 'none', borderRadius: '6px', cursor: conteosServidor.cargando ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.82rem' }}
-                  title="Cuenta TODA la base de completados, sin fechas ni cliente"
-                >
-                  Σ Total global (sin filtros)
-                </button>
-              </div>
-
-              {conteosServidor.cargando && (
-                <div style={{ marginTop: '12px', color: '#8b949e', fontSize: '0.85rem' }}>Contando en el servidor...</div>
-              )}
-
-              {conteosServidor.error && !conteosServidor.cargando && (
-                <div style={{ marginTop: '12px', color: '#f85149', fontSize: '0.82rem' }}>{conteosServidor.error}</div>
-              )}
-
-              {!conteosServidor.cargando && !conteosServidor.error && conteosServidor.total !== null && (
-                <div style={{ marginTop: '12px' }}>
-                  <div style={{ color: '#8b949e', fontSize: '0.75rem', marginBottom: '8px' }}>
-                    Resultado: <span style={{ color: '#fb923c', fontWeight: 'bold' }}>{conteosServidor.alcance === 'global' ? 'TODA la base (sin filtros)' : 'Rango / cliente seleccionado'}</span>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-                    <div style={cardResumenStyle}>
-                      <span style={cardLabelStyle}>Total (real)</span>
-                      <span style={{ ...cardValueStyle, color: '#f0f6fc' }}>{conteosServidor.total}</span>
-                    </div>
-                    <div style={cardResumenStyle}>
-                      <span style={cardLabelStyle}>Completados (real)</span>
-                      <span style={{ ...cardValueStyle, color: '#10b981' }}>{conteosServidor.completados}</span>
-                    </div>
-                    <div style={cardResumenStyle}>
-                      <span style={cardLabelStyle}>Falsos (real)</span>
-                      <span style={{ ...cardValueStyle, color: '#f85149' }}>{conteosServidor.falsos !== null ? conteosServidor.falsos : 'N/D'}</span>
-                    </div>
-                  </div>
-                  {conteosServidor.falsos === null && (
-                    <div style={{ marginTop: '8px', color: '#fb923c', fontSize: '0.78rem' }}>
-                      ⚠ No se encontró un status llamado "Falso" en el catálogo, por eso no se separan los falsos. El "Total" sí es exacto.
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
           </div>
         )}
 
@@ -1846,17 +2240,27 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       Acciones
                     </th>
                     {columnasTabla.filter(c => c.visible).map(col => (
-                      <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                      <th
+                        key={`th_${col.id}`}
+                        onClick={() => manejarOrdenColumna(col.id)}
+                        title={ordenColumna === col.id ? (ordenDireccion === 'asc' ? 'Clic: ordenar descendente' : 'Clic: quitar ordenamiento') : 'Clic: ordenar ascendente'}
+                        style={{ padding: '16px', color: ordenColumna === col.id ? '#f0f6fc' : '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', cursor: 'pointer', userSelect: 'none' }}
+                      >
                         {col.label}
+                        {ordenColumna === col.id && (
+                          <span style={{ marginLeft: '6px', color: '#10b981', fontSize: '0.7rem' }}>
+                            {ordenDireccion === 'asc' ? '▲' : '▼'}
+                          </span>
+                        )}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {(!filterFechaInicio || !filterFechaFin) ? (
+                  {!filtrosAplicados ? (
                     <tr>
                       <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e', fontWeight: '500' }}>
-                        Selecciona <strong style={{ color: '#10b981' }}>Fecha Inicio</strong> y <strong style={{ color: '#10b981' }}>Fecha Fin</strong> para buscar las operaciones completadas.
+                        Selecciona <strong style={{ color: '#10b981' }}>Fecha Inicio</strong> y <strong style={{ color: '#10b981' }}>Fecha Fin</strong> y presiona <strong style={{ color: '#10b981' }}>Buscar</strong> para ver las operaciones completadas.
                       </td>
                     </tr>
                   ) : operacionesEnPantalla.length === 0 ? (
@@ -1906,10 +2310,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
           </div>
 
-          {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
+          {operacionesOrdenadas.length > 0 && !cargandoOperaciones && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
-                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones completadas
+                Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones completadas
                 {hayMasOperaciones && <span style={{ color: '#fb923c', marginLeft: '8px' }}>(hay más disponibles)</span>}
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>

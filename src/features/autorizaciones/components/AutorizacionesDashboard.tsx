@@ -23,6 +23,19 @@ import { registrarLog } from '../../../utils/logger';
 
 const REGLA_VACIA: ReglaAut = { requiere: false, roles: [] };
 
+// ✅ NUEVO: resume los campos involucrados en una solicitud para el Historial
+//   de Actividad (en ediciones solo los que realmente cambiaron de valor).
+const camposDeSolicitudLog = (s: SolicitudAut): string => {
+  const claves = s.accion === 'editar'
+    ? Object.keys(s.datosPropuestos || {}).filter(k => String((s.datosAnteriores || {})[k] ?? '') !== String((s.datosPropuestos || {})[k] ?? ''))
+    : Object.keys(s.datosPropuestos || {});
+  if (claves.length === 0) return '';
+  const etiquetas = ETIQUETAS_CAMPO[s.modulo] || {};
+  const visibles = claves.slice(0, 12).map(k => etiquetas[k] || k);
+  const resto = claves.length - visibles.length;
+  return visibles.join(', ') + (resto > 0 ? ` y ${resto} más` : '');
+};
+
 const ETIQUETAS_CAMPO: Record<string, Record<string, string>> = {};
 MODULOS_AUTORIZABLES.forEach(m => {
   ETIQUETAS_CAMPO[m.clave] = {};
@@ -203,7 +216,9 @@ export const AutorizacionesDashboard = () => {
       await updateDoc(doc(db, 'solicitudes_autorizacion', s.id), {
         estado: 'aprobada', resueltaEn: new Date().toISOString(), resueltaPorNombre: usuario?.nombre || 'Admin',
       });
-      await registrarLog('Autorizaciones', 'Aprobación', `Aprobó ${ACCIONES.find(a => a.key === s.accion)?.label || s.accion} en ${s.moduloLabel}${s.referencia ? ` (${s.referencia})` : ''} solicitado por ${s.solicitanteNombre}`);
+      // ✅ HISTORIAL: quién autorizó, qué solicitó quién y qué campos abarcó el cambio.
+      const camposTxtA = camposDeSolicitudLog(s);
+      await registrarLog('Autorizaciones', 'Aprobación', `Aprobó ${ACCIONES.find(a => a.key === s.accion)?.label || s.accion} en ${s.moduloLabel}${s.referencia ? ` (${s.referencia})` : ''} solicitado por ${s.solicitanteNombre}${camposTxtA ? `. Campos del cambio: ${camposTxtA}` : ''}`);
       setSolicitudDetalle(null);
     } catch (e: any) {
       console.error(e);
@@ -220,7 +235,8 @@ export const AutorizacionesDashboard = () => {
       await updateDoc(doc(db, 'solicitudes_autorizacion', s.id), {
         estado: 'rechazada', resueltaEn: new Date().toISOString(), resueltaPorNombre: usuario?.nombre || 'Admin', motivoRechazo: motivo || 'Sin motivo',
       });
-      await registrarLog('Autorizaciones', 'Rechazo', `Rechazó ${ACCIONES.find(a => a.key === s.accion)?.label || s.accion} en ${s.moduloLabel}${s.referencia ? ` (${s.referencia})` : ''} solicitado por ${s.solicitanteNombre}`);
+      const camposTxtR = camposDeSolicitudLog(s);
+      await registrarLog('Autorizaciones', 'Rechazo', `Rechazó ${ACCIONES.find(a => a.key === s.accion)?.label || s.accion} en ${s.moduloLabel}${s.referencia ? ` (${s.referencia})` : ''} solicitado por ${s.solicitanteNombre}${camposTxtR ? `. Campos del cambio: ${camposTxtR}` : ''}. Motivo: ${motivo || 'Sin motivo'}`);
       setSolicitudDetalle(null);
     } catch (e) {
       console.error(e);
