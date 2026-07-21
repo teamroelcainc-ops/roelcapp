@@ -27,6 +27,7 @@ import {
   getDocs,
   getDoc,
   setDoc,
+  updateDoc,
   documentId,
   startAfter,
 } from 'firebase/firestore';
@@ -38,6 +39,7 @@ import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 import { generarConfirmacionTarifaPDF, generarRateProveedorPDF } from './generarDocumentosProveedorPDF';
 import type { ConfirmacionTarifaData, RateProveedorData } from './generarDocumentosProveedorPDF';
 import { getAuth } from 'firebase/auth';
+import { registrarLog } from '../../../utils/logger';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -1523,7 +1525,11 @@ export const FacturacionProveedoresDashboard = () => {
     const monedaConvRaw = mostrarMoneda(op.monedaConvenioProv);
     const monedaConv = monedaConvRaw !== '-' ? monedaConvRaw : monedaFact;
     const limpiar = (v: string) => (v === '-' ? '' : v);
-    setConfirmacionPreview({
+    // ✅ NUEVO: los valores por defecto se calculan igual que siempre, pero si la
+    //   operación ya tiene una confirmación GUARDADA (op.confirmacionTarifa), esa
+    //   manda: así todos los usuarios ven los mismos datos editados.
+    const base = {
+      opId: String(op.id || ''),
       coordinador: nombreCoordinadorActual(),
       referencia: refDeOp(op) || op.numReferencia || String(op.id || ''),
       remolque: limpiar(txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)),
@@ -1553,11 +1559,38 @@ export const FacturacionProveedoresDashboard = () => {
       totalAFacturar: String(m.conv || 0),
       emisorDireccion: 'MAR DE LAS ANTILLAS #947, COL. LA PAZ, C.P. 88290',
       emisorCiudad: 'NUEVO LAREDO, TAMPS',
-    });
+    };
+    const guardada = (op.confirmacionTarifa && typeof op.confirmacionTarifa === 'object') ? op.confirmacionTarifa : null;
+    setConfirmacionPreview(guardada ? { ...base, ...guardada, opId: base.opId } : base);
   };
 
-  const generarPDFDeConfirmacion = () => {
+  // ✅ NUEVO: guarda la confirmación editada en la operación (Firestore) para que
+  //   los demás usuarios vean exactamente los mismos datos al abrirla.
+  const guardarConfirmacion = async (avisar: boolean = true): Promise<boolean> => {
+    if (!confirmacionPreview) return false;
+    const { opId, ...campos } = confirmacionPreview as any;
+    if (!opId) {
+      if (avisar) alert('No se encontró la operación a la que pertenece esta confirmación.');
+      return false;
+    }
+    try {
+      await updateDoc(doc(db, 'operaciones', String(opId)), { confirmacionTarifa: campos });
+      setOperacionesGlobales(prev => prev.map((o: any) => (String(o.id) === String(opId) ? { ...o, confirmacionTarifa: campos } : o)));
+      registrarLog('Facturación Proveedores', 'Edición', `Guardó la Confirmación de Tarifa de ${campos.referencia || opId} (moneda de pago: ${campos.monedaPago || '-'}, total: ${campos.totalAFacturar || '0'})`).catch(() => {});
+      if (avisar) alert('Confirmación de tarifa guardada. Los demás usuarios verán estos datos al abrirla.');
+      return true;
+    } catch (e) {
+      console.error('Error guardando la confirmación de tarifa:', e);
+      alert('No se pudo guardar la confirmación de tarifa. Inténtalo de nuevo.');
+      return false;
+    }
+  };
+
+  const generarPDFDeConfirmacion = async () => {
     if (!confirmacionPreview) return;
+    // ✅ NUEVO: al generar el PDF también se guarda (sin alerta) — el documento
+    //   siempre queda respaldado con lo que se ve en pantalla.
+    await guardarConfirmacion(false);
     const p = confirmacionPreview;
     const data = {
       coordinador: p.coordinador || '',
@@ -4115,7 +4148,8 @@ export const FacturacionProveedoresDashboard = () => {
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
               <button onClick={() => setConfirmacionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
-              <button onClick={generarPDFDeConfirmacion} style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📋 Generar PDF</button>
+              <button onClick={() => guardarConfirmacion(true)} title="Guardar los cambios para que los demás usuarios los vean" style={{ padding: '8px 24px', backgroundColor: 'transparent', color: '#58a6ff', border: '1px solid #58a6ff', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>💾 Guardar</button>
+              <button onClick={generarPDFDeConfirmacion} title="Guarda los cambios y descarga el PDF" style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📋 Generar PDF</button>
             </div>
           </div>
         </div>

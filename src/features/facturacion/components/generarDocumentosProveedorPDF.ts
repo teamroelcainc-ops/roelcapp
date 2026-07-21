@@ -107,6 +107,7 @@ export interface ConfirmacionTarifaData {
   refCliente: string;
   facturadoEn: string;       // Moneda en la que se factura (Pesos / Dólares)
   monedaConvenio: string;    // Moneda del convenio (Pesos / Dólares)
+  monedaPago?: string;       // ✅ Moneda de PAGO: manda en el TOTAL A FACT.
   convenioProv: string;      // Monto convenio
   costosAdic: string;        // Costos adicionales
   subtotalProv: string;      // Subtotal proveedor
@@ -215,7 +216,7 @@ export const generarConfirmacionTarifaPDF = (data: ConfirmacionTarifaData): void
               ${filaMonto('CONVENIO PROV. $', data.convenioProv, data.monedaConvenio, valueBlue)}
               ${filaMonto('COSTOS ADIC. $', data.costosAdic, data.monedaConvenio, valueBlue)}
               ${filaMonto('SUBTOTAL PROV. $', data.subtotalProv, data.monedaConvenio, valueBlue)}
-              ${filaMonto('TOTAL A FACT. $', data.totalAFacturar, data.facturadoEn, valueRed)}
+              ${filaMonto('TOTAL A FACT. $', data.totalAFacturar, data.monedaPago || data.facturadoEn, valueRed)}
             </table>
           </td>
         </tr>
