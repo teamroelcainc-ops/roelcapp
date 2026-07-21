@@ -1670,11 +1670,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   useEffect(() => {
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
     const subtotal = Number(formData.montoConvenioCliente || 0) + Number(formData.cargosAdicionales || 0);
-    const { dol, pes, conv } = desglosarPorMonedas(subtotal, tc, formData.monedaConvenioCliente, formData.facturadoEnCobrar);
+    // ✅ CORREGIDO: si la moneda del convenio quedó VACÍA (el detalle no se pudo
+    //   cargar al capturar), se toma la del convenio elegido y, en último término,
+    //   USD (el estándar de los convenios). Antes, con la moneda vacía y la
+    //   facturación en Pesos, el desglose caía al caso "pesos" y NO multiplicaba
+    //   por el TC: "Pesos (Cliente)" y "Conversión Cliente (MXN)" quedaban con el
+    //   monto en dólares sin convertir.
+    let monConvCli: any = formData.monedaConvenioCliente;
+    if (!monConvCli) {
+      const detConv = listaConveniosCliente.find((c: any) => String(c.id) === String(formData.convenio || ''));
+      monConvCli = detConv?.monedaMaestro || ID_USD;
+    }
+    const { dol, pes, conv } = desglosarPorMonedas(subtotal, tc, monConvCli, formData.facturadoEnCobrar);
     const utilidad = conv - Number(formData.conversionProv || 0); 
     setFormData(prev => ({ ...prev, subtotalCliente: subtotal, dolaresCliente: dol, pesosCliente: pes, conversionCliente: conv, utilidadEstimada: utilidad }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.facturadoEnCobrar, formData.monedaConvenioCliente, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado, listaMonedasLocal]);
+  }, [formData.facturadoEnCobrar, formData.monedaConvenioCliente, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado, formData.convenio, listaConveniosCliente, listaMonedasLocal]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
