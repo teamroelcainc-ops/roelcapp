@@ -284,7 +284,6 @@ export interface RateProveedorData {
 
 export const generarRateProveedorPDF = (data: RateProveedorData): void => {
   const logoSrc = resolverLogo(data.logoBase64);
-  const monedaCol = (data.moneda || 'PESOS').toUpperCase();
 
   const th = `border: 1px solid ${BORDE}; padding: 7px 4px; font-size: 10px; font-weight: bold; text-align: center; background-color: ${GRISCL}; color: ${TINTA};`;
   const td = `border-left: 1px solid ${BORDE}; border-right: 1px solid ${BORDE}; padding: 8px 4px; font-size: 10px; text-align: center; vertical-align: top; color: ${TINTA};`;
@@ -388,8 +387,8 @@ export const generarRateProveedorPDF = (data: RateProveedorData): void => {
             <th style="${th} width: 14%;">DESTINO</th>
             <th style="${th} width: 16%;">DESCRIPCION</th>
             <th style="${th} width: 9%;">FACTURA ROELCA</th>
-            <th style="${th} width: 10%;">COBRADO EN ${esc(monedaCol)}</th>
-            <th style="${th} width: 10%;">PROVEEDOR EN ${esc(monedaCol)}</th>
+            <th style="${th} width: 10%;">COBRADO EN PESOS</th>
+            <th style="${th} width: 10%;">PROVEEDOR EN PESOS</th>
             <th style="${th} width: 9%;">UTILIDAD</th>
           </tr>
         </thead>

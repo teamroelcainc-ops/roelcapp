@@ -1691,18 +1691,63 @@ export const FacturacionProveedoresDashboard = () => {
         : ids.map((id) => ({ id }));
 
       // TC sugerido: primer tipoCambioAprobado > 0 entre las operaciones de la factura.
+      // ✅ CORREGIDO: se calcula ANTES de armar las filas para poder usarlo como
+      //   respaldo al convertir a pesos las operaciones que no traen TC propio.
       let tcSugerido = 0;
+      guardadas.forEach((g: any) => {
+        const o = byId.get(String(g.id)) || {};
+        const tcOp0 = Number(o.tipoCambioAprobado) || 0;
+        if (!tcSugerido && tcOp0 > 0) tcSugerido = tcOp0;
+      });
+      const monedaFacturaEsUsd = monedaFacturaMostrar(f).toUpperCase() === 'USD';
 
       const filas = guardadas.map((g: any) => {
         const o = byId.get(String(g.id)) || {};
         const equipoUnidad = txt(o.unidadProveedor, o.unidadNombre, o.unidad);
         const equipo = equipoUnidad !== '-' ? equipoUnidad : txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque);
         const m = o.id ? obtenerMontoOperacion(o) : { subtotal: 0, dol: 0, pes: 0, conv: 0 };
-        const tcOp = Number(o.tipoCambioAprobado) || 0;
-        if (!tcSugerido && tcOp > 0) tcSugerido = tcOp;
+        const tcOp = Number(o.tipoCambioAprobado) || tcSugerido || 0;
         const convenioUsd = Number(m.dol) || 0; // Convenio del proveedor en dólares (0 si la op es en pesos)
-        const proveedorMonto = Number(g.monto) || m.conv || 0;
-        const cobrado = Number(o.conversionCliente) || 0;
+        // ✅ CORREGIDO: el monto del PROVEEDOR siempre en pesos. Si el monto
+        //   capturado en la factura viene en dólares (factura USD), se convierte
+        //   con el TC; si no hay monto capturado se usa la conversión guardada
+        //   de la operación (m.conv, que ya está en pesos).
+        const montoFactura = Number(g.monto) || 0;
+        const proveedorMonto = montoFactura > 0
+          ? (monedaFacturaEsUsd && tcOp > 0 ? montoFactura * tcOp : montoFactura)
+          : (m.conv || ((Number(m.pes) || 0) + ((Number(m.dol) || 0) * (tcOp > 0 ? tcOp : 0))) || 0);
+        // ✅ CORREGIDO (v3): lo COBRADO al cliente siempre en pesos, replicando la
+        //   fórmula del formulario (desglosarPorMonedas) con los CAMPOS PRIMARIOS
+        //   de la operación: subtotalCliente (= monto del convenio + cargos, en la
+        //   moneda del convenio) y monedaConvenioCliente/facturadoEnCobrar. Si el
+        //   convenio del cliente es en dólares se multiplica por el TC; si es en
+        //   pesos se toma tal cual. Los desgloses/conversiones guardados solo se
+        //   usan como respaldo (pueden haberse guardado sin TC).
+        const nombreMonCli = String(o.monedaCobroNombre || '').toUpperCase();
+        const esUSDCli = (id: any) => id === ID_USD;
+        const esMXNCli = (id: any) => id === ID_MXN;
+        const convU = esUSDCli(o.monedaConvenioCliente);
+        const convM = esMXNCli(o.monedaConvenioCliente);
+        const factU = esUSDCli(o.facturadoEnCobrar) || nombreMonCli.includes('USD') || nombreMonCli.includes('DOLAR') || nombreMonCli.includes('DÓLAR');
+        const factM = esMXNCli(o.facturadoEnCobrar) || nombreMonCli.includes('MXN') || nombreMonCli.includes('PESO');
+        const convenioClienteEnUsd = convU || (!convM && factU);
+        const subtotalCli = Number(o.subtotalCliente) || ((Number(o.montoConvenioCliente) || 0) + (Number(o.cargosAdicionales) || 0));
+        const dolCli = Number(o.dolaresCliente) || 0;
+        const pesCli = Number(o.pesosCliente) || 0;
+        const ingresoCliente = Number(o.conversionCliente) || 0;
+        let cobrado = 0;
+        if (subtotalCli > 0 && (!convenioClienteEnUsd || tcOp > 0)) {
+          // Cálculo primario: igual que el formulario, pero con el TC vigente.
+          cobrado = convenioClienteEnUsd ? subtotalCli * tcOp : subtotalCli;
+        } else if (dolCli > 0 || pesCli > 0) {
+          // Respaldo 1: desglose guardado.
+          if (dolCli > 0 && tcOp > 0) cobrado = pesCli + dolCli * tcOp;
+          else if (dolCli === 0) cobrado = pesCli;
+          else cobrado = ingresoCliente || (pesCli + dolCli);
+        } else {
+          // Respaldo 2 (registros muy viejos): conversión guardada + detección de moneda.
+          cobrado = factU && !factM && tcOp > 0 ? ingresoCliente * tcOp : ingresoCliente;
+        }
         const fc = o.id ? getFacturaClienteDeOp(o) : null;
         const org = txt(o.origenNombre, o.origen);
         const dst = txt(o.destinoNombre, o.destino);
@@ -4198,9 +4243,9 @@ export const FacturacionProveedoresDashboard = () => {
                       <th style={{ padding: '8px', textAlign: 'left' }}>DESTINO</th>
                       <th style={{ padding: '8px', textAlign: 'left' }}>DESCRIPCIÓN</th>
                       <th style={{ padding: '8px', textAlign: 'left' }}>FACTURA ROELCA</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>COBRADO</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>COBRADO (PESOS)</th>
                       <th style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>CONVENIO USD</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>PROVEEDOR</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>PROVEEDOR (PESOS)</th>
                       <th style={{ padding: '8px', textAlign: 'right' }}>UTILIDAD</th>
                       <th style={{ padding: '8px' }}></th>
                     </tr>
