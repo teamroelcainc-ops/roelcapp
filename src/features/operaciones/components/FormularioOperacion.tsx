@@ -38,6 +38,21 @@ const describirCambiosLog = (nuevo: any, anterior: any, etiquetas: Record<string
   return visibles.join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
 };
 
+// ✅ NUEVO (auditoría NO editable): lista completa de cambios "campo: viejo → nuevo"
+//   que se guarda DENTRO de la operación (historialEdiciones) para saber cuántas
+//   veces se editó una referencia, quién lo hizo y qué cambió exactamente.
+const listaCambiosAuditoria = (nuevo: any, anterior: any, etiquetas: Record<string, string> = {}): string[] => {
+  const cmp = (x: any) => (typeof x === 'object' && x !== null ? JSON.stringify(x) : String(x ?? ''));
+  const cambios: string[] = [];
+  Object.keys(nuevo || {}).forEach((k) => {
+    if (k === 'historialEdiciones' || k === 'creadoPor' || k === 'creadoEn') return;
+    const a = anterior ? anterior[k] : undefined;
+    if (cmp(a) === cmp(nuevo[k])) return;
+    cambios.push(`${etiquetas[k] || k}: "${truncarValorLog(a)}" → "${truncarValorLog(nuevo[k])}"`);
+  });
+  return cambios.slice(0, 40);
+};
+
 const describirCamposCapturadosLog = (datos: any, etiquetas: Record<string, string> = {}): string => {
   const claves = Object.keys(datos || {}).filter((k) => {
     const v = datos[k];
@@ -2019,6 +2034,45 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (evalAut.requiere) {
         alert(`🔒 No tienes permiso para realizar esta modificación:\n\n${evalAut.motivos.join('\n')}\n\nRevierte esos campos para poder guardar el resto de los cambios.`);
         return;
+      }
+
+      // ── ✅ NUEVO (auditoría NO editable): quién y a qué hora creó la
+      //    referencia, y bitácora embebida de cada edición con sus cambios.
+      //    Estos campos NO existen en el formulario: en cada edición se
+      //    preservan desde el registro original, por lo que nadie puede
+      //    modificarlos desde la interfaz. ──
+      // El nombre se resuelve desde el perfil del usuario (colección `usuarios`),
+      //   nunca el UID: si lo que trae la autorización es el UID, se busca el
+      //   nombre real o el correo como respaldo.
+      let nombreAuditoria = '';
+      try {
+        const uidA = auth.currentUser?.uid || '';
+        const candidatos = [(usuarioA as any)?.nombre, (usuarioA as any)?.nombreCompleto, (usuarioA as any)?.email];
+        nombreAuditoria = String(candidatos.find((v: any) => v && String(v).trim() && String(v).trim() !== uidA) || '');
+        if (!nombreAuditoria && uidA) {
+          const snapU = await getDoc(doc(db, 'usuarios', uidA));
+          const dU: any = snapU.exists() ? snapU.data() : {};
+          nombreAuditoria = String(dU.nombre || dU.nombreCompleto || dU.displayName || dU.email || '');
+        }
+        if (!nombreAuditoria) nombreAuditoria = String(auth.currentUser?.displayName || auth.currentUser?.email || 'Desconocido');
+      } catch {
+        nombreAuditoria = String(auth.currentUser?.displayName || auth.currentUser?.email || 'Desconocido');
+      }
+      const ahoraAuditoria = new Date().toISOString();
+      if (initialData) {
+        const cambiosAud = listaCambiosAuditoria(operacionData, initialData as any, etiquetasCamposAut);
+        (operacionData as any).creadoPor = (initialData as any).creadoPor || '';
+        (operacionData as any).creadoEn = (initialData as any).creadoEn || '';
+        if (cambiosAud.length > 0) {
+          (operacionData as any).historialEdiciones = [
+            ...((Array.isArray((initialData as any).historialEdiciones) ? (initialData as any).historialEdiciones : [])),
+            { fecha: ahoraAuditoria, usuario: nombreAuditoria, cambios: cambiosAud },
+          ];
+        }
+      } else {
+        (operacionData as any).creadoPor = nombreAuditoria;
+        (operacionData as any).creadoEn = ahoraAuditoria;
+        (operacionData as any).historialEdiciones = [];
       }
 
       let idGuardado = '';

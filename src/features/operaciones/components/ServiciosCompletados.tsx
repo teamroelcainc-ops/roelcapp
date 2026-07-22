@@ -12,6 +12,15 @@ import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 
+// ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
+const fmtFechaAuditoria = (iso: any): string => {
+  try {
+    const d = new Date(String(iso));
+    if (isNaN(d.getTime())) return String(iso || '');
+    return d.toLocaleString('es-MX', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch { return String(iso || ''); }
+};
+
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
 
@@ -262,6 +271,28 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
+  // ✅ NUEVO: modal de auditoría de la referencia (solo lectura).
+  const [mostrarAuditoria, setMostrarAuditoria] = useState(false);
+  // ✅ NUEVO: mapa uid → nombre para mostrar SIEMPRE el nombre del usuario en la
+  //   auditoría (las referencias viejas guardaron el UID; aquí se traduce).
+  const [nombresUsuarios, setNombresUsuarios] = useState<Record<string, string>>({});
+  const cargarNombresAuditoria = async () => {
+    if (Object.keys(nombresUsuarios).length > 0) return;
+    try {
+      const snapU = await getDocs(collection(db, 'usuarios'));
+      const mapa: Record<string, string> = {};
+      snapU.docs.forEach((d: any) => {
+        const u: any = d.data() || {};
+        mapa[d.id] = String(u.nombre || u.email || d.id);
+      });
+      setNombresUsuarios(mapa);
+    } catch (e) { console.error('No se pudieron cargar los nombres de usuarios:', e); }
+  };
+  const nombreAuditor = (v: any, porDefecto: string = 'Desconocido'): string => {
+    const t = String(v || '').trim();
+    if (!t) return porDefecto;
+    return nombresUsuarios[t] || t;
+  };
 
   const [modalHorarios, setModalHorarios] = useState<'cerrado' | 'registrar' | 'historial'>('cerrado');
   const [historialList, setHistorialList] = useState<any[]>([]);
@@ -2898,6 +2929,56 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 </div>
               )}
 
+
+              {/* ✅ Auditoría de la referencia: botón que abre el detalle en un modal */}
+              <div style={{ margin: '24px 24px 12px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                  🕓 Ver auditoría
+                  <span style={{ backgroundColor: '#f59e0b', color: '#0d1117', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem', fontWeight: 'bold' }}>{(operacionViendo.historialEdiciones || []).length}</span>
+                </button>
+              </div>
+
+              {/* ✅ Modal de auditoría (solo lectura) */}
+              {mostrarAuditoria && (
+                <div onClick={() => setMostrarAuditoria(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 1450, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
+                  <div onClick={(e) => e.stopPropagation()} style={{ width: '620px', maxWidth: '94%', maxHeight: '82vh', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #30363d' }}>
+                      <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>🕓 Auditoría de la referencia <span style={{ color: '#D84315', fontSize: '0.85rem', marginLeft: '8px' }}>{operacionViendo.ref || ''}</span></h3>
+                      <button onClick={() => setMostrarAuditoria(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+                    </div>
+                    <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Creación</span>
+                        <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>
+                          Creada por <b style={{ color: '#58a6ff' }}>{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
+                          {operacionViendo.creadoEn ? <> el <b style={{ color: '#c9d1d9' }}>{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: '#8b949e', fontSize: '0.82rem', fontWeight: 'bold' }}>EDICIONES REGISTRADAS:</span>
+                        <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{(operacionViendo.historialEdiciones || []).length}</span>
+                      </div>
+                      {(operacionViendo.historialEdiciones || []).slice().reverse().map((h: any, i: number) => (
+                        <details key={i} open={i === 0} style={{ border: '1px solid #21262d', borderRadius: '8px', padding: '10px 14px', backgroundColor: '#010409' }}>
+                          <summary style={{ cursor: 'pointer', color: '#8b949e', fontSize: '0.85rem' }}>
+                            <b style={{ color: '#c9d1d9' }}>{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b style={{ color: '#f59e0b' }}>{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
+                          </summary>
+                          <ul style={{ margin: '10px 0 2px 18px', padding: 0, color: '#8b949e', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            {(h.cambios || []).map((c: any, j: number) => (<li key={j}>{String(c)}</li>))}
+                          </ul>
+                        </details>
+                      ))}
+                      {(operacionViendo.historialEdiciones || []).length === 0 && (
+                        <span style={{ color: '#6e7681', fontSize: '0.85rem' }}>Sin ediciones desde su creación.</span>
+                      )}
+                    </div>
+                    <div style={{ padding: '12px 20px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end' }}>
+                      <button onClick={() => setMostrarAuditoria(false)} style={{ padding: '9px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="form-actions detail-actions" style={{ padding: '16px 32px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>

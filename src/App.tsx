@@ -302,8 +302,31 @@ function ResumenDelDia() {
     setModalDieselAbierto(true);
     if (empresasDiesel.length === 0) {
       try {
-        const snap = await getDocs(collection(db, 'empresas'));
-        setEmpresasDiesel(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''))));
+        // ✅ CORREGIDO: solo PROVEEDORES DE DIESEL (tipos de empresa/servicio que
+        //   mencionen diesel o combustible), igual que el formulario del catálogo.
+        const [snap, tipoEmpSnap, tipoServSnap] = await Promise.all([
+          getDocs(collection(db, 'empresas')),
+          getDocs(collection(db, 'catalogo_tipo_empresa')),
+          getDocs(collection(db, 'catalogo_tipo_servicio')),
+        ]);
+        const nombresTipo: Record<string, string> = {};
+        tipoEmpSnap.docs.forEach((d: any) => { nombresTipo[d.id] = String((d.data() as any).nombre || ''); });
+        tipoServSnap.docs.forEach((d: any) => { nombresTipo[d.id] = String((d.data() as any).nombre || ''); });
+        const nombreDeTipo = (item: any): string => {
+          if (!item) return '';
+          if (typeof item === 'object') return String(item.nombre || item.tipo || nombresTipo[item.id] || '');
+          return String(nombresTipo[String(item)] || item);
+        };
+        const todas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+        let lista = todas.filter((emp: any) => {
+          const etiquetas = [
+            ...(Array.isArray(emp.tiposEmpresa) ? emp.tiposEmpresa : []),
+            ...(Array.isArray(emp.tiposServicio) ? emp.tiposServicio : []),
+          ].map(nombreDeTipo).join(' | ').toLowerCase();
+          return etiquetas.includes('diesel') || etiquetas.includes('combustible');
+        });
+        if (lista.length === 0) lista = todas; // respaldo: sin tipo asignado aún
+        setEmpresasDiesel(lista.sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' })));
       } catch (e) { console.error('[Resumen del día] empresas:', e); }
     }
   };
