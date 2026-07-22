@@ -263,8 +263,9 @@ export interface RateProveedorFila {
   destino: string;
   descripcion: string;
   facturaRoelca: string;
-  cobrado: number;     // Lo que Roelca cobró al cliente (en la moneda del rate)
-  proveedor: number;   // Lo que se paga al proveedor (en la moneda del rate)
+  cobrado: number;     // Lo que Roelca cobró al cliente (siempre en pesos)
+  subtotalProv?: number; // Subtotal del proveedor (convenio + costos, en la moneda del convenio)
+  proveedor: number;   // Conversión a pesos de lo que se paga al proveedor
 }
 
 export interface RateProveedorData {
@@ -295,11 +296,13 @@ export const generarRateProveedorPDF = (data: RateProveedorData): void => {
     </tr></table>`;
 
   let totalCobrado = 0, totalProveedor = 0, totalUtilidad = 0;
+  let totalSubtotalProv = 0;
   const filasHtml = (data.filas || []).map((r) => {
     const cobrado = Number(r.cobrado) || 0;
+    const subtotalProv = Number(r.subtotalProv) || 0;
     const proveedor = Number(r.proveedor) || 0;
     const utilidad = cobrado - proveedor;
-    totalCobrado += cobrado; totalProveedor += proveedor; totalUtilidad += utilidad;
+    totalCobrado += cobrado; totalSubtotalProv += subtotalProv; totalProveedor += proveedor; totalUtilidad += utilidad;
     return `
     <tr>
       <td style="${td}">${esc(r.ref)}</td>
@@ -309,13 +312,14 @@ export const generarRateProveedorPDF = (data: RateProveedorData): void => {
       <td style="${td}">${esc(r.descripcion)}</td>
       <td style="${td}">${esc(r.facturaRoelca)}</td>
       <td style="${td}">${celdaMonto(cobrado)}</td>
+      <td style="${td}">${celdaMonto(subtotalProv)}</td>
       <td style="${td}">${celdaMonto(proveedor)}</td>
       <td style="${td} ${utilidad < 0 ? `color: ${ROJO}; font-weight: bold;` : ''}">${celdaMonto(utilidad)}</td>
     </tr>`;
   }).join('');
 
   const filasVacias = (data.filas || []).length === 0
-    ? `<tr><td colspan="9" style="${td} padding: 16px;">No hay servicios registrados.</td></tr>`
+    ? `<tr><td colspan="10" style="${td} padding: 16px;">No hay servicios registrados.</td></tr>`
     : '';
 
   const htmlTemplate = `
@@ -383,13 +387,14 @@ export const generarRateProveedorPDF = (data: RateProveedorData): void => {
           <tr>
             <th style="${th} width: 10%;">REF#</th>
             <th style="${th} width: 8%;">EQ.</th>
-            <th style="${th} width: 14%;">ORIGEN</th>
-            <th style="${th} width: 14%;">DESTINO</th>
-            <th style="${th} width: 16%;">DESCRIPCION</th>
-            <th style="${th} width: 9%;">FACTURA ROELCA</th>
-            <th style="${th} width: 10%;">COBRADO EN PESOS</th>
-            <th style="${th} width: 10%;">PROVEEDOR EN PESOS</th>
-            <th style="${th} width: 9%;">UTILIDAD</th>
+            <th style="${th} width: 12%;">ORIGEN</th>
+            <th style="${th} width: 12%;">DESTINO</th>
+            <th style="${th} width: 13%;">DESCRIPCION</th>
+            <th style="${th} width: 8%;">FACTURA ROELCA</th>
+            <th style="${th} width: 9%;">COBRADO EN PESOS</th>
+            <th style="${th} width: 9%;">SUBTOTAL PROV.</th>
+            <th style="${th} width: 9%;">CONVERSION A PESOS</th>
+            <th style="${th} width: 10%;">UTILIDAD</th>
           </tr>
         </thead>
         <tbody>
@@ -404,11 +409,12 @@ export const generarRateProveedorPDF = (data: RateProveedorData): void => {
             <td colspan="5" style="border: 1px solid ${BORDE}; background-color: ${GRISCL}; font-weight: bold; text-align: center; padding: 6px 4px; font-size: 10px;">OBSERVACIONES${data.observaciones ? `: <span style="font-weight: normal;">${esc(data.observaciones)}</span>` : ''}</td>
             <td style="border: 1px solid ${BORDE}; text-align: center; padding: 6px 4px; font-size: 10px;">TOTAL</td>
             <td style="border: 1px solid ${BORDE}; padding: 6px 0; font-weight: bold;">${celdaMonto(totalCobrado)}</td>
+            <td style="border: 1px solid ${BORDE}; padding: 6px 0; font-weight: bold;">${celdaMonto(totalSubtotalProv)}</td>
             <td style="border: 1px solid ${BORDE}; padding: 6px 0; font-weight: bold;">${celdaMonto(totalProveedor)}</td>
             <td style="border: 1px solid ${BORDE}; padding: 6px 4px; text-align: right; font-weight: bold; font-size: 10px; ${totalUtilidad < 0 ? `color: ${ROJO};` : ''}">${num2(totalUtilidad)}</td>
           </tr>
           <tr>
-            <td colspan="9" style="border: 1px solid ${BORDE}; text-align: center; font-weight: bold; font-size: 16px; padding: 10px 0;">GRACIAS POR USAR TRANSPORTES ROELCA</td>
+            <td colspan="10" style="border: 1px solid ${BORDE}; text-align: center; font-weight: bold; font-size: 16px; padding: 10px 0;">GRACIAS POR USAR TRANSPORTES ROELCA</td>
           </tr>
         </tfoot>
       </table>

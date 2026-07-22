@@ -1677,10 +1677,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   useEffect(() => {
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 
     const subtotal = Number(formData.totalAPagarProv || 0) + Number(formData.cargosAdicionalesProv || 0);
-    const { dol, pes, conv } = desglosarPorMonedas(subtotal, tc, formData.monedaConvenioProv, formData.facturadoEnUnidad);
+    // ✅ CORREGIDO: si la moneda del convenio del PROVEEDOR quedó VACÍA, se toma
+    //   la del convenio elegido y, en último término, USD (igual que el lado del
+    //   cliente). Antes, con la moneda vacía y el pago facturado en Pesos, el
+    //   desglose caía al caso "pesos" y NO multiplicaba por el TC: "Pesos (Prov)"
+    //   y "Conversión (MXN)" quedaban con el monto en dólares sin convertir.
+    let monConvProv: any = formData.monedaConvenioProv;
+    if (!monConvProv) {
+      const detConvProv = listaConveniosProveedor.find((c: any) => String(c.id) === String(formData.convenioProveedor || ''));
+      monConvProv = detConvProv?.monedaBase || ID_USD;
+    }
+    const { dol, pes, conv } = desglosarPorMonedas(subtotal, tc, monConvProv, formData.facturadoEnUnidad);
     setFormData(prev => ({ ...prev, subtotalProv: subtotal, dolaresProv: dol, pesosProv: pes, conversionProv: conv }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formData.facturadoEnUnidad, formData.monedaConvenioProv, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, listaMonedasLocal]);
+  }, [formData.facturadoEnUnidad, formData.monedaConvenioProv, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, formData.convenioProveedor, listaConveniosProveedor, listaMonedasLocal]);
 
   useEffect(() => {
     const tc = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0; 

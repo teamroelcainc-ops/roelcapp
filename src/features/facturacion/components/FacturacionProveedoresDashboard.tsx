@@ -1711,17 +1711,27 @@ export const FacturacionProveedoresDashboard = () => {
         const equipo = equipoUnidad !== '-' ? equipoUnidad : txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque);
         const m = o.id ? obtenerMontoOperacion(o) : { subtotal: 0, dol: 0, pes: 0, conv: 0 };
         const tcOp = Number(o.tipoCambioAprobado) || tcSugerido || 0;
-        const convenioUsd = Number(m.dol) || 0; // Convenio del proveedor en dólares (0 si la op es en pesos)
-        // ✅ CORREGIDO (v4): el Rate coloca lo que esté en "Conversión Proveedor
-        //   (MXN)" de la operación (m.conv). Si no existe, usa el monto capturado
-        //   en la factura (convertido si la factura es USD) y, en último término,
-        //   recalcula con el desglose pesos + dólares × TC.
+        // ✅ CORREGIDO (v5): el Rate coloca lo que esté en "Conversión Proveedor
+        //   (MXN)" de la operación (m.conv) — pero si detecta el caso del bug
+        //   (convenio del proveedor en dólares o con la moneda vacía, pagado en
+        //   Pesos, y la conversión guardada igual al subtotal sin convertir), la
+        //   recalcula aquí con subtotal × TC, igual que el lado del cliente.
         const montoFactura = Number(g.monto) || 0;
-        const proveedorMonto = (m.conv || 0) > 0
-          ? m.conv
-          : (montoFactura > 0
-              ? (monedaFacturaEsUsd && tcOp > 0 ? montoFactura * tcOp : montoFactura)
-              : (((Number(m.pes) || 0) + ((Number(m.dol) || 0) * (tcOp > 0 ? tcOp : 0))) || 0));
+        const nombreMonProv = String(o.monedaUnidadNombre || '').toUpperCase();
+        const convUProv = o.monedaConvenioProv === ID_USD;
+        const convMProv = o.monedaConvenioProv === ID_MXN;
+        const factUProv = o.facturadoEnUnidad === ID_USD || nombreMonProv.includes('USD') || nombreMonProv.includes('DOLAR') || nombreMonProv.includes('DÓLAR');
+        const factMProv = o.facturadoEnUnidad === ID_MXN || nombreMonProv.includes('MXN') || nombreMonProv.includes('PESO');
+        const convenioProvUsdEfectivo = convUProv || (!convMProv && (factUProv || !o.monedaConvenioProv));
+        const subtotalProvOp = Number(o.subtotalProv) || ((Number(o.totalAPagarProv) || 0) + (Number(o.cargosAdicionalesProv) || 0));
+        const provQuedoSinConvertir = convenioProvUsdEfectivo && factMProv && tcOp > 0 && subtotalProvOp > 0 && Math.abs((m.conv || 0) - subtotalProvOp) < 0.01;
+        const proveedorMonto = provQuedoSinConvertir
+          ? subtotalProvOp * tcOp
+          : ((m.conv || 0) > 0
+              ? m.conv
+              : (montoFactura > 0
+                  ? (monedaFacturaEsUsd && tcOp > 0 ? montoFactura * tcOp : montoFactura)
+                  : (((Number(m.pes) || 0) + ((Number(m.dol) || 0) * (tcOp > 0 ? tcOp : 0))) || 0)));
         // ✅ CORREGIDO (v4): el Rate coloca lo que esté en "Conversión Cliente
         //   (MXN)" de la operación. Solo si ese campo quedó SIN convertir (el bug
         //   de la moneda del convenio vacía: convenio en dólares facturado en
@@ -1760,7 +1770,8 @@ export const FacturacionProveedoresDashboard = () => {
           descripcion: desc === '-' ? (o.descripcionServicio || o.observacionesEjecutivo || '') : desc,
           facturaRoelca: (fc && fc.invoice) ? String(fc.invoice) : '',
           cobrado,
-          convenioUsd,
+          subtotalProv: Number(subtotalProvOp.toFixed(2)),
+          provEnUsd: convenioProvUsdEfectivo,
           proveedor: proveedorMonto,
         };
       });
@@ -1813,7 +1824,7 @@ export const FacturacionProveedoresDashboard = () => {
         descripcion: r.descripcion || '',
         facturaRoelca: r.facturaRoelca || '',
         cobrado: Number(r.cobrado) || 0,
-        convenioUsd: Number(r.convenioUsd) || 0,
+        subtotalProv: Number(r.subtotalProv) || 0,
         proveedor: Number(r.proveedor) || 0,
       })),
     } as RateProveedorData;
@@ -1826,23 +1837,28 @@ export const FacturacionProveedoresDashboard = () => {
       if (!prev) return prev;
       const filas = [...(prev.filas || [])];
       filas[idx] = { ...filas[idx], [campo]: valor };
-      // Al editar el convenio en USD, la conversión (PROVEEDOR) se recalcula con el TC vigente.
-      if (campo === 'convenioUsd') {
+      // Al editar el SUBTOTAL del proveedor, la CONVERSIÓN se recalcula: si el
+      // convenio es en dólares se multiplica por el TC vigente; si es en pesos
+      // se toma tal cual.
+      if (campo === 'subtotalProv') {
         const tc = Number(prev.tipoCambio) || 0;
-        const usd = Number(valor) || 0;
-        if (tc > 0 && usd > 0) filas[idx] = { ...filas[idx], proveedor: Number((usd * tc).toFixed(2)) };
+        const base = Number(valor) || 0;
+        if (base > 0) {
+          const enUsd = !!filas[idx]?.provEnUsd;
+          filas[idx] = { ...filas[idx], proveedor: Number(((enUsd && tc > 0) ? base * tc : base).toFixed(2)) };
+        }
       }
       return { ...prev, filas };
     });
-  // Cambiar el TIPO DE CAMBIO recalcula la conversión de TODAS las filas con convenio en USD.
-  // Las filas en pesos (convenioUsd = 0) conservan su monto tal cual.
+  // Cambiar el TIPO DE CAMBIO recalcula la CONVERSIÓN de TODAS las filas cuyo
+  // convenio del proveedor es en dólares; las filas en pesos quedan tal cual.
   const setTipoCambioRate = (valor: string) =>
     setRatePreview((prev: any) => {
       if (!prev) return prev;
       const tc = Number(valor) || 0;
       const filas = (prev.filas || []).map((r: any) => {
-        const usd = Number(r.convenioUsd) || 0;
-        return (usd > 0 && tc > 0) ? { ...r, proveedor: Number((usd * tc).toFixed(2)) } : r;
+        const base = Number(r.subtotalProv) || 0;
+        return (base > 0 && r.provEnUsd && tc > 0) ? { ...r, proveedor: Number((base * tc).toFixed(2)) } : r;
       });
       return { ...prev, tipoCambio: valor, filas };
     });
@@ -4255,8 +4271,8 @@ export const FacturacionProveedoresDashboard = () => {
                       <th style={{ padding: '8px', textAlign: 'left' }}>DESCRIPCIÓN</th>
                       <th style={{ padding: '8px', textAlign: 'left' }}>FACTURA ROELCA</th>
                       <th style={{ padding: '8px', textAlign: 'right' }}>COBRADO (PESOS)</th>
-                      <th style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>CONVENIO USD</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>PROVEEDOR (PESOS)</th>
+                      <th style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>SUBTOTAL PROV.</th>
+                      <th style={{ padding: '8px', textAlign: 'right' }}>CONVERSIÓN (PESOS)</th>
                       <th style={{ padding: '8px', textAlign: 'right' }}>UTILIDAD</th>
                       <th style={{ padding: '8px' }}></th>
                     </tr>
@@ -4273,7 +4289,7 @@ export const FacturacionProveedoresDashboard = () => {
                           <td style={{ padding: '4px' }}><input value={r.descripcion} onChange={e => setRTFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '140px' }} /></td>
                           <td style={{ padding: '4px' }}><input value={r.facturaRoelca} onChange={e => setRTFila(idx, 'facturaRoelca', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
                           <td style={{ padding: '4px' }}><input type="number" step="any" value={r.cobrado} onChange={e => setRTFila(idx, 'cobrado', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
-                          <td style={{ padding: '4px' }}><input type="number" step="any" value={r.convenioUsd} onChange={e => setRTFila(idx, 'convenioUsd', e.target.value)} title="Convenio del proveedor en dólares; PROVEEDOR = USD × Tipo de Cambio" style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#f59e0b' }} /></td>
+                          <td style={{ padding: '4px' }}><input type="number" step="any" value={r.subtotalProv} onChange={e => setRTFila(idx, 'subtotalProv', e.target.value)} title="Subtotal del proveedor (convenio + costos, en la moneda del convenio); la CONVERSIÓN = subtotal × TC si el convenio es en dólares" style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#f59e0b' }} /></td>
                           <td style={{ padding: '4px' }}><input type="number" step="any" value={r.proveedor} onChange={e => setRTFila(idx, 'proveedor', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3b82f6' }} /></td>
                           <td style={{ padding: '4px 10px', textAlign: 'right', color: utilidad < 0 ? '#f85149' : '#c9d1d9', fontSize: '0.82rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(utilidad)}</td>
                           <td style={{ padding: '4px', textAlign: 'center' }}>
@@ -4290,8 +4306,8 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '24px', padding: '10px 12px', color: '#8b949e', fontSize: '0.82rem', flexWrap: 'wrap' }}>
                 <span>Cobrado: <b style={{ color: '#3fb950' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.cobrado) || 0), 0))}</b></span>
-                <span>Convenio USD: <b style={{ color: '#f59e0b' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.convenioUsd) || 0), 0))}</b></span>
-                <span>Proveedor: <b style={{ color: '#3b82f6' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.proveedor) || 0), 0))}</b></span>
+                <span>Subtotal Prov.: <b style={{ color: '#f59e0b' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.subtotalProv) || 0), 0))}</b></span>
+                <span>Conversión: <b style={{ color: '#3b82f6' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.proveedor) || 0), 0))}</b></span>
                 <span>Utilidad: <b style={{ color: '#f0f6fc' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + ((Number(r.cobrado) || 0) - (Number(r.proveedor) || 0)), 0))}</b></span>
               </div>
             </div>
