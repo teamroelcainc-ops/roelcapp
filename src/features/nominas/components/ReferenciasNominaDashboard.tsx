@@ -129,6 +129,10 @@ export const ReferenciasNominaDashboard = () => {
   }, []);
 
   const [busquedaHistorial, setBusquedaHistorial] = useState('');
+  // ✅ NUEVO: panel lateral derecho de filtros + tablas VACÍAS hasta presionar Buscar.
+  const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
+  const [busquedaOpsHecha, setBusquedaOpsHecha] = useState(false);
+  const [busquedaHistHecha, setBusquedaHistHecha] = useState(false);
   const [filtroEstadoHist, setFiltroEstadoHist] = useState<'pendientes' | 'pagadas'>('pendientes');
   // ✅ NUEVO (Fix 4): filtro por Fecha de Pago en el historial.
   const [histFechaInicio, setHistFechaInicio] = useState('');
@@ -1825,8 +1829,6 @@ export const ReferenciasNominaDashboard = () => {
   const thOrdenStyle: React.CSSProperties = { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap', cursor: 'pointer', userSelect: 'none' };
   const selectOrdenStyle: React.CSSProperties = { backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 10px', fontSize: '0.85rem' };
   const btnDirStyle: React.CSSProperties = { backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', padding: '8px 12px', cursor: 'pointer', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
-  const dateHistStyle: React.CSSProperties = { padding: '9px 10px', backgroundColor: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', fontSize: '0.85rem' };
-  const labelHistStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.72rem', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 'bold' };
 
   const colsOpsVisibles = columnasOps.filter(c => c.visible).length + 1;
 
@@ -1912,60 +1914,39 @@ export const ReferenciasNominaDashboard = () => {
 
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
-            {renderBuscadorOperador()}
-            <div>
-              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>FECHA INICIO (Opcional)</label>
-              <input type="date" value={fechaInicio} onChange={e => {setFechaInicio(e.target.value); setSeleccionadas([]);}} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
-            </div>
-            <div>
-              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>FECHA FIN (Opcional)</label>
-              <input type="date" value={fechaFin} onChange={e => {setFechaFin(e.target.value); setSeleccionadas([]);}} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
-            </div>
-            <button
-              disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas'}
-              onClick={abrirModalNomina}
-              style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
-            >
-              Generar Nómina ({seleccionadas.length})
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
+            <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(filtroOperador || fechaInicio || fechaFin) ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+              Filtros
+              {(filtroOperador || fechaInicio || fechaFin) && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[filtroOperador, fechaInicio || fechaFin].filter(Boolean).length}</span>}
             </button>
+            {filtroOperador && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid #10b981', borderRadius: '14px', color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', maxWidth: '260px' }}>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filtroOperador}</span>
+                <button onClick={() => { setFiltroOperador(''); setTextoBuscarOperador(''); setSeleccionadas([]); }} style={{ background: 'transparent', border: 'none', color: '#10b981', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            {(fechaInicio || fechaFin) && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '14px', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                {(fechaInicio || '…')} → {(fechaFin || '…')}
+                <button onClick={() => { setFechaInicio(''); setFechaFin(''); setSeleccionadas([]); }} style={{ background: 'transparent', border: 'none', color: '#D84315', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            {!busquedaOpsHecha && <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Presiona Filtros y Buscar para ver las operaciones.</span>}
+            <div style={{ marginLeft: 'auto' }}>
+              <button
+                disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas'}
+                onClick={abrirModalNomina}
+                style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+              >
+                Generar Nómina ({seleccionadas.length})
+              </button>
+            </div>
           </div>
 
-          {true && (
+          {busquedaOpsHecha && (
             <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => { setFiltroEstadoOps('pendientes'); }}
-                  style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
-                    border: `1px solid ${filtroEstadoOps === 'pendientes' ? '#ef4444' : '#30363d'}`,
-                    backgroundColor: filtroEstadoOps === 'pendientes' ? 'rgba(239,68,68,0.15)' : 'transparent',
-                    color: filtroEstadoOps === 'pendientes' ? '#ef4444' : '#8b949e' }}>
-                  ● Pendientes ({conteoOps.pendientes})
-                </button>
-                <button onClick={() => { setFiltroEstadoOps('asignadas'); setSeleccionadas([]); }}
-                  style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
-                    border: `1px solid ${filtroEstadoOps === 'asignadas' ? '#10b981' : '#30363d'}`,
-                    backgroundColor: filtroEstadoOps === 'asignadas' ? 'rgba(16,185,129,0.15)' : 'transparent',
-                    color: filtroEstadoOps === 'asignadas' ? '#10b981' : '#8b949e' }}>
-                  ● Asignadas ({conteoOps.asignadas})
-                </button>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
-                <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={selectOrdenStyle}>
-                  <option value="ref">Referencia</option>
-                  <option value="fechaServicio">Fecha Servicio</option>
-                  <option value="operador">Operador</option>
-                  <option value="origen">Origen</option>
-                  <option value="destino">Destino</option>
-                  <option value="sueldo">Sueldo</option>
-                </select>
-                <button onClick={() => setOrdenOps(prev => ({ ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }))} style={btnDirStyle} title="Cambiar dirección">
-                  {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
-                </button>
-              </div>
-            </div>
-
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
               <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
                 {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}
@@ -2025,7 +2006,15 @@ export const ReferenciasNominaDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {operacionesMostradas.length === 0 ? (
+                {!busquedaOpsHecha ? (
+                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '64px 24px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las operaciones.</span>
+                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                    </div>
+                  </td></tr>
+                ) : operacionesMostradas.length === 0 ? (
                   <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
                     {filtroEstadoOps === 'pendientes'
                       ? (filtroOperador ? 'No hay operaciones completadas pendientes de nómina para este operador.' : 'No hay operaciones completadas pendientes de nómina.')
@@ -2060,50 +2049,31 @@ export const ReferenciasNominaDashboard = () => {
 
       ) : activeTab === 'historial' ? (
         <div className="animation-fade-in">
-          <div style={{ position: 'relative', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}>
-            <input type="text" placeholder="Buscar en historial (Consecutivo, Operador)..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)} style={{ width: '100%', maxWidth: '400px', padding: '10px 16px', backgroundColor: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
-            <button title="Exportar a Excel" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
+            <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busquedaHistorial || histFechaInicio || histFechaFin) ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+              Filtros
+              {(busquedaHistorial || histFechaInicio || histFechaFin) && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[busquedaHistorial, histFechaInicio || histFechaFin].filter(Boolean).length}</span>}
+            </button>
+            {busquedaHistorial && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                "{busquedaHistorial}"
+                <button onClick={() => setBusquedaHistorial('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            {(histFechaInicio || histFechaFin) && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '14px', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                {(histFechaInicio || '…')} → {(histFechaFin || '…')}
+                <button onClick={() => { setHistFechaInicio(''); setHistFechaFin(''); }} style={{ background: 'transparent', border: 'none', color: '#D84315', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+              {busquedaHistHecha ? `${historialFiltrado.length} ${historialFiltrado.length === 1 ? 'nómina' : 'nóminas'}` : 'Presiona Filtros y Buscar para ver el historial.'}
+            </span>
+            <button title="Exportar a Excel" onClick={exportarCSV} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
-          </div>
-
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '16px', alignItems: 'flex-end' }}>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setFiltroEstadoHist('pendientes')}
-                style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
-                  border: `1px solid ${filtroEstadoHist === 'pendientes' ? '#f59e0b' : '#30363d'}`,
-                  backgroundColor: filtroEstadoHist === 'pendientes' ? 'rgba(245,158,11,0.15)' : 'transparent',
-                  color: filtroEstadoHist === 'pendientes' ? '#f59e0b' : '#8b949e' }}>
-                ● Pendientes ({conteoHist.pendientes})
-              </button>
-              <button onClick={() => setFiltroEstadoHist('pagadas')}
-                style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
-                  border: `1px solid ${filtroEstadoHist === 'pagadas' ? '#10b981' : '#30363d'}`,
-                  backgroundColor: filtroEstadoHist === 'pagadas' ? 'rgba(16,185,129,0.15)' : 'transparent',
-                  color: filtroEstadoHist === 'pagadas' ? '#10b981' : '#8b949e' }}>
-                ● Pagadas ({conteoHist.pagadas})
-              </button>
-            </div>
-
-            <div style={{ width: '1px', alignSelf: 'stretch', backgroundColor: '#30363d', margin: '0 4px' }} />
-
-            <div>
-              <label style={labelHistStyle}>Fecha pago desde</label>
-              <input type="date" value={histFechaInicio} onChange={e => setHistFechaInicio(e.target.value)} style={dateHistStyle} />
-            </div>
-            <div>
-              <label style={labelHistStyle}>Fecha pago hasta</label>
-              <input type="date" value={histFechaFin} onChange={e => setHistFechaFin(e.target.value)} style={dateHistStyle} />
-            </div>
-            {(histFechaInicio || histFechaFin) && (
-              <button onClick={() => { setHistFechaInicio(''); setHistFechaFin(''); }}
-                style={{ padding: '9px 14px', borderRadius: '6px', border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer', fontSize: '0.82rem' }}>
-                ✕ Limpiar fechas
-              </button>
-            )}
-            <span style={{ color: '#8b949e', fontSize: '0.8rem', marginLeft: 'auto', alignSelf: 'center' }}>
-              {historialFiltrado.length} {historialFiltrado.length === 1 ? 'nómina' : 'nóminas'}
-            </span>
           </div>
 
           <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 320px)', backgroundColor: '#161b22' }}>
@@ -2120,7 +2090,15 @@ export const ReferenciasNominaDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {registrosVisibles.length === 0 ? (
+                {!busquedaHistHecha ? (
+                  <tr><td colSpan={7} style={{ padding: '64px 24px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las nóminas.</span>
+                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                    </div>
+                  </td></tr>
+                ) : registrosVisibles.length === 0 ? (
                   <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
                     {filtroEstadoHist === 'pendientes' ? 'No hay nóminas pendientes de pago.' : 'No hay nóminas pagadas.'}
                   </td></tr>
@@ -2171,7 +2149,7 @@ export const ReferenciasNominaDashboard = () => {
               </tbody>
             </table>
           </div>
-          {totalPaginas > 1 && (
+          {busquedaHistHecha && totalPaginas > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
               <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '8px 16px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Anterior</button>
               <span style={{ color: '#fff', alignSelf: 'center' }}>{paginaActual} / {totalPaginas}</span>
@@ -2809,6 +2787,112 @@ export const ReferenciasNominaDashboard = () => {
               <button onClick={(e) => abrirEditarNomina(e as any, nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#a371f7', cursor: 'pointer', fontWeight: 'bold' }}>✎ Editar Nómina</button>
               <button onClick={() => generarReciboNomina(nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#f37021', cursor: 'pointer', fontWeight: 'bold' }}>Descargar Recibo (PDF)</button>
               <button onClick={() => setNominaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Referencias de Nómina) */}
+      {drawerFiltrosAbierto && (
+        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '380px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
+              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            {activeTab === 'operaciones' ? (
+              <>
+                {renderBuscadorOperador()}
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA INICIO</label>
+                    <input type="date" value={fechaInicio} onChange={e => { setFechaInicio(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA FIN</label>
+                    <input type="date" value={fechaFin} min={fechaInicio || undefined} onChange={e => { setFechaFin(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ESTADO</label>
+                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                    <button onClick={() => { setFiltroEstadoOps('pendientes'); }} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoOps === 'pendientes' ? 'rgba(239,68,68,0.15)' : 'transparent', color: filtroEstadoOps === 'pendientes' ? '#ef4444' : '#8b949e' }}>● Pendientes ({conteoOps.pendientes})</button>
+                    <button onClick={() => { setFiltroEstadoOps('asignadas'); setSeleccionadas([]); }} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoOps === 'asignadas' ? 'rgba(16,185,129,0.15)' : 'transparent', color: filtroEstadoOps === 'asignadas' ? '#10b981' : '#8b949e' }}>● Asignadas ({conteoOps.asignadas})</button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ORDENAR POR</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
+                      <option value="ref">Referencia</option>
+                      <option value="fechaServicio">Fecha Servicio</option>
+                      <option value="operador">Operador</option>
+                      <option value="origen">Origen</option>
+                      <option value="destino">Destino</option>
+                      <option value="sueldo">Sueldo</option>
+                    </select>
+                    <button onClick={() => setOrdenOps(prev => ({ ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }))} style={btnDirStyle} title="Cambiar dirección">
+                      {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
+                  Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las operaciones.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
+                  <div style={{ position: 'relative' }}>
+                    <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" placeholder="Consecutivo, operador..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)}
+                      style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                    {busquedaHistorial && (
+                      <button onClick={() => setBusquedaHistorial('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ESTADO</label>
+                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                    <button onClick={() => setFiltroEstadoHist('pendientes')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoHist === 'pendientes' ? 'rgba(245,158,11,0.15)' : 'transparent', color: filtroEstadoHist === 'pendientes' ? '#f59e0b' : '#8b949e' }}>● Pendientes ({conteoHist.pendientes})</button>
+                    <button onClick={() => setFiltroEstadoHist('pagadas')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoHist === 'pagadas' ? 'rgba(16,185,129,0.15)' : 'transparent', color: filtroEstadoHist === 'pagadas' ? '#10b981' : '#8b949e' }}>● Pagadas ({conteoHist.pagadas})</button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA PAGO DESDE</label>
+                    <input type="date" value={histFechaInicio} onChange={e => setHistFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA PAGO HASTA</label>
+                    <input type="date" value={histFechaFin} min={histFechaInicio || undefined} onChange={e => setHistFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
+                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
+                  Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver el historial.
+                </div>
+              </>
+            )}
+
+            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
+              <button onClick={() => {
+                if (activeTab === 'operaciones') { setFiltroOperador(''); setTextoBuscarOperador(''); setFechaInicio(''); setFechaFin(''); setSeleccionadas([]); setBusquedaOpsHecha(false); }
+                else { setBusquedaHistorial(''); setHistFechaInicio(''); setHistFechaFin(''); setBusquedaHistHecha(false); }
+              }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
+              <button onClick={() => {
+                if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true);
+                setDrawerFiltrosAbierto(false);
+              }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

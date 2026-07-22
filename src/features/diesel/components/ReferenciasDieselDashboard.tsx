@@ -206,6 +206,10 @@ export const ReferenciasDieselDashboard = () => {
   const [fechaHastaOps, setFechaHastaOps] = useState('');
 
   const [busquedaRef, setBusquedaRef] = useState('');
+  // ✅ NUEVO: panel lateral derecho de filtros + tablas VACÍAS hasta presionar Buscar.
+  const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
+  const [busquedaOpsHecha, setBusquedaOpsHecha] = useState(false);
+  const [busquedaRefHecha, setBusquedaRefHecha] = useState(false);
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
@@ -1330,42 +1334,42 @@ export const ReferenciasDieselDashboard = () => {
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
           
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
-            <div style={{ flex: 1 }}>
-              <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>UNIDAD</label>
-              <select value={filtroUnidad} onChange={e => { setFiltroUnidad(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }}>
-                <option value="">Seleccionar Unidad...</option>
-                {unidadesOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
-              </select>
-            </div>
-            <button 
-              disabled={seleccionadas.length === 0 || filtroEstadoOps === 'cargadas'} 
-              onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setFotosSeleccionadas([]); setModalAbierto(true); }}
-              style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
-            >
-              Generar Referencia ({seleccionadas.length})
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
+            <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(filtroUnidad || fechaDesdeOps || fechaHastaOps) ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+              Filtros
+              {(filtroUnidad || fechaDesdeOps || fechaHastaOps) && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[filtroUnidad, fechaDesdeOps || fechaHastaOps].filter(Boolean).length}</span>}
             </button>
+            {filtroUnidad && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                {filtroUnidad}
+                <button onClick={() => { setFiltroUnidad(''); setSeleccionadas([]); setBusquedaOpsHecha(false); }} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            {(fechaDesdeOps || fechaHastaOps) && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '14px', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                {(fechaDesdeOps || '…')} → {(fechaHastaOps || '…')}
+                <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ background: 'transparent', border: 'none', color: '#D84315', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            {!filtroUnidad && <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Presiona Filtros, elige la Unidad y pulsa Buscar.</span>}
+            <div style={{ marginLeft: 'auto' }}>
+              <button 
+                disabled={seleccionadas.length === 0 || filtroEstadoOps === 'cargadas'} 
+                onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setFotosSeleccionadas([]); setModalAbierto(true); }}
+                style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+              >
+                Generar Referencia ({seleccionadas.length})
+              </button>
+            </div>
           </div>
 
-          {/* Filtros Pendientes / Cargadas + Seleccionar todo + Orden */}
-          {filtroUnidad && (
+          {/* Barra contextual (tras Buscar): seleccionar todo + columnas + export */}
+          {busquedaOpsHecha && (
             <>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-                <button onClick={() => { setFiltroEstadoOps('pendientes'); }}
-                  style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
-                    border: `1px solid ${filtroEstadoOps === 'pendientes' ? '#ef4444' : '#30363d'}`,
-                    backgroundColor: filtroEstadoOps === 'pendientes' ? 'rgba(239,68,68,0.15)' : 'transparent',
-                    color: filtroEstadoOps === 'pendientes' ? '#ef4444' : '#8b949e' }}>
-                  ● Pendientes ({conteoOps.pendientes})
-                </button>
-                <button onClick={() => { setFiltroEstadoOps('cargadas'); setSeleccionadas([]); }}
-                  style={{ padding: '8px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
-                    border: `1px solid ${filtroEstadoOps === 'cargadas' ? '#10b981' : '#30363d'}`,
-                    backgroundColor: filtroEstadoOps === 'cargadas' ? 'rgba(16,185,129,0.15)' : 'transparent',
-                    color: filtroEstadoOps === 'cargadas' ? '#10b981' : '#8b949e' }}>
-                  ● Cargadas ({conteoOps.cargadas})
-                </button>
 
                 {filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
                   <button onClick={toggleSeleccionarTodas}
@@ -1378,39 +1382,11 @@ export const ReferenciasDieselDashboard = () => {
                 )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Ordenar:</span>
-                <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={selectOrdenStyle}>
-                  <option value="ref">Referencia</option>
-                  <option value="fechaServicio">Fecha Servicio</option>
-                  <option value="unidad">Unidad</option>
-                  <option value="operador">Operador</option>
-                  <option value="origen">Origen</option>
-                  <option value="destino">Destino</option>
-                  <option value="diesel">Diesel</option>
-                </select>
-                <button onClick={() => setOrdenOps(prev => ({ ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }))} style={btnDirStyle} title="Cambiar dirección">
-                  {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
-                </button>
-              </div>
             </div>
 
             {/* Rango de fechas + Configurar columnas + Exportar Excel */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', alignItems: 'flex-end' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>FECHA DESDE</label>
-                  <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={dateInputStyle} />
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold' }}>FECHA HASTA</label>
-                  <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={dateInputStyle} />
-                </div>
-                {(fechaDesdeOps || fechaHastaOps) && (
-                  <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar filtro de fechas">
-                    ✕ Limpiar fechas
-                  </button>
-                )}
                 <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
                   {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}
                 </span>
@@ -1480,8 +1456,14 @@ export const ReferenciasDieselDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {!filtroUnidad ? (
-                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Selecciona una Unidad en el filtro superior para buscar operaciones.</td></tr>
+                {!busquedaOpsHecha ? (
+                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '64px 24px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Elige la <b style={{ color: '#58a6ff' }}>Unidad</b> en los filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las operaciones.</span>
+                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                    </div>
+                  </td></tr>
                 ) : cargandoOps ? (
                   <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones de la unidad...</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
@@ -1516,15 +1498,29 @@ export const ReferenciasDieselDashboard = () => {
       ) : (
         <div className="animation-fade-in">
           
-          <div style={{ position: 'relative', marginBottom: '20px', display: 'flex', justifyContent: 'space-between' }}>
-            <input type="text" placeholder="Buscar en historial (Unidad, Ref, Status)..." value={busquedaRef} onChange={e => setBusquedaRef(e.target.value)} style={{ width: '100%', maxWidth: '400px', padding: '10px 16px', backgroundColor: '#0d1117', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' }} />
-            <button title="Exportar a Excel" onClick={exportarCSV} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
+            <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busquedaRef ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+              Filtros
+              {busquedaRef && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+            </button>
+            {busquedaRef && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                "{busquedaRef}"
+                <button onClick={() => setBusquedaRef('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+              {busquedaRefHecha ? `${referenciasFiltradas.length} referencias` : 'Presiona Filtros y Buscar para ver el historial.'}
+            </span>
+            <button title="Exportar a Excel" onClick={exportarCSV} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
 
           {/* ✅ RESUMEN: separa lo AUTORIZADO de lo CARGADO (galones y $) */}
-          {referenciasFiltradas.length > 0 && (
+          {busquedaRefHecha && referenciasFiltradas.length > 0 && (
             <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '16px' }}>
                 <div style={{ borderRight: '1px solid #30363d' }}>
@@ -1573,7 +1569,15 @@ export const ReferenciasDieselDashboard = () => {
                 </tr>
               </thead>
               <tbody>
-                {registrosVisibles.length === 0 ? (
+                {!busquedaRefHecha ? (
+                  <tr><td colSpan={11} style={{ padding: '64px 24px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las referencias.</span>
+                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                    </div>
+                  </td></tr>
+                ) : registrosVisibles.length === 0 ? (
                   <tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay referencias registradas.</td></tr>
                 ) : (
                   registrosVisibles.map(r => (
@@ -1636,7 +1640,7 @@ export const ReferenciasDieselDashboard = () => {
               </tbody>
             </table>
           </div>
-          {totalPaginas > 1 && (
+          {busquedaRefHecha && totalPaginas > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
               <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '8px 16px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Anterior</button>
               <span style={{ color: '#fff', alignSelf: 'center' }}>{paginaActual} / {totalPaginas}</span>
@@ -2233,6 +2237,104 @@ export const ReferenciasDieselDashboard = () => {
         </div>
       )}
 
+
+      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Referencias del Diesel) */}
+      {drawerFiltrosAbierto && (
+        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
+              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            {activeTab === 'operaciones' ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>UNIDAD <span style={{ color: '#f85149' }}>*</span></label>
+                  <select value={filtroUnidad} onChange={e => { setFiltroUnidad(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: `1px solid ${filtroUnidad ? '#58a6ff' : '#30363d'}`, borderRadius: '6px', boxSizing: 'border-box' }}>
+                    <option value="">Seleccionar Unidad...</option>
+                    {unidadesOptions.map((name, i) => <option key={i} value={name}>{name}</option>)}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ESTADO</label>
+                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                    <button onClick={() => { setFiltroEstadoOps('pendientes'); }} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoOps === 'pendientes' ? 'rgba(239,68,68,0.15)' : 'transparent', color: filtroEstadoOps === 'pendientes' ? '#ef4444' : '#8b949e' }}>● Pendientes ({conteoOps.pendientes})</button>
+                    <button onClick={() => { setFiltroEstadoOps('cargadas'); setSeleccionadas([]); }} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoOps === 'cargadas' ? 'rgba(16,185,129,0.15)' : 'transparent', color: filtroEstadoOps === 'cargadas' ? '#10b981' : '#8b949e' }}>● Cargadas ({conteoOps.cargadas})</button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE</label>
+                    <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA</label>
+                    <input type="date" value={fechaHastaOps} min={fechaDesdeOps || undefined} onChange={(e) => setFechaHastaOps(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ORDENAR POR</label>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
+                      <option value="ref">Referencia</option>
+                      <option value="fechaServicio">Fecha Servicio</option>
+                      <option value="unidad">Unidad</option>
+                      <option value="operador">Operador</option>
+                      <option value="origen">Origen</option>
+                      <option value="destino">Destino</option>
+                      <option value="diesel">Diesel</option>
+                    </select>
+                    <button onClick={() => setOrdenOps(prev => ({ ...prev, dir: prev.dir === 'asc' ? 'desc' : 'asc' }))} style={btnDirStyle} title="Cambiar dirección">
+                      {ordenOps.dir === 'asc' ? '▲ Asc' : '▼ Desc'}
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
+                  La <b style={{ color: '#58a6ff' }}>Unidad</b> es obligatoria; las fechas y el estado son opcionales.
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
+                  <div style={{ position: 'relative' }}>
+                    <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" placeholder="Unidad, referencia, status, proveedor..." value={busquedaRef} onChange={e => setBusquedaRef(e.target.value)}
+                      style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                    {busquedaRef && (
+                      <button onClick={() => setBusquedaRef('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
+                  La búsqueda es <b style={{ color: '#8b949e' }}>opcional</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todo el historial.
+                </div>
+              </>
+            )}
+
+            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
+              <button onClick={() => {
+                if (activeTab === 'operaciones') { setFiltroUnidad(''); setFechaDesdeOps(''); setFechaHastaOps(''); setSeleccionadas([]); setBusquedaOpsHecha(false); }
+                else { setBusquedaRef(''); setBusquedaRefHecha(false); }
+              }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
+              <button onClick={() => {
+                if (activeTab === 'operaciones') {
+                  if (!filtroUnidad) { alert('Selecciona una Unidad para buscar sus operaciones.'); return; }
+                  setBusquedaOpsHecha(true);
+                } else {
+                  setBusquedaRefHecha(true);
+                }
+                setDrawerFiltrosAbierto(false);
+              }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

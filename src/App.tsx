@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
+import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, updateDoc, getDoc, collection, onSnapshot, query, where, getDocs } from 'firebase/firestore'; 
+import { doc, updateDoc, getDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger'; 
 import { lazyWithRetry } from './utils/lazyWithRetry';
@@ -221,6 +222,358 @@ const CargandoModulo = () => (
     Cargando módulo…<style>{`@keyframes spinRoelca { to { transform: rotate(360deg); } }`}</style>
   </div>
 );
+
+// ============================================================================
+// ✅ NUEVO — RESUMEN DEL DÍA (vista principal)
+// Franja profesional de indicadores sobre Operaciones Activas: operaciones del
+// día (total, completadas y canceladas por fecha de servicio de HOY), el tipo
+// de cambio del día y el costo del diesel del día. Lecturas mínimas: una
+// consulta puntual por indicador, con botón ↻ para refrescar.
+// ============================================================================
+const RESUMEN_STATUS_COMPLETADOS = ['c2d57403', 'f557b751'];
+const RESUMEN_STATUS_CANCELADO = '7607f692';
+const RESUMEN_COLECCIONES_TC = [
+  'tipo_cambio', 'tipos_cambio', 'catalogo_tipo_cambio', 'catalogo_tipos_cambio',
+  'catalogo_tc', 'tipo_cambio_oficial', 'tipoCambio', 'tc', 'tc_dof', 'tipos_de_cambio',
+];
+
+const resumenNormalizarISO = (v: any): string => {
+  if (v == null) return '';
+  if (typeof v === 'object' && typeof v.toDate === 'function') {
+    const d = v.toDate();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  const t = String(v).trim();
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return '';
+};
+
+const resumenExtraerTC = (row: any): number | null => {
+  if (!row || typeof row !== 'object') return null;
+  const valKey = Object.keys(row).find((k) => {
+    const kk = String(k).toLowerCase();
+    return kk.includes('dof') || kk.includes('valor') || kk === 'tc' || kk.includes('cambio') || kk.includes('monto') || kk.includes('t.c');
+  });
+  if (valKey) {
+    const n = Number(String(row[valKey]).replace(/[^0-9.-]+/g, ''));
+    if (!isNaN(n) && n > 0) return n;
+  }
+  const posibles = Object.values(row)
+    .map((v: any) => parseFloat(String(v).replace(/[^0-9.-]+/g, '')))
+    .filter((n: any) => !isNaN(n) && n > 5 && n < 60);
+  return posibles.length > 0 ? posibles[0] : null;
+};
+
+const resumenMejorFechaFila = (row: any): string => {
+  let mejor = '';
+  Object.values(row || {}).forEach((v: any) => {
+    const iso = resumenNormalizarISO(v);
+    if (iso && iso > mejor) mejor = iso;
+  });
+  return mejor;
+};
+
+function ResumenDelDia() {
+  const [cargando, setCargando] = useState(true);
+  const [datos, setDatos] = useState<{
+    totalHoy: number; completadasHoy: number; canceladasHoy: number;
+    tc: number | null; tcFecha: string;
+    diesel: number | null; dieselFecha: string; dieselProveedores: number;
+  }>({ totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, tc: null, tcFecha: '', diesel: null, dieselFecha: '', dieselProveedores: 0 });
+
+  const hoy = new Date();
+  const hoyISO = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+
+  // ✅ NUEVO: captura rápida del TC y del diesel del día desde la vista principal
+  //   (los botones solo aparecen cuando el dato de HOY aún no existe).
+  const [modalTCAbierto, setModalTCAbierto] = useState(false);
+  const [nuevoTC, setNuevoTC] = useState('');
+  const [modalDieselAbierto, setModalDieselAbierto] = useState(false);
+  const [nuevoDieselCosto, setNuevoDieselCosto] = useState('');
+  const [provDieselId, setProvDieselId] = useState('');
+  const [buscarProvDiesel, setBuscarProvDiesel] = useState('');
+  const [empresasDiesel, setEmpresasDiesel] = useState<any[]>([]);
+  const [guardandoCaptura, setGuardandoCaptura] = useState(false);
+
+  const abrirModalDiesel = async () => {
+    setModalDieselAbierto(true);
+    if (empresasDiesel.length === 0) {
+      try {
+        const snap = await getDocs(collection(db, 'empresas'));
+        setEmpresasDiesel(snap.docs.map((d: any) => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''))));
+      } catch (e) { console.error('[Resumen del día] empresas:', e); }
+    }
+  };
+
+  const guardarTCDia = async () => {
+    const valor = Number(String(nuevoTC).replace(/[^0-9.]/g, ''));
+    if (!valor || valor <= 0) { alert('Captura un tipo de cambio válido.'); return; }
+    setGuardandoCaptura(true);
+    try {
+      const previo = datos.tc != null && datos.tcFecha !== hoyISO ? datos.tc : null;
+      const tendencia = previo == null ? 'igual' : valor > previo ? 'subio' : valor < previo ? 'bajo' : 'igual';
+      const nombreDia = hoy.toLocaleDateString('es-MX', { weekday: 'long' });
+      await addDoc(collection(db, 'tipo_cambio'), {
+        fecha: hoyISO,
+        dia: nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1),
+        tcDof: valor,
+        tipoTendencia: tendencia,
+        createdAt: new Date().toISOString(),
+      });
+      registrarLog('Tipo de Cambio', 'Creación', `Capturó el tipo de cambio del día ${hoyISO}: $${valor.toFixed(4)} (desde Operaciones)`).catch(() => {});
+      setModalTCAbierto(false); setNuevoTC('');
+      await cargar();
+    } catch (e) {
+      console.error('[Resumen del día] guardar TC:', e);
+      alert('No se pudo guardar el tipo de cambio. Inténtalo de nuevo.');
+    } finally { setGuardandoCaptura(false); }
+  };
+
+  const guardarDieselDia = async () => {
+    const costo = Number(String(nuevoDieselCosto).replace(/[^0-9.]/g, ''));
+    if (!provDieselId) { alert('Selecciona el proveedor del diesel.'); return; }
+    if (!costo || costo <= 0) { alert('Captura un costo válido por litro.'); return; }
+    setGuardandoCaptura(true);
+    try {
+      const prov = empresasDiesel.find((e: any) => e.id === provDieselId);
+      await addDoc(collection(db, 'combustibles'), {
+        fecha: hoyISO,
+        proveedorId: provDieselId,
+        proveedor: prov?.nombre || '',
+        costo,
+        createdAt: new Date().toISOString(),
+      });
+      registrarLog('Combustible', 'Creación', `Capturó el diesel del día ${hoyISO}: $${costo.toFixed(2)} — ${prov?.nombre || provDieselId} (desde Operaciones)`).catch(() => {});
+      setModalDieselAbierto(false); setNuevoDieselCosto(''); setProvDieselId(''); setBuscarProvDiesel('');
+      await cargar();
+    } catch (e) {
+      console.error('[Resumen del día] guardar diesel:', e);
+      alert('No se pudo guardar el costo del diesel. Inténtalo de nuevo.');
+    } finally { setGuardandoCaptura(false); }
+  };
+
+  const empresasDieselFiltradas = empresasDiesel.filter((e: any) =>
+    !buscarProvDiesel.trim() || String(e.nombre || '').toLowerCase().includes(buscarProvDiesel.toLowerCase()));
+
+  const cargar = async () => {
+    setCargando(true);
+    const nuevo = { totalHoy: 0, completadasHoy: 0, canceladasHoy: 0, tc: null as number | null, tcFecha: '', diesel: null as number | null, dieselFecha: '', dieselProveedores: 0 };
+
+    // 1) Operaciones con fecha de servicio de HOY, clasificadas por status.
+    try {
+      const snap = await getDocs(query(collection(db, 'operaciones'), where('fechaServicio', '==', hoyISO)));
+      snap.docs.forEach((d: any) => {
+        const op = d.data() || {};
+        const nombre = String(op.statusNombre || '').toLowerCase();
+        nuevo.totalHoy += 1;
+        if (op.status === RESUMEN_STATUS_CANCELADO || nombre.includes('cancel')) nuevo.canceladasHoy += 1;
+        else if (RESUMEN_STATUS_COMPLETADOS.includes(op.status) || nombre.includes('complet')) nuevo.completadasHoy += 1;
+      });
+    } catch (e) { console.error('[Resumen del día] operaciones:', e); }
+
+    // 2) Tipo de cambio del día (o el más reciente disponible).
+    try {
+      let filas: any[] = [];
+      for (const nombre of RESUMEN_COLECCIONES_TC) {
+        try {
+          const snap = await getDocs(collection(db, nombre));
+          if (!snap.empty) { filas = snap.docs.map((d: any) => ({ id: d.id, ...d.data() })); break; }
+        } catch { /* colección inexistente: probar la siguiente */ }
+      }
+      const deHoy = filas.find(f => Object.values(f).some((v: any) => resumenNormalizarISO(v) === hoyISO));
+      if (deHoy) {
+        nuevo.tc = resumenExtraerTC(deHoy);
+        nuevo.tcFecha = hoyISO;
+      } else if (filas.length > 0) {
+        const ordenadas = filas
+          .map(f => ({ f, fecha: resumenMejorFechaFila(f), rate: resumenExtraerTC(f) }))
+          .filter(x => x.rate != null && x.fecha && x.fecha <= hoyISO)
+          .sort((a, b) => b.fecha.localeCompare(a.fecha));
+        if (ordenadas.length > 0) { nuevo.tc = ordenadas[0].rate; nuevo.tcFecha = ordenadas[0].fecha; }
+      }
+    } catch (e) { console.error('[Resumen del día] tipo de cambio:', e); }
+
+    // 3) Costo del diesel del día (promedio si hay varios proveedores) o el más reciente.
+    try {
+      let docsDiesel: any[] = [];
+      const snapHoy = await getDocs(query(collection(db, 'combustibles'), where('fecha', '==', hoyISO)));
+      if (!snapHoy.empty) {
+        docsDiesel = snapHoy.docs.map((d: any) => d.data());
+        nuevo.dieselFecha = hoyISO;
+      } else {
+        const snapUlt = await getDocs(query(collection(db, 'combustibles'), orderBy('fecha', 'desc'), limit(1)));
+        if (!snapUlt.empty) {
+          const data = snapUlt.docs[0].data() as any;
+          docsDiesel = [data];
+          nuevo.dieselFecha = resumenNormalizarISO(data.fecha) || '';
+        }
+      }
+      const costos = docsDiesel.map((d: any) => Number(d.costo) || 0).filter(n => n > 0);
+      if (costos.length > 0) {
+        nuevo.diesel = costos.reduce((a, b) => a + b, 0) / costos.length;
+        nuevo.dieselProveedores = costos.length;
+      }
+    } catch (e) { console.error('[Resumen del día] diesel:', e); }
+
+    setDatos(nuevo);
+    setCargando(false);
+  };
+
+  useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  const fmtDia = (iso: string) => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  };
+  const fechaLegible = hoy.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const tarjeta: CSSProperties = { backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '10px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 };
+  const etiqueta: CSSProperties = { color: '#8b949e', fontSize: '0.68rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px', display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' };
+  const valorCss = (color: string): CSSProperties => ({ color, fontSize: '1.55rem', fontWeight: 800, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' });
+  const sub: CSSProperties = { color: '#6e7681', fontSize: '0.7rem' };
+
+  return (
+    <div style={{ padding: '20px 28px 0 28px', boxSizing: 'border-box', width: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+        <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+          Resumen del día · <span style={{ color: '#c9d1d9', fontWeight: 600, textTransform: 'capitalize' }}>{fechaLegible}</span>
+        </span>
+        <button onClick={cargar} disabled={cargando} title="Actualizar resumen"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'transparent', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e', cursor: cargando ? 'wait' : 'pointer', fontSize: '0.78rem', opacity: cargando ? 0.6 : 1 }}>
+          <span style={{ fontSize: '0.9rem', lineHeight: 1 }}>↻</span>{cargando ? 'Actualizando…' : 'Actualizar'}
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+        <div style={tarjeta}>
+          <span style={etiqueta}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="2.2"><rect x="1" y="3" width="15" height="13" rx="1"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+            Operaciones del día
+          </span>
+          <span style={valorCss('#58a6ff')}>{cargando ? '…' : datos.totalHoy}</span>
+          <span style={sub}>{cargando ? ' ' : `${Math.max(0, datos.totalHoy - datos.completadasHoy - datos.canceladasHoy)} en proceso`}</span>
+        </div>
+
+        <div style={tarjeta}>
+          <span style={etiqueta}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#3fb950" strokeWidth="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+            Completadas hoy
+          </span>
+          <span style={valorCss('#3fb950')}>{cargando ? '…' : datos.completadasHoy}</span>
+          <span style={sub}>{cargando || datos.totalHoy === 0 ? ' ' : `${Math.round((datos.completadasHoy / datos.totalHoy) * 100)}% del día`}</span>
+        </div>
+
+        <div style={tarjeta}>
+          <span style={etiqueta}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f85149" strokeWidth="2.2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+            Canceladas hoy
+          </span>
+          <span style={valorCss('#f85149')}>{cargando ? '…' : datos.canceladasHoy}</span>
+          <span style={sub}>{cargando || datos.totalHoy === 0 ? ' ' : `${Math.round((datos.canceladasHoy / datos.totalHoy) * 100)}% del día`}</span>
+        </div>
+
+        <div style={tarjeta} title={datos.tcFecha && datos.tcFecha !== hoyISO ? `Último registro: ${fmtDia(datos.tcFecha)}` : 'Tipo de cambio del día'}>
+          <span style={etiqueta}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+            Tipo de cambio
+          </span>
+          <span style={valorCss('#f59e0b')}>{cargando ? '…' : (datos.tc != null ? `$${datos.tc.toFixed(4)}` : '—')}</span>
+          <span style={sub}>
+            {cargando ? ' ' : datos.tc == null ? 'Sin registro' : (datos.tcFecha === hoyISO ? 'DOF de hoy' : `al ${fmtDia(datos.tcFecha)}`)}
+          </span>
+          {!cargando && datos.tcFecha !== hoyISO && (
+            <button onClick={() => setModalTCAbierto(true)} title="Capturar el tipo de cambio de hoy"
+              style={{ marginTop: '2px', padding: '5px 10px', backgroundColor: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 'bold', alignSelf: 'flex-start' }}>
+              + Capturar el de hoy
+            </button>
+          )}
+        </div>
+
+        <div style={tarjeta} title={datos.dieselProveedores > 1 ? `Promedio de ${datos.dieselProveedores} proveedores` : 'Costo del diesel'}>
+          <span style={etiqueta}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fb923c" strokeWidth="2.2"><path d="M3 22V8a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v14"></path><line x1="3" y1="22" x2="15" y2="22"></line><path d="M13 10h2a2 2 0 0 1 2 2v5a1.5 1.5 0 0 0 3 0V9l-3-3"></path></svg>
+            Diesel del día
+          </span>
+          <span style={valorCss('#fb923c')}>{cargando ? '…' : (datos.diesel != null ? `$${datos.diesel.toFixed(2)}` : '—')}</span>
+          <span style={sub}>
+            {cargando ? ' ' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedores > 1 ? `Prom. ${datos.dieselProveedores} proveedores` : 'Por litro'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
+          </span>
+          {!cargando && datos.dieselFecha !== hoyISO && (
+            <button onClick={abrirModalDiesel} title="Capturar el costo del diesel de hoy"
+              style={{ marginTop: '2px', padding: '5px 10px', backgroundColor: 'rgba(251,146,60,0.12)', color: '#fb923c', border: '1px solid #fb923c', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 'bold', alignSelf: 'flex-start' }}>
+              + Capturar el de hoy
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ✅ Modal: capturar TIPO DE CAMBIO de hoy */}
+      {modalTCAbierto && (
+        <div onClick={() => !guardandoCaptura && setModalTCAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '380px', maxWidth: '92%', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.02rem' }}>💱 Tipo de cambio de hoy</h3>
+              <button onClick={() => setModalTCAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Se registrará para el <b style={{ color: '#c9d1d9' }}>{fmtDia(hoyISO)}</b> en el catálogo de Tipo de Cambio.</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ color: '#f59e0b', fontSize: '0.75rem', fontWeight: 'bold' }}>TIPO DE CAMBIO DOF $</label>
+              <input type="number" step="0.0001" min="0" autoFocus placeholder="Ej. 17.5993" value={nuevoTC}
+                onChange={(e) => setNuevoTC(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') guardarTCDia(); }}
+                style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#f0f6fc', fontSize: '1.05rem', fontWeight: 'bold', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setModalTCAbierto(false)} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cancelar</button>
+              <button onClick={guardarTCDia} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', backgroundColor: '#f59e0b', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: guardandoCaptura ? 'wait' : 'pointer', fontWeight: 'bold' }}>{guardandoCaptura ? 'Guardando…' : '💾 Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Modal: capturar DIESEL de hoy */}
+      {modalDieselAbierto && (
+        <div onClick={() => !guardandoCaptura && setModalDieselAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '420px', maxWidth: '92%', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.02rem' }}>⛽ Diesel de hoy</h3>
+              <button onClick={() => setModalDieselAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Se registrará para el <b style={{ color: '#c9d1d9' }}>{fmtDia(hoyISO)}</b> en el catálogo de Combustible.</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>PROVEEDOR</label>
+              <input type="text" placeholder="Buscar proveedor..." value={buscarProvDiesel} onChange={(e) => setBuscarProvDiesel(e.target.value)}
+                style={{ width: '100%', padding: '8px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.88rem', boxSizing: 'border-box' }} />
+              <select value={provDieselId} onChange={(e) => setProvDieselId(e.target.value)} size={5}
+                style={{ width: '100%', padding: '6px', backgroundColor: '#0d1117', border: `1px solid ${provDieselId ? '#fb923c' : '#30363d'}`, borderRadius: '6px', color: '#c9d1d9', fontSize: '0.88rem', boxSizing: 'border-box' }}>
+                {empresasDiesel.length === 0 && <option value="" disabled>Cargando proveedores…</option>}
+                {empresasDieselFiltradas.slice(0, 60).map((e: any) => (
+                  <option key={e.id} value={e.id}>{e.nombre}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ color: '#fb923c', fontSize: '0.75rem', fontWeight: 'bold' }}>COSTO POR LITRO $</label>
+              <input type="number" step="0.01" min="0" placeholder="Ej. 26.50" value={nuevoDieselCosto}
+                onChange={(e) => setNuevoDieselCosto(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') guardarDieselDia(); }}
+                style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#f0f6fc', fontSize: '1.05rem', fontWeight: 'bold', boxSizing: 'border-box' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setModalDieselAbierto(false)} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cancelar</button>
+              <button onClick={guardarDieselDia} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: guardandoCaptura ? 'wait' : 'pointer', fontWeight: 'bold' }}>{guardandoCaptura ? 'Guardando…' : '💾 Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 function App() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -823,7 +1176,12 @@ function App() {
           </div>
         ) : (
           <Suspense fallback={<CargandoModulo />}>
-            {moduloActivo === 'operaciones' && puede('operaciones') && <OperacionesDashboard />}
+            {moduloActivo === 'operaciones' && puede('operaciones') && (
+              <>
+                <ResumenDelDia />
+                <OperacionesDashboard />
+              </>
+            )}
             {moduloActivo === 'serviciosCompletados' && puede('serviciosCompletados') && <ServiciosCompletados />}
             {moduloActivo === 'serviciosCancelados' && puede('serviciosCancelados') && <ServiciosCancelados />}
             {moduloActivo === 'reportes' && puede('reportes') && <ReportesDashboard />}

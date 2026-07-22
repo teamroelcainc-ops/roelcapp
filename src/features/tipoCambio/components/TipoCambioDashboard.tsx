@@ -21,6 +21,10 @@ export const TipoCambioDashboard = () => {
 
   // Estados de Búsqueda y Paginación
   const [busqueda, setBusqueda] = useState('');
+  // ✅ NUEVO: panel lateral derecho de filtros. Por DEFECTO la tabla muestra
+  //   únicamente el tipo de cambio de HOY; con Buscar se consulta el historial.
+  const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
+  const [busquedaHecha, setBusquedaHecha] = useState(false);
   const [filtroTendencia, setFiltroTendencia] = useState('Todos');
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
@@ -136,7 +140,20 @@ export const TipoCambioDashboard = () => {
   };
 
   // ✅ FILTRADO Y BÚSQUEDA
+  // ✅ NUEVO: fecha de hoy (local) y normalizador para comparar r.fecha con hoy.
+  const hoyISOTc = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  const normFechaISO = (v: any): string => {
+    const t = String(v ?? '').trim();
+    let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = t.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return '';
+  };
+
   const registrosFiltrados = registrosGlobales.filter(r => {
+    // ✅ Por defecto (sin Buscar) solo se muestra el tipo de cambio de HOY.
+    if (!busquedaHecha) return normFechaISO(r.fecha) === hoyISOTc;
     const b = busqueda.toLowerCase();
     const coincideBusqueda = 
       formatearFecha(r.fecha).includes(b) ||
@@ -241,33 +258,38 @@ export const TipoCambioDashboard = () => {
         {/* BARRA DE CONTROLES: Responsive y Alineada */}
         <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
           
-          {/* Izquierda: Filtro Estático */}
-          <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '150px' }}>
-            <select 
-              value={filtroTendencia} 
-              onChange={(e) => setFiltroTendencia(e.target.value)}
-              className="form-control" 
-              style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', padding: '10px', borderRadius: '6px' }}
-            >
-              <option value="Todos">Filtro: Todos</option>
-              <option value="subio">Tendencia: Subió</option>
-              <option value="bajo">Tendencia: Bajó</option>
-              <option value="igual">Tendencia: Se mantuvo</option>
-            </select>
-          </div>
 
           {/* Centro: Buscador Inteligente */}
-          <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'center' }}>
-            <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
-              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input 
-                type="text" 
-                placeholder="Buscar por Fecha, Día o Monto..." 
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }}
-              />
-            </div>
+          <div style={{ display: 'flex', gap: '10px', flex: '2 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busqueda || filtroTendencia !== 'Todos') ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+              Filtros
+              {(busqueda || filtroTendencia !== 'Todos') && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[busqueda, filtroTendencia !== 'Todos' ? filtroTendencia : ''].filter(Boolean).length}</span>}
+            </button>
+            {filtroTendencia !== 'Todos' && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(163,113,247,0.1)', border: '1px solid #a371f7', borderRadius: '14px', color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                {filtroTendencia === 'subio' ? 'Subió' : filtroTendencia === 'bajo' ? 'Bajó' : 'Se mantuvo'}
+                <button onClick={() => setFiltroTendencia('Todos')} style={{ background: 'transparent', border: 'none', color: '#a371f7', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            {busqueda && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                "{busqueda}"
+                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+              {busquedaHecha
+                ? `${registrosFiltrados.length} registros`
+                : <>Mostrando el tipo de cambio de <b style={{ color: '#f59e0b' }}>HOY</b> · usa Filtros para ver el historial</>}
+            </span>
+            {busquedaHecha && (
+              <button onClick={() => { setBusqueda(''); setFiltroTendencia('Todos'); setBusquedaHecha(false); }}
+                style={{ padding: '6px 12px', background: 'none', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e', cursor: 'pointer', fontSize: '0.78rem' }}>
+                ← Volver a hoy
+              </button>
+            )}
           </div>
 
           {/* Derecha: Botones Iconográficos */}
@@ -325,10 +347,21 @@ export const TipoCambioDashboard = () => {
               </thead>
               
               <tbody>
-                {registrosEnPantalla.length === 0 ? (
+                {registrosEnPantalla.length === 0 && !busquedaHecha ? (
+                  <tr><td colSpan={columnasTabla.length + 1} style={{ padding: '56px 24px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Aún no se captura el tipo de cambio de <b style={{ color: '#f59e0b' }}>HOY</b>.</span>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
+                        <button onClick={handleNuevo} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>+ Capturar el TC de hoy</button>
+                        <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Ver historial</button>
+                      </div>
+                    </div>
+                  </td></tr>
+                ) : registrosEnPantalla.length === 0 ? (
                   <tr>
                     <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
-                      {busqueda || filtroTendencia !== 'Todos' ? 'No se encontraron registros con estos filtros.' : 'Aún no hay registros de tipo de cambio. Haz clic en el botón de agregar (+) para crear el primero.'}
+                      No se encontraron registros con estos filtros.
                     </td>
                   </tr>
                 ) : (
@@ -484,6 +517,49 @@ export const TipoCambioDashboard = () => {
         </div>
       )}
 
+
+      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Tipo de Cambio · historial) */}
+      {drawerFiltrosAbierto && (
+        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Historial de TC</h3>
+              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
+              <div style={{ position: 'relative' }}>
+                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" placeholder="Fecha, día o monto..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
+                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                {busqueda && (
+                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <label style={{ color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>TENDENCIA</label>
+              <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                <button onClick={() => setFiltroTendencia('Todos')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', backgroundColor: filtroTendencia === 'Todos' ? 'rgba(88,166,255,0.15)' : 'transparent', color: filtroTendencia === 'Todos' ? '#58a6ff' : '#8b949e' }}>Todas</button>
+                <button onClick={() => setFiltroTendencia('subio')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', backgroundColor: filtroTendencia === 'subio' ? 'rgba(63,185,80,0.15)' : 'transparent', color: filtroTendencia === 'subio' ? '#3fb950' : '#8b949e' }}>▲ Subió</button>
+                <button onClick={() => setFiltroTendencia('bajo')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', backgroundColor: filtroTendencia === 'bajo' ? 'rgba(248,81,73,0.15)' : 'transparent', color: filtroTendencia === 'bajo' ? '#f85149' : '#8b949e' }}>▼ Bajó</button>
+                <button onClick={() => setFiltroTendencia('igual')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', backgroundColor: filtroTendencia === 'igual' ? 'rgba(245,158,11,0.15)' : 'transparent', color: filtroTendencia === 'igual' ? '#f59e0b' : '#8b949e' }}>= Igual</button>
+              </div>
+            </div>
+
+            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
+              Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver el historial completo con estos filtros. <b style={{ color: '#8b949e' }}>Limpiar</b> regresa a la vista del día de hoy.
+            </div>
+
+            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
+              <button onClick={() => { setBusqueda(''); setFiltroTendencia('Todos'); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
+              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
