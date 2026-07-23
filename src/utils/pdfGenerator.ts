@@ -929,3 +929,218 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
     }
   })();
 };
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ RELACIÓN DE COMPRAS (MTTO)
+//    Documento que antes se armaba dentro de MttoAgrupadosInvoice. Al vivir
+//    aquí, el historial de Invoice y la vista "Todos los Gastos" generan
+//    EXACTAMENTE el mismo documento (con uno o varios gastos).
+// ═══════════════════════════════════════════════════════════════════════════
+export interface RelacionComprasFila {
+  numeroGasto: string;
+  fecha: string;          // ISO YYYY-MM-DD (o texto de fecha válido)
+  unidadNombre: string;
+  descripcion: string;
+  total: number | string;
+}
+
+export interface RelacionComprasMttoData {
+  denominacion: string;   // Número de invoice o, si no hay, el folio del gasto
+  proveedorNum: string;
+  razonSocial: string;
+  tipo: string;           // Estatus (Facturado / No facturado)
+  filas: RelacionComprasFila[];
+  sumaImporte: number;
+  sumaIva: number;
+  sumaTotal: number;
+}
+
+export const generarRelacionComprasMttoPDF = (data: RelacionComprasMttoData): void => {
+  const formatoMoneda = (monto: number | string) => {
+    const num = Number(monto) || 0;
+    return `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+  const formatearFechaEspanol = (fechaStr: string | Date) => {
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const d = new Date(fechaStr);
+    if (isNaN(d.getTime())) return String(fechaStr || '-');
+    const dUTC = new Date(d.getTime() + d.getTimezoneOffset() * 60000);
+    return `${dUTC.getDate()} de ${meses[dUTC.getMonth()]} de ${dUTC.getFullYear()}`;
+  };
+  const escaparHTML = (texto: any) => {
+    return String(texto ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+  // Respeta los saltos de línea de la descripción en el PDF (\n -> <br>)
+  const formatearTextoMultilinea = (texto: any) => {
+    return escaparHTML(texto).replace(/\r\n|\r|\n/g, '<br>');
+  };
+
+  let filasHTML = '';
+  (data.filas || []).forEach((g) => {
+    const fechaFmt = formatearFechaEspanol(g.fecha);
+    const descripcionFmt = formatearTextoMultilinea(g.descripcion);
+    filasHTML += `
+        <tr>
+          <td class="text-center">${escaparHTML(g.numeroGasto || '-')}</td>
+          <td class="text-center" style="text-transform: capitalize;">${fechaFmt}</td>
+          <td class="text-center">${escaparHTML(g.unidadNombre)}</td>
+          <td class="col-desc">${descripcionFmt}</td>
+          <td class="text-right">${formatoMoneda(g.total)}</td>
+        </tr>
+      `;
+  });
+
+  const fechaActual = formatearFechaEspanol(new Date());
+  const logoBase64 = getLogoPdf() || LOGO_DEFAULT;
+
+  const htmlDocument = `
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="utf-8">
+        <title>Relación de Compras - ${escaparHTML(data.denominacion)}</title>
+        <style>
+          @media print {
+            @page { size: letter; margin: 10mm; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          }
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background-color: #fff; padding: 20px; }
+          .container { max-width: 950px; margin: 0 auto; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+          .logo-section { width: 25%; text-align: center; display: flex; flex-direction: column; align-items: center; }
+          .logo-img { max-width: 110px; margin-bottom: 2px; }
+          .logo-transporte { color: #00AEEF; font-weight: bold; font-size: 10px; text-transform: uppercase; }
+          .logo-url { color: #F15A24; font-weight: bold; font-size: 10px; }
+          .title-section { width: 50%; text-align: center; padding-top: 15px; }
+          .title-main { color: #00AEEF; font-size: 22px; font-weight: bold; margin-bottom: 5px; }
+          .title-sub { color: #F15A24; font-size: 18px; font-weight: bold; }
+          .date-section { width: 25%; display: flex; justify-content: flex-end; }
+          .date-table { width: 150px; border-collapse: collapse; border: 1px solid #000; }
+          .date-table th { background-color: #E6E6E6 !important; border-bottom: 1px solid #000; padding: 6px; text-align: center; font-weight: bold; font-size: 12px; }
+          .date-table td { padding: 6px; text-align: center; font-size: 12px; text-transform: capitalize; }
+          .info-wrapper { border: 1px solid #000; padding: 8px 10px; margin-bottom: 20px; }
+          .info-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          .info-table td { padding: 4px 5px; vertical-align: middle; border: none; }
+          .col-label { font-weight: bold; white-space: nowrap; width: 1%; }
+          .col-value { width: 32%; text-transform: uppercase; }
+          .report-table { width: 100%; border-collapse: collapse; border: 1px solid #000; font-size: 11px; table-layout: fixed; }
+          .report-table th, .report-table td { border: 1px solid #000; }
+          .report-table th { background-color: #E6E6E6 !important; padding: 8px 5px; text-align: center; font-weight: bold; font-size: 12px; }
+          .report-table td { padding: 6px 8px; vertical-align: top; }
+          .col-ref { width: 14%; } .col-fecha { width: 15%; } .col-tractor { width: 12%; } .col-servicio { width: 41%; } .col-subtotal { width: 18%; }
+          .col-desc { white-space: pre-line; word-break: break-word; overflow-wrap: anywhere; }
+          .text-center { text-align: center; } .text-left { text-align: left; } .text-right { text-align: right; }
+          .amount-box { display: flex; justify-content: space-between; width: 100%; font-weight: bold; }
+          .spacer-row td { height: 60px; border-bottom: none !important; }
+          .no-internal-borders { border-right: 1px solid #000; border-left: 1px solid #000; }
+          .first-empty { border-top: 1px solid #000; border-bottom: 1px solid transparent; }
+          .middle-empty { border-top: 1px solid transparent; border-bottom: 1px solid transparent; }
+          .last-empty { border-top: 1px solid transparent; border-bottom: 1px solid #000; }
+        </style>
+      </head>
+      <body>
+      <div class="container">
+        <div class="header">
+          <div class="logo-section">
+            ${logoBase64 ? `<img alt="Roelca Logo" class="logo-img" src="${logoBase64}" />` : `<div style="height:40px; font-weight:bold; color:#00AEEF;">[LOGO ROELCA]</div>`}
+            <span class="logo-transporte">TRANSPORTE</span> 
+            <span class="logo-url">www.roelca.com</span>
+          </div>
+
+          <div class="title-section">
+            <div class="title-main">ROELCAINC SA DE CV</div>
+            <div class="title-sub">RELACIÓN DE COMPRAS</div>
+          </div>
+
+          <div class="date-section">
+            <table class="date-table">
+              <tbody>
+                <tr><th>FECHA</th></tr>
+                <tr><td>${fechaActual}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="info-wrapper">
+          <table class="info-table">
+            <tbody>
+              <tr>
+                <td class="col-label"># PROVEEDOR</td><td class="col-value">${escaparHTML(data.proveedorNum)}</td>
+                <td class="col-label">RAZON SOCIAL:</td><td class="col-value">${escaparHTML(data.razonSocial)}</td>
+                <td class="col-label">DENOMINACION:</td><td class="col-value">${escaparHTML(data.denominacion)}</td>
+              </tr>
+              <tr>
+                <td class="col-label">TIPO:</td><td class="col-value">${escaparHTML(data.tipo)}</td>
+                <td class="col-label">CONTACTO:</td><td class="col-value"> </td>
+                <td class="col-label"> </td><td class="col-value"> </td>
+              </tr>
+              <tr>
+                <td class="col-label">TELEFONO:</td><td class="col-value"> </td>
+                <td class="col-label">MAIL:</td><td class="col-value"> </td>
+                <td class="col-label"> </td><td class="col-value"> </td>
+              </tr>
+              <tr>
+                <td class="col-label">BANCO:</td><td class="col-value"> </td>
+                <td class="col-label">CUENTA:</td><td class="col-value"> </td>
+                <td class="col-label">CLABE:</td><td class="col-value"> </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th class="col-ref">REF#</th>
+              <th class="col-fecha">FECHA</th>
+              <th class="col-tractor">UNIDAD</th>
+              <th class="col-servicio">SERVICIO / DESCRIPCIÓN</th>
+              <th class="col-subtotal">SUBTOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filasHTML}
+            <tr class="spacer-row"><td colspan="5"></td></tr>
+            <tr>
+              <td class="no-internal-borders first-empty" colspan="4"> </td>
+              <td><div class="amount-box"><span>$</span> <span>${(Number(data.sumaImporte) || 0).toFixed(2)}</span></div></td>
+            </tr>
+            <tr>
+              <td class="no-internal-borders middle-empty" colspan="4"> </td>
+              <td><div class="amount-box"><span>$</span> <span>${(Number(data.sumaIva) || 0).toFixed(2)}</span></div></td>
+            </tr>
+            <tr>
+              <td class="no-internal-borders last-empty" colspan="4"> </td>
+              <td><div class="amount-box"><span>$</span> <span>${(Number(data.sumaTotal) || 0).toFixed(2)}</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <script>
+        window.onload = function() {
+          setTimeout(function() {
+            window.print();
+          }, 500);
+        }
+      </script>
+      </body>
+      </html>
+    `;
+
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    printWindow.document.open();
+    printWindow.document.write(htmlDocument);
+    printWindow.document.close();
+  } else {
+    alert('Por favor, permite las ventanas emergentes (pop-ups) en tu navegador para generar el PDF.');
+  }
+};

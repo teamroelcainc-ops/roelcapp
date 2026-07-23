@@ -5,6 +5,8 @@ import { collection, query, getDocs, limit, orderBy, doc, deleteDoc, writeBatch 
 import { db } from '../../../../config/firebase'; 
 import MttoAgrupadosInvoice from './MttoAgrupadosInvoice';
 import * as XLSX from 'xlsx';
+// ✅ Logo de los PDF (mismas exportaciones que ya usa el historial de Invoice).
+import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
 
 type VistaMaestra = 'tabla' | 'agrupado';
 
@@ -225,6 +227,192 @@ const MttoDashboard = () => {
         if (uni) return uni.unidad || uni.numeroEconomico || uni.nombre;
     }
     return unidadValor;
+  };
+
+  // ✅ NUEVO: genera para UN registro el MISMO documento "Relación de Compras"
+  //    que produce la pestaña "Agrupados por Invoice" (mismo HTML, mismos
+  //    estilos, mismo logo), con los datos de ese gasto individual.
+  const generarDocumentoGasto = (m: any) => {
+    const formatoMonedaDoc = (monto: number | string) => {
+      const num = Number(monto) || 0;
+      return `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+    const formatearFechaEspanolDoc = (fechaStr: string | Date) => {
+      const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+      const d = new Date(fechaStr);
+      if (isNaN(d.getTime())) return String(fechaStr || '-');
+      const dUTC = new Date(d.getTime() + d.getTimezoneOffset() * 60000);
+      return `${dUTC.getDate()} de ${meses[dUTC.getMonth()]} de ${dUTC.getFullYear()}`;
+    };
+    const escaparHTMLDoc = (texto: any) => String(texto ?? '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+    const multilineaDoc = (texto: any) => escaparHTMLDoc(texto).replace(/\r\n|\r|\n/g, '<br>');
+
+    const folio = formatearFolio(m);
+    const invoiceTxt = m.invoice && String(m.invoice).trim() !== '' ? String(m.invoice).trim() : '';
+    const denominacion = invoiceTxt || folio;
+    const proveedorTxt = m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas');
+    const razonSocial = (proveedorTxt && proveedorTxt !== '-') ? String(proveedorTxt) : 'VARIOS';
+    const proveedorNum = m.proveedorId || 'N/A';
+    const rfc = m.estatus || 'No facturado';
+    const fechaActual = formatearFechaEspanolDoc(new Date());
+    const logoBase64 = getLogoPdf() || LOGO_DEFAULT;
+
+    const filasHTML = `
+        <tr>
+          <td class="text-center">${escaparHTMLDoc(folio)}</td>
+          <td class="text-center" style="text-transform: capitalize;">${formatearFechaEspanolDoc(String(m.fecha || m.createdAt || ''))}</td>
+          <td class="text-center">${escaparHTMLDoc(mostrarNombreUnidad(m.unidadId || m.unidad))}</td>
+          <td class="col-desc">${multilineaDoc(m.descripcion || m.descripcionGeneral || '')}</td>
+          <td class="text-right">${formatoMonedaDoc(m.total)}</td>
+        </tr>
+      `;
+
+    const htmlDocument = `
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="utf-8">
+        <title>Relación de Compras - ${escaparHTMLDoc(denominacion)}</title>
+        <style>
+          @media print {
+            @page { size: letter; margin: 10mm; }
+            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          }
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background-color: #fff; padding: 20px; }
+          .container { max-width: 950px; margin: 0 auto; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+          .logo-section { width: 25%; text-align: center; display: flex; flex-direction: column; align-items: center; }
+          .logo-img { max-width: 110px; margin-bottom: 2px; }
+          .logo-transporte { color: #00AEEF; font-weight: bold; font-size: 10px; text-transform: uppercase; }
+          .logo-url { color: #F15A24; font-weight: bold; font-size: 10px; }
+          .title-section { width: 50%; text-align: center; padding-top: 15px; }
+          .title-main { color: #00AEEF; font-size: 22px; font-weight: bold; margin-bottom: 5px; }
+          .title-sub { color: #F15A24; font-size: 18px; font-weight: bold; }
+          .date-section { width: 25%; display: flex; justify-content: flex-end; }
+          .date-table { width: 150px; border-collapse: collapse; border: 1px solid #000; }
+          .date-table th { background-color: #E6E6E6 !important; border-bottom: 1px solid #000; padding: 6px; text-align: center; font-weight: bold; font-size: 12px; }
+          .date-table td { padding: 6px; text-align: center; font-size: 12px; text-transform: capitalize; }
+          .info-wrapper { border: 1px solid #000; padding: 8px 10px; margin-bottom: 20px; }
+          .info-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          .info-table td { padding: 4px 5px; vertical-align: middle; border: none; }
+          .col-label { font-weight: bold; white-space: nowrap; width: 1%; }
+          .col-value { width: 32%; text-transform: uppercase; }
+          .report-table { width: 100%; border-collapse: collapse; border: 1px solid #000; font-size: 11px; table-layout: fixed; }
+          .report-table th, .report-table td { border: 1px solid #000; }
+          .report-table th { background-color: #E6E6E6 !important; padding: 8px 5px; text-align: center; font-weight: bold; font-size: 12px; }
+          .report-table td { padding: 6px 8px; vertical-align: top; }
+          .col-ref { width: 14%; } .col-fecha { width: 15%; } .col-tractor { width: 12%; } .col-servicio { width: 41%; } .col-subtotal { width: 18%; }
+          .col-desc { white-space: pre-line; word-break: break-word; overflow-wrap: anywhere; }
+          .text-center { text-align: center; } .text-left { text-align: left; } .text-right { text-align: right; }
+          .amount-box { display: flex; justify-content: space-between; width: 100%; font-weight: bold; }
+          .spacer-row td { height: 60px; border-bottom: none !important; }
+          .no-internal-borders { border-right: 1px solid #000; border-left: 1px solid #000; }
+          .first-empty { border-top: 1px solid #000; border-bottom: 1px solid transparent; }
+          .middle-empty { border-top: 1px solid transparent; border-bottom: 1px solid transparent; }
+          .last-empty { border-top: 1px solid transparent; border-bottom: 1px solid #000; }
+        </style>
+      </head>
+      <body>
+      <div class="container">
+        <div class="header">
+          <div class="logo-section">
+            ${logoBase64 ? `<img alt="Roelca Logo" class="logo-img" src="${logoBase64}" />` : `<div style="height:40px; font-weight:bold; color:#00AEEF;">[LOGO ROELCA]</div>`}
+            <span class="logo-transporte">TRANSPORTE</span> 
+            <span class="logo-url">www.roelca.com</span>
+          </div>
+
+          <div class="title-section">
+            <div class="title-main">ROELCAINC SA DE CV</div>
+            <div class="title-sub">RELACIÓN DE COMPRAS</div>
+          </div>
+
+          <div class="date-section">
+            <table class="date-table">
+              <tbody>
+                <tr><th>FECHA</th></tr>
+                <tr><td>${fechaActual}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="info-wrapper">
+          <table class="info-table">
+            <tbody>
+              <tr>
+                <td class="col-label"># PROVEEDOR</td><td class="col-value">${escaparHTMLDoc(proveedorNum)}</td>
+                <td class="col-label">RAZON SOCIAL:</td><td class="col-value">${escaparHTMLDoc(razonSocial)}</td>
+                <td class="col-label">DENOMINACION:</td><td class="col-value">${escaparHTMLDoc(denominacion)}</td>
+              </tr>
+              <tr>
+                <td class="col-label">TIPO:</td><td class="col-value">${escaparHTMLDoc(rfc)}</td>
+                <td class="col-label">CONTACTO:</td><td class="col-value"> </td>
+                <td class="col-label"> </td><td class="col-value"> </td>
+              </tr>
+              <tr>
+                <td class="col-label">TELEFONO:</td><td class="col-value"> </td>
+                <td class="col-label">MAIL:</td><td class="col-value"> </td>
+                <td class="col-label"> </td><td class="col-value"> </td>
+              </tr>
+              <tr>
+                <td class="col-label">BANCO:</td><td class="col-value"> </td>
+                <td class="col-label">CUENTA:</td><td class="col-value"> </td>
+                <td class="col-label">CLABE:</td><td class="col-value"> </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th class="col-ref">REF#</th>
+              <th class="col-fecha">FECHA</th>
+              <th class="col-tractor">UNIDAD</th>
+              <th class="col-servicio">SERVICIO / DESCRIPCIÓN</th>
+              <th class="col-subtotal">SUBTOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filasHTML}
+            <tr class="spacer-row"><td colspan="5"></td></tr>
+            <tr>
+              <td class="no-internal-borders first-empty" colspan="4"> </td>
+              <td><div class="amount-box"><span>$</span> <span>${(parseFloat(m.importe) || 0).toFixed(2)}</span></div></td>
+            </tr>
+            <tr>
+              <td class="no-internal-borders middle-empty" colspan="4"> </td>
+              <td><div class="amount-box"><span>$</span> <span>${(parseFloat(m.ivaMonto) || 0).toFixed(2)}</span></div></td>
+            </tr>
+            <tr>
+              <td class="no-internal-borders last-empty" colspan="4"> </td>
+              <td><div class="amount-box"><span>$</span> <span>${(parseFloat(m.total) || 0).toFixed(2)}</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <script>
+        window.onload = function() {
+          setTimeout(function() {
+            window.print();
+          }, 500);
+        }
+      </script>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(htmlDocument);
+      printWindow.document.close();
+    } else {
+      alert('Por favor, permite las ventanas emergentes (pop-ups) en tu navegador para generar el PDF.');
+    }
   };
 
   const mostrarDatoMapeado = (id: any, catalogo: string, campoRetorno: string = 'nombre') => {
@@ -694,6 +882,15 @@ const MttoDashboard = () => {
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            </button>
+                            <button 
+                              title="Generar documento (Relación de Compras) con este gasto"
+                              onClick={() => generarDocumentoGasto(m)} 
+                              style={{ background: 'transparent', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                             </button>
                             <button 
                               title="Eliminar Gasto"
