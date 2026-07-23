@@ -1936,9 +1936,10 @@ export const ReferenciasNominaDashboard = () => {
             {!busquedaOpsHecha && <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Presiona Filtros y Buscar para ver las operaciones.</span>}
             <div style={{ marginLeft: 'auto' }}>
               <button
-                disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas'}
+                disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas' || !filtroOperador}
                 onClick={abrirModalNomina}
-                style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
+                title={!filtroOperador ? 'Selecciona un operador en Filtros para poder generar la nómina' : undefined}
+                style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas' && !!filtroOperador) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'asignadas' && !!filtroOperador) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
               >
                 Generar Nómina ({seleccionadas.length})
               </button>
@@ -1992,8 +1993,8 @@ export const ReferenciasNominaDashboard = () => {
               <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>
-                    {filtroEstadoOps === 'pendientes' && !!filtroOperador && operacionesMostradas.length > 0 && (
-                      <input type="checkbox" checked={todasMostradasSeleccionadas} onChange={toggleSeleccionarTodo} title="Seleccionar todo" style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                    {filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
+                      <input type="checkbox" checked={todasMostradasSeleccionadas} onChange={toggleSeleccionarTodo} title="Seleccionar / deseleccionar todas las operaciones mostradas" style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
                     )}
                   </th>
                   {columnasOps.filter(c => c.visible).map(col => (
@@ -2022,19 +2023,18 @@ export const ReferenciasNominaDashboard = () => {
                   </td></tr>
                 ) : (
                   operacionesMostradas.map(op => {
-                    // ✅ Para SELECCIONAR (y generar la nómina) sí se requiere haber
-                    //   elegido un operador; sin operador la tabla es de consulta.
-                    const seleccionable = filtroEstadoOps === 'pendientes' && !!filtroOperador;
+                    // ✅ Las operaciones PENDIENTES siempre se pueden seleccionar
+                    //   (con o sin operador filtrado). Generar la nómina sí sigue
+                    //   requiriendo un operador seleccionado.
+                    const seleccionable = filtroEstadoOps === 'pendientes';
                     return (
                       <tr key={op.id} onClick={() => seleccionable && toggleSeleccion(op.id)}
                         style={{ cursor: seleccionable ? 'pointer' : 'default', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
                         <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                           {seleccionable ? (
                             <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
-                          ) : filtroEstadoOps === 'asignadas' ? (
-                            <span title={op.referenciaNominaConsecutivo || 'Asignada'} style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                           ) : (
-                            <span title="Selecciona un operador para poder marcarla" style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#30363d' }} />
+                            <span title={op.referenciaNominaConsecutivo || 'Asignada'} style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                           )}
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id))}
