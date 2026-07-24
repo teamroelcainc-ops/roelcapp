@@ -1,11 +1,11 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, startAfter } from 'firebase/firestore';
-import { db, auth } from '../../../config/firebase'; 
+import { db, auth } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
-import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
+import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 // ✅ NUEVO: visor y subida de documentos ligados a la operación
@@ -41,10 +41,11 @@ const ID_MXN = 'f95d8894';
 // ID hex del status "Cancelado" en catalogo_status_servicio
 // ✅ NUEVO: utilidad para el Historial de Actividad (historial_actividad).
 //   Nunca debe romper el flujo principal: los llamados a registrarLog van con .catch.
-const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; remolque?: string; remolqueNombre?: string; busqueda?: string }): string => {
+const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; remolque?: string; remolqueNombre?: string; referencia?: string; busqueda?: string }): string => {
   const partes: string[] = [`Fechas: ${f.fechaInicio} a ${f.fechaFin}`];
   if (f.cliente) partes.push(`Cliente: ${f.clienteNombre || f.cliente}`);
   if (f.remolque) partes.push(`Remolque: ${f.remolqueNombre || f.remolque}`);
+  if (f.referencia && f.referencia.trim()) partes.push(`# Referencia: "${f.referencia.trim()}"`);
   if (f.busqueda && f.busqueda.trim()) partes.push(`Filtro general: "${f.busqueda.trim()}"`);
   return partes.join(' | ');
 };
@@ -156,7 +157,7 @@ const ServiciosCancelados = () => {
   // ✅ NUEVO: edición vía FormularioOperacion completo (igual que Activos/Completados)
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
-  
+
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
 
@@ -166,6 +167,9 @@ const ServiciosCancelados = () => {
   const [filterFechaFin, setFilterFechaFin] = useState('');
   const [filterCliente, setFilterCliente] = useState('');
   const [filterRemolque, setFilterRemolque] = useState('');
+  // ✅ NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya guardadas).
+  //   ⚠️ Regla: # referencia y # remolque SOLO funcionan con un rango de fechas.
+  const [filterReferencia, setFilterReferencia] = useState('');
 
   // ✅ NUEVO: buscador autocompletado de cliente (igual que Servicios Completados)
   const [textoBuscarCliente, setTextoBuscarCliente] = useState('');
@@ -196,6 +200,7 @@ const ServiciosCancelados = () => {
     clienteNombre: string;
     remolque: string;
     remolqueNombre: string;
+    referencia: string;
     busqueda: string;
   } | null>(null);
 
@@ -317,9 +322,9 @@ const ServiciosCancelados = () => {
       getDocs(collection(db, 'catalogo_tipo_operacion')),
       getDocs(collection(db, 'catalogo_embalaje')),
       getDocs(collection(db, 'remolques')),
-      getDocs(collection(db, 'catalogo_tarifas_referencia')), 
+      getDocs(collection(db, 'catalogo_tarifas_referencia')),
       getDocs(collection(db, 'convenios_proveedores')),
-      getDocs(collection(db, 'convenios_proveedores_detalles')), 
+      getDocs(collection(db, 'convenios_proveedores_detalles')),
       getDocs(collection(db, 'tipo_cambio')),
       getDocs(collection(db, 'convenios_clientes')),
       getDocs(collection(db, 'convenios_clientes_detalles')),
@@ -337,7 +342,7 @@ const ServiciosCancelados = () => {
       remolques: remSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
       tarifas: tarSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
       conveniosProv: convProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
-      catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })), 
+      catalogoConvProvDetalles: convProvDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
       catalogoTC: tcSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
       catalogoConvClientes: convCliSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
       catalogoConvDetalles: convDetSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
@@ -347,7 +352,7 @@ const ServiciosCancelados = () => {
       unidades_proveedor: uniProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) })),
       proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
     };
-    
+
     sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
     setCatalogosGlobales(catGuardados);
   };
@@ -389,6 +394,9 @@ const ServiciosCancelados = () => {
   //   La descarga y la aplicación de filtros ocurren SOLO al presionar BUSCAR.
   //   El rango de fechas (inicio + fin) es el requisito mínimo del botón.
   //   La carga sigue siendo por status 7607f692 (una sola descarga por sesión).
+  // ✅ NUEVO: los filtros de # referencia y # remolque requieren rango de fechas.
+  const rangoFechasListo = !!(filterFechaInicio && filterFechaFin);
+
   const ejecutarBusqueda = () => {
     if (!filterFechaInicio || !filterFechaFin) {
       alert('Selecciona Fecha Inicio y Fecha Fin para buscar.');
@@ -401,6 +409,7 @@ const ServiciosCancelados = () => {
       clienteNombre: nombreClienteSeleccionado,
       remolque: filterRemolque,
       remolqueNombre: nombreRemolqueSeleccionado,
+      referencia: filterReferencia,
       busqueda,
     };
     setFiltrosAplicados(snapshot);
@@ -413,7 +422,7 @@ const ServiciosCancelados = () => {
       descargarOperaciones();
     }
     // ✅ HISTORIAL: deja constancia de la búsqueda y de los filtros usados.
-    registrarLog('Servicios Cancelados', 'Búsqueda', `Buscó operaciones canceladas con filtros → ${describirFiltrosLog(snapshot)}`).catch(() => {});
+    registrarLog('Servicios Cancelados', 'Búsqueda', `Buscó operaciones canceladas con filtros → ${describirFiltrosLog(snapshot)}`).catch(() => { });
   };
 
   // ✅ MODIFICADO: Limpiar borra los campos del panel Y quita el filtro aplicado
@@ -425,6 +434,7 @@ const ServiciosCancelados = () => {
     setTextoBuscarCliente('');
     setFilterRemolque('');
     setTextoBuscarRemolque('');
+    setFilterReferencia('');
     setBusqueda('');
     setFiltrosAplicados(null);
     setPaginaActual(1);
@@ -444,6 +454,7 @@ const ServiciosCancelados = () => {
       setFilterFechaFin(f.fechaFin);
       setFilterCliente(f.cliente || '');
       setFilterRemolque(f.remolque || '');
+      setFilterReferencia(f.referencia || '');
       setBusqueda(f.busqueda || '');
       setFiltrosAplicados({
         fechaInicio: f.fechaInicio,
@@ -452,6 +463,7 @@ const ServiciosCancelados = () => {
         clienteNombre: f.clienteNombre || '',
         remolque: f.remolque || '',
         remolqueNombre: f.remolqueNombre || '',
+        referencia: f.referencia || '',
         busqueda: f.busqueda || '',
       });
       if (!yaDescargado.current) {
@@ -463,7 +475,7 @@ const ServiciosCancelados = () => {
   }, []);
 
   // ✅ NUEVO: cuántos filtros están definidos en el panel (para el contador del botón).
-  const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, busqueda.trim()].filter(Boolean).length;
+  const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, filterReferencia.trim(), busqueda.trim()].filter(Boolean).length;
 
   // ✅ NUEVO: chips con el resumen del último criterio buscado.
   const resumenFiltrosChips = useMemo(() => {
@@ -471,6 +483,7 @@ const ServiciosCancelados = () => {
     const chips: string[] = [`📅 ${filtrosAplicados.fechaInicio} → ${filtrosAplicados.fechaFin}`];
     if (filtrosAplicados.cliente) chips.push(`Cliente: ${filtrosAplicados.clienteNombre || filtrosAplicados.cliente}`);
     if (filtrosAplicados.remolque) chips.push(`Remolque: ${filtrosAplicados.remolqueNombre || filtrosAplicados.remolque}`);
+    if ((filtrosAplicados.referencia || '').trim()) chips.push(`# Referencia: "${filtrosAplicados.referencia.trim()}"`);
     if (filtrosAplicados.busqueda.trim()) chips.push(`Ref: "${filtrosAplicados.busqueda.trim()}"`);
     return chips;
   }, [filtrosAplicados]);
@@ -508,14 +521,14 @@ const ServiciosCancelados = () => {
     cargarBotones();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operacionViendo, catalogosGlobales.statusServicio]);
-  
+
   const mostrarDato = (dato: any) => (dato && dato !== '' ? dato : '-');
-  
+
   const formatearFechaHora = (isoString: string | undefined | null) => {
     if (!isoString) return '-';
     return new Date(isoString).toLocaleString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
-  
+
   const mostrarMoneda = (val: string | null | undefined) => {
     if (val === ID_USD) return 'USD';
     if (val === ID_MXN) return 'MXN';
@@ -555,7 +568,7 @@ const ServiciosCancelados = () => {
     if (!monto) return '$ 0.00';
     return `$ ${parseFloat(monto).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
-  
+
   const verHistorial = async () => {
     setModalHorarios('historial');
     setCargandoHorarios(true);
@@ -610,7 +623,7 @@ const ServiciosCancelados = () => {
       // ✅ HISTORIAL: cambio de status con el valor anterior y el nuevo.
       const refLogH = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
       const statusAnteriorH = operacionViendo.statusNombre || operacionViendo.status || '(sin status)';
-      registrarLog('Servicios Cancelados', 'Edición', `Cambió el status de la operación ${refLogH}: "${statusAnteriorH}" → "${statusNombreResuelto}" (horario del evento: ${nuevaFechaHora})`).catch(() => {});
+      registrarLog('Servicios Cancelados', 'Edición', `Cambió el status de la operación ${refLogH}: "${statusAnteriorH}" → "${statusNombreResuelto}" (horario del evento: ${nuevaFechaHora})`).catch(() => { });
 
       aplicarStatusEnMemoria(operacionViendo.id, statusId, statusNombreResuelto);
       alert('Horario registrado y Estatus actualizado.');
@@ -660,7 +673,7 @@ const ServiciosCancelados = () => {
 
       obtenerBotonesHorarioDinamicos({ ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre })
         .then(botones => setBotonesDisponibles(botones || []))
-        .catch(() => {});
+        .catch(() => { });
 
       const now = new Date();
       const tzOffset = now.getTimezoneOffset() * 60000;
@@ -688,7 +701,7 @@ const ServiciosCancelados = () => {
       const refLogR = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
       const statusAnteriorR = operacionPrevia.statusNombre || operacionPrevia.status || '(sin status)';
       const cascadaTxt = cadenaResuelta.length > 1 ? ` (cascada: ${cadenaResuelta.map(c => c.nombre).join(' → ')})` : '';
-      registrarLog('Servicios Cancelados', 'Edición', `Cambió el status de la operación ${refLogR}: "${statusAnteriorR}" → "${statusFinal.nombre}"${cascadaTxt}`).catch(() => {});
+      registrarLog('Servicios Cancelados', 'Edición', `Cambió el status de la operación ${refLogR}: "${statusAnteriorR}" → "${statusFinal.nombre}"${cascadaTxt}`).catch(() => { });
 
       setGuardandoStatusRapido(null);
       setUltimoStatusGuardado(statusNombre);
@@ -713,9 +726,9 @@ const ServiciosCancelados = () => {
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
-    const unidadProvVal = operacionViendo.unidadProveedor? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
+    const unidadProvVal = operacionViendo.unidadProveedor ? (catalogosGlobales.unidades_proveedor?.find((u: any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o: any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     generarSolicitudRetiroPDF({
       bodegaNombre: origen,
@@ -739,13 +752,13 @@ const ServiciosCancelados = () => {
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
-    const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
+    const unidadProvVal = operacionViendo.unidadProveedor
+      ? (catalogosGlobales.unidades_proveedor?.find((u: any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o: any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     generarInstruccionesServicioPDF({
-      consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'N/A',
+      consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'N/A',
       fecha: operacionViendo.fechaServicio || '',
       unidadNombre: operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal),
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
@@ -768,17 +781,17 @@ const ServiciosCancelados = () => {
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
-    const unidadProvVal = operacionViendo.unidadProveedor 
-      ? (catalogosGlobales.unidades_proveedor?.find((u:any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
+    const unidadProvVal = operacionViendo.unidadProveedor
+      ? (catalogosGlobales.unidades_proveedor?.find((u: any) => u.id === operacionViendo.unidadProveedor)?.numeroUnidad || operacionViendo.unidadProveedor) : 'N/A';
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o: any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
     const uniNombre = operacionViendo.unidadNombre || (unidadObj ? (unidadObj.numeroEconomico || unidadObj.nombre) : unidadProvVal);
     const uniPlacas = unidadObj ? (unidadObj.placa || 'N/A') : 'N/A';
 
     generarCheckListPDF({
-      consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
+      consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'S/R',
       fecha: operacionViendo.fechaServicio || '',
       cliente: operacionViendo.clienteNombre || mostrarDatoMapeado(operacionViendo.clientePaga, 'empresas'),
       remolque: operacionViendo.remolqueNombre || (remolqueObj ? (remolqueObj.placa || remolqueObj.nombre) : 'N/A'),
@@ -805,12 +818,12 @@ const ServiciosCancelados = () => {
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o: any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
 
     generarPruebaEntregaPDF({
-      referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
+      referencia: operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'S/R',
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
@@ -838,13 +851,13 @@ const ServiciosCancelados = () => {
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
 
     const operadorProvVal = operacionViendo.operadorProveedor
-      ? (catalogosGlobales.proveedores_unidad?.find((o:any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
+      ? (catalogosGlobales.proveedores_unidad?.find((o: any) => o.id === operacionViendo.operadorProveedor)?.nombre || operacionViendo.operadorProveedor) : 'N/A';
 
     const empNombre = operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal);
 
     generarCartaInstruccionesPDF({
-      referencia: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
-      consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0,6) || 'S/R',
+      referencia: operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'S/R',
+      consecutivo: operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'S/R',
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
       tipoServicio: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
@@ -925,6 +938,7 @@ const ServiciosCancelados = () => {
     const fCliente = filtrosAplicados.cliente;
     const fRemolque = filtrosAplicados.remolque;
     const fRemolqueNombre = filtrosAplicados.remolqueNombre;
+    const fReferencia = (filtrosAplicados.referencia || '').trim().toLowerCase();
 
     return operacionesGlobales.filter(op => {
       // Rango de fechas (obligatorio)
@@ -942,6 +956,13 @@ const ServiciosCancelados = () => {
           String(op.numeroRemolque || '') === fRemolque ||
           (fRemolqueNombre && String(op.remolqueNombre || '').toLowerCase().includes(fRemolqueNombre.toLowerCase()));
         if (!coincideRem) return false;
+      }
+
+      // ✅ NUEVO: # de referencia (opcional) — coincidencia parcial en las
+      //   referencias YA GUARDADAS dentro del rango de fechas aplicado arriba.
+      if (fReferencia) {
+        const textoRef = `${op.ref || ''} ${op.numReferencia || ''} ${op.referencia || ''}`.toLowerCase();
+        if (!textoRef.includes(fReferencia)) return false;
       }
 
       // Búsqueda general (opcional)
@@ -1153,7 +1174,7 @@ const ServiciosCancelados = () => {
   const evalIsFletes = evalTipoOpText.includes('fletes') || evalTipoOpText.includes('flete');
   const evalIsLogistica = evalTipoOpText.includes('logistica') || evalTipoOpText.includes('logística');
   const evalIsRoelca = String(operacionViendo?.proveedorUnidadNombre || operacionViendo?.proveedorUnidad || '').toLowerCase().includes('roelca');
-  
+
   const showDetailInternalFleet = evalIsTransfer || ((evalIsLogistica || evalIsFletes) && evalIsRoelca);
   const showDetailExternalFleet = (evalIsLogistica || evalIsFletes) && !evalIsRoelca;
 
@@ -1176,17 +1197,17 @@ const ServiciosCancelados = () => {
         />
       )}
 
-     <div style={{ width: '100%', margin: '0 auto' }}>
+      <div style={{ width: '100%', margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
           <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: 0, fontWeight: 'bold' }}>Servicios Cancelados</h1>
         </div>
 
-          {/* ✅ NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
+        {/* ✅ NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
               pantalla, con fondo oscurecido; se abre con el botón Filtros. */}
-          {drawerFiltrosAbierto && (
-            <>
-              <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1200, animation: 'fadeIn 0.2s ease' }} />
-              <aside style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92vw', backgroundColor: '#161b22', borderLeft: '1px solid #30363d', zIndex: 1201, display: 'flex', flexDirection: 'column', boxShadow: '-10px 0 30px rgba(0, 0, 0, 0.55)', animation: 'fadeIn 0.2s ease' }}>
+        {drawerFiltrosAbierto && (
+          <>
+            <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1200, animation: 'fadeIn 0.2s ease' }} />
+            <aside style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92vw', backgroundColor: '#161b22', borderLeft: '1px solid #30363d', zIndex: 1201, display: 'flex', flexDirection: 'column', boxShadow: '-10px 0 30px rgba(0, 0, 0, 0.55)', animation: 'fadeIn 0.2s ease' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
@@ -1197,140 +1218,164 @@ const ServiciosCancelados = () => {
 
               <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-          {/* Fecha Inicio (requerida para mostrar registros) */}
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO *</label>
-            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
-          </div>
+                {/* Fecha Inicio (requerida para mostrar registros) */}
+                <div style={{ width: '100%' }}>
+                  <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO *</label>
+                  <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+                </div>
 
-          {/* Fecha Fin (requerida para mostrar registros) */}
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN *</label>
-            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
-          </div>
+                {/* Fecha Fin (requerida para mostrar registros) */}
+                <div style={{ width: '100%' }}>
+                  <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN *</label>
+                  <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+                </div>
 
-          {/* Cliente que paga (buscador con autocompletado) */}
-          <div style={{ width: '100%', position: 'relative' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
+                {/* ✅ NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
+              guardadas dentro del rango). Requiere rango de fechas. */}
+                <div style={{ width: '100%' }}>
+                  <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}># REFERENCIA (requiere rango de fechas)</label>
+                  <input
+                    type="text"
+                    placeholder={rangoFechasListo ? 'Ej. TR-220726-016 (acepta parcial)' : 'Coloca un rango de fechas primero'}
+                    value={filterReferencia}
+                    onChange={(e) => setFilterReferencia(e.target.value)}
+                    disabled={!rangoFechasListo}
+                    title={rangoFechasListo ? 'Busca en los números de referencia ya guardados dentro del rango de fechas' : 'Este filtro solo funciona con un rango de fechas (inicio y fin)'}
+                    style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box', opacity: rangoFechasListo ? 1 : 0.45, cursor: rangoFechasListo ? 'text' : 'not-allowed' }}
+                  />
+                  {!rangoFechasListo && (
+                    <div style={{ color: '#6e7681', fontSize: '0.72rem', marginTop: '4px' }}>⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+                  )}
+                </div>
 
-            {filterCliente ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
-                <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {nombreClienteSeleccionado}
-                </span>
-                <button
-                  onClick={() => { setFilterCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
-                  title="Cambiar cliente"
-                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
-                >
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <input
-                type="text"
-                placeholder="Buscar cliente por nombre o RFC..."
-                value={textoBuscarCliente}
-                onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
-                onFocus={() => setMostrarSugerenciasCliente(true)}
-                onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
-                style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
-              />
-            )}
+                {/* Cliente que paga (buscador con autocompletado) */}
+                <div style={{ width: '100%', position: 'relative' }}>
+                  <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
 
-            {!filterCliente && mostrarSugerenciasCliente && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
-                {clientesFiltradosBuscador.length === 0 ? (
-                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
-                    {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
-                      {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
-                    </div>
-                    {clientesFiltradosBuscador.map((cli: any) => (
-                      <div
-                        key={cli.id}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => { setFilterCliente(cli.id); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
-                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
-                        onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
-                        onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  {filterCliente ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
+                      <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {nombreClienteSeleccionado}
+                      </span>
+                      <button
+                        onClick={() => { setFilterCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
+                        title="Cambiar cliente"
+                        style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
                       >
-                        <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
-                        {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Remolque (buscador con autocompletado) */}
-          <div style={{ width: '100%', position: 'relative' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE (opcional)</label>
-
-            {filterRemolque ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
-                <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {nombreRemolqueSeleccionado}
-                </span>
-                <button
-                  onClick={() => { setFilterRemolque(''); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
-                  title="Cambiar remolque"
-                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
-                >
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <input
-                type="text"
-                placeholder="Buscar remolque por nombre o placa..."
-                value={textoBuscarRemolque}
-                onChange={(e) => { setTextoBuscarRemolque(e.target.value); setMostrarSugerenciasRemolque(true); }}
-                onFocus={() => setMostrarSugerenciasRemolque(true)}
-                onBlur={() => setTimeout(() => setMostrarSugerenciasRemolque(false), 180)}
-                style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
-              />
-            )}
-
-            {!filterRemolque && mostrarSugerenciasRemolque && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
-                {remolquesFiltradosBuscador.length === 0 ? (
-                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
-                    {textoBuscarRemolque.trim() ? 'Sin coincidencias' : 'No hay remolques cargados'}
-                  </div>
-                ) : (
-                  <>
-                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
-                      {remolquesFiltradosBuscador.length} {remolquesFiltradosBuscador.length === 1 ? 'remolque' : 'remolques'}{textoBuscarRemolque.trim() ? '' : ' (primeros 30)'}
+                        ✕
+                      </button>
                     </div>
-                    {remolquesFiltradosBuscador.map((rem: any) => (
-                      <div
-                        key={rem.id}
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => { setFilterRemolque(rem.id); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
-                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
-                        onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
-                        onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                      >
-                        <div style={{ fontWeight: '500' }}>{etiquetaRemolque(rem) || rem.id}</div>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Buscar cliente por nombre o RFC..."
+                      value={textoBuscarCliente}
+                      onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
+                      onFocus={() => setMostrarSugerenciasCliente(true)}
+                      onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
+                      style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                    />
+                  )}
 
-          {/* Filtro general (opcional) */}
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
-            <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
-          </div>
+                  {!filterCliente && mostrarSugerenciasCliente && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+                      {clientesFiltradosBuscador.length === 0 ? (
+                        <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                          {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                            {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
+                          </div>
+                          {clientesFiltradosBuscador.map((cli: any) => (
+                            <div
+                              key={cli.id}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => { setFilterCliente(cli.id); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
+                              style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
+                              {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Remolque (buscador con autocompletado) */}
+                <div style={{ width: '100%', position: 'relative' }}>
+                  <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}># REMOLQUE (requiere rango de fechas)</label>
+
+                  {filterRemolque ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
+                      <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {nombreRemolqueSeleccionado}
+                      </span>
+                      <button
+                        onClick={() => { setFilterRemolque(''); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
+                        title="Cambiar remolque"
+                        style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder={rangoFechasListo ? 'Buscar remolque por nombre o placa...' : 'Coloca un rango de fechas primero'}
+                      value={textoBuscarRemolque}
+                      onChange={(e) => { setTextoBuscarRemolque(e.target.value); setMostrarSugerenciasRemolque(true); }}
+                      onFocus={() => setMostrarSugerenciasRemolque(true)}
+                      onBlur={() => setTimeout(() => setMostrarSugerenciasRemolque(false), 180)}
+                      disabled={!rangoFechasListo}
+                      title={rangoFechasListo ? 'Busca en los números de remolque ya guardados dentro del rango de fechas' : 'Este filtro solo funciona con un rango de fechas (inicio y fin)'}
+                      style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box', opacity: rangoFechasListo ? 1 : 0.45, cursor: rangoFechasListo ? 'text' : 'not-allowed' }}
+                    />
+                  )}
+
+                  {!rangoFechasListo && !filterRemolque && (
+                    <div style={{ color: '#6e7681', fontSize: '0.72rem', marginTop: '4px' }}>⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+                  )}
+
+                  {rangoFechasListo && !filterRemolque && mostrarSugerenciasRemolque && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+                      {remolquesFiltradosBuscador.length === 0 ? (
+                        <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                          {textoBuscarRemolque.trim() ? 'Sin coincidencias' : 'No hay remolques cargados'}
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                            {remolquesFiltradosBuscador.length} {remolquesFiltradosBuscador.length === 1 ? 'remolque' : 'remolques'}{textoBuscarRemolque.trim() ? '' : ' (primeros 30)'}
+                          </div>
+                          {remolquesFiltradosBuscador.map((rem: any) => (
+                            <div
+                              key={rem.id}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => { setFilterRemolque(rem.id); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
+                              style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                            >
+                              <div style={{ fontWeight: '500' }}>{etiquetaRemolque(rem) || rem.id}</div>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Filtro general (opcional) */}
+                <div style={{ width: '100%' }}>
+                  <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
+                  <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                </div>
               </div>
 
               <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', flexShrink: 0 }}>
@@ -1350,9 +1395,9 @@ const ServiciosCancelados = () => {
                   Buscar
                 </button>
               </div>
-              </aside>
-            </>
-          )}
+            </aside>
+          </>
+        )}
 
         {/* ✅ NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
             Arrastrando ⋮⋮ (o con las flechas) se cambia el orden; el checkbox
@@ -1475,109 +1520,109 @@ const ServiciosCancelados = () => {
               </div>
             </div>
           ) : (
-          <>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-              <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
-                  <tr>
-                    <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
-                    {/* ✅ NUEVO: encabezados clicables para ordenar (asc ▲ / desc ▼ / original) */}
-                    {COLUMNAS_TABLA_CANCELADOS.map(col => (
-                      <th
-                        key={`th_${col.id}`}
-                        onClick={() => manejarOrdenColumna(col.id)}
-                        title={ordenColumna === col.id ? (ordenDireccion === 'asc' ? 'Clic: ordenar descendente' : 'Clic: quitar ordenamiento') : 'Clic: ordenar ascendente'}
-                        style={{ padding: '16px', color: ordenColumna === col.id ? '#f0f6fc' : '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', cursor: 'pointer', userSelect: 'none' }}
-                      >
-                        {col.label}
-                        {ordenColumna === col.id && (
-                          <span style={{ marginLeft: '6px', color: '#ef4444', fontSize: '0.7rem' }}>
-                            {ordenDireccion === 'asc' ? '▲' : '▼'}
-                          </span>
-                        )}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {operacionesEnPantalla.length === 0 ? (<tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados para tu búsqueda.</td></tr>) : (
-                    operacionesEnPantalla.map((op: any) => (
-                      <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
-                        <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                          <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            <button 
-                              type="button" 
-                              title="Ver Detalles"
-                              onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setPestañaDetalleActiva('general'); }}
-                              style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
-                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                            </button>
-                            <button 
-                              type="button" 
-                              title="Editar Operación"
-                              onClick={(e) => { e.stopPropagation(); abrirEdicion(op); }}
-                              style={{ background: 'transparent', border: '1px solid #58a6ff', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(88, 166, 255, 0.1)'}
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                            </button>
-                            <button 
-                              type="button" 
-                              title="Ver Documentos"
-                              onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setMostrarDocumentos(true); }}
-                              style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
-                            </button>
-                          </div>
-                        </td>
-                        <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0,6)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td>
-                        <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</td>
-                        <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</td>
-                        <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</td>
-                        <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.subtotalCliente)}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-          </div>
-          {operacionesOrdenadas.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones canceladas</div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button 
-                  title="Página Anterior"
-                  onClick={irPaginaAnterior} 
-                  disabled={paginaActual === 1}
-                  style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-                </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
-                <button 
-                  title="Página Siguiente"
-                  onClick={irPaginaSiguiente} 
-                  disabled={paginaActual === totalPaginas || totalPaginas === 0}
-                  style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </button>
+            <>
+              <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
+                <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+                    <tr>
+                      <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                      {/* ✅ NUEVO: encabezados clicables para ordenar (asc ▲ / desc ▼ / original) */}
+                      {COLUMNAS_TABLA_CANCELADOS.map(col => (
+                        <th
+                          key={`th_${col.id}`}
+                          onClick={() => manejarOrdenColumna(col.id)}
+                          title={ordenColumna === col.id ? (ordenDireccion === 'asc' ? 'Clic: ordenar descendente' : 'Clic: quitar ordenamiento') : 'Clic: ordenar ascendente'}
+                          style={{ padding: '16px', color: ordenColumna === col.id ? '#f0f6fc' : '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          {col.label}
+                          {ordenColumna === col.id && (
+                            <span style={{ marginLeft: '6px', color: '#ef4444', fontSize: '0.7rem' }}>
+                              {ordenDireccion === 'asc' ? '▲' : '▼'}
+                            </span>
+                          )}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {operacionesEnPantalla.length === 0 ? (<tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados para tu búsqueda.</td></tr>) : (
+                      operacionesEnPantalla.map((op: any) => (
+                        <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
+                          <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
+                            <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                title="Ver Detalles"
+                                onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setPestañaDetalleActiva('general'); }}
+                                style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                              </button>
+                              <button
+                                type="button"
+                                title="Editar Operación"
+                                onClick={(e) => { e.stopPropagation(); abrirEdicion(op); }}
+                                style={{ background: 'transparent', border: '1px solid #58a6ff', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(88, 166, 255, 0.1)'}
+                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                              </button>
+                              <button
+                                type="button"
+                                title="Ver Documentos"
+                                onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setMostrarDocumentos(true); }}
+                                style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
+                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+                              </button>
+                            </div>
+                          </td>
+                          <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0, 6)}</td>
+                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td>
+                          <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</td>
+                          <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</td>
+                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</td>
+                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</td>
+                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</td>
+                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</td>
+                          <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</td>
+                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.subtotalCliente)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-            </div>
-          )}
-          </>
+              {operacionesOrdenadas.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
+                  <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones canceladas</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      title="Página Anterior"
+                      onClick={irPaginaAnterior}
+                      disabled={paginaActual === 1}
+                      style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    </button>
+                    <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                    <button
+                      title="Página Siguiente"
+                      onClick={irPaginaSiguiente}
+                      disabled={paginaActual === totalPaginas || totalPaginas === 0}
+                      style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1587,13 +1632,13 @@ const ServiciosCancelados = () => {
             <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: 'none' }}>
               <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                 <span>Detalle de Servicio Cancelado</span>
-                <span style={{ color: '#ef4444' }}>{operacionViendo.ref || operacionViendo.id?.substring(0,6)}</span>
+                <span style={{ color: '#ef4444' }}>{operacionViendo.ref || operacionViendo.id?.substring(0, 6)}</span>
                 <span style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(239, 68, 68, 0.3)', fontWeight: 'bold' }}>
                   {mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}
                 </span>
               </h2>
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-                
+
                 {evalIsFletes && (
                   <>
                     <button onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
@@ -1633,12 +1678,14 @@ const ServiciosCancelados = () => {
                     const esExitoso = ultimoStatusGuardado === botonStr;
                     return (
                       <button key={botonStr} onClick={() => registrarStatusRapido(botonStr)} disabled={guardandoStatusRapido !== null} className="status-pill"
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
                           background: esExitoso ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
                           color: '#fff', cursor: guardandoStatusRapido && !esExitoso ? 'wait' : 'pointer', fontWeight: 600, fontSize: '0.9rem',
                           boxShadow: esExitoso ? '0 4px 14px rgba(16, 185, 129, 0.4)' : '0 4px 14px rgba(234, 88, 12, 0.35)',
                           transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-                          opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden' }}
+                          opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden'
+                        }}
                         title={`Marcar como: ${botonStr}`}>
                         <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                           {esExitoso ? (
@@ -1656,8 +1703,10 @@ const ServiciosCancelados = () => {
                     );
                   })}
                   <button onClick={abrirRegistroHorario} className="status-circle-btn"
-                    style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#8b949e',
-                      cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0 }}
+                    style={{
+                      width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#8b949e',
+                      cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0
+                    }}
                     title="Registrar con fecha/hora distinta (retroactivo)">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -1673,9 +1722,11 @@ const ServiciosCancelados = () => {
                     No hay transiciones automáticas configuradas.
                   </span>
                   <button onClick={abrirRegistroHorario} className="status-pill"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
                       background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
-                      boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)', transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                      boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)', transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
                     title="Registrar status manualmente">
                     <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1694,7 +1745,7 @@ const ServiciosCancelados = () => {
             <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
               {pestañaDetalleActiva === 'general' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}><div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Tipo</span><span>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{color: '#ef4444'}}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span></div>
+                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{ color: '#ef4444' }}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span></div>
                   {evalIsFletes && (<div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
                   <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Paga)</span><span>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span></div>

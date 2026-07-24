@@ -57,12 +57,13 @@ const describirCambiosLog = (nuevo: any, anterior: any, etiquetas: Record<string
   return visibles.join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
 };
 
-const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; tipoOperacion?: string; remolque?: string; remolqueNombre?: string; operador?: string; operadorNombre?: string; busqueda?: string }): string => {
+const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; tipoOperacion?: string; remolque?: string; remolqueNombre?: string; operador?: string; operadorNombre?: string; referencia?: string; busqueda?: string }): string => {
   const partes: string[] = [`Fechas: ${f.fechaInicio} a ${f.fechaFin}`];
   if (f.cliente) partes.push(`Cliente: ${f.clienteNombre || f.cliente}`);
   if (f.tipoOperacion) partes.push(`Tipo de operación: ${f.tipoOperacion}`);
   if (f.remolque) partes.push(`Remolque: ${f.remolqueNombre || f.remolque}`);
   if (f.operador) partes.push(`Operador: ${f.operadorNombre || f.operador}`);
+  if (f.referencia && f.referencia.trim()) partes.push(`# Referencia: "${f.referencia.trim()}"`);
   if (f.busqueda && f.busqueda.trim()) partes.push(`Filtro general: "${f.busqueda.trim()}"`);
   return partes.join(' | ');
 };
@@ -317,6 +318,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [filterFechaFin, setFilterFechaFin] = useState('');
   const [filterRemolque, setFilterRemolque] = useState('');
   const [filterCliente, setFilterCliente] = useState('');
+  // ✅ NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya guardadas).
+  //   ⚠️ Regla: # referencia y # remolque SOLO funcionan con un rango de fechas.
+  const [filterReferencia, setFilterReferencia] = useState('');
   // ✅ NUEVO: filtro por tipo de operación (Transfer / Logística / Fletes).
   const [filterTipoOperacion, setFilterTipoOperacion] = useState('');
 
@@ -347,6 +351,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     remolqueNombre: string;
     operador: string;
     operadorNombre: string;
+    referencia: string;
     busqueda: string;
   } | null>(null);
 
@@ -607,6 +612,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ MODIFICADO: ya NO se descarga automáticamente al cambiar las fechas.
   //   La descarga y la aplicación de filtros ocurren SOLO al presionar BUSCAR.
   //   El rango de fechas (inicio + fin) es el requisito mínimo del botón.
+  // ✅ NUEVO: los filtros de # referencia y # remolque requieren rango de fechas.
+  const rangoFechasListo = !!(filterFechaInicio && filterFechaFin);
+
   const ejecutarBusqueda = () => {
     if (!filterFechaInicio || !filterFechaFin) {
       alert('Selecciona Fecha Inicio y Fecha Fin para buscar.');
@@ -622,6 +630,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       remolqueNombre: nombreRemolqueSeleccionado,
       operador: filterOperador,
       operadorNombre: nombreOperadorSeleccionado,
+      referencia: filterReferencia,
       busqueda,
     };
     setFiltrosAplicados(snapshot);
@@ -648,6 +657,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setTextoBuscarRemolque('');
     setFilterOperador('');
     setTextoBuscarOperador('');
+    setFilterReferencia('');
     setFilterTipoOperacion('');
     setBusqueda('');
     setFiltrosAplicados(null);
@@ -670,6 +680,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       setFilterTipoOperacion(f.tipoOperacion || '');
       setFilterRemolque(f.remolque || '');
       setFilterOperador(f.operador || '');
+      setFilterReferencia(f.referencia || '');
       setBusqueda(f.busqueda || '');
       setFiltrosAplicados({
         fechaInicio: f.fechaInicio,
@@ -681,6 +692,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         remolqueNombre: f.remolqueNombre || '',
         operador: f.operador || '',
         operadorNombre: f.operadorNombre || '',
+        referencia: f.referencia || '',
         busqueda: f.busqueda || '',
       });
       if (!yaDescargado.current) {
@@ -692,7 +704,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   }, []);
 
   // ✅ NUEVO: cuántos filtros están definidos en el panel (para el contador del botón).
-  const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, filterOperador, filterTipoOperacion, busqueda.trim()].filter(Boolean).length;
+  const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, filterOperador, filterReferencia.trim(), filterTipoOperacion, busqueda.trim()].filter(Boolean).length;
 
   // ✅ NUEVO: chips con el resumen del último criterio buscado.
   const resumenFiltrosChips = useMemo(() => {
@@ -702,6 +714,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     if (filtrosAplicados.tipoOperacion) chips.push(`Tipo: ${filtrosAplicados.tipoOperacion}`);
     if (filtrosAplicados.remolque) chips.push(`Remolque: ${filtrosAplicados.remolqueNombre || filtrosAplicados.remolque}`);
     if (filtrosAplicados.operador) chips.push(`Operador: ${filtrosAplicados.operadorNombre || filtrosAplicados.operador}`);
+    if ((filtrosAplicados.referencia || '').trim()) chips.push(`# Referencia: "${filtrosAplicados.referencia.trim()}"`);
     if (filtrosAplicados.busqueda.trim()) chips.push(`Ref: "${filtrosAplicados.busqueda.trim()}"`);
     return chips;
   }, [filtrosAplicados]);
@@ -1262,7 +1275,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   //   presionar BUSCAR (filtrosAplicados), no con los campos en vivo de la barra.
   const operacionesFiltradas = useMemo(() => {
     if (!filtrosAplicados) return [];
-    const { fechaInicio: fIni, fechaFin: fFin, cliente: fCliente, tipoOperacion: fTipoOp, remolque: fRemolque, operador: fOperador, busqueda: fBusqueda } = filtrosAplicados;
+    const { fechaInicio: fIni, fechaFin: fFin, cliente: fCliente, tipoOperacion: fTipoOp, remolque: fRemolque, operador: fOperador, referencia: fReferencia, busqueda: fBusqueda } = filtrosAplicados;
 
     let filtradas = operacionesGlobales;
 
@@ -1286,6 +1299,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
     if (fRemolque) {
       filtradas = filtradas.filter(op => String(op.numeroRemolque || '') === fRemolque || String(op.remolqueNombre || '').toLowerCase().includes(fRemolque.toLowerCase()));
+    }
+
+    // ✅ NUEVO: filtro por # DE REFERENCIA. Busca coincidencia (parcial) en las
+    //   referencias YA GUARDADAS dentro del rango de fechas aplicado arriba.
+    if ((fReferencia || '').trim()) {
+      const r = fReferencia.trim().toLowerCase();
+      filtradas = filtradas.filter(op =>
+        `${op.ref || ''} ${op.numReferencia || ''} ${op.referencia || ''}`.toLowerCase().includes(r)
+      );
     }
 
     // ✅ NUEVO: filtro por OPERADOR. Cruza por ID del empleado (op.operador /
@@ -1847,6 +1869,27 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
           </div>
 
+          {/* ✅ NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
+              guardadas dentro del rango). Requiere rango de fechas. */}
+          <div style={{ width: '100%' }}>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}># REFERENCIA (requiere rango de fechas)</label>
+            <div style={{ position: 'relative' }}>
+              <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input
+                type="text"
+                placeholder={rangoFechasListo ? 'Ej. TR-220726-016 (acepta parcial)' : 'Coloca un rango de fechas primero'}
+                value={filterReferencia}
+                onChange={(e) => setFilterReferencia(e.target.value)}
+                disabled={!rangoFechasListo}
+                title={rangoFechasListo ? 'Busca en los números de referencia ya guardados dentro del rango de fechas' : 'Este filtro solo funciona con un rango de fechas (inicio y fin)'}
+                style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box', opacity: rangoFechasListo ? 1 : 0.45, cursor: rangoFechasListo ? 'text' : 'not-allowed' }}
+              />
+            </div>
+            {!rangoFechasListo && (
+              <div style={{ color: '#6e7681', fontSize: '0.72rem', marginTop: '4px' }}>⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+            )}
+          </div>
+
           <div style={{ width: '100%', position: 'relative' }}>
             <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
 
@@ -1919,7 +1962,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
 
           <div style={{ width: '100%', position: 'relative' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>REMOLQUE (opcional)</label>
+            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}># REMOLQUE (requiere rango de fechas)</label>
 
             {filterRemolque ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', minHeight: '20px' }}>
@@ -1940,17 +1983,23 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                 <input
                   type="text"
-                  placeholder="Buscar remolque por nombre o placa..."
+                  placeholder={rangoFechasListo ? 'Buscar remolque por nombre o placa...' : 'Coloca un rango de fechas primero'}
                   value={textoBuscarRemolque}
                   onChange={(e) => { setTextoBuscarRemolque(e.target.value); setMostrarSugerenciasRemolque(true); }}
                   onFocus={() => setMostrarSugerenciasRemolque(true)}
                   onBlur={() => setTimeout(() => setMostrarSugerenciasRemolque(false), 180)}
-                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                  disabled={!rangoFechasListo}
+                  title={rangoFechasListo ? 'Busca en los números de remolque ya guardados dentro del rango de fechas' : 'Este filtro solo funciona con un rango de fechas (inicio y fin)'}
+                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box', opacity: rangoFechasListo ? 1 : 0.45, cursor: rangoFechasListo ? 'text' : 'not-allowed' }}
                 />
               </div>
             )}
 
-            {!filterRemolque && mostrarSugerenciasRemolque && (
+            {!rangoFechasListo && !filterRemolque && (
+              <div style={{ color: '#6e7681', fontSize: '0.72rem', marginTop: '4px' }}>⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+            )}
+
+            {rangoFechasListo && !filterRemolque && mostrarSugerenciasRemolque && (
               <div style={{
                 position: 'absolute', top: '100%', left: 0, right: 0,
                 backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',

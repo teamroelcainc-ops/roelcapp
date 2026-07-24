@@ -227,6 +227,7 @@ const OperacionesDashboard = () => {
   const [filtroUnidad, setFiltroUnidad] = useState('');
   const [filtroRemolque, setFiltroRemolque] = useState('');
 
+
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
   const registrosPorPagina = 50;
