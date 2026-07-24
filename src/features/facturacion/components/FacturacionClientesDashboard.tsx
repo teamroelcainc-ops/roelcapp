@@ -1029,29 +1029,31 @@ export const FacturacionClientesDashboard = () => {
   };
 
   // ──────────────────────────────────────────────────────────────────
-  // ✅ (# REMOLQUE) Un remolque suele traer el MISMO número en "nombre" y
-  //    "placa" (p. ej. "672619 672619"): en ese caso se muestra UNO solo.
-  //    Si son números DIFERENTES (p. ej. "658 19UJ2W") se muestran ambos
-  //    con un indicador "≠" de que no coinciden.
+  // ✅ (# REMOLQUE) El valor del remolque CONCATENA el # de caja con la
+  //    placa (p. ej. "PLT.51 187-WN7"). Solo interesa el # de CAJA, que es
+  //    el PRIMER token. Si una factura tiene varias operaciones con cajas
+  //    DIFERENTES, se muestran todas con un indicador "≠".
   // ──────────────────────────────────────────────────────────────────
-  const tokensRemolque = (...valores: any[]): string[] => {
-    const unicos: string[] = [];
-    const vistos = new Set<string>();
-    valores.forEach(v => {
-      const r = resolverNombre(v);
-      String(r ?? '').split(/[\s,]+/).forEach(t => {
-        const limpio = t.trim();
-        if (!limpio || limpio === '-') return;
-        const k = limpio.toUpperCase();
-        if (!vistos.has(k)) { vistos.add(k); unicos.push(limpio); }
-      });
-    });
-    return unicos;
+  const cajaDeTexto = (valor: any): string => {
+    const r = resolverNombre(valor);
+    const tokens = String(r ?? '')
+      .split(/[\s,|]+/)
+      .map(t => t.trim())
+      .filter(t => t && t !== '-' && /[A-Za-z0-9]/.test(t));
+    return tokens[0] || '';
   };
 
-  // Tokens de remolque de una OPERACIÓN (junta nombre + placa + número).
-  const remolqueOpTokens = (op: any): string[] =>
-    tokensRemolque(op?.remolqueNombre, op?.remolquePlaca, op?.numeroRemolque, op?.remolque);
+  // # de caja de una OPERACIÓN (primer campo con valor: nombre → placa → número).
+  const remolqueOpTokens = (op: any): string[] => {
+    const cands = [op?.remolqueNombre, op?.remolquePlaca, op?.numeroRemolque, op?.remolque];
+    for (const c of cands) {
+      if (c !== undefined && c !== null && c !== '') {
+        const caja = cajaDeTexto(c);
+        if (caja) return [caja];
+      }
+    }
+    return [];
+  };
 
   // ✅ Número de caja (# remolque) de una operación de la factura: usa el valor
   //    guardado en el resumen y, si falta (facturas viejas), cae al opInfoMap
@@ -1064,23 +1066,27 @@ export const FacturacionClientesDashboard = () => {
     return resuelto && resuelto !== '-' ? resuelto : '';
   };
 
-  // Tokens de remolque de una FACTURA (junta los de todas sus operaciones).
+  // # de caja de una FACTURA: una caja por operación, sin repetir.
   const remolquesFacturaTokens = (f: any): string[] => {
-    const crudos: any[] = [];
-    (Array.isArray(f?.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => {
-      const r = remolqueDeOp(op);
-      if (r) crudos.push(r);
-    });
-    if (crudos.length === 0 && Array.isArray(f?.remolques)) crudos.push(...f.remolques);
-    return tokensRemolque(...crudos);
+    const cajas: string[] = [];
+    const vistos = new Set<string>();
+    const agregar = (valor: any) => {
+      const caja = cajaDeTexto(valor);
+      if (!caja) return;
+      const k = caja.toUpperCase();
+      if (!vistos.has(k)) { vistos.add(k); cajas.push(caja); }
+    };
+    (Array.isArray(f?.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => agregar(remolqueDeOp(op)));
+    if (cajas.length === 0 && Array.isArray(f?.remolques)) f.remolques.forEach((r: any) => agregar(r));
+    return cajas;
   };
 
-  // Render compartido: 1 token → uno solo; varios → todos + indicador "≠".
+  // Render compartido: 1 caja → una sola; varias (ops con cajas distintas) → todas + "≠".
   const renderRemolqueTokens = (tokens: string[]) => {
     if (tokens.length === 0) return <span style={{ color: '#8b949e' }}>-</span>;
     if (tokens.length === 1) return <span style={{ color: '#c9d1d9', fontFamily: 'monospace' }}>{tokens[0]}</span>;
     return (
-      <span title="Los números de remolque son diferentes" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+      <span title="Las operaciones de esta factura tienen números de caja diferentes" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
         <span style={{ color: '#c9d1d9', fontFamily: 'monospace' }}>{tokens.join(' / ')}</span>
         <span style={{ color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '10px', padding: '0 6px', fontSize: '0.75rem', fontWeight: 'bold', lineHeight: '16px' }}>≠</span>
       </span>
