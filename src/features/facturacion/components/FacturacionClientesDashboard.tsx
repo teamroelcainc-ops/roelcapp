@@ -44,9 +44,11 @@ const SS_OPS = 'roelca_ops_completadas_v2';
 const SS_OPS_TTL = 30 * 60 * 1000; // 30 min
 
 // ✅ (A) Documento(s) de configuración de columnas COMPARTIDA en Firestore.
+// ⚠️ v2: se cambió la versión para RESETEAR la configuración guardada y que
+//    apliquen las nuevas columnas por defecto (# Remolque + columnas AppSheet).
 const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
-const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops';
-const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial';
+const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops_v2';
+const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial_v2';
 
 // ✅ (REMISIÓN) Documento de encabezado de remisiones (emisores) en Firestore.
 //    Se guarda en la MISMA colección config_columnas para reusar sus reglas.
@@ -70,8 +72,8 @@ const EMISOR_USD_DEFAULT: EmisorRemision = {
 };
 
 // ✅ Persistencia local (respaldo instantáneo que sobrevive al refresco).
-const LS_COLS_OPS = 'cfgcols_facturacion_ops_v1';
-const LS_COLS_HIST = 'cfgcols_facturacion_hist_v1';
+const LS_COLS_OPS = 'cfgcols_facturacion_ops_v2';
+const LS_COLS_HIST = 'cfgcols_facturacion_hist_v2';
 
 // ✅ Lee un catálogo desde la caché local (cat_v1__<alias>).
 const leerCacheLocal = (alias: string): any[] | null => {
@@ -177,6 +179,7 @@ const COLUMNAS_FACTURA_BASE = [
   { id: 'statusFactura', label: 'Status',       visible: true },
   { id: 'invoice',     label: 'Invoice',      visible: true },
   { id: 'fecha',       label: 'Fecha',        visible: true },
+  { id: 'remolque',    label: '# Remolque',   visible: true },
   { id: 'cliente',     label: 'Cliente',      visible: true },
   { id: 'moneda',      label: 'Moneda',       visible: true },
   { id: 'facturaCcp',  label: 'Factura CCP',  visible: true },
@@ -279,19 +282,27 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'factura',       label: '# Factura',       visible: true,  orden: true,  grupo: 'General' },
   { id: 'ref',           label: 'Ref. Operación',  visible: true,  orden: true,  grupo: 'General' },
   { id: 'fechaServicio', label: 'Fecha Servicio',  visible: true,  orden: true,  grupo: 'General' },
+  // ✅ # Remolque entre Fecha y Cliente. Si nombre y placa son el MISMO número
+  //    se muestra uno solo; si son diferentes se muestran ambos con "≠".
+  { id: 'remolque',      label: '# Remolque',      visible: true,  orden: true,  grupo: 'General', tipo: 'texto', sourceField: ['remolqueNombre', 'remolquePlaca', 'numeroRemolque'] },
   { id: 'cliente',       label: 'Cliente',         visible: true,  orden: true,  grupo: 'General' },
   { id: 'cartaPorte',    label: 'Carta Porte',     visible: true,  orden: false, grupo: 'General' },
   { id: 'destino',       label: 'Destino',         visible: true,  orden: true,  grupo: 'General' },
-  { id: 'moneda',        label: 'Moneda',          visible: true,  orden: false, grupo: 'Por Cobrar' },
-  { id: 'subtotal',      label: 'Subtotal',        visible: true,  orden: true,  grupo: 'Por Cobrar' },
+  // ✅ Columnas de facturación según AppSheet (misma lógica de monedas:
+  //    USD → Dólares, MXN → Pesos, Conversión = total en MXN con el TC).
+  { id: 'moneda',        label: 'Facturado en',    visible: true,  orden: false, grupo: 'Por Cobrar' },
+  { id: 'montoConvenioCliente',  label: 'Convenio',           visible: true,  orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'montoConvenioCliente' },
+  { id: 'cargosAdicionales',     label: 'Cargos Adicionales', visible: true,  orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'cargosAdicionales' },
+  { id: 'subtotal',      label: 'Importe',         visible: true,  orden: true,  grupo: 'Por Cobrar' },
   { id: 'dolares',       label: 'Dólares',         visible: true,  orden: false, grupo: 'Por Cobrar' },
+  { id: 'tipoCambioAprobado',    label: 'Tipo de Cambio',     visible: true,  orden: true,  grupo: 'Por Cobrar', tipo: 'numero', sourceField: 'tipoCambioAprobado' },
   { id: 'pesos',         label: 'Pesos',           visible: true,  orden: false, grupo: 'Por Cobrar' },
   { id: 'conv',          label: 'Conversión',      visible: true,  orden: true,  grupo: 'Por Cobrar' },
+  { id: 'observacionesCobrar',   label: 'Observaciones (Costos)', visible: true, orden: false, grupo: 'Por Cobrar', tipo: 'texto', sourceField: 'observacionesCobrar' },
   { id: 'tipoOperacion',  label: 'Tipo de Operación', visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['tipoOperacionNombre', 'tipoOperacionId'] },
   { id: 'status',         label: 'Status',            visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['statusNombre', 'status'] },
   { id: 'fechaCita',      label: 'Fecha Cita',        visible: false, orden: true,  grupo: 'General', tipo: 'fechaHora', sourceField: 'fechaCita' },
   { id: 'convenio',       label: 'Convenio (Tarifa)', visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['convenioNombre', 'convenio'] },
-  { id: 'remolque',       label: '# Remolque',        visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['remolqueNombre', 'remolquePlaca', 'numeroRemolque'] },
   { id: 'refCliente',     label: 'Ref Cliente',       visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: 'refCliente' },
   { id: 'origen',         label: 'Origen',            visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['origenNombre', 'origen'] },
   { id: 'observacionesEjecutivo', label: 'Obs. Ejecutivo',    visible: false, orden: false, grupo: 'General', tipo: 'texto',     sourceField: 'observacionesEjecutivo' },
@@ -331,15 +342,11 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'operadorProveedor',     label: 'Operador Externo',     visible: false, orden: true,  grupo: 'Unidad', tipo: 'texto', sourceField: 'operadorProveedor' },
   { id: 'observacionesUnidad',   label: 'Obs. Unidad/Prov.',    visible: false, orden: false, grupo: 'Unidad', tipo: 'texto', sourceField: 'observacionesUnidad' },
   { id: 'monedaConvenioCliente', label: 'Moneda Convenio Cliente', visible: false, orden: false, grupo: 'Por Cobrar', tipo: 'moneda', sourceField: 'monedaConvenioCliente' },
-  { id: 'montoConvenioCliente',  label: 'Monto Convenio Cliente',  visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'montoConvenioCliente' },
-  { id: 'cargosAdicionales',     label: 'Cargos Adicionales',      visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'cargosAdicionales' },
   { id: 'subtotalCliente',       label: 'Subtotal Cliente',        visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'subtotalCliente' },
-  { id: 'tipoCambioAprobado',    label: 'TC Aprobado',             visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'numero', sourceField: 'tipoCambioAprobado' },
   { id: 'dolaresCliente',        label: 'Dólares Cliente',         visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'dolaresCliente' },
   { id: 'pesosCliente',          label: 'Pesos Cliente',           visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'pesosCliente' },
   { id: 'conversionCliente',     label: 'Conversión Cliente',      visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'conversionCliente' },
   { id: 'utilidadEstimada',      label: 'Utilidad Estimada',       visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'utilidadEstimada' },
-  { id: 'observacionesCobrar',   label: 'Obs. Facturación/Cobro',  visible: false, orden: false, grupo: 'Por Cobrar', tipo: 'texto',  sourceField: 'observacionesCobrar' },
 ];
 
 const calcularConversionCliente = (op: any) => {
@@ -397,6 +404,8 @@ export const FacturacionClientesDashboard = () => {
 
   const [textoBuscarFactura, setTextoBuscarFactura] = useState('');
   const [filtroStatusFactura, setFiltroStatusFactura] = useState<string>('Todos');
+  // ✅ NUEVO: tab para separar la facturación por moneda (Todas | Dólares | Pesos).
+  const [filtroMonedaHist, setFiltroMonedaHist] = useState<'todas' | 'USD' | 'MXN'>('todas');
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   // ✅ NUEVO: las tablas arrancan VACÍAS; cada pestaña muestra datos hasta que
   //   se presiona "Buscar" en el panel lateral de filtros.
@@ -1019,8 +1028,69 @@ export const FacturacionClientesDashboard = () => {
     }
   };
 
-  const fechaOrdenKey = (val: any): string => {
-    const s = String(val || '').trim();
+  // ──────────────────────────────────────────────────────────────────
+  // ✅ (# REMOLQUE) Un remolque suele traer el MISMO número en "nombre" y
+  //    "placa" (p. ej. "672619 672619"): en ese caso se muestra UNO solo.
+  //    Si son números DIFERENTES (p. ej. "658 19UJ2W") se muestran ambos
+  //    con un indicador "≠" de que no coinciden.
+  // ──────────────────────────────────────────────────────────────────
+  const tokensRemolque = (...valores: any[]): string[] => {
+    const unicos: string[] = [];
+    const vistos = new Set<string>();
+    valores.forEach(v => {
+      const r = resolverNombre(v);
+      String(r ?? '').split(/[\s,]+/).forEach(t => {
+        const limpio = t.trim();
+        if (!limpio || limpio === '-') return;
+        const k = limpio.toUpperCase();
+        if (!vistos.has(k)) { vistos.add(k); unicos.push(limpio); }
+      });
+    });
+    return unicos;
+  };
+
+  // Tokens de remolque de una OPERACIÓN (junta nombre + placa + número).
+  const remolqueOpTokens = (op: any): string[] =>
+    tokensRemolque(op?.remolqueNombre, op?.remolquePlaca, op?.numeroRemolque, op?.remolque);
+
+  // ✅ Número de caja (# remolque) de una operación de la factura: usa el valor
+  //    guardado en el resumen y, si falta (facturas viejas), cae al opInfoMap
+  //    que se resuelve bajo demanda.
+  const remolqueDeOp = (op: any): string => {
+    const directo = String(op?.remolque || '').trim();
+    if (directo && directo !== '-') return directo;
+    const info = opInfoMap[String(op?.id || '')];
+    const resuelto = String(info?.remolque || '').trim();
+    return resuelto && resuelto !== '-' ? resuelto : '';
+  };
+
+  // Tokens de remolque de una FACTURA (junta los de todas sus operaciones).
+  const remolquesFacturaTokens = (f: any): string[] => {
+    const crudos: any[] = [];
+    (Array.isArray(f?.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => {
+      const r = remolqueDeOp(op);
+      if (r) crudos.push(r);
+    });
+    if (crudos.length === 0 && Array.isArray(f?.remolques)) crudos.push(...f.remolques);
+    return tokensRemolque(...crudos);
+  };
+
+  // Render compartido: 1 token → uno solo; varios → todos + indicador "≠".
+  const renderRemolqueTokens = (tokens: string[]) => {
+    if (tokens.length === 0) return <span style={{ color: '#8b949e' }}>-</span>;
+    if (tokens.length === 1) return <span style={{ color: '#c9d1d9', fontFamily: 'monospace' }}>{tokens[0]}</span>;
+    return (
+      <span title="Los números de remolque son diferentes" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+        <span style={{ color: '#c9d1d9', fontFamily: 'monospace' }}>{tokens.join(' / ')}</span>
+        <span style={{ color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '10px', padding: '0 6px', fontSize: '0.75rem', fontWeight: 'bold', lineHeight: '16px' }}>≠</span>
+      </span>
+    );
+  };
+  // Texto plano para exportar a Excel.
+  const remolqueTokensTexto = (tokens: string[]): string =>
+    tokens.length === 0 ? '' : (tokens.length === 1 ? tokens[0] : `${tokens.join(' / ')} (≠)`);
+
+  const fechaOrdenKey = (val: any): string => {    const s = String(val || '').trim();
     if (!s) return '00000000';
     let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
     if (m) return m[1] + m[2].padStart(2, '0') + m[3].padStart(2, '0');
@@ -1045,6 +1115,7 @@ export const FacturacionClientesDashboard = () => {
       case 'factura': return String(op.facturaClienteInvoice || '').toLowerCase();
       case 'ref': return refNaturalKey(op);
       case 'fechaServicio': return fechaOrdenKey(op.fechaServicio || op.createdAt);
+      case 'remolque': return remolqueOpTokens(op).join(' ').toLowerCase();
       case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId).toLowerCase();
       case 'destino': return String(op.destinoNombre || op.destino || '').toLowerCase();
       case 'subtotal': return obtenerMontoOperacion(op).subtotal;
@@ -1167,6 +1238,7 @@ export const FacturacionClientesDashboard = () => {
       }
       case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.numReferencia || op.referencia || op.ref || op.id.substring(0, 6)}</td>;
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
+      case 'remolque': return <td key={key} style={tdBase}>{renderRemolqueTokens(remolqueOpTokens(op))}</td>;
       case 'cliente': return <td key={key} style={tdBase}>{getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId)}</td>;
       case 'cartaPorte': return <td key={key} style={tdBase}>{op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destinoNombre || op.destino || '-'}</td>;
@@ -1224,6 +1296,7 @@ export const FacturacionClientesDashboard = () => {
         case 'factura': { const inv = invoiceDeOp(op); return inv || (esFacturada(op) ? 'Facturada' : 'Por facturar'); }
         case 'ref': return op.numReferencia || op.referencia || op.ref || op.id;
         case 'fechaServicio': return op.fechaServicio || op.createdAt || '';
+        case 'remolque': return remolqueTokensTexto(remolqueOpTokens(op));
         case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId);
         case 'cartaPorte': return op.cartaPorte || op.numeroCartaPorte || op.numDoda || '';
         case 'destino': return op.destinoNombre || op.destino || '';
@@ -1760,6 +1833,7 @@ export const FacturacionClientesDashboard = () => {
       case 'statusFactura': return String(f.statusFactura || '').toLowerCase();
       case 'invoice': return String(f.invoice || '').toLowerCase();
       case 'fecha': return String(f.fecha || '');
+      case 'remolque': return remolquesFacturaTokens(f).join(' ').toLowerCase();
       case 'cliente': return String(f.clienteNombre || '').toLowerCase();
       case 'moneda': return String(f.monedaFacturacion || '').toLowerCase();
       case 'cantOps': return Number(f.operacionesIds?.length || 0);
@@ -1793,6 +1867,7 @@ export const FacturacionClientesDashboard = () => {
       return false;
     };
     const coincideCliente = (f: any) => !filtroCliente || String(f.clienteId || '') === filtroCliente;
+    const coincideMoneda = (f: any) => filtroMonedaHist === 'todas' || monedaFacturaMostrar(f).toUpperCase() === filtroMonedaHist;
     const coincideFechas = (f: any) => {
       if (!fechaDesdeHist && !fechaHastaHist) return true;
       const fc = String(f.fecha || '').slice(0, 10);
@@ -1801,7 +1876,7 @@ export const FacturacionClientesDashboard = () => {
       if (fechaHastaHist && fc > fechaHastaHist) return false;
       return true;
     };
-    const filtradas = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideFechas(f));
+    const filtradas = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideMoneda(f) && coincideFechas(f));
     const grupos = new Map<string, any>();
     for (const f of filtradas) {
       const key = `${String(f.invoice || f.id).trim().toLowerCase()}__${String(f.clienteId || '')}`;
@@ -1842,7 +1917,7 @@ export const FacturacionClientesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura]);
+  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, filtroMonedaHist]);
 
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
@@ -1879,7 +1954,8 @@ export const FacturacionClientesDashboard = () => {
       if (fechaHastaHist && fc > fechaHastaHist) return false;
       return true;
     };
-    const base = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideFechas(f));
+    const coincideMoneda = (f: any) => filtroMonedaHist === 'todas' || monedaFacturaMostrar(f).toUpperCase() === filtroMonedaHist;
+    const base = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideMoneda(f) && coincideFechas(f));
     const c = { Todos: base.length } as Record<string, number>;
     base.forEach((f: any) => {
       const s = (String(f.statusFactura || 'Facturado').trim()) || 'Facturado';
@@ -1887,7 +1963,43 @@ export const FacturacionClientesDashboard = () => {
     });
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturasGlobales, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist]);
+  }, [facturasGlobales, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, filtroMonedaHist]);
+
+  // ✅ Conteo de facturas por moneda (para el tab Todas | Dólares | Pesos del filtro).
+  //    Respeta texto, cliente, fechas y status, pero NO el propio filtro de moneda.
+  const conteoMonedaHist = useMemo(() => {
+    const q = textoBuscarFactura.trim().toLowerCase();
+    const coincideTexto = (f: any) => {
+      if (!q) return true;
+      if (String(f.invoice || '').toLowerCase().includes(q)) return true;
+      if (String(f.clienteNombre || '').toLowerCase().includes(q)) return true;
+      if (String(f.statusFactura || '').toLowerCase().includes(q)) return true;
+      if (f.clienteId) { const nom = getNombreCliente(f.clienteId); if (nom && nom.toLowerCase().includes(q)) return true; }
+      if (String(f.facturaCcp || '').toLowerCase().includes(q)) return true;
+      if (String(f.monedaFacturacion || '').toLowerCase().includes(q)) return true;
+      if (Array.isArray(f.remolques) && f.remolques.some((r: any) => String(r || '').toLowerCase().includes(q))) return true;
+      return false;
+    };
+    const coincideCliente = (f: any) => !filtroCliente || String(f.clienteId || '') === filtroCliente;
+    const coincideFechas = (f: any) => {
+      if (!fechaDesdeHist && !fechaHastaHist) return true;
+      const fc = String(f.fecha || '').slice(0, 10);
+      if (!fc) return false;
+      if (fechaDesdeHist && fc < fechaDesdeHist) return false;
+      if (fechaHastaHist && fc > fechaHastaHist) return false;
+      return true;
+    };
+    const coincideStatus = (f: any) => filtroStatusFactura === 'Todos' || String(f.statusFactura || 'Facturado') === filtroStatusFactura;
+    const base = facturasGlobales.filter(f => coincideTexto(f) && coincideCliente(f) && coincideFechas(f) && coincideStatus(f));
+    let usd = 0, mxn = 0;
+    base.forEach((f: any) => {
+      const mon = monedaFacturaMostrar(f).toUpperCase();
+      if (mon === 'USD') usd++;
+      else if (mon === 'MXN') mxn++;
+    });
+    return { todas: base.length, USD: usd, MXN: mxn };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facturasGlobales, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, filtroStatusFactura, empresasList, mapaCatalogos]);
 
   const statusBotones = useMemo(() => {
     const orden = ['Facturado', 'No Facturado', 'Cancelado'];
@@ -1973,20 +2085,9 @@ export const FacturacionClientesDashboard = () => {
     return directos[0] || (info?.ref ? String(info.ref) : '') || id;
   };
 
-  // ✅ Número de caja (# remolque) de una operación de la factura: usa el valor
-  //    guardado en el resumen y, si falta (facturas viejas), cae al opInfoMap
-  //    que se resuelve bajo demanda al abrir la ficha.
-  const remolqueDeOp = (op: any): string => {
-    const directo = String(op?.remolque || '').trim();
-    if (directo && directo !== '-') return directo;
-    const info = opInfoMap[String(op?.id || '')];
-    const resuelto = String(info?.remolque || '').trim();
-    return resuelto && resuelto !== '-' ? resuelto : '';
-  };
-
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(p => Math.max(p - 1, 1));
-  useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeHist, fechaHastaHist, textoBuscarFactura, filtroStatusFactura]);
+  useEffect(() => { setPaginaActual(1); }, [filtroCliente, ordenFac, fechaDesdeHist, fechaHastaHist, textoBuscarFactura, filtroStatusFactura, filtroMonedaHist]);
   useEffect(() => { setPaginaOps(1); }, [filtroCliente, ordenOps, fechaDesdeOps, fechaHastaOps, textoBuscarRemolqueOps, vistaOps, operacionesGlobales, filtroTipoOp]);
 
   const nombreClienteFactura_ = (f: any): string => {
@@ -2004,6 +2105,7 @@ export const FacturacionClientesDashboard = () => {
       case 'statusFactura': return chipStatusFactura(f.statusFactura);
       case 'invoice': return <span style={{ color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace' }}>{f.invoice}</span>;
       case 'fecha': return <span style={{ color: '#c9d1d9' }}>{formatearFechaSpanish(f.fecha)}</span>;
+      case 'remolque': return renderRemolqueTokens(remolquesFacturaTokens(f));
       case 'cliente': return <span style={{ color: '#f0f6fc' }}>{nombreClienteFactura_(f)}</span>;
       case 'moneda': { const mon = monedaFacturaMostrar(f); return <span style={{ color: mon === 'N/A' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{mon}</span>; }
       case 'facturaCcp': return <span style={{ color: '#c9d1d9' }}>{f.facturaCcp || '-'}</span>;
@@ -2051,6 +2153,7 @@ export const FacturacionClientesDashboard = () => {
         case 'statusFactura': return f.statusFactura || 'Facturado';
         case 'invoice': return f.invoice || '';
         case 'fecha': return f.fecha || '';
+        case 'remolque': return remolqueTokensTexto(remolquesFacturaTokens(f));
         case 'cliente': return nombreClienteFactura_(f);
         case 'moneda': return monedaFacturaMostrar(f);
         case 'facturaCcp': return f.facturaCcp || '';
@@ -2359,10 +2462,10 @@ export const FacturacionClientesDashboard = () => {
 
   const filtrosActivos = activeTab === 'operaciones'
     ? [fechaDesdeOps, fechaHastaOps, textoBuscarRemolqueOps, filtroTipoOp, filtroCliente].filter(Boolean).length
-    : [textoBuscarFactura, fechaDesdeHist, fechaHastaHist, filtroCliente].filter(Boolean).length;
+    : [textoBuscarFactura, fechaDesdeHist, fechaHastaHist, filtroCliente].filter(Boolean).length + (filtroMonedaHist !== 'todas' ? 1 : 0);
   const limpiarFiltros = () => {
     if (activeTab === 'operaciones') { setFechaDesdeOps(''); setFechaHastaOps(''); setTextoBuscarRemolqueOps(''); setFiltroTipoOp(''); }
-    else { setTextoBuscarFactura(''); setFechaDesdeHist(''); setFechaHastaHist(''); }
+    else { setTextoBuscarFactura(''); setFechaDesdeHist(''); setFechaHastaHist(''); setFiltroMonedaHist('todas'); }
     setFiltroCliente(''); setTextoBuscarCliente('');
   };
 
@@ -2395,6 +2498,12 @@ export const FacturacionClientesDashboard = () => {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(163,113,247,0.1)', border: '1px solid #a371f7', borderRadius: '14px', color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>
             {filtroTipoOp}
             <button onClick={() => setFiltroTipoOp('')} style={{ background: 'transparent', border: 'none', color: '#a371f7', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+          </span>
+        )}
+        {activeTab === 'historial' && filtroMonedaHist !== 'todas' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: filtroMonedaHist === 'USD' ? 'rgba(16,185,129,0.1)' : 'rgba(59,130,246,0.1)', border: `1px solid ${filtroMonedaHist === 'USD' ? '#10b981' : '#3b82f6'}`, borderRadius: '14px', color: filtroMonedaHist === 'USD' ? '#10b981' : '#3b82f6', fontSize: '0.8rem', fontWeight: 'bold' }}>
+            {filtroMonedaHist === 'USD' ? '$ Dólares (USD)' : '$ Pesos (MXN)'}
+            <button onClick={() => setFiltroMonedaHist('todas')} style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
           </span>
         )}
         {filtroCliente && (
@@ -2517,12 +2626,21 @@ export const FacturacionClientesDashboard = () => {
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>MONEDA DE FACTURACIÓN</label>
+                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                    <button onClick={() => setFiltroMonedaHist('todas')} style={{ ...segBtnStyle(filtroMonedaHist === 'todas', '#58a6ff'), flex: 1 }}>Todas ({conteoMonedaHist.todas})</button>
+                    <button onClick={() => setFiltroMonedaHist('USD')} style={{ ...segBtnStyle(filtroMonedaHist === 'USD', '#10b981'), flex: 1 }}>$ Dólares ({conteoMonedaHist.USD})</button>
+                    <button onClick={() => setFiltroMonedaHist('MXN')} style={{ ...segBtnStyle(filtroMonedaHist === 'MXN', '#3b82f6'), flex: 1 }}>$ Pesos ({conteoMonedaHist.MXN})</button>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ORDENAR POR</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <select value={ordenFac.campo} onChange={(e) => setOrdenFac(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
                 <option value="statusFactura">Status</option>
                 <option value="invoice">Invoice</option>
                 <option value="fecha">Fecha</option>
+                <option value="remolque"># Remolque</option>
                 <option value="cliente">Cliente</option>
                 <option value="moneda">Moneda</option>
                 <option value="cantOps">Cant. Ops</option>
