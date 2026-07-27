@@ -210,8 +210,14 @@ export const ReferenciasDieselDashboard = () => {
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
   const [busquedaOpsHecha, setBusquedaOpsHecha] = useState(false);
   const [busquedaRefHecha, setBusquedaRefHecha] = useState(false);
+  // ✅ NUEVO: rango de fechas del HISTORIAL (filtra por la fecha de la referencia).
+  const [fechaDesdeHist, setFechaDesdeHist] = useState('');
+  const [fechaHastaHist, setFechaHastaHist] = useState('');
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
+  // ✅ NUEVO: al cambiar la búsqueda o el rango de fechas del historial se
+  //   regresa a la página 1 para no quedar en una página vacía.
+  useEffect(() => { setPaginaActual(1); }, [busquedaRef, fechaDesdeHist, fechaHastaHist]);
 
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -1242,6 +1248,13 @@ export const ReferenciasDieselDashboard = () => {
   const referenciasFiltradas = useMemo(() => {
     const t = busquedaRef.toLowerCase();
     const lista = referenciasGlobales.filter(r => {
+      // ✅ NUEVO: rango de fechas (por la fecha de la referencia, robusto a formatos).
+      if (fechaDesdeHist || fechaHastaHist) {
+        const f = fechaISO(r.fecha);
+        if (!f) return false;
+        if (fechaDesdeHist && f < fechaDesdeHist) return false;
+        if (fechaHastaHist && f > fechaHastaHist) return false;
+      }
       const nombreUni = r.unidadNombre || getNombreUnidad(r.unidadId || r.unidad);
       const nombreOpe = r.operadorNombre || getNombreOperador(r.operadorId || r.operador);
       const nombreProv = r.proveedorNombre || getNombreProveedor(r.proveedorId || r.proveedor);
@@ -1259,7 +1272,7 @@ export const ReferenciasDieselDashboard = () => {
       if (fa !== fb) return fb.localeCompare(fa);
       return consecutivoNum(b.consecutivo) - consecutivoNum(a.consecutivo);
     });
-  }, [referenciasGlobales, busquedaRef, unidadesList, operadoresList, proveedoresList]);
+  }, [referenciasGlobales, busquedaRef, fechaDesdeHist, fechaHastaHist, unidadesList, operadoresList, proveedoresList]);
 
   // ✅ Resumen del historial: separa lo AUTORIZADO de lo CARGADO (galones y $).
   const resumenHistorial = useMemo(() => {
@@ -1500,15 +1513,21 @@ export const ReferenciasDieselDashboard = () => {
           
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busquedaRef ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busquedaRef || fechaDesdeHist || fechaHastaHist) ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busquedaRef && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+              {(busquedaRef || fechaDesdeHist || fechaHastaHist) && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[busquedaRef, fechaDesdeHist || fechaHastaHist].filter(Boolean).length}</span>}
             </button>
             {busquedaRef && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
                 "{busquedaRef}"
                 <button onClick={() => setBusquedaRef('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              </span>
+            )}
+            {(fechaDesdeHist || fechaHastaHist) && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '14px', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                📅 {(fechaDesdeHist || '…')} → {(fechaHastaHist || '…')}
+                <button onClick={() => { setFechaDesdeHist(''); setFechaHastaHist(''); }} style={{ background: 'transparent', border: 'none', color: '#D84315', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
               </span>
             )}
             <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
@@ -2311,8 +2330,21 @@ export const ReferenciasDieselDashboard = () => {
                     )}
                   </div>
                 </div>
+
+                {/* ✅ NUEVO: rango de fechas del historial (fecha de la referencia) */}
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE</label>
+                    <input type="date" value={fechaDesdeHist} onChange={(e) => setFechaDesdeHist(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA</label>
+                    <input type="date" value={fechaHastaHist} min={fechaDesdeHist || undefined} onChange={(e) => setFechaHastaHist(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
                 <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-                  La búsqueda es <b style={{ color: '#8b949e' }}>opcional</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todo el historial.
+                  La búsqueda y las fechas son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todo el historial.
                 </div>
               </>
             )}
@@ -2320,7 +2352,7 @@ export const ReferenciasDieselDashboard = () => {
             <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
               <button onClick={() => {
                 if (activeTab === 'operaciones') { setFiltroUnidad(''); setFechaDesdeOps(''); setFechaHastaOps(''); setSeleccionadas([]); setBusquedaOpsHecha(false); }
-                else { setBusquedaRef(''); setBusquedaRefHecha(false); }
+                else { setBusquedaRef(''); setFechaDesdeHist(''); setFechaHastaHist(''); setBusquedaRefHecha(false); }
               }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
               <button onClick={() => {
                 if (activeTab === 'operaciones') {
