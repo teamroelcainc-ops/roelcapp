@@ -256,8 +256,8 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     return `CONV-${String(Math.max(...numeros) + 1).padStart(3, '0')}`;
   };
 
-  const handleTipoConvenioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const id = e.target.value;
+  // ✅ Ahora recibe el id directo (lo llama el SearchableSelect del detalle).
+  const handleTipoConvenioChange = (id: string) => {
     const tarifario = tarifarios.find(t => t.id === id);
     const nombreTarifario = tarifario ? (tarifario.descripcion || 'Desconocido') : '';
     
@@ -419,17 +419,23 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                     <div className="form-grid" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', gap: '16px', alignItems: 'end' }}>
                       <div className="form-group">
                         <label className="form-label">Tipo de Convenio (Referencia)</label>
-                        <select className="form-control" value={detalleDraft.tipoConvenioId} onChange={handleTipoConvenioChange}>
-                          <option value="">Seleccione...</option>
-                          {tarifarios.map(t => <option key={t.id} value={t.id}>{t.descripcion}</option>)}
-                        </select>
+                        {/* ✅ Buscador en lugar de lista desplegable */}
+                        <SearchableSelect
+                          options={tarifarios.map(t => ({ id: t.id, label: t.descripcion || 'Sin descripción' }))}
+                          value={detalleDraft.tipoConvenioId}
+                          onChange={(id) => handleTipoConvenioChange(id)}
+                          placeholder="Buscar tipo de convenio..."
+                        />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Sugerida</label>
-                        <select className="form-control" value={detalleDraft.tarifaSugeridaSeleccionada} onChange={(e) => setDetalleDraft({...detalleDraft, tarifaSugeridaSeleccionada: e.target.value, tarifa: parseFloat(e.target.value) || 0})}>
-                          <option value="">Ver...</option>
-                          {tarifasSugeridasActuales.map((tar, i) => <option key={i} value={tar}>${tar}</option>)}
-                        </select>
+                        {/* ✅ Buscador en lugar de lista desplegable */}
+                        <SearchableSelect
+                          options={tarifasSugeridasActuales.map(tar => ({ id: String(tar), label: `$${tar}` }))}
+                          value={detalleDraft.tarifaSugeridaSeleccionada}
+                          onChange={(id) => setDetalleDraft({ ...detalleDraft, tarifaSugeridaSeleccionada: id, tarifa: parseFloat(id) || 0 })}
+                          placeholder={tarifasSugeridasActuales.length > 0 ? 'Ver sugeridas...' : 'Sin sugeridas'}
+                        />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Tarifa Final *</label>

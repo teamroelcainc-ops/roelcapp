@@ -522,7 +522,7 @@ export const generarPruebaEntregaPDF = (datos: DatosPruebaEntrega) => {
             <div style="color: #e74c3c; font-weight: bold; font-size: 10pt; text-align: center; padding: 5px 0;">${datos.origenCiudad}</div>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
-                <td style="font-weight: bold; text-align: right; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; font-size:10px;">CLIENTE:</td>
+                <td style="font-weight: bold; text-align: right; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; font-size:10px;">PATIO/BODEGA:</td>
                 <td style="padding: 2px 0;">${datos.origenNombre}</td>
               </tr>
               <tr>
@@ -537,7 +537,7 @@ export const generarPruebaEntregaPDF = (datos: DatosPruebaEntrega) => {
             <div style="color: #e74c3c; font-weight: bold; font-size: 10pt; text-align: center; padding: 5px 0;">${datos.destinoCiudad}</div>
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
-                <td style="font-weight: bold; text-align: right; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; font-size:10px;">CLIENTE:</td>
+                <td style="font-weight: bold; text-align: right; padding: 2px 8px 2px 0; width: 100px; vertical-align: top; font-size:10px;">PATIO/BODEGA:</td>
                 <td style="padding: 2px 0;">${datos.destinoNombre}</td>
               </tr>
               <tr>
