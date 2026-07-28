@@ -114,6 +114,7 @@ export interface ConfirmacionTarifaData {
   totalAFacturar: string;    // Total a facturar (ya convertido)
   emisorDireccion: string;   // Dirección Roelca (pie derecho)
   emisorCiudad: string;      // Ciudad/CP Roelca (pie derecho)
+  observaciones?: string;    // ✅ NUEVO: observaciones impresas en el documento
   logoBase64?: string;
 }
 
@@ -221,6 +222,15 @@ export const generarConfirmacionTarifaPDF = (data: ConfirmacionTarifaData): void
           </td>
         </tr>
       </table>
+
+      ${data.observaciones && String(data.observaciones).trim() ? `
+      <!-- ✅ NUEVO: Observaciones -->
+      <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+        <tr>
+          <td style="${label} vertical-align: top; padding-top: 8px;">OBSERVACIONES</td>
+          <td style="${value} line-height: 1.5; white-space: pre-wrap;">${esc(String(data.observaciones).trim())}</td>
+        </tr>
+      </table>` : ''}
 
       <!-- Pie: datos de facturación -->
       <table style="width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 18px;">

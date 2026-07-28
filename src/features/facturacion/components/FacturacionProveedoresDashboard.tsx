@@ -30,6 +30,7 @@ import {
   updateDoc,
   documentId,
   startAfter,
+  arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -1481,6 +1482,9 @@ export const FacturacionProveedoresDashboard = () => {
   // Ambos con vista previa editable antes de descargar el PDF (con logo).
   // ═══════════════════════════════════════════════════════════════════
   const [confirmacionPreview, setConfirmacionPreview] = useState<any | null>(null);
+  // ✅ NUEVO: modal con el LOG de generación de PDF de la confirmación
+  //   (fecha, hora y quién lo generó).
+  const [logConfirmacionAbierto, setLogConfirmacionAbierto] = useState(false);
   const [ratePreview, setRatePreview] = useState<any | null>(null);
   const [cargandoRate, setCargandoRate] = useState(false);
 
@@ -1563,8 +1567,11 @@ export const FacturacionProveedoresDashboard = () => {
       totalAFacturar: String(m.conv || 0),
       emisorDireccion: 'MAR DE LAS ANTILLAS #947, COL. LA PAZ, C.P. 88290',
       emisorCiudad: 'NUEVO LAREDO, TAMPS',
+      // ✅ NUEVO: observaciones (se guardan con la confirmación y salen en el PDF).
+      observaciones: '',
     };
     const guardada = (op.confirmacionTarifa && typeof op.confirmacionTarifa === 'object') ? op.confirmacionTarifa : null;
+    setLogConfirmacionAbierto(false);
     setConfirmacionPreview(guardada ? { ...base, ...guardada, opId: base.opId } : base);
   };
 
@@ -1590,11 +1597,45 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
 
+  // ✅ NUEVO: LOG de generación del PDF de la confirmación. Guarda fecha, hora
+  //   y quién lo generó en la operación (confirmacionTarifaLog) para que todos
+  //   los usuarios lo vean en el modal de Log.
+  const registrarGeneracionPDFConfirmacion = async () => {
+    const opId = String(confirmacionPreview?.opId || '');
+    if (!opId) return;
+    const ahora = new Date();
+    const entrada = {
+      ts: ahora.toISOString(),
+      fecha: ahora.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+      hora: ahora.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      usuario: nombreCoordinadorActual() || 'Desconocido',
+    };
+    try {
+      await updateDoc(doc(db, 'operaciones', opId), { confirmacionTarifaLog: arrayUnion(entrada) });
+      setOperacionesGlobales(prev => prev.map((o: any) => (String(o.id) === opId
+        ? { ...o, confirmacionTarifaLog: [...(Array.isArray(o.confirmacionTarifaLog) ? o.confirmacionTarifaLog : []), entrada] }
+        : o)));
+      registrarLog('Facturación Proveedores', 'PDF', `Generó el PDF de la Confirmación de Tarifa de ${confirmacionPreview?.referencia || opId}`).catch(() => {});
+    } catch (e) {
+      console.error('No se pudo registrar el log de generación del PDF:', e);
+    }
+  };
+
+  // Entradas del log de la confirmación abierta (más recientes primero).
+  const logDeConfirmacionActual = (): any[] => {
+    const opId = String(confirmacionPreview?.opId || '');
+    const op = operacionesGlobales.find((o: any) => String(o.id) === opId);
+    const lista = Array.isArray(op?.confirmacionTarifaLog) ? [...op.confirmacionTarifaLog] : [];
+    return lista.sort((a: any, b: any) => String(b?.ts || '').localeCompare(String(a?.ts || '')));
+  };
+
   const generarPDFDeConfirmacion = async () => {
     if (!confirmacionPreview) return;
     // ✅ NUEVO: al generar el PDF también se guarda (sin alerta) — el documento
     //   siempre queda respaldado con lo que se ve en pantalla.
     await guardarConfirmacion(false);
+    // ✅ NUEVO: queda registro de fecha, hora y quién generó el PDF.
+    await registrarGeneracionPDFConfirmacion();
     const p = confirmacionPreview;
     const data = {
       coordinador: p.coordinador || '',
@@ -1624,6 +1665,8 @@ export const FacturacionProveedoresDashboard = () => {
       emisorCiudad: p.emisorCiudad || '',
       // ✅ Moneda de pago (el generador del PDF puede mostrarla junto al total).
       monedaPago: p.monedaPago || '',
+      // ✅ NUEVO: observaciones — salen en el PDF.
+      observaciones: p.observaciones || '',
     } as ConfirmacionTarifaData;
     generarConfirmacionTarifaPDF(data);
   };
@@ -4218,12 +4261,72 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
-              <button onClick={() => setConfirmacionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
-              <button onClick={() => guardarConfirmacion(true)} title="Guardar los cambios para que los demás usuarios los vean" style={{ padding: '8px 24px', backgroundColor: 'transparent', color: '#58a6ff', border: '1px solid #58a6ff', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>💾 Guardar</button>
-              <button onClick={generarPDFDeConfirmacion} title="Guarda los cambios y descarga el PDF" style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📋 Generar PDF</button>
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>OBSERVACIONES</div>
+              {/* ✅ NUEVO: se guardan con la confirmación y salen en el PDF */}
+              <textarea
+                value={confirmacionPreview.observaciones || ''}
+                onChange={e => setCT('observaciones', e.target.value)}
+                placeholder="Observaciones que saldrán impresas en el PDF de la confirmación..."
+                rows={3}
+                style={{ ...rInputStyle, width: '100%', boxSizing: 'border-box', resize: 'vertical', minHeight: '64px', fontFamily: 'inherit', lineHeight: 1.4 }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
+              {/* ✅ NUEVO: log de generación del PDF (fecha, hora y usuario) */}
+              <button onClick={() => setLogConfirmacionAbierto(true)} title="Ver quién y cuándo ha generado el PDF de esta confirmación"
+                style={{ padding: '8px 18px', background: 'none', color: '#a371f7', border: '1px solid #a371f7', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                📜 Log ({logDeConfirmacionActual().length})
+              </button>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button onClick={() => setConfirmacionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
+                <button onClick={() => guardarConfirmacion(true)} title="Guardar los cambios para que los demás usuarios los vean" style={{ padding: '8px 24px', backgroundColor: 'transparent', color: '#58a6ff', border: '1px solid #58a6ff', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>💾 Guardar</button>
+                <button onClick={generarPDFDeConfirmacion} title="Guarda los cambios, registra el log y descarga el PDF" style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📋 Generar PDF</button>
+              </div>
             </div>
           </div>
+
+          {/* ✅ NUEVO: MODAL DE LOG — quién y cuándo generó el PDF */}
+          {logConfirmacionAbierto && (
+            <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 2700, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { e.stopPropagation(); setLogConfirmacionAbierto(false); }}>
+              <div style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', width: '100%', maxWidth: '520px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #30363d' }}>
+                  <div>
+                    <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1rem' }}>📜 Log de generación de PDF</div>
+                    <div style={{ color: '#8b949e', fontSize: '0.78rem', marginTop: '2px' }}>Confirmación de Tarifa · <span style={{ color: '#fb923c', fontFamily: 'monospace' }}>{confirmacionPreview.referencia}</span></div>
+                  </div>
+                  <button onClick={() => setLogConfirmacionAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+                </div>
+                <div style={{ overflowY: 'auto', padding: '8px 0' }}>
+                  {logDeConfirmacionActual().length === 0 ? (
+                    <div style={{ color: '#8b949e', textAlign: 'center', padding: '28px 16px', fontSize: '0.9rem' }}>
+                      Aún no se ha generado el PDF de esta confirmación.
+                    </div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          <th style={{ textAlign: 'left', padding: '8px 20px' }}>Fecha</th>
+                          <th style={{ textAlign: 'left', padding: '8px 12px' }}>Hora</th>
+                          <th style={{ textAlign: 'left', padding: '8px 20px 8px 12px' }}>Generó el PDF</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {logDeConfirmacionActual().map((l: any, i: number) => (
+                          <tr key={`${l.ts || i}`} style={{ borderTop: '1px solid #21262d', color: '#c9d1d9', fontSize: '0.86rem' }}>
+                            <td style={{ padding: '9px 20px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{l.fecha || '-'}</td>
+                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{l.hora || '-'}</td>
+                            <td style={{ padding: '9px 20px 9px 12px' }}>{l.usuario || 'Desconocido'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
