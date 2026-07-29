@@ -158,7 +158,7 @@ export const LogsDashboard = () => {
             {!hayFiltrosActivos ? (
               <tr>
                 <td className="ld-x15" colSpan={5}>
-                  <div className="ld-x16">🔍</div>
+                  <div className="ld-x16"></div>
                   Por favor, aplica al menos un filtro en la parte superior para visualizar el historial.
                 </td>
               </tr>

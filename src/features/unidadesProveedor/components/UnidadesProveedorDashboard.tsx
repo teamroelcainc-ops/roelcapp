@@ -176,7 +176,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
         />
       )}
 
-      {/* ✅ CONTENEDOR MAESTRO */}
+      {/* CONTENEDOR MAESTRO */}
       <div className="upd-x5">
         
         {/* TÍTULO LIMPIO */}
@@ -345,7 +345,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
         <div className="modal-overlay upd-x39">
           <div className="upd-x40">
@@ -380,7 +380,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
       )}
 
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Unidades de Proveedor) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Unidades de Proveedor) */}
       {drawerFiltrosAbierto && (
         <div className="upd-x49" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="upd-x50" onClick={(e) => e.stopPropagation()}>
@@ -406,7 +406,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
 
             <div className="upd-x61">
               <button className="upd-x62" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="upd-x63" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="upd-x63" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

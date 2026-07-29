@@ -287,7 +287,7 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
         <div className="form-header fr-x6">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Remolque: ${formData.nombre}` : 'Nuevo Remolque')}</h2>
           <div className="header-actions">
-            {/* ✅ NUEVO: botón de configuración de campos obligatorios */}
+            {/* NUEVO: botón de configuración de campos obligatorios */}
             <button type="button" onClick={() => setModalConfig(true)} className="btn-window fr-x7" title="Configurar campos obligatorios">⚙</button>
             {estado === 'abierto' ? (
               <button type="button" onClick={onMinimize} className="btn-window">🗕</button>
@@ -390,7 +390,7 @@ export const FormularioRemolque = ({ estado, initialData, onClose, onMinimize, o
         </div>
       </div>
 
-      {/* ✅ NUEVO: Modal de configuración de campos obligatorios (compartido) */}
+      {/* NUEVO: Modal de configuración de campos obligatorios (compartido) */}
       {modalConfig && (
         <div className="modal-overlay fr-x15">
           <div className="form-card fr-x16">

@@ -218,7 +218,7 @@ export const UnidadesDashboard: React.FC = () => {
         />
       )}
 
-      {/* ✅ CONTENEDOR MAESTRO */}
+      {/* CONTENEDOR MAESTRO */}
      <div className="ud-x7">
         
         {/* TÍTULO LIMPIO */}
@@ -335,7 +335,7 @@ export const UnidadesDashboard: React.FC = () => {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
 
-                          {/* ✅ Ver Documentos de la unidad */}
+                          {/* Ver Documentos de la unidad */}
                           <button 
                             className="btn-small ud-x35" 
                             title="Ver Documentos"
@@ -401,7 +401,7 @@ export const UnidadesDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
         <div className="modal-overlay ud-x42">
           <div className="ud-x43">
@@ -435,7 +435,7 @@ export const UnidadesDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ MODAL VISOR DE DOCUMENTOS DE LA UNIDAD */}
+      {/* MODAL VISOR DE DOCUMENTOS DE LA UNIDAD */}
       {unidadDocumentos && (
         <div className="modal-overlay ud-x52">
           <div className="ud-x53">
@@ -459,7 +459,7 @@ export const UnidadesDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ MODAL SUBIR DOCUMENTO (dentro del visor) */}
+      {/* MODAL SUBIR DOCUMENTO (dentro del visor) */}
       <DocumentoUploadModal
         isOpen={mostrarSubirDoc && !!unidadDocumentos}
         onClose={() => setMostrarSubirDoc(false)}
@@ -470,7 +470,7 @@ export const UnidadesDashboard: React.FC = () => {
       />
 
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Unidades) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Unidades) */}
       {drawerFiltrosAbierto && (
         <div className="ud-x61" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="ud-x62" onClick={(e) => e.stopPropagation()}>
@@ -507,7 +507,7 @@ export const UnidadesDashboard: React.FC = () => {
 
             <div className="ud-x74">
               <button className="ud-x75" onClick={() => { setBusqueda(''); setFiltroTipo('Todos'); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="ud-x76" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="ud-x76" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

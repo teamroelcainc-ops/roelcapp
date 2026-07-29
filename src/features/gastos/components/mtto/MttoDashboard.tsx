@@ -712,7 +712,7 @@ const MttoDashboard = () => {
       {vistaActiva === 'agrupado' ? <MttoAgrupadosInvoice /> : (
         <div className="md-x12">
 
-          {/* ✅ PESTAÑAS POR ESTATUS: No facturados / Facturados (con conteo y monto) */}
+          {/* PESTAÑAS POR ESTATUS: No facturados / Facturados (con conteo y monto) */}
           <div className="md-x13">
             {([
               { id: 'no_facturado', label: 'No facturados', count: registrosNoFacturados.length, total: totalNoFacturado, color: '#f85149' },
@@ -800,7 +800,7 @@ const MttoDashboard = () => {
             </div>
           </div>
 
-          {/* ✅ PANEL DE SUMARIO DE GASTOS */}
+          {/* PANEL DE SUMARIO DE GASTOS */}
           {gastosSeleccionados.length > 0 && (
             <div className="md-x28">
               <div className="md-x29">
@@ -966,7 +966,7 @@ const MttoDashboard = () => {
         </div>
       )}
 
-      {/* ✅ MODAL PARA CONFIGURAR COLUMNAS EN GRID DE 3 COLUMNAS */}
+      {/* MODAL PARA CONFIGURAR COLUMNAS EN GRID DE 3 COLUMNAS */}
       {modalColumnas && (
         <div className="modal-overlay md-x75">
           <div className="md-x76">
@@ -1006,7 +1006,7 @@ const MttoDashboard = () => {
         </div>
       )}
 
-      {/* ✅ MODAL DE DETALLES RECONSTRUIDO */}
+      {/* MODAL DE DETALLES RECONSTRUIDO */}
       {mttoViendo && (
         <div className="modal-overlay md-x83">
           <div className="form-card detail-card md-x84">
@@ -1101,7 +1101,7 @@ const MttoDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Gastos MTTO) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Gastos MTTO) */}
       {drawerFiltrosAbierto && (
         <div className="md-x96" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="md-x97" onClick={(e) => e.stopPropagation()}>
@@ -1138,7 +1138,7 @@ const MttoDashboard = () => {
 
             <div className="md-x112">
               <button className="md-x113" onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="md-x114" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="md-x114" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

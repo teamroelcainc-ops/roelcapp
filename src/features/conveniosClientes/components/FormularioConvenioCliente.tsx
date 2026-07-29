@@ -415,7 +415,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                     <div className="form-grid fcc-x24">
                       <div className="form-group">
                         <label className="form-label">Tipo de Convenio (Referencia)</label>
-                        {/* ✅ Buscador en lugar de lista desplegable */}
+                        {/* Buscador en lugar de lista desplegable */}
                         <SearchableSelect
                           options={tarifarios.map(t => ({ id: t.id, label: t.descripcion || 'Sin descripción' }))}
                           value={detalleDraft.tipoConvenioId}
@@ -425,7 +425,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                       </div>
                       <div className="form-group">
                         <label className="form-label">Sugerida</label>
-                        {/* ✅ Buscador en lugar de lista desplegable */}
+                        {/* Buscador en lugar de lista desplegable */}
                         <SearchableSelect
                           options={tarifasSugeridasActuales.map(tar => ({ id: String(tar), label: `$${tar}` }))}
                           value={detalleDraft.tarifaSugeridaSeleccionada}

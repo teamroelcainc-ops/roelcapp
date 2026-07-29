@@ -706,7 +706,7 @@ export const ReferenciasPuentesDashboard = () => {
                   cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
                   backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
                   color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
-                ⬇ Exportar Excel ({filtroEstadoOps === 'asignadas' ? 'Asignadas' : 'Pendientes'})
+                Exportar Excel ({filtroEstadoOps === 'asignadas' ? 'Asignadas' : 'Pendientes'})
               </button>
             </div>
           </div>
@@ -1060,7 +1060,7 @@ export const ReferenciasPuentesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Referencias de Puentes) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Referencias de Puentes) */}
       {drawerFiltrosAbierto && (
         <div className="rpd-x109" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="rpd-x110" onClick={(e) => e.stopPropagation()}>
@@ -1161,7 +1161,7 @@ export const ReferenciasPuentesDashboard = () => {
                   setBusquedaHistHecha(true);
                 }
                 setDrawerFiltrosAbierto(false);
-              }}>🔍 Buscar</button>
+              }}>Buscar</button>
             </div>
           </div>
         </div>

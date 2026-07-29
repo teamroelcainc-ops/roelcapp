@@ -2663,7 +2663,7 @@ export const FacturacionClientesDashboard = () => {
 
             <div className="fcd-x61">
               <button className="fcd-x62" onClick={() => { limpiarFiltros(); if (activeTab === 'operaciones') setBusquedaOpsHecha(false); else setBusquedaHistHecha(false); }}>Limpiar</button>
-              <button className="fcd-x63" onClick={() => { if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true); setFiltrosAbiertos(false); }}>🔍 Buscar</button>
+              <button className="fcd-x63" onClick={() => { if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true); setFiltrosAbiertos(false); }}>Buscar</button>
             </div>
           </div>
         </div>
@@ -2701,12 +2701,12 @@ export const FacturacionClientesDashboard = () => {
                   cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
                   backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
                   color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
-                ⬇ Exportar Excel
+                Exportar Excel
               </button>
               <button disabled={seleccionadas.length === 0} onClick={abrirModalCostoAdic}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #58a6ff', backgroundColor: 'transparent', color: seleccionadas.length === 0 ? '#484f58' : '#58a6ff', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', cursor: seleccionadas.length === 0 ? 'not-allowed' : 'pointer' }}
                 title="Agregar un costo adicional al cliente en una operación seleccionada">
-                ➕ Costo adicional
+                Costo adicional
               </button>
               <button disabled={seleccionadas.length === 0 || seleccionMultiCliente} onClick={() => { setStatusFacturaForm('Facturado'); setModalAbierto(true); }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiCliente) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
@@ -2863,9 +2863,9 @@ export const FacturacionClientesDashboard = () => {
             </div>
             <div className="fcd-x72">
               <button title="Editar el encabezado de las remisiones (emisor por moneda: USD→Camila, MXN→Rolando)" onClick={() => setModalEmisores(true)} style={{ ...btnDirStyle, borderColor: '#fb923c', color: '#fb923c' }}>⚙ Encabezado Remisión</button>
-              <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>🩺 Verificar</button>
+              <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>Verificar</button>
               <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
-              <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>⬇ Exportar Excel</button>
+              <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>Exportar Excel</button>
             </div>
           </div>
 
@@ -3124,7 +3124,7 @@ export const FacturacionClientesDashboard = () => {
                 <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                   title="Generar la Remisión en PDF de esta factura"
                   style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1 }}>
-                  🧾 {cargandoRemision ? 'Preparando...' : 'Remisión'}
+                  {cargandoRemision ? 'Preparando...' : 'Remisión'}
                 </button>
                 <button className="fcd-x45" onClick={() => setFacturaViendo(null)}>✕</button>
               </div>
@@ -3215,7 +3215,7 @@ export const FacturacionClientesDashboard = () => {
         <div className="modal-overlay fcd-x198" onClick={() => setModalDiagnostico(false)}>
           <div className="fcd-x199" onClick={(e) => e.stopPropagation()}>
             <div className="fcd-x171">
-              <span className="fcd-x200">🩺 Verificación de Facturación</span>
+              <span className="fcd-x200">Verificación de Facturación</span>
               <button className="fcd-x201" onClick={() => setModalDiagnostico(false)}>×</button>
             </div>
             <div className="fcd-x202">
@@ -3264,7 +3264,7 @@ export const FacturacionClientesDashboard = () => {
                     { ok: !diagnostico.topeFacturas, txt: diagnostico.topeFacturas ? `Se alcanzó el tope de ${LIMITE_FACTURAS_TODAS} facturas cargadas: podría faltar información.` : `Se cargaron todas las facturas (sin alcanzar el tope de ${LIMITE_FACTURAS_TODAS}).` },
                   ].map((r, i) => (
                     <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', color: r.ok ? '#3fb950' : (r.warn ? '#f59e0b' : '#f85149') }}>
-                      <span className="fcd-x209">{r.ok ? '✓' : (r.warn ? '⚠' : '✕')}</span>
+                      <span className="fcd-x209">{r.ok ? '✓' : (r.warn ? '' : '✕')}</span>
                       <span className="fcd-x11">{r.txt}</span>
                     </div>
                   ))}
@@ -3781,7 +3781,7 @@ export const FacturacionClientesDashboard = () => {
 
             <div className="fcd-x246">
               <button className="fcd-x153" onClick={() => setRemisionPreview(null)}>Cerrar</button>
-              <button className="fcd-x335" onClick={generarPDFDeRemision}>🧾 Generar PDF</button>
+              <button className="fcd-x335" onClick={generarPDFDeRemision}>Generar PDF</button>
             </div>
           </div>
         </div>

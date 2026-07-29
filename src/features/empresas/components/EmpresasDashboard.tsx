@@ -758,7 +758,7 @@ const EmpresasDashboard = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
         <div className="modal-overlay ed-x42">
           <div className="ed-x43">
@@ -921,7 +921,7 @@ const EmpresasDashboard = () => {
               {activeTabDetalle === 'contacto' && (
                 <div className="detail-grid ed-x89">
                   <div className="detail-item ed-x82"><span className="detail-label ed-x78">Dirección de Facturación</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo._direccionLabel)}</span></div>
-                  {/* ✅ Desglose de la dirección (campos del catálogo de direcciones). */}
+                  {/* Desglose de la dirección (campos del catálogo de direcciones). */}
                   {(() => {
                     // ✅ Por id y, si el id quedó desactualizado, por coincidencia
                     //   del texto de la dirección completa.
@@ -956,7 +956,7 @@ const EmpresasDashboard = () => {
                 </div>
               )}
 
-              {/* ✅ TABLA HISTORIAL DE USO */}
+              {/* TABLA HISTORIAL DE USO */}
               {activeTabDetalle === 'uso' && (
                 <div className="ed-x93">
                   {cargandoUso ? (
@@ -1064,7 +1064,7 @@ const EmpresasDashboard = () => {
         />
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Empresas) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Empresas) */}
       {drawerFiltrosAbierto && (
         <div className="ed-x116" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="ed-x117" onClick={(e) => e.stopPropagation()}>
@@ -1100,7 +1100,7 @@ const EmpresasDashboard = () => {
 
             <div className="ed-x129">
               <button className="ed-x130" onClick={() => { setBusqueda(''); setFiltroActivo('Todo'); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="ed-x131" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="ed-x131" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

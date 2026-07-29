@@ -378,7 +378,7 @@ export const EmpleadosDashboard = () => {
         />
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Directorio de Empleados) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Directorio de Empleados) */}
       {drawerFiltrosAbierto && (
         <div className="ed-x62" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="ed-x63" onClick={(e) => e.stopPropagation()}>
@@ -404,7 +404,7 @@ export const EmpleadosDashboard = () => {
 
             <div className="ed-x74">
               <button className="ed-x75" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="ed-x76" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="ed-x76" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

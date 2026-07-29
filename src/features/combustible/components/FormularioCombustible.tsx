@@ -375,7 +375,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
             </div>
             {esDolar && tipoCambio === 0 && !cargandoTC && (
               <p className="fc-x9">
-                ⚠️ Debes registrar primero el Tipo de Cambio para el día {fecha} en su respectivo módulo.
+                Debes registrar primero el Tipo de Cambio para el día {fecha} en su respectivo módulo.
               </p>
             )}
           </form>

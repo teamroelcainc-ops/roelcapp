@@ -138,7 +138,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
       console.error('Error al cargar operaciones:', e);
       const msg = String(e?.message || e?.code || e || '').toLowerCase();
       if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
-        alert('⚠️ Cuota de lecturas de Firestore agotada. Se reinicia a las 2 AM (hora México).');
+        alert('Cuota de lecturas de Firestore agotada. Se reinicia a las 2 AM (hora México).');
       } else if (msg.includes('permission')) {
         alert('Sin permisos para leer operaciones. Revisa las reglas de Firestore.');
       } else {

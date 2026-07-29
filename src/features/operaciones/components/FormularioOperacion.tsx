@@ -994,7 +994,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         setStatusPreview('');
         setCamposSiguienteStatus([]);
         setNombreSiguienteAuto('');
-        const msjLimpio = error.message.replace('⛔ BLOQUEO: ', '').replace('⛔ ', '');
+        const msjLimpio = error.message.replace('BLOQUEO: ', '').replace('', '');
         setStatusError(msjLimpio);
         // ✅ Aunque el cálculo dinámico falle, al EDITAR se arma el checklist
         //    del siguiente status partiendo del status GUARDADO de la operación,
@@ -2029,7 +2029,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const configA = configAut !== undefined ? configAut : await cargarConfigModulo('operaciones');
       const evalAut = evaluarAutorizacion(configA, accionAut, usuarioA, camposCambiadosAut, etiquetasCamposAut);
       if (evalAut.requiere) {
-        alert(`🔒 No tienes permiso para realizar esta modificación:\n\n${evalAut.motivos.join('\n')}\n\nRevierte esos campos para poder guardar el resto de los cambios.`);
+        alert(`No tienes permiso para realizar esta modificación:\n\n${evalAut.motivos.join('\n')}\n\nRevierte esos campos para poder guardar el resto de los cambios.`);
         return;
       }
 
@@ -2719,7 +2719,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnUnidad</span></label>
-                        {/* ✅ NO editable: se asigna automáticamente según el proveedor. */}
+                        {/* NO editable: se asigna automáticamente según el proveedor. */}
                         <input type="text" className="form-control" value={nombreMoneda(formData.facturadoEnUnidad) || ''} readOnly placeholder="Se asigna según el proveedor" title="Se asigna automáticamente según el proveedor (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaProv, fontWeight: colorMonedaProv ? 700 : undefined }} />
                       </div>
                       )}
@@ -2766,18 +2766,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion({ tipo: 'empleado', coleccion: 'empleados' }, (id, reg) => { setFormData(prev => ({ ...prev, operador: id })); setSearchOperador(labelEmpleado(reg)); })} />
                           </div>
                         </div>
-                        {/* ✅ Sueldo/Combustible base: BLOQUEADOS (vienen del tarifario de rendimientos). Los totales son calculados. */}
+                        {/* Sueldo/Combustible base: BLOQUEADOS (vienen del tarifario de rendimientos). Los totales son calculados. */}
                         <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly={campoBloqueadoAut('sueldoOperador')} onChange={e => setFormData(prev => ({ ...prev, sueldoOperador: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('sueldoOperador') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('sueldoOperador') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                         <div className="form-group"><label className="form-label">Sueldo Extra <span className="campo-badge">sueldoExtra</span></label><ConSimboloMoneda><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></ConSimboloMoneda></div>
                         <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x22" value={formData.sueldoTotal || 0} readOnly /></ConSimboloMoneda></div>
-                        {/* ✅ Notas del Sueldo Extra: solo aparecen cuando el extra es distinto de 0. */}
+                        {/* Notas del Sueldo Extra: solo aparecen cuando el extra es distinto de 0. */}
                         {Number(formData.sueldoExtra) !== 0 && (
                           <div className="form-group fo-x24"><label className="form-label fo-x26">Notas del Sueldo Extra <span className="campo-badge">sueldoExtraNotas</span></label><input type="text" name="sueldoExtraNotas" className="form-control" placeholder="Motivo del sueldo extra..." value={formData.sueldoExtraNotas || ''} onChange={handleChange} /></div>
                         )}
                         <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustible) || 0)} readOnly={campoBloqueadoAut('combustible')} onChange={e => setFormData(prev => ({ ...prev, combustible: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('combustible') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('combustible') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></div>
                         <div className="form-group"><label className="form-label">Combustible Extra <span className="campo-badge">combustibleExtra</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustibleExtra) || 0)} onChange={(e) => setFormData(prev => ({ ...prev, combustibleExtra: Math.round(Number(e.target.value) || 0) }))} /></div>
                         <div className="form-group"><label className="form-label">Combustible Total <span className="campo-badge">combustibleTotal</span></label><input type="number" step="1" className="form-control fo-x22" value={Math.round(Number(formData.combustibleTotal) || 0)} readOnly /></div>
-                        {/* ✅ Notas del Combustible Extra: solo aparecen cuando el extra es distinto de 0. */}
+                        {/* Notas del Combustible Extra: solo aparecen cuando el extra es distinto de 0. */}
                         {Number(formData.combustibleExtra) !== 0 && (
                           <div className="form-group fo-x24"><label className="form-label fo-x26">Notas del Combustible Extra <span className="campo-badge">combustibleExtraNotas</span></label><input type="text" name="combustibleExtraNotas" className="form-control" placeholder="Motivo del combustible extra..." value={formData.combustibleExtraNotas || ''} onChange={handleChange} /></div>
                         )}
@@ -2875,7 +2875,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnCobrar</span></label>
-                        {/* ✅ NO editable: se asigna automáticamente según el cliente. */}
+                        {/* NO editable: se asigna automáticamente según el cliente. */}
                         <input type="text" className="form-control" value={nombreMoneda(formData.facturadoEnCobrar) || ''} readOnly placeholder="Se asigna según el cliente" title="Se asigna automáticamente según el cliente (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 700 : undefined }} />
                       </div>
                       <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.montoConvenioCliente || 0} readOnly={campoBloqueadoAut('montoConvenioCliente')} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda></div>

@@ -495,7 +495,7 @@ const ServiciosCancelados = () => {
   // ✅ NUEVO: chips con el resumen del último criterio buscado.
   const resumenFiltrosChips = useMemo(() => {
     if (!filtrosAplicados) return [] as string[];
-    const chips: string[] = [`📅 ${filtrosAplicados.fechaInicio} → ${filtrosAplicados.fechaFin}`];
+    const chips: string[] = [`${filtrosAplicados.fechaInicio} → ${filtrosAplicados.fechaFin}`];
     if (filtrosAplicados.cliente) chips.push(`Cliente: ${filtrosAplicados.clienteNombre || filtrosAplicados.cliente}`);
     if (filtrosAplicados.remolque) chips.push(`Remolque: ${filtrosAplicados.remolqueNombre || filtrosAplicados.remolque}`);
     if ((filtrosAplicados.referencia || '').trim()) chips.push(`# Referencia: "${filtrosAplicados.referencia.trim()}"`);
@@ -1199,7 +1199,7 @@ const ServiciosCancelados = () => {
   return (
     <div className="module-container sc-x1">
 
-      {/* ✅ NUEVO: FormularioOperacion COMPLETO para editar (igual que Activos/Completados) */}
+      {/* NUEVO: FormularioOperacion COMPLETO para editar (igual que Activos/Completados) */}
       {estadoFormulario !== 'cerrado' && (
         <FormularioOperacion
           estado={estadoFormulario}
@@ -1217,7 +1217,7 @@ const ServiciosCancelados = () => {
           <h1 className="module-title sc-x4">Servicios Cancelados</h1>
         </div>
 
-        {/* ✅ NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
+        {/* NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
               pantalla, con fondo oscurecido; se abre con el botón Filtros. */}
         {drawerFiltrosAbierto && (
           <>
@@ -1245,7 +1245,7 @@ const ServiciosCancelados = () => {
                   <input className="sc-x14" type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} />
                 </div>
 
-                {/* ✅ NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
+                {/* NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
               guardadas dentro del rango). Requiere rango de fechas. */}
                 <div className="sc-x12">
                   <label className="sc-x15"># REFERENCIA (requiere rango de fechas)</label>
@@ -1259,7 +1259,7 @@ const ServiciosCancelados = () => {
                     style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box', opacity: rangoFechasListo ? 1 : 0.45, cursor: rangoFechasListo ? 'text' : 'not-allowed' }}
                   />
                   {!rangoFechasListo && (
-                    <div className="sc-x16">⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+                    <div className="sc-x16">Requiere Fecha Inicio y Fecha Fin.</div>
                   )}
                 </div>
 
@@ -1350,7 +1350,7 @@ const ServiciosCancelados = () => {
                   )}
 
                   {!rangoFechasListo && !filterRemolque && (
-                    <div className="sc-x16">⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+                    <div className="sc-x16">Requiere Fecha Inicio y Fecha Fin.</div>
                   )}
 
                   {rangoFechasListo && !filterRemolque && mostrarSugerenciasRemolque && (
@@ -1408,7 +1408,7 @@ const ServiciosCancelados = () => {
           </>
         )}
 
-        {/* ✅ NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
+        {/* NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
             Arrastrando ⋮⋮ (o con las flechas) se cambia el orden; el checkbox
             incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
         {modalExportar && (
@@ -1471,7 +1471,7 @@ const ServiciosCancelados = () => {
         )}
 
         {/* Barra de filtros. Todos los filtros son OPCIONALES y se aplican en memoria. */}
-        {/* ✅ NUEVO: barra compacta — los filtros viven en un panel lateral
+        {/* NUEVO: barra compacta — los filtros viven en un panel lateral
             izquierdo; aquí solo queda el botón Filtros y el resumen de la
             última búsqueda. */}
         <div className="sc-x43">
@@ -1532,7 +1532,7 @@ const ServiciosCancelados = () => {
                   <thead className="sc-x62">
                     <tr>
                       <th className="sc-x63">Acciones</th>
-                      {/* ✅ NUEVO: encabezados clicables para ordenar (asc ▲ / desc ▼ / original) */}
+                      {/* NUEVO: encabezados clicables para ordenar (asc ▲ / desc ▼ / original) */}
                       {COLUMNAS_TABLA_CANCELADOS.map(col => (
                         <th
                           key={`th_${col.id}`}
@@ -1672,7 +1672,7 @@ const ServiciosCancelados = () => {
                 <button onClick={() => setOperacionViendo(null)} className="btn-window close sc-x86">✕</button>
               </div>
             </div>
-            {/* ✅ NUEVO: SIGUIENTE PASO — editar status/horario igual que Operaciones Activas */}
+            {/* NUEVO: SIGUIENTE PASO — editar status/horario igual que Operaciones Activas */}
             <div className="sc-x87">
               <span className="sc-x88">SIGUIENTE PASO</span>
               {botonesDisponibles.length > 0 ? (
@@ -1816,7 +1816,7 @@ const ServiciosCancelados = () => {
                       <div className="sc-x106"><span className="sc-x103">Operador Externo</span><span>{mostrarDato(operacionViendo.operadorProveedor)}</span></div>
                     </div>
                   )}
-                  {/* ✅ Observaciones ARRIBA del bloque de gastos (a petición) */}
+                  {/* Observaciones ARRIBA del bloque de gastos (a petición) */}
                   <div className="sc-x120">
                     <span className="sc-x102">Observaciones (Unidad / Proveedor)</span>
                     <div className="sc-x121">{mostrarDato(operacionViendo.observacionesUnidad)}</div>
@@ -1850,20 +1850,20 @@ const ServiciosCancelados = () => {
                 </div>
               )}
 
-              {/* ✅ Auditoría de la referencia: botón que abre el detalle en un modal */}
+              {/* Auditoría de la referencia: botón que abre el detalle en un modal */}
               <div className="sc-x132">
                 <button className="sc-x133" onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición">
-                  🕓 Ver auditoría
+                  Ver auditoría
                   <span className="sc-x134">{(operacionViendo.historialEdiciones || []).length}</span>
                 </button>
               </div>
 
-              {/* ✅ Modal de auditoría (solo lectura) */}
+              {/* Modal de auditoría (solo lectura) */}
               {mostrarAuditoria && (
                 <div className="sc-x135" onClick={() => setMostrarAuditoria(false)}>
                   <div className="sc-x136" onClick={(e) => e.stopPropagation()}>
                     <div className="sc-x137">
-                      <h3 className="sc-x138">🕓 Auditoría de la referencia <span className="sc-x139">{operacionViendo.ref || ''}</span></h3>
+                      <h3 className="sc-x138">Auditoría de la referencia <span className="sc-x139">{operacionViendo.ref || ''}</span></h3>
                       <button className="sc-x140" onClick={() => setMostrarAuditoria(false)}>✕</button>
                     </div>
                     <div className="sc-x141">
@@ -1906,7 +1906,7 @@ const ServiciosCancelados = () => {
         </div>
       )}
 
-      {/* ✅ Visor de documentos de la operación cancelada */}
+      {/* Visor de documentos de la operación cancelada */}
       {mostrarDocumentos && operacionViendo && (
         <div className="modal-overlay sc-x156">
           <div className="form-card sc-x157">
@@ -1938,7 +1938,7 @@ const ServiciosCancelados = () => {
         </div>
       )}
 
-      {/* ✅ Subida de documentos ligada a la operación */}
+      {/* Subida de documentos ligada a la operación */}
       {operacionViendo && (
         <DocumentoUploadModal
           isOpen={mostrarSubirDocOp && !!operacionViendo}
@@ -1950,7 +1950,7 @@ const ServiciosCancelados = () => {
         />
       )}
 
-      {/* ✅ Registro retroactivo de movimiento (fecha/hora personalizada) */}
+      {/* Registro retroactivo de movimiento (fecha/hora personalizada) */}
       {modalHorarios === 'registrar' && (
         <div className="modal-overlay sc-x168">
           <div className="form-card sc-x169">

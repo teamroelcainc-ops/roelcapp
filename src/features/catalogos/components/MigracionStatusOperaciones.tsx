@@ -143,7 +143,7 @@ export const MigracionStatusOperaciones = () => {
   // ====================================================================
   const migrarFlujos = async (aplicar: boolean) => {
     setCorriendoA(true); setLogsA([]);
-    pushA('info', aplicar ? '▶ APLICANDO Migración A…' : '👁 Previsualización Migración A (no escribe)…');
+    pushA('info', aplicar ? '▶ APLICANDO Migración A…' : 'Previsualización Migración A (no escribe)…');
     try {
       const [statusSnap, flujosSnap] = await Promise.all([
         getDocs(collection(db, 'catalogo_status_servicio')),
@@ -169,8 +169,8 @@ export const MigracionStatusOperaciones = () => {
         if (cambio) { docsCambios++; updates.push({ id: d.id, flujo: nuevo }); }
       });
       pushA('ok', `Nodos a actualizar: ${nodosUpd} · ya correctos: ${nodosOk} · documentos: ${docsCambios}.`);
-      if (noEnc.size > 0) { pushA('warn', `⚠ ${noEnc.size} nodo(s) sin match:`); Array.from(noEnc).sort().forEach(n => pushA('warn', `   • "${n}"`)); }
-      if (!aplicar) { pushA('info', '👁 Fin previsualización. Pulsa "Aplicar".'); return; }
+      if (noEnc.size > 0) { pushA('warn', `${noEnc.size} nodo(s) sin match:`); Array.from(noEnc).sort().forEach(n => pushA('warn', `   • "${n}"`)); }
+      if (!aplicar) { pushA('info', 'Fin previsualización. Pulsa "Aplicar".'); return; }
 
       let batch = writeBatch(db); let n = 0;
       for (const u of updates) {
@@ -178,8 +178,8 @@ export const MigracionStatusOperaciones = () => {
         if (++n >= BATCH_MAX) { await batch.commit(); batch = writeBatch(db); n = 0; }
       }
       if (n > 0) await batch.commit();
-      pushA('ok', `✅ Migración A aplicada. ${docsCambios} flujo(s).`);
-    } catch (e: any) { pushA('err', `❌ ${e?.message || e}`); console.error(e); }
+      pushA('ok', `Migración A aplicada. ${docsCambios} flujo(s).`);
+    } catch (e: any) { pushA('err', `${e?.message || e}`); console.error(e); }
     finally { setCorriendoA(false); }
   };
 
@@ -189,7 +189,7 @@ export const MigracionStatusOperaciones = () => {
   const migrarOperaciones = async (aplicar: boolean) => {
     if (aplicar && !defaultStatusId) { alert('Elige primero el "Status por defecto (sin horario)".'); return; }
     setCorriendoB(true); setLogsB([]);
-    pushB('info', aplicar ? '▶ APLICANDO Migración B…' : '👁 Previsualización Migración B (no escribe)…');
+    pushB('info', aplicar ? '▶ APLICANDO Migración B…' : 'Previsualización Migración B (no escribe)…');
     try {
       pushB('info', 'Descargando catálogo, horarios, flujos, tipos de operación y operaciones…');
       const [statusSnap, horariosSnap, flujosSnap, tiposOpSnap, opsSnap] = await Promise.all([
@@ -332,10 +332,10 @@ export const MigracionStatusOperaciones = () => {
       });
 
       pushB('ok', `Resultado → con cascada de flujo: ${desdeCascada} · sin flujo (por prefijo): ${sinFlujoPrefijo} · default sin horario: ${desdeDefault} · sin cambio: ${sinCambio} · sin horario con status: ${sinHorarioConStatus} · sin resolver: ${sinNada}.`);
-      if (huerfanos.size > 0) pushB('warn', `⚠ ${huerfanos.size} status hex en horarios no están en el catálogo: ${Array.from(huerfanos).join(', ')}`);
+      if (huerfanos.size > 0) pushB('warn', `${huerfanos.size} status hex en horarios no están en el catálogo: ${Array.from(huerfanos).join(', ')}`);
       pushB('info', `Total operaciones a escribir: ${updates.length}.`);
 
-      if (!aplicar) { pushB('info', '👁 Fin previsualización. Pulsa "Aplicar".'); return; }
+      if (!aplicar) { pushB('info', 'Fin previsualización. Pulsa "Aplicar".'); return; }
 
       let batch = writeBatch(db); let n = 0, escritas = 0;
       for (const u of updates) {
@@ -344,8 +344,8 @@ export const MigracionStatusOperaciones = () => {
         if (n >= BATCH_MAX) { await batch.commit(); pushB('info', `   …${escritas}/${updates.length}`); batch = writeBatch(db); n = 0; }
       }
       if (n > 0) await batch.commit();
-      pushB('ok', `✅ Migración B aplicada. ${updates.length} operación(es). Recarga Operaciones con Ctrl+Shift+R.`);
-    } catch (e: any) { pushB('err', `❌ ${e?.message || e}`); console.error(e); }
+      pushB('ok', `Migración B aplicada. ${updates.length} operación(es). Recarga Operaciones con Ctrl+Shift+R.`);
+    } catch (e: any) { pushB('err', `${e?.message || e}`); console.error(e); }
     finally { setCorriendoB(false); }
   };
 

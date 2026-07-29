@@ -152,7 +152,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       <div className="form-card log-x2">
         
         <div className="log-x3">
-          {/* ✅ NUEVO: Logo de la empresa */}
+          {/* NUEVO: Logo de la empresa */}
           <img className="log-x4"
             src={LOGO_DEFAULT}
             alt="Roelca Inc."
@@ -187,7 +187,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
           <div className="form-group log-x11">
             <label className="log-x9">Contraseña</label>
-            {/* ✅ NUEVO: campo con botón de ojo para mostrar/ocultar la contraseña */}
+            {/* NUEVO: campo con botón de ojo para mostrar/ocultar la contraseña */}
             <div className="log-x12">
               <input 
                 type={mostrarPassword ? 'text' : 'password'}
@@ -214,7 +214,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </div>
           </div>
 
-          {/* ✅ NUEVO: "¿Olvidaste tu contraseña?" debajo del campo de contraseña */}
+          {/* NUEVO: "¿Olvidaste tu contraseña?" debajo del campo de contraseña */}
           <div className="log-x15">
             <button
               type="button"

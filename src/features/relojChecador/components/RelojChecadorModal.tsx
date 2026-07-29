@@ -213,7 +213,7 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
     <div className="modal-overlay rcm-x1">
       <div className="form-card rcm-x2">
         <div className="rcm-x3">
-          <h2 className="rcm-x4">⏱️ Reloj Checador</h2>
+          <h2 className="rcm-x4">Reloj Checador</h2>
           <p className="rcm-x5">Registra tu asistencia del día</p>
         </div>
 
@@ -225,7 +225,7 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
         ) : ipValida === false ? (
           <div className="rcm-x8">
             <div className="rcm-x9">
-              <span className="rcm-x10">⛔</span>
+              <span className="rcm-x10"></span>
               <h3 className="rcm-x11">Acceso Denegado</h3>
               <p className="rcm-x12">
                 No estás conectado a la red WiFi oficial de la oficina.<br/><br/>
@@ -253,7 +253,7 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
 
             {jornadaTerminada ? (
               <div className="rcm-x21">
-                <span className="rcm-x22">¡Jornada Finalizada! 🎉</span>
+                <span className="rcm-x22">¡Jornada Finalizada! </span>
                 <span className="rcm-x23">Ya has registrado tu salida del turno por el día de hoy. ¡Buen trabajo!</span>
               </div>
             ) : (
@@ -285,7 +285,7 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
                       readOnly={obteniendoGps}
                     />
                     <button type="button" onClick={obtenerUbicacion} disabled={obteniendoGps} className="btn btn-outline rcm-x27">
-                      {obteniendoGps ? 'Buscando...' : '📍 GPS'}
+                      {obteniendoGps ? 'Buscando...' : 'GPS'}
                     </button>
                   </div>
                 </div>

@@ -1149,10 +1149,10 @@ export const ReportesDashboard = () => {
       </div>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${vista.titulo}</title>
 <style>
-  /* ✅ Hoja CARTA HORIZONTAL con márgenes cortos: cabe mucho más ancho de tabla. */
+  /* Hoja CARTA HORIZONTAL con márgenes cortos: cabe mucho más ancho de tabla. */
   @page{ size: letter landscape; margin: 8mm }
   body{ margin:0 }
-  /* ✅ El encabezado de la tabla se repite en cada página y las filas no se parten. */
+  /* El encabezado de la tabla se repite en cada página y las filas no se parten. */
   thead{ display: table-header-group }
   tr{ page-break-inside: avoid }
 </style></head>
@@ -1208,7 +1208,7 @@ export const ReportesDashboard = () => {
       <h1 className="rd-x1">Reportes</h1>
       <p className="rd-x2">Reportes de operaciones por rango de fechas. Exporta a Excel o PDF.</p>
 
-      {/* ✅ Filtros en una sola barra: Módulo + Reporte + Desde + Hasta + acciones */}
+      {/* Filtros en una sola barra: Módulo + Reporte + Desde + Hasta + acciones */}
       <div className="rd-x3">
         <div className="rd-x4">
           <label className="rd-x5">Módulo</label>
@@ -1241,7 +1241,7 @@ export const ReportesDashboard = () => {
           <label className="rd-x5">Hasta</label>
           <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} style={inputEstilo} />
         </div>
-        {/* ✅ NUEVO: filtro de estatus (solo para el reporte de ventas) */}
+        {/* NUEVO: filtro de estatus (solo para el reporte de ventas) */}
         {esReporteVentas && (
           <div className="rd-x8">
             <label className="rd-x5">Estatus a incluir</label>
@@ -1258,7 +1258,7 @@ export const ReportesDashboard = () => {
         </button>
         <div className="rd-x9" />
         <div className="rd-x10">
-          {/* ✅ NUEVO: abre los Resúmenes Diarios (Transfer / Logística / Fletes) */}
+          {/* NUEVO: abre los Resúmenes Diarios (Transfer / Logística / Fletes) */}
           <button onClick={() => setMostrarResumenDiario(true)} style={btnOutline} title="Resúmenes diarios de operaciones (Transfer / Logística / Fletes)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
             Resúmenes
@@ -1339,7 +1339,7 @@ export const ReportesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: modal para elegir y ordenar columnas del reporte actual */}
+      {/* NUEVO: modal para elegir y ordenar columnas del reporte actual */}
       {modalColumnas && (
         <div className="rd-x28"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setModalColumnas(false); }}
@@ -1458,7 +1458,7 @@ export const ReportesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: modal de Resúmenes Diarios (Transfer / Logística / Fletes) */}
+      {/* NUEVO: modal de Resúmenes Diarios (Transfer / Logística / Fletes) */}
       {mostrarResumenDiario && (
         <div className="rd-x46"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarResumenDiario(false); }}

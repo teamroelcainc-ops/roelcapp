@@ -307,7 +307,7 @@ export const UsuariosDashboard = () => {
             </div>
             
             <form className="ud-x35" onSubmit={handleGuardar}>
-              {/* ✅ NUEVO: Foto de perfil */}
+              {/* NUEVO: Foto de perfil */}
               <div className="form-group ud-x36">
                 <label className="ud-x37">Foto de Perfil</label>
                 <div className="ud-x38">

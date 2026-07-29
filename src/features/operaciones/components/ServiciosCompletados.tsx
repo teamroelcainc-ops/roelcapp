@@ -723,7 +723,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: chips con el resumen del último criterio buscado.
   const resumenFiltrosChips = useMemo(() => {
     if (!filtrosAplicados) return [] as string[];
-    const chips: string[] = [`📅 ${filtrosAplicados.fechaInicio} → ${filtrosAplicados.fechaFin}`];
+    const chips: string[] = [`${filtrosAplicados.fechaInicio} → ${filtrosAplicados.fechaFin}`];
     if (filtrosAplicados.cliente) chips.push(`Cliente: ${filtrosAplicados.clienteNombre || filtrosAplicados.cliente}`);
     if (filtrosAplicados.tipoOperacion) chips.push(`Tipo: ${filtrosAplicados.tipoOperacion}`);
     if (filtrosAplicados.remolque) chips.push(`Remolque: ${filtrosAplicados.remolqueNombre || filtrosAplicados.remolque}`);
@@ -1859,7 +1859,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           ✓ Servicios Completados
         </h1>
 
-          {/* ✅ NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
+          {/* NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
               pantalla, con fondo oscurecido; se abre con el botón Filtros. */}
           {drawerFiltrosAbierto && (
             <>
@@ -1885,7 +1885,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             <input className="sc-x26" type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} />
           </div>
 
-          {/* ✅ NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
+          {/* NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
               guardadas dentro del rango). Requiere rango de fechas. */}
           <div className="sc-x24">
             <label className="sc-x27"># REFERENCIA (requiere rango de fechas)</label>
@@ -1902,7 +1902,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               />
             </div>
             {!rangoFechasListo && (
-              <div className="sc-x30">⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+              <div className="sc-x30">Requiere Fecha Inicio y Fecha Fin.</div>
             )}
           </div>
 
@@ -2003,7 +2003,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
 
             {!rangoFechasListo && !filterRemolque && (
-              <div className="sc-x30">⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+              <div className="sc-x30">Requiere Fecha Inicio y Fecha Fin.</div>
             )}
 
             {rangoFechasListo && !filterRemolque && mostrarSugerenciasRemolque && (
@@ -2038,7 +2038,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
           </div>
 
-          {/* ✅ NUEVO: filtro por OPERADOR (búsqueda con sugerencias) */}
+          {/* NUEVO: filtro por OPERADOR (búsqueda con sugerencias) */}
           <div className="sc-x31">
             <label className="sc-x27">OPERADOR (opcional)</label>
 
@@ -2101,7 +2101,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
           </div>
 
-          {/* ✅ NUEVO: filtro por TIPO DE OPERACIÓN (Transfer / Logística / Fletes) */}
+          {/* NUEVO: filtro por TIPO DE OPERACIÓN (Transfer / Logística / Fletes) */}
           <div className="sc-x24">
             <label className="sc-x27">TIPO DE OPERACIÓN (opcional)</label>
             <select className="sc-x46"
@@ -2144,7 +2144,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             </>
           )}
 
-        {/* ✅ NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
+        {/* NUEVO: modal para ELEGIR Y ORDENAR las columnas del Excel.
             Arrastrando ⋮⋮ (o con las flechas) se cambia el orden; el checkbox
             incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
         {modalExportar && (
@@ -2207,7 +2207,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         )}
 
 
-        {/* ✅ NUEVO: barra compacta — los filtros viven en un panel lateral
+        {/* NUEVO: barra compacta — los filtros viven en un panel lateral
             izquierdo; aquí solo queda el botón Filtros, el resumen de la última
             búsqueda y las acciones de la tabla. */}
         <div className="sc-x63">
@@ -2410,7 +2410,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             </div>
             <p className="sc-x98">Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
 
-            {/* ✅ NUEVO: buscador de columnas por nombre */}
+            {/* NUEVO: buscador de columnas por nombre */}
             <div className="sc-x99">
               <svg className="sc-x47" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input className="sc-x100"
@@ -2876,7 +2876,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                     </div>
                   )}
 
-                  {/* ✅ Observaciones ARRIBA del bloque de gastos (a petición) */}
+                  {/* Observaciones ARRIBA del bloque de gastos (a petición) */}
                   <div className="sc-x161">
                     <span className="sc-x162">Observaciones (Unidad / Proveedor)</span>
                     <div className="sc-x163">
@@ -2954,20 +2954,20 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               )}
 
 
-              {/* ✅ Auditoría de la referencia: botón que abre el detalle en un modal */}
+              {/* Auditoría de la referencia: botón que abre el detalle en un modal */}
               <div className="sc-x175">
                 <button className="sc-x176" onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición">
-                  🕓 Ver auditoría
+                  Ver auditoría
                   <span className="sc-x177">{(operacionViendo.historialEdiciones || []).length}</span>
                 </button>
               </div>
 
-              {/* ✅ Modal de auditoría (solo lectura) */}
+              {/* Modal de auditoría (solo lectura) */}
               {mostrarAuditoria && (
                 <div className="sc-x178" onClick={() => setMostrarAuditoria(false)}>
                   <div className="sc-x179" onClick={(e) => e.stopPropagation()}>
                     <div className="sc-x180">
-                      <h3 className="sc-x181">🕓 Auditoría de la referencia <span className="sc-x182">{operacionViendo.ref || ''}</span></h3>
+                      <h3 className="sc-x181">Auditoría de la referencia <span className="sc-x182">{operacionViendo.ref || ''}</span></h3>
                       <button className="sc-x97" onClick={() => setMostrarAuditoria(false)}>✕</button>
                     </div>
                     <div className="sc-x183">
@@ -3011,7 +3011,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
       )}
 
-      {/* ✅ Editor integrado DESHABILITADO: ahora "Editar" abre el FormularioOperacion completo */}
+      {/* Editor integrado DESHABILITADO: ahora "Editar" abre el FormularioOperacion completo */}
       {false && operacionEditando && (
         <div className="modal-overlay sc-x199">
           <div className="form-card sc-x200">

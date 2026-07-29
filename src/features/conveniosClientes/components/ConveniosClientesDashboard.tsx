@@ -865,7 +865,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
                               <tr className="ccd-x73" key={idDet || idx}>
                                 <td className="ccd-x74">
                                   {nomDet || `Tarifa ${idx + 1}`}
-                                  {/* ✅ Cambio 1: ID del catálogo de tarifas (tipoConvenioId) */}
+                                  {/* Cambio 1: ID del catálogo de tarifas (tipoConvenioId) */}
                                   <div className="ccd-x75">
                                     ID tarifa: {det.tipoConvenioId || '—'}
                                   </div>
@@ -893,7 +893,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
                                     {fechaUso ? formatearFechaEsp(fechaUso) : 'Nunca usado'}
                                   </div>
                                 </td>
-                                {/* ✅ Cambio 2: editar y eliminar el detalle */}
+                                {/* Cambio 2: editar y eliminar el detalle */}
                                 <td className="ccd-x80">
                                   <div className="ccd-x28">
                                     <button className="ccd-x81"
@@ -980,7 +980,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO (Cambio 2): MODAL EDITAR DETALLE / TARIFA */}
+      {/* NUEVO (Cambio 2): MODAL EDITAR DETALLE / TARIFA */}
       {detalleEditando && (
         <div className="modal-overlay ccd-x90">
           <div className="form-card ccd-x91">
@@ -1111,7 +1111,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Convenios de Clientes) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Convenios de Clientes) */}
       {drawerFiltrosAbierto && (
         <div className="ccd-x116" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="ccd-x117" onClick={(e) => e.stopPropagation()}>
@@ -1146,7 +1146,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
 
             <div className="ccd-x130">
               <button className="ccd-x131" onClick={() => { setBusqueda(''); setFiltroActivo('Todo'); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="ccd-x132" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="ccd-x132" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

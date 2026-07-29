@@ -27,6 +27,9 @@ export const CombustibleDashboard: React.FC = () => {
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
+  // ✅ NUEVO: rango de fechas del costo de combustible (opcional).
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
   const [busquedaHecha, setBusquedaHecha] = useState(false);
   
   // ✅ ESTADOS DE PAGINACIÓN
@@ -97,9 +100,20 @@ export const CombustibleDashboard: React.FC = () => {
 
   // Filtrado GLOBAL por buscador inteligente
   const registrosFiltrados = useMemo(() => {
-    if (!busqueda.trim()) return registrosGlobales;
+    // ✅ Rango de fechas primero (la fecha se guarda en ISO YYYY-MM-DD).
+    let base = registrosGlobales;
+    if (fechaDesde || fechaHasta) {
+      base = base.filter(reg => {
+        const f = String(reg.fecha || '').slice(0, 10);
+        if (!f) return false;
+        if (fechaDesde && f < fechaDesde) return false;
+        if (fechaHasta && f > fechaHasta) return false;
+        return true;
+      });
+    }
+    if (!busqueda.trim()) return base;
     const b = busqueda.toLowerCase();
-    return registrosGlobales.filter(reg => (
+    return base.filter(reg => (
       String(formatearFechaEsp(reg.fecha)).toLowerCase().includes(b) ||
       String(reg.proveedor || '').toLowerCase().includes(b) ||
       String(reg.tipoCombustible || '').toLowerCase().includes(b) ||
@@ -108,7 +122,7 @@ export const CombustibleDashboard: React.FC = () => {
       String(reg.costo || '').toLowerCase().includes(b) ||
       String(reg.totalPesos || '').toLowerCase().includes(b)
     ));
-  }, [busqueda, registrosGlobales]);
+  }, [busqueda, registrosGlobales, fechaDesde, fechaHasta]);
 
   // LÓGICA DE PAGINACIÓN
   const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
@@ -361,7 +375,7 @@ export const CombustibleDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
         <div className="modal-overlay cd-x41">
           <div className="cd-x42">
@@ -404,7 +418,7 @@ export const CombustibleDashboard: React.FC = () => {
         />
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Combustible) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Combustible) */}
       {drawerFiltrosAbierto && (
         <div className="cd-x51" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="cd-x52" onClick={(e) => e.stopPropagation()}>
@@ -424,13 +438,25 @@ export const CombustibleDashboard: React.FC = () => {
               </div>
             </div>
 
+            {/* ✅ NUEVO: rango de fechas */}
+            <div className="cd-fechas">
+              <div className="cd-fecha-campo">
+                <label className="cd-x56">FECHA DESDE</label>
+                <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} className="cd-fecha-input" />
+              </div>
+              <div className="cd-fecha-campo">
+                <label className="cd-x56">FECHA HASTA</label>
+                <input type="date" value={fechaHasta} min={fechaDesde || undefined} onChange={(e) => setFechaHasta(e.target.value)} className="cd-fecha-input" />
+              </div>
+            </div>
+
             <div className="cd-x61">
-              La búsqueda es <b className="cd-x62">opcional</b>. Presiona <b className="cd-x29">Buscar</b> para ver todo el catálogo.
+              La búsqueda y las fechas son <b className="cd-x62">opcionales</b>. Presiona <b className="cd-x29">Buscar</b> para ver todo el catálogo.
             </div>
 
             <div className="cd-x63">
-              <button className="cd-x64" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="cd-x65" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="cd-x64" onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="cd-x65" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

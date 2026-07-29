@@ -3040,7 +3040,7 @@ export const FacturacionProveedoresDashboard = () => {
 
             <div className="fpd-x57">
               <button className="fpd-x58" onClick={() => { limpiarFiltros(); if (activeTab === 'operaciones') setBusquedaOpsHecha(false); else setBusquedaHistHecha(false); }}>Limpiar</button>
-              <button className="fpd-x59" onClick={() => { if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true); setFiltrosAbiertos(false); }}>🔍 Buscar</button>
+              <button className="fpd-x59" onClick={() => { if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true); setFiltrosAbiertos(false); }}>Buscar</button>
             </div>
           </div>
         </div>
@@ -3079,12 +3079,12 @@ export const FacturacionProveedoresDashboard = () => {
                   cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
                   backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
                   color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
-                ⬇ Exportar Excel
+                Exportar Excel
               </button>
               <button disabled={seleccionadas.length === 0} onClick={abrirModalCostoAdic}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #58a6ff', backgroundColor: 'transparent', color: seleccionadas.length === 0 ? '#484f58' : '#58a6ff', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap', cursor: seleccionadas.length === 0 ? 'not-allowed' : 'pointer' }}
                 title="Agregar un costo adicional al proveedor en una operación seleccionada">
-                ➕ Costo adicional
+                Costo adicional
               </button>
               <button disabled={seleccionadas.length === 0 || seleccionMultiProveedor} onClick={() => { setStatusFacturaForm('Facturado'); setModalAbierto(true); }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiProveedor) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiProveedor) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
@@ -3166,13 +3166,13 @@ export const FacturacionProveedoresDashboard = () => {
                         <td className="fpd-x89">
                           {yaFacturada ? (
                             <div className="fpd-x90">
-                              <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">📋 Tarifa</button>
+                              <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">Tarifa</button>
                               <button className="fpd-x92" onClick={(e) => abrirGestionOp(e, op)} title="Editar el # de factura de esta operación">✎ #</button>
                               <button className="fpd-x93" onClick={(e) => { e.stopPropagation(); quitarOpDeFactura(op); }} title="Quitar esta operación de la factura (vuelve a Pendientes)">✕ Quitar</button>
                             </div>
                           ) : (
                             <div className="fpd-x90">
-                              <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">📋 Tarifa</button>
+                              <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">Tarifa</button>
                               <button className="fpd-x94" onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }} title="Agregar costo adicional a esta operación">＋ Costo</button>
                             </div>
                           )}
@@ -3231,9 +3231,9 @@ export const FacturacionProveedoresDashboard = () => {
               <span className="fpd-x3">{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
             </div>
             <div className="fpd-x109">
-              <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>🩺 Verificar</button>
+              <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>Verificar</button>
               <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
-              <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>⬇ Exportar Excel</button>
+              <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>Exportar Excel</button>
             </div>
           </div>
 
@@ -3595,12 +3595,12 @@ export const FacturacionProveedoresDashboard = () => {
               <button onClick={() => abrirRate(facturaViendo)} disabled={cargandoRate}
                 title="Generar el Rate de Proveedor en PDF (relación de referencias de esta factura)"
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#10b981', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRate ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRate ? 0.7 : 1, marginRight: '8px' }}>
-                📄 {cargandoRate ? 'Preparando...' : 'Rate Proveedor'}
+                {cargandoRate ? 'Preparando...' : 'Rate Proveedor'}
               </button>
               <button onClick={() => abrirRemision(facturaViendo)} disabled={cargandoRemision}
                 title="Generar la Remisión en PDF de esta factura"
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1, marginRight: '8px' }}>
-                🧾 {cargandoRemision ? 'Preparando...' : 'Remisión'}
+                {cargandoRemision ? 'Preparando...' : 'Remisión'}
               </button>
               <button onClick={() => setFacturaViendo(null)} className="btn btn-outline fpd-x204">Cerrar Ficha</button>
             </div>
@@ -3612,7 +3612,7 @@ export const FacturacionProveedoresDashboard = () => {
         <div className="modal-overlay fpd-x205" onClick={() => setModalDiagnostico(false)}>
           <div className="fpd-x206" onClick={(e) => e.stopPropagation()}>
             <div className="fpd-x180">
-              <span className="fpd-x207">🩺 Verificación de Facturación (Proveedores)</span>
+              <span className="fpd-x207">Verificación de Facturación (Proveedores)</span>
               <button className="fpd-x208" onClick={() => setModalDiagnostico(false)}>×</button>
             </div>
             <div className="fpd-x209">
@@ -3661,7 +3661,7 @@ export const FacturacionProveedoresDashboard = () => {
                     { ok: !diagnostico.topeFacturas, txt: diagnostico.topeFacturas ? `Se alcanzó el tope de ${LIMITE_FACTURAS_TODAS} facturas cargadas: podría faltar información.` : `Se cargaron todas las facturas (sin alcanzar el tope de ${LIMITE_FACTURAS_TODAS}).` },
                   ].map((r, i) => (
                     <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', color: r.ok ? '#3fb950' : (r.warn ? '#f59e0b' : '#f85149') }}>
-                      <span className="fpd-x216">{r.ok ? '✓' : (r.warn ? '⚠' : '✕')}</span>
+                      <span className="fpd-x216">{r.ok ? '✓' : (r.warn ? '' : '✕')}</span>
                       <span className="fpd-x8">{r.txt}</span>
                     </div>
                   ))}
@@ -4163,19 +4163,19 @@ export const FacturacionProveedoresDashboard = () => {
 
             <div className="fpd-x252">
               <button className="fpd-x150" onClick={() => setRemisionPreview(null)}>Cerrar</button>
-              <button className="fpd-x340" onClick={generarPDFDeRemision}>🧾 Generar PDF</button>
+              <button className="fpd-x340" onClick={generarPDFDeRemision}>Generar PDF</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ✅ (CONFIRMACIÓN DE TARIFA) Vista previa editable → PDF */}
+      {/* (CONFIRMACIÓN DE TARIFA) Vista previa editable → PDF */}
       {confirmacionPreview && (
         <div className="modal-overlay fpd-x341" onClick={() => setConfirmacionPreview(null)}>
           <div className="fpd-x342" onClick={(e) => e.stopPropagation()}>
             <div className="fpd-x39">
               <div className="fpd-x343">
-                <h2 className="fpd-x140">📋 Confirmación de Tarifa a Proveedor</h2>
+                <h2 className="fpd-x140">Confirmación de Tarifa a Proveedor</h2>
                 <span className="fpd-x344">{confirmacionPreview.referencia}</span>
               </div>
               <button className="fpd-x41" onClick={() => setConfirmacionPreview(null)}>✕</button>
@@ -4224,7 +4224,7 @@ export const FacturacionProveedoresDashboard = () => {
               <div className="fpd-x345">
                 <div><label style={rLabelStyle}>FACTURADO EN</label><input type="text" value={confirmacionPreview.facturadoEn} onChange={e => setCTMonto('facturadoEn', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>MONEDA DEL CONVENIO</label><input type="text" value={confirmacionPreview.monedaConvenio} onChange={e => setCTMonto('monedaConvenio', e.target.value)} style={rInputStyle} /></div>
-                {/* ✅ MONEDA DE PAGO: define en qué moneda se pagan los montos */}
+                {/* MONEDA DE PAGO: define en qué moneda se pagan los montos */}
                 <div>
                   <label style={{ ...rLabelStyle, color: '#fb923c' }}>MONEDA DE PAGO</label>
                   <select value={confirmacionPreview.monedaPago || ''} onChange={e => setCTMonto('monedaPago', e.target.value)} style={{ ...rInputStyle, cursor: 'pointer' }}>
@@ -4241,7 +4241,7 @@ export const FacturacionProveedoresDashboard = () => {
 
             <div className="fpd-x322">
               <div className="fpd-x347">OBSERVACIONES</div>
-              {/* ✅ NUEVO: se guardan con la confirmación y salen en el PDF */}
+              {/* NUEVO: se guardan con la confirmación y salen en el PDF */}
               <textarea
                 value={confirmacionPreview.observaciones || ''}
                 onChange={e => setCT('observaciones', e.target.value)}
@@ -4252,25 +4252,25 @@ export const FacturacionProveedoresDashboard = () => {
             </div>
 
             <div className="fpd-x348">
-              {/* ✅ NUEVO: log de generación del PDF (fecha, hora y usuario) */}
+              {/* NUEVO: log de generación del PDF (fecha, hora y usuario) */}
               <button className="fpd-x349" onClick={() => setLogConfirmacionAbierto(true)} title="Ver quién y cuándo ha generado el PDF de esta confirmación">
-                📜 Log ({logDeConfirmacionActual().length})
+                Log ({logDeConfirmacionActual().length})
               </button>
               <div className="fpd-x49">
                 <button className="fpd-x150" onClick={() => setConfirmacionPreview(null)}>Cerrar</button>
-                <button className="fpd-x350" onClick={() => guardarConfirmacion(true)} title="Guardar los cambios para que los demás usuarios los vean">💾 Guardar</button>
-                <button className="fpd-x340" onClick={generarPDFDeConfirmacion} title="Guarda los cambios, registra el log y descarga el PDF">📋 Generar PDF</button>
+                <button className="fpd-x350" onClick={() => guardarConfirmacion(true)} title="Guardar los cambios para que los demás usuarios los vean">Guardar</button>
+                <button className="fpd-x340" onClick={generarPDFDeConfirmacion} title="Guarda los cambios, registra el log y descarga el PDF">Generar PDF</button>
               </div>
             </div>
           </div>
 
-          {/* ✅ NUEVO: MODAL DE LOG — quién y cuándo generó el PDF */}
+          {/* NUEVO: MODAL DE LOG — quién y cuándo generó el PDF */}
           {logConfirmacionAbierto && (
             <div className="fpd-x351" onClick={(e) => { e.stopPropagation(); setLogConfirmacionAbierto(false); }}>
               <div className="fpd-x352" onClick={e => e.stopPropagation()}>
                 <div className="fpd-x353">
                   <div>
-                    <div className="fpd-x354">📜 Log de generación de PDF</div>
+                    <div className="fpd-x354">Log de generación de PDF</div>
                     <div className="fpd-x355">Confirmación de Tarifa · <span className="fpd-x356">{confirmacionPreview.referencia}</span></div>
                   </div>
                   <button className="fpd-x357" onClick={() => setLogConfirmacionAbierto(false)}>✕</button>
@@ -4307,13 +4307,13 @@ export const FacturacionProveedoresDashboard = () => {
         </div>
       )}
 
-      {/* ✅ (RATE DE PROVEEDOR) Vista previa editable → PDF */}
+      {/* (RATE DE PROVEEDOR) Vista previa editable → PDF */}
       {ratePreview && (
         <div className="modal-overlay fpd-x341" onClick={() => setRatePreview(null)}>
           <div className="fpd-x369" onClick={(e) => e.stopPropagation()}>
             <div className="fpd-x39">
               <div className="fpd-x343">
-                <h2 className="fpd-x140">📄 Rate de Proveedor</h2>
+                <h2 className="fpd-x140">Rate de Proveedor</h2>
                 <span className="fpd-x370">Factura {ratePreview.facturaProveedor}</span>
               </div>
               <button className="fpd-x41" onClick={() => setRatePreview(null)}>✕</button>
@@ -4399,7 +4399,7 @@ export const FacturacionProveedoresDashboard = () => {
 
             <div className="fpd-x252">
               <button className="fpd-x150" onClick={() => setRatePreview(null)}>Cerrar</button>
-              <button className="fpd-x375" onClick={generarPDFDeRate}>📄 Generar PDF</button>
+              <button className="fpd-x375" onClick={generarPDFDeRate}>Generar PDF</button>
             </div>
           </div>
         </div>

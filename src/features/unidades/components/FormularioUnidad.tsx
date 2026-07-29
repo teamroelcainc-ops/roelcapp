@@ -206,7 +206,7 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
         <div className="form-header fu-x6">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Unidad: ${formData.unidad}` : 'Nueva Unidad Propia')}</h2>
           <div className="header-actions fu-x7">
-            {/* ✅ Botón Subir Documentos (solo visible con el formulario abierto) */}
+            {/* Botón Subir Documentos (solo visible con el formulario abierto) */}
             {estado === 'abierto' && (
               <button
                 type="button"
@@ -256,7 +256,7 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
               
               <div className="form-group">
                 <label className="form-label">Tipo de Unidad (Remolque) *</label>
-                {/* ✅ CORRECCIÓN DE TYPESCRIPT: (prev: UnidadRecord) */}
+                {/* CORRECCIÓN DE TYPESCRIPT: (prev: UnidadRecord) */}
                 <SearchableSelect 
                   options={tiposUnidad}
                   value={formData.tipoUnidadId}
@@ -396,7 +396,7 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
         </div>
       </div>
 
-      {/* ✅ Modal reutilizable para subir documentos ligados a esta unidad */}
+      {/* Modal reutilizable para subir documentos ligados a esta unidad */}
       <DocumentoUploadModal
         isOpen={mostrarSubirDoc}
         onClose={() => setMostrarSubirDoc(false)}

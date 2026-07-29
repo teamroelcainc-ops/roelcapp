@@ -873,7 +873,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                           + Añadir Nueva
                         </button>
                       </div>
-                      {/* ✅ Desglose de la dirección seleccionada (campos del catálogo de
+                      {/* Desglose de la dirección seleccionada (campos del catálogo de
                           direcciones, SOLO LECTURA: se editan desde el catálogo). */}
                       {(() => {
                         const dirSel = direccionesDB.find((d: any) => String(d.id) === String(formData.direccionId));
@@ -912,7 +912,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                       </div>
                     </div>
 
-                    {/* ✅ LOS CAMPOS RESTANTES DE CONTACTO */}
+                    {/* LOS CAMPOS RESTANTES DE CONTACTO */}
                     <div className="form-group">
                       <label className="form-label fe-x38">Teléfono</label>
                       <input type="text" name="telefono" className="form-control fe-x40" value={formData.telefono} onChange={handleChange} />
@@ -927,7 +927,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                 </div>
               </div>
 
-              {/* ✅ BOTONES DEL FORMULARIO */}
+              {/* BOTONES DEL FORMULARIO */}
               <div className="form-actions fe-x56">
                 <button type="button" onClick={onClose} className="btn btn-outline fe-x24">Cancelar</button>
                 <button type="submit" className="btn btn-primary fe-x57" disabled={cargando}>{cargando ? 'Guardando...' : 'Guardar Empresa'}</button>
