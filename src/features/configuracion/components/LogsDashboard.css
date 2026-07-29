@@ -1,0 +1,39 @@
+/* Estilos hermanos de LogsDashboard.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.ld-x1 { padding: 24px; animation: fadeIn 0.3s ease; }
+.ld-x2 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.ld-x3 { font-size: 1.25rem; color: #8b949e; margin: 0; font-weight: 400; }
+.ld-x4 { color: #f0f6fc; font-weight: 600; }
+.ld-x5 { display: flex; gap: 16px; margin-bottom: 24px; background-color: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; }
+.ld-x6 { flex: 1; }
+.ld-x7 { display: block; font-size: 0.75rem; color: #8b949e; text-transform: uppercase; margin-bottom: 8px; }
+.ld-x8 { width: 100%; padding: 10px; background-color: #010409; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; }
+.ld-x9 { display: flex; align-items: flex-end; }
+.ld-x10 { padding: 10px 16px; background-color: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; cursor: pointer; }
+.ld-x11 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 280px); }
+.ld-x12 { width: 100%; min-width: 900px; border-collapse: collapse; text-align: left; }
+.ld-x13 { background-color: #161b22; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 0 #30363d; }
+.ld-x14 { padding: 16px; color: #8b949e; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; }
+.ld-x15 { text-align: center; padding: 60px; color: #8b949e; }
+.ld-x16 { font-size: 1.1rem; margin-bottom: 8px; }
+.ld-x17 { text-align: center; padding: 40px; color: #8b949e; }
+.ld-x18 { border-bottom: 1px solid #21262d; }
+.ld-x19 { padding: 16px; color: #8b949e; font-size: 0.9rem; white-space: nowrap; }
+.ld-x20 { padding: 16px; color: #f0f6fc; font-size: 0.9rem; font-weight: 500; }
+.ld-x21 { padding: 16px; }
+.ld-x22 { background-color: rgba(59, 130, 246, 0.1); color: #58a6ff; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; border: 1px solid rgba(59, 130, 246, 0.2); }
+.ld-x23 { padding: 16px; color: #c9d1d9; font-size: 0.9rem; line-height: 1.4; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .ld-x1 { padding: 14px 12px; }
+  .ld-x2 { flex-wrap: wrap; }
+  .ld-x5 { flex-wrap: wrap; }
+  .ld-x9 { flex-wrap: wrap; }
+  .ld-x12 { min-width: 0; }
+  .ld-x15 { padding: 14px 12px; }
+  .ld-x17 { padding: 14px 12px; }
+}

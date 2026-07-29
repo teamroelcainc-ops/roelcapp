@@ -1,0 +1,338 @@
+/* ============================================================================
+   mobile.css — CAPA RESPONSIVE GLOBAL
+   ----------------------------------------------------------------------------
+   Este proyecto nació orientado a escritorio y la mayoría de sus componentes
+   usan estilos inline con medidas fijas. Mientras la migración a clases CSS
+   hermanas avanza módulo por módulo (ver CLAUDE.md), esta capa corrige la
+   experiencia móvil de TODA la app desde un solo lugar.
+
+   ⚠️ EXCEPCIÓN DOCUMENTADA A LAS REGLAS DE CLAUDE.md:
+   Aquí se usa `!important` y selectores de atributo sobre `style` a propósito:
+   es la única forma de que una clase global le gane a los estilos inline ya
+   existentes. Conforme cada componente se migre a clases hermanas, estas
+   reglas dejan de aplicarle sin romper nada (los selectores dejan de matchear).
+============================================================================ */
+
+/* ---------- Base táctil / tipografía ---------- */
+@media (max-width: 768px) {
+
+  /* iOS hace zoom automático cuando un input tiene fuente < 16px.
+     Forzarlo evita el "brinco" de zoom al tocar cualquier campo. */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* ✅ Elementos MÁS GRANDES en móvil: tipografía base y controles cómodos. */
+  html, body {
+    font-size: 17px;
+  }
+
+  /* Objetivos táctiles cómodos (lineamiento 44px). */
+  button {
+    min-height: 44px;
+    font-size: 0.95rem;
+  }
+
+  label {
+    font-size: 0.9rem !important;
+  }
+
+  input, select, textarea {
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  /* Scroll con inercia en cualquier contenedor con overflow. */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ---------- Layout raíz ---------- */
+@media (max-width: 768px) {
+
+  /* El contenido ocupa todo el ancho cuando el sidebar está cerrado. */
+  .content, .main-content, .content-body {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Respeta el notch / barra de gestos (viewport-fit=cover). */
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ---------- Sidebar: off-canvas en teléfono ---------- */
+@media (max-width: 768px) {
+
+  /* En móvil el menú flota SOBRE el contenido y cubre TODA la pantalla. */
+  .sidebar {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 100vw !important;
+    transform: translateX(0);
+    transition: transform 0.25s ease;
+    z-index: 1200;
+  }
+
+  .sidebar.collapsed {
+    /* En escritorio colapsa por ancho; en móvil se desliza fuera. */
+    width: 100vw !important;
+    transform: translateX(-100%);
+    border-right: 1px solid #30363d;
+  }
+
+  /* Ítems del menú más grandes y cómodos al dedo. */
+  .sidebar-item, .sidebar-subitem {
+    padding-top: 14px !important;
+    padding-bottom: 14px !important;
+    font-size: 1.05rem !important;
+  }
+
+  /* Botón ✕ para cerrar el menú (existe en el DOM siempre; visible solo aquí). */
+  .sidebar-cerrar-movil {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 42px;
+    height: 42px;
+    background: none;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    color: #c9d1d9;
+    font-size: 1.2rem;
+    cursor: pointer;
+  }
+
+  .sidebar-brand {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between;
+    padding-right: 12px;
+  }
+}
+
+/* El botón de cierre del menú NO existe en escritorio. */
+.sidebar-cerrar-movil { display: none; }
+
+/* ---------- Modales: pantalla completa en teléfono ---------- */
+@media (max-width: 640px) {
+
+  .modal-overlay {
+    padding: 0 !important;
+    align-items: stretch !important;
+  }
+
+  /* El hijo directo del overlay es siempre la tarjeta del modal
+     (patrón usado en todos los módulos), aunque tenga width inline. */
+  .modal-overlay > div {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100dvh;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    box-sizing: border-box;
+    overflow-y: auto;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* ---------- Formularios: rejillas a una columna ---------- */
+@media (max-width: 640px) {
+
+  /* Todas las rejillas declaradas inline (repeat(2/3/4, 1fr)) colapsan a una
+     columna: en un teléfono los formularios se leen y llenan en vertical. */
+  div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .form-grid, .grid-3-cols, .detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ---------- Tablas: scroll horizontal sin romper el layout ---------- */
+@media (max-width: 768px) {
+
+  .table-container {
+    overflow-x: auto !important;
+    max-width: 100vw;
+  }
+
+  /* Texto de tabla legible en teléfono (con scroll horizontal táctil). */
+  table {
+    font-size: 0.95rem;
+  }
+
+  th, td {
+    padding: 12px 10px !important;
+    white-space: nowrap;
+  }
+}
+
+/* ---------- Drawers / paneles laterales de filtros ---------- */
+@media (max-width: 640px) {
+
+  /* Los drawers de filtros son divs fijos anclados a la derecha con ancho
+     inline (~380-420px). En teléfono ocupan todo el ancho. */
+  div[style*="position: fixed"][style*="right: 0"] {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    left: 0;
+  }
+}
+
+/* ---------- Barras de acciones y filtros superiores ---------- */
+@media (max-width: 640px) {
+
+  /* Las filas de filtros/acciones con display flex inline se acomodan en
+     varias líneas en vez de desbordarse. */
+  .content-header, .filters-bar {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+}
+
+/* ---------- Login: pantalla completa en teléfono ---------- */
+@media (max-width: 640px) {
+
+  /* La tarjeta del login ocupa toda la pantalla, con campos grandes. */
+  .log-x1 {
+    align-items: stretch !important;
+  }
+
+  .log-x2 {
+    max-width: 100vw !important;
+    width: 100vw !important;
+    height: 100dvh;
+    border-radius: 0 !important;
+    border: none !important;
+    box-sizing: border-box;
+    padding: 32px 24px !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-bottom: calc(32px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .log-x2 input {
+    min-height: 48px;
+  }
+
+  .log-x2 button {
+    min-height: 48px;
+    font-size: 1rem;
+  }
+}
+
+/* ---------- Resumen del día (home): KPIs a 2 columnas en teléfono ---------- */
+@media (max-width: 640px) {
+
+  .app-x9 {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .app-x9 > div {
+    padding: 10px 12px !important;
+  }
+}
+
+/* ---------- Contenedores de módulo: menos aire, más contenido ---------- */
+@media (max-width: 640px) {
+
+  .module-container, .content, .content-body {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  h1 {
+    font-size: 1.15rem !important;
+  }
+}
+
+/* ---------- Barra superior: sin encimarse (la altura fija de 60px hacía que
+   los botones envueltos desbordaran sobre el contenido) ---------- */
+@media (max-width: 768px) {
+
+  .topbar {
+    height: auto !important;
+    min-height: 54px;
+    flex-wrap: wrap !important;
+    row-gap: 6px;
+    padding: 8px 12px !important;
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    background-color: #0d1117;
+  }
+
+  .topbar-right {
+    flex-wrap: wrap !important;
+    row-gap: 6px;
+    justify-content: flex-end;
+    margin-left: auto;
+  }
+
+  .topbar-right button {
+    font-size: 0.72rem !important;
+    padding: 6px 10px !important;
+    min-height: 36px;
+    white-space: nowrap;
+  }
+}
+
+/* ---------- Espacio para la barra de navegación inferior ---------- */
+@media (max-width: 768px) {
+
+  .content, .main-content, .content-body, .module-container {
+    padding-bottom: calc(70px + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* El aviso de sin conexión se acomoda ARRIBA de la barra de navegación. */
+  .aviso-sin-conexion {
+    bottom: calc(56px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ---------- Pulido tipo app: tarjetas y buscadores redondeados ---------- */
+@media (max-width: 640px) {
+
+  .app-x9 > div {
+    border-radius: 14px !important;
+  }
+
+  input[type="text"], input[type="search"] {
+    border-radius: 10px !important;
+  }
+}
+
+/* ---------- Capas y scroll (orden y disciplina visual) ---------- */
+@media (max-width: 768px) {
+
+  /* Solo scroll VERTICAL de la página; las tablas conservan su scroll
+     horizontal INTERNO dentro de .table-container. */
+  html, body {
+    overflow-x: hidden !important;
+    max-width: 100vw;
+  }
+
+  .content, .main-content, .module-container {
+    overflow-x: hidden !important;
+    max-width: 100vw;
+  }
+
+  /* Jerarquía de capas fija: menú lateral (1400) > barra inferior (1100)
+     > barra superior (800). Los botones de arriba NUNCA quedan sobre el menú. */
+  .sidebar {
+    z-index: 1400 !important;
+  }
+
+  .topbar {
+    z-index: 800 !important;
+  }
+}

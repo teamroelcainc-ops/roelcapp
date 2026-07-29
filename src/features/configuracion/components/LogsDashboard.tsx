@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import './LogsDashboard.css';
 
 interface LogRecord {
   id: string;
@@ -78,42 +79,39 @@ export const LogsDashboard = () => {
   };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
+    <div className="module-container ld-x1">
       
       {/* CABECERA */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '1.25rem', color: '#8b949e', margin: 0, fontWeight: '400' }}>
-          Configuración {'>'} <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Historial de Actividad {hayFiltrosActivos ? `(${logsFiltrados.length})` : ''}</span>
+      <div className="ld-x2">
+        <h2 className="ld-x3">
+          Configuración {'>'} <span className="ld-x4">Historial de Actividad {hayFiltrosActivos ? `(${logsFiltrados.length})` : ''}</span>
         </h2>
       </div>
 
       {/* BARRA DE FILTROS */}
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-        <div style={{ flex: 1 }}>
-          <label style={{ display: 'block', fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', marginBottom: '8px' }}>Filtrar por Día</label>
-          <input 
+      <div className="ld-x5">
+        <div className="ld-x6">
+          <label className="ld-x7">Filtrar por Día</label>
+          <input className="ld-x8" 
             type="date" 
             value={filtroFecha}
             onChange={(e) => setFiltroFecha(e.target.value)}
-            style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}
           />
         </div>
-        <div style={{ flex: 1 }}>
-          <label style={{ display: 'block', fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', marginBottom: '8px' }}>Filtrar por Usuario</label>
-          <input 
+        <div className="ld-x6">
+          <label className="ld-x7">Filtrar por Usuario</label>
+          <input className="ld-x8" 
             type="text" 
             placeholder="Buscar correo o nombre..."
             value={filtroUsuario}
             onChange={(e) => setFiltroUsuario(e.target.value)}
-            style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}
           />
         </div>
-        <div style={{ flex: 1 }}>
-          <label style={{ display: 'block', fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', marginBottom: '8px' }}>Filtrar por Módulo</label>
-          <select 
+        <div className="ld-x6">
+          <label className="ld-x7">Filtrar por Módulo</label>
+          <select className="ld-x8" 
             value={filtroModulo}
             onChange={(e) => setFiltroModulo(e.target.value)}
-            style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}
           >
             <option value="">Todos los módulos</option>
             {modulosUnicos.map(mod => (
@@ -121,12 +119,11 @@ export const LogsDashboard = () => {
             ))}
           </select>
         </div>
-        <div style={{ flex: 1 }}>
-          <label style={{ display: 'block', fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', marginBottom: '8px' }}>Filtrar por Acción</label>
-          <select
+        <div className="ld-x6">
+          <label className="ld-x7">Filtrar por Acción</label>
+          <select className="ld-x8"
             value={filtroAccion}
             onChange={(e) => setFiltroAccion(e.target.value)}
-            style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}
           >
             <option value="">Todas las acciones</option>
             {accionesUnicas.map(a => (
@@ -134,10 +131,9 @@ export const LogsDashboard = () => {
             ))}
           </select>
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-          <button 
+        <div className="ld-x9">
+          <button className="ld-x10" 
             onClick={() => { setFiltroFecha(''); setFiltroUsuario(''); setFiltroModulo(''); setFiltroAccion(''); }}
-            style={{ padding: '10px 16px', backgroundColor: '#21262d', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer' }}
           >
             Limpiar
           </button>
@@ -146,50 +142,43 @@ export const LogsDashboard = () => {
 
       {/* ÁREA PRINCIPAL (TABLA SOLO LECTURA) */}
       <div 
-        className="table-container" 
-        style={{ 
-          border: '1px solid #30363d', 
-          borderRadius: '8px', 
-          overflowX: 'auto', 
-          overflowY: 'auto', 
-          maxHeight: 'calc(100vh - 280px)' 
-        }}
+        className="table-container ld-x11"
       >
-        <table className="data-table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
-          <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 1px 0 #30363d' }}>
+        <table className="data-table ld-x12">
+          <thead className="ld-x13">
             <tr>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>Fecha y Hora</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>Usuario</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>Módulo</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>Acción</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase' }}>Detalle</th>
+              <th className="ld-x14">Fecha y Hora</th>
+              <th className="ld-x14">Usuario</th>
+              <th className="ld-x14">Módulo</th>
+              <th className="ld-x14">Acción</th>
+              <th className="ld-x14">Detalle</th>
             </tr>
           </thead>
           <tbody>
             {!hayFiltrosActivos ? (
               <tr>
-                <td colSpan={5} style={{ textAlign: 'center', padding: '60px', color: '#8b949e' }}>
-                  <div style={{ fontSize: '1.1rem', marginBottom: '8px' }}>🔍</div>
+                <td className="ld-x15" colSpan={5}>
+                  <div className="ld-x16">🔍</div>
                   Por favor, aplica al menos un filtro en la parte superior para visualizar el historial.
                 </td>
               </tr>
             ) : logsFiltrados.length === 0 ? (
-              <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay registros que coincidan con los filtros aplicados.</td></tr>
+              <tr><td className="ld-x17" colSpan={5}>No hay registros que coincidan con los filtros aplicados.</td></tr>
             ) : (
               logsFiltrados.map(log => (
-                <tr key={log.id} style={{ borderBottom: '1px solid #21262d' }}>
-                  <td style={{ padding: '16px', color: '#8b949e', fontSize: '0.9rem', whiteSpace: 'nowrap' }}>
+                <tr className="ld-x18" key={log.id}>
+                  <td className="ld-x19">
                     {formatearFechaHora(log.fecha)}
                   </td>
-                  <td style={{ padding: '16px', color: '#f0f6fc', fontSize: '0.9rem', fontWeight: '500' }}>
+                  <td className="ld-x20">
                     {log.usuario}
                   </td>
-                  <td style={{ padding: '16px' }}>
-                    <span style={{ backgroundColor: 'rgba(59, 130, 246, 0.1)', color: '#58a6ff', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
+                  <td className="ld-x21">
+                    <span className="ld-x22">
                       {log.modulo}
                     </span>
                   </td>
-                  <td style={{ padding: '16px' }}>
+                  <td className="ld-x21">
                     <span style={{
                       backgroundColor: colorAccion(log.accion).bg,
                       color: colorAccion(log.accion).fg,
@@ -198,7 +187,7 @@ export const LogsDashboard = () => {
                       {log.accion}
                     </span>
                   </td>
-                  <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.9rem', lineHeight: '1.4' }}>
+                  <td className="ld-x23">
                     {log.detalle}
                   </td>
                 </tr>

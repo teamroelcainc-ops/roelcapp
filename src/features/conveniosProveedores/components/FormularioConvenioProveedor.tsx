@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, writeBatch, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import type { ConvenioProveedorRecord, ConvenioProveedorDetalleRecord } from '../../../types/convenioProveedor';
+import './FormularioConvenioProveedor.css';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -23,7 +24,7 @@ const SearchableSelect: React.FC<{
   const filteredOptions = options.filter(opt => opt.label.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div className="fcp-x1">
       <input
         type="text"
         className="form-control"
@@ -40,13 +41,10 @@ const SearchableSelect: React.FC<{
         style={{ cursor: 'text', border: isOpen ? '1px solid #3b82f6' : '', backgroundColor: '#0d1117', color: '#c9d1d9' }}
       />
       {isOpen && (
-        <ul style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '200px', overflowY: 'auto',
-          backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px', zIndex: 1000, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)', padding: 0, listStyle: 'none'
-        }}>
+        <ul className="fcp-x2">
           {filteredOptions.length > 0 ? (
             filteredOptions.map(opt => (
-              <li 
+              <li className="fcp-x3" 
                 key={opt.id} 
                 // CORRECCIÓN 2: onMouseDown evita que se dispare el onBlur del input antes de seleccionar
                 onMouseDown={(e) => { 
@@ -55,14 +53,13 @@ const SearchableSelect: React.FC<{
                   setSearchTerm(opt.label); 
                   setIsOpen(false); 
                 }}
-                style={{ padding: '8px 12px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #21262d', fontSize: '0.85rem' }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                 {opt.label}
               </li>
             ))
           ) : (
-            <li style={{ padding: '8px 12px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>No hay coincidencias</li>
+            <li className="fcp-x4">No hay coincidencias</li>
           )}
         </ul>
       )}
@@ -276,7 +273,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
 
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
-      <div className="form-card" style={{ maxWidth: '850px' }}>
+      <div className="form-card fcp-x5">
         <div className="form-header">
           <h2>{initialData ? `Editar Convenio` : 'Nuevo Convenio de Proveedor'}</h2>
           <div className="header-actions">
@@ -287,10 +284,10 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
           <form onSubmit={handleSubmit}>
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div className="form-grid fcp-x6">
               <div className="form-group">
                 <label className="form-label orange"># de Convenio</label>
-                <input type="text" className="form-control" value={formData.numeroConvenio} disabled style={{ backgroundColor: '#21262d' }} />
+                <input type="text" className="form-control fcp-x7" value={formData.numeroConvenio} disabled />
               </div>
               <div className="form-group">
                 <label className="form-label">Proveedor *</label>
@@ -316,15 +313,15 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
               <div className="form-group"><label className="form-label">Crédito (Días)</label><input type="number" className="form-control" value={formData.credito} onChange={(e) => setFormData({...formData, credito: parseInt(e.target.value) || 0})} required /></div>
             </div>
 
-            <div style={{ marginTop: '32px', border: '1px solid #30363d', borderRadius: '8px', padding: '24px', backgroundColor: '#0d1117' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ fontSize: '1rem', color: '#f0f6fc', margin: 0 }}>Lista de Tarifas</h3>
+            <div className="fcp-x8">
+              <div className="fcp-x9">
+                <h3 className="fcp-x10">Lista de Tarifas</h3>
                 <button type="button" className="btn btn-outline" onClick={() => setMostrandoDetalleForm(!mostrandoDetalleForm)}>{mostrandoDetalleForm ? 'Cancelar' : '+ Agregar Concepto'}</button>
               </div>
 
               {mostrandoDetalleForm && (
-                <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', marginBottom: '24px', border: '1px solid #30363d' }}>
-                  <div className="form-grid" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', gap: '16px', alignItems: 'end' }}>
+                <div className="fcp-x11">
+                  <div className="form-grid fcp-x12">
                     <div className="form-group">
                       <label className="form-label">Concepto (Tipo de Operación)</label>
                       <select className="form-control" value={detalleDraft.tipoConvenioId} onChange={handleTipoConvenioChange}>
@@ -340,35 +337,34 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                       </select>
                     </div>
                     <div className="form-group"><label className="form-label">Tarifa Final *</label><input type="number" step="0.01" className="form-control" value={detalleDraft.tarifa} onChange={(e) => setDetalleDraft({...detalleDraft, tarifa: parseFloat(e.target.value) || 0})} /></div>
-                    <button type="button" className="btn btn-primary" style={{ height: '38px', backgroundColor: '#D84315' }} onClick={handleAgregarDetalle}>Guardar Concepto</button>
+                    <button type="button" className="btn btn-primary fcp-x13" onClick={handleAgregarDetalle}>Guardar Concepto</button>
                   </div>
                 </div>
               )}
 
-              <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden' }}>
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ backgroundColor: '#1f2937', color: '#8b949e' }}>
+              <div className="table-container fcp-x14">
+                <table className="data-table fcp-x15">
+                  <thead className="fcp-x16">
                     <tr>
-                      <th style={{ padding: '12px', textAlign: 'center', width: '50px' }}>#</th>
-                      <th style={{ padding: '12px', textAlign: 'left' }}>CONCEPTO</th>
-                      <th style={{ padding: '12px', textAlign: 'right', width: '150px' }}>TARIFA</th>
-                      <th style={{ padding: '12px', textAlign: 'center', width: '100px' }}>ACCIÓN</th>
+                      <th className="fcp-x17">#</th>
+                      <th className="fcp-x18">CONCEPTO</th>
+                      <th className="fcp-x19">TARIFA</th>
+                      <th className="fcp-x20">ACCIÓN</th>
                     </tr>
                   </thead>
                   <tbody>
                     {detalles.length === 0 ? (
-                      <tr><td colSpan={4} style={{ textAlign: 'center', padding: '32px', color: '#8b949e' }}>No hay conceptos agregados a este convenio.</td></tr>
+                      <tr><td className="fcp-x21" colSpan={4}>No hay conceptos agregados a este convenio.</td></tr>
                     ) : (
                       detalles.map((det, index) => (
-                        <tr key={det.id} style={{ borderTop: '1px solid #30363d', backgroundColor: '#0d1117' }} onMouseEnter={(e:any) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e:any) => e.currentTarget.style.backgroundColor = '#0d1117'}>
-                          <td style={{ padding: '12px', textAlign: 'center', color: '#8b949e' }}>{index + 1}</td>
-                          <td style={{ padding: '12px', color: '#c9d1d9', fontWeight: '500' }}>{det.tipoConvenioNombre}</td>
-                          <td style={{ padding: '12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right' }}>${` ${Number(det.tarifa).toFixed(2)}`}</td>
-                          <td style={{ padding: '12px', textAlign: 'center' }}>
-                            <button 
+                        <tr className="fcp-x22" key={det.id} onMouseEnter={(e:any) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e:any) => e.currentTarget.style.backgroundColor = '#0d1117'}>
+                          <td className="fcp-x23">{index + 1}</td>
+                          <td className="fcp-x24">{det.tipoConvenioNombre}</td>
+                          <td className="fcp-x25">${` ${Number(det.tarifa).toFixed(2)}`}</td>
+                          <td className="fcp-x26">
+                            <button className="fcp-x27" 
                               type="button" 
-                              onClick={() => handleEliminarDetalle(det.id!, det._isNew)} 
-                              style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '4px 12px', fontSize: '0.8rem', transition: 'all 0.2s' }}
+                              onClick={() => handleEliminarDetalle(det.id!, det._isNew)}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               ✕ Quitar
@@ -382,9 +378,9 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
               </div>
             </div>
 
-            <div className="form-actions" style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end', gap: '16px', padding: '24px', backgroundColor: '#161b22', borderRadius: '8px', borderTop: '1px solid #30363d' }}>
-              <button type="button" onClick={onClose} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cancelar</button>
-              <button type="submit" className="btn btn-primary" disabled={cargando} style={{ backgroundColor: '#238636', padding: '10px 24px', borderRadius: '6px', border: 'none', fontWeight: 'bold' }}>
+            <div className="form-actions fcp-x28">
+              <button type="button" onClick={onClose} className="btn btn-outline fcp-x29">Cancelar</button>
+              <button type="submit" className="btn btn-primary fcp-x30" disabled={cargando}>
                 {cargando ? 'Guardando Convenio...' : 'Guardar Convenio Maestro'}
               </button>
             </div>

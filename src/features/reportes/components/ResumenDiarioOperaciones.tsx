@@ -34,6 +34,7 @@ import { collection, getDocs } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 // Mismo logo base64 que usan los demás PDF del proyecto.
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import './ResumenDiarioOperaciones.css';
 
 type TipoResumen = 'Transfer' | 'Logística' | 'Fletes';
 const TIPOS: TipoResumen[] = ['Transfer', 'Logística', 'Fletes'];
@@ -533,24 +534,24 @@ export const ResumenDiarioOperaciones = () => {
 
   return (
     <div style={{ padding: 24, width: '100%', boxSizing: 'border-box', color: '#c9d1d9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      <h1 style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 4px', fontWeight: 'bold' }}>Resúmenes Diarios de Operaciones</h1>
-      <p style={{ color: '#8b949e', margin: '0 0 20px', fontSize: '0.92rem' }}>Genera el resumen diario de Transfer, Logística o Fletes y descárgalo en PDF (mismo formato de antes).</p>
+      <h1 className="rdo-x1">Resúmenes Diarios de Operaciones</h1>
+      <p className="rdo-x2">Genera el resumen diario de Transfer, Logística o Fletes y descárgalo en PDF (mismo formato de antes).</p>
 
       {/* Barra de filtros */}
-      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, padding: 18, marginBottom: 18, display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Fecha</label>
+      <div className="rdo-x3">
+        <div className="rdo-x4">
+          <label className="rdo-x5">Fecha</label>
           <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} style={inputEstilo} />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 240px', minWidth: 200 }}>
-          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Realizado por</label>
+        <div className="rdo-x6">
+          <label className="rdo-x5">Realizado por</label>
           <input type="text" value={realizadoPor} onChange={e => setRealizadoPor(e.target.value)} placeholder="Nombre de quien realiza el reporte" style={{ ...inputEstilo, width: '100%' }} />
         </div>
         <button onClick={cargarTodo} disabled={cargando} style={{ ...btnOutline, opacity: cargando ? 0.6 : 1 }} title="Volver a leer las operaciones desde la base de datos">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           {cargando ? 'Cargando…' : 'Recargar'}
         </button>
-        <div style={{ flex: 1 }} />
+        <div className="rdo-x7" />
         <button onClick={() => descargarPDF(tipoActivo)} disabled={cargando || totalDia === 0} style={{ ...btnPrimary, opacity: (cargando || totalDia === 0) ? 0.55 : 1 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           Descargar PDF {tipoActivo}
@@ -558,7 +559,7 @@ export const ResumenDiarioOperaciones = () => {
       </div>
 
       {/* Selector de tipo */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div className="rdo-x8">
         {TIPOS.map(t => {
           const activo = t === tipoActivo;
           const count = opsDia.filter(o => clasificar(o) === t).length;
@@ -578,21 +579,21 @@ export const ResumenDiarioOperaciones = () => {
         })}
       </div>
 
-      {error && <div style={{ background: 'rgba(248,81,73,.08)', border: '1px solid rgba(248,81,73,.3)', color: '#ff9b94', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: '0.88rem' }}>{error}</div>}
+      {error && <div className="rdo-x9">{error}</div>}
 
       {!cargando && totalDia === 0 && !error && (
-        <div style={{ background: '#0d1117', border: '1px dashed #30363d', borderRadius: 12, padding: 30, textAlign: 'center', color: '#6e7681', marginBottom: 16 }}>
-          No hay operaciones registradas el <b style={{ color: '#fb923c' }}>{fmtFechaLatina(fecha)}</b>. Cambia la fecha o pulsa <b style={{ color: '#fb923c' }}>Recargar</b>.
+        <div className="rdo-x10">
+          No hay operaciones registradas el <b className="rdo-x11">{fmtFechaLatina(fecha)}</b>. Cambia la fecha o pulsa <b className="rdo-x11">Recargar</b>.
         </div>
       )}
 
       {/* Vista previa */}
-      <div style={{ background: '#fff', border: '1px solid #30363d', borderRadius: 12, overflow: 'hidden' }}>
-        <div style={{ background: '#0d1117', padding: '10px 14px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Vista previa · {tipoActivo} · {fmtFechaLatina(fecha)}</span>
-          <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>{cargando ? 'Cargando…' : `${opsDia.filter(o => clasificar(o) === tipoActivo).length} operación(es)`}</span>
+      <div className="rdo-x12">
+        <div className="rdo-x13">
+          <span className="rdo-x14">Vista previa · {tipoActivo} · {fmtFechaLatina(fecha)}</span>
+          <span className="rdo-x14">{cargando ? 'Cargando…' : `${opsDia.filter(o => clasificar(o) === tipoActivo).length} operación(es)`}</span>
         </div>
-        <iframe title="preview-resumen" srcDoc={previewSrc} style={{ width: '100%', height: 520, border: 'none', background: '#fff' }} />
+        <iframe className="rdo-x15" title="preview-resumen" srcDoc={previewSrc} />
       </div>
     </div>
   );

@@ -1,0 +1,131 @@
+/* Estilos hermanos de EditorNavMovil.tsx — paleta de la app. */
+
+.editor-nav-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500; /* por encima del sidebar (1400) */
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.editor-nav-card {
+  width: 100%;
+  max-width: 480px;
+  max-height: 82dvh;
+  display: flex;
+  flex-direction: column;
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 16px 16px 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (min-width: 641px) {
+  .editor-nav-overlay { align-items: center; }
+  .editor-nav-card { border-radius: 12px; }
+}
+
+.editor-nav-encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 18px 12px;
+  border-bottom: 1px solid #21262d;
+}
+
+.editor-nav-encabezado h2 { margin: 0 0 4px; font-size: 1.05rem; color: #f0f6fc; }
+.editor-nav-encabezado p { margin: 0; font-size: 0.8rem; color: #8b949e; line-height: 1.4; }
+
+.editor-nav-cerrar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  cursor: pointer;
+}
+
+.editor-nav-lista {
+  list-style: none;
+  margin: 0;
+  padding: 10px 14px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.editor-nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  color: #c9d1d9;
+  font-size: 0.9rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.editor-nav-item:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.editor-nav-item.marcado {
+  border-color: #D84315;
+  color: #f0f6fc;
+  background-color: rgba(216, 67, 21, 0.08);
+}
+
+.editor-nav-etiqueta { flex: 1; }
+
+.editor-nav-orden {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background-color: #D84315;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.editor-nav-pie {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 18px 16px;
+  border-top: 1px solid #21262d;
+}
+
+.editor-nav-conteo { color: #8b949e; font-size: 0.8rem; font-weight: 600; }
+.editor-nav-acciones { display: flex; gap: 10px; }
+
+.editor-nav-btn-cancelar {
+  padding: 9px 16px;
+  background: none;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  cursor: pointer;
+}
+
+.editor-nav-btn-guardar {
+  padding: 9px 22px;
+  background-color: #D84315;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}

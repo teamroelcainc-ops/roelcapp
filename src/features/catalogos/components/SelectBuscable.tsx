@@ -13,6 +13,7 @@
 //        placeholder="Seleccione una opción..."
 //      />
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import './SelectBuscable.css';
 
 export interface OpcionBuscable {
   value: string;
@@ -145,7 +146,7 @@ export const SelectBuscable: React.FC<Props> = ({
         }}
       >
         {/* Icono de búsqueda */}
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <svg className="sb-x1" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
 
@@ -172,11 +173,10 @@ export const SelectBuscable: React.FC<Props> = ({
 
         {/* Botón para limpiar la selección */}
         {value !== '' && value !== undefined && value !== null && !disabled && (
-          <button
+          <button className="sb-x2"
             type="button"
             onClick={limpiar}
             title="Limpiar selección"
-            style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.85rem', padding: '2px 4px', flexShrink: 0, lineHeight: 1 }}
           >
             ✕
           </button>
@@ -193,24 +193,11 @@ export const SelectBuscable: React.FC<Props> = ({
 
       {/* Lista desplegable de opciones */}
       {abierto && !disabled && (
-        <div
+        <div className="sb-x3"
           ref={listaRef}
-          style={{
-            position: 'absolute',
-            top: 'calc(100% + 4px)',
-            left: 0,
-            right: 0,
-            zIndex: 2000,
-            backgroundColor: '#161b22',
-            border: '1px solid #30363d',
-            borderRadius: '6px',
-            maxHeight: '240px',
-            overflowY: 'auto',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-          }}
         >
           {opcionesFiltradas.length === 0 ? (
-            <div style={{ padding: '12px 14px', color: '#6e7681', fontSize: '0.9rem', fontStyle: 'italic' }}>
+            <div className="sb-x4">
               Sin resultados para "{textoBusqueda}"
             </div>
           ) : (
@@ -235,8 +222,8 @@ export const SelectBuscable: React.FC<Props> = ({
                     gap: '8px',
                   }}
                 >
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opcion.label}</span>
-                  {esSeleccionada && <span style={{ flexShrink: 0, color: '#58a6ff' }}>✓</span>}
+                  <span className="sb-x5">{opcion.label}</span>
+                  {esSeleccionada && <span className="sb-x6">✓</span>}
                 </div>
               );
             })

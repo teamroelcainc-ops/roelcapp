@@ -5,6 +5,8 @@ import { db } from '../../../../config/firebase';
 // ✅ Logo incrustado (base64) usado en TODOS los PDF de la app: prioridad al logo
 //    dinámico registrado con setLogoPdf() y respaldo al logo por defecto.
 import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
+import './MttoAgrupadosInvoice.css';
+import { almacenSesion } from '../../../../utils/cacheMemoria';
 
 interface GastoMtto {
   id: string;
@@ -57,7 +59,7 @@ const MttoAgrupadosInvoice = () => {
   useEffect(() => {
     const cargarUnidades = async () => {
       try {
-        const cacheStr = sessionStorage.getItem('roelca_catalogos_v1');
+        const cacheStr = almacenSesion.getItem('roelca_catalogos_v1');
         if (cacheStr) {
           const cache = JSON.parse(cacheStr);
           if (Array.isArray(cache?.unidades) && cache.unidades.length > 0) {
@@ -425,49 +427,49 @@ const MttoAgrupadosInvoice = () => {
   };
 
   return (
-    <div style={{ animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: '24px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', gap: '10px', flexWrap: 'wrap' }}>
+    <div className="mai-x1">
+      <div className="mai-x2">
         <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busqueda || fechaDesde || fechaHasta) ? '#3fb950' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
           Filtros
-          {(busqueda || fechaDesde || fechaHasta) && <span style={{ backgroundColor: '#3fb950', color: '#0d1117', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem', fontWeight: 'bold' }}>{[busqueda, fechaDesde || fechaHasta].filter(Boolean).length}</span>}
+          {(busqueda || fechaDesde || fechaHasta) && <span className="mai-x3">{[busqueda, fechaDesde || fechaHasta].filter(Boolean).length}</span>}
         </button>
         {(fechaDesde || fechaHasta) && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(63,185,80,0.1)', border: '1px solid #3fb950', borderRadius: '14px', color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold' }}>
+          <span className="mai-x4">
             {(fechaDesde || '…')} → {(fechaHasta || '…')}
-            <button onClick={() => { setFechaDesde(''); setFechaHasta(''); }} style={{ background: 'transparent', border: 'none', color: '#3fb950', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+            <button className="mai-x5" onClick={() => { setFechaDesde(''); setFechaHasta(''); }}>✕</button>
           </span>
         )}
         {busqueda && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+          <span className="mai-x6">
             "{busqueda}"
-            <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+            <button className="mai-x7" onClick={() => setBusqueda('')}>✕</button>
           </span>
         )}
-        <div style={{ marginLeft: 'auto', color: '#8b949e', fontSize: '0.9rem' }}>
+        <div className="mai-x8">
           {busquedaHecha ? `${gruposFacturados.length} Grupos Encontrados` : 'Presiona Filtros y Buscar para consolidar los Invoices.'}
         </div>
       </div>
 
       {!busquedaHecha ? (
-        <div style={{ padding: '64px 24px', textAlign: 'center', backgroundColor: '#0d1117', borderRadius: '8px', border: '1px solid #30363d' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+        <div className="mai-x9">
+          <div className="mai-x10">
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-            <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#3fb950' }}>Buscar</b> para ver los grupos por Invoice.</span>
-            <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#3fb950', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+            <span className="mai-x11">Define tus filtros y presiona <b className="mai-x12">Buscar</b> para ver los grupos por Invoice.</span>
+            <button className="mai-x13" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
           </div>
         </div>
       ) : cargando ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#0d1117', borderRadius: '8px', border: '1px solid #30363d' }}>
+        <div className="mai-x14">
           Procesando consolidación de Invoices...
         </div>
       ) : gruposFacturados.length === 0 ? (
-        <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#0d1117', borderRadius: '8px', border: '1px dashed #30363d' }}>
+        <div className="mai-x15">
           No se encontraron gastos para la búsqueda especificada.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div className="mai-x16">
           {gruposFacturados.map((grupo) => {
             const isSinInvoice = grupo.invoice.includes('SIN INVOICE');
             const isAbierto = acordeonesAbiertos[grupo.invoice] || false;
@@ -479,40 +481,39 @@ const MttoAgrupadosInvoice = () => {
                   onClick={() => toggleAcordeon(grupo.invoice)}
                   style={{ padding: '16px 24px', backgroundColor: isSinInvoice ? '#161b22' : 'rgba(63, 185, 80, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none', flexWrap: 'wrap', gap: '16px' }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="mai-x17">
                     <div style={{ width: '24px', height: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b949e', transform: isAbierto ? 'rotate(90deg)' : 'rotate(0)', transition: 'transform 0.2s' }}>
                       ▶
                     </div>
                     <div>
                       <h2 style={{ margin: 0, fontSize: '1.2rem', color: isSinInvoice ? '#8b949e' : '#f0f6fc', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {isSinInvoice ? 'Gastos Pendientes de Facturar' : `Invoice: ${grupo.invoice}`}
-                        <span style={{ fontSize: '0.8rem', padding: '2px 8px', borderRadius: '12px', backgroundColor: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', fontWeight: 'normal' }}>
+                        <span className="mai-x18">
                           {grupo.gastos.length} Items
                         </span>
                       </h2>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
-                    <div style={{ display: 'flex', gap: '20px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase' }}>Suma Importe</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatoMoneda(grupo.sumaImporte)}</span>
+                  <div className="mai-x19">
+                    <div className="mai-x20">
+                      <div className="mai-x21">
+                        <span className="mai-x22">Suma Importe</span>
+                        <span className="mai-x23">{formatoMoneda(grupo.sumaImporte)}</span>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase' }}>Suma IVA</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500' }}>{formatoMoneda(grupo.sumaIva)}</span>
+                      <div className="mai-x21">
+                        <span className="mai-x22">Suma IVA</span>
+                        <span className="mai-x23">{formatoMoneda(grupo.sumaIva)}</span>
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase' }}>Total Consolidado</span>
+                      <div className="mai-x21">
+                        <span className="mai-x22">Total Consolidado</span>
                         <span style={{ color: isSinInvoice ? '#c9d1d9' : '#3fb950', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(grupo.sumaTotal)}</span>
                       </div>
                     </div>
 
                     {!isSinInvoice && (
-                      <button 
+                      <button className="mai-x24" 
                         onClick={(e) => { e.stopPropagation(); handleGenerarDocumento(grupo); }}
-                        style={{ backgroundColor: '#238636', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', transition: 'background-color 0.2s' }}
                         onMouseEnter={(e:any) => e.currentTarget.style.backgroundColor = '#2ea043'}
                         onMouseLeave={(e:any) => e.currentTarget.style.backgroundColor = '#238636'}
                       >
@@ -526,15 +527,14 @@ const MttoAgrupadosInvoice = () => {
                 {/* ✅ VISTA SIMPLIFICADA: SOLO REFERENCIAS (# DE GASTO) */}
                 {isAbierto && (
                   <div style={{ borderTop: isSinInvoice ? '1px solid #30363d' : '1px solid rgba(63, 185, 80, 0.2)', padding: '16px' }}>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
+                    <span className="mai-x25">
                       Gastos incluidos en este Invoice:
                     </span>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    <div className="mai-x26">
                       {grupo.gastos.map(g => (
-                        <span 
+                        <span className="mai-x27" 
                           key={g.id} 
                           title={`Importe Base: ${formatoMoneda(g.importe)} | Proveedor: ${g.proveedorNombre || 'N/A'}`}
-                          style={{ backgroundColor: '#161b22', border: '1px solid #30363d', color: '#58a6ff', padding: '6px 14px', borderRadius: '16px', fontSize: '0.9rem', fontFamily: 'monospace', fontWeight: 'bold' }}
                         >
                           {g.numeroGasto || '-'}
                         </span>
@@ -551,43 +551,42 @@ const MttoAgrupadosInvoice = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Agrupados por Invoice) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Agrupados por Invoice</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="mai-x28" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="mai-x29" onClick={(e) => e.stopPropagation()}>
+            <div className="mai-x30">
+              <h3 className="mai-x31">Filtros · Agrupados por Invoice</h3>
+              <button className="mai-x32" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Invoice, folio, unidad, proveedor..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="mai-x33">
+              <label className="mai-x34">BÚSQUEDA</label>
+              <div className="mai-x35">
+                <svg className="mai-x36" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="mai-x37" type="text" placeholder="Invoice, folio, unidad, proveedor..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="mai-x38" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE</label>
-                <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', colorScheme: 'dark', boxSizing: 'border-box' }} />
+            <div className="mai-x39">
+              <div className="mai-x40">
+                <label className="mai-x41">FECHA DESDE</label>
+                <input className="mai-x42" type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} />
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA</label>
-                <input type="date" value={fechaHasta} min={fechaDesde || undefined} onChange={(e) => setFechaHasta(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', colorScheme: 'dark', boxSizing: 'border-box' }} />
+              <div className="mai-x40">
+                <label className="mai-x41">FECHA HASTA</label>
+                <input className="mai-x42" type="date" value={fechaHasta} min={fechaDesde || undefined} onChange={(e) => setFechaHasta(e.target.value)} />
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#3fb950' }}>Buscar</b> para consolidar los Invoices.
+            <div className="mai-x43">
+              Todos los campos son <b className="mai-x44">opcionales</b>. Presiona <b className="mai-x12">Buscar</b> para consolidar los Invoices.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#3fb950', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="mai-x45">
+              <button className="mai-x46" onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="mai-x47" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

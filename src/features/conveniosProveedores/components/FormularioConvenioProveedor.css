@@ -1,0 +1,45 @@
+/* Estilos hermanos de FormularioConvenioProveedor.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.fcp-x1 { position: relative; width: 100%; }
+.fcp-x2 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; z-index: 1000; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); padding: 0; list-style: none; }
+.fcp-x3 { padding: 8px 12px; cursor: pointer; color: #c9d1d9; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
+.fcp-x4 { padding: 8px 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
+.fcp-x5 { max-width: 850px; }
+.fcp-x6 { grid-template-columns: 1fr 1fr; gap: 20px; }
+.fcp-x7 { background-color: #21262d; }
+.fcp-x8 { margin-top: 32px; border: 1px solid #30363d; border-radius: 8px; padding: 24px; background-color: #0d1117; }
+.fcp-x9 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.fcp-x10 { font-size: 1rem; color: #f0f6fc; margin: 0; }
+.fcp-x11 { background-color: #161b22; padding: 20px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #30363d; }
+.fcp-x12 { grid-template-columns: 2fr 1fr 1fr auto; gap: 16px; align-items: end; }
+.fcp-x13 { height: 38px; background-color: #D84315; }
+.fcp-x14 { border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+.fcp-x15 { width: 100%; border-collapse: collapse; }
+.fcp-x16 { background-color: #1f2937; color: #8b949e; }
+.fcp-x17 { padding: 12px; text-align: center; width: 50px; }
+.fcp-x18 { padding: 12px; text-align: left; }
+.fcp-x19 { padding: 12px; text-align: right; width: 150px; }
+.fcp-x20 { padding: 12px; text-align: center; width: 100px; }
+.fcp-x21 { text-align: center; padding: 32px; color: #8b949e; }
+.fcp-x22 { border-top: 1px solid #30363d; background-color: #0d1117; }
+.fcp-x23 { padding: 12px; text-align: center; color: #8b949e; }
+.fcp-x24 { padding: 12px; color: #c9d1d9; font-weight: 500; }
+.fcp-x25 { padding: 12px; color: #3fb950; font-weight: bold; text-align: right; }
+.fcp-x26 { padding: 12px; text-align: center; }
+.fcp-x27 { background: transparent; border: 1px solid #ef4444; color: #ef4444; border-radius: 4px; cursor: pointer; padding: 4px 12px; font-size: 0.8rem; transition: all 0.2s; }
+.fcp-x28 { margin-top: 32px; display: flex; justify-content: flex-end; gap: 16px; padding: 24px; background-color: #161b22; border-radius: 8px; border-top: 1px solid #30363d; }
+.fcp-x29 { padding: 10px 24px; border-radius: 6px; }
+.fcp-x30 { background-color: #238636; padding: 10px 24px; border-radius: 6px; border: none; font-weight: bold; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .fcp-x6 { grid-template-columns: 1fr; }
+  .fcp-x8 { padding: 14px 12px; }
+  .fcp-x9 { flex-wrap: wrap; }
+  .fcp-x12 { grid-template-columns: 1fr; }
+  .fcp-x21 { padding: 14px 12px; }
+  .fcp-x28 { flex-wrap: wrap; padding: 14px 12px; }
+}

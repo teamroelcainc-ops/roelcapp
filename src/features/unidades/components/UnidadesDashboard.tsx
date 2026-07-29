@@ -7,6 +7,7 @@ import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import type { UnidadRecord } from '../../../types/unidad'; 
 import * as XLSX from 'xlsx';
+import './UnidadesDashboard.css';
 
 // ✅ COLUMNAS BASE DE LA TABLA UNIDADES
 const COLUMNAS_BASE = [
@@ -152,19 +153,19 @@ export const UnidadesDashboard: React.FC = () => {
   // ✅ RENDERIZADOR DINÁMICO DE CELDAS
   const renderCellContent = (reg: UnidadRecord, colId: string) => {
     switch (colId) {
-      case 'unidad': return <span style={{ fontWeight: '500', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{reg.unidad}</span>;
-      case 'tipo': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tipoUnidadNombre || 'Sin Asignar'}</span>;
+      case 'unidad': return <span className="ud-x1">{reg.unidad}</span>;
+      case 'tipo': return <span className="ud-x2">{reg.tipoUnidadNombre || 'Sin Asignar'}</span>;
       case 'status': return reg.activo 
-        ? <span style={{ backgroundColor: 'rgba(63, 185, 80, 0.1)', color: '#3fb950', border: '1px solid #3fb950', padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Activo</span> 
-        : <span style={{ backgroundColor: 'rgba(248, 81, 73, 0.1)', color: '#f85149', border: '1px solid #f85149', padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Inactivo</span>;
-      case 'placas': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.placas || '-'}</span>;
-      case 'serie': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.serie || '-'}</span>;
-      case 'marca': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.marca || '-'}</span>;
-      case 'modelo': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.modelo || '-'}</span>;
-      case 'tanque1': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tanqueUno || 0}</span>;
-      case 'tanque2': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.tanqueDos || 0}</span>;
-      case 'porcentaje': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{Number(reg.porcentajeRecarga || 0).toFixed(2)} %</span>;
-      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+        ? <span className="ud-x3">Activo</span> 
+        : <span className="ud-x4">Inactivo</span>;
+      case 'placas': return <span className="font-mono ud-x2">{reg.placas || '-'}</span>;
+      case 'serie': return <span className="font-mono ud-x2">{reg.serie || '-'}</span>;
+      case 'marca': return <span className="ud-x2">{reg.marca || '-'}</span>;
+      case 'modelo': return <span className="ud-x2">{reg.modelo || '-'}</span>;
+      case 'tanque1': return <span className="font-mono ud-x2">{reg.tanqueUno || 0}</span>;
+      case 'tanque2': return <span className="font-mono ud-x2">{reg.tanqueDos || 0}</span>;
+      case 'porcentaje': return <span className="font-mono ud-x2">{Number(reg.porcentajeRecarga || 0).toFixed(2)} %</span>;
+      default: return <span className="ud-x5">-</span>;
     }
   };
 
@@ -205,7 +206,7 @@ export const UnidadesDashboard: React.FC = () => {
   const nombreUnidadDoc = unidadDocumentos ? (unidadDocumentos.unidad || unidadDocumentos.placas || unidadDocumentos.serie || 'Unidad') : '';
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container ud-x6">
       
       {estadoFormulario !== 'cerrado' && (
         <FormularioUnidad 
@@ -218,65 +219,62 @@ export const UnidadesDashboard: React.FC = () => {
       )}
 
       {/* ✅ CONTENEDOR MAESTRO */}
-     <div style={{ width: '100%', margin: '0 auto' }}>
+     <div className="ud-x7">
         
         {/* TÍTULO LIMPIO */}
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+        <h1 className="module-title ud-x8">
           Unidades Propias
         </h1>
 
         {/* BARRA DE CONTROLES: Responsive y Alineada */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
+        <div className="ud-x9">
           
 
           {/* Centro: Buscador Inteligente */}
-          <div style={{ display: 'flex', gap: '10px', flex: '2 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="ud-x10">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busqueda || filtroTipo !== 'Todos') ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {(busqueda || filtroTipo !== 'Todos') && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[busqueda, filtroTipo !== 'Todos' ? filtroTipo : ''].filter(Boolean).length}</span>}
+              {(busqueda || filtroTipo !== 'Todos') && <span className="ud-x11">{[busqueda, filtroTipo !== 'Todos' ? filtroTipo : ''].filter(Boolean).length}</span>}
             </button>
             {filtroTipo !== 'Todos' && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(163,113,247,0.1)', border: '1px solid #a371f7', borderRadius: '14px', color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="ud-x12">
                 {filtroTipo}
-                <button onClick={() => setFiltroTipo('Todos')} style={{ background: 'transparent', border: 'none', color: '#a371f7', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="ud-x13" onClick={() => setFiltroTipo('Todos')}>✕</button>
               </span>
             )}
             {busqueda && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="ud-x14">
                 "{busqueda}"
-                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="ud-x15" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="ud-x16">
               {busquedaHecha ? `${registrosFiltrados.length} unidades` : 'Presiona Filtros y Buscar para ver el catálogo.'}
             </span>
           </div>
 
           {/* Derecha: Botones Iconográficos */}
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '150px' }}>
+          <div className="ud-x17">
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline ud-x18" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline ud-x18" 
               title="Exportar a Excel"
-              onClick={exportarExcel} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+              onClick={exportarExcel}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button 
-              className="btn btn-primary" 
+              className="btn btn-primary ud-x19" 
               title="Agregar Nueva Unidad"
-              onClick={handleNuevo} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              onClick={handleNuevo}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
@@ -284,16 +282,16 @@ export const UnidadesDashboard: React.FC = () => {
         </div>
 
         {/* TABLA RESPONSIVE */}
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="content-body ud-x20">
+          <div className="table-container ud-x21">
+            <table className="data-table ud-x22">
+              <thead className="ud-x23">
                 <tr>
-                  <th style={{ padding: '16px', width: '150px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                  <th className="ud-x24">
                     Acciones
                   </th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                    <th className="ud-x25" key={`th_${col.id}`}>
                       {col.label}
                     </th>
                   ))}
@@ -302,16 +300,16 @@ export const UnidadesDashboard: React.FC = () => {
               
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td colSpan={columnasTabla.length + 1} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="ud-x26" colSpan={columnasTabla.length + 1}>
+                    <div className="ud-x27">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las unidades.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="ud-x28">Define tus filtros y presiona <b className="ud-x29">Buscar</b> para ver las unidades.</span>
+                      <button className="ud-x30" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td className="ud-x31" colSpan={columnasTabla.length + 1}>
                       {busqueda || filtroTipo !== 'Todos' ? 'No se encontraron unidades con estos filtros.' : 'Aún no hay unidades registradas.'}
                     </td>
                   </tr>
@@ -325,13 +323,12 @@ export const UnidadesDashboard: React.FC = () => {
                       onClick={() => editarRegistro(reg)}
                     >
                       {/* Celda de Acciones fija a la izquierda */}
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <td className="ud-x32" onClick={(e: any) => e.stopPropagation()}>
+                        <div className="actions-cell ud-x33">
                           <button 
-                            className="btn-small btn-edit" 
+                            className="btn-small btn-edit ud-x34" 
                             title="Editar Unidad"
                             onClick={(e) => { e.stopPropagation(); editarRegistro(reg); }}
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -340,10 +337,9 @@ export const UnidadesDashboard: React.FC = () => {
 
                           {/* ✅ Ver Documentos de la unidad */}
                           <button 
-                            className="btn-small" 
+                            className="btn-small ud-x35" 
                             title="Ver Documentos"
                             onClick={(e) => { e.stopPropagation(); setUnidadDocumentos(reg); }}
-                            style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -351,10 +347,9 @@ export const UnidadesDashboard: React.FC = () => {
                           </button>
 
                           <button 
-                            className="btn-small btn-danger" 
+                            className="btn-small btn-danger ud-x36" 
                             title="Eliminar Unidad"
                             onClick={(e) => handleEliminar(e, reg.id!)}
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -364,7 +359,7 @@ export const UnidadesDashboard: React.FC = () => {
                       </td>
 
                       {columnasTabla.filter(col => col.visible).map(col => (
-                        <td key={`cell_${reg.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                        <td className="ud-x37" key={`cell_${reg.id}_${col.id}`}>
                           {renderCellContent(reg, col.id)}
                         </td>
                       ))}
@@ -377,11 +372,11 @@ export const UnidadesDashboard: React.FC = () => {
 
           {/* CONTROLES DE PAGINACIÓN ICONOGRÁFICOS */}
           {busquedaHecha && registrosFiltrados.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="ud-x38">
+              <div className="ud-x39">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="ud-x40">
                 <button 
                   onClick={irPaginaAnterior} 
                   disabled={paginaActual === 1}
@@ -390,7 +385,7 @@ export const UnidadesDashboard: React.FC = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="ud-x41">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   onClick={irPaginaSiguiente} 
                   disabled={paginaActual === totalPaginas || totalPaginas === 0}
@@ -408,15 +403,15 @@ export const UnidadesDashboard: React.FC = () => {
 
       {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay ud-x42">
+          <div className="ud-x43">
+            <div className="ud-x44">
+              <h3 className="ud-x45">Configurar Columnas de la Tabla</h3>
+              <button className="ud-x46" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            <p className="ud-x47">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
             
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <ul className="ud-x48">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -428,13 +423,13 @@ export const UnidadesDashboard: React.FC = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <input className="ud-x49" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="ud-x50">
+              <button className="ud-x51" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -442,23 +437,22 @@ export const UnidadesDashboard: React.FC = () => {
 
       {/* ✅ MODAL VISOR DE DOCUMENTOS DE LA UNIDAD */}
       {unidadDocumentos && (
-        <div className="modal-overlay" style={{ zIndex: 2100, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', padding: '20px' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '900px', maxWidth: '95%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.2rem' }}>Documentos — <span style={{ color: '#58a6ff' }}>{nombreUnidadDoc}</span></h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button
+        <div className="modal-overlay ud-x52">
+          <div className="ud-x53">
+            <div className="ud-x54">
+              <h3 className="ud-x55">Documentos — <span className="ud-x56">{nombreUnidadDoc}</span></h3>
+              <div className="ud-x57">
+                <button className="ud-x58"
                   type="button"
                   onClick={() => setMostrarSubirDoc(true)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                   Subir Documento
                 </button>
-                <button onClick={() => { setUnidadDocumentos(null); setMostrarSubirDoc(false); }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem' }}>✕</button>
+                <button className="ud-x59" onClick={() => { setUnidadDocumentos(null); setMostrarSubirDoc(false); }}>✕</button>
               </div>
             </div>
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+            <div className="ud-x60">
               <DocumentosLista coleccionOrigen="unidades" registroId={unidadDocumentos.id ?? ''} />
             </div>
           </div>
@@ -478,27 +472,26 @@ export const UnidadesDashboard: React.FC = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Unidades) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Unidades</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="ud-x61" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="ud-x62" onClick={(e) => e.stopPropagation()}>
+            <div className="ud-x63">
+              <h3 className="ud-x64">Filtros · Unidades</h3>
+              <button className="ud-x46" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Unidad, placas, serie, modelo..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="ud-x65">
+              <label className="ud-x66">BÚSQUEDA</label>
+              <div className="ud-x67">
+                <svg className="ud-x68" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="ud-x69" type="text" placeholder="Unidad, placas, serie, modelo..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="ud-x70" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>TIPO DE UNIDAD</label>
+            <div className="ud-x65">
+              <label className="ud-x71">TIPO DE UNIDAD</label>
               <select value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value)}
                 style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: `1px solid ${filtroTipo !== 'Todos' ? '#a371f7' : '#30363d'}`, borderRadius: '6px', color: filtroTipo !== 'Todos' ? '#a371f7' : '#c9d1d9', cursor: 'pointer', fontWeight: filtroTipo !== 'Todos' ? 'bold' : 'normal', boxSizing: 'border-box' }}>
                 <option value="Todos">Todos</option>
@@ -508,13 +501,13 @@ export const UnidadesDashboard: React.FC = () => {
               </select>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todo el catálogo.
+            <div className="ud-x72">
+              Todos los campos son <b className="ud-x73">opcionales</b>. Presiona <b className="ud-x29">Buscar</b> para ver todo el catálogo.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setFiltroTipo('Todos'); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="ud-x74">
+              <button className="ud-x75" onClick={() => { setBusqueda(''); setFiltroTipo('Todos'); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="ud-x76" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

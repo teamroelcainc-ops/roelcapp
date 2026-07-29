@@ -1,0 +1,27 @@
+/* Estilos hermanos de DocumentoUploadModal.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.dum-x1 { backdrop-filter: blur(4px); z-index: 2100; }
+.dum-x2 { max-width: 720px; width: 95%; border-radius: 14px; border: 1px solid #30363d; background-color: #0d1117; display: flex; flex-direction: column; max-height: 92vh; }
+.dum-x3 { padding: 20px 24px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+.dum-x4 { margin: 0; color: #f0f6fc; font-size: 1.15rem; }
+.dum-x5 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.dum-x6 { padding: 24px; overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 20px; }
+.dum-x7 { font-size: 0.75rem; color: #6e7681; background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px 12px; }
+.dum-x8 { color: #8b949e; }
+.dum-x9 { color: #6e7681; }
+.dum-x10 { color: #3fb950; font-weight: 600; font-size: 0.85rem; text-align: center; word-break: break-all; }
+.dum-x11 { color: #8b949e; font-size: 0.82rem; }
+.dum-x12 { display: none; }
+.dum-x13 { display: inline-flex; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; width: fit-content; }
+.dum-x14 { padding: 16px 24px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 12px; flex-shrink: 0; }
+.dum-x15 { padding: 10px 20px; border-radius: 6px; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .dum-x3 { flex-wrap: wrap; }
+  .dum-x6 { padding: 14px 12px; }
+  .dum-x14 { flex-wrap: wrap; }
+}

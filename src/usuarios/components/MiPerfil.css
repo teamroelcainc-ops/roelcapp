@@ -1,0 +1,38 @@
+/* Estilos hermanos de MiPerfil.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.mp-x1 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; backdrop-filter: blur(6px); }
+.mp-x2 { max-width: 560px; width: 100%; max-height: 90vh; overflow-y: auto; background-color: #0d1117; border: 1px solid #444; border-radius: 12px; }
+.mp-x3 { padding: 24px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+.mp-x4 { font-size: 1.25rem; color: #f0f6fc; margin: 0; font-weight: 500; }
+.mp-x5 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.mp-x6 { padding: 24px; }
+.mp-x7 { background-color: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.4); color: #ef4444; padding: 12px 14px; border-radius: 6px; margin-bottom: 18px; font-size: 0.85rem; }
+.mp-x8 { background-color: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.4); color: #10b981; padding: 12px 14px; border-radius: 6px; margin-bottom: 18px; font-size: 0.85rem; }
+.mp-x9 { color: #f0f6fc; font-size: 1rem; margin: 0 0 16px 0; }
+.mp-x10 { display: flex; align-items: center; gap: 20px; margin-bottom: 12px; }
+.mp-x11 { width: 80px; height: 80px; border-radius: 50%; background-color: #D84315; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: bold; overflow: hidden; flex-shrink: 0; border: 2px solid #30363d; }
+.mp-x12 { width: 100%; height: 100%; object-fit: cover; }
+.mp-x13 { display: flex; flex-direction: column; gap: 8px; }
+.mp-x14 { display: none; }
+.mp-x15 { padding: 8px 16px; background-color: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+.mp-x16 { padding: 8px 16px; background: none; color: #ef4444; border: 1px solid #ef4444; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+.mp-x17 { color: #8b949e; font-size: 0.78rem; margin: 0 0 16px 0; }
+.mp-x18 { border: none; border-top: 1px solid #30363d; margin: 28px 0; }
+.mp-x19 { display: grid; grid-template-columns: 1fr; gap: 14px; margin-bottom: 16px; }
+.mp-x20 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.mp-x21 { padding: 16px 24px; display: flex; justify-content: flex-end; border-top: 1px solid #30363d; background-color: #161b22; }
+.mp-x22 { padding: 8px 24px; border-radius: 6px; color: #c9d1d9; border: 1px solid #30363d; background: transparent; cursor: pointer; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .mp-x1 { flex-wrap: wrap; }
+  .mp-x3 { flex-wrap: wrap; padding: 14px 12px; }
+  .mp-x6 { padding: 14px 12px; }
+  .mp-x10 { flex-wrap: wrap; }
+  .mp-x11 { flex-wrap: wrap; font-size: 1.3rem; }
+  .mp-x20 { grid-template-columns: 1fr; }
+  .mp-x21 { flex-wrap: wrap; }
+}

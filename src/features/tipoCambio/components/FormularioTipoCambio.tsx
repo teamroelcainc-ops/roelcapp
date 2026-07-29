@@ -5,6 +5,7 @@ import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebas
 import { registrarLog } from '../../../utils/logger';
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
 import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, crearSolicitudAutorizacion, obtenerUsuarioAut } from '../../autorizaciones/autorizaciones';
+import './FormularioTipoCambio.css';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -305,7 +306,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
-      <div className="form-card" style={{ maxWidth: '500px' }}>
+      <div className="form-card ftc-x1">
         <div className="form-header">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Tipo de Cambio` : 'Nuevo Tipo de Cambio')}</h2>
           <div className="header-actions">
@@ -313,9 +314,8 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
             <button
               type="button"
               onClick={() => setModalConfig(true)}
-              className="btn-window"
+              className="btn-window ftc-x2"
               title="Configurar campos obligatorios"
-              style={{ fontSize: '0.95rem' }}
             >
               ⚙
             </button>
@@ -326,11 +326,11 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '20px' }}>
           <form onSubmit={handleSubmit}>
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
+            <div className="form-grid ftc-x3">
               
               <div className="form-group">
                 <label className="form-label orange">Día de la semana (Automático)</label>
-                <input type="text" className="form-control" value={formData.dia} disabled style={{ backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed' }} />
+                <input type="text" className="form-control ftc-x4" value={formData.dia} disabled />
               </div>
 
               <div className="form-group">
@@ -350,10 +350,10 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
                   style={esEdicion ? { backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed' } : undefined}
                 />
                 {!esEdicion && (
-                  <small style={{ color: '#8b949e' }}>Puedes registrar el de hoy o completar días pasados faltantes. No se permiten fechas futuras. Los sábados, domingos y festivos siguientes se agregan solos con el mismo valor.</small>
+                  <small className="ftc-x5">Puedes registrar el de hoy o completar días pasados faltantes. No se permiten fechas futuras. Los sábados, domingos y festivos siguientes se agregan solos con el mismo valor.</small>
                 )}
                 {fechaDuplicada && (
-                  <small style={{ color: '#f85149', fontWeight: 600, display: 'block', marginTop: '4px' }}>
+                  <small className="ftc-x6">
                     ⚠ Ya existe un registro para esta fecha. No se puede guardar duplicado.
                   </small>
                 )}
@@ -375,7 +375,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
               <div className="form-group">
                 <label className="form-label">Tipo de Tendencia (Fórmula)</label>
-                <select className="form-control" value={formData.tipoTendencia} disabled style={{ backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed' }}>
+                <select className="form-control ftc-x4" value={formData.tipoTendencia} disabled>
                   <option value="subio">Subió</option>
                   <option value="bajo">Bajó</option>
                   <option value="igual">Sin cambio</option>
@@ -384,12 +384,12 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
               <div className="form-group">
                 <label className="form-label">Descripción Tendencia (Fórmula)</label>
-                <input type="text" className="form-control" value={formData.tendencia} disabled style={{ backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed' }} />
+                <input type="text" className="form-control ftc-x4" value={formData.tendencia} disabled />
               </div>
 
             </div>
 
-            <div className="form-actions" style={{ marginTop: '24px' }}>
+            <div className="form-actions ftc-x7">
               <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
               <button type="submit" className="btn btn-primary" disabled={guardando || fechaDuplicada} style={{ opacity: (guardando || fechaDuplicada) ? 0.6 : 1, cursor: (guardando || fechaDuplicada) ? 'not-allowed' : 'pointer' }}>
                 {guardando ? 'Guardando...' : (initialData ? 'Guardar Cambios' : 'Guardar')}
@@ -401,31 +401,30 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
       {/* ✅ NUEVO: Modal de configuración de campos obligatorios (compartido) */}
       {modalConfig && (
-        <div className="modal-overlay" style={{ zIndex: 3000, position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
-          <div className="form-card" style={{ maxWidth: '460px', width: '95%', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Campos obligatorios</h3>
-              <button type="button" onClick={() => setModalConfig(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+        <div className="modal-overlay ftc-x8">
+          <div className="form-card ftc-x9">
+            <div className="ftc-x10">
+              <h3 className="ftc-x11">Campos obligatorios</h3>
+              <button className="ftc-x12" type="button" onClick={() => setModalConfig(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: 0, marginBottom: '16px' }}>
+            <p className="ftc-x13">
               Marca qué campos serán obligatorios al guardar. Esta configuración se guarda y aplica para <b>todos los usuarios</b>.
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div className="ftc-x14">
               {CAMPOS_CONFIGURABLES.map(c => (
-                <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', cursor: 'pointer' }}>
-                  <input
+                <label className="ftc-x15" key={c.key}>
+                  <input className="ftc-x16"
                     type="checkbox"
                     checked={esOblig(c.key)}
                     onChange={() => setObligatorios(prev => ({ ...prev, [c.key]: !prev[c.key] }))}
-                    style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                   />
                   <span style={{ color: esOblig(c.key) ? '#f0f6fc' : '#8b949e', fontWeight: esOblig(c.key) ? 600 : 400 }}>{c.label}</span>
                 </label>
               ))}
             </div>
-            <div className="form-actions" style={{ marginTop: '22px', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+            <div className="form-actions ftc-x17">
               <button type="button" onClick={() => setModalConfig(false)} className="btn btn-outline" disabled={guardandoConfig}>Cancelar</button>
-              <button type="button" onClick={guardarConfigObligatorios} className="btn btn-primary" disabled={guardandoConfig} style={{ backgroundColor: '#D84315', border: 'none' }}>
+              <button type="button" onClick={guardarConfigObligatorios} className="btn btn-primary ftc-x18" disabled={guardandoConfig}>
                 {guardandoConfig ? 'Guardando...' : 'Guardar configuración'}
               </button>
             </div>

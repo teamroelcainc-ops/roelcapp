@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import type { UnidadProveedorRecord } from '../../../types/unidadProveedor';
+import './FormularioUnidadProveedor.css';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -99,7 +100,7 @@ export const FormularioUnidadProveedor = ({ estado, initialData, onClose, onMini
 
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
-      <div className="form-card" style={{ maxWidth: '750px' }}>
+      <div className="form-card fup-x1">
         <div className="form-header">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Unidad` : 'Nueva Unidad de Proveedor')}</h2>
           <div className="header-actions">
@@ -114,9 +115,9 @@ export const FormularioUnidadProveedor = ({ estado, initialData, onClose, onMini
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '10px 0' }}>
           <form onSubmit={handleSubmit}>
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div className="form-grid fup-x2">
               
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <div className="form-group fup-x3">
                 <label className="form-label">Proveedor (Transporte) *</label>
                 <select 
                   className="form-control" 
@@ -151,14 +152,14 @@ export const FormularioUnidadProveedor = ({ estado, initialData, onClose, onMini
                 <input type="text" name="pais" className="form-control" value={formData.pais} onChange={handleChange} required />
               </div>
 
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <div className="form-group fup-x3">
                 <label className="form-label">Estado *</label>
                 <input type="text" name="estadoUbicacion" className="form-control" value={formData.estadoUbicacion} onChange={handleChange} required />
               </div>
 
             </div>
 
-            <div className="form-actions" style={{ marginTop: '24px' }}>
+            <div className="form-actions fup-x4">
               <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
               <button type="submit" className="btn btn-primary" disabled={cargando}>
                 {cargando ? 'Guardando...' : (initialData ? 'Guardar Cambios' : 'Guardar')}

@@ -1,0 +1,19 @@
+/* Estilos hermanos de FormularioCombustible.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.fc-x1 { position: relative; width: 100%; }
+.fc-x2 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; padding: 0; margin: 4px 0 0 0; list-style: none; z-index: 1000; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); }
+.fc-x3 { padding: 8px 12px; cursor: pointer; color: #c9d1d9; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
+.fc-x4 { padding: 8px 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
+.fc-x5 { max-width: 700px; }
+.fc-x6 { grid-template-columns: 1fr 1fr; gap: 20px; }
+.fc-x7 { background-color: #21262d; color: #8b949e; cursor: not-allowed; }
+.fc-x8 { margin-top: 24px; }
+.fc-x9 { color: #f85149; font-size: 0.8rem; margin-top: 10px; text-align: center; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .fc-x6 { grid-template-columns: 1fr; }
+}

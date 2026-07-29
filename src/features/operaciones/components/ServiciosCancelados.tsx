@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, startAfter } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
+import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
 import * as XLSX from 'xlsx';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
@@ -14,6 +15,8 @@ import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 // ✅ logo + nombre de la empresa removidos de esta vista (se quitó EmpresaBrand)
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
+import './ServiciosCancelados.css';
+import { almacenSesion } from '../../../utils/cacheMemoria';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -244,7 +247,18 @@ const ServiciosCancelados = () => {
   //    un índice de fechaServicio ni del formato en que se guardó la fecha (que es
   //    justo lo que dejaba la tabla vacía). El rango de fechas se aplica luego en
   //    memoria sobre lo descargado.
-  const descargarOperaciones = async () => {
+  // ✅ VELOCIDAD: dataset cacheado EN MEMORIA 10 min — al volver al módulo o
+  //   re-buscar, la tabla y los filtros responden al instante sin re-descargar.
+  const CACHE_MEM_CANCELADOS = 'cancelados_ops_v1';
+  const CACHE_MEM_TTL = 10 * 60 * 1000;
+
+  const descargarOperaciones = async (opciones: { forzar?: boolean } = {}) => {
+    if (!opciones.forzar) {
+      const enCache = obtenerCacheMemoria<(Record<string, unknown> & { id: string })[]>(CACHE_MEM_CANCELADOS, CACHE_MEM_TTL);
+      if (enCache) { setOperacionesGlobales(enCache); return; }
+    } else {
+      limpiarCacheMemoria(CACHE_MEM_CANCELADOS);
+    }
     setCargandoOperaciones(true);
     setErrorCarga(null);
     try {
@@ -265,6 +279,7 @@ const ServiciosCancelados = () => {
 
       acumulado.sort((a, b) => normalizarFechaISO(b.fechaServicio).localeCompare(normalizarFechaISO(a.fechaServicio)));
       console.log(`[FIREBASE READ] Descargadas ${acumulado.length} operaciones canceladas.`);
+      guardarCacheMemoria(CACHE_MEM_CANCELADOS, acumulado);
       setOperacionesGlobales(acumulado);
     } catch (e: any) {
       console.error("Error al cargar operaciones canceladas:", e);
@@ -286,7 +301,7 @@ const ServiciosCancelados = () => {
   const cargarCatalogosFiltros = async () => {
     if (Object.keys(catalogosGlobales).length > 0) return;
     // Si existe la caché COMPLETA en sesión, úsala (gratis) y listo.
-    const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
+    const cacheCatStr = almacenSesion.getItem('roelca_catalogos_v2');
     if (cacheCatStr) { setCatalogosGlobales(JSON.parse(cacheCatStr)); return; }
     try {
       const [empSnap, remSnap, statusSnap] = await Promise.all([
@@ -310,7 +325,7 @@ const ServiciosCancelados = () => {
   const cargarCatalogosSiEsNecesario = async () => {
     if (catalogosGlobales.tarifas) return;
 
-    const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
+    const cacheCatStr = almacenSesion.getItem('roelca_catalogos_v2');
     if (cacheCatStr) {
       setCatalogosGlobales(JSON.parse(cacheCatStr));
       return;
@@ -353,7 +368,7 @@ const ServiciosCancelados = () => {
       proveedores_unidad: opeProvSnap.docs.map((d: any) => ({ id: d.id, ...(d.data() as any) }))
     };
 
-    sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
+    almacenSesion.setItem('roelca_catalogos_v2', JSON.stringify(catGuardados));
     setCatalogosGlobales(catGuardados);
   };
 
@@ -364,7 +379,7 @@ const ServiciosCancelados = () => {
   //   recargar la página.
   const resincronizarCatalogosDesdeCache = () => {
     try {
-      const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v2');
+      const cacheCatStr = almacenSesion.getItem('roelca_catalogos_v2');
       if (cacheCatStr) {
         const cache = JSON.parse(cacheCatStr);
         setCatalogosGlobales((prev: any) => ({ ...prev, ...cache }));
@@ -1164,7 +1179,7 @@ const ServiciosCancelados = () => {
     setEstadoFormulario('cerrado');
     setOperacionEditando(null);
     setOperacionViendo(null);
-    if (filtrosAplicados) descargarOperaciones();
+    if (filtrosAplicados) descargarOperaciones({ forzar: true });
   };
 
   const tabsDetalle = [{ id: 'general', label: 'Información General' }, { id: 'pedimento', label: 'Pedimento y CT' }, { id: 'manifiestos', label: "Entry's y Manifiestos" }, { id: 'unidad', label: 'Unidad y Operador' }, { id: 'cobrar', label: 'Por Cobrar' }];
@@ -1182,7 +1197,7 @@ const ServiciosCancelados = () => {
   const refOperacionViendo = operacionViendo ? (operacionViendo.ref || operacionViendo.id?.substring(0, 6) || 'Operacion') : '';
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container sc-x1">
 
       {/* ✅ NUEVO: FormularioOperacion COMPLETO para editar (igual que Activos/Completados) */}
       {estadoFormulario !== 'cerrado' && (
@@ -1197,43 +1212,43 @@ const ServiciosCancelados = () => {
         />
       )}
 
-      <div style={{ width: '100%', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
-          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#ef4444', margin: 0, fontWeight: 'bold' }}>Servicios Cancelados</h1>
+      <div className="sc-x2">
+        <div className="sc-x3">
+          <h1 className="module-title sc-x4">Servicios Cancelados</h1>
         </div>
 
         {/* ✅ NUEVO: sidebar FLOTANTE de filtros — anclado al lado DERECHO de la
               pantalla, con fondo oscurecido; se abre con el botón Filtros. */}
         {drawerFiltrosAbierto && (
           <>
-            <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1200, animation: 'fadeIn 0.2s ease' }} />
-            <aside style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92vw', backgroundColor: '#161b22', borderLeft: '1px solid #30363d', zIndex: 1201, display: 'flex', flexDirection: 'column', boxShadow: '-10px 0 30px rgba(0, 0, 0, 0.55)', animation: 'fadeIn 0.2s ease' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="sc-x5" onClick={() => setDrawerFiltrosAbierto(false)} />
+            <aside className="sc-x6">
+              <div className="sc-x7">
+                <div className="sc-x8">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                  <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>Filtros</span>
+                  <span className="sc-x9">Filtros</span>
                 </div>
-                <button onClick={() => setDrawerFiltrosAbierto(false)} title="Cerrar filtros" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '4px' }}>✕</button>
+                <button className="sc-x10" onClick={() => setDrawerFiltrosAbierto(false)} title="Cerrar filtros">✕</button>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="sc-x11">
 
                 {/* Fecha Inicio (requerida para mostrar registros) */}
-                <div style={{ width: '100%' }}>
-                  <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO *</label>
-                  <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+                <div className="sc-x12">
+                  <label className="sc-x13">FECHA INICIO *</label>
+                  <input className="sc-x14" type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} />
                 </div>
 
                 {/* Fecha Fin (requerida para mostrar registros) */}
-                <div style={{ width: '100%' }}>
-                  <label style={{ display: 'block', color: '#ef4444', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN *</label>
-                  <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+                <div className="sc-x12">
+                  <label className="sc-x13">FECHA FIN *</label>
+                  <input className="sc-x14" type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} />
                 </div>
 
                 {/* ✅ NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
               guardadas dentro del rango). Requiere rango de fechas. */}
-                <div style={{ width: '100%' }}>
-                  <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}># REFERENCIA (requiere rango de fechas)</label>
+                <div className="sc-x12">
+                  <label className="sc-x15"># REFERENCIA (requiere rango de fechas)</label>
                   <input
                     type="text"
                     placeholder={rangoFechasListo ? 'Ej. TR-220726-016 (acepta parcial)' : 'Coloca un rango de fechas primero'}
@@ -1244,61 +1259,58 @@ const ServiciosCancelados = () => {
                     style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box', opacity: rangoFechasListo ? 1 : 0.45, cursor: rangoFechasListo ? 'text' : 'not-allowed' }}
                   />
                   {!rangoFechasListo && (
-                    <div style={{ color: '#6e7681', fontSize: '0.72rem', marginTop: '4px' }}>⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+                    <div className="sc-x16">⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
                   )}
                 </div>
 
                 {/* Cliente que paga (buscador con autocompletado) */}
-                <div style={{ width: '100%', position: 'relative' }}>
-                  <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
+                <div className="sc-x17">
+                  <label className="sc-x15">CLIENTE QUE PAGA (opcional)</label>
 
                   {filterCliente ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
-                      <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div className="sc-x18">
+                      <span className="sc-x19">
                         {nombreClienteSeleccionado}
                       </span>
-                      <button
+                      <button className="sc-x20"
                         onClick={() => { setFilterCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
                         title="Cambiar cliente"
-                        style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
                       >
                         ✕
                       </button>
                     </div>
                   ) : (
-                    <input
+                    <input className="sc-x21"
                       type="text"
                       placeholder="Buscar cliente por nombre o RFC..."
                       value={textoBuscarCliente}
                       onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
                       onFocus={() => setMostrarSugerenciasCliente(true)}
                       onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
-                      style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
                     />
                   )}
 
                   {!filterCliente && mostrarSugerenciasCliente && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+                    <div className="sc-x22">
                       {clientesFiltradosBuscador.length === 0 ? (
-                        <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                        <div className="sc-x23">
                           {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
                         </div>
                       ) : (
                         <>
-                          <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                          <div className="sc-x24">
                             {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
                           </div>
                           {clientesFiltradosBuscador.map((cli: any) => (
-                            <div
+                            <div className="sc-x25"
                               key={cli.id}
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => { setFilterCliente(cli.id); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
-                              style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
-                              <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
-                              {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                              <div className="sc-x26">{cli.nombre || cli.id}</div>
+                              {cli.rfc && <div className="sc-x27">{cli.rfc}</div>}
                             </div>
                           ))}
                         </>
@@ -1308,18 +1320,17 @@ const ServiciosCancelados = () => {
                 </div>
 
                 {/* Remolque (buscador con autocompletado) */}
-                <div style={{ width: '100%', position: 'relative' }}>
-                  <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}># REMOLQUE (requiere rango de fechas)</label>
+                <div className="sc-x17">
+                  <label className="sc-x15"># REMOLQUE (requiere rango de fechas)</label>
 
                   {filterRemolque ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #ef4444', borderRadius: '6px', minHeight: '20px' }}>
-                      <span style={{ color: '#ef4444', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div className="sc-x18">
+                      <span className="sc-x19">
                         {nombreRemolqueSeleccionado}
                       </span>
-                      <button
+                      <button className="sc-x20"
                         onClick={() => { setFilterRemolque(''); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
                         title="Cambiar remolque"
-                        style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
                       >
                         ✕
                       </button>
@@ -1339,30 +1350,29 @@ const ServiciosCancelados = () => {
                   )}
 
                   {!rangoFechasListo && !filterRemolque && (
-                    <div style={{ color: '#6e7681', fontSize: '0.72rem', marginTop: '4px' }}>⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+                    <div className="sc-x16">⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
                   )}
 
                   {rangoFechasListo && !filterRemolque && mostrarSugerenciasRemolque && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+                    <div className="sc-x22">
                       {remolquesFiltradosBuscador.length === 0 ? (
-                        <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                        <div className="sc-x23">
                           {textoBuscarRemolque.trim() ? 'Sin coincidencias' : 'No hay remolques cargados'}
                         </div>
                       ) : (
                         <>
-                          <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                          <div className="sc-x24">
                             {remolquesFiltradosBuscador.length} {remolquesFiltradosBuscador.length === 1 ? 'remolque' : 'remolques'}{textoBuscarRemolque.trim() ? '' : ' (primeros 30)'}
                           </div>
                           {remolquesFiltradosBuscador.map((rem: any) => (
-                            <div
+                            <div className="sc-x25"
                               key={rem.id}
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => { setFilterRemolque(rem.id); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
-                              style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
-                              <div style={{ fontWeight: '500' }}>{etiquetaRemolque(rem) || rem.id}</div>
+                              <div className="sc-x26">{etiquetaRemolque(rem) || rem.id}</div>
                             </div>
                           ))}
                         </>
@@ -1372,16 +1382,15 @@ const ServiciosCancelados = () => {
                 </div>
 
                 {/* Filtro general (opcional) */}
-                <div style={{ width: '100%' }}>
-                  <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
-                  <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                <div className="sc-x12">
+                  <label className="sc-x15">FILTRO GENERAL (opcional)</label>
+                  <input className="sc-x21" type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 </div>
               </div>
 
-              <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', flexShrink: 0 }}>
-                <button
+              <div className="sc-x28">
+                <button className="sc-x29"
                   onClick={limpiarFiltrosPanel}
-                  style={{ flex: 1, padding: '11px', backgroundColor: 'transparent', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
                 >
                   Limpiar
                 </button>
@@ -1404,22 +1413,22 @@ const ServiciosCancelados = () => {
             incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
         {modalExportar && (
           <>
-            <div onClick={() => setModalExportar(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1300, animation: 'fadeIn 0.2s ease' }} />
-            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '480px', maxWidth: '94vw', maxHeight: '86vh', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', zIndex: 1301, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="sc-x30" onClick={() => setModalExportar(false)} />
+            <div className="sc-x31">
+              <div className="sc-x7">
+                <div className="sc-x8">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>Exportar a Excel</span>
-                  <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>({columnasExport.filter(c => c.visible).length} columnas)</span>
+                  <span className="sc-x9">Exportar a Excel</span>
+                  <span className="sc-x32">({columnasExport.filter(c => c.visible).length} columnas)</span>
                 </div>
-                <button onClick={() => setModalExportar(false)} title="Cerrar" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '4px' }}>✕</button>
+                <button className="sc-x10" onClick={() => setModalExportar(false)} title="Cerrar">✕</button>
               </div>
 
-              <div style={{ padding: '10px 16px', color: '#8b949e', fontSize: '0.78rem', borderBottom: '1px solid #21262d', flexShrink: 0 }}>
-                Arrastra <span style={{ color: '#c9d1d9' }}>⋮⋮</span> o usa las flechas para cambiar el orden. Marca las columnas que quieres incluir.
+              <div className="sc-x33">
+                Arrastra <span className="sc-x34">⋮⋮</span> o usa las flechas para cambiar el orden. Marca las columnas que quieres incluir.
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+              <div className="sc-x35">
                 {columnasExport.map((c, idx) => (
                   <div
                     key={c.id}
@@ -1429,12 +1438,11 @@ const ServiciosCancelados = () => {
                     onDrop={() => soltarColumnaExport(idx)}
                     style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', marginBottom: '4px', backgroundColor: c.visible ? '#0d1117' : 'rgba(13, 17, 23, 0.5)', border: '1px solid #21262d', borderRadius: '6px', cursor: 'grab', opacity: c.visible ? 1 : 0.55 }}
                   >
-                    <span title="Arrastrar para reordenar" style={{ color: '#484f58', fontSize: '0.85rem', letterSpacing: '-2px', userSelect: 'none' }}>⋮⋮</span>
-                    <input
+                    <span className="sc-x36" title="Arrastrar para reordenar">⋮⋮</span>
+                    <input className="sc-x37"
                       type="checkbox"
                       checked={c.visible}
                       onChange={() => setColumnasExport(prev => prev.map((x, i) => (i === idx ? { ...x, visible: !x.visible } : x)))}
-                      style={{ accentColor: '#ef4444', cursor: 'pointer', width: '15px', height: '15px', flexShrink: 0 }}
                     />
                     <span style={{ flex: 1, color: c.visible ? '#c9d1d9' : '#8b949e', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
                     <button onClick={() => moverColumnaExport(idx, -1)} disabled={idx === 0} title="Subir" style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '4px', color: idx === 0 ? '#30363d' : '#8b949e', cursor: idx === 0 ? 'default' : 'pointer', padding: '2px 7px', fontSize: '0.7rem' }}>▲</button>
@@ -1443,19 +1451,17 @@ const ServiciosCancelados = () => {
                 ))}
               </div>
 
-              <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-                <button
+              <div className="sc-x38">
+                <button className="sc-x39"
                   onClick={() => setColumnasExport(columnasExportPorDefecto())}
                   title="Restablecer con las columnas visibles de la tabla, en su orden actual"
-                  style={{ padding: '9px 12px', backgroundColor: 'transparent', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
                 >
                   Columnas de la tabla
                 </button>
-                <div style={{ flex: 1 }} />
-                <button onClick={() => setModalExportar(false)} style={{ padding: '9px 14px', backgroundColor: 'transparent', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>Cancelar</button>
-                <button
+                <div className="sc-x40" />
+                <button className="sc-x41" onClick={() => setModalExportar(false)}>Cancelar</button>
+                <button className="sc-x42"
                   onClick={exportarExcel}
-                  style={{ padding: '9px 16px', backgroundColor: '#ef4444', color: '#f0f6fc', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
                 >
                   Exportar
                 </button>
@@ -1468,7 +1474,7 @@ const ServiciosCancelados = () => {
         {/* ✅ NUEVO: barra compacta — los filtros viven en un panel lateral
             izquierdo; aquí solo queda el botón Filtros y el resumen de la
             última búsqueda. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+        <div className="sc-x43">
           <button
             onClick={() => setDrawerFiltrosAbierto(v => !v)}
             title={drawerFiltrosAbierto ? 'Ocultar el panel de filtros' : 'Mostrar el panel de filtros'}
@@ -1477,43 +1483,43 @@ const ServiciosCancelados = () => {
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
             Filtros
             {contadorFiltrosActivos > 0 && (
-              <span style={{ backgroundColor: '#f0f6fc', color: '#ef4444', borderRadius: '999px', padding: '1px 8px', fontSize: '0.75rem', fontWeight: 'bold' }}>{contadorFiltrosActivos}</span>
+              <span className="sc-x44">{contadorFiltrosActivos}</span>
             )}
           </button>
 
           {filtrosAplicados ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', flex: 1, minWidth: '200px' }}>
+            <div className="sc-x45">
               {resumenFiltrosChips.map((chip, i) => (
-                <span key={`chip_${i}`} style={{ backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.35)', color: '#fca5a5', padding: '4px 10px', borderRadius: '999px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{chip}</span>
+                <span className="sc-x46" key={`chip_${i}`}>{chip}</span>
               ))}
             </div>
           ) : (
-            <span style={{ color: '#8b949e', fontSize: '0.82rem', flex: 1, minWidth: '200px' }}>Presiona Filtros para definir el rango de fechas y buscar.</span>
+            <span className="sc-x47">Presiona Filtros para definir el rango de fechas y buscar.</span>
           )}
 
-          <button className="btn btn-outline" onClick={abrirModalExportar} style={{ padding: '10px 12px', marginLeft: 'auto', flexShrink: 0 }} title="Exportar a Excel (elegir y ordenar columnas)">
+          <button className="btn btn-outline sc-x48" onClick={abrirModalExportar} title="Exportar a Excel (elegir y ordenar columnas)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           </button>
         </div>
 
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
+        <div className="content-body sc-x49">
           {!filtrosAplicados ? (
-            <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
-              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>Realiza una búsqueda</div>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Define <span style={{ color: '#ef4444' }}>Fecha Inicio</span> y <span style={{ color: '#ef4444' }}>Fecha Fin</span> y presiona <span style={{ color: '#ef4444', fontWeight: 'bold' }}>Buscar</span> para ver las operaciones canceladas.</div>
+            <div className="sc-x50">
+              <div className="sc-x51">Realiza una búsqueda</div>
+              <div className="sc-x52">Define <span className="sc-x53">Fecha Inicio</span> y <span className="sc-x53">Fecha Fin</span> y presiona <span className="sc-x54">Buscar</span> para ver las operaciones canceladas.</div>
             </div>
           ) : cargandoOperaciones ? (
-            <div style={{ border: '1px solid #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones canceladas...</div>
+            <div className="sc-x55">Cargando operaciones canceladas...</div>
           ) : errorCarga ? (
-            <div style={{ border: '1px solid rgba(248,81,73,0.4)', backgroundColor: 'rgba(248,81,73,0.06)', borderRadius: '8px', padding: '40px 24px', textAlign: 'center' }}>
-              <div style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.05rem', marginBottom: '8px' }}>No se pudieron cargar las operaciones</div>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem', maxWidth: '520px', margin: '0 auto 16px' }}>{errorCarga}</div>
-              <button onClick={() => descargarOperaciones()} style={{ padding: '8px 18px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Reintentar</button>
+            <div className="sc-x56">
+              <div className="sc-x57">No se pudieron cargar las operaciones</div>
+              <div className="sc-x58">{errorCarga}</div>
+              <button className="sc-x59" onClick={() => descargarOperaciones({ forzar: true })}>Reintentar</button>
             </div>
           ) : operacionesFiltradas.length === 0 ? (
-            <div style={{ border: '1px dashed #30363d', borderRadius: '8px', padding: '60px 24px', textAlign: 'center' }}>
-              <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem', marginBottom: '6px' }}>Sin resultados</div>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="sc-x50">
+              <div className="sc-x51">Sin resultados</div>
+              <div className="sc-x52">
                 {operacionesGlobales.length === 0
                   ? 'No hay operaciones canceladas registradas.'
                   : 'No hay operaciones canceladas que coincidan con los filtros seleccionados.'}
@@ -1521,11 +1527,11 @@ const ServiciosCancelados = () => {
             </div>
           ) : (
             <>
-              <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-                <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+              <div className="table-container sc-x60">
+                <table className="data-table sc-x61">
+                  <thead className="sc-x62">
                     <tr>
-                      <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                      <th className="sc-x63">Acciones</th>
                       {/* ✅ NUEVO: encabezados clicables para ordenar (asc ▲ / desc ▼ / original) */}
                       {COLUMNAS_TABLA_CANCELADOS.map(col => (
                         <th
@@ -1536,7 +1542,7 @@ const ServiciosCancelados = () => {
                         >
                           {col.label}
                           {ordenColumna === col.id && (
-                            <span style={{ marginLeft: '6px', color: '#ef4444', fontSize: '0.7rem' }}>
+                            <span className="sc-x64">
                               {ordenDireccion === 'asc' ? '▲' : '▼'}
                             </span>
                           )}
@@ -1545,36 +1551,33 @@ const ServiciosCancelados = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {operacionesEnPantalla.length === 0 ? (<tr><td colSpan={11} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados para tu búsqueda.</td></tr>) : (
+                    {operacionesEnPantalla.length === 0 ? (<tr><td className="sc-x65" colSpan={11}>Sin resultados para tu búsqueda.</td></tr>) : (
                       operacionesEnPantalla.map((op: any) => (
                         <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
-                          <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                            <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button
+                          <td className="sc-x66" onClick={(e: any) => e.stopPropagation()}>
+                            <div className="actions-cell sc-x67">
+                              <button className="sc-x68"
                                 type="button"
                                 title="Ver Detalles"
                                 onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setPestañaDetalleActiva('general'); }}
-                                style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                                 onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                                 onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                               >
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                               </button>
-                              <button
+                              <button className="sc-x69"
                                 type="button"
                                 title="Editar Operación"
                                 onClick={(e) => { e.stopPropagation(); abrirEdicion(op); }}
-                                style={{ background: 'transparent', border: '1px solid #58a6ff', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                                 onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(88, 166, 255, 0.1)'}
                                 onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                               >
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                               </button>
-                              <button
+                              <button className="sc-x70"
                                 type="button"
                                 title="Ver Documentos"
                                 onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setMostrarDocumentos(true); }}
-                                style={{ background: 'transparent', border: '1px solid #fb923c', borderRadius: '4px', color: '#fb923c', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                                 onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
                                 onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                               >
@@ -1583,15 +1586,15 @@ const ServiciosCancelados = () => {
                             </div>
                           </td>
                           <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0, 6)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{op.fechaServicio}</td>
+                          <td className="sc-x71">{op.fechaServicio}</td>
                           <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)}</td>
-                          <td style={{ padding: '16px', color: '#ef4444', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</td>
-                          <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</td>
-                          <td style={{ padding: '16px', color: '#c9d1d9' }}>{formatoMoneda(op.subtotalCliente)}</td>
+                          <td className="sc-x72">{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</td>
+                          <td className="sc-x71">{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</td>
+                          <td className="sc-x71">{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</td>
+                          <td className="sc-x71">{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</td>
+                          <td className="sc-x71">{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</td>
+                          <td className="sc-x73">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</td>
+                          <td className="sc-x71">{formatoMoneda(op.subtotalCliente)}</td>
                         </tr>
                       ))
                     )}
@@ -1599,9 +1602,9 @@ const ServiciosCancelados = () => {
                 </table>
               </div>
               {operacionesOrdenadas.length > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px' }}>
-                  <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones canceladas</div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="sc-x74">
+                  <div className="sc-x52">Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones canceladas</div>
+                  <div className="sc-x75">
                     <button
                       title="Página Anterior"
                       onClick={irPaginaAnterior}
@@ -1610,7 +1613,7 @@ const ServiciosCancelados = () => {
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                     </button>
-                    <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                    <span className="sc-x76">{paginaActual} / {totalPaginas || 1}</span>
                     <button
                       title="Página Siguiente"
                       onClick={irPaginaSiguiente}
@@ -1627,51 +1630,51 @@ const ServiciosCancelados = () => {
         </div>
       </div>
       {operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 1500 }}>
-          <div className="form-card detail-card" style={{ maxWidth: '1100px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: 'none' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <div className="modal-overlay sc-x77">
+          <div className="form-card detail-card sc-x78">
+            <div className="form-header sc-x79">
+              <h2 className="sc-x80">
                 <span>Detalle de Servicio Cancelado</span>
-                <span style={{ color: '#ef4444' }}>{operacionViendo.ref || operacionViendo.id?.substring(0, 6)}</span>
-                <span style={{ backgroundColor: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(239, 68, 68, 0.3)', fontWeight: 'bold' }}>
+                <span className="sc-x53">{operacionViendo.ref || operacionViendo.id?.substring(0, 6)}</span>
+                <span className="sc-x81">
                   {mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}
                 </span>
               </h2>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <div className="sc-x82">
 
                 {evalIsFletes && (
                   <>
-                    <button onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                    <button className="sc-x83" onClick={handleDescargarCartaInstrucciones} title="Descargar Carta de Instrucciones">
                       Carta Instrucciones
                     </button>
-                    <button onClick={handleDescargarPruebaEntrega} title="Descargar Prueba de Entrega" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                    <button className="sc-x83" onClick={handleDescargarPruebaEntrega} title="Descargar Prueba de Entrega">
                       Prueba Entrega
                     </button>
                   </>
                 )}
 
-                <button onClick={handleDescargarCheckList} title="Descargar Check List" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                <button className="sc-x83" onClick={handleDescargarCheckList} title="Descargar Check List">
                   Check List
                 </button>
-                <button onClick={handleDescargarSolicitudRetiro} title="Descargar Solicitud de Retiro" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                <button className="sc-x83" onClick={handleDescargarSolicitudRetiro} title="Descargar Solicitud de Retiro">
                   Solicitud
                 </button>
-                <button onClick={handleDescargarInstruccionesServicio} title="Descargar Instrucciones de Servicio" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                <button className="sc-x83" onClick={handleDescargarInstruccionesServicio} title="Descargar Instrucciones de Servicio">
                   Instrucciones
                 </button>
 
-                <button onClick={() => abrirEdicion(operacionViendo)} title="Editar Operación" style={{ background: '#21262d', border: '1px solid rgba(88, 166, 255, 0.4)', color: '#58a6ff', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>
+                <button className="sc-x84" onClick={() => abrirEdicion(operacionViendo)} title="Editar Operación">
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                   Editar
                 </button>
-                <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ background: '#21262d', border: '1px solid rgba(251, 146, 60, 0.4)', color: '#fb923c', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>Documentos</button>
-                <button onClick={verHistorial} style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '8px' }}>Bitácora</button>
-                <button onClick={() => setOperacionViendo(null)} className="btn-window close" style={{ padding: '6px', borderRadius: '50%' }}>✕</button>
+                <button className="sc-x85" onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos">Documentos</button>
+                <button className="sc-x83" onClick={verHistorial}>Bitácora</button>
+                <button onClick={() => setOperacionViendo(null)} className="btn-window close sc-x86">✕</button>
               </div>
             </div>
             {/* ✅ NUEVO: SIGUIENTE PASO — editar status/horario igual que Operaciones Activas */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 24px', borderTop: '1px solid #30363d', flexWrap: 'wrap' }}>
-              <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>SIGUIENTE PASO</span>
+            <div className="sc-x87">
+              <span className="sc-x88">SIGUIENTE PASO</span>
               {botonesDisponibles.length > 0 ? (
                 <>
                   {botonesDisponibles.map((botonStr: string) => {
@@ -1687,9 +1690,9 @@ const ServiciosCancelados = () => {
                           opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden'
                         }}
                         title={`Marcar como: ${botonStr}`}>
-                        <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <span className="sc-x89">
                           {esExitoso ? (
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pop 0.3s ease-out' }}>
+                            <svg className="sc-x90" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                               <polyline points="20 6 9 17 4 12"></polyline>
                             </svg>
                           ) : (
@@ -1698,15 +1701,11 @@ const ServiciosCancelados = () => {
                             </svg>
                           )}
                         </span>
-                        <span style={{ whiteSpace: 'nowrap' }}>{botonStr}</span>
+                        <span className="sc-x91">{botonStr}</span>
                       </button>
                     );
                   })}
-                  <button onClick={abrirRegistroHorario} className="status-circle-btn"
-                    style={{
-                      width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#8b949e',
-                      cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0
-                    }}
+                  <button onClick={abrirRegistroHorario} className="status-circle-btn sc-x92"
                     title="Registrar con fecha/hora distinta (retroactivo)">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -1718,17 +1717,12 @@ const ServiciosCancelados = () => {
                 </>
               ) : (
                 <>
-                  <span style={{ color: '#8b949e', fontSize: '0.85rem', fontStyle: 'italic', marginRight: '8px' }}>
+                  <span className="sc-x93">
                     No hay transiciones automáticas configuradas.
                   </span>
-                  <button onClick={abrirRegistroHorario} className="status-pill"
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
-                      background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
-                      boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)', transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
-                    }}
+                  <button onClick={abrirRegistroHorario} className="status-pill sc-x94"
                     title="Registrar status manualmente">
-                    <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span className="sc-x95">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <line x1="12" y1="5" x2="12" y2="19"></line>
                         <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1739,174 +1733,173 @@ const ServiciosCancelados = () => {
                 </>
               )}
             </div>
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px', overflowX: 'auto' }}>
+            <div className="sc-x96">
               {tabsDetalle.map(tab => (<button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)} style={{ padding: '12px 16px', background: 'none', border: 'none', borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #D84315' : '2px solid transparent', color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e', cursor: 'pointer' }}>{tab.label}</button>))}
             </div>
-            <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+            <div className="detail-content sc-x97">
               {pestañaDetalleActiva === 'general' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}><div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Tipo</span><span>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span style={{ color: '#ef4444' }}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span></div>
-                  {evalIsFletes && (<div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Paga)</span><span>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio (Tarifa)</span><span>{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># de Remolque</span><span>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Ref Cliente</span><span>{mostrarDato(operacionViendo.refCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Origen</span><span>{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Destino</span><span>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span></div>
-                  <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Observaciones Ejecutivo</span><div style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>{mostrarDato(operacionViendo.observacionesEjecutivo)}</div></div>
+                <div className="sc-x98"><div><span className="sc-x99">Tipo</span><span>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span></div>
+                  <div><span className="sc-x99">Fecha / Status</span><span>{mostrarDato(operacionViendo.fechaServicio)} | <span className="sc-x53">{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span></div>
+                  {evalIsFletes && (<div><span className="sc-x99">Fecha de Cita</span><span>{formatearFechaHora(operacionViendo.fechaCita)}</span></div>)}
+                  <div className="sc-x100"><hr className="sc-x101" /></div>
+                  <div><span className="sc-x102">Cliente (Paga)</span><span>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span></div>
+                  <div><span className="sc-x102">Convenio (Tarifa)</span><span>{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span></div>
+                  <div><span className="sc-x102"># de Remolque</span><span>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre)}</span></div>
+                  <div><span className="sc-x102">Ref Cliente</span><span>{mostrarDato(operacionViendo.refCliente)}</span></div>
+                  <div><span className="sc-x103">Origen</span><span>{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span></div>
+                  <div><span className="sc-x103">Destino</span><span>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span></div>
+                  <div className="sc-x104"><span className="sc-x102">Observaciones Ejecutivo</span><div className="sc-x105">{mostrarDato(operacionViendo.observacionesEjecutivo)}</div></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'pedimento' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cliente (Mercancía)</span><span>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Descripción de la Mercancía</span><span>{mostrarDato(operacionViendo.descripcionMercancia)}</span></div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cantidad</span><span>{mostrarDato(operacionViendo.cantidad)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Embalaje</span><span>{operacionViendo.embalajeNombre || operacionViendo.embalaje || '-'}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Peso (Kg)</span><span>{mostrarDato(operacionViendo.pesoKg)}</span></div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># DODA</span><span>{mostrarDato(operacionViendo.numDoda)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Fecha DODA</span><span>{mostrarDato(operacionViendo.fechaEmisionDoda)}</span></div>
+                <div className="sc-x98">
+                  <div className="sc-x106"><span className="sc-x102">Cliente (Mercancía)</span><span>{operacionViendo.clienteMercanciaNombre || operacionViendo.clienteMercancia || '-'}</span></div>
+                  <div><span className="sc-x102">Descripción de la Mercancía</span><span>{mostrarDato(operacionViendo.descripcionMercancia)}</span></div>
+                  <div className="sc-x100"><hr className="sc-x101" /></div>
+                  <div><span className="sc-x102">Cantidad</span><span>{mostrarDato(operacionViendo.cantidad)}</span></div>
+                  <div><span className="sc-x102">Embalaje</span><span>{operacionViendo.embalajeNombre || operacionViendo.embalaje || '-'}</span></div>
+                  <div><span className="sc-x102">Peso (Kg)</span><span>{mostrarDato(operacionViendo.pesoKg)}</span></div>
+                  <div className="sc-x100"><hr className="sc-x101" /></div>
+                  <div><span className="sc-x102"># DODA</span><span>{mostrarDato(operacionViendo.numDoda)}</span></div>
+                  <div><span className="sc-x102">Fecha DODA</span><span>{mostrarDato(operacionViendo.fechaEmisionDoda)}</span></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'manifiestos' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># de Entry's</span><span>{mostrarDato(operacionViendo.numeroEntrys)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cant. Entry's</span><span>{mostrarDato(operacionViendo.cantEntrys)}</span></div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}># Manifiesto</span><span>{mostrarDato(operacionViendo.numManifiesto)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Servicios</span><span>{operacionViendo.provServiciosNombre || operacionViendo.provServicios || '-'}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Costo Manifiesto</span><span>{formatoMoneda(operacionViendo.montoManifiesto)}</span></div>
+                <div className="sc-x98">
+                  <div><span className="sc-x102"># de Entry's</span><span>{mostrarDato(operacionViendo.numeroEntrys)}</span></div>
+                  <div><span className="sc-x102">Cant. Entry's</span><span>{mostrarDato(operacionViendo.cantEntrys)}</span></div>
+                  <div className="sc-x100"><hr className="sc-x101" /></div>
+                  <div><span className="sc-x102"># Manifiesto</span><span>{mostrarDato(operacionViendo.numManifiesto)}</span></div>
+                  <div><span className="sc-x102">Prov. Servicios</span><span>{operacionViendo.provServiciosNombre || operacionViendo.provServicios || '-'}</span></div>
+                  <div><span className="sc-x102">Costo Manifiesto</span><span>{formatoMoneda(operacionViendo.montoManifiesto)}</span></div>
                 </div>
               )}
               {pestañaDetalleActiva === 'unidad' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Prov. Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span></div>
-                  <div style={{ gridColumn: 'span 3', backgroundColor: '#161b22', padding: '20px', borderRadius: '12px', border: '1px solid #30363d' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio Proveedor</span><span>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Moneda Base</span><span>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span></div>
+                <div className="sc-x98">
+                  <div className="sc-x100"><span className="sc-x102">Prov. Transporte</span><span className="sc-x107">{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span></div>
+                  <div className="sc-x108">
+                    <div className="sc-x109">
+                      <div><span className="sc-x102">Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span></div>
+                      <div><span className="sc-x102">Convenio Proveedor</span><span>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span></div>
+                      <div><span className="sc-x102">Moneda Base</span><span>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span></div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Monto (Base)</span><span>{formatoMoneda(operacionViendo.totalAPagarProv)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Costos Adicionales</span><span>{formatoMoneda(operacionViendo.cargosAdicionalesProv)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Subtotal</span><span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.subtotalProv)}</span></div>
+                    <div className="sc-x110">
+                      <div><span className="sc-x102">Monto (Base)</span><span>{formatoMoneda(operacionViendo.totalAPagarProv)}</span></div>
+                      <div><span className="sc-x102">Costos Adicionales</span><span>{formatoMoneda(operacionViendo.cargosAdicionalesProv)}</span></div>
+                      <div><span className="sc-x99">Subtotal</span><span className="sc-x111">{formatoMoneda(operacionViendo.subtotalProv)}</span></div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Dólares</span><span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.dolaresProv)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Pesos</span><span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.pesosProv)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#f85149', fontWeight: 'bold' }}>Conversión Final</span><span style={{ color: '#f85149', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.conversionProv)}</span></div>
+                    <div className="sc-x110">
+                      <div><span className="sc-x102">Dólares</span><span className="sc-x112">{formatoMoneda(operacionViendo.dolaresProv)}</span></div>
+                      <div><span className="sc-x102">Pesos</span><span className="sc-x112">{formatoMoneda(operacionViendo.pesosProv)}</span></div>
+                      <div><span className="sc-x113">Conversión Final</span><span className="sc-x114">{formatoMoneda(operacionViendo.conversionProv)}</span></div>
                     </div>
                   </div>
                   {showDetailInternalFleet && (
-                    <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                      <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0' }}>Flota Operativa (Roelca)</h4></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span></div>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Operador Asignado</span><span>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span></div>
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Sueldo Operador</span><span>{formatoMoneda(operacionViendo.sueldoOperador)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Sueldo Extra</span><span>{formatoMoneda(operacionViendo.sueldoExtra)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Sueldo Total</span><span style={{ color: '#f0f6fc', fontWeight: 'bold', backgroundColor: '#161b22', padding: '6px 10px', borderRadius: '4px', border: '1px solid #30363d' }}>{formatoMoneda(operacionViendo.sueldoTotal)}</span></div>
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Combustible</span><span>{formatoMoneda(operacionViendo.combustible)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Combustible Extra</span><span>{formatoMoneda(operacionViendo.combustibleExtra)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Total Combustible</span><span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.combustibleTotal)}</span></div>
+                    <div className="sc-x115">
+                      <div className="sc-x100"><h4 className="sc-x116">Flota Operativa (Roelca)</h4></div>
+                      <div><span className="sc-x102">Unidad Asignada</span><span>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span></div>
+                      <div className="sc-x106"><span className="sc-x102">Operador Asignado</span><span>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span></div>
+                      <div className="sc-x100"><hr className="sc-x117" /></div>
+                      <div><span className="sc-x102">Sueldo Operador</span><span>{formatoMoneda(operacionViendo.sueldoOperador)}</span></div>
+                      <div><span className="sc-x102">Sueldo Extra</span><span>{formatoMoneda(operacionViendo.sueldoExtra)}</span></div>
+                      <div><span className="sc-x99">Sueldo Total</span><span className="sc-x118">{formatoMoneda(operacionViendo.sueldoTotal)}</span></div>
+                      <div className="sc-x100"><hr className="sc-x117" /></div>
+                      <div><span className="sc-x102">Combustible</span><span>{formatoMoneda(operacionViendo.combustible)}</span></div>
+                      <div><span className="sc-x102">Combustible Extra</span><span>{formatoMoneda(operacionViendo.combustibleExtra)}</span></div>
+                      <div><span className="sc-x99">Total Combustible</span><span className="sc-x111">{formatoMoneda(operacionViendo.combustibleTotal)}</span></div>
                     </div>
                   )}
                   {showDetailExternalFleet && (
-                    <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                      <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#58a6ff', margin: '0' }}>Flota Externa (Proveedor)</h4></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Unidad Externa</span><span>{mostrarDato(operacionViendo.unidadProveedor)}</span></div>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold' }}>Operador Externo</span><span>{mostrarDato(operacionViendo.operadorProveedor)}</span></div>
+                    <div className="sc-x115">
+                      <div className="sc-x100"><h4 className="sc-x119">Flota Externa (Proveedor)</h4></div>
+                      <div><span className="sc-x103">Unidad Externa</span><span>{mostrarDato(operacionViendo.unidadProveedor)}</span></div>
+                      <div className="sc-x106"><span className="sc-x103">Operador Externo</span><span>{mostrarDato(operacionViendo.operadorProveedor)}</span></div>
                     </div>
                   )}
                   {/* ✅ Observaciones ARRIBA del bloque de gastos (a petición) */}
-                  <div style={{ gridColumn: 'span 3', marginTop: '24px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Observaciones (Unidad / Proveedor)</span>
-                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>{mostrarDato(operacionViendo.observacionesUnidad)}</div>
+                  <div className="sc-x120">
+                    <span className="sc-x102">Observaciones (Unidad / Proveedor)</span>
+                    <div className="sc-x121">{mostrarDato(operacionViendo.observacionesUnidad)}</div>
                   </div>
-                  <div style={{ gridColumn: 'span 3', marginTop: '20px', backgroundColor: '#0d1117', border: '1px solid #f85149', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-                    <div style={{ color: '#8b949e', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px' }}>Total Gastos [Sueldos + Manifiesto]</div>
-                    <div style={{ color: '#f85149', fontSize: '2rem', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.totalGastos)}</div>
+                  <div className="sc-x122">
+                    <div className="sc-x123">Total Gastos [Sueldos + Manifiesto]</div>
+                    <div className="sc-x124">{formatoMoneda(operacionViendo.totalGastos)}</div>
                   </div>
                 </div>
               )}
               {pestañaDetalleActiva === 'cobrar' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnCobrar)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Moneda Convenio</span><span>{mostrarMoneda(operacionViendo.monedaConvenioCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Convenio (Base)</span><span>{formatoMoneda(operacionViendo.montoConvenioCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Cargos Adicionales</span><span>{formatoMoneda(operacionViendo.cargosAdicionales)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Subtotal</span><span style={{ color: '#c9d1d9', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.subtotalCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Tipo de Cambio del Día</span><span>{mostrarDato(operacionViendo.tipoCambioAprobado)}</span></div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Dólares (Cliente)</span><span style={{ color: '#10b981', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.dolaresCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Pesos (Cliente)</span><span style={{ color: '#3b82f6', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.pesosCliente)}</span></div>
-                  <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold' }}>Conversión Final</span><span style={{ color: '#D84315', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.conversionCliente)}</span></div>
-                  <div style={{ gridColumn: 'span 3', marginTop: '24px', backgroundColor: '#0d1117', border: '1px solid #10b981', padding: '24px', borderRadius: '12px', textAlign: 'center' }}>
-                    <span style={{ display: 'block', fontSize: '0.9rem', color: '#8b949e', textTransform: 'uppercase' }}>Utilidad Estimada de la Operación</span>
-                    <span style={{ fontSize: '2.5rem', color: '#10b981', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.utilidadEstimada)}</span>
+                <div className="sc-x98">
+                  <div><span className="sc-x102">Facturado En:</span><span>{mostrarMoneda(operacionViendo.facturadoEnCobrar)}</span></div>
+                  <div><span className="sc-x102">Moneda Convenio</span><span>{mostrarMoneda(operacionViendo.monedaConvenioCliente)}</span></div>
+                  <div><span className="sc-x102">Convenio (Base)</span><span>{formatoMoneda(operacionViendo.montoConvenioCliente)}</span></div>
+                  <div><span className="sc-x102">Cargos Adicionales</span><span>{formatoMoneda(operacionViendo.cargosAdicionales)}</span></div>
+                  <div><span className="sc-x99">Subtotal</span><span className="sc-x125">{formatoMoneda(operacionViendo.subtotalCliente)}</span></div>
+                  <div><span className="sc-x102">Tipo de Cambio del Día</span><span>{mostrarDato(operacionViendo.tipoCambioAprobado)}</span></div>
+                  <div className="sc-x100"><hr className="sc-x101" /></div>
+                  <div><span className="sc-x102">Dólares (Cliente)</span><span className="sc-x126">{formatoMoneda(operacionViendo.dolaresCliente)}</span></div>
+                  <div><span className="sc-x102">Pesos (Cliente)</span><span className="sc-x112">{formatoMoneda(operacionViendo.pesosCliente)}</span></div>
+                  <div><span className="sc-x99">Conversión Final</span><span className="sc-x127">{formatoMoneda(operacionViendo.conversionCliente)}</span></div>
+                  <div className="sc-x128">
+                    <span className="sc-x129">Utilidad Estimada de la Operación</span>
+                    <span className="sc-x130">{formatoMoneda(operacionViendo.utilidadEstimada)}</span>
                   </div>
-                  <div style={{ gridColumn: 'span 3', marginTop: '24px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold' }}>Observaciones (Cobro)</span>
-                    <div style={{ color: '#c9d1d9', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>{mostrarDato(operacionViendo.observacionesCobrar)}</div>
+                  <div className="sc-x120">
+                    <span className="sc-x102">Observaciones (Cobro)</span>
+                    <div className="sc-x131">{mostrarDato(operacionViendo.observacionesCobrar)}</div>
                   </div>
                 </div>
               )}
 
               {/* ✅ Auditoría de la referencia: botón que abre el detalle en un modal */}
-              <div style={{ margin: '24px 24px 12px', display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición"
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
+              <div className="sc-x132">
+                <button className="sc-x133" onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición">
                   🕓 Ver auditoría
-                  <span style={{ backgroundColor: '#f59e0b', color: '#0d1117', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem', fontWeight: 'bold' }}>{(operacionViendo.historialEdiciones || []).length}</span>
+                  <span className="sc-x134">{(operacionViendo.historialEdiciones || []).length}</span>
                 </button>
               </div>
 
               {/* ✅ Modal de auditoría (solo lectura) */}
               {mostrarAuditoria && (
-                <div onClick={() => setMostrarAuditoria(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 1450, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
-                  <div onClick={(e) => e.stopPropagation()} style={{ width: '620px', maxWidth: '94%', maxHeight: '82vh', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #30363d' }}>
-                      <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>🕓 Auditoría de la referencia <span style={{ color: '#D84315', fontSize: '0.85rem', marginLeft: '8px' }}>{operacionViendo.ref || ''}</span></h3>
-                      <button onClick={() => setMostrarAuditoria(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+                <div className="sc-x135" onClick={() => setMostrarAuditoria(false)}>
+                  <div className="sc-x136" onClick={(e) => e.stopPropagation()}>
+                    <div className="sc-x137">
+                      <h3 className="sc-x138">🕓 Auditoría de la referencia <span className="sc-x139">{operacionViendo.ref || ''}</span></h3>
+                      <button className="sc-x140" onClick={() => setMostrarAuditoria(false)}>✕</button>
                     </div>
-                    <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Creación</span>
-                        <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>
-                          Creada por <b style={{ color: '#58a6ff' }}>{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
-                          {operacionViendo.creadoEn ? <> el <b style={{ color: '#c9d1d9' }}>{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
+                    <div className="sc-x141">
+                      <div className="sc-x142">
+                        <span className="sc-x143">Creación</span>
+                        <span className="sc-x144">
+                          Creada por <b className="sc-x145">{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
+                          {operacionViendo.creadoEn ? <> el <b className="sc-x34">{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ color: '#8b949e', fontSize: '0.82rem', fontWeight: 'bold' }}>EDICIONES REGISTRADAS:</span>
-                        <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{(operacionViendo.historialEdiciones || []).length}</span>
+                      <div className="sc-x8">
+                        <span className="sc-x146">EDICIONES REGISTRADAS:</span>
+                        <span className="sc-x147">{(operacionViendo.historialEdiciones || []).length}</span>
                       </div>
                       {(operacionViendo.historialEdiciones || []).slice().reverse().map((h: any, i: number) => (
-                        <details key={i} open={i === 0} style={{ border: '1px solid #21262d', borderRadius: '8px', padding: '10px 14px', backgroundColor: '#010409' }}>
-                          <summary style={{ cursor: 'pointer', color: '#8b949e', fontSize: '0.85rem' }}>
-                            <b style={{ color: '#c9d1d9' }}>{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b style={{ color: '#f59e0b' }}>{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
+                        <details className="sc-x148" key={i} open={i === 0}>
+                          <summary className="sc-x149">
+                            <b className="sc-x34">{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b className="sc-x150">{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
                           </summary>
-                          <ul style={{ margin: '10px 0 2px 18px', padding: 0, color: '#8b949e', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <ul className="sc-x151">
                             {(h.cambios || []).map((c: any, j: number) => (<li key={j}>{String(c)}</li>))}
                           </ul>
                         </details>
                       ))}
                       {(operacionViendo.historialEdiciones || []).length === 0 && (
-                        <span style={{ color: '#6e7681', fontSize: '0.85rem' }}>Sin ediciones desde su creación.</span>
+                        <span className="sc-x152">Sin ediciones desde su creación.</span>
                       )}
                     </div>
-                    <div style={{ padding: '12px 20px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end' }}>
-                      <button onClick={() => setMostrarAuditoria(false)} style={{ padding: '9px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
+                    <div className="sc-x153">
+                      <button className="sc-x154" onClick={() => setMostrarAuditoria(false)}>Cerrar</button>
                     </div>
                   </div>
                 </div>
               )}
             </div>
-            <div className="form-actions" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d' }}>
+            <div className="form-actions sc-x155">
               <button onClick={() => setOperacionViendo(null)} className="btn btn-outline">Cerrar Ficha</button>
             </div>
           </div>
@@ -1915,32 +1908,31 @@ const ServiciosCancelados = () => {
 
       {/* ✅ Visor de documentos de la operación cancelada */}
       {mostrarDocumentos && operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 2100 }}>
-          <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="modal-overlay sc-x156">
+          <div className="form-card sc-x157">
+            <div className="form-header sc-x158">
               <div>
-                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Documentos de la Operación</h2>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#8b949e' }}>
-                  Referencia: <span style={{ color: '#fb923c', fontWeight: 600 }}>{refOperacionViendo}</span>
+                <h2 className="sc-x159">Documentos de la Operación</h2>
+                <p className="sc-x160">
+                  Referencia: <span className="sc-x161">{refOperacionViendo}</span>
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <button
+              <div className="sc-x162">
+                <button className="sc-x163"
                   type="button"
                   onClick={() => setMostrarSubirDocOp(true)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                   Subir Documento
                 </button>
-                <button onClick={() => setMostrarDocumentos(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1 }} title="Cerrar">✕</button>
+                <button className="sc-x164" onClick={() => setMostrarDocumentos(false)} title="Cerrar">✕</button>
               </div>
             </div>
-            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+            <div className="sc-x165">
               <DocumentosLista coleccionOrigen="operaciones" registroId={operacionViendo.id} />
             </div>
-            <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', textAlign: 'right', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar</button>
+            <div className="sc-x166">
+              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline sc-x167">Cerrar</button>
             </div>
           </div>
         </div>
@@ -1960,22 +1952,22 @@ const ServiciosCancelados = () => {
 
       {/* ✅ Registro retroactivo de movimiento (fecha/hora personalizada) */}
       {modalHorarios === 'registrar' && (
-        <div className="modal-overlay" style={{ zIndex: 2000 }}>
-          <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '20px 24px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f0f6fc' }}>Registrar Movimiento (Fecha Personalizada)</h2>
+        <div className="modal-overlay sc-x168">
+          <div className="form-card sc-x169">
+            <div className="form-header sc-x170">
+              <h2 className="sc-x171">Registrar Movimiento (Fecha Personalizada)</h2>
               <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
             </div>
-            <div style={{ padding: '24px' }}>
-              <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
+            <div className="sc-x172">
+              <p className="sc-x173">
                 Usa este formulario solo si necesitas registrar un movimiento con una fecha y hora distinta a la actual.
               </p>
               <div className="form-group">
-                <label className="form-label" style={{ color: '#8b949e' }}>Fecha y Hora</label>
+                <label className="form-label sc-x174">Fecha y Hora</label>
                 <input type="datetime-local" className="form-control" value={nuevaFechaHora} onChange={e => setNuevaFechaHora(e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label" style={{ color: '#8b949e' }}>Estatus / Hito</label>
+                <label className="form-label sc-x174">Estatus / Hito</label>
                 <select className="form-control" value={nuevoStatus} onChange={e => setNuevoStatus(e.target.value)}>
                   <option value="">-- Selecciona un status --</option>
                   {botonesDisponibles.length > 0 ? (
@@ -1991,7 +1983,7 @@ const ServiciosCancelados = () => {
                   )}
                 </select>
               </div>
-              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary" style={{ width: '100%', marginTop: '24px', padding: '12px', borderRadius: '6px', fontWeight: 'bold' }}>
+              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary sc-x175">
                 {cargandoHorarios ? 'Actualizando...' : 'Guardar y Actualizar Operación'}
               </button>
             </div>
@@ -2000,14 +1992,14 @@ const ServiciosCancelados = () => {
       )}
 
       {modalHorarios === 'historial' && (
-        <div className="modal-overlay" style={{ zIndex: 2000 }}>
-          <div className="form-card" style={{ maxWidth: '650px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
+        <div className="modal-overlay sc-x168">
+          <div className="form-card sc-x176">
             <div className="form-header"><h2>Bitácora de Movimientos</h2><button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button></div>
-            <div style={{ padding: '24px', maxHeight: '60vh', overflowY: 'auto' }}>
+            <div className="sc-x177">
               {cargandoHorarios ? (<div>Descargando...</div>) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead><tr style={{ color: '#8b949e' }}><th style={{ textAlign: 'left' }}>Fecha y Hora</th><th style={{ textAlign: 'left' }}>Estatus</th></tr></thead>
-                  <tbody>{historialList.map((h: any) => (<tr key={h.id} style={{ borderBottom: '1px solid #21262d' }}><td style={{ padding: '12px' }}>{new Date(h.fechaHora).toLocaleString('es-MX')}</td><td style={{ padding: '12px', color: '#ef4444' }}>{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre', h.statusNombre)}</td></tr>))}</tbody>
+                <table className="sc-x178">
+                  <thead><tr className="sc-x174"><th className="sc-x179">Fecha y Hora</th><th className="sc-x179">Estatus</th></tr></thead>
+                  <tbody>{historialList.map((h: any) => (<tr className="sc-x180" key={h.id}><td className="sc-x181">{new Date(h.fechaHora).toLocaleString('es-MX')}</td><td className="sc-x182">{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre', h.statusNombre)}</td></tr>))}</tbody>
                 </table>
               )}
             </div>

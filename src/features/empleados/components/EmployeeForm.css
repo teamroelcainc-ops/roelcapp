@@ -1,0 +1,79 @@
+/* Estilos hermanos de EmployeeForm.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.ef-x1 { position: relative; width: 100%; }
+.ef-x2 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; padding: 0; list-style: none; z-index: 1000; }
+.ef-x3 { padding: 8px 12px; cursor: pointer; color: #c9d1d9; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
+.ef-x4 { padding: 8px 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
+.ef-x5 { position: absolute; opacity: 0; width: 0; height: 0; }
+.ef-x6 { color: #8b949e; }
+.ef-x7 { background-color: #21262d; border: 1px solid #30363d; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; }
+.ef-x8 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; z-index: 1000; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+.ef-x9 { display: flex; align-items: center; gap: 8px; color: #c9d1d9; cursor: pointer; font-size: 0.85rem; }
+.ef-x10 { accent-color: #D84315; }
+.ef-x11 { backdrop-filter: blur(4px); z-index: 2000; }
+.ef-x12 { max-width: 1100px; width: 95%; border-radius: 16px; border: 1px solid #444; background-color: #0d1117; display: flex; flex-direction: column; max-height: 90vh; }
+.ef-x13 { padding: 20px 24px; border-bottom: 1px solid #30363d; margin-bottom: 0; flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; }
+.ef-x14 { display: flex; align-items: center; gap: 8px; font-size: 1.25rem; margin: 0; color: #f0f6fc; }
+.ef-x15 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.ef-x16 { padding: 24px; overflow-y: auto; flex: 1; }
+.ef-x17 { color: #8b949e; margin-bottom: 24px; font-size: 0.9rem; }
+.ef-x18 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.ef-x19 { background-color: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; }
+.ef-x20 { margin: 0 0 12px 0; color: #58a6ff; font-size: 0.95rem; }
+.ef-x21 { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer; color: #c9d1d9; font-size: 0.9rem; font-weight: bold; }
+.ef-x22 { width: 16px; height: 16px; accent-color: #D84315; }
+.ef-x23 { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; border-top: 1px solid #30363d; padding-top: 12px; }
+.ef-x24 { display: flex; flex-wrap: wrap; gap: 10px; }
+.ef-x25 { padding: 16px 24px; border-top: 1px solid #30363d; flex-shrink: 0; display: flex; justify-content: flex-end; }
+.ef-x26 { padding: 10px 32px; background-color: #D84315; border: none; border-radius: 6px; color: #fff; font-weight: bold; cursor: pointer; }
+.ef-x27 { max-width: 1100px; width: 100%; border-radius: 12px; border: 1px solid #30363d; background-color: #0d1117; display: flex; flex-direction: column; max-height: 95vh; }
+.ef-x28 { padding: 20px 24px; border-bottom: none; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0; }
+.ef-x29 { font-size: 1.25rem; font-weight: 500; margin: 0; color: #f0f6fc; display: flex; align-items: center; gap: 12px; }
+.ef-x30 { display: flex; gap: 12px; align-items: center; }
+.ef-x31 { background: none; font-size: 1.2rem; cursor: pointer; }
+.ef-x32 { display: flex; border-bottom: 1px solid #30363d; padding: 0 24px; overflow-x: auto; flex-shrink: 0; }
+.ef-x33 { animation: fadeIn 0.2s ease; }
+.ef-x34 { display: flex; justify-content: space-between; align-items: center; }
+.ef-x35 { font-size: 0.85rem; color: #8b949e; display: block; margin-bottom: 4px; text-transform: uppercase; }
+.ef-x36 { color: #3fb950; font-weight: bold; font-size: 1rem; }
+.ef-x37 { color: #f85149; font-weight: bold; font-size: 1rem; }
+.ef-x38 { background-color: transparent; border: 1px solid #f85149; color: #f85149; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.ef-x39 { background-color: #2ea043; border: none; color: #fff; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.ef-x40 { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #30363d; }
+.ef-x41 { color: #f85149; }
+.ef-x42 { background-color: #010409; color: #58a6ff; font-weight: bold; border: 1px solid #3b82f6; }
+.ef-x43 { grid-column: 1 / -1; background-color: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; }
+.ef-x44 { color: #58a6ff; }
+.ef-x45 { display: flex; gap: 12px; flex-wrap: wrap; }
+.ef-x46 { flex: 1 1 300px; }
+.ef-x47 { background-color: #2ea043; color: white; display: flex; align-items: center; gap: 8px; }
+.ef-x48 { grid-column: 1 / -1; }
+.ef-x49 { border-color: #30363d; }
+.ef-x50 { color: #ff7b72; }
+.ef-x51 { grid-column: 1 / -1; margin-top: 16px; }
+.ef-x52 { min-height: 80px; resize: vertical; width: 100%; background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; }
+.ef-x53 { color: #8b949e; grid-column: 1 / -1; }
+.ef-x54 { padding: 10px 24px; border-radius: 6px; }
+.ef-x55 { background-color: #D84315; padding: 10px 24px; border-radius: 6px; border: none; font-weight: bold; }
+.ef-x56 { z-index: 2000; position: relative; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .ef-x9 { flex-wrap: wrap; }
+  .ef-x13 { flex-wrap: wrap; }
+  .ef-x14 { flex-wrap: wrap; }
+  .ef-x16 { padding: 14px 12px; }
+  .ef-x18 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .ef-x21 { flex-wrap: wrap; }
+  .ef-x25 { flex-wrap: wrap; }
+  .ef-x28 { flex-wrap: wrap; }
+  .ef-x29 { flex-wrap: wrap; }
+  .ef-x30 { flex-wrap: wrap; }
+  .ef-x32 { flex-wrap: wrap; }
+  .ef-x34 { flex-wrap: wrap; }
+  .ef-x40 { grid-template-columns: 1fr; }
+  .ef-x47 { flex-wrap: wrap; }
+}

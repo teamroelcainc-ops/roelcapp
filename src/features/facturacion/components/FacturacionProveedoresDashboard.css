@@ -1,0 +1,496 @@
+/* Estilos hermanos de FacturacionProveedoresDashboard.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.fpd-x1 { padding: 16px; white-space: nowrap; }
+.fpd-x2 { padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: bold; color: #58a6ff; border: 1px solid #58a6ff; background-color: rgba(88,166,255,0.1); font-family: monospace; }
+.fpd-x3 { color: #8b949e; font-size: 0.8rem; }
+.fpd-x4 { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 12px; font-size: 0.78rem; font-weight: bold; color: #3fb950; border: 1px solid #3fb950; background-color: rgba(63,185,80,0.12); font-family: monospace; cursor: pointer; }
+.fpd-x5 { padding: 16px; color: #58a6ff; font-weight: bold; font-family: monospace; white-space: nowrap; }
+.fpd-x6 { padding: 16px; color: #3fb950; font-weight: bold; white-space: nowrap; }
+.fpd-x7 { color: #D84315; font-weight: bold; font-family: monospace; }
+.fpd-x8 { color: #c9d1d9; }
+.fpd-x9 { color: #f0f6fc; }
+.fpd-x10 { color: #8b949e; }
+.fpd-x11 { display: flex; flex-wrap: wrap; gap: 6px; max-width: 420px; white-space: normal; }
+.fpd-x12 { background-color: #21262d; border: 1px solid #58a6ff; color: #58a6ff; padding: 3px 8px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-family: monospace; font-weight: bold; }
+.fpd-x13 { color: #58a6ff; font-weight: bold; }
+.fpd-x14 { flex: 1; min-width: 280px; position: relative; }
+.fpd-x15 { color: #10b981; font-size: 0.8rem; font-weight: bold; display: block; margin-bottom: 8px; }
+.fpd-x16 { display: flex; align-items: center; gap: 8px; padding: 10px; background-color: #161b22; border: 1px solid #10b981; border-radius: 6px; min-height: 20px; }
+.fpd-x17 { color: #10b981; font-weight: bold; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fpd-x18 { background: transparent; border: none; color: #8b949e; cursor: pointer; padding: 0 4px; font-size: 1rem; line-height: 1; }
+.fpd-x19 { position: relative; }
+.fpd-x20 { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #10b981; }
+.fpd-x21 { width: 100%; padding: 10px 10px 10px 32px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.9rem; box-sizing: border-box; }
+.fpd-x22 { position: absolute; top: 100%; left: 0; right: 0; background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px; max-height: 320px; overflow-y: auto; z-index: 100; margin-top: 4px; box-shadow: 0 6px 16px rgba(0,0,0,0.5); }
+.fpd-x23 { padding: 14px; color: #8b949e; font-size: 0.85rem; text-align: center; }
+.fpd-x24 { padding: 6px 12px; font-size: 0.7rem; color: #8b949e; border-bottom: 1px solid #21262d; background-color: #161b22; }
+.fpd-x25 { padding: 10px 12px; cursor: pointer; color: #c9d1d9; font-size: 0.88rem; border-bottom: 1px solid #21262d; transition: background-color 0.15s; }
+.fpd-x26 { font-weight: 500; }
+.fpd-x27 { color: #8b949e; font-size: 0.75rem; margin-top: 2px; }
+.fpd-x28 { padding: 24px; animation: fadeIn 0.3s ease; }
+.fpd-x29 { color: #f0f6fc; font-size: 1.5rem; margin-bottom: 24px; }
+.fpd-x30 { display: flex; border-bottom: 1px solid #30363d; margin-bottom: 24px; }
+.fpd-x31 { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+.fpd-x32 { background-color: #D84315; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; }
+.fpd-x33 { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background-color: rgba(163,113,247,0.1); border: 1px solid #a371f7; border-radius: 14px; color: #a371f7; font-size: 0.8rem; font-weight: bold; }
+.fpd-x34 { background: transparent; border: none; color: #a371f7; cursor: pointer; font-size: 0.9rem; line-height: 1; }
+.fpd-x35 { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background-color: rgba(16,185,129,0.1); border: 1px solid #10b981; border-radius: 14px; color: #10b981; font-size: 0.8rem; font-weight: bold; }
+.fpd-x36 { background: transparent; border: none; color: #10b981; cursor: pointer; font-size: 0.9rem; line-height: 1; }
+.fpd-x37 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); z-index: 1400; backdrop-filter: blur(2px); }
+.fpd-x38 { position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 92%; background-color: #0d1117; border-left: 1px solid #30363d; box-shadow: -8px 0 28px rgba(0,0,0,0.5); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; z-index: 1401; animation: fadeIn 0.15s ease; }
+.fpd-x39 { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
+.fpd-x40 { margin: 0; color: #f0f6fc; font-size: 1.05rem; }
+.fpd-x41 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.fpd-x42 { display: flex; flex-direction: column; gap: 6px; }
+.fpd-x43 { color: #8b949e; font-size: 0.8rem; font-weight: bold; }
+.fpd-x44 { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #58a6ff; }
+.fpd-x45 { width: 100%; padding: 9px 10px 9px 32px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.9rem; box-sizing: border-box; }
+.fpd-x46 { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #8b949e; cursor: pointer; font-size: 0.95rem; }
+.fpd-x47 { color: #a371f7; font-size: 0.8rem; font-weight: bold; }
+.fpd-x48 { color: #6e7681; font-size: 0.72rem; }
+.fpd-x49 { display: flex; gap: 12px; }
+.fpd-x50 { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.fpd-x51 { color: #f59e0b; font-size: 0.8rem; font-weight: bold; }
+.fpd-x52 { display: flex; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
+.fpd-x53 { display: flex; gap: 8px; }
+.fpd-x54 { color: #6e7681; font-size: 0.75rem; }
+.fpd-x55 { color: #58a6ff; font-size: 0.8rem; font-weight: bold; }
+.fpd-x56 { display: flex; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
+.fpd-x57 { margin-top: auto; display: flex; gap: 10px; border-top: 1px solid #30363d; padding-top: 14px; }
+.fpd-x58 { flex: 1; padding: 10px; background: none; color: #8b949e; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.fpd-x59 { flex: 1; padding: 10px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.fpd-x60 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px; }
+.fpd-x61 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px 20px; }
+.fpd-x62 { display: block; color: #8b949e; font-size: 0.78rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+.fpd-x63 { color: #f59e0b; font-size: 1.8rem; font-weight: bold; }
+.fpd-x64 { color: #10b981; font-size: 1.8rem; font-weight: bold; }
+.fpd-x65 { color: #58a6ff; font-size: 1.8rem; font-weight: bold; }
+.fpd-x66 { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; }
+.fpd-x67 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.fpd-x68 { display: flex; gap: 10px; flex-wrap: wrap; }
+.fpd-x69 { background-color: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.4); color: #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.85rem; }
+.fpd-x70 { background-color: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.4); color: #ff7b72; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 0.85rem; }
+.fpd-x71 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 20px; animation: fadeIn 0.3s ease; }
+.fpd-x72 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.fpd-x73 { border-right: 1px solid #30363d; }
+.fpd-x74 { display: block; color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+.fpd-x75 { color: #3fb950; font-size: 1.8rem; font-weight: bold; }
+.fpd-x76 { color: #f0f6fc; font-size: 1.1rem; font-weight: bold; }
+.fpd-x77 { color: #D84315; font-size: 1.8rem; font-weight: bold; }
+.fpd-x78 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 380px); background-color: #161b22; }
+.fpd-x79 { width: 100%; border-collapse: collapse; text-align: left; }
+.fpd-x80 { background-color: #1f2937; color: #8b949e; font-size: 0.8rem; position: sticky; top: 0; z-index: 10; }
+.fpd-x81 { padding: 16px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.fpd-x82 { padding: 16px; width: 50px; text-align: center; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.fpd-x83 { padding: 64px 24px; text-align: center; }
+.fpd-x84 { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.fpd-x85 { color: #8b949e; font-size: 0.95rem; }
+.fpd-x86 { color: #D84315; }
+.fpd-x87 { padding: 10px 20px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
+.fpd-x88 { padding: 40px; text-align: center; color: #8b949e; }
+.fpd-x89 { padding: 12px 16px; text-align: center; white-space: nowrap; }
+.fpd-x90 { display: flex; gap: 6px; justify-content: center; }
+.fpd-x91 { background-color: transparent; border: 1px solid #fb923c; color: #fb923c; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
+.fpd-x92 { background-color: transparent; border: 1px solid #f59e0b; color: #f59e0b; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
+.fpd-x93 { background-color: transparent; border: 1px solid #ef4444; color: #ef4444; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
+.fpd-x94 { background-color: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; }
+.fpd-x95 { padding: 16px; text-align: center; white-space: nowrap; }
+.fpd-x96 { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #10b981; }
+.fpd-x97 { cursor: pointer; width: 16px; height: 16px; accent-color: #ffffff; }
+.fpd-x98 { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
+.fpd-x99 { color: #8b949e; font-size: 0.85rem; }
+.fpd-x100 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+.fpd-x101 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
+.fpd-x102 { display: block; color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; }
+.fpd-x103 { color: #58a6ff; font-size: 2rem; font-weight: bold; }
+.fpd-x104 { color: #3fb950; font-size: 2rem; font-weight: bold; }
+.fpd-x105 { display: block; color: #D84315; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 6px; }
+.fpd-x106 { color: #10b981; font-size: 1.5rem; font-weight: bold; }
+.fpd-x107 { color: #3b82f6; font-size: 1.5rem; font-weight: bold; }
+.fpd-x108 { display: flex; align-items: center; gap: 8px; }
+.fpd-x109 { display: flex; gap: 10px; }
+.fpd-x110 { text-align: center; padding: 40px; color: #8b949e; }
+.fpd-x111 { border-bottom: 1px solid #21262d; }
+.fpd-x112 { display: flex; gap: 8px; justify-content: center; }
+.fpd-x113 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 6px; display: flex; }
+.fpd-x114 { background: transparent; border: 1px solid #f59e0b; border-radius: 4px; color: #f59e0b; cursor: pointer; padding: 6px; display: flex; }
+.fpd-x115 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; }
+.fpd-x116 { display: flex; justify-content: center; gap: 10px; margin-top: 20px; }
+.fpd-x117 { color: #fff; align-self: center; }
+.fpd-x118 { z-index: 2000; position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(4px); background-color: rgba(0,0,0,0.7); }
+.fpd-x119 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 720px; max-width: 95%; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.fpd-x120 { display: flex; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
+.fpd-x121 { margin: 0; color: #f0f6fc; }
+.fpd-x122 { color: #8b949e; font-size: 0.85rem; margin-bottom: 20px; }
+.fpd-x123 { color: #58a6ff; }
+.fpd-x124 { list-style: none; padding: 0; margin: 0; max-height: 60vh; overflow-y: auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.fpd-x125 { cursor: pointer; transform: scale(1.2); }
+.fpd-x126 { display: flex; justify-content: flex-end; margin-top: 24px; border-top: 1px solid #30363d; padding-top: 16px; }
+.fpd-x127 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 860px; max-width: 95%; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.fpd-x128 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
+.fpd-x129 { color: #8b949e; font-size: 0.78rem; }
+.fpd-x130 { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.fpd-x131 { flex: 1; min-width: 220px; position: relative; }
+.fpd-x132 { width: 100%; padding: 8px 8px 8px 32px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.88rem; box-sizing: border-box; }
+.fpd-x133 { color: #8b949e; font-size: 0.8rem; margin-bottom: 14px; }
+.fpd-x134 { list-style: none; padding: 0; margin: 0; max-height: 60vh; overflow-y: auto; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.fpd-x135 { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.fpd-x136 { color: #6e7681; font-size: 0.7rem; }
+.fpd-x137 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1700; padding: 20px; backdrop-filter: blur(6px); }
+.fpd-x138 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 520px; padding: 24px; }
+.fpd-x139 { display: flex; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #30363d; padding-bottom: 16px; }
+.fpd-x140 { color: #f0f6fc; margin: 0; font-size: 1.2rem; }
+.fpd-x141 { color: #8b949e; font-size: 0.82rem; margin-bottom: 16px; }
+.fpd-x142 { display: flex; flex-direction: column; gap: 14px; }
+.fpd-x143 { color: #8b949e; font-size: 0.75rem; display: block; margin-bottom: 4px; }
+.fpd-x144 { width: 100%; padding: 10px; background-color: #161b22; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box; }
+.fpd-x145 { background-color: #010409; border: 1px dashed #30363d; border-radius: 8px; padding: 12px 14px; font-size: 0.82rem; color: #8b949e; }
+.fpd-x146 { color: #3fb950; }
+.fpd-x147 { width: 100%; padding: 10px; background-color: #161b22; color: #D84315; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; font-size: 1.05rem; box-sizing: border-box; }
+.fpd-x148 { width: 100%; padding: 10px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box; }
+.fpd-x149 { display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #30363d; padding-top: 18px; margin-top: 20px; }
+.fpd-x150 { padding: 8px 24px; background: none; color: #8b949e; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; }
+.fpd-x151 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(8px); }
+.fpd-x152 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 700px; max-height: 90vh; overflow-y: auto; padding: 24px; }
+.fpd-x153 { color: #f0f6fc; margin: 0; }
+.fpd-x154 { display: flex; justify-content: space-between; align-items: center; background-color: #010409; padding: 16px; border-radius: 8px; border: 1px dashed #30363d; margin-bottom: 24px; }
+.fpd-x155 { display: block; color: #8b949e; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
+.fpd-x156 { text-align: center; border-left: 1px solid #30363d; border-right: 1px solid #30363d; padding: 0 20px; }
+.fpd-x157 { color: #10b981; font-size: 1.1rem; font-weight: bold; }
+.fpd-x158 { text-align: right; }
+.fpd-x159 { color: #58a6ff; font-size: 1.4rem; font-weight: bold; }
+.fpd-x160 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.fpd-x161 { grid-column: span 2; }
+.fpd-x162 { width: 100%; padding: 10px; background-color: #161b22; color: #D84315; border: 1px solid #30363d; border-radius: 4px; font-weight: bold; font-size: 1.1rem; }
+.fpd-x163 { width: 100%; padding: 10px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 4px; }
+.fpd-x164 { display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #30363d; padding-top: 20px; }
+.fpd-x165 { padding: 8px 24px; background-color: #238636; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.fpd-x166 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1850; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
+.fpd-x167 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 460px; overflow: hidden; }
+.fpd-x168 { padding: 18px 22px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+.fpd-x169 { margin: 0; color: #f0f6fc; font-size: 1.1rem; }
+.fpd-x170 { background: transparent; border: none; color: #8b949e; cursor: pointer; font-size: 1.3rem; line-height: 1; }
+.fpd-x171 { padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.fpd-x172 { background-color: rgba(63,185,80,0.1); border: 1px solid rgba(63,185,80,0.4); border-radius: 8px; padding: 12px 14px; color: #3fb950; font-size: 0.85rem; }
+.fpd-x173 { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; border-bottom: 1px solid #21262d; padding-bottom: 8px; }
+.fpd-x174 { color: #8b949e; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.4px; }
+.fpd-x175 { color: #f0f6fc; font-size: 0.92rem; font-weight: 600; text-align: right; }
+.fpd-x176 { padding: 14px 22px; border-top: 1px solid #30363d; text-align: right; }
+.fpd-x177 { padding: 9px 22px; background-color: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.fpd-x178 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1500; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
+.fpd-x179 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 800px; max-width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.fpd-x180 { padding: 20px 24px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+.fpd-x181 { margin: 0; color: #f0f6fc; font-size: 1.4rem; }
+.fpd-x182 { padding: 24px; }
+.fpd-x183 { display: flex; align-items: center; gap: 12px; background-color: #161b22; padding: 12px 16px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 20px; flex-wrap: wrap; }
+.fpd-x184 { color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; }
+.fpd-x185 { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.fpd-x186 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+.fpd-x187 { grid-column: span 3; display: flex; justify-content: space-between; background-color: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; align-items: center; }
+.fpd-x188 { display: block; color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; }
+.fpd-x189 { color: #D84315; font-size: 1.4rem; font-weight: bold; font-family: monospace; }
+.fpd-x190 { text-align: center; }
+.fpd-x191 { color: #c9d1d9; font-size: 1.1rem; font-weight: bold; }
+.fpd-x192 { color: #c9d1d9; font-size: 1rem; }
+.fpd-x193 { color: #3fb950; font-size: 1.2rem; font-weight: bold; }
+.fpd-x194 { grid-column: span 3; }
+.fpd-x195 { border-color: #30363d; margin: 0; }
+.fpd-x196 { grid-column: span 3; margin-top: 8px; }
+.fpd-x197 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.fpd-x198 { background-color: transparent; border: 1px solid #10b981; color: #10b981; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-size: 0.82rem; font-weight: bold; white-space: nowrap; }
+.fpd-x199 { display: flex; flex-wrap: wrap; gap: 12px; }
+.fpd-x200 { background-color: #21262d; border: 1px solid #58a6ff; padding: 8px 14px; border-radius: 8px; display: flex; flex-direction: column; gap: 4px; cursor: pointer; text-align: left; transition: all 0.15s; }
+.fpd-x201 { color: #58a6ff; font-size: 0.9rem; font-family: monospace; font-weight: bold; }
+.fpd-x202 { color: #3fb950; font-size: 0.85rem; }
+.fpd-x203 { padding: 16px 24px; display: flex; justify-content: flex-end; border-top: 1px solid #30363d; background-color: #161b22; }
+.fpd-x204 { padding: 8px 24px; border-radius: 6px; color: #c9d1d9; border: 1px solid #30363d; background: transparent; cursor: pointer; }
+.fpd-x205 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1900; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
+.fpd-x206 { width: 720px; max-width: 100%; max-height: 92vh; overflow-y: auto; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; }
+.fpd-x207 { color: #f0f6fc; font-size: 1.15rem; font-weight: bold; }
+.fpd-x208 { background: transparent; border: none; color: #8b949e; font-size: 1.4rem; cursor: pointer; }
+.fpd-x209 { padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+.fpd-x210 { color: #f59e0b; font-size: 0.85rem; }
+.fpd-x211 { color: #8b949e; font-size: 0.78rem; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; }
+.fpd-x212 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.fpd-x213 { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px; }
+.fpd-x214 { color: #8b949e; font-size: 0.72rem; text-transform: uppercase; }
+.fpd-x215 { display: flex; flex-direction: column; gap: 8px; font-size: 0.88rem; }
+.fpd-x216 { flex-shrink: 0; }
+.fpd-x217 { background-color: rgba(88,166,255,0.06); border: 1px solid rgba(88,166,255,0.3); border-radius: 8px; padding: 12px 14px; color: #8b949e; font-size: 0.8rem; }
+.fpd-x218 { padding: 16px 24px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 10px; }
+.fpd-x219 { padding: 8px 24px; border-radius: 6px; background-color: #D84315; color: #fff; border: none; cursor: pointer; font-weight: bold; }
+.fpd-x220 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1750; padding: 20px; backdrop-filter: blur(6px); }
+.fpd-x221 { display: flex; justify-content: space-between; margin-bottom: 18px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
+.fpd-x222 { color: #f0f6fc; margin: 0; font-size: 1.15rem; }
+.fpd-x223 { background-color: #010409; border: 1px dashed #30363d; border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 0.85rem; color: #8b949e; }
+.fpd-x224 { color: #58a6ff; font-family: monospace; }
+.fpd-x225 { color: #D84315; font-family: monospace; }
+.fpd-x226 { margin-bottom: 20px; }
+.fpd-x227 { color: #8b949e; font-size: 0.75rem; display: block; margin-bottom: 6px; }
+.fpd-x228 { color: #6e7681; font-size: 0.75rem; margin-top: 8px; }
+.fpd-x229 { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #30363d; padding-top: 16px; flex-wrap: wrap; }
+.fpd-x230 { padding: 8px 18px; background: none; color: #8b949e; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; }
+.fpd-x231 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 640px; max-height: 90vh; display: flex; flex-direction: column; padding: 24px; }
+.fpd-x232 { display: flex; justify-content: space-between; margin-bottom: 14px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
+.fpd-x233 { position: relative; margin-bottom: 12px; }
+.fpd-x234 { flex: 1; overflow-y: auto; border: 1px solid #30363d; border-radius: 8px; background-color: #010409; }
+.fpd-x235 { padding: 30px; text-align: center; color: #8b949e; }
+.fpd-x236 { padding: 24px; text-align: center; color: #8b949e; }
+.fpd-x237 { margin-top: 12px; }
+.fpd-x238 { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-bottom: 1px solid #21262d; }
+.fpd-x239 { min-width: 0; }
+.fpd-x240 { color: #58a6ff; font-family: monospace; font-weight: bold; font-size: 0.9rem; }
+.fpd-x241 { color: #8b949e; font-size: 0.78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fpd-x242 { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #30363d; padding-top: 14px; margin-top: 14px; }
+.fpd-x243 { color: #6e7681; font-size: 0.78rem; }
+.fpd-x244 { padding: 8px 20px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.fpd-x245 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1600; padding: 20px; backdrop-filter: blur(6px); }
+.fpd-x246 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 640px; max-height: 90vh; overflow-y: auto; padding: 24px; }
+.fpd-x247 { background-color: #010409; border: 1px dashed #30363d; border-radius: 8px; padding: 12px 14px; margin-bottom: 18px; font-size: 0.82rem; color: #8b949e; }
+.fpd-x248 { color: #f59e0b; }
+.fpd-x249 { width: 100%; padding: 10px; background-color: #161b22; color: #fff; border: 1px solid #30363d; border-radius: 6px; box-sizing: border-box; color-scheme: dark; }
+.fpd-x250 { width: 100%; padding: 10px; background-color: #161b22; color: #10b981; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; box-sizing: border-box; }
+.fpd-x251 { width: 100%; padding: 10px; background-color: #161b22; color: #3fb950; border: 1px solid #30363d; border-radius: 6px; font-weight: bold; box-sizing: border-box; }
+.fpd-x252 { display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #30363d; padding-top: 18px; }
+.fpd-x253 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 1800; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
+.fpd-x254 { width: 1100px; max-width: 100%; max-height: 94vh; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; display: flex; flex-direction: column; }
+.fpd-x255 { padding: 60px; text-align: center; color: #8b949e; }
+.fpd-x256 { padding: 16px 32px 0 32px; border-bottom: none; display: flex; flex-direction: column; gap: 8px; }
+.fpd-x257 { display: flex; justify-content: space-between; align-items: flex-start; }
+.fpd-x258 { margin: 0; color: #f0f6fc; font-size: 1.25rem; font-weight: 600; letter-spacing: -0.5px; }
+.fpd-x259 { margin-top: 8px; display: flex; align-items: center; gap: 12px; }
+.fpd-x260 { color: #D84315; font-weight: bold; font-size: 1.1rem; letter-spacing: 0.5px; }
+.fpd-x261 { background-color: rgba(16, 185, 129, 0.15); color: #10b981; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: bold; }
+.fpd-x262 { background: transparent; border: none; color: #8b949e; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; border-radius: 50%; }
+.fpd-x263 { display: flex; border-bottom: 1px solid #30363d; padding: 12px 32px 0 32px; overflow-x: auto; flex-shrink: 0; }
+.fpd-x264 { padding: 18px 32px; overflow-y: auto; flex: 1; }
+.fpd-x265 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.fpd-x266 { display: block; font-size: 0.8rem; color: #D84315; font-weight: bold; margin-bottom: 4px; }
+.fpd-x267 { color: #c9d1d9; font-weight: 500; font-size: 1.05rem; }
+.fpd-x268 { color: #30363d; margin: 0 8px; }
+.fpd-x269 { color: #10b981; font-weight: bold; }
+.fpd-x270 { border-color: #30363d; margin: 8px 0; }
+.fpd-x271 { display: block; font-size: 0.8rem; color: #8b949e; font-weight: bold; margin-bottom: 4px; }
+.fpd-x272 { display: block; font-size: 0.8rem; color: #58a6ff; font-weight: bold; margin-bottom: 4px; }
+.fpd-x273 { grid-column: 1 / -1; margin-top: 8px; }
+.fpd-x274 { color: #c9d1d9; font-weight: 500; background-color: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; min-height: 60px; }
+.fpd-x275 { color: #c9d1d9; font-weight: bold; font-size: 1.05rem; }
+.fpd-x276 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px; }
+.fpd-x277 { color: #58a6ff; font-weight: bold; font-size: 1.1rem; }
+.fpd-x278 { background-color: #161b22; padding: 20px; border-radius: 12px; border: 1px solid #30363d; margin-bottom: 24px; }
+.fpd-x279 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 16px; }
+.fpd-x280 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding-top: 16px; border-top: 1px solid #30363d; margin-bottom: 16px; }
+.fpd-x281 { color: #f0f6fc; font-weight: bold; font-size: 1.1rem; }
+.fpd-x282 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding-top: 16px; border-top: 1px solid #30363d; }
+.fpd-x283 { color: #3b82f6; font-weight: bold; font-size: 1.1rem; }
+.fpd-x284 { display: block; font-size: 0.8rem; color: #f85149; font-weight: bold; margin-bottom: 4px; }
+.fpd-x285 { color: #f85149; font-weight: bold; font-size: 1.1rem; }
+.fpd-x286 { color: #f0f6fc; margin: 0 0 8px 0; }
+.fpd-x287 { color: #f0f6fc; font-weight: bold; background-color: #161b22; padding: 6px 10px; border-radius: 4px; border: 1px solid #30363d; display: inline-block; }
+.fpd-x288 { color: #58a6ff; margin: 0 0 8px 0; }
+.fpd-x289 { margin-top: 20px; }
+.fpd-x290 { background-color: #0d1117; border: 1px solid #f85149; padding: 20px; border-radius: 8px; text-align: center; }
+.fpd-x291 { color: #8b949e; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.fpd-x292 { color: #f85149; font-size: 2rem; font-weight: bold; }
+.fpd-x293 { margin-top: 24px; }
+.fpd-x294 { display: block; font-size: 0.8rem; color: #8b949e; font-weight: bold; margin-bottom: 8px; }
+.fpd-x295 { color: #c9d1d9; font-weight: 500; background-color: #010409; padding: 16px; border-radius: 8px; border: 1px solid #30363d; min-height: 60px; }
+.fpd-x296 { color: #c9d1d9; font-weight: bold; font-size: 1.1rem; }
+.fpd-x297 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding-bottom: 24px; border-bottom: 1px solid #30363d; }
+.fpd-x298 { color: #10b981; font-weight: bold; font-size: 1.1rem; }
+.fpd-x299 { color: #D84315; font-weight: bold; font-size: 1.1rem; }
+.fpd-x300 { margin-top: 24px; padding: 24px; background-color: #0d1117; border: 1px solid #10b981; border-radius: 12px; text-align: center; }
+.fpd-x301 { display: block; font-size: 0.9rem; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.fpd-x302 { font-size: 2.5rem; color: #10b981; font-weight: bold; }
+.fpd-x303 { padding: 12px 32px; display: flex; justify-content: flex-end; border-top: 1px solid #30363d; background-color: #161b22; border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; flex-shrink: 0; }
+.fpd-x304 { padding: 10px 32px; border-radius: 6px; color: #c9d1d9; border: 1px solid #30363d; background: transparent; cursor: pointer; }
+.fpd-x305 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1900; padding: 20px; backdrop-filter: blur(6px); }
+.fpd-x306 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 760px; max-height: 92vh; overflow-y: auto; padding: 24px; }
+.fpd-x307 { display: flex; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
+.fpd-x308 { color: #8b949e; font-size: 0.82rem; margin: 12px 0 20px; }
+.fpd-x309 { color: #3b82f6; }
+.fpd-x310 { color: #10b981; }
+.fpd-x311 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.fpd-x312 { border: 1px solid #3b82f6; border-radius: 10px; padding: 16px; background-color: rgba(59,130,246,0.05); }
+.fpd-x313 { color: #3b82f6; font-weight: bold; font-size: 0.9rem; margin-bottom: 12px; }
+.fpd-x314 { margin-bottom: 10px; }
+.fpd-x315 { border: 1px solid #10b981; border-radius: 10px; padding: 16px; background-color: rgba(16,185,129,0.05); }
+.fpd-x316 { color: #10b981; font-weight: bold; font-size: 0.9rem; margin-bottom: 12px; }
+.fpd-x317 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: flex-start; justify-content: center; z-index: 1850; padding: 20px; backdrop-filter: blur(6px); overflow-y: auto; }
+.fpd-x318 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 960px; margin: auto; padding: 24px; }
+.fpd-x319 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; border-bottom: 1px solid #30363d; padding-bottom: 14px; }
+.fpd-x320 { color: #8b949e; font-size: 0.8rem; margin: 10px 0 18px; }
+.fpd-x321 { color: #fb923c; }
+.fpd-x322 { margin-bottom: 16px; }
+.fpd-x323 { color: #fb923c; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; }
+.fpd-x324 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.fpd-x325 { color: #58a6ff; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; }
+.fpd-x326 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.fpd-x327 { color: #3fb950; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; }
+.fpd-x328 { overflow-x: auto; border: 1px solid #30363d; border-radius: 8px; }
+.fpd-x329 { width: 100%; border-collapse: collapse; min-width: 820px; }
+.fpd-x330 { background-color: #161b22; color: #8b949e; font-size: 0.72rem; }
+.fpd-x331 { padding: 8px; text-align: left; }
+.fpd-x332 { padding: 8px; text-align: right; }
+.fpd-x333 { padding: 8px; }
+.fpd-x334 { border-top: 1px solid #21262d; }
+.fpd-x335 { padding: 4px; }
+.fpd-x336 { padding: 4px; text-align: center; }
+.fpd-x337 { background: transparent; border: 1px solid #ef4444; color: #ef4444; border-radius: 4px; cursor: pointer; padding: 4px 8px; font-size: 0.75rem; }
+.fpd-x338 { padding: 16px; text-align: center; color: #8b949e; font-size: 0.82rem; }
+.fpd-x339 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.fpd-x340 { padding: 8px 24px; background-color: #fb923c; color: #0d1117; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.fpd-x341 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); z-index: 2600; display: flex; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(4px); }
+.fpd-x342 { width: 860px; max-width: 100%; max-height: 92vh; overflow-y: auto; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 24px; }
+.fpd-x343 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fpd-x344 { color: #fb923c; font-size: 0.82rem; font-weight: bold; font-family: monospace; }
+.fpd-x345 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.fpd-x346 { color: #f85149; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; }
+.fpd-x347 { color: #a371f7; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; }
+.fpd-x348 { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid #30363d; padding-top: 18px; }
+.fpd-x349 { padding: 8px 18px; background: none; color: #a371f7; border: 1px solid #a371f7; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.fpd-x350 { padding: 8px 24px; background-color: transparent; color: #58a6ff; border: 1px solid #58a6ff; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.fpd-x351 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.7); z-index: 2700; display: flex; justify-content: center; align-items: center; padding: 20px; }
+.fpd-x352 { background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; width: 100%; max-width: 520px; max-height: 70vh; display: flex; flex-direction: column; }
+.fpd-x353 { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #30363d; }
+.fpd-x354 { color: #f0f6fc; font-weight: bold; font-size: 1rem; }
+.fpd-x355 { color: #8b949e; font-size: 0.78rem; margin-top: 2px; }
+.fpd-x356 { color: #fb923c; font-family: monospace; }
+.fpd-x357 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.1rem; }
+.fpd-x358 { overflow-y: auto; padding: 8px 0; }
+.fpd-x359 { color: #8b949e; text-align: center; padding: 28px 16px; font-size: 0.9rem; }
+.fpd-x360 { width: 100%; border-collapse: collapse; }
+.fpd-x361 { color: #8b949e; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.fpd-x362 { text-align: left; padding: 8px 20px; }
+.fpd-x363 { text-align: left; padding: 8px 12px; }
+.fpd-x364 { text-align: left; padding: 8px 20px 8px 12px; }
+.fpd-x365 { border-top: 1px solid #21262d; color: #c9d1d9; font-size: 0.86rem; }
+.fpd-x366 { padding: 9px 20px; font-family: monospace; white-space: nowrap; }
+.fpd-x367 { padding: 9px 12px; font-family: monospace; white-space: nowrap; }
+.fpd-x368 { padding: 9px 20px 9px 12px; }
+.fpd-x369 { width: 1080px; max-width: 100%; max-height: 92vh; overflow-y: auto; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 24px; }
+.fpd-x370 { color: #10b981; font-size: 0.82rem; font-weight: bold; font-family: monospace; }
+.fpd-x371 { color: #10b981; font-size: 0.8rem; font-weight: bold; margin-bottom: 8px; }
+.fpd-x372 { width: 100%; border-collapse: collapse; min-width: 960px; }
+.fpd-x373 { padding: 8px; text-align: right; color: #f59e0b; }
+.fpd-x374 { display: flex; justify-content: flex-end; gap: 24px; padding: 10px 12px; color: #8b949e; font-size: 0.82rem; flex-wrap: wrap; }
+.fpd-x375 { padding: 8px 24px; background-color: #10b981; color: #0d1117; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .fpd-x14 { min-width: 0; }
+  .fpd-x16 { flex-wrap: wrap; }
+  .fpd-x28 { padding: 14px 12px; }
+  .fpd-x29 { font-size: 1.3rem; }
+  .fpd-x30 { flex-wrap: wrap; }
+  .fpd-x39 { flex-wrap: wrap; }
+  .fpd-x49 { flex-wrap: wrap; }
+  .fpd-x52 { flex-wrap: wrap; }
+  .fpd-x53 { flex-wrap: wrap; }
+  .fpd-x57 { flex-wrap: wrap; }
+  .fpd-x60 { grid-template-columns: 1fr; }
+  .fpd-x63 { font-size: 1.3rem; }
+  .fpd-x64 { font-size: 1.3rem; }
+  .fpd-x65 { font-size: 1.3rem; }
+  .fpd-x72 { grid-template-columns: 1fr; }
+  .fpd-x75 { font-size: 1.3rem; }
+  .fpd-x77 { font-size: 1.3rem; }
+  .fpd-x83 { padding: 14px 12px; }
+  .fpd-x88 { padding: 14px 12px; }
+  .fpd-x90 { flex-wrap: wrap; }
+  .fpd-x98 { flex-wrap: wrap; }
+  .fpd-x100 { grid-template-columns: 1fr; }
+  .fpd-x103 { font-size: 1.3rem; }
+  .fpd-x104 { font-size: 1.3rem; }
+  .fpd-x106 { font-size: 1.3rem; }
+  .fpd-x107 { font-size: 1.3rem; }
+  .fpd-x108 { flex-wrap: wrap; }
+  .fpd-x109 { flex-wrap: wrap; }
+  .fpd-x110 { padding: 14px 12px; }
+  .fpd-x112 { flex-wrap: wrap; }
+  .fpd-x113 { flex-wrap: wrap; }
+  .fpd-x114 { flex-wrap: wrap; }
+  .fpd-x115 { flex-wrap: wrap; }
+  .fpd-x116 { flex-wrap: wrap; }
+  .fpd-x118 { flex-wrap: wrap; }
+  .fpd-x119 { padding: 14px 12px; }
+  .fpd-x120 { flex-wrap: wrap; }
+  .fpd-x124 { grid-template-columns: 1fr; }
+  .fpd-x126 { flex-wrap: wrap; }
+  .fpd-x127 { padding: 14px 12px; }
+  .fpd-x128 { flex-wrap: wrap; }
+  .fpd-x134 { grid-template-columns: 1fr; }
+  .fpd-x137 { flex-wrap: wrap; }
+  .fpd-x138 { padding: 14px 12px; }
+  .fpd-x139 { flex-wrap: wrap; }
+  .fpd-x149 { flex-wrap: wrap; }
+  .fpd-x151 { flex-wrap: wrap; }
+  .fpd-x152 { padding: 14px 12px; }
+  .fpd-x154 { flex-wrap: wrap; }
+  .fpd-x160 { grid-template-columns: 1fr; }
+  .fpd-x164 { flex-wrap: wrap; }
+  .fpd-x166 { flex-wrap: wrap; }
+  .fpd-x168 { flex-wrap: wrap; }
+  .fpd-x173 { flex-wrap: wrap; }
+  .fpd-x178 { flex-wrap: wrap; }
+  .fpd-x180 { flex-wrap: wrap; }
+  .fpd-x182 { padding: 14px 12px; }
+  .fpd-x185 { flex-wrap: wrap; }
+  .fpd-x186 { grid-template-columns: 1fr; }
+  .fpd-x187 { flex-wrap: wrap; }
+  .fpd-x203 { flex-wrap: wrap; }
+  .fpd-x205 { flex-wrap: wrap; }
+  .fpd-x209 { padding: 14px 12px; }
+  .fpd-x212 { grid-template-columns: 1fr; }
+  .fpd-x218 { flex-wrap: wrap; }
+  .fpd-x220 { flex-wrap: wrap; }
+  .fpd-x221 { flex-wrap: wrap; }
+  .fpd-x231 { padding: 14px 12px; }
+  .fpd-x232 { flex-wrap: wrap; }
+  .fpd-x235 { padding: 14px 12px; }
+  .fpd-x236 { padding: 14px 12px; }
+  .fpd-x238 { flex-wrap: wrap; }
+  .fpd-x242 { flex-wrap: wrap; }
+  .fpd-x245 { flex-wrap: wrap; }
+  .fpd-x246 { padding: 14px 12px; }
+  .fpd-x252 { flex-wrap: wrap; }
+  .fpd-x253 { flex-wrap: wrap; }
+  .fpd-x255 { padding: 14px 12px; }
+  .fpd-x257 { flex-wrap: wrap; }
+  .fpd-x259 { flex-wrap: wrap; }
+  .fpd-x262 { flex-wrap: wrap; }
+  .fpd-x263 { flex-wrap: wrap; }
+  .fpd-x265 { grid-template-columns: 1fr; }
+  .fpd-x276 { grid-template-columns: 1fr; }
+  .fpd-x279 { grid-template-columns: 1fr; }
+  .fpd-x280 { grid-template-columns: 1fr; }
+  .fpd-x282 { grid-template-columns: 1fr; }
+  .fpd-x292 { font-size: 1.3rem; }
+  .fpd-x297 { grid-template-columns: 1fr; }
+  .fpd-x300 { padding: 14px 12px; }
+  .fpd-x302 { font-size: 1.3rem; }
+  .fpd-x303 { flex-wrap: wrap; }
+  .fpd-x305 { flex-wrap: wrap; }
+  .fpd-x306 { padding: 14px 12px; }
+  .fpd-x307 { flex-wrap: wrap; }
+  .fpd-x311 { grid-template-columns: 1fr; }
+  .fpd-x317 { flex-wrap: wrap; }
+  .fpd-x318 { padding: 14px 12px; }
+  .fpd-x319 { flex-wrap: wrap; }
+  .fpd-x324 { grid-template-columns: 1fr; }
+  .fpd-x326 { grid-template-columns: 1fr; }
+  .fpd-x329 { min-width: 0; }
+  .fpd-x339 { grid-template-columns: 1fr; }
+  .fpd-x341 { flex-wrap: wrap; }
+  .fpd-x342 { padding: 14px 12px; }
+  .fpd-x345 { grid-template-columns: 1fr; }
+  .fpd-x348 { flex-wrap: wrap; }
+  .fpd-x351 { flex-wrap: wrap; }
+  .fpd-x353 { flex-wrap: wrap; }
+  .fpd-x359 { padding: 14px 12px; }
+  .fpd-x369 { padding: 14px 12px; }
+  .fpd-x372 { min-width: 0; }
+}

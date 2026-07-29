@@ -5,6 +5,7 @@ import { db } from '../../../config/firebase';
 import type { DireccionRecord } from '../../../types/direccion';
 import { FormularioDireccion } from './FormularioDireccion';
 import * as XLSX from 'xlsx';
+import './DireccionesDashboard.css';
 
 // ✅ TODAS LAS COLUMNAS BASE DE LA TABLA DIRECCIONES
 const COLUMNAS_BASE = [
@@ -127,16 +128,16 @@ export const DireccionesDashboard = () => {
   // ✅ RENDERIZADOR DINÁMICO DE CELDAS (Aprovechando la data desnormalizada para 0 lecturas extra)
   const renderCellContent = (reg: DireccionRecord, colId: string) => {
     switch (colId) {
-      case 'pais': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{reg.paisNombre || reg.paisId || '-'}</span>;
-      case 'estado': return <span style={{ color: '#c9d1d9' }}>{reg.estadoNombre || reg.estadoId || '-'}</span>;
-      case 'municipio': return <span style={{ color: '#c9d1d9' }}>{reg.municipioNombre || reg.municipioId || '-'}</span>;
-      case 'colonia': return <span style={{ color: '#c9d1d9' }}>{reg.coloniaNombre || reg.coloniaId || '-'}</span>;
-      case 'cp': return <span className="font-mono" style={{ color: '#58a6ff', fontWeight: 'bold' }}>{reg.cpNombre || reg.cpId || '-'}</span>;
-      case 'calle': return <span style={{ color: '#c9d1d9' }}>{reg.calleNombre || reg.calleId || '-'}</span>;
-      case 'numExterior': return <span style={{ color: '#c9d1d9' }}>{reg.numExterior || '-'}</span>;
-      case 'numInterior': return <span style={{ color: '#c9d1d9' }}>{reg.numInterior || '-'}</span>;
-      case 'direccionCompleta': return <span style={{ color: '#c9d1d9', fontSize: '0.9rem', lineHeight: '1.4' }}>{reg.direccionCompleta || '-'}</span>;
-      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+      case 'pais': return <span className="dd-x1">{reg.paisNombre || reg.paisId || '-'}</span>;
+      case 'estado': return <span className="dd-x2">{reg.estadoNombre || reg.estadoId || '-'}</span>;
+      case 'municipio': return <span className="dd-x2">{reg.municipioNombre || reg.municipioId || '-'}</span>;
+      case 'colonia': return <span className="dd-x2">{reg.coloniaNombre || reg.coloniaId || '-'}</span>;
+      case 'cp': return <span className="font-mono dd-x3">{reg.cpNombre || reg.cpId || '-'}</span>;
+      case 'calle': return <span className="dd-x2">{reg.calleNombre || reg.calleId || '-'}</span>;
+      case 'numExterior': return <span className="dd-x2">{reg.numExterior || '-'}</span>;
+      case 'numInterior': return <span className="dd-x2">{reg.numInterior || '-'}</span>;
+      case 'direccionCompleta': return <span className="dd-x4">{reg.direccionCompleta || '-'}</span>;
+      default: return <span className="dd-x2">-</span>;
     }
   };
 
@@ -173,64 +174,61 @@ export const DireccionesDashboard = () => {
   };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container dd-x5">
       
       {/* CONTENEDOR MAESTRO */}
-      <div style={{ width: '100%', margin: '0 auto' }}>
+      <div className="dd-x6">
         
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+        <h1 className="module-title dd-x7">
           Directorio de Direcciones
         </h1>
 
         {/* BARRA DE CONTROLES */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
+        <div className="dd-x8">
           
-          <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '150px' }}>
-            <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', padding: '10px', borderRadius: '6px' }}>
+          <div className="dd-x9">
+            <select className="form-control dd-x10">
               <option>Filtro: Todo</option>
             </select>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px', flex: '2 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="dd-x11">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busqueda ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busqueda && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+              {busqueda && <span className="dd-x12">1</span>}
             </button>
             {busqueda && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="dd-x13">
                 "{busqueda}"
-                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="dd-x14" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="dd-x15">
               {busquedaHecha ? `${registrosFiltrados.length} direcciones` : 'Presiona Filtros y Buscar para ver el catálogo.'}
             </span>
           </div>
 
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '150px' }}>
+          <div className="dd-x16">
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline dd-x17" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline dd-x17" 
               title="Exportar a Excel"
-              onClick={exportarExcel} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+              onClick={exportarExcel}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button 
-              className="btn btn-primary" 
+              className="btn btn-primary dd-x18" 
               title="Agregar Dirección"
-              onClick={handleNuevoRegistro} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 16px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', cursor: 'pointer' }}
+              onClick={handleNuevoRegistro}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
@@ -238,16 +236,16 @@ export const DireccionesDashboard = () => {
         </div>
 
         {/* TABLA DINÁMICA */}
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="content-body dd-x19">
+          <div className="table-container dd-x20">
+            <table className="data-table dd-x21">
+              <thead className="dd-x22">
                 <tr>
-                  <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                  <th className="dd-x23">
                     Acciones
                   </th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                    <th className="dd-x24" key={`th_${col.id}`}>
                       {col.label}
                     </th>
                   ))}
@@ -255,16 +253,16 @@ export const DireccionesDashboard = () => {
               </thead>
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td colSpan={columnasTabla.length + 1} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="dd-x25" colSpan={columnasTabla.length + 1}>
+                    <div className="dd-x26">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las direcciones.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="dd-x27">Define tus filtros y presiona <b className="dd-x28">Buscar</b> para ver las direcciones.</span>
+                      <button className="dd-x29" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td className="dd-x30" colSpan={columnasTabla.length + 1}>
                       {busqueda ? 'No se encontraron direcciones para tu búsqueda.' : 'No hay direcciones registradas. Haz clic en el botón de agregar (+) para comenzar.'}
                     </td>
                   </tr>
@@ -277,23 +275,21 @@ export const DireccionesDashboard = () => {
                       onMouseLeave={() => setHoveredRowId(null)}
                       onClick={() => handleAbrirDetalle(reg)}
                     >
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <td className="dd-x31" onClick={(e: any) => e.stopPropagation()}>
+                        <div className="actions-cell dd-x32">
                           <button 
-                            className="btn-small btn-edit" 
+                            className="btn-small btn-edit dd-x33" 
                             title="Editar Dirección"
                             onClick={(e) => { e.stopPropagation(); handleEditarRegistro(reg); }}
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           <button 
-                            className="btn-small btn-danger" 
+                            className="btn-small btn-danger dd-x34" 
                             title="Eliminar Dirección"
                             onClick={(e) => handleEliminar(e, reg.id!)}
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -302,7 +298,7 @@ export const DireccionesDashboard = () => {
                         </div>
                       </td>
                       {columnasTabla.filter(c => c.visible).map(col => (
-                        <td key={`cell_${reg.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                        <td className="dd-x35" key={`cell_${reg.id}_${col.id}`}>
                           {renderCellContent(reg, col.id)}
                         </td>
                       ))}
@@ -315,11 +311,11 @@ export const DireccionesDashboard = () => {
 
           {/* CONTROLES DE PAGINACIÓN */}
           {busquedaHecha && registrosFiltrados.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="dd-x36">
+              <div className="dd-x37">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="dd-x38">
                 <button 
                   onClick={irPaginaAnterior} 
                   disabled={paginaActual === 1}
@@ -328,7 +324,7 @@ export const DireccionesDashboard = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="dd-x39">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   onClick={irPaginaSiguiente} 
                   disabled={paginaActual === totalPaginas || totalPaginas === 0}
@@ -346,15 +342,15 @@ export const DireccionesDashboard = () => {
 
       {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay dd-x40">
+          <div className="dd-x41">
+            <div className="dd-x42">
+              <h3 className="dd-x43">Configurar Columnas de la Tabla</h3>
+              <button className="dd-x44" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            <p className="dd-x45">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
             
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', maxHeight: '50vh', overflowY: 'auto' }}>
+            <ul className="dd-x46">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -366,13 +362,13 @@ export const DireccionesDashboard = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <input className="dd-x47" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="dd-x48">
+              <button className="dd-x49" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -391,34 +387,34 @@ export const DireccionesDashboard = () => {
 
       {/* MODAL DE DETALLE DE LA DIRECCIÓN */}
       {modalEstado === 'detalle' && registroActual && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="form-card" style={{ maxWidth: '600px', width: '100%', borderRadius: '12px', border: '1px solid #444', backgroundColor: '#0d1117', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '1.25rem', color: '#f0f6fc', margin: 0, fontWeight: '500' }}>Detalle de la Dirección</h2>
-              <button onClick={() => setModalEstado('cerrado')} style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+        <div className="modal-overlay dd-x50">
+          <div className="form-card dd-x51">
+            <div className="form-header dd-x52">
+              <h2 className="dd-x53">Detalle de la Dirección</h2>
+              <button className="dd-x54" onClick={() => setModalEstado('cerrado')}>✕</button>
             </div>
             
-            <div style={{ padding: '24px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div><span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>País</span><div style={{ color: '#f0f6fc', fontSize: '1rem' }}>{registroActual.paisNombre || (registroActual.paisId ? `(ID: ${registroActual.paisId})` : '-')}</div></div>
-                <div><span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>Estado</span><div style={{ color: '#f0f6fc', fontSize: '1rem' }}>{registroActual.estadoNombre || (registroActual.estadoId ? `(ID: ${registroActual.estadoId})` : '-')}</div></div>
-                <div><span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>Municipio</span><div style={{ color: '#f0f6fc', fontSize: '1rem' }}>{registroActual.municipioNombre || (registroActual.municipioId ? `(ID: ${registroActual.municipioId})` : '-')}</div></div>
-                <div><span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>Colonia</span><div style={{ color: '#f0f6fc', fontSize: '1rem' }}>{registroActual.coloniaNombre || (registroActual.coloniaId ? `(ID: ${registroActual.coloniaId})` : '-')}</div></div>
-                <div><span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>Código Postal</span><div className="font-mono" style={{ color: '#58a6ff', fontSize: '1rem', fontWeight: 'bold' }}>{registroActual.cpNombre || (registroActual.cpId ? `(ID: ${registroActual.cpId})` : '-')}</div></div>
-                <div><span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>Calle</span><div style={{ color: '#f0f6fc', fontSize: '1rem' }}>{registroActual.calleNombre || (registroActual.calleId ? `(ID: ${registroActual.calleId})` : '-')}</div></div>
-                <div><span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}># Exterior</span><div style={{ color: '#f0f6fc', fontSize: '1rem' }}>{registroActual.numExterior || '-'}</div></div>
-                <div><span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '4px', fontWeight: 'bold' }}># Interior</span><div style={{ color: '#f0f6fc', fontSize: '1rem' }}>{registroActual.numInterior || '-'}</div></div>
+            <div className="dd-x55">
+              <div className="dd-x56">
+                <div><span className="dd-x57">País</span><div className="dd-x58">{registroActual.paisNombre || (registroActual.paisId ? `(ID: ${registroActual.paisId})` : '-')}</div></div>
+                <div><span className="dd-x57">Estado</span><div className="dd-x58">{registroActual.estadoNombre || (registroActual.estadoId ? `(ID: ${registroActual.estadoId})` : '-')}</div></div>
+                <div><span className="dd-x57">Municipio</span><div className="dd-x58">{registroActual.municipioNombre || (registroActual.municipioId ? `(ID: ${registroActual.municipioId})` : '-')}</div></div>
+                <div><span className="dd-x57">Colonia</span><div className="dd-x58">{registroActual.coloniaNombre || (registroActual.coloniaId ? `(ID: ${registroActual.coloniaId})` : '-')}</div></div>
+                <div><span className="dd-x57">Código Postal</span><div className="font-mono dd-x59">{registroActual.cpNombre || (registroActual.cpId ? `(ID: ${registroActual.cpId})` : '-')}</div></div>
+                <div><span className="dd-x57">Calle</span><div className="dd-x58">{registroActual.calleNombre || (registroActual.calleId ? `(ID: ${registroActual.calleId})` : '-')}</div></div>
+                <div><span className="dd-x57"># Exterior</span><div className="dd-x58">{registroActual.numExterior || '-'}</div></div>
+                <div><span className="dd-x57"># Interior</span><div className="dd-x58">{registroActual.numInterior || '-'}</div></div>
               </div>
               
-              <div style={{ marginTop: '24px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
-                <span style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', display: 'block', marginBottom: '8px', fontWeight: 'bold' }}>Dirección Completa Formateada</span>
-                <div style={{ color: '#58a6ff', fontSize: '1.1rem', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d' }}>
+              <div className="dd-x60">
+                <span className="dd-x61">Dirección Completa Formateada</span>
+                <div className="dd-x62">
                   {registroActual.direccionCompleta || '-'}
                 </div>
               </div>
 
-              <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="button" onClick={() => setModalEstado('cerrado')} style={{ backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}>Cerrar</button>
+              <div className="dd-x63">
+                <button className="dd-x64" type="button" onClick={() => setModalEstado('cerrado')}>Cerrar</button>
               </div>
             </div>
           </div>
@@ -427,32 +423,31 @@ export const DireccionesDashboard = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Direcciones) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Direcciones</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="dd-x65" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="dd-x66" onClick={(e) => e.stopPropagation()}>
+            <div className="dd-x67">
+              <h3 className="dd-x68">Filtros · Direcciones</h3>
+              <button className="dd-x44" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="País, estado, C.P. o dirección..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="dd-x69">
+              <label className="dd-x70">BÚSQUEDA</label>
+              <div className="dd-x71">
+                <svg className="dd-x72" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="dd-x73" type="text" placeholder="País, estado, C.P. o dirección..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="dd-x74" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todo el catálogo.
+            <div className="dd-x75">
+              Todos los campos son <b className="dd-x76">opcionales</b>. Presiona <b className="dd-x28">Buscar</b> para ver todo el catálogo.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="dd-x77">
+              <button className="dd-x78" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="dd-x79" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

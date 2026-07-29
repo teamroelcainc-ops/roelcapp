@@ -1,0 +1,29 @@
+/* Estilos hermanos de FormularioUnidad.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.fu-x1 { position: relative; width: 100%; }
+.fu-x2 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; padding: 0; list-style: none; z-index: 1000; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); }
+.fu-x3 { padding: 8px 12px; cursor: pointer; color: #c9d1d9; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
+.fu-x4 { padding: 8px 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
+.fu-x5 { max-width: 1000px; background-color: #0d1117; border: 1px solid #30363d; }
+.fu-x6 { border-bottom: 1px solid #30363d; }
+.fu-x7 { display: flex; align-items: center; gap: 8px; }
+.fu-x8 { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; background-color: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; }
+.fu-x9 { display: flex; align-items: center; gap: 8px; color: #f0f6fc; font-weight: bold; cursor: pointer; }
+.fu-x10 { width: 20px; height: 20px; accent-color: #3fb950; }
+.fu-x11 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+.fu-x12 { background-color: #010409; color: #c9d1d9; }
+.fu-x13 { background-color: #010409; color: #c9d1d9; font-weight: bold; }
+.fu-x14 { margin-top: 32px; border-top: 1px solid #30363d; padding-top: 20px; }
+.fu-x15 { background-color: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+.fu-x16 { background-color: #D84315; border: none; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .fu-x7 { flex-wrap: wrap; }
+  .fu-x8 { flex-wrap: wrap; }
+  .fu-x9 { flex-wrap: wrap; }
+  .fu-x11 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}

@@ -20,6 +20,7 @@ import {
 import type { ConfigModuloAut, ReglaAut, SolicitudAut } from '../autorizaciones';
 import { guardarOperacionSegura } from '../../operaciones/services/operacionesService';
 import { registrarLog } from '../../../utils/logger';
+import './AutorizacionesDashboard.css';
 
 const REGLA_VACIA: ReglaAut = { requiere: false, roles: [] };
 
@@ -268,10 +269,10 @@ export const AutorizacionesDashboard = () => {
 
   if (accesoPermitido === false) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 120px)', color: '#8b949e', textAlign: 'center' }}>
-        <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🔒</div>
-        <h2 style={{ color: '#f0f6fc', margin: 0 }}>No tienes acceso a este módulo</h2>
-        <p style={{ maxWidth: '420px' }}>Pide al administrador que asigne el módulo "Autorizaciones" a tu rol.</p>
+      <div className="ad-x1">
+        <div className="ad-x2">🔒</div>
+        <h2 className="ad-x3">No tienes acceso a este módulo</h2>
+        <p className="ad-x4">Pide al administrador que asigne el módulo "Autorizaciones" a tu rol.</p>
       </div>
     );
   }
@@ -283,9 +284,9 @@ export const AutorizacionesDashboard = () => {
     return (
       <div key={`${tipo}-${key}`} style={{ backgroundColor: '#161b22', border: `1px solid ${regla.requiere ? 'rgba(216,67,21,0.55)' : '#21262d'}`, borderRadius: '8px' }}>
         {/* Fila principal: marcar el campo es la acción primaria */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 12px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', flex: 1, minWidth: 0 }}>
-            <input type="checkbox" checked={regla.requiere} onChange={() => setRegla(modulo, tipo, key, { requiere: !regla.requiere })} style={{ width: 15, height: 15, accentColor: '#D84315', cursor: 'pointer', flexShrink: 0 }} />
+        <div className="ad-x5">
+          <label className="ad-x6">
+            <input className="ad-x7" type="checkbox" checked={regla.requiere} onChange={() => setRegla(modulo, tipo, key, { requiere: !regla.requiere })} />
             <span style={{ color: regla.requiere ? '#f0f6fc' : '#8b949e', fontSize: '0.88rem', fontWeight: regla.requiere ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
           </label>
           {regla.requiere && (
@@ -298,8 +299,8 @@ export const AutorizacionesDashboard = () => {
         </div>
         {/* Panel de roles: solo al expandir, con atajos */}
         {regla.requiere && expandida && (
-          <div style={{ borderTop: '1px dashed #30363d', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          <div className="ad-x8">
+            <div className="ad-x9">
               {/* ✅ Chip TODOS: sin roles seleccionados = aplica a todos */}
               <span style={{ ...chip(regla.roles.length === 0), borderColor: regla.roles.length === 0 ? '#3fb950' : '#30363d', color: regla.roles.length === 0 ? '#3fb950' : '#8b949e', backgroundColor: regla.roles.length === 0 ? 'rgba(63,185,80,0.15)' : 'transparent' }}
                 onClick={() => setRolesRegla(modulo, tipo, key, [])}>
@@ -309,10 +310,10 @@ export const AutorizacionesDashboard = () => {
                 <span key={rol} style={chip(regla.roles.includes(rol))} onClick={() => toggleRolRegla(modulo, tipo, key, rol)}>{rol}</span>
               ))}
             </div>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => setRolesRegla(modulo, tipo, key, [...rolesCatalogo])} style={{ padding: '4px 10px', fontSize: '0.7rem', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Seleccionar todos</button>
-              <button type="button" onClick={() => setRolesRegla(modulo, tipo, key, [])} style={{ padding: '4px 10px', fontSize: '0.7rem', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Limpiar (= todos)</button>
-              <button type="button" onClick={() => { aplicarRolesATodoElModulo(modulo, regla.roles); setReglaExpandida(''); }} title="Copia esta selección de roles a todas las acciones y campos marcados del módulo" style={{ padding: '4px 10px', fontSize: '0.7rem', backgroundColor: 'rgba(216,67,21,0.18)', color: '#fb923c', border: '1px solid #D84315', borderRadius: '6px', cursor: 'pointer', fontWeight: 700 }}>Aplicar a todo el módulo</button>
+            <div className="ad-x10">
+              <button className="ad-x11" type="button" onClick={() => setRolesRegla(modulo, tipo, key, [...rolesCatalogo])}>Seleccionar todos</button>
+              <button className="ad-x11" type="button" onClick={() => setRolesRegla(modulo, tipo, key, [])}>Limpiar (= todos)</button>
+              <button className="ad-x12" type="button" onClick={() => { aplicarRolesATodoElModulo(modulo, regla.roles); setReglaExpandida(''); }} title="Copia esta selección de roles a todas las acciones y campos marcados del módulo">Aplicar a todo el módulo</button>
             </div>
           </div>
         )}
@@ -321,10 +322,10 @@ export const AutorizacionesDashboard = () => {
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1200px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-        <h1 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.5rem' }}>🛡️ Autorizaciones</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
+    <div className="ad-x13">
+      <div className="ad-x14">
+        <h1 className="ad-x15">🛡️ Autorizaciones</h1>
+        <div className="ad-x16">
           {([
             { key: 'pendientes', label: `Pendientes${pendientes.length ? ` (${pendientes.length})` : ''}` },
             { key: 'configuracion', label: 'Configuración' },
@@ -339,7 +340,7 @@ export const AutorizacionesDashboard = () => {
 
       {/* ══ PENDIENTES ══ */}
       {pestana === 'pendientes' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="ad-x17">
           {pendientes.length === 0 && (
             <div style={{ ...card, padding: '40px', textAlign: 'center', color: '#8b949e' }}>
               ✅ No hay solicitudes pendientes de autorización.
@@ -347,22 +348,22 @@ export const AutorizacionesDashboard = () => {
           )}
           {pendientes.map(s => (
             <div key={s.id} style={{ ...card, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap', borderLeft: '4px solid #fb923c' }}>
-              <div style={{ minWidth: '260px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                  <span style={{ color: '#f0f6fc', fontWeight: 700 }}>{s.moduloLabel}</span>
+              <div className="ad-x18">
+                <div className="ad-x19">
+                  <span className="ad-x20">{s.moduloLabel}</span>
                   <span style={{ padding: '2px 10px', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 700, backgroundColor: s.accion === 'borrar' ? 'rgba(248,81,73,0.18)' : 'rgba(88,166,255,0.15)', color: s.accion === 'borrar' ? '#f85149' : '#58a6ff', border: `1px solid ${s.accion === 'borrar' ? '#f85149' : '#58a6ff'}` }}>
                     {ACCIONES.find(a => a.key === s.accion)?.label || s.accion}
                   </span>
-                  {s.referencia && <span style={{ color: '#fb923c', fontFamily: 'monospace', fontWeight: 700 }}>{s.referencia}</span>}
+                  {s.referencia && <span className="ad-x21">{s.referencia}</span>}
                 </div>
-                <div style={{ color: '#8b949e', fontSize: '0.8rem', marginTop: '4px' }}>
-                  Solicitó <b style={{ color: '#c9d1d9' }}>{s.solicitanteNombre}</b> ({(s.solicitanteRoles || []).join(', ') || 'sin rol'}) · {fmtFecha(s.creadaEn)}
+                <div className="ad-x22">
+                  Solicitó <b className="ad-x23">{s.solicitanteNombre}</b> ({(s.solicitanteRoles || []).join(', ') || 'sin rol'}) · {fmtFecha(s.creadaEn)}
                 </div>
                 {(s.motivosControl || []).length > 0 && (
-                  <div style={{ color: '#6e7681', fontSize: '0.75rem', marginTop: '4px' }}>{(s.motivosControl || []).join(' ')}</div>
+                  <div className="ad-x24">{(s.motivosControl || []).join(' ')}</div>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="ad-x16">
                 <button onClick={() => setSolicitudDetalle(s)} style={btn('#21262d')}>Ver detalle</button>
                 <button onClick={() => aprobar(s)} disabled={procesando === s.id} style={{ ...btn('#238636'), opacity: procesando === s.id ? 0.6 : 1 }}>{procesando === s.id ? 'Aplicando...' : 'Aprobar'}</button>
                 <button onClick={() => rechazar(s)} disabled={procesando === s.id} style={btn('#da3633')}>Rechazar</button>
@@ -374,11 +375,11 @@ export const AutorizacionesDashboard = () => {
 
       {/* ══ CONFIGURACIÓN ══ */}
       {pestana === 'configuracion' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div className="ad-x25">
           <div style={{ ...card, padding: '14px 18px', color: '#8b949e', fontSize: '0.85rem' }}>
-            Marca con su casilla las <b style={{ color: '#c9d1d9' }}>acciones</b> y <b style={{ color: '#c9d1d9' }}>campos</b> que requieren autorización. Por defecto cada regla aplica a <b style={{ color: '#3fb950' }}>todos los roles</b>; si quieres limitarla, pulsa la píldora de roles y elige. Con <b style={{ color: '#fb923c' }}>"Aplicar a todo el módulo"</b> copias una selección de roles a todas las reglas marcadas de un clic. Los usuarios <b style={{ color: '#fb923c' }}>Admin siempre están exentos</b>. La configuración se comparte con todos los usuarios.
+            Marca con su casilla las <b className="ad-x23">acciones</b> y <b className="ad-x23">campos</b> que requieren autorización. Por defecto cada regla aplica a <b className="ad-x26">todos los roles</b>; si quieres limitarla, pulsa la píldora de roles y elige. Con <b className="ad-x27">"Aplicar a todo el módulo"</b> copias una selección de roles a todas las reglas marcadas de un clic. Los usuarios <b className="ad-x27">Admin siempre están exentos</b>. La configuración se comparte con todos los usuarios.
           </div>
-          {cargandoConfig && <div style={{ color: '#8b949e', padding: '20px' }}>Cargando configuración...</div>}
+          {cargandoConfig && <div className="ad-x28">Cargando configuración...</div>}
           {!cargandoConfig && MODULOS_AUTORIZABLES.map(m => {
             const abierto = moduloAbierto === m.clave;
             const cfg = configs[m.clave] || { acciones: {}, campos: {} };
@@ -386,41 +387,41 @@ export const AutorizacionesDashboard = () => {
               + Object.values(cfg.campos || {}).filter((r: any) => r?.requiere).length;
             return (
               <div key={m.clave} style={card}>
-                <div onClick={() => setModuloAbierto(abierto ? '' : m.clave)} style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>{abierto ? '▼' : '▶'}</span>
-                    <span style={{ color: '#f0f6fc', fontWeight: 600 }}>{m.label}</span>
-                    {!m.integrado && <span style={{ fontSize: '0.68rem', color: '#6e7681', border: '1px solid #30363d', borderRadius: '999px', padding: '1px 8px' }}>pendiente de integrar</span>}
+                <div className="ad-x29" onClick={() => setModuloAbierto(abierto ? '' : m.clave)}>
+                  <div className="ad-x30">
+                    <span className="ad-x31">{abierto ? '▼' : '▶'}</span>
+                    <span className="ad-x32">{m.label}</span>
+                    {!m.integrado && <span className="ad-x33">pendiente de integrar</span>}
                   </div>
-                  {activas > 0 && <span style={{ fontSize: '0.72rem', color: '#fb923c', fontWeight: 700 }}>{activas} regla{activas === 1 ? '' : 's'} activa{activas === 1 ? '' : 's'}</span>}
+                  {activas > 0 && <span className="ad-x34">{activas} regla{activas === 1 ? '' : 's'} activa{activas === 1 ? '' : 's'}</span>}
                 </div>
                 {abierto && (
-                  <div style={{ borderTop: '1px solid #21262d', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div className="ad-x35">
                     <div>
-                      <div style={{ color: '#8b949e', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', marginBottom: '8px' }}>Acciones</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <div className="ad-x36">Acciones</div>
+                      <div className="ad-x37">
                         {ACCIONES.map(a => renderRegla(m.clave, 'acciones', a.key, a.label))}
                       </div>
                     </div>
                     {m.campos.length > 0 && (
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                          <div style={{ color: '#8b949e', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase' }}>Campos (al editar)</div>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                            <input type="text" value={filtroCampos} onChange={e => setFiltroCampos(e.target.value)} placeholder="Buscar campo..." style={{ padding: '5px 10px', fontSize: '0.78rem', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', width: '170px' }} />
-                            <button type="button" onClick={() => marcarTodosCampos(m.clave, true)} style={{ padding: '5px 10px', fontSize: '0.72rem', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Marcar todos</button>
-                            <button type="button" onClick={() => marcarTodosCampos(m.clave, false)} style={{ padding: '5px 10px', fontSize: '0.72rem', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Desmarcar todos</button>
+                        <div className="ad-x38">
+                          <div className="ad-x39">Campos (al editar)</div>
+                          <div className="ad-x40">
+                            <input className="ad-x41" type="text" value={filtroCampos} onChange={e => setFiltroCampos(e.target.value)} placeholder="Buscar campo..." />
+                            <button className="ad-x42" type="button" onClick={() => marcarTodosCampos(m.clave, true)}>Marcar todos</button>
+                            <button className="ad-x42" type="button" onClick={() => marcarTodosCampos(m.clave, false)}>Desmarcar todos</button>
                           </div>
                         </div>
                         {/* ✅ Cuadrícula de dos columnas: más campos visibles sin scroll */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '6px' }}>
+                        <div className="ad-x43">
                           {m.campos
                             .filter(c => !filtroCampos.trim() || c.label.toLowerCase().includes(filtroCampos.trim().toLowerCase()))
                             .map(c => renderRegla(m.clave, 'campos', c.key, c.label))}
                         </div>
                       </div>
                     )}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <div className="ad-x44">
                       <button onClick={() => guardarModulo(m.clave)} disabled={guardandoModulo === m.clave} style={btn('#D84315')}>
                         {guardandoModulo === m.clave ? 'Guardando...' : 'Guardar para todos'}
                       </button>
@@ -435,18 +436,18 @@ export const AutorizacionesDashboard = () => {
 
       {/* ══ HISTORIAL ══ */}
       {pestana === 'historial' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="ad-x45">
           {historial.length === 0 && <div style={{ ...card, padding: '30px', textAlign: 'center', color: '#8b949e' }}>Sin solicitudes resueltas todavía.</div>}
           {historial.map(s => (
             <div key={s.id} style={{ ...card, padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', borderLeft: `4px solid ${s.estado === 'aprobada' ? '#238636' : '#da3633'}` }}>
               <div>
-                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="ad-x46">
                   <span style={{ color: s.estado === 'aprobada' ? '#3fb950' : '#f85149', fontWeight: 700, fontSize: '0.8rem', textTransform: 'uppercase' }}>{s.estado}</span>
-                  <span style={{ color: '#f0f6fc', fontWeight: 600 }}>{s.moduloLabel}</span>
-                  <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>{ACCIONES.find(a => a.key === s.accion)?.label}</span>
-                  {s.referencia && <span style={{ color: '#fb923c', fontFamily: 'monospace' }}>{s.referencia}</span>}
+                  <span className="ad-x32">{s.moduloLabel}</span>
+                  <span className="ad-x47">{ACCIONES.find(a => a.key === s.accion)?.label}</span>
+                  {s.referencia && <span className="ad-x48">{s.referencia}</span>}
                 </div>
-                <div style={{ color: '#8b949e', fontSize: '0.76rem', marginTop: '2px' }}>
+                <div className="ad-x49">
                   Solicitó {s.solicitanteNombre} · {fmtFecha(s.creadaEn)} · Resolvió {s.resueltaPorNombre || '—'} · {fmtFecha(s.resueltaEn)}
                   {s.estado === 'rechazada' && s.motivoRechazo ? ` · Motivo: ${s.motivoRechazo}` : ''}
                 </div>
@@ -459,48 +460,48 @@ export const AutorizacionesDashboard = () => {
 
       {/* ══ MODAL DETALLE ══ */}
       {solicitudDetalle && (
-        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: '20px' }}>
+        <div className="ad-x50">
           <div style={{ ...card, maxWidth: '720px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>
+            <div className="ad-x51">
+              <h3 className="ad-x52">
                 {solicitudDetalle.moduloLabel} · {ACCIONES.find(a => a.key === solicitudDetalle.accion)?.label}
-                {solicitudDetalle.referencia ? <span style={{ color: '#fb923c', fontFamily: 'monospace', marginLeft: 10 }}>{solicitudDetalle.referencia}</span> : null}
+                {solicitudDetalle.referencia ? <span className="ad-x53">{solicitudDetalle.referencia}</span> : null}
               </h3>
-              <button onClick={() => setSolicitudDetalle(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="ad-x54" onClick={() => setSolicitudDetalle(null)}>✕</button>
             </div>
-            <div style={{ padding: '18px 24px', overflowY: 'auto' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.82rem', marginBottom: '12px' }}>
-                Solicitó <b style={{ color: '#c9d1d9' }}>{solicitudDetalle.solicitanteNombre}</b> ({(solicitudDetalle.solicitanteRoles || []).join(', ') || 'sin rol'}) · {fmtFecha(solicitudDetalle.creadaEn)}
+            <div className="ad-x55">
+              <div className="ad-x56">
+                Solicitó <b className="ad-x23">{solicitudDetalle.solicitanteNombre}</b> ({(solicitudDetalle.solicitanteRoles || []).join(', ') || 'sin rol'}) · {fmtFecha(solicitudDetalle.creadaEn)}
               </div>
               {(solicitudDetalle.motivosControl || []).length > 0 && (
-                <div style={{ backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '8px', padding: '10px 14px', color: '#fb923c', fontSize: '0.8rem', marginBottom: '14px' }}>
+                <div className="ad-x57">
                   {(solicitudDetalle.motivosControl || []).map((m, i) => <div key={i}>• {m}</div>)}
                 </div>
               )}
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <table className="ad-x58">
                 <thead>
-                  <tr style={{ color: '#8b949e', textAlign: 'left', borderBottom: '1px solid #30363d' }}>
-                    <th style={{ padding: '8px 10px' }}>Campo</th>
-                    <th style={{ padding: '8px 10px' }}>Anterior</th>
-                    <th style={{ padding: '8px 10px' }}>Propuesto</th>
+                  <tr className="ad-x59">
+                    <th className="ad-x60">Campo</th>
+                    <th className="ad-x60">Anterior</th>
+                    <th className="ad-x60">Propuesto</th>
                   </tr>
                 </thead>
                 <tbody>
                   {diffDeSolicitud(solicitudDetalle).map((d, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid #21262d' }}>
-                      <td style={{ padding: '7px 10px', color: '#c9d1d9', fontWeight: 600 }}>{d.campo}</td>
-                      <td style={{ padding: '7px 10px', color: '#8b949e' }}>{d.antes}</td>
-                      <td style={{ padding: '7px 10px', color: '#3fb950', fontWeight: 600 }}>{d.despues}</td>
+                    <tr className="ad-x61" key={i}>
+                      <td className="ad-x62">{d.campo}</td>
+                      <td className="ad-x63">{d.antes}</td>
+                      <td className="ad-x64">{d.despues}</td>
                     </tr>
                   ))}
                   {diffDeSolicitud(solicitudDetalle).length === 0 && (
-                    <tr><td colSpan={3} style={{ padding: '14px', color: '#8b949e', textAlign: 'center' }}>Sin cambios de campos que mostrar.</td></tr>
+                    <tr><td className="ad-x65" colSpan={3}>Sin cambios de campos que mostrar.</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
             {solicitudDetalle.estado === 'pendiente' && (
-              <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <div className="ad-x66">
                 <button onClick={() => rechazar(solicitudDetalle)} disabled={!!procesando} style={btn('#da3633')}>Rechazar</button>
                 <button onClick={() => aprobar(solicitudDetalle)} disabled={!!procesando} style={btn('#238636')}>{procesando ? 'Aplicando...' : 'Aprobar y aplicar'}</button>
               </div>

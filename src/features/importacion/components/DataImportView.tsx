@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { db } from '../../../config/firebase';
 import { collection, doc, writeBatch, getDocs, query, limit, getDoc, setDoc, arrayUnion } from 'firebase/firestore';
+import './DataImportView.css';
 
 // ── Paleta Roelca (GitHub dark + acento naranja) ──────────────────────────
 const C = {
@@ -699,7 +700,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
   // ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="fade-in" style={{ padding: '24px', maxWidth: '1180px', margin: '0 auto' }}>
+    <div className="fade-in div-x1">
       <style>{`
         .spin-import { animation: spin-import 1s linear infinite; }
         @keyframes spin-import { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -714,7 +715,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       `}</style>
 
       {/* HEADER */}
-      <header style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
+      <header className="div-x2">
         <button className="hamburger-btn" onClick={onOpenMenu}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
@@ -726,17 +727,17 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
 
       {/* ⭐ PANEL: DESCARGAR PLANTILLA EXCEL (independiente de la importación) */}
       <div style={{ ...s.card, marginBottom: '20px', borderColor: C.greenBorder }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+        <div className="div-x3">
           <FileSpreadsheet size={16} color={C.green} />
           <h2 style={{ margin: 0, fontSize: '0.95rem', color: C.text, fontWeight: 600 }}>Descargar plantilla de Excel</h2>
         </div>
         <p style={{ margin: '0 0 14px 0', color: C.textMuted, fontSize: '0.8rem', lineHeight: 1.5 }}>
           La plantilla <strong style={{ color: C.text }}>.xlsx</strong> se genera leyendo una muestra de tus documentos reales en Firestore, así incluye <strong style={{ color: C.text }}>todos los campos</strong> de esa colección. ¿Falta alguna colección en la lista? Elige <strong style={{ color: C.text }}>"Otra colección…"</strong>, escribe su nombre y pulsa <strong style={{ color: C.text }}>Agregar a la lista</strong> para que aparezca siempre.
         </p>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div style={{ flex: '1 1 280px', minWidth: '220px' }}>
+        <div className="div-x4">
+          <div className="div-x5">
             <label style={s.label}>
-              <Database size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
+              <Database className="div-x6" size={11} />
               Colección de la plantilla
             </label>
             <select
@@ -755,9 +756,9 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
 
           {/* Campo libre para cualquier otra colección de Firestore */}
           {exportCollection === '__other__' && (
-            <div style={{ flex: '1 1 260px', minWidth: '200px' }}>
+            <div className="div-x7">
               <label style={s.label}>Nombre exacto de la colección en Firestore</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="div-x8">
                 <input
                   className="di-input"
                   style={{ ...s.input, flex: 1 }}
@@ -801,7 +802,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       {/* PROGRESS BAR */}
       <div style={{ ...s.card, marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap', padding: '16px 20px' }}>
         {STEPS.map((label, idx) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '110px' }}>
+          <div className="div-x9" key={label}>
             <div style={s.stepBadge(idx === currentStepIndex, idx < currentStepIndex)}>
               {idx < currentStepIndex ? <CheckCircle size={14} color="#ffffff" /> : idx + 1}
             </div>
@@ -836,7 +837,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
               transition: 'all 0.18s'
             }}
           >
-            <Upload size={32} strokeWidth={1.5} color={isDragging ? C.accent : C.textMuted} style={{ margin: '0 auto 12px', display: 'block' }} />
+            <Upload className="div-x10" size={32} strokeWidth={1.5} color={isDragging ? C.accent : C.textMuted} />
             <div style={{ fontSize: '0.875rem', fontWeight: 600, color: C.text, marginBottom: '3px' }}>
               {isDragging ? 'Suelta el CSV aquí' : 'Haz clic para seleccionar o arrastra un archivo CSV'}
             </div>
@@ -845,11 +846,10 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
             </div>
           </div>
 
-          <input
+          <input className="div-x11"
             ref={fileInputRef}
             type="file"
             accept=".csv,text/csv"
-            style={{ display: 'none' }}
             onChange={(e) => {
               if (e.target.files && e.target.files[0]) {
                 handleFile(e.target.files[0]);
@@ -858,10 +858,10 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           />
 
           <div style={{ marginTop: '18px', padding: '14px 16px', backgroundColor: C.amberSoft, border: `1px solid ${C.amberBorder}`, borderRadius: '8px', display: 'flex', gap: '10px' }}>
-            <AlertCircle size={15} color={C.amber} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <AlertCircle className="div-x12" size={15} color={C.amber} />
             <div style={{ fontSize: '0.8rem', color: C.amberText, lineHeight: 1.55 }}>
-              <strong style={{ fontWeight: 600 }}>Cómo exportar desde Google Sheets:</strong>
-              <ol style={{ margin: '4px 0 0 16px', padding: 0 }}>
+              <strong className="div-x13">Cómo exportar desde Google Sheets:</strong>
+              <ol className="div-x14">
                 <li>Abre tu Google Sheet</li>
                 <li>Asegúrate de que la <strong>primera fila</strong> contenga los nombres de columna (p. ej. "Nombre", "RFC", "Ciudad")</li>
                 <li>Haz clic en <strong>File → Download → Comma-separated values (.csv)</strong></li>
@@ -875,11 +875,11 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       {/* ─────────── STEP 2: MAPPING ─────────── */}
       {step === 'mapping' && (
         <div style={s.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+          <div className="div-x15">
             <div>
               <h2 style={{ margin: '0 0 3px 0', fontSize: '0.95rem', color: C.text, fontWeight: 600 }}>Asigna columnas a campos de Firestore</h2>
               <p style={{ margin: 0, color: C.textMuted, fontSize: '0.775rem' }}>
-                <FileSpreadsheet size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
+                <FileSpreadsheet className="div-x6" size={13} />
                 <strong style={{ color: C.text, fontWeight: 600 }}>{csvFile?.name}</strong> · {csvData.length} filas · {csvHeaders.length} columnas
               </p>
             </div>
@@ -887,9 +887,9 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           </div>
 
           {/* SELECCIONAR COLECCIÓN */}
-          <div style={{ marginBottom: '16px' }}>
+          <div className="div-x16">
             <label style={s.label}>
-              <Database size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
+              <Database className="div-x6" size={11} />
               Colección destino en Firestore
             </label>
             <select className="di-input" style={s.select} value={selectedCollection} onChange={(e) => handleSelectCollection(e.target.value)}>
@@ -929,8 +929,8 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           {selectedCollection && (
             <div style={{ marginBottom: '14px', padding: '14px 16px', backgroundColor: C.bg, border: `1px solid ${C.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {/* Buscador */}
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '200px' }}>
+              <div className="div-x17">
+                <div className="div-x18">
                   <input
                     className="di-input"
                     style={{ ...s.input, paddingLeft: '32px' }}
@@ -938,10 +938,10 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                     value={columnSearch}
                     onChange={(e) => setColumnSearch(e.target.value)}
                   />
-                  <FileSpreadsheet size={14} color={C.textFaint} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <FileSpreadsheet className="div-x19" size={14} color={C.textFaint} />
                 </div>
                 {/* Acciones masivas */}
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                <div className="div-x20">
                   <button type="button" onClick={reAutoMap} className="di-btn-secondary" style={{ ...s.btnSecondary, padding: '7px 12px' }} title="Volver a emparejar automáticamente por nombre">
                     <RotateCcw size={13} /> Auto-mapear
                   </button>
@@ -955,7 +955,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
               </div>
 
               {/* Filtros por estado (con conteos, clickeables) */}
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <div className="div-x21">
                 {filterPill('all', 'Todas', counts.all, C.accent)}
                 {filterPill('matched', '✓ En la colección', counts.matched, C.green)}
                 {filterPill('custom', '✎ Campo nuevo', counts.custom, C.blue)}
@@ -966,15 +966,15 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
 
           {/* TABLA DE MAPEO */}
           <div style={{ border: `1px solid ${C.border}`, borderRadius: '8px', overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '680px' }}>
+            <table className="div-x22">
               <thead>
                 <tr>
                   <th style={{ ...s.th, width: '132px' }}>Estado</th>
-                  <th style={s.th}><FileSpreadsheet size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} /> Columna del CSV</th>
+                  <th style={s.th}><FileSpreadsheet className="div-x6" size={11} /> Columna del CSV</th>
                   <th style={s.th}>Ejemplo</th>
                   <th style={{ ...s.th, width: '36px' }}></th>
                   <th style={s.th}>
-                    <Database size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '5px' }} />
+                    <Database className="div-x6" size={11} />
                     {(() => {
                       const def = getCollectionDef();
                       return def ? `Campo en ${def.name}` : 'Campo destino (elige colección)';
@@ -1008,7 +1008,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                       {/* Estado */}
                       <td style={s.td}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', borderRadius: '999px', border: `1px solid ${ui.border}`, background: ui.bg, color: ui.fg, fontSize: '0.68rem', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                          <span style={{ fontSize: '0.72rem' }}>{ui.icon}</span> {ui.label}
+                          <span className="div-x23">{ui.icon}</span> {ui.label}
                         </span>
                       </td>
                       {/* Columna del CSV */}
@@ -1020,7 +1020,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                       <td style={s.td}><ArrowRight size={13} color={C.textFaint} strokeWidth={2} /></td>
                       {/* Campo destino */}
                       <td style={s.td}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div className="div-x24">
                           <select
                             className="di-input"
                             style={{ ...s.select, padding: '6px 10px', fontSize: '0.8rem', opacity: isSkipped ? 0.5 : 1 }}
@@ -1097,7 +1097,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           </div>
 
           {/* Resumen inferior + continuar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '18px', gap: '10px', flexWrap: 'wrap' }}>
+          <div className="div-x25">
             <div style={{ fontSize: '0.78rem', color: C.textMuted }}>
               Se importarán <strong style={{ color: C.text }}>{counts.matched + counts.custom}</strong> de {csvHeaders.length} columnas
               {counts.skipped > 0 && <span> · {counts.skipped} omitida(s)</span>}
@@ -1117,7 +1117,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       {/* ─────────── STEP 3: PREVIEW ─────────── */}
       {step === 'preview' && (
         <div style={s.card}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', flexWrap: 'wrap', gap: '12px' }}>
+          <div className="div-x26">
             <div>
               <h2 style={{ margin: '0 0 3px 0', fontSize: '0.95rem', color: C.text, fontWeight: 600 }}>Previsualiza antes de importar</h2>
               <p style={{ margin: 0, color: C.textMuted, fontSize: '0.775rem' }}>
@@ -1125,17 +1125,17 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
               </p>
             </div>
             <button onClick={() => setStep('mapping')} className="di-btn-secondary" style={s.btnSecondary}>
-              <ChevronDown size={13} style={{ transform: 'rotate(90deg)' }} /> Volver al mapeo
+              <ChevronDown className="div-x27" size={13} /> Volver al mapeo
             </button>
           </div>
 
-          <div style={{ display: 'grid', gap: '10px', marginBottom: '16px' }}>
+          <div className="div-x28">
             {csvData.slice(0, 5).map((row, idx) => {
               const transformed = transformRow(row);
               const docId = useExistingId && idColumn ? String(row[idColumn] || '(¡vacío!)').trim() : '(auto-generado)';
               return (
                 <div key={idx} style={{ backgroundColor: C.bg, border: `1px solid ${C.border}`, borderRadius: '8px', padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <div className="div-x29">
                     <span style={{ fontSize: '0.65rem', color: C.textFaint, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Fila {idx + 1}</span>
                     <span style={{ fontSize: '0.7rem', color: C.textMuted, backgroundColor: C.borderSoft, padding: '2px 8px', borderRadius: '4px', fontWeight: 500, fontFamily: 'ui-monospace, Menlo, Monaco, Consolas, monospace' }}>
                       ID: {docId}
@@ -1156,14 +1156,14 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
           )}
 
           <div style={{ padding: '14px 16px', backgroundColor: C.amberSoft, border: `1px solid ${C.amberBorder}`, borderRadius: '8px', marginBottom: '18px', display: 'flex', gap: '10px' }}>
-            <AlertCircle size={16} color={C.amber} style={{ flexShrink: 0, marginTop: '2px' }} />
+            <AlertCircle className="div-x12" size={16} color={C.amber} />
             <div style={{ fontSize: '0.8rem', color: C.amberText, lineHeight: 1.5 }}>
-              <strong style={{ fontWeight: 600 }}>A punto de importar {csvData.length} documentos en "{selectedCollection}"</strong>
-              <div style={{ marginTop: '3px', fontSize: '0.75rem', opacity: 0.85 }}>Esta acción no se puede deshacer desde esta vista. Verifica que el mapeo sea correcto.</div>
+              <strong className="div-x13">A punto de importar {csvData.length} documentos en "{selectedCollection}"</strong>
+              <div className="div-x30">Esta acción no se puede deshacer desde esta vista. Verifica que el mapeo sea correcto.</div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <div className="div-x31">
             <button onClick={handleReset} className="di-btn-secondary" style={s.btnSecondary}>Cancelar</button>
             <button
               onClick={handleImport}
@@ -1180,14 +1180,14 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       {/* ─────────── STEP 4: IMPORTING ─────────── */}
       {step === 'importing' && (
         <div style={s.card}>
-          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-            <Loader2 size={32} strokeWidth={1.75} className="spin-import" color={C.accent} style={{ margin: '0 auto 16px', display: 'block' }} />
+          <div className="div-x32">
+            <Loader2 size={32} strokeWidth={1.75} className="spin-import div-x33" color={C.accent} />
             <h2 style={{ margin: '0 0 4px 0', fontSize: '1rem', color: C.text, fontWeight: 600 }}>Importando datos</h2>
             <p style={{ margin: '0 0 22px 0', color: C.textMuted, fontSize: '0.8rem' }}>
               {importProgress.current} de {importProgress.total} registros procesados
             </p>
 
-            <div style={{ maxWidth: '360px', margin: '0 auto' }}>
+            <div className="div-x34">
               <div style={{ height: '6px', backgroundColor: C.borderSoft, borderRadius: '3px', overflow: 'hidden' }}>
                 <div
                   style={{
@@ -1210,7 +1210,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
       {/* ─────────── STEP 5: DONE ─────────── */}
       {step === 'done' && (
         <div style={s.card}>
-          <div style={{ textAlign: 'center', padding: '20px 16px' }}>
+          <div className="div-x35">
             <div style={{ width: '48px', height: '48px', borderRadius: '50%', backgroundColor: C.greenSoft, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
               <CheckCircle size={26} strokeWidth={2} color={C.green} />
             </div>
@@ -1227,10 +1227,10 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
                 <summary style={{ cursor: 'pointer', fontWeight: 600, color: C.redText, fontSize: '0.8rem' }}>
                   Mostrar {importProgress.errors.length} errores
                 </summary>
-                <div style={{ marginTop: '10px', maxHeight: '200px', overflowY: 'auto' }}>
+                <div className="div-x36">
                   {importProgress.errors.map((err, i) => (
                     <div key={i} style={{ fontSize: '0.75rem', color: C.redText, padding: '4px 0', borderBottom: i < importProgress.errors.length - 1 ? `1px solid ${C.redBorder}` : 'none' }}>
-                      <strong style={{ fontWeight: 600 }}>Fila {err.row}:</strong> {err.message}
+                      <strong className="div-x13">Fila {err.row}:</strong> {err.message}
                     </div>
                   ))}
                 </div>

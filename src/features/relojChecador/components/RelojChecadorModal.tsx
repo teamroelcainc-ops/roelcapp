@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, addDoc, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
+import './RelojChecadorModal.css';
 
 interface Props {
   isOpen: boolean;
@@ -209,62 +210,61 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
   const jornadaTerminada = hasSalidaTurno;
 
   return (
-    <div className="modal-overlay" style={{ backdropFilter: 'blur(6px)', zIndex: 3000 }}>
-      <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #3b82f6', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 40px rgba(0,0,0,0.8)' }}>
-        <div style={{ backgroundColor: '#161b22', padding: '24px', borderBottom: '1px solid #30363d', textAlign: 'center' }}>
-          <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>⏱️ Reloj Checador</h2>
-          <p style={{ color: '#8b949e', margin: '8px 0 0 0', fontSize: '0.9rem' }}>Registra tu asistencia del día</p>
+    <div className="modal-overlay rcm-x1">
+      <div className="form-card rcm-x2">
+        <div className="rcm-x3">
+          <h2 className="rcm-x4">⏱️ Reloj Checador</h2>
+          <p className="rcm-x5">Registra tu asistencia del día</p>
         </div>
 
         {cargandoDatos ? (
-          <div style={{ padding: '60px 40px', textAlign: 'center', color: '#8b949e' }}>
-            <div style={{ marginBottom: '16px', fontSize: '1.5rem' }}>⏳</div>
+          <div className="rcm-x6">
+            <div className="rcm-x7">⏳</div>
             Verificando credenciales de red y leyendo historial del día...
           </div>
         ) : ipValida === false ? (
-          <div style={{ padding: '40px 24px', textAlign: 'center' }}>
-            <div style={{ backgroundColor: 'rgba(218, 54, 51, 0.1)', border: '1px solid rgba(218, 54, 51, 0.4)', padding: '24px', borderRadius: '8px' }}>
-              <span style={{ fontSize: '3rem', display: 'block', marginBottom: '16px' }}>⛔</span>
-              <h3 style={{ color: '#ff4d4d', margin: '0 0 12px 0', fontSize: '1.2rem' }}>Acceso Denegado</h3>
-              <p style={{ color: '#c9d1d9', fontSize: '0.95rem', margin: 0, lineHeight: '1.5' }}>
+          <div className="rcm-x8">
+            <div className="rcm-x9">
+              <span className="rcm-x10">⛔</span>
+              <h3 className="rcm-x11">Acceso Denegado</h3>
+              <p className="rcm-x12">
                 No estás conectado a la red WiFi oficial de la oficina.<br/><br/>
-                Tu IP actual es: <strong style={{ color: '#f0f6fc' }}>{ipActualUsuario}</strong>
+                Tu IP actual es: <strong className="rcm-x13">{ipActualUsuario}</strong>
               </p>
             </div>
-            <button onClick={onClose} className="btn btn-outline" style={{ marginTop: '24px', width: '100%' }}>Cerrar</button>
+            <button onClick={onClose} className="btn btn-outline rcm-x14">Cerrar</button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} style={{ padding: '24px' }}>
+          <form className="rcm-x15" onSubmit={handleSubmit}>
             
-            <div style={{ textAlign: 'center', marginBottom: '24px', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-              <div style={{ color: '#58a6ff', fontSize: '2.5rem', fontWeight: 'bold', fontFamily: 'monospace', letterSpacing: '2px' }}>
+            <div className="rcm-x16">
+              <div className="rcm-x17">
                 {tiempoActual.toLocaleTimeString('es-MX', { hour12: false })}
               </div>
-              <div style={{ color: '#c9d1d9', fontSize: '0.9rem', marginTop: '4px', textTransform: 'uppercase' }}>
+              <div className="rcm-x18">
                 {tiempoActual.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </div>
             </div>
 
             <div className="form-group">
-              <label className="form-label" style={{ color: '#8b949e' }}>Colaborador</label>
-              <input type="text" className="form-control" value={usuario.nombre || usuario.correo} disabled style={{ backgroundColor: '#21262d', color: '#f0f6fc', fontWeight: 'bold', cursor: 'not-allowed' }} />
+              <label className="form-label rcm-x19">Colaborador</label>
+              <input type="text" className="form-control rcm-x20" value={usuario.nombre || usuario.correo} disabled />
             </div>
 
             {jornadaTerminada ? (
-              <div style={{ backgroundColor: 'rgba(46, 160, 67, 0.1)', border: '1px solid rgba(46, 160, 67, 0.4)', padding: '16px', borderRadius: '8px', textAlign: 'center', marginBottom: '24px' }}>
-                <span style={{ color: '#3fb950', fontWeight: 'bold', fontSize: '1.1rem', display: 'block', marginBottom: '8px' }}>¡Jornada Finalizada! 🎉</span>
-                <span style={{ color: '#8b949e', fontSize: '0.9rem' }}>Ya has registrado tu salida del turno por el día de hoy. ¡Buen trabajo!</span>
+              <div className="rcm-x21">
+                <span className="rcm-x22">¡Jornada Finalizada! 🎉</span>
+                <span className="rcm-x23">Ya has registrado tu salida del turno por el día de hoy. ¡Buen trabajo!</span>
               </div>
             ) : (
               <>
                 <div className="form-group">
-                  <label className="form-label" style={{ color: '#8b949e' }}>Tipo de Registro *</label>
+                  <label className="form-label rcm-x19">Tipo de Registro *</label>
                   <select 
-                    className="form-control" 
+                    className="form-control rcm-x24" 
                     value={tipoRegistro} 
                     onChange={(e) => setTipoRegistro(e.target.value)} 
-                    required 
-                    style={{ backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d' }}
+                    required
                   >
                     {opcionesDisponibles.map(opcion => (
                       <option key={opcion} value={opcion}>{opcion}</option>
@@ -273,19 +273,18 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label" style={{ color: '#8b949e' }}>Ubicación (Lat, Lng) *</label>
-                  <div style={{ display: 'flex', gap: '10px' }}>
+                  <label className="form-label rcm-x19">Ubicación (Lat, Lng) *</label>
+                  <div className="rcm-x25">
                     <input 
                       type="text" 
-                      className="form-control font-mono" 
+                      className="form-control font-mono rcm-x26" 
                       value={coordenadasVisuales} 
                       onChange={handleIngresoManualGPS} 
                       placeholder="Presiona el botón de GPS..." 
                       required 
                       readOnly={obteniendoGps}
-                      style={{ flex: 1, backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', fontSize: '0.9rem' }}
                     />
-                    <button type="button" onClick={obtenerUbicacion} disabled={obteniendoGps} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                    <button type="button" onClick={obtenerUbicacion} disabled={obteniendoGps} className="btn btn-outline rcm-x27">
                       {obteniendoGps ? 'Buscando...' : '📍 GPS'}
                     </button>
                   </div>
@@ -293,11 +292,11 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
               </>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '32px' }}>
+            <div className="rcm-x28">
               <button type="button" onClick={onClose} className="btn btn-outline">{jornadaTerminada ? 'Cerrar' : 'Cancelar'}</button>
               
               {!jornadaTerminada && (
-                <button type="submit" className="btn btn-primary" disabled={cargando || obteniendoGps || !tipoRegistro} style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '10px 24px', borderRadius: '6px', fontWeight: 'bold' }}>
+                <button type="submit" className="btn btn-primary rcm-x29" disabled={cargando || obteniendoGps || !tipoRegistro}>
                   {cargando ? 'Registrando...' : 'Confirmar Chequeo'}
                 </button>
               )}

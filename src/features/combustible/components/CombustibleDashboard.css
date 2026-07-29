@@ -1,0 +1,93 @@
+/* Estilos hermanos de CombustibleDashboard.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.cd-x1 { font-weight: 500; color: #f0f6fc; font-size: 0.95rem; white-space: nowrap; }
+.cd-x2 { color: #c9d1d9; font-size: 0.95rem; white-space: nowrap; }
+.cd-x3 { color: #10b981; font-size: 0.95rem; font-weight: bold; white-space: nowrap; }
+.cd-x4 { color: #58a6ff; font-size: 0.95rem; font-weight: bold; white-space: nowrap; }
+.cd-x5 { color: #c9d1d9; }
+.cd-x6 { padding: 24px; animation: fadeIn 0.3s ease; width: 100%; box-sizing: border-box; }
+.cd-x7 { width: 100%; margin: 0 auto; }
+.cd-x8 { font-size: 1.5rem; color: #f0f6fc; margin: 0 0 24px 0; font-weight: bold; }
+.cd-x9 { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 20px; width: 100%; }
+.cd-x10 { flex: 1 1 auto; max-width: 200px; min-width: 120px; }
+.cd-x11 { width: 100%; background-color: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 10px; border-radius: 6px; }
+.cd-x12 { display: flex; gap: 10px; flex: 2 1 auto; align-items: center; flex-wrap: wrap; }
+.cd-x13 { background-color: #D84315; color: #fff; border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; }
+.cd-x14 { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background-color: rgba(88,166,255,0.1); border: 1px solid #58a6ff; border-radius: 14px; color: #58a6ff; font-size: 0.8rem; font-weight: bold; }
+.cd-x15 { background: transparent; border: none; color: #58a6ff; cursor: pointer; font-size: 0.9rem; line-height: 1; }
+.cd-x16 { color: #8b949e; font-size: 0.82rem; }
+.cd-x17 { flex: 1 1 auto; display: flex; gap: 12px; justify-content: flex-end; min-width: 150px; }
+.cd-x18 { display: flex; align-items: center; justify-content: center; background-color: transparent; border: 1px solid #8b949e; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+.cd-x19 { white-space: nowrap; background-color: #D84315; color: #fff; border: none; padding: 8px 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.cd-x20 { display: block; width: 100%; }
+.cd-x21 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 280px); width: 100%; }
+.cd-x22 { width: 100%; min-width: 1000px; border-collapse: collapse; text-align: left; }
+.cd-x23 { background-color: #161b22; position: sticky; top: 0; z-index: 10; }
+.cd-x24 { padding: 16px; width: 120px; text-align: center; color: #8b949e; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; position: sticky; left: 0; background-color: #161b22; z-index: 12; border-right: 1px solid #30363d; border-bottom: 1px solid #30363d; }
+.cd-x25 { padding: 16px; color: #8b949e; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; white-space: nowrap; border-bottom: 1px solid #30363d; }
+.cd-x26 { padding: 64px 24px; text-align: center; }
+.cd-x27 { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.cd-x28 { color: #8b949e; font-size: 0.95rem; }
+.cd-x29 { color: #D84315; }
+.cd-x30 { padding: 10px 20px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
+.cd-x31 { text-align: center; padding: 40px; color: #8b949e; }
+.cd-x32 { padding: 16px; text-align: center; position: sticky; left: 0; background-color: inherit; z-index: 5; border-right: 1px solid #30363d; }
+.cd-x33 { display: flex; gap: 8px; justify-content: center; }
+.cd-x34 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.cd-x35 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+.cd-x36 { padding: 16px; white-space: nowrap; }
+.cd-x37 { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding: 0 8px; flex-wrap: wrap; gap: 10px; }
+.cd-x38 { color: #8b949e; font-size: 0.9rem; }
+.cd-x39 { display: flex; gap: 8px; }
+.cd-x40 { padding: 6px 12px; color: #f0f6fc; font-weight: bold; }
+.cd-x41 { z-index: 2000; position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(4px); }
+.cd-x42 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 800px; max-width: 95%; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.cd-x43 { display: flex; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
+.cd-x44 { margin: 0; color: #f0f6fc; }
+.cd-x45 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.cd-x46 { color: #8b949e; font-size: 0.85rem; margin-bottom: 24px; }
+.cd-x47 { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.cd-x48 { cursor: pointer; }
+.cd-x49 { display: flex; justify-content: flex-end; margin-top: 24px; border-top: 1px solid #30363d; padding-top: 16px; }
+.cd-x50 { background-color: #D84315; color: #fff; border: none; padding: 10px 32px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.cd-x51 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); z-index: 1400; backdrop-filter: blur(2px); }
+.cd-x52 { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 92%; background-color: #0d1117; border-left: 1px solid #30363d; box-shadow: -8px 0 28px rgba(0,0,0,0.5); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; z-index: 1401; animation: fadeIn 0.15s ease; }
+.cd-x53 { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
+.cd-x54 { margin: 0; color: #f0f6fc; font-size: 1.05rem; }
+.cd-x55 { display: flex; flex-direction: column; gap: 6px; }
+.cd-x56 { color: #58a6ff; font-size: 0.8rem; font-weight: bold; }
+.cd-x57 { position: relative; }
+.cd-x58 { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #58a6ff; }
+.cd-x59 { width: 100%; padding: 9px 10px 9px 32px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.9rem; box-sizing: border-box; }
+.cd-x60 { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #8b949e; cursor: pointer; font-size: 0.95rem; }
+.cd-x61 { color: #6e7681; font-size: 0.75rem; }
+.cd-x62 { color: #8b949e; }
+.cd-x63 { margin-top: auto; display: flex; gap: 10px; border-top: 1px solid #30363d; padding-top: 14px; }
+.cd-x64 { flex: 1; padding: 10px; background: none; color: #8b949e; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.cd-x65 { flex: 1; padding: 10px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .cd-x6 { padding: 14px 12px; }
+  .cd-x8 { font-size: 1.3rem; }
+  .cd-x17 { flex-wrap: wrap; }
+  .cd-x18 { flex-wrap: wrap; }
+  .cd-x19 { flex-wrap: wrap; }
+  .cd-x22 { min-width: 0; }
+  .cd-x26 { padding: 14px 12px; }
+  .cd-x31 { padding: 14px 12px; }
+  .cd-x33 { flex-wrap: wrap; }
+  .cd-x34 { flex-wrap: wrap; }
+  .cd-x35 { flex-wrap: wrap; }
+  .cd-x39 { flex-wrap: wrap; }
+  .cd-x41 { flex-wrap: wrap; }
+  .cd-x42 { padding: 14px 12px; }
+  .cd-x43 { flex-wrap: wrap; }
+  .cd-x47 { grid-template-columns: 1fr; }
+  .cd-x49 { flex-wrap: wrap; }
+  .cd-x53 { flex-wrap: wrap; }
+  .cd-x63 { flex-wrap: wrap; }
+}

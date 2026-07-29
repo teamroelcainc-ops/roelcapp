@@ -1,0 +1,73 @@
+/* Estilos hermanos de CostosAdicionalesDashboard.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.cad-x1 { flex: 1; min-width: 320px; background-color: #0d1117; border: 1px solid #30363d; border-radius: 10px; padding: 18px; }
+.cad-x2 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.cad-x3 { margin: 0; color: #f0f6fc; font-size: 1rem; }
+.cad-x4 { padding: 8px 14px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.82rem; }
+.cad-x5 { padding: 20px; text-align: center; color: #8b949e; }
+.cad-x6 { padding: 20px; text-align: center; color: #8b949e; font-size: 0.85rem; }
+.cad-x7 { display: flex; flex-direction: column; gap: 8px; }
+.cad-x8 { display: flex; justify-content: space-between; align-items: center; gap: 10px; background-color: #161b22; border: 1px solid #21262d; border-radius: 6px; padding: 10px 12px; }
+.cad-x9 { min-width: 0; }
+.cad-x10 { color: #c9d1d9; font-weight: bold; font-size: 0.88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cad-x11 { color: #8b949e; font-size: 0.78rem; }
+.cad-x12 { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.cad-x13 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 5px; display: flex; }
+.cad-x14 { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; padding-top: 12px; border-top: 1px dashed #30363d; }
+.cad-x15 { color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; }
+.cad-x16 { color: #f0f6fc; font-size: 1.5rem; margin-bottom: 24px; }
+.cad-x17 { margin-bottom: 16px; max-width: 460px; }
+.cad-x18 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; overflow-y: auto; max-height: calc(100vh - 260px); background-color: #161b22; }
+.cad-x19 { width: 100%; border-collapse: collapse; text-align: left; }
+.cad-x20 { background-color: #1f2937; color: #8b949e; font-size: 0.8rem; position: sticky; top: 0; z-index: 10; }
+.cad-x21 { padding: 14px 16px; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.cad-x22 { padding: 40px; text-align: center; color: #8b949e; }
+.cad-x23 { border-bottom: 1px solid #21262d; cursor: pointer; }
+.cad-x24 { padding: 14px 16px; color: #58a6ff; font-weight: bold; font-family: monospace; white-space: nowrap; }
+.cad-x25 { padding: 14px 16px; color: #c9d1d9; white-space: nowrap; }
+.cad-x26 { padding: 14px 16px; color: #c9d1d9; }
+.cad-x27 { padding: 14px 16px; text-align: right; white-space: nowrap; }
+.cad-x28 { color: #D84315; font-size: 0.82rem; font-weight: bold; }
+.cad-x29 { display: flex; justify-content: center; margin-top: 16px; }
+.cad-x30 { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; background-color: #0d1117; border: 1px solid #30363d; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; }
+.cad-x31 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.82rem; padding: 0; margin-bottom: 6px; }
+.cad-x32 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cad-x33 { color: #D84315; font-weight: bold; font-size: 1.2rem; font-family: monospace; }
+.cad-x34 { color: #c9d1d9; }
+.cad-x35 { color: #8b949e; }
+.cad-x36 { color: #8b949e; font-size: 0.9rem; }
+.cad-x37 { text-align: right; }
+.cad-x38 { display: block; color: #8b949e; font-size: 0.72rem; font-weight: bold; text-transform: uppercase; }
+.cad-x39 { display: flex; gap: 20px; flex-wrap: wrap; }
+.cad-x40 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(8px); }
+.cad-x41 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 100%; max-width: 640px; padding: 24px; }
+.cad-x42 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.cad-x43 { color: #f0f6fc; margin: 0; font-size: 1.2rem; }
+.cad-x44 { display: flex; gap: 10px; }
+.cad-x45 { padding: 8px 18px; background: none; color: #D84315; border: 1px solid #D84315; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.cad-x46 { padding: 8px 22px; background-color: #D84315; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.cad-x47 { display: flex; flex-direction: column; gap: 18px; }
+.cad-x48 { display: block; color: #8b949e; font-size: 0.72rem; margin-top: 6px; }
+.cad-x49 { position: relative; }
+.cad-x50 { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #8b949e; font-weight: bold; }
+.cad-x51 { position: fixed; inset: 0; background-color: #0a0d14; z-index: 1200; overflow-y: auto; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .cad-x1 { min-width: 0; }
+  .cad-x2 { flex-wrap: wrap; }
+  .cad-x8 { flex-wrap: wrap; }
+  .cad-x12 { flex-wrap: wrap; }
+  .cad-x13 { flex-wrap: wrap; }
+  .cad-x14 { flex-wrap: wrap; }
+  .cad-x16 { font-size: 1.3rem; }
+  .cad-x22 { padding: 14px 12px; }
+  .cad-x29 { flex-wrap: wrap; }
+  .cad-x40 { flex-wrap: wrap; }
+  .cad-x41 { padding: 14px 12px; }
+  .cad-x42 { flex-wrap: wrap; }
+  .cad-x44 { flex-wrap: wrap; }
+}

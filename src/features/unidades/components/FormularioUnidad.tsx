@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import type { UnidadRecord } from '../../../types/unidad'; // ✅ RUTA CORREGIDA
-import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal'; // ✅ Modal reutilizable de documentos
+import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import './FormularioUnidad.css'; // ✅ Modal reutilizable de documentos
 
 // ✅ Tipos de documento sugeridos para Unidades Propias.
 // Puedes editarlos libremente o, más adelante, leerlos del catálogo "Tipo de Archivo" (módulo Unidad).
@@ -47,7 +48,7 @@ const SearchableSelect: React.FC<{
   );
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div className="fu-x1">
       <input
         type="text"
         className="form-control"
@@ -70,17 +71,12 @@ const SearchableSelect: React.FC<{
       />
       
       {isOpen && (
-        <ul style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '200px', overflowY: 'auto',
-          backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px',
-          padding: '0', listStyle: 'none', zIndex: 1000, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)'
-        }}>
+        <ul className="fu-x2">
           {filteredOptions.length > 0 ? (
             filteredOptions.map(opt => (
-              <li
+              <li className="fu-x3"
                 key={opt.id}
                 onClick={() => { onChange(opt.id, opt.label); setSearchTerm(opt.label); setIsOpen(false); }}
-                style={{ padding: '8px 12px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #21262d', fontSize: '0.85rem' }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
@@ -88,7 +84,7 @@ const SearchableSelect: React.FC<{
               </li>
             ))
           ) : (
-            <li style={{ padding: '8px 12px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>No hay coincidencias</li>
+            <li className="fu-x4">No hay coincidencias</li>
           )}
         </ul>
       )}
@@ -206,10 +202,10 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
 
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
-      <div className="form-card" style={{ maxWidth: '1000px', backgroundColor: '#0d1117', border: '1px solid #30363d' }}>
-        <div className="form-header" style={{ borderBottom: '1px solid #30363d' }}>
+      <div className="form-card fu-x5">
+        <div className="form-header fu-x6">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Unidad: ${formData.unidad}` : 'Nueva Unidad Propia')}</h2>
-          <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="header-actions fu-x7">
             {/* ✅ Botón Subir Documentos (solo visible con el formulario abierto) */}
             {estado === 'abierto' && (
               <button
@@ -244,20 +240,19 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
           <form onSubmit={handleSubmit}>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f0f6fc', fontWeight: 'bold', cursor: 'pointer' }}>
-                <input 
+            <div className="fu-x8">
+              <label className="fu-x9">
+                <input className="fu-x10" 
                   type="checkbox" 
                   name="activo" 
                   checked={formData.activo} 
-                  onChange={handleCheckboxChange} 
-                  style={{ width: '20px', height: '20px', accentColor: '#3fb950' }}
+                  onChange={handleCheckboxChange}
                 />
                 Unidad Activa / Disponible
               </label>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+            <div className="fu-x11">
               
               <div className="form-group">
                 <label className="form-label">Tipo de Unidad (Remolque) *</label>
@@ -272,47 +267,47 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
 
               <div className="form-group">
                 <label className="form-label">ID Propietario</label>
-                <input type="text" name="propietarioUnidad" className="form-control" value={formData.propietarioUnidad} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="text" name="propietarioUnidad" className="form-control fu-x12" value={formData.propietarioUnidad} onChange={handleTextChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Nombre de Unidad (Ej. R001) *</label>
-                <input type="text" name="unidad" className="form-control" value={formData.unidad} onChange={handleTextChange} required style={{ backgroundColor: '#010409', color: '#c9d1d9', fontWeight: 'bold' }}/>
+                <input type="text" name="unidad" className="form-control fu-x13" value={formData.unidad} onChange={handleTextChange} required/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Placas *</label>
-                <input type="text" name="placas" className="form-control" value={formData.placas} onChange={handleTextChange} required style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="text" name="placas" className="form-control fu-x12" value={formData.placas} onChange={handleTextChange} required/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Número de Serie *</label>
-                <input type="text" name="serie" className="form-control" value={formData.serie} onChange={handleTextChange} required style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="text" name="serie" className="form-control fu-x12" value={formData.serie} onChange={handleTextChange} required/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Marca</label>
-                <input type="text" name="marca" className="form-control" value={formData.marca} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="text" name="marca" className="form-control fu-x12" value={formData.marca} onChange={handleTextChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Modelo (Año)</label>
-                <input type="text" name="modelo" className="form-control" value={formData.modelo} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="text" name="modelo" className="form-control fu-x12" value={formData.modelo} onChange={handleTextChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Color</label>
-                <input type="text" name="color" className="form-control" value={formData.color} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="text" name="color" className="form-control fu-x12" value={formData.color} onChange={handleTextChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Clase</label>
-                <input type="text" name="clase" className="form-control" value={formData.clase} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="text" name="clase" className="form-control fu-x12" value={formData.clase} onChange={handleTextChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Combustible</label>
-                <select name="combustible" className="form-control" value={formData.combustible} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}>
+                <select name="combustible" className="form-control fu-x12" value={formData.combustible} onChange={handleTextChange}>
                   <option value="">Seleccionar...</option>
                   <option value="Gasolina">Gasolina</option>
                   <option value="Diesel">Diesel</option>
@@ -321,79 +316,79 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
 
               <div className="form-group">
                 <label className="form-label">Peso Vehicular (Kg)</label>
-                <input type="number" name="pesoVehicular" className="form-control" value={formData.pesoVehicular} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" name="pesoVehicular" className="form-control fu-x12" value={formData.pesoVehicular} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Toneladas</label>
-                <input type="number" name="toneladas" className="form-control" value={formData.toneladas} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" name="toneladas" className="form-control fu-x12" value={formData.toneladas} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">No. de Ejes</label>
-                <input type="number" name="ejes" className="form-control" value={formData.ejes} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" name="ejes" className="form-control fu-x12" value={formData.ejes} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">No. de Llantas</label>
-                <input type="number" name="llantas" className="form-control" value={formData.llantas} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" name="llantas" className="form-control fu-x12" value={formData.llantas} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Alto (m)</label>
-                <input type="number" step="0.01" name="alto" className="form-control" value={formData.alto} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" step="0.01" name="alto" className="form-control fu-x12" value={formData.alto} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Ancho (m)</label>
-                <input type="number" step="0.01" name="ancho" className="form-control" value={formData.ancho} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" step="0.01" name="ancho" className="form-control fu-x12" value={formData.ancho} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Largo (m)</label>
-                <input type="number" step="0.01" name="largo" className="form-control" value={formData.largo} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" step="0.01" name="largo" className="form-control fu-x12" value={formData.largo} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Eje Direccional</label>
-                <input type="number" name="ejeDireccional" className="form-control" value={formData.ejeDireccional} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" name="ejeDireccional" className="form-control fu-x12" value={formData.ejeDireccional} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Eje Motriz</label>
-                <input type="number" name="ejeMotriz" className="form-control" value={formData.ejeMotriz} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" name="ejeMotriz" className="form-control fu-x12" value={formData.ejeMotriz} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">TAG AVC</label>
-                <input type="text" name="tagAvc" className="form-control" value={formData.tagAvc} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="text" name="tagAvc" className="form-control fu-x12" value={formData.tagAvc} onChange={handleTextChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Expedición HAZMAT</label>
-                <input type="date" name="expedicionHazmat" className="form-control" value={formData.expedicionHazmat} onChange={handleTextChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="date" name="expedicionHazmat" className="form-control fu-x12" value={formData.expedicionHazmat} onChange={handleTextChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Tanque 1 (Lts)</label>
-                <input type="number" step="0.01" name="tanqueUno" className="form-control" value={formData.tanqueUno} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" step="0.01" name="tanqueUno" className="form-control fu-x12" value={formData.tanqueUno} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Tanque 2 (Lts)</label>
-                <input type="number" step="0.01" name="tanqueDos" className="form-control" value={formData.tanqueDos} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" step="0.01" name="tanqueDos" className="form-control fu-x12" value={formData.tanqueDos} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">
                 <label className="form-label">Porcentaje Recarga (%)</label>
-                <input type="number" step="0.01" name="porcentajeRecarga" className="form-control" value={formData.porcentajeRecarga} onChange={handleNumberChange} style={{ backgroundColor: '#010409', color: '#c9d1d9' }}/>
+                <input type="number" step="0.01" name="porcentajeRecarga" className="form-control fu-x12" value={formData.porcentajeRecarga} onChange={handleNumberChange}/>
               </div>
 
             </div>
 
-            <div className="form-actions" style={{ marginTop: '32px', borderTop: '1px solid #30363d', paddingTop: '20px' }}>
-              <button type="button" onClick={onClose} className="btn btn-outline" style={{ backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d' }}>Cancelar</button>
-              <button type="submit" className="btn btn-primary" disabled={cargando} style={{ backgroundColor: '#D84315', border: 'none' }}>
+            <div className="form-actions fu-x14">
+              <button type="button" onClick={onClose} className="btn btn-outline fu-x15">Cancelar</button>
+              <button type="submit" className="btn btn-primary fu-x16" disabled={cargando}>
                 {cargando ? 'Guardando...' : (initialData ? 'Guardar Cambios' : 'Registrar Unidad')}
               </button>
             </div>

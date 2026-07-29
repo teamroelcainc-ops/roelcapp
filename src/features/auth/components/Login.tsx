@@ -6,6 +6,7 @@ import { auth, db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 // ✅ NUEVO: logo de la empresa (mismo base64 que usan los PDF) para mostrarlo en el login.
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import './Login.css';
 
 // Clave de localStorage para recordar el último correo que inició sesión en ESTA computadora.
 const LS_ULTIMO_CORREO = 'roelca_ultimo_correo';
@@ -147,64 +148,60 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   };
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', display: 'flex', backgroundColor: '#010409', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-      <div className="form-card" style={{ maxWidth: '400px', width: '100%', padding: '40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+    <div className="log-x1">
+      <div className="form-card log-x2">
         
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+        <div className="log-x3">
           {/* ✅ NUEVO: Logo de la empresa */}
-          <img
+          <img className="log-x4"
             src={LOGO_DEFAULT}
             alt="Roelca Inc."
-            style={{ maxWidth: '120px', height: 'auto', marginBottom: '16px' }}
           />
-          <p style={{ color: '#8b949e', margin: 0, fontSize: '0.9rem' }}>Ingresa tus credenciales para acceder al sistema</p>
+          <p className="log-x5">Ingresa tus credenciales para acceder al sistema</p>
         </div>
 
         {error && (
-          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#ef4444', padding: '16px', borderRadius: '6px', marginBottom: '20px', fontSize: '0.85rem', textAlign: 'center', lineHeight: '1.5', fontWeight: '500' }}>
+          <div className="log-x6">
             {error}
           </div>
         )}
 
         {mensaje && (
-          <div style={{ backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#10b981', padding: '16px', borderRadius: '6px', marginBottom: '20px', fontSize: '0.85rem', textAlign: 'center', lineHeight: '1.5', fontWeight: '500' }}>
+          <div className="log-x7">
             {mensaje}
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group" style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.85rem', marginBottom: '8px' }}>Correo Electrónico</label>
+          <div className="form-group log-x8">
+            <label className="log-x9">Correo Electrónico</label>
             <input 
               type="email" 
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="form-control" 
+              className="form-control log-x10" 
               placeholder="tu@correo.com"
-              required 
-              style={{ width: '100%', padding: '12px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px' }}
+              required
             />
           </div>
 
-          <div className="form-group" style={{ marginBottom: '8px' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.85rem', marginBottom: '8px' }}>Contraseña</label>
+          <div className="form-group log-x11">
+            <label className="log-x9">Contraseña</label>
             {/* ✅ NUEVO: campo con botón de ojo para mostrar/ocultar la contraseña */}
-            <div style={{ position: 'relative' }}>
+            <div className="log-x12">
               <input 
                 type={mostrarPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="form-control" 
+                className="form-control log-x13" 
                 placeholder="••••••••"
-                required 
-                style={{ width: '100%', padding: '12px 46px 12px 12px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
+                required
               />
-              <button
+              <button className="log-x14"
                 type="button"
                 onClick={() => setMostrarPassword((v) => !v)}
                 title={mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
                 aria-label={mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
-                style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                 onMouseEnter={(e: any) => (e.currentTarget.style.color = '#c9d1d9')}
                 onMouseLeave={(e: any) => (e.currentTarget.style.color = '#8b949e')}
               >
@@ -218,7 +215,7 @@ export const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
           </div>
 
           {/* ✅ NUEVO: "¿Olvidaste tu contraseña?" debajo del campo de contraseña */}
-          <div style={{ textAlign: 'right', marginBottom: '24px' }}>
+          <div className="log-x15">
             <button
               type="button"
               onClick={handleResetPassword}

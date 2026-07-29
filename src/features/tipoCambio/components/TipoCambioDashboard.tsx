@@ -5,6 +5,7 @@ import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { FormularioTipoCambio } from './FormularioTipoCambio';
 import * as XLSX from 'xlsx';
+import './TipoCambioDashboard.css';
 
 // ✅ TODAS LAS COLUMNAS BASE DE LA TABLA TIPO DE CAMBIO
 const COLUMNAS_BASE = [
@@ -134,9 +135,9 @@ export const TipoCambioDashboard = () => {
   };
 
   const renderTendencia = (tipo: string, texto: string) => {
-    if (tipo === 'subio') return <span><span style={{color: '#ef4444', marginRight: '6px'}}>↗</span>{texto}</span>;
-    if (tipo === 'bajo') return <span><span style={{color: '#3b82f6', marginRight: '6px'}}>↘</span>{texto}</span>;
-    return <span><span style={{color: '#8b949e', marginRight: '6px'}}>—</span>{texto}</span>;
+    if (tipo === 'subio') return <span><span className="tcd-x1">↗</span>{texto}</span>;
+    if (tipo === 'bajo') return <span><span className="tcd-x2">↘</span>{texto}</span>;
+    return <span><span className="tcd-x3">—</span>{texto}</span>;
   };
 
   // ✅ FILTRADO Y BÚSQUEDA
@@ -198,11 +199,11 @@ export const TipoCambioDashboard = () => {
   // ✅ RENDERIZADOR DINÁMICO DE CELDAS
   const renderCellContent = (registro: any, colId: string) => {
     switch (colId) {
-      case 'fecha': return <span style={{ fontWeight: '500', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{formatearFecha(registro.fecha)}</span>;
-      case 'dia': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{registro.dia || '-'}</span>;
-      case 'tcDof': return <span style={{ color: '#10b981', fontWeight: 'bold', whiteSpace: 'nowrap' }}>${registro.tcDof}</span>;
-      case 'tendencia': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{renderTendencia(registro.tipoTendencia, registro.tendencia)}</span>;
-      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+      case 'fecha': return <span className="tcd-x4">{formatearFecha(registro.fecha)}</span>;
+      case 'dia': return <span className="tcd-x5">{registro.dia || '-'}</span>;
+      case 'tcDof': return <span className="tcd-x6">${registro.tcDof}</span>;
+      case 'tendencia': return <span className="tcd-x5">{renderTendencia(registro.tipoTendencia, registro.tendencia)}</span>;
+      default: return <span className="tcd-x7">-</span>;
     }
   };
 
@@ -234,7 +235,7 @@ export const TipoCambioDashboard = () => {
   };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container tcd-x8">
       
       {estadoFormulario !== 'cerrado' && (
         <FormularioTipoCambio
@@ -248,81 +249,76 @@ export const TipoCambioDashboard = () => {
       )}
 
       {/* CONTENEDOR MAESTRO */}
-     <div style={{ width: '100%', margin: '0 auto' }}>
+     <div className="tcd-x9">
         
         {/* TÍTULO LIMPIO */}
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+        <h1 className="module-title tcd-x10">
           Tipo de Cambio Oficial
         </h1>
 
         {/* BARRA DE CONTROLES: Responsive y Alineada */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
+        <div className="tcd-x11">
           
 
           {/* Centro: Buscador Inteligente */}
-          <div style={{ display: 'flex', gap: '10px', flex: '2 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="tcd-x12">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busqueda || filtroTendencia !== 'Todos') ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {(busqueda || filtroTendencia !== 'Todos') && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[busqueda, filtroTendencia !== 'Todos' ? filtroTendencia : ''].filter(Boolean).length}</span>}
+              {(busqueda || filtroTendencia !== 'Todos') && <span className="tcd-x13">{[busqueda, filtroTendencia !== 'Todos' ? filtroTendencia : ''].filter(Boolean).length}</span>}
             </button>
             {filtroTendencia !== 'Todos' && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(163,113,247,0.1)', border: '1px solid #a371f7', borderRadius: '14px', color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="tcd-x14">
                 {filtroTendencia === 'subio' ? 'Subió' : filtroTendencia === 'bajo' ? 'Bajó' : 'Se mantuvo'}
-                <button onClick={() => setFiltroTendencia('Todos')} style={{ background: 'transparent', border: 'none', color: '#a371f7', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="tcd-x15" onClick={() => setFiltroTendencia('Todos')}>✕</button>
               </span>
             )}
             {busqueda && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="tcd-x16">
                 "{busqueda}"
-                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="tcd-x17" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="tcd-x18">
               {busquedaHecha
                 ? `${registrosFiltrados.length} registros`
-                : <>Mostrando el tipo de cambio de <b style={{ color: '#f59e0b' }}>HOY</b> · usa Filtros para ver el historial</>}
+                : <>Mostrando el tipo de cambio de <b className="tcd-x19">HOY</b> · usa Filtros para ver el historial</>}
             </span>
             {busquedaHecha && (
-              <button onClick={() => { setBusqueda(''); setFiltroTendencia('Todos'); setBusquedaHecha(false); }}
-                style={{ padding: '6px 12px', background: 'none', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e', cursor: 'pointer', fontSize: '0.78rem' }}>
+              <button className="tcd-x20" onClick={() => { setBusqueda(''); setFiltroTendencia('Todos'); setBusquedaHecha(false); }}>
                 ← Volver a hoy
               </button>
             )}
           </div>
 
           {/* Derecha: Botones Iconográficos */}
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '150px' }}>
+          <div className="tcd-x21">
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline tcd-x22" 
               title="Días Festivos (el T.C. toma el valor del día anterior)"
               onClick={() => setModalFestivos(true)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line><path d="M12 14l1.1 2.2 2.4.35-1.75 1.7.4 2.4L12 19.5l-2.15 1.15.4-2.4-1.75-1.7 2.4-.35z"></path></svg>
             </button>
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline tcd-x22" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline tcd-x22" 
               title="Exportar a Excel"
-              onClick={exportarExcel} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+              onClick={exportarExcel}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button 
-              className="btn btn-primary" 
+              className="btn btn-primary tcd-x23" 
               title="Nuevo Registro"
-              onClick={handleNuevo} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              onClick={handleNuevo}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
@@ -330,16 +326,16 @@ export const TipoCambioDashboard = () => {
         </div>
 
         {/* TABLA RESPONSIVE */}
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="content-body tcd-x24">
+          <div className="table-container tcd-x25">
+            <table className="data-table tcd-x26">
+              <thead className="tcd-x27">
                 <tr>
-                  <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                  <th className="tcd-x28">
                     Acciones
                   </th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                    <th className="tcd-x29" key={`th_${col.id}`}>
                       {col.label}
                     </th>
                   ))}
@@ -348,19 +344,19 @@ export const TipoCambioDashboard = () => {
               
               <tbody>
                 {registrosEnPantalla.length === 0 && !busquedaHecha ? (
-                  <tr><td colSpan={columnasTabla.length + 1} style={{ padding: '56px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="tcd-x30" colSpan={columnasTabla.length + 1}>
+                    <div className="tcd-x31">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Aún no se captura el tipo de cambio de <b style={{ color: '#f59e0b' }}>HOY</b>.</span>
-                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                        <button onClick={handleNuevo} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>+ Capturar el TC de hoy</button>
-                        <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Ver historial</button>
+                      <span className="tcd-x32">Aún no se captura el tipo de cambio de <b className="tcd-x19">HOY</b>.</span>
+                      <div className="tcd-x33">
+                        <button className="tcd-x34" onClick={handleNuevo}>+ Capturar el TC de hoy</button>
+                        <button className="tcd-x35" onClick={() => setDrawerFiltrosAbierto(true)}>Ver historial</button>
                       </div>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td className="tcd-x36" colSpan={columnasTabla.length + 1}>
                       No se encontraron registros con estos filtros.
                     </td>
                   </tr>
@@ -374,23 +370,21 @@ export const TipoCambioDashboard = () => {
                       onClick={() => editarRegistro(registro)}
                     >
                       {/* Celda de Acciones fija a la izquierda con ICONOS */}
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <td className="tcd-x37" onClick={(e: any) => e.stopPropagation()}>
+                        <div className="actions-cell tcd-x38">
                           <button 
-                            className="btn-small btn-edit" 
+                            className="btn-small btn-edit tcd-x39" 
                             title="Editar Registro"
                             onClick={(e) => { e.stopPropagation(); editarRegistro(registro); }}
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           <button 
-                            className="btn-small btn-danger" 
+                            className="btn-small btn-danger tcd-x40" 
                             title="Eliminar Registro"
                             onClick={(e) => handleEliminar(e, registro.id, registro.fecha)}
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -400,7 +394,7 @@ export const TipoCambioDashboard = () => {
                       </td>
 
                       {columnasTabla.filter(c => c.visible).map(col => (
-                        <td key={`cell_${registro.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                        <td className="tcd-x41" key={`cell_${registro.id}_${col.id}`}>
                           {renderCellContent(registro, col.id)}
                         </td>
                       ))}
@@ -413,11 +407,11 @@ export const TipoCambioDashboard = () => {
 
           {/* CONTROLES DE PAGINACIÓN ICONOGRÁFICOS */}
           {registrosFiltrados.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="tcd-x42">
+              <div className="tcd-x43">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="tcd-x44">
                 <button 
                   title="Página Anterior"
                   onClick={irPaginaAnterior} 
@@ -426,7 +420,7 @@ export const TipoCambioDashboard = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="tcd-x45">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   title="Página Siguiente"
                   onClick={irPaginaSiguiente} 
@@ -445,55 +439,55 @@ export const TipoCambioDashboard = () => {
       {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {/* ✅ MODAL DE DÍAS FESTIVOS */}
       {modalFestivos && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2600, padding: '20px' }}>
-          <div style={{ maxWidth: '560px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Días Festivos</h3>
-              <button onClick={() => setModalFestivos(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay tcd-x46">
+          <div className="tcd-x47">
+            <div className="tcd-x48">
+              <h3 className="tcd-x49">Días Festivos</h3>
+              <button className="tcd-x50" onClick={() => setModalFestivos(false)}>✕</button>
             </div>
-            <div style={{ padding: '18px 24px', overflowY: 'auto' }}>
-              <p style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: 0, marginBottom: '16px' }}>
-                En estos días no se trabaja: el tipo de cambio <b style={{ color: '#c9d1d9' }}>toma el valor del día anterior</b> y se genera automáticamente al capturar ese día anterior. La lista aplica para <b style={{ color: '#fb923c' }}>todos los usuarios</b>.
+            <div className="tcd-x51">
+              <p className="tcd-x52">
+                En estos días no se trabaja: el tipo de cambio <b className="tcd-x7">toma el valor del día anterior</b> y se genera automáticamente al capturar ese día anterior. La lista aplica para <b className="tcd-x53">todos los usuarios</b>.
               </p>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                <input type="date" value={nuevoFestivo.fecha} onChange={e => setNuevoFestivo(prev => ({ ...prev, fecha: e.target.value }))} style={{ padding: '8px 10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px' }} />
-                <input type="text" placeholder="Nombre (ej. 4 de Julio)" value={nuevoFestivo.nombre} onChange={e => setNuevoFestivo(prev => ({ ...prev, nombre: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); agregarFestivo(); } }} style={{ flex: 1, minWidth: '160px', padding: '8px 10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px' }} />
-                <button type="button" onClick={agregarFestivo} style={{ padding: '8px 18px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Agregar</button>
+              <div className="tcd-x54">
+                <input className="tcd-x55" type="date" value={nuevoFestivo.fecha} onChange={e => setNuevoFestivo(prev => ({ ...prev, fecha: e.target.value }))} />
+                <input className="tcd-x56" type="text" placeholder="Nombre (ej. 4 de Julio)" value={nuevoFestivo.nombre} onChange={e => setNuevoFestivo(prev => ({ ...prev, nombre: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); agregarFestivo(); } }} />
+                <button className="tcd-x57" type="button" onClick={agregarFestivo}>Agregar</button>
               </div>
               {festivos.length === 0 ? (
-                <div style={{ color: '#8b949e', textAlign: 'center', padding: '20px', border: '1px dashed #30363d', borderRadius: '8px' }}>Sin días festivos registrados.</div>
+                <div className="tcd-x58">Sin días festivos registrados.</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div className="tcd-x59">
                   {festivos.map(f => (
-                    <div key={f.fecha} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '9px 12px', backgroundColor: '#161b22', border: '1px solid #21262d', borderRadius: '8px' }}>
+                    <div className="tcd-x60" key={f.fecha}>
                       <div>
-                        <span style={{ color: '#f0f6fc', fontWeight: 600, fontSize: '0.9rem' }}>{f.nombre}</span>
-                        <span style={{ color: '#8b949e', fontSize: '0.78rem', marginLeft: '10px' }}>{formatoFechaFestivo(f.fecha)}</span>
+                        <span className="tcd-x61">{f.nombre}</span>
+                        <span className="tcd-x62">{formatoFechaFestivo(f.fecha)}</span>
                       </div>
-                      <button type="button" title="Quitar" onClick={() => quitarFestivo(f.fecha)} style={{ background: 'transparent', border: '1px solid #f85149', color: '#f85149', borderRadius: '6px', width: '26px', height: '24px', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                      <button className="tcd-x63" type="button" title="Quitar" onClick={() => quitarFestivo(f.fecha)}>✕</button>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-            <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '10px', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-              <button type="button" onClick={() => setModalFestivos(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-              <button type="button" onClick={guardarFestivos} disabled={guardandoFestivos} style={{ padding: '8px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoFestivos ? 'Guardando...' : 'Guardar para todos'}</button>
+            <div className="tcd-x64">
+              <button className="tcd-x65" type="button" onClick={() => setModalFestivos(false)}>Cancelar</button>
+              <button className="tcd-x66" type="button" onClick={guardarFestivos} disabled={guardandoFestivos}>{guardandoFestivos ? 'Guardando...' : 'Guardar para todos'}</button>
             </div>
           </div>
         </div>
       )}
 
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay tcd-x67">
+          <div className="tcd-x68">
+            <div className="tcd-x69">
+              <h3 className="tcd-x70">Configurar Columnas de la Tabla</h3>
+              <button className="tcd-x50" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            <p className="tcd-x71">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
             
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <ul className="tcd-x72">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -505,13 +499,13 @@ export const TipoCambioDashboard = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <input className="tcd-x73" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="tcd-x74">
+              <button className="tcd-x75" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -520,28 +514,27 @@ export const TipoCambioDashboard = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Tipo de Cambio · historial) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Historial de TC</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="tcd-x76" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="tcd-x77" onClick={(e) => e.stopPropagation()}>
+            <div className="tcd-x78">
+              <h3 className="tcd-x79">Filtros · Historial de TC</h3>
+              <button className="tcd-x50" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Fecha, día o monto..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="tcd-x59">
+              <label className="tcd-x80">BÚSQUEDA</label>
+              <div className="tcd-x81">
+                <svg className="tcd-x82" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="tcd-x83" type="text" placeholder="Fecha, día o monto..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="tcd-x84" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>TENDENCIA</label>
-              <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+            <div className="tcd-x59">
+              <label className="tcd-x85">TENDENCIA</label>
+              <div className="tcd-x86">
                 <button onClick={() => setFiltroTendencia('Todos')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', backgroundColor: filtroTendencia === 'Todos' ? 'rgba(88,166,255,0.15)' : 'transparent', color: filtroTendencia === 'Todos' ? '#58a6ff' : '#8b949e' }}>Todas</button>
                 <button onClick={() => setFiltroTendencia('subio')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', backgroundColor: filtroTendencia === 'subio' ? 'rgba(63,185,80,0.15)' : 'transparent', color: filtroTendencia === 'subio' ? '#3fb950' : '#8b949e' }}>▲ Subió</button>
                 <button onClick={() => setFiltroTendencia('bajo')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem', backgroundColor: filtroTendencia === 'bajo' ? 'rgba(248,81,73,0.15)' : 'transparent', color: filtroTendencia === 'bajo' ? '#f85149' : '#8b949e' }}>▼ Bajó</button>
@@ -549,13 +542,13 @@ export const TipoCambioDashboard = () => {
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver el historial completo con estos filtros. <b style={{ color: '#8b949e' }}>Limpiar</b> regresa a la vista del día de hoy.
+            <div className="tcd-x87">
+              Presiona <b className="tcd-x88">Buscar</b> para ver el historial completo con estos filtros. <b className="tcd-x89">Limpiar</b> regresa a la vista del día de hoy.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setFiltroTendencia('Todos'); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="tcd-x90">
+              <button className="tcd-x91" onClick={() => { setBusqueda(''); setFiltroTendencia('Todos'); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="tcd-x92" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

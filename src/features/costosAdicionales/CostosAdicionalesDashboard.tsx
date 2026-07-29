@@ -21,6 +21,7 @@ import {
   doc, addDoc, deleteDoc, updateDoc, where
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import './CostosAdicionalesDashboard.css';
 
 const ID_USD = '7dca62b3';
 const ID_MXN = 'f95d8894';
@@ -352,28 +353,28 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
     const total = tipo === 'cliente' ? totalCliente : totalProveedor;
     const color = tipo === 'cliente' ? '#3fb950' : '#58a6ff';
     return (
-      <div style={{ flex: 1, minWidth: '320px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '10px', padding: '18px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-          <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1rem' }}>
+      <div className="cad-x1">
+        <div className="cad-x2">
+          <h3 className="cad-x3">
             Costos Adicionales · <span style={{ color }}>{tipo === 'cliente' ? 'Cliente' : 'Proveedor'}</span>
           </h3>
-          <button onClick={() => abrirModal(tipo)} style={{ padding: '8px 14px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.82rem' }}>+ Agregar</button>
+          <button className="cad-x4" onClick={() => abrirModal(tipo)}>+ Agregar</button>
         </div>
         {cargandoCostos ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: '#8b949e' }}>Cargando...</div>
+          <div className="cad-x5">Cargando...</div>
         ) : lista.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: '#8b949e', fontSize: '0.85rem' }}>Sin costos adicionales registrados.</div>
+          <div className="cad-x6">Sin costos adicionales registrados.</div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div className="cad-x7">
             {lista.map(c => (
-              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', backgroundColor: '#161b22', border: '1px solid #21262d', borderRadius: '6px', padding: '10px 12px' }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ color: '#c9d1d9', fontWeight: 'bold', fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.convenioNombre || 'Sin convenio'}</div>
-                  {c.observaciones && <div style={{ color: '#8b949e', fontSize: '0.78rem' }}>{c.observaciones}</div>}
+              <div className="cad-x8" key={c.id}>
+                <div className="cad-x9">
+                  <div className="cad-x10">{c.convenioNombre || 'Sin convenio'}</div>
+                  {c.observaciones && <div className="cad-x11">{c.observaciones}</div>}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
+                <div className="cad-x12">
                   <span style={{ color, fontWeight: 'bold' }}>{formatoMoneda(c.monto)}</span>
-                  <button onClick={() => eliminarCosto(c)} title="Eliminar" style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '5px', display: 'flex' }}>
+                  <button className="cad-x13" onClick={() => eliminarCosto(c)} title="Eliminar">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                   </button>
                 </div>
@@ -381,8 +382,8 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
             ))}
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', paddingTop: '12px', borderTop: '1px dashed #30363d' }}>
-          <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Costo Adicionales</span>
+        <div className="cad-x14">
+          <span className="cad-x15">Total Costo Adicionales</span>
           <span style={{ color, fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(total)}</span>
         </div>
       </div>
@@ -391,38 +392,38 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
 
   const contenido = (
     <div className="module-container" style={{ padding: comoModal ? '20px 24px 48px' : '24px', animation: 'fadeIn 0.3s ease' }}>
-      <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Costos Adicionales</h1>
+      <h1 className="cad-x16">Costos Adicionales</h1>
 
       {!opSeleccionada ? (
         <>
-          <div style={{ marginBottom: '16px', maxWidth: '460px' }}>
+          <div className="cad-x17">
             <input type="text" placeholder="Buscar operación (Ref, Cliente, Proveedor)..." value={busqueda} onChange={e => setBusqueda(e.target.value)} style={inputStyle} />
           </div>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 260px)', backgroundColor: '#161b22' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div className="table-container cad-x18">
+            <table className="cad-x19">
+              <thead className="cad-x20">
                 <tr>
-                  <th style={{ padding: '14px 16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>REFERENCIA</th>
-                  <th style={{ padding: '14px 16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA</th>
-                  <th style={{ padding: '14px 16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CLIENTE</th>
-                  <th style={{ padding: '14px 16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PROVEEDOR</th>
-                  <th style={{ padding: '14px 16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}></th>
+                  <th className="cad-x21">REFERENCIA</th>
+                  <th className="cad-x21">FECHA</th>
+                  <th className="cad-x21">CLIENTE</th>
+                  <th className="cad-x21">PROVEEDOR</th>
+                  <th className="cad-x21"></th>
                 </tr>
               </thead>
               <tbody>
                 {cargandoOps ? (
-                  <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones...</td></tr>
+                  <tr><td className="cad-x22" colSpan={5}>Cargando operaciones...</td></tr>
                 ) : opsFiltradas.length === 0 ? (
-                  <tr><td colSpan={5} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Sin operaciones.</td></tr>
+                  <tr><td className="cad-x22" colSpan={5}>Sin operaciones.</td></tr>
                 ) : (
                   opsFiltradas.map(op => (
-                    <tr key={op.id} onClick={() => seleccionarOperacion(op)} style={{ borderBottom: '1px solid #21262d', cursor: 'pointer' }}>
-                      <td style={{ padding: '14px 16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.ref || op.id?.substring(0, 6)}</td>
-                      <td style={{ padding: '14px 16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFecha(op.fechaServicio)}</td>
-                      <td style={{ padding: '14px 16px', color: '#c9d1d9' }}>{op.clienteNombre || op.nombreCliente || '-'}</td>
-                      <td style={{ padding: '14px 16px', color: '#c9d1d9' }}>{op.proveedorUnidadNombre || '-'}</td>
-                      <td style={{ padding: '14px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <span style={{ color: '#D84315', fontSize: '0.82rem', fontWeight: 'bold' }}>Gestionar →</span>
+                    <tr className="cad-x23" key={op.id} onClick={() => seleccionarOperacion(op)}>
+                      <td className="cad-x24">{op.ref || op.id?.substring(0, 6)}</td>
+                      <td className="cad-x25">{formatearFecha(op.fechaServicio)}</td>
+                      <td className="cad-x26">{op.clienteNombre || op.nombreCliente || '-'}</td>
+                      <td className="cad-x26">{op.proveedorUnidadNombre || '-'}</td>
+                      <td className="cad-x27">
+                        <span className="cad-x28">Gestionar →</span>
                       </td>
                     </tr>
                   ))
@@ -431,7 +432,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
             </table>
           </div>
           {hayMas && !cargandoOps && (
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px' }}>
+            <div className="cad-x29">
               <button onClick={cargarMas} disabled={cargandoMas} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: cargandoMas ? 'wait' : 'pointer' }}>
                 {cargandoMas ? 'Cargando...' : '+ Cargar más (50)'}
               </button>
@@ -440,23 +441,23 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
         </>
       ) : (
         <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '10px', padding: '16px 20px', marginBottom: '20px' }}>
+          <div className="cad-x30">
             <div>
-              <button onClick={() => { if (comoModal) { onCerrar?.(); } else { setOpSeleccionada(null); setCostos([]); } }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.82rem', padding: 0, marginBottom: '6px' }}>{comoModal ? '✕ Cerrar y volver al formulario' : '← Volver a la lista'}</button>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.2rem', fontFamily: 'monospace' }}>{opSeleccionada.ref || opSeleccionada.id?.substring(0, 6)}</span>
-                <span style={{ color: '#c9d1d9' }}>{opSeleccionada.clienteNombre || opSeleccionada.nombreCliente || '-'}</span>
-                <span style={{ color: '#8b949e' }}>·</span>
-                <span style={{ color: '#8b949e', fontSize: '0.9rem' }}>{opSeleccionada.proveedorUnidadNombre || 'Sin proveedor'}</span>
+              <button className="cad-x31" onClick={() => { if (comoModal) { onCerrar?.(); } else { setOpSeleccionada(null); setCostos([]); } }}>{comoModal ? '✕ Cerrar y volver al formulario' : '← Volver a la lista'}</button>
+              <div className="cad-x32">
+                <span className="cad-x33">{opSeleccionada.ref || opSeleccionada.id?.substring(0, 6)}</span>
+                <span className="cad-x34">{opSeleccionada.clienteNombre || opSeleccionada.nombreCliente || '-'}</span>
+                <span className="cad-x35">·</span>
+                <span className="cad-x36">{opSeleccionada.proveedorUnidadNombre || 'Sin proveedor'}</span>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Utilidad Estimada</span>
+            <div className="cad-x37">
+              <span className="cad-x38">Utilidad Estimada</span>
               <span style={{ color: Number(opSeleccionada.utilidadEstimada) < 0 ? '#f85149' : '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>{formatoMoneda(opSeleccionada.utilidadEstimada)}</span>
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+          <div className="cad-x39">
             {renderPanelCostos('cliente')}
             {renderPanelCostos('proveedor')}
           </div>
@@ -465,20 +466,20 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
 
       {/* MODAL AGREGAR COSTOS ADICIONALES */}
       {modal && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(8px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '640px', padding: '24px' }}>
+        <div className="modal-overlay cad-x40">
+          <div className="cad-x41">
             <form onSubmit={guardarCosto}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>
+              <div className="cad-x42">
+                <h2 className="cad-x43">
                   Agregar Costos Adicionales <span style={{ color: modal.tipo === 'proveedor' ? '#58a6ff' : '#3fb950', fontSize: '0.9rem' }}>· {modal.tipo === 'proveedor' ? 'Proveedor' : 'Cliente'}</span>
                 </h2>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button type="button" onClick={() => setModal(null)} disabled={guardando} style={{ padding: '8px 18px', background: 'none', color: '#D84315', border: '1px solid #D84315', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cancelar</button>
-                  <button type="submit" disabled={guardando} style={{ padding: '8px 22px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+                <div className="cad-x44">
+                  <button className="cad-x45" type="button" onClick={() => setModal(null)} disabled={guardando}>Cancelar</button>
+                  <button className="cad-x46" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</button>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div className="cad-x47">
                 <div>
                   <label style={labelInput}>Convenio</label>
                   <select value={convenioSel} onChange={e => setConvenioSel(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
@@ -486,7 +487,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
                     {conveniosDelModal.map((c: any) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                   </select>
                   {conveniosDelModal.length === 0 && (
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '6px' }}>
+                    <span className="cad-x48">
                       {modal.tipo === 'proveedor' ? 'Este proveedor no tiene convenios; puedes dejarlo vacío.' : 'Este cliente no tiene convenios; puedes dejarlo vacío.'}
                     </span>
                   )}
@@ -499,8 +500,8 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
 
                 <div>
                   <label style={labelInput}>Cargos Adicionales</label>
-                  <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold' }}>$</span>
+                  <div className="cad-x49">
+                    <span className="cad-x50">$</span>
                     <input type="number" step="0.01" value={monto} placeholder="0.00" onChange={e => setMonto(e.target.valueAsNumber || '')} style={{ ...inputStyle, paddingLeft: '26px', color: '#3fb950', fontWeight: 'bold' }} />
                   </div>
                 </div>
@@ -510,7 +511,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
                   <div style={{ ...inputStyle, color: '#8b949e', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
                     {formatoMoneda(totalConNuevo)}
                   </div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '6px' }}>Actual {formatoMoneda(totalActualTipo)} + nuevo {formatoMoneda(Number(monto) || 0)}</span>
+                  <span className="cad-x48">Actual {formatoMoneda(totalActualTipo)} + nuevo {formatoMoneda(Number(monto) || 0)}</span>
                 </div>
               </div>
             </form>
@@ -523,7 +524,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
   if (comoModal) {
     // Modo modal: overlay a pantalla completa por encima del formulario de operación.
     return (
-      <div style={{ position: 'fixed', inset: 0, backgroundColor: '#0a0d14', zIndex: 1200, overflowY: 'auto' }}>
+      <div className="cad-x51">
         {contenido}
       </div>
     );

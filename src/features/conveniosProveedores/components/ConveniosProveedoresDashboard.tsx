@@ -4,6 +4,7 @@ import { collection, onSnapshot, getDocs, query, where, limit, orderBy } from 'f
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase'; 
 import { FormularioConvenioProveedor } from './FormularioConvenioProveedor';
 import type { ConvenioProveedorRecord } from '../../../types/convenioProveedor';
+import './ConveniosProveedoresDashboard.css';
 
 // ============================================================
 // HELPER DE NORMALIZACIÓN PARA EL CRUCE
@@ -420,7 +421,7 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
   });
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container cpd-x1">
       
       {estadoFormulario !== 'cerrado' && (
         <FormularioConvenioProveedor 
@@ -433,82 +434,80 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
         />
       )}
 
-      <div style={{ width: '100%', margin: '0 auto' }}>
+      <div className="cpd-x2">
         
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+        <h1 className="module-title cpd-x3">
           Convenios de Proveedores
         </h1>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
+        <div className="cpd-x4">
           
-          <div style={{ display: 'flex', gap: '10px', flex: '1 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="cpd-x5">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busqueda ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busqueda && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+              {busqueda && <span className="cpd-x6">1</span>}
             </button>
             {busqueda && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="cpd-x7">
                 "{busqueda}"
-                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="cpd-x8" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="cpd-x9">
               {busquedaHecha ? `${registrosFiltrados.length} convenios` : 'Presiona Filtros y Buscar para ver los convenios.'}
             </span>
           </div>
 
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
+          <div className="cpd-x10">
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline cpd-x11" 
               title="Exportar a CSV"
-              onClick={exportarCSV} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px' }}
+              onClick={exportarCSV}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button 
-              className="btn btn-primary" 
+              className="btn btn-primary cpd-x12" 
               title="Agregar Nuevo Convenio"
-              onClick={handleNuevo} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none' }}
+              onClick={handleNuevo}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
           </div>
         </div>
 
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="content-body cpd-x13">
+          <div className="table-container cpd-x14">
+            <table className="data-table cpd-x15">
+              <thead className="cpd-x16">
                 <tr>
-                  <th style={{ padding: '16px', width: '160px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                  <th className="cpd-x17">
                     Acciones
                   </th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}># de Convenio</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha del convenio</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Fecha de vencimiento</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Proveedor</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', textAlign: 'center' }}>Convenios del Proveedor</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Moneda</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Crédito</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>Último Uso</th>
+                  <th className="cpd-x18"># de Convenio</th>
+                  <th className="cpd-x18">Fecha del convenio</th>
+                  <th className="cpd-x18">Fecha de vencimiento</th>
+                  <th className="cpd-x18">Proveedor</th>
+                  <th className="cpd-x19">Convenios del Proveedor</th>
+                  <th className="cpd-x18">Moneda</th>
+                  <th className="cpd-x18">Crédito</th>
+                  <th className="cpd-x18">Último Uso</th>
                 </tr>
               </thead>
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td colSpan={9} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="cpd-x20" colSpan={9}>
+                    <div className="cpd-x21">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver los convenios.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="cpd-x22">Define tus filtros y presiona <b className="cpd-x23">Buscar</b> para ver los convenios.</span>
+                      <button className="cpd-x24" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td className="cpd-x25" colSpan={9}>
                       {busqueda ? 'No se encontraron convenios para tu búsqueda.' : 'Aún no hay convenios registrados. Haz clic en el botón de "+" para comenzar.'}
                     </td>
                   </tr>
@@ -525,23 +524,21 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                       onMouseLeave={() => setHoveredRowId(null)}
                       onClick={() => verDetalle(reg)}
                     >
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <td className="cpd-x26" onClick={(e: any) => e.stopPropagation()}>
+                        <div className="actions-cell cpd-x27">
                           <button 
-                            className="btn-small btn-edit" 
+                            className="btn-small btn-edit cpd-x28" 
                             title="Editar Convenio"
                             onClick={(e) => { e.stopPropagation(); editarRegistro(reg); }}
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           <button 
-                            className="btn-small btn-danger" 
+                            className="btn-small btn-danger cpd-x29" 
                             title="Eliminar Convenio"
                             onClick={(e) => handleEliminar(e, reg.id!)}
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -550,8 +547,8 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                         </div>
                       </td>
 
-                      <td className="font-mono" style={{ padding: '16px', fontWeight: 'bold', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <td className="font-mono cpd-x30">
+                        <div className="cpd-x31">
                           <span 
                             title={reg._fechaDinamicaUso ? `Color por días de inactividad` : 'Nunca usado'} 
                             style={{ 
@@ -564,21 +561,21 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                               boxShadow: `0 0 5px ${colorSemaforo}` 
                             }}>
                           </span>
-                          <span style={{ color: '#f0f6fc' }}>{reg.numeroConvenio}</span>
+                          <span className="cpd-x32">{reg.numeroConvenio}</span>
                         </div>
                       </td>
 
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatearFechaEsp(reg.fechaConvenio)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{formatearFechaEsp(reg.fechaVencimiento)}</td>
-                      <td style={{ padding: '16px', color: '#f0f6fc', fontSize: '0.95rem', fontWeight: '500', whiteSpace: 'nowrap' }}>{reg.proveedorNombre}</td>
-                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <span title={`Este proveedor tiene ${numConvProv} convenio(s) registrado(s)`} style={{ display: 'inline-block', minWidth: '28px', padding: '3px 10px', borderRadius: '12px', backgroundColor: 'rgba(88,166,255,0.12)', border: '1px solid #58a6ff', color: '#58a6ff', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                      <td className="cpd-x33">{formatearFechaEsp(reg.fechaConvenio)}</td>
+                      <td className="cpd-x33">{formatearFechaEsp(reg.fechaVencimiento)}</td>
+                      <td className="cpd-x34">{reg.proveedorNombre}</td>
+                      <td className="cpd-x35">
+                        <span className="cpd-x36" title={`Este proveedor tiene ${numConvProv} convenio(s) registrado(s)`}>
                           {numConvProv}
                         </span>
                       </td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{reg.monedaNombre}</td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{reg.credito}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
+                      <td className="cpd-x33">{reg.monedaNombre}</td>
+                      <td className="font-mono cpd-x33">{reg.credito}</td>
+                      <td className="cpd-x33">
                         {reg._fechaDinamicaUso ? formatearFechaEsp(reg._fechaDinamicaUso) : '-'}
                       </td>
                     </tr>
@@ -590,11 +587,11 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
           </div>
 
           {busquedaHecha && registrosFiltrados.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="cpd-x37">
+              <div className="cpd-x38">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="cpd-x39">
                 <button 
                   onClick={irPaginaAnterior} 
                   disabled={paginaActual === 1}
@@ -603,7 +600,7 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="cpd-x40">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   onClick={irPaginaSiguiente} 
                   disabled={paginaActual === totalPaginas || totalPaginas === 0}
@@ -621,93 +618,93 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
       {/* MODAL FICHA DE CONVENIO */}
       {convenioViendo && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1000, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="form-card detail-card" style={{ maxWidth: '850px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+        <div className="modal-overlay cpd-x41">
+          <div className="form-card detail-card cpd-x42">
             
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <div className="form-header cpd-x43">
               <div>
-                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.25rem' }}>Ficha de Convenio <span style={{ color: '#D84315' }}>{convenioViendo.numeroConvenio}</span></h2>
+                <h2 className="cpd-x44">Ficha de Convenio <span className="cpd-x23">{convenioViendo.numeroConvenio}</span></h2>
               </div>
-              <button onClick={() => setConvenioViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="cpd-x45" onClick={() => setConvenioViendo(null)}>✕</button>
             </div>
             
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px', flexShrink: 0, overflowX: 'auto' }}>
+            <div className="cpd-x46">
               <button type="button" onClick={() => setActiveTabDetalle('general')} style={tabStyle(activeTabDetalle === 'general')}>General</button>
               <button type="button" onClick={() => setActiveTabDetalle('detalles')} style={tabStyle(activeTabDetalle === 'detalles')}>Detalles / Tarifas</button>
               <button type="button" onClick={() => setActiveTabDetalle('uso')} style={tabStyle(activeTabDetalle === 'uso')}>Historial de Uso (Operaciones)</button>
             </div>
 
-            <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+            <div className="detail-content cpd-x47">
               
               {activeTabDetalle === 'general' && (
-                <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', animation: 'fadeIn 0.3s ease' }}>
-                  <div className="detail-item" style={{ gridColumn: 'span 2' }}>
-                    <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Proveedor</span>
-                    <span className="detail-value" style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{convenioViendo.proveedorNombre || '-'}</span>
+                <div className="detail-grid cpd-x48">
+                  <div className="detail-item cpd-x49">
+                    <span className="detail-label cpd-x50">Proveedor</span>
+                    <span className="detail-value cpd-x51">{convenioViendo.proveedorNombre || '-'}</span>
                   </div>
                   <div className="detail-item">
-                    <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Estatus</span>
-                    <span className="detail-value" style={{ color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="detail-label cpd-x50">Estatus</span>
+                    <span className="detail-value cpd-x52">
                       <span className={`dot dot-green`} style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981', display: 'inline-block' }}></span>
                       {convenioViendo.status || 'Activo'}
                     </span>
                   </div>
 
-                  <div className="detail-item" style={{ gridColumn: 'span 3', backgroundColor: 'rgba(88,166,255,0.06)', border: '1px solid rgba(88,166,255,0.3)', borderRadius: '8px', padding: '12px 16px' }}>
-                    <span className="detail-label" style={{ color: '#58a6ff', fontSize: '0.85rem', display:'block', fontWeight: 'bold' }}>Convenios de este proveedor</span>
-                    <span className="detail-value" style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                  <div className="detail-item cpd-x53">
+                    <span className="detail-label cpd-x54">Convenios de este proveedor</span>
+                    <span className="detail-value cpd-x51">
                       {contarConveniosProveedor(convenioViendo)} {contarConveniosProveedor(convenioViendo) === 1 ? 'convenio' : 'convenios'} registrado(s) para {convenioViendo.proveedorNombre || 'este proveedor'}
                     </span>
                   </div>
                   
                   <div className="detail-item">
-                    <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Fecha de Convenio</span>
-                    <span className="detail-value" style={{ color: '#c9d1d9' }}>{formatearFechaEsp(convenioViendo.fechaConvenio)}</span>
+                    <span className="detail-label cpd-x50">Fecha de Convenio</span>
+                    <span className="detail-value cpd-x55">{formatearFechaEsp(convenioViendo.fechaConvenio)}</span>
                   </div>
                   <div className="detail-item">
-                    <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Fecha de Vencimiento</span>
-                    <span className="detail-value" style={{ color: '#c9d1d9' }}>{formatearFechaEsp(convenioViendo.fechaVencimiento)}</span>
+                    <span className="detail-label cpd-x50">Fecha de Vencimiento</span>
+                    <span className="detail-value cpd-x55">{formatearFechaEsp(convenioViendo.fechaVencimiento)}</span>
                   </div>
                   <div className="detail-item">
-                    <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Último Uso Operativo</span>
-                    <span className="detail-value font-mono" style={{ color: '#58a6ff', fontWeight: 'bold' }}>
+                    <span className="detail-label cpd-x50">Último Uso Operativo</span>
+                    <span className="detail-value font-mono cpd-x56">
                       {lastUsedConvenioMap[convenioViendo.id]
                         ? formatearFechaEsp(lastUsedConvenioMap[convenioViendo.id])
                         : '-'}
                     </span>
                   </div>
 
-                  <div className="detail-item" style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+                  <div className="detail-item cpd-x57"><hr className="cpd-x58" /></div>
 
                   <div className="detail-item">
-                    <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Moneda Base</span>
-                    <span className="detail-value" style={{ color: '#c9d1d9' }}>{convenioViendo.monedaNombre || '-'}</span>
+                    <span className="detail-label cpd-x50">Moneda Base</span>
+                    <span className="detail-value cpd-x55">{convenioViendo.monedaNombre || '-'}</span>
                   </div>
                   <div className="detail-item">
-                    <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Días de Crédito</span>
-                    <span className="detail-value font-mono" style={{ color: '#c9d1d9' }}>{convenioViendo.credito || '-'}</span>
+                    <span className="detail-label cpd-x50">Días de Crédito</span>
+                    <span className="detail-value font-mono cpd-x55">{convenioViendo.credito || '-'}</span>
                   </div>
                 </div>
               )}
 
               {activeTabDetalle === 'detalles' && (
-                <div style={{ animation: 'fadeIn 0.3s ease' }}>
-                  <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
+                <div className="cpd-x59">
+                  <p className="cpd-x60">
                     Mostrando los detalles/tarifas del convenio y su último uso en base a las operaciones registradas. Usa los botones para editar o eliminar cada tarifa.
                   </p>
                   {(!convenioViendo.detalles || convenioViendo.detalles.length === 0) ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
+                    <div className="cpd-x61">
                       Este convenio no tiene detalles o tarifas registradas.
                     </div>
                   ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                      <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
-                        <thead style={{ backgroundColor: '#1f2937' }}>
+                    <div className="cpd-x62">
+                      <table className="cpd-x63">
+                        <thead className="cpd-x64">
                           <tr>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>DESCRIPCIÓN / CONCEPTO</th>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>COSTO TARIFA</th>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>ÚLTIMO USO</th>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textAlign: 'center' }}>ACCIONES</th>
+                            <th className="cpd-x65">DESCRIPCIÓN / CONCEPTO</th>
+                            <th className="cpd-x65">COSTO TARIFA</th>
+                            <th className="cpd-x65">ÚLTIMO USO</th>
+                            <th className="cpd-x66">ACCIONES</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -722,19 +719,19 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                             const colorInactividadDetalle = obtenerColorInactividad(fechaUso);
 
                             return (
-                              <tr key={idDet || idx} style={{ borderBottom: '1px solid #30363d' }}>
-                                <td style={{ padding: '12px 16px', color: '#f0f6fc', fontSize: '0.85rem' }}>
+                              <tr className="cpd-x67" key={idDet || idx}>
+                                <td className="cpd-x68">
                                   {nomDet || `Concepto ${idx + 1}`}
                                   {/* ✅ Cambio 1: ID del catálogo de tarifas (tipoConvenioId) */}
-                                  <div style={{ fontSize: '0.7rem', color: '#fb923c', marginTop: '4px', fontFamily: 'monospace' }}>
+                                  <div className="cpd-x69">
                                     ID tarifa: {det.tipoConvenioId || '—'}
                                   </div>
                                 </td>
-                                <td style={{ padding: '12px 16px', color: '#10b981', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                <td className="cpd-x70">
                                   ${Number(det.tarifa || 0).toFixed(2)}
                                 </td>
-                                <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <td className="cpd-x71">
+                                  <div className="cpd-x72">
                                     <span 
                                       title={fechaUso ? `Último uso: ${formatearFechaEsp(fechaUso)}` : 'Nunca usado'} 
                                       style={{ 
@@ -751,23 +748,21 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                                   </div>
                                 </td>
                                 {/* ✅ Cambio 2: editar y eliminar el detalle */}
-                                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
-                                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                                    <button
+                                <td className="cpd-x73">
+                                  <div className="cpd-x27">
+                                    <button className="cpd-x74"
                                       type="button"
                                       title="Editar detalle"
                                       onClick={() => abrirEditorDetalle(det)}
-                                      style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                       onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                                       onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                                     >
                                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                                     </button>
-                                    <button
+                                    <button className="cpd-x75"
                                       type="button"
                                       title="Eliminar detalle"
                                       onClick={() => eliminarDetalle(det)}
-                                      style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                       onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                                       onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                                     >
@@ -786,25 +781,25 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
               )}
 
               {activeTabDetalle === 'uso' && (
-                <div style={{ animation: 'fadeIn 0.3s ease' }}>
+                <div className="cpd-x59">
                   {cargandoUso ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando el historial de detalles y rutas usadas...</div>
+                    <div className="cpd-x76">Cargando el historial de detalles y rutas usadas...</div>
                   ) : operacionesUso.length === 0 ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
+                    <div className="cpd-x61">
                       Este convenio aún no ha sido asociado a ninguna operación registrada.
                     </div>
                   ) : (
                     <>
-                      <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
+                      <p className="cpd-x60">
                         Mostrando las operaciones más recientes donde se seleccionó este Convenio de Proveedor.
                       </p>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
-                        <thead style={{ backgroundColor: '#1f2937' }}>
+                      <table className="cpd-x77">
+                        <thead className="cpd-x64">
                           <tr>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>REF. OPERACIÓN</th>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>FECHA</th>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>TARIFA/DETALLE APLICADO</th>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>RUTA (ORIGEN / DESTINO)</th>
+                            <th className="cpd-x65">REF. OPERACIÓN</th>
+                            <th className="cpd-x65">FECHA</th>
+                            <th className="cpd-x65">TARIFA/DETALLE APLICADO</th>
+                            <th className="cpd-x65">RUTA (ORIGEN / DESTINO)</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -815,11 +810,11 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                               : '-';
 
                             return (
-                              <tr key={op.id} style={{ borderBottom: '1px solid #30363d' }}>
-                                <td style={{ padding: '12px 16px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold' }}>{op.ref || op.id.substring(0,6)}</td>
-                                <td style={{ padding: '12px 16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaEsp(op.fechaServicio || op.createdAt)}</td>
-                                <td style={{ padding: '12px 16px', color: '#10b981', fontSize: '0.85rem' }}>{detalleUsado}</td>
-                                <td style={{ padding: '12px 16px', color: '#c9d1d9', fontSize: '0.85rem' }}>{ruta}</td>
+                              <tr className="cpd-x67" key={op.id}>
+                                <td className="cpd-x78">{op.ref || op.id.substring(0,6)}</td>
+                                <td className="cpd-x79">{formatearFechaEsp(op.fechaServicio || op.createdAt)}</td>
+                                <td className="cpd-x80">{detalleUsado}</td>
+                                <td className="cpd-x81">{ruta}</td>
                               </tr>
                             );
                           })}
@@ -832,8 +827,8 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
             </div>
             
-            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', flexShrink: 0 }}>
-              <button onClick={() => setConvenioViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
+            <div className="cpd-x82">
+              <button onClick={() => setConvenioViendo(null)} className="btn btn-outline cpd-x83">Cerrar Ficha</button>
             </div>
           </div>
         </div>
@@ -841,17 +836,17 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
       {/* ✅ NUEVO (Cambio 2): MODAL EDITAR DETALLE / TARIFA */}
       {detalleEditando && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1200, position: 'fixed', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="form-card" style={{ maxWidth: '560px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
-              <h3 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.1rem' }}>Editar Detalle / Tarifa</h3>
-              <button onClick={() => setDetalleEditando(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay cpd-x84">
+          <div className="form-card cpd-x85">
+            <div className="cpd-x86">
+              <h3 className="cpd-x87">Editar Detalle / Tarifa</h3>
+              <button className="cpd-x45" onClick={() => setDetalleEditando(null)}>✕</button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px' }}>
+            <div className="cpd-x88">
               <div>
-                <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Tipo de Convenio (Tarifa del catálogo)</label>
-                <select
+                <label className="cpd-x89">Tipo de Convenio (Tarifa del catálogo)</label>
+                <select className="cpd-x90"
                   value={detalleEditando.tipoConvenioId || ''}
                   onChange={(e) => {
                     const id = e.target.value;
@@ -859,7 +854,6 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                     const nombre = data?.descripcion || data?.nombre || '';
                     setDetalleEditando((prev: any) => prev ? { ...prev, tipoConvenioId: id, tipoConvenioNombre: nombre } : prev);
                   }}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
                 >
                   <option value="">-- Sin asignar --</option>
                   {detalleEditando.tipoConvenioId && !opcionesTarifas.some(o => o.id === detalleEditando.tipoConvenioId) && (
@@ -869,49 +863,46 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                     <option key={o.id} value={o.id}>{o.nombre}</option>
                   ))}
                 </select>
-                <small style={{ color: '#fb923c', fontFamily: 'monospace', fontSize: '0.7rem' }}>ID tarifa: {detalleEditando.tipoConvenioId || '—'}</small>
+                <small className="cpd-x91">ID tarifa: {detalleEditando.tipoConvenioId || '—'}</small>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              <div className="cpd-x92">
                 <div>
-                  <label style={{ display: 'block', color: '#10b981', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 'bold' }}>Tarifa ($)</label>
-                  <input
+                  <label className="cpd-x93">Tarifa ($)</label>
+                  <input className="cpd-x94"
                     type="number"
                     step="0.01"
                     value={detalleEditando.tarifa}
                     onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, tarifa: e.target.value } : prev)}
-                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#10b981', fontWeight: 'bold', borderRadius: '6px', boxSizing: 'border-box' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Costo ($)</label>
-                  <input
+                  <label className="cpd-x89">Costo ($)</label>
+                  <input className="cpd-x90"
                     type="number"
                     step="0.01"
                     value={detalleEditando.costo}
                     onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, costo: e.target.value } : prev)}
-                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
                   />
                 </div>
                 <div>
-                  <label style={{ display: 'block', color: '#8b949e', marginBottom: '6px', fontSize: '0.85rem' }}>Venta ($)</label>
-                  <input
+                  <label className="cpd-x89">Venta ($)</label>
+                  <input className="cpd-x90"
                     type="number"
                     step="0.01"
                     value={detalleEditando.venta}
                     onChange={(e) => setDetalleEditando((prev: any) => prev ? { ...prev, venta: e.target.value } : prev)}
-                    style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' }}
                   />
                 </div>
               </div>
-              <small style={{ color: '#8b949e', fontSize: '0.75rem' }}>
+              <small className="cpd-x95">
                 Deja en blanco los montos que no apliquen. Si el detalle usa una sola "Tarifa", captura solo ese campo; si usa "Costo / Venta", captura esos dos.
               </small>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button type="button" onClick={() => setDetalleEditando(null)} disabled={guardandoDetalle} style={{ padding: '9px 20px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-              <button type="button" onClick={guardarDetalleEditado} disabled={guardandoDetalle} style={{ padding: '9px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoDetalle ? 'Guardando...' : 'Guardar Detalle'}</button>
+            <div className="cpd-x96">
+              <button className="cpd-x97" type="button" onClick={() => setDetalleEditando(null)} disabled={guardandoDetalle}>Cancelar</button>
+              <button className="cpd-x98" type="button" onClick={guardarDetalleEditado} disabled={guardandoDetalle}>{guardandoDetalle ? 'Guardando...' : 'Guardar Detalle'}</button>
             </div>
           </div>
         </div>
@@ -920,32 +911,31 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Convenios de Proveedores) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Convenios de Proveedores</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="cpd-x99" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="cpd-x100" onClick={(e) => e.stopPropagation()}>
+            <div className="cpd-x101">
+              <h3 className="cpd-x102">Filtros · Convenios de Proveedores</h3>
+              <button className="cpd-x45" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="# Convenio, proveedor, fechas..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="cpd-x103">
+              <label className="cpd-x104">BÚSQUEDA</label>
+              <div className="cpd-x105">
+                <svg className="cpd-x106" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="cpd-x107" type="text" placeholder="# Convenio, proveedor, fechas..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="cpd-x108" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              La búsqueda es <b style={{ color: '#8b949e' }}>opcional</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todos los convenios.
+            <div className="cpd-x109">
+              La búsqueda es <b className="cpd-x110">opcional</b>. Presiona <b className="cpd-x23">Buscar</b> para ver todos los convenios.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="cpd-x111">
+              <button className="cpd-x112" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="cpd-x113" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

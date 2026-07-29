@@ -1,0 +1,88 @@
+/* Estilos hermanos de UsuariosDashboard.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.ud-x1 { padding: 24px; animation: fadeIn 0.3s ease; }
+.ud-x2 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.ud-x3 { font-size: 1.25rem; color: #8b949e; margin: 0; font-weight: 400; }
+.ud-x4 { color: #f0f6fc; font-weight: 600; }
+.ud-x5 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; }
+.ud-x6 { width: 100%; border-collapse: collapse; text-align: left; }
+.ud-x7 { background-color: #161b22; border-bottom: 1px solid #30363d; }
+.ud-x8 { padding: 16px; width: 220px; text-align: center; color: #8b949e; font-size: 0.8rem; font-weight: 600; }
+.ud-x9 { padding: 16px; color: #8b949e; font-size: 0.8rem; font-weight: 600; }
+.ud-x10 { text-align: center; padding: 40px; color: #8b949e; }
+.ud-x11 { border-bottom: 1px solid #21262d; }
+.ud-x12 { padding: 16px; text-align: center; }
+.ud-x13 { display: flex; gap: 6px; justify-content: center; }
+.ud-x14 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 6px 10px; font-size: 0.8rem; }
+.ud-x15 { background: transparent; border: 1px solid #10b981; border-radius: 4px; color: #10b981; cursor: pointer; padding: 6px 10px; font-size: 0.8rem; }
+.ud-x16 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 6px 10px; font-size: 0.8rem; }
+.ud-x17 { display: inline-flex; align-items: center; gap: 6px; color: #10b981; font-size: 0.85rem; font-weight: 500; background-color: rgba(16, 185, 129, 0.1); padding: 4px 8px; border-radius: 12px; }
+.ud-x18 { width: 8px; height: 8px; background-color: #10b981; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #10b981; }
+.ud-x19 { display: inline-flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.85rem; font-weight: 500; background-color: rgba(139, 148, 158, 0.1); padding: 4px 8px; border-radius: 12px; }
+.ud-x20 { width: 8px; height: 8px; background-color: #8b949e; border-radius: 50%; display: inline-block; }
+.ud-x21 { padding: 16px; color: #f0f6fc; font-weight: 600; }
+.ud-x22 { display: flex; align-items: center; gap: 10px; }
+.ud-x23 { width: 32px; height: 32px; border-radius: 50%; background-color: #D84315; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: bold; overflow: hidden; flex-shrink: 0; }
+.ud-x24 { width: 100%; height: 100%; object-fit: cover; }
+.ud-x25 { padding: 16px; color: #8b949e; }
+.ud-x26 { padding: 16px; color: #c9d1d9; }
+.ud-x27 { display: flex; flex-wrap: wrap; gap: 6px; }
+.ud-x28 { background-color: #21262d; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; border: 1px solid #30363d; color: #58a6ff; }
+.ud-x29 { padding: 16px; color: #8b949e; font-size: 0.9rem; }
+.ud-x30 { backdrop-filter: blur(4px); }
+.ud-x31 { max-width: 600px; width: 100%; border-radius: 12px; border: 1px solid #444; background-color: #0d1117; }
+.ud-x32 { padding: 24px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+.ud-x33 { font-size: 1.25rem; color: #f0f6fc; margin: 0; font-weight: 500; }
+.ud-x34 { background: none; border: none; color: #8b949e; font-size: 1.2rem; cursor: pointer; }
+.ud-x35 { padding: 24px; }
+.ud-x36 { margin-bottom: 24px; }
+.ud-x37 { color: #8b949e; font-size: 0.85rem; display: block; margin-bottom: 12px; }
+.ud-x38 { display: flex; align-items: center; gap: 16px; }
+.ud-x39 { width: 64px; height: 64px; border-radius: 50%; background-color: #D84315; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: bold; overflow: hidden; flex-shrink: 0; border: 2px solid #30363d; }
+.ud-x40 { display: flex; gap: 8px; }
+.ud-x41 { display: none; }
+.ud-x42 { padding: 8px 14px; background-color: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
+.ud-x43 { padding: 8px 14px; background: none; color: #ef4444; border: 1px solid #ef4444; border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
+.ud-x44 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+.ud-x45 { color: #8b949e; font-size: 0.85rem; display: block; margin-bottom: 8px; }
+.ud-x46 { background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; width: 100%; padding: 10px; border-radius: 6px; }
+.ud-x47 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background-color: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; }
+.ud-x48 { display: flex; align-items: center; gap: 8px; color: #c9d1d9; cursor: pointer; font-size: 0.9rem; }
+.ud-x49 { accent-color: #D84315; width: 16px; height: 16px; cursor: pointer; }
+.ud-x50 { margin-top: 32px; display: flex; justify-content: flex-end; gap: 12px; border-top: 1px solid #30363d; padding-top: 20px; }
+.ud-x51 { background-color: #21262d; color: #c9d1d9; border: 1px solid #30363d; padding: 10px 24px; border-radius: 6px; cursor: pointer; }
+.ud-x52 { background-color: #D84315; color: #fff; border: none; padding: 10px 24px; border-radius: 6px; cursor: pointer; }
+.ud-x53 { backdrop-filter: blur(4px); z-index: 1000; }
+.ud-x54 { max-width: 650px; width: 100%; border-radius: 12px; border: 1px solid #444; background-color: #0d1117; max-height: 80vh; display: flex; flex-direction: column; }
+.ud-x55 { color: #8b949e; font-size: 0.85rem; }
+.ud-x56 { padding: 24px; overflow-y: auto; flex: 1; }
+.ud-x57 { text-align: center; color: #8b949e; padding: 40px; }
+.ud-x58 { border-bottom: 1px solid #30363d; }
+.ud-x59 { padding: 12px 8px; color: #8b949e; font-size: 0.75rem; font-weight: 600; }
+.ud-x60 { padding: 12px 8px; color: #c9d1d9; font-size: 0.85rem; white-space: nowrap; }
+.ud-x61 { padding: 12px 8px; }
+.ud-x62 { padding: 12px 8px; color: #8b949e; font-size: 0.85rem; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .ud-x1 { padding: 14px 12px; }
+  .ud-x2 { flex-wrap: wrap; }
+  .ud-x10 { padding: 14px 12px; }
+  .ud-x13 { flex-wrap: wrap; }
+  .ud-x22 { flex-wrap: wrap; }
+  .ud-x23 { flex-wrap: wrap; }
+  .ud-x32 { flex-wrap: wrap; padding: 14px 12px; }
+  .ud-x35 { padding: 14px 12px; }
+  .ud-x38 { flex-wrap: wrap; }
+  .ud-x39 { flex-wrap: wrap; }
+  .ud-x40 { flex-wrap: wrap; }
+  .ud-x44 { grid-template-columns: 1fr; }
+  .ud-x47 { grid-template-columns: 1fr; }
+  .ud-x48 { flex-wrap: wrap; }
+  .ud-x50 { flex-wrap: wrap; }
+  .ud-x56 { padding: 14px 12px; }
+  .ud-x57 { padding: 14px 12px; }
+}

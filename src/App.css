@@ -32,10 +32,30 @@ body {
   white-space: nowrap; /* Evita que el texto se rompa en dos líneas */
 }
 
-/* Clase que aplicaremos cuando el menú esté cerrado */
+/* Clase que aplicaremos cuando el menú esté cerrado.
+   ✅ ESCRITORIO: ya no desaparece — queda un rail de 64px SOLO con iconos
+   (los títulos nativos de cada ítem hacen de tooltip). En móvil este ancho
+   lo pisa mobile.css (ahí el menú se desliza fuera de pantalla). */
 .sidebar.collapsed {
-  width: 0;
-  border-right: none;
+  width: 64px;
+}
+
+.sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .sidebar-chevron,
+.sidebar.collapsed .sidebar-submenu,
+.sidebar.collapsed .sidebar-footer {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-item {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.sidebar.collapsed .sidebar-brand {
+  justify-content: center;
+  overflow: hidden;
 }
 
 .sidebar-brand {
@@ -1052,4 +1072,123 @@ body {
 /* Evita que la marca/logo se desborde cuando el menú está angosto */
 .sidebar.collapsed .sidebar-brand {
   overflow: hidden;
+}
+.app-x1 { flex-shrink: 0; }
+.app-x2 { display: flex; align-items: center; justify-content: center; gap: 12px; height: calc(100vh - 160px); color: #8b949e; }
+.app-x3 { width: 18px; height: 18px; border: 2px solid #30363d; border-top-color: #D84315; border-radius: 50%; display: inline-block; animation: spinRoelca 0.7s linear infinite; }
+.app-x4 { padding: 20px 28px 0 28px; box-sizing: border-box; width: 100%; }
+.app-x5 { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.app-x6 { color: #8b949e; font-size: 0.82rem; }
+.app-x7 { color: #c9d1d9; font-weight: 600; text-transform: capitalize; }
+.app-x8 { font-size: 0.9rem; line-height: 1; }
+.app-x9 { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.app-x10 { margin-top: 2px; padding: 5px 10px; background-color: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid #f59e0b; border-radius: 6px; cursor: pointer; font-size: 0.72rem; font-weight: bold; align-self: flex-start; }
+.app-x11 { margin-top: 2px; padding: 5px 10px; background-color: rgba(251,146,60,0.12); color: #fb923c; border: 1px solid #fb923c; border-radius: 6px; cursor: pointer; font-size: 0.72rem; font-weight: bold; align-self: flex-start; }
+.app-x12 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.6); z-index: 1500; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+.app-x13 { width: 380px; max-width: 92%; background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.app-x14 { display: flex; justify-content: space-between; align-items: center; }
+.app-x15 { margin: 0; color: #f0f6fc; font-size: 1.02rem; }
+.app-x16 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.1rem; }
+.app-x17 { color: #c9d1d9; }
+.app-x18 { display: flex; flex-direction: column; gap: 6px; }
+.app-x19 { color: #f59e0b; font-size: 0.75rem; font-weight: bold; }
+.app-x20 { width: 100%; padding: 10px; background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #f0f6fc; font-size: 1.05rem; font-weight: bold; box-sizing: border-box; }
+.app-x21 { display: flex; gap: 10px; }
+.app-x22 { flex: 1; padding: 10px; background: none; color: #8b949e; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.app-x23 { width: 420px; max-width: 92%; background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.app-x24 { color: #8b949e; font-size: 0.75rem; font-weight: bold; }
+.app-x25 { width: 100%; padding: 8px 10px; background-color: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.88rem; box-sizing: border-box; }
+.app-x26 { color: #fb923c; font-size: 0.75rem; font-weight: bold; }
+.app-x27 { display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #010409; color: #8b949e; }
+.app-x28 { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 3000; display: flex; align-items: center; gap: 14px; background-color: #3b0764; border: 1px solid #a855f7; border-radius: 999px; padding: 8px 10px 8px 18px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); max-width: 92vw; }
+.app-x29 { color: #e9d5ff; font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-x30 { background-color: #a855f7; color: #fff; border: none; border-radius: 999px; padding: 6px 16px; cursor: pointer; font-weight: bold; font-size: 0.8rem; white-space: nowrap; }
+.app-x31 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 2500; padding: 20px; backdrop-filter: blur(6px); }
+.app-x32 { max-width: 480px; width: 100%; background-color: #0d1117; border: 1px solid #444; border-radius: 12px; }
+.app-x33 { padding: 20px 24px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+.app-x34 { font-size: 1.1rem; color: #f0f6fc; margin: 0; font-weight: 500; }
+.app-x35 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.app-x36 { padding: 24px; }
+.app-x37 { color: #8b949e; font-size: 0.82rem; margin: 0 0 16px 0; }
+.app-x38 { display: flex; gap: 8px; margin-bottom: 18px; }
+.app-x39 { background-color: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.4); color: #ef4444; padding: 10px 12px; border-radius: 6px; margin-bottom: 14px; font-size: 0.82rem; }
+.app-x40 { color: #8b949e; font-size: 0.8rem; display: block; margin-bottom: 6px; }
+.app-x41 { width: 100%; padding: 10px; background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; box-sizing: border-box; margin-bottom: 18px; }
+.app-x42 { width: 100%; padding: 11px; background-color: #a855f7; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
+.app-x43 { font-size: 0.7rem; }
+.app-x44 { justify-content: space-between; }
+.app-x45 { display: flex; align-items: center; }
+.app-x46 { position: relative; display: flex; align-items: center; gap: 20px; }
+.app-x47 { background-color: rgba(168, 85, 247, 0.15); border: 1px solid #a855f7; color: #e9d5ff; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease; white-space: nowrap; }
+.app-x48 { background-color: rgba(59, 130, 246, 0.15); border: 1px solid #3b82f6; color: #58a6ff; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px; transition: all 0.2s ease; white-space: nowrap; }
+.app-x49 { cursor: pointer; background-color: #D84315; color: white; border: none; overflow: hidden; }
+.app-x50 { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.app-x51 { background-color: #D84315; color: white; overflow: hidden; }
+.app-x52 { display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100vh - 120px); color: #8b949e; text-align: center; padding: 24px; }
+.app-x53 { font-size: 2.5rem; margin-bottom: 12px; }
+.app-x54 { color: #f0f6fc; margin: 0 0 8px 0; }
+.app-x55 { max-width: 420px; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .app-wrapper { flex-wrap: wrap; }
+  .sidebar-brand { flex-wrap: wrap; }
+  .sidebar-item { flex-wrap: wrap; }
+  .sidebar-subitem { flex-wrap: wrap; }
+  .sidebar-item-with-icon { flex-wrap: wrap; }
+  .sidebar-footer { padding: 14px 12px; }
+  .topbar { flex-wrap: wrap; }
+  .menu-toggle-btn { flex-wrap: wrap; }
+  .search-container { flex-wrap: wrap; }
+  .topbar-right { flex-wrap: wrap; }
+  .avatar { flex-wrap: wrap; }
+  .module-header { flex-wrap: wrap; }
+  .action-buttons { flex-wrap: wrap; }
+  .content-body { flex-wrap: wrap; }
+  .filter-item { flex-wrap: wrap; }
+  .form-card { padding: 14px 12px; }
+  .form-header { flex-wrap: wrap; }
+  .form-grid { grid-template-columns: 1fr; }
+  .type-selector { flex-wrap: wrap; }
+  .form-actions { flex-wrap: wrap; }
+  .modal-overlay { flex-wrap: wrap; }
+  .form-card { padding: 14px 12px; }
+  .form-header { flex-wrap: wrap; }
+  .header-actions { flex-wrap: wrap; }
+  .btn-window { flex-wrap: wrap; }
+  .tabs-container { flex-wrap: wrap; }
+  .notification-wrapper { flex-wrap: wrap; }
+  .notification-badge { flex-wrap: wrap; }
+  .detail-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .actions-cell { flex-wrap: wrap; }
+  .login-wrapper { flex-wrap: wrap; }
+  .login-card { padding: 14px 12px; }
+  .login-logo { font-size: 1.3rem; }
+  .profile-header-info { flex-wrap: wrap; }
+  .profile-avatar-large { flex-wrap: wrap; }
+  .app-wrapper { flex-wrap: wrap; }
+  .catalog-grid { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .catalog-card { flex-wrap: wrap; }
+  .catalog-icon { flex-wrap: wrap; }
+  .breadcrumb-nav { flex-wrap: wrap; }
+  .sidebar-subitem { flex-wrap: wrap; }
+  .app-x2 { flex-wrap: wrap; }
+  .app-x5 { flex-wrap: wrap; }
+  .app-x9 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .app-x12 { flex-wrap: wrap; }
+  .app-x14 { flex-wrap: wrap; }
+  .app-x21 { flex-wrap: wrap; }
+  .app-x27 { flex-wrap: wrap; }
+  .app-x28 { flex-wrap: wrap; }
+  .app-x31 { flex-wrap: wrap; }
+  .app-x33 { flex-wrap: wrap; }
+  .app-x36 { padding: 14px 12px; }
+  .app-x38 { flex-wrap: wrap; }
+  .app-x45 { flex-wrap: wrap; }
+  .app-x46 { flex-wrap: wrap; }
+  .app-x47 { flex-wrap: wrap; }
+  .app-x48 { flex-wrap: wrap; }
+  .app-x52 { padding: 14px 12px; }
+  .app-x53 { font-size: 1.3rem; }
 }
