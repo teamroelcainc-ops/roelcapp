@@ -300,7 +300,7 @@ const ProveedoresUnidadDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Proveedores de Unidad) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Proveedores de Unidad) */}
       {drawerFiltrosAbierto && (
         <div className="pud-x48" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="pud-x49" onClick={(e) => e.stopPropagation()}>
@@ -326,7 +326,7 @@ const ProveedoresUnidadDashboard: React.FC = () => {
 
             <div className="pud-x60">
               <button className="pud-x61" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="pud-x62" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="pud-x62" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

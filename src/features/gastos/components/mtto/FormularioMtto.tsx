@@ -496,7 +496,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
                 )}
               </div>
 
-              {/* ✅ DESCRIPCIÓN GENERAL: AHORA ADMITE SALTOS DE LÍNEA (TEXTAREA) */}
+              {/* DESCRIPCIÓN GENERAL: AHORA ADMITE SALTOS DE LÍNEA (TEXTAREA) */}
               <div className="form-group fm-x23">
                 <label className="fm-x14">Descripción General {configuracion.requeridos.descripcion && <RequeridoMark />}</label>
                 <textarea className="fm-x24"

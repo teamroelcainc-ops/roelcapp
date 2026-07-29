@@ -514,7 +514,7 @@ export const DeduccionesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Deducciones y Saldos) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Deducciones y Saldos) */}
       {drawerFiltrosAbierto && (
         <div className="dd-x66" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="dd-x67" onClick={(e) => e.stopPropagation()}>
@@ -540,7 +540,7 @@ export const DeduccionesDashboard = () => {
 
             <div className="dd-x77">
               <button className="dd-x78" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="dd-x79" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="dd-x79" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

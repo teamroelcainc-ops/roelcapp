@@ -488,7 +488,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
                   <div className="fd-x4"
                     onMouseDown={(e) => { e.preventDefault(); setDdAbierto(''); setModalNuevo({ nivel, valor: textos[nivel] }); }}
                   >
-                    Sin coincidencias{textos[nivel] ? ` para "${textos[nivel]}"` : ''}. Clic aquí para agregarlo ➕
+                    Sin coincidencias{textos[nivel] ? ` para "${textos[nivel]}"` : ''}. Clic aquí para agregarlo 
                   </div>
                 )}
               </div>
@@ -575,7 +575,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
       </div>
     </div>
 
-    {/* ✅ Modal de creación rápida de catálogo (botón "+") */}
+    {/* Modal de creación rápida de catálogo (botón "+") */}
     {modalNuevo && (
       <div className="modal-overlay fd-x19">
         <div className="form-card fd-x20">

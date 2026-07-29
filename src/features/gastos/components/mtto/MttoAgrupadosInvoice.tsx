@@ -315,7 +315,7 @@ const MttoAgrupadosInvoice = () => {
           .report-table th { background-color: #E6E6E6 !important; padding: 8px 5px; text-align: center; font-weight: bold; font-size: 12px; }
           .report-table td { padding: 6px 8px; vertical-align: top; }
           .col-ref { width: 14%; } .col-fecha { width: 15%; } .col-tractor { width: 12%; } .col-servicio { width: 41%; } .col-subtotal { width: 18%; }
-          /* ✅ La descripción respeta saltos de línea y ajusta palabras largas */
+          /* La descripción respeta saltos de línea y ajusta palabras largas */
           .col-desc { white-space: pre-line; word-break: break-word; overflow-wrap: anywhere; }
           .text-center { text-align: center; } .text-left { text-align: left; } .text-right { text-align: right; }
           .amount-box { display: flex; justify-content: space-between; width: 100%; font-weight: bold; }
@@ -524,7 +524,7 @@ const MttoAgrupadosInvoice = () => {
                   </div>
                 </div>
 
-                {/* ✅ VISTA SIMPLIFICADA: SOLO REFERENCIAS (# DE GASTO) */}
+                {/* VISTA SIMPLIFICADA: SOLO REFERENCIAS (# DE GASTO) */}
                 {isAbierto && (
                   <div style={{ borderTop: isSinInvoice ? '1px solid #30363d' : '1px solid rgba(63, 185, 80, 0.2)', padding: '16px' }}>
                     <span className="mai-x25">
@@ -549,7 +549,7 @@ const MttoAgrupadosInvoice = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Agrupados por Invoice) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Agrupados por Invoice) */}
       {drawerFiltrosAbierto && (
         <div className="mai-x28" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="mai-x29" onClick={(e) => e.stopPropagation()}>
@@ -586,7 +586,7 @@ const MttoAgrupadosInvoice = () => {
 
             <div className="mai-x45">
               <button className="mai-x46" onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="mai-x47" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="mai-x47" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

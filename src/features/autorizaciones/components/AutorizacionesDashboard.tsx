@@ -270,7 +270,7 @@ export const AutorizacionesDashboard = () => {
   if (accesoPermitido === false) {
     return (
       <div className="ad-x1">
-        <div className="ad-x2">🔒</div>
+        <div className="ad-x2"></div>
         <h2 className="ad-x3">No tienes acceso a este módulo</h2>
         <p className="ad-x4">Pide al administrador que asigne el módulo "Autorizaciones" a tu rol.</p>
       </div>
@@ -301,7 +301,7 @@ export const AutorizacionesDashboard = () => {
         {regla.requiere && expandida && (
           <div className="ad-x8">
             <div className="ad-x9">
-              {/* ✅ Chip TODOS: sin roles seleccionados = aplica a todos */}
+              {/* Chip TODOS: sin roles seleccionados = aplica a todos */}
               <span style={{ ...chip(regla.roles.length === 0), borderColor: regla.roles.length === 0 ? '#3fb950' : '#30363d', color: regla.roles.length === 0 ? '#3fb950' : '#8b949e', backgroundColor: regla.roles.length === 0 ? 'rgba(63,185,80,0.15)' : 'transparent' }}
                 onClick={() => setRolesRegla(modulo, tipo, key, [])}>
                 ✓ TODOS LOS ROLES
@@ -324,7 +324,7 @@ export const AutorizacionesDashboard = () => {
   return (
     <div className="ad-x13">
       <div className="ad-x14">
-        <h1 className="ad-x15">🛡️ Autorizaciones</h1>
+        <h1 className="ad-x15">Autorizaciones</h1>
         <div className="ad-x16">
           {([
             { key: 'pendientes', label: `Pendientes${pendientes.length ? ` (${pendientes.length})` : ''}` },
@@ -343,7 +343,7 @@ export const AutorizacionesDashboard = () => {
         <div className="ad-x17">
           {pendientes.length === 0 && (
             <div style={{ ...card, padding: '40px', textAlign: 'center', color: '#8b949e' }}>
-              ✅ No hay solicitudes pendientes de autorización.
+              No hay solicitudes pendientes de autorización.
             </div>
           )}
           {pendientes.map(s => (
@@ -413,7 +413,7 @@ export const AutorizacionesDashboard = () => {
                             <button className="ad-x42" type="button" onClick={() => marcarTodosCampos(m.clave, false)}>Desmarcar todos</button>
                           </div>
                         </div>
-                        {/* ✅ Cuadrícula de dos columnas: más campos visibles sin scroll */}
+                        {/* Cuadrícula de dos columnas: más campos visibles sin scroll */}
                         <div className="ad-x43">
                           {m.campos
                             .filter(c => !filtroCampos.trim() || c.label.toLowerCase().includes(filtroCampos.trim().toLowerCase()))

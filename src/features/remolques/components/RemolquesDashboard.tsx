@@ -172,7 +172,7 @@ export function RemolquesDashboard() {
         />
       )}
 
-      {/* ✅ CONTENEDOR MAESTRO */}
+      {/* CONTENEDOR MAESTRO */}
      <div className="rd-x7">
         
         {/* TÍTULO LIMPIO */}
@@ -337,7 +337,7 @@ export function RemolquesDashboard() {
         </div>
       </div>
 
-      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
         <div className="modal-overlay rd-x42">
           <div className="rd-x43">
@@ -372,7 +372,7 @@ export function RemolquesDashboard() {
       )}
 
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Remolques) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Remolques) */}
       {drawerFiltrosAbierto && (
         <div className="rd-x52" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="rd-x53" onClick={(e) => e.stopPropagation()}>
@@ -398,7 +398,7 @@ export function RemolquesDashboard() {
 
             <div className="rd-x64">
               <button className="rd-x65" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="rd-x66" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="rd-x66" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

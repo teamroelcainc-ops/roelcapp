@@ -235,7 +235,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
           solicitanteRoles: usuarioA.roles,
           estrategiaCrear: 'directa',
         });
-        alert(`🔒 Este cambio requiere autorización del administrador.\n\n${evalAut.motivos.join('\n')}\n\nSe envió la solicitud. Los cambios NO se guardaron todavía; se aplicarán cuando el Admin los apruebe.`);
+        alert(`Este cambio requiere autorización del administrador.\n\n${evalAut.motivos.join('\n')}\n\nSe envió la solicitud. Los cambios NO se guardaron todavía; se aplicarán cuando el Admin los apruebe.`);
         onClose();
         return;
       }
@@ -310,7 +310,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
         <div className="form-header">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Tipo de Cambio` : 'Nuevo Tipo de Cambio')}</h2>
           <div className="header-actions">
-            {/* ✅ NUEVO: botón de configuración de campos obligatorios */}
+            {/* NUEVO: botón de configuración de campos obligatorios */}
             <button
               type="button"
               onClick={() => setModalConfig(true)}
@@ -335,7 +335,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
 
               <div className="form-group">
                 <label className="form-label">Fecha {esOblig('fecha') ? '*' : ''}</label>
-                {/* ✅ Al AGREGAR: solo se permite la fecha de HOY (min = max = hoy).
+                {/* Al AGREGAR: solo se permite la fecha de HOY (min = max = hoy).
                     Al EDITAR: la fecha queda bloqueada; solo se corrige el valor. */}
                 <input 
                   type="date" 
@@ -354,7 +354,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
                 )}
                 {fechaDuplicada && (
                   <small className="ftc-x6">
-                    ⚠ Ya existe un registro para esta fecha. No se puede guardar duplicado.
+                    Ya existe un registro para esta fecha. No se puede guardar duplicado.
                   </small>
                 )}
               </div>
@@ -399,7 +399,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
         </div>
       </div>
 
-      {/* ✅ NUEVO: Modal de configuración de campos obligatorios (compartido) */}
+      {/* NUEVO: Modal de configuración de campos obligatorios (compartido) */}
       {modalConfig && (
         <div className="modal-overlay ftc-x8">
           <div className="form-card ftc-x9">

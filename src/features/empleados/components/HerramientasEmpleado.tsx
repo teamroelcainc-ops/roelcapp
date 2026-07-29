@@ -196,7 +196,7 @@ export const HerramientasEmpleado: React.FC<Props> = ({ empleadoId }) => {
         </div>
       )}
 
-      {/* ✅ SOLUCIÓN: ENVOLVEMOS EL MODAL EN CREATEPORTAL PARA SACARLO DEL PADRE */}
+      {/* SOLUCIÓN: ENVOLVEMOS EL MODAL EN CREATEPORTAL PARA SACARLO DEL PADRE */}
       {modalAbierto && document.body && createPortal(
         <div className="modal-overlay he-x22">
           <div className="he-x23">

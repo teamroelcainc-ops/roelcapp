@@ -37,7 +37,7 @@ type CombinacionEdicion =
   | undefined;
 
 /* ============================================================
-   ✅ NUEVO: PESTAÑAS DEL FORMULARIO DE OPERACIONES
+   NUEVO: PESTAÑAS DEL FORMULARIO DE OPERACIONES
    Controla, por flujo completo (Servicio + Tráfico + Carga), qué pestañas
    se muestran en el Formulario de Operaciones y qué campos son obligatorios
    para poder guardar. Esto es independiente de `camposRequeridos` de cada
@@ -358,7 +358,7 @@ const miniBtn: React.CSSProperties = {
 };
 
 /* ============================================================
-   ✅ NUEVO: MODAL "CONFIGURAR FORMULARIO" (POR FLUJO)
+   NUEVO: MODAL "CONFIGURAR FORMULARIO" (POR FLUJO)
    Define, para el flujo completo (Servicio + Tráfico + Carga):
      - qué pestañas se muestran en el Formulario de Operaciones
      - qué campos son obligatorios para poder guardar
@@ -675,14 +675,14 @@ const EditorFlujoAppSheet = ({
   /* ---------- portapapeles ---------- */
   const [clipboardInfo, setClipboardInfo]   = useState<{ count: number; origen: string } | null>(null);
 
-  /* ---------- ✅ NUEVO: visibilidad de paneles laterales ---------- */
+  /* ---------- NUEVO: visibilidad de paneles laterales ---------- */
   const [sidebarVisible, setSidebarVisible]     = useState(true);
   const [inspectorVisible, setInspectorVisible] = useState(true);
 
-  /* ---------- ✅ NUEVO: modal de campos requeridos ---------- */
+  /* ---------- NUEVO: modal de campos requeridos ---------- */
   const [modalCamposAbierto, setModalCamposAbierto] = useState(false);
 
-  /* ---------- ✅ NUEVO: configuración del formulario por flujo ----------
+  /* ---------- NUEVO: configuración del formulario por flujo ----------
      `null` = el flujo todavía no tiene esta configuración guardada
      (no se debe escribir el campo en el documento hasta que el usuario
      lo configure explícitamente, para no romper flujos viejos). */
@@ -690,7 +690,7 @@ const EditorFlujoAppSheet = ({
   const [camposObligatorios, setCamposObligatorios] = useState<string[] | null>(null);
   const [modalFormularioAbierto, setModalFormularioAbierto] = useState(false);
 
-  /* ---------- ✅ NUEVO: dropdown del botón "Agregar paso" ---------- */
+  /* ---------- NUEVO: dropdown del botón "Agregar paso" ---------- */
   const [menuAgregarAbierto, setMenuAgregarAbierto] = useState(false);
 
   /* ---------- refs ---------- */
@@ -785,7 +785,7 @@ const EditorFlujoAppSheet = ({
   });
 
   /* ============================================================
-     ✅ NUEVO: AUTO-CENTRAR EL FLUJO
+     NUEVO: AUTO-CENTRAR EL FLUJO
      Se ejecuta cuando:
        - se toggle la visibilidad de los paneles laterales
        - se cargan reglas nuevas
@@ -1294,7 +1294,7 @@ const EditorFlujoAppSheet = ({
             </div>
           </div>
 
-          {/* ✅ NUEVO: Toggle del sidebar izquierdo */}
+          {/* NUEVO: Toggle del sidebar izquierdo */}
           <button
             onClick={() => setSidebarVisible(v => !v)}
             style={{ ...S.iconBtn, marginLeft: 4 }}
@@ -1346,7 +1346,7 @@ const EditorFlujoAppSheet = ({
             </div>
           )}
 
-          {/* ✅ NUEVO: Botón "Agregar paso" prominente con dropdown */}
+          {/* NUEVO: Botón "Agregar paso" prominente con dropdown */}
           <div className="cs-x42">
             <button
               onClick={() => setMenuAgregarAbierto(v => !v)}
@@ -1397,7 +1397,7 @@ const EditorFlujoAppSheet = ({
             )}
           </div>
 
-          {/* ✅ NUEVO: Configuración del formulario por flujo (pestañas + campos obligatorios) */}
+          {/* NUEVO: Configuración del formulario por flujo (pestañas + campos obligatorios) */}
           <button
             onClick={() => setModalFormularioAbierto(true)}
             disabled={!configValido}
@@ -1423,7 +1423,7 @@ const EditorFlujoAppSheet = ({
             {guardando ? 'Guardando…' : 'Guardar flujo'}
           </button>
 
-          {/* ✅ NUEVO: Toggle del inspector */}
+          {/* NUEVO: Toggle del inspector */}
           <button
             onClick={() => setInspectorVisible(v => !v)}
             style={S.iconBtn}
@@ -1825,7 +1825,7 @@ const EditorFlujoAppSheet = ({
         )}
       </div>
 
-      {/* ✅ NUEVO: Modal de selección de campos requeridos */}
+      {/* NUEVO: Modal de selección de campos requeridos */}
       <ModalCamposRequeridos
         abierto={modalCamposAbierto && !!reglaSel}
         seleccionados={reglaSel?.camposRequeridos || []}
@@ -1837,7 +1837,7 @@ const EditorFlujoAppSheet = ({
         }}
       />
 
-      {/* ✅ NUEVO: Modal "Configurar formulario" — config por flujo completo */}
+      {/* NUEVO: Modal "Configurar formulario" — config por flujo completo */}
       <ModalConfigurarFormulario
         abierto={modalFormularioAbierto}
         pestanasIniciales={pestanasVisibles ?? []}
@@ -1992,7 +1992,7 @@ const Inspector = ({
           </div>
         </Section>
 
-        {/* ✅ NUEVO: Campos requeridos (ahora via modal) */}
+        {/* NUEVO: Campos requeridos (ahora via modal) */}
         <Section
           title="Campos requeridos para avanzar"
           hint="Marca los campos del formulario de operaciones que deben estar llenos para que este paso se active."

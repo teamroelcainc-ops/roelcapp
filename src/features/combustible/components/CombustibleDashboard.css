@@ -91,3 +91,29 @@
   .cd-x53 { flex-wrap: wrap; }
   .cd-x63 { flex-wrap: wrap; }
 }
+
+/* ✅ Rango de fechas del drawer de filtros */
+.cd-fechas {
+  display: flex;
+  gap: 12px;
+  padding: 0 18px 4px;
+}
+
+.cd-fecha-campo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cd-fecha-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  color-scheme: dark;
+  font-size: 0.9rem;
+}

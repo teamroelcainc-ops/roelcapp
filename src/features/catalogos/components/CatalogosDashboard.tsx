@@ -514,7 +514,7 @@ const CatalogosDashboard = () => {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           
-                          {/* ✅ LLAMADA A LA FUNCIÓN REFACTORIZADA PARA ELIMINAR CON LOG */}
+                          {/* LLAMADA A LA FUNCIÓN REFACTORIZADA PARA ELIMINAR CON LOG */}
                           <button 
                             className="btn-small btn-danger cd-x28" 
                             title="Eliminar Registro"
@@ -557,7 +557,7 @@ const CatalogosDashboard = () => {
         </div>
       </div>
 
-      {/* ✅ VISTA: MODAL DETALLES (RENDERIZADO INSTANTÁNEO 0 LECTURAS) */}
+      {/* VISTA: MODAL DETALLES (RENDERIZADO INSTANTÁNEO 0 LECTURAS) */}
       {viendoDetalles && registroActual && (
         <div className="modal-overlay cd-x36">
           <div className="form-card detail-card cd-x37">
@@ -688,7 +688,7 @@ const CatalogosDashboard = () => {
         </div>
       )}
 
-      {/* ✅ FORMULARIO DE AGREGAR / EDITAR PRINCIPAL */}
+      {/* FORMULARIO DE AGREGAR / EDITAR PRINCIPAL */}
       {modalEstado === 'formulario' && catalogoSeleccionado && (
         <div className="modal-overlay cd-x72">
           <div className="cd-x73">
@@ -738,7 +738,7 @@ const CatalogosDashboard = () => {
         </div>
       )}
 
-      {/* ✅ MODAL DE FORMULARIO PARA SUB-DETALLES */}
+      {/* MODAL DE FORMULARIO PARA SUB-DETALLES */}
       {subModalEstado === 'abierto' && subColeccionActual && (
         <div className="modal-overlay cd-x80">
           <div className="cd-x73">

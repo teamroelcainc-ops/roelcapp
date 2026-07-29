@@ -1960,7 +1960,7 @@ export const ReferenciasNominaDashboard = () => {
                     cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
                     backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
                     color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
-                  ⬇ Exportar Excel ({filtroEstadoOps === 'asignadas' ? 'Asignadas' : 'Pendientes'})
+                  Exportar Excel ({filtroEstadoOps === 'asignadas' ? 'Asignadas' : 'Pendientes'})
                 </button>
               </div>
             </div>
@@ -2162,7 +2162,7 @@ export const ReferenciasNominaDashboard = () => {
             {renderBuscadorOperador()}
             {filtroOperador && (
               <button className="rnd-x80" title="Exportar a Excel" onClick={exportarPrestamosCSV}>
-                ⬇ Exportar Préstamos
+                Exportar Préstamos
               </button>
             )}
           </div>
@@ -2237,7 +2237,7 @@ export const ReferenciasNominaDashboard = () => {
             {renderBuscadorOperador()}
             {filtroOperador && (
               <button className="rnd-x80" title="Exportar a Excel" onClick={exportarAhorroCSV}>
-                ⬇ Exportar Ahorro
+                Exportar Ahorro
               </button>
             )}
           </div>
@@ -2308,7 +2308,7 @@ export const ReferenciasNominaDashboard = () => {
       )}
 
       {/* MODAL CONFIGURAR COLUMNAS */}
-      {/* ✅ DETALLE editable de la operación (se abre al oprimir la referencia).
+      {/* DETALLE editable de la operación (se abre al oprimir la referencia).
           El contenedor con z-index alto lo pone POR ENCIMA del modal de nómina. */}
       {opDetalle && (
         <div className="rnd-x98">
@@ -2373,7 +2373,7 @@ export const ReferenciasNominaDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO — MINI MODAL: SUELDO BASE DE LA OPERACIÓN */}
+      {/* NUEVO — MINI MODAL: SUELDO BASE DE LA OPERACIÓN */}
       {editandoSueldo && (
         <div className="modal-overlay rnd-x109">
           <div className="rnd-x110">
@@ -2429,7 +2429,7 @@ export const ReferenciasNominaDashboard = () => {
 
             {operadorIdSeleccionado && !deduccionOperador && (
               <div className="rnd-x135">
-                ⚠ No se encontró un registro en <b>deducciones</b> para este operador. Los valores se inician en cero (puedes capturarlos manualmente).
+                No se encontró un registro en <b>deducciones</b> para este operador. Los valores se inician en cero (puedes capturarlos manualmente).
               </div>
             )}
 
@@ -2780,7 +2780,7 @@ export const ReferenciasNominaDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Referencias de Nómina) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Referencias de Nómina) */}
       {drawerFiltrosAbierto && (
         <div className="rnd-x195" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="rnd-x196" onClick={(e) => e.stopPropagation()}>
@@ -2879,7 +2879,7 @@ export const ReferenciasNominaDashboard = () => {
               <button className="rnd-x214" onClick={() => {
                 if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true);
                 setDrawerFiltrosAbierto(false);
-              }}>🔍 Buscar</button>
+              }}>Buscar</button>
             </div>
           </div>
         </div>

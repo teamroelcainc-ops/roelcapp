@@ -223,6 +223,8 @@ const OperacionesDashboard = () => {
   const [busqueda, setBusqueda] = useState('');
 
   // ✅ NUEVO (Fix 1): filtros por columna (Tipo Operación, Status, Unidad Roelca, Remolque).
+  // ✅ NUEVO: los filtros ahora viven en un drawer lateral derecho.
+  const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
   const [filtroTipoOperacion, setFiltroTipoOperacion] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroUnidad, setFiltroUnidad] = useState('');
@@ -400,7 +402,7 @@ const OperacionesDashboard = () => {
       console.error("Error al cargar operaciones:", e);
       const msg = String(e?.message || e?.code || e || '').toLowerCase();
       if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
-        alert("⚠️ Cuota de lecturas de Firestore agotada.\n\nEl plan gratuito permite 50,000 lecturas/día y entre varias personas se agota. Se reinicia a las 2 AM (hora México).\n\nRecomendación: activa el plan Blaze en Firebase Console.");
+        alert("Cuota de lecturas de Firestore agotada.\n\nEl plan gratuito permite 50,000 lecturas/día y entre varias personas se agota. Se reinicia a las 2 AM (hora México).\n\nRecomendación: activa el plan Blaze en Firebase Console.");
       } else if (msg.includes('index')) {
         alert("Falta un índice en Firestore para esta consulta. Abre la consola del navegador (F12); el error de Firebase trae un enlace para crear el índice con un clic.");
       } else {
@@ -824,13 +826,13 @@ const OperacionesDashboard = () => {
 
           if (msg.includes('resource-exhausted') || msg.includes('quota') || msg.includes('429')) {
             alert(
-              "⚠️ Cuota de Firestore agotada.\n\n" +
+              "Cuota de Firestore agotada.\n\n" +
               "Tu proyecto superó el límite gratuito diario. La cuota se reinicia a las 2 AM (hora México).\n\n" +
               "Recomendación: activa el plan Blaze en Firebase Console para evitar este límite."
             );
           } else if (code.includes('permission-denied') || msg.includes('permission') || msg.includes('insufficient') || msg.includes('missing or insufficient')) {
             alert(
-              "🔒 Permiso denegado por Firestore.\n\n" +
+              "Permiso denegado por Firestore.\n\n" +
               "Tu usuario no tiene permiso para actualizar el estatus (escribir en 'operaciones' y/o 'horarios').\n\n" +
               "Revisa las reglas de seguridad de Firestore para esas colecciones.\n\n" +
               "Detalle técnico: " + detalle
@@ -1519,9 +1521,6 @@ const OperacionesDashboard = () => {
   const btnSecondaryActionStyle = { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '8px 16px', borderRadius: '6px', gap: '8px', fontWeight: 'bold', transition: 'background 0.2s', fontSize: '0.85rem' };
   const btnDocStyle = { background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: '6px 12px', borderRadius: '6px', gap: '6px', fontSize: '0.85rem', transition: 'all 0.2s' };
 
-  const filtroLabelStyle: React.CSSProperties = { color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' };
-  const filtroSelectStyle: React.CSSProperties = { padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', fontSize: '0.9rem', minWidth: '180px' };
-
   return (
     <div className="module-container od-x13">
       
@@ -1570,34 +1569,14 @@ const OperacionesDashboard = () => {
         </div>
 
         <div className="od-x26">
-          <div className="od-x27">
-            <label style={filtroLabelStyle}>Tipo de Operación</label>
-            <select value={filtroTipoOperacion} onChange={(e) => setFiltroTipoOperacion(e.target.value)} style={filtroSelectStyle}>
-              <option value="">Todos</option>
-              {opcionesTipoOperacion.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="od-x27">
-            <label style={filtroLabelStyle}>Status</label>
-            <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} style={filtroSelectStyle}>
-              <option value="">Todos</option>
-              {opcionesStatus.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="od-x27">
-            <label style={filtroLabelStyle}>Unidad Roelca</label>
-            <select value={filtroUnidad} onChange={(e) => setFiltroUnidad(e.target.value)} style={filtroSelectStyle}>
-              <option value="">Todas</option>
-              {opcionesUnidad.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div className="od-x27">
-            <label style={filtroLabelStyle}>Remolque</label>
-            <select value={filtroRemolque} onChange={(e) => setFiltroRemolque(e.target.value)} style={filtroSelectStyle}>
-              <option value="">Todos</option>
-              {opcionesRemolque.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
+          {/* ✅ Los filtros viven en el drawer derecho; aquí solo el acceso. */}
+          <button className="od-btn-filtros" onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+            Filtros
+            {hayFiltrosActivos && (
+              <span className="od-badge-filtros">{[filtroTipoOperacion, filtroStatus, filtroUnidad, filtroRemolque].filter(Boolean).length}</span>
+            )}
+          </button>
           {hayFiltrosActivos && (
             <button className="od-x28" onClick={limpiarFiltros} title="Quitar todos los filtros">
               ✕ Limpiar filtros
@@ -1728,7 +1707,7 @@ const OperacionesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: Modal de Resúmenes Diarios (Transfer / Logística / Fletes) */}
+      {/* NUEVO: Modal de Resúmenes Diarios (Transfer / Logística / Fletes) */}
       {mostrarResumenDiario && (
         <div className="modal-overlay od-x58">
           <div className="od-x59">
@@ -2100,7 +2079,7 @@ const OperacionesDashboard = () => {
                     </div>
                   )}
 
-                  {/* ✅ Observaciones ARRIBA del bloque de gastos (a petición) */}
+                  {/* Observaciones ARRIBA del bloque de gastos (a petición) */}
                   <div className="od-x115">
                     <span className="od-x116">Observaciones (Unidad / Proveedor)</span>
                     <div className="od-x117">
@@ -2175,20 +2154,20 @@ const OperacionesDashboard = () => {
                 </div>
               )}
 
-              {/* ✅ Auditoría de la referencia: botón que abre el detalle en un modal */}
+              {/* Auditoría de la referencia: botón que abre el detalle en un modal */}
               <div className="od-x129">
                 <button className="od-x130" onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición">
-                  🕓 Ver auditoría
+                  Ver auditoría
                   <span className="od-x131">{(operacionViendo.historialEdiciones || []).length}</span>
                 </button>
               </div>
 
-              {/* ✅ Modal de auditoría (solo lectura) */}
+              {/* Modal de auditoría (solo lectura) */}
               {mostrarAuditoria && (
                 <div className="od-x132" onClick={() => setMostrarAuditoria(false)}>
                   <div className="od-x133" onClick={(e) => e.stopPropagation()}>
                     <div className="od-x134">
-                      <h3 className="od-x61">🕓 Auditoría de la referencia <span className="od-x135">{operacionViendo.ref || ''}</span></h3>
+                      <h3 className="od-x61">Auditoría de la referencia <span className="od-x135">{operacionViendo.ref || ''}</span></h3>
                       <button className="od-x52" onClick={() => setMostrarAuditoria(false)}>✕</button>
                     </div>
                     <div className="od-x136">
@@ -2314,6 +2293,55 @@ const OperacionesDashboard = () => {
         .status-pill:active { transform: translateY(0); }
         .status-circle-btn:hover { background: #30363d !important; color: #f0f6fc !important; border-color: #484f58 !important; }
       `}</style>
+      {/* ✅ DRAWER LATERAL DE FILTROS (patrón estándar de la app) */}
+      {drawerFiltrosAbierto && (
+        <div className="od-drawer-overlay" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="od-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="od-drawer-encabezado">
+              <h3>Filtros · Operaciones Activas</h3>
+              <button className="od-drawer-cerrar" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
+            </div>
+
+            <div className="od-drawer-cuerpo">
+              <div className="od-drawer-campo">
+                <label>TIPO DE OPERACIÓN</label>
+                <select value={filtroTipoOperacion} onChange={(e) => setFiltroTipoOperacion(e.target.value)}>
+                  <option value="">Todos</option>
+                  {opcionesTipoOperacion.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="od-drawer-campo">
+                <label>STATUS</label>
+                <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+                  <option value="">Todos</option>
+                  {opcionesStatus.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="od-drawer-campo">
+                <label>UNIDAD ROELCA</label>
+                <select value={filtroUnidad} onChange={(e) => setFiltroUnidad(e.target.value)}>
+                  <option value="">Todas</option>
+                  {opcionesUnidad.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="od-drawer-campo">
+                <label>REMOLQUE</label>
+                <select value={filtroRemolque} onChange={(e) => setFiltroRemolque(e.target.value)}>
+                  <option value="">Todos</option>
+                  {opcionesRemolque.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <p className="od-drawer-nota">Los filtros se aplican al instante sobre la tabla.</p>
+            </div>
+
+            <div className="od-drawer-pie">
+              <button className="od-drawer-btn-limpiar" onClick={limpiarFiltros}>Limpiar</button>
+              <button className="od-drawer-btn-aplicar" onClick={() => setDrawerFiltrosAbierto(false)}>Aplicar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

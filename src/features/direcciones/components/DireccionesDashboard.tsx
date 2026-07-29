@@ -340,7 +340,7 @@ export const DireccionesDashboard = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
         <div className="modal-overlay dd-x40">
           <div className="dd-x41">
@@ -421,7 +421,7 @@ export const DireccionesDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Direcciones) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Direcciones) */}
       {drawerFiltrosAbierto && (
         <div className="dd-x65" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="dd-x66" onClick={(e) => e.stopPropagation()}>
@@ -447,7 +447,7 @@ export const DireccionesDashboard = () => {
 
             <div className="dd-x77">
               <button className="dd-x78" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="dd-x79" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="dd-x79" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

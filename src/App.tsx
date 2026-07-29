@@ -537,7 +537,7 @@ function ResumenDelDia() {
         </div>
       </div>
 
-      {/* ✅ Modal: capturar TIPO DE CAMBIO de hoy */}
+      {/* Modal: capturar TIPO DE CAMBIO de hoy */}
       {modalTCAbierto && (
         <div className="app-x12" onClick={() => !guardandoCaptura && setModalTCAbierto(false)}>
           <div className="app-x13" onClick={(e) => e.stopPropagation()}>
@@ -554,18 +554,18 @@ function ResumenDelDia() {
             </div>
             <div className="app-x21">
               <button className="app-x22" onClick={() => setModalTCAbierto(false)} disabled={guardandoCaptura}>Cancelar</button>
-              <button onClick={guardarTCDia} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', backgroundColor: '#f59e0b', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: guardandoCaptura ? 'wait' : 'pointer', fontWeight: 'bold' }}>{guardandoCaptura ? 'Guardando…' : '💾 Guardar'}</button>
+              <button onClick={guardarTCDia} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', backgroundColor: '#f59e0b', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: guardandoCaptura ? 'wait' : 'pointer', fontWeight: 'bold' }}>{guardandoCaptura ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ✅ Modal: capturar DIESEL de hoy */}
+      {/* Modal: capturar DIESEL de hoy */}
       {modalDieselAbierto && (
         <div className="app-x12" onClick={() => !guardandoCaptura && setModalDieselAbierto(false)}>
           <div className="app-x23" onClick={(e) => e.stopPropagation()}>
             <div className="app-x14">
-              <h3 className="app-x15">⛽ Diesel de hoy</h3>
+              <h3 className="app-x15">Diesel de hoy</h3>
               <button className="app-x16" onClick={() => setModalDieselAbierto(false)}>✕</button>
             </div>
             <span className="app-x6">Se registrará para el <b className="app-x17">{fmtDia(hoyISO)}</b> en el catálogo de Combustible.</span>
@@ -588,7 +588,7 @@ function ResumenDelDia() {
             </div>
             <div className="app-x21">
               <button className="app-x22" onClick={() => setModalDieselAbierto(false)} disabled={guardandoCaptura}>Cancelar</button>
-              <button onClick={guardarDieselDia} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: guardandoCaptura ? 'wait' : 'pointer', fontWeight: 'bold' }}>{guardandoCaptura ? 'Guardando…' : '💾 Guardar'}</button>
+              <button onClick={guardarDieselDia} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: guardandoCaptura ? 'wait' : 'pointer', fontWeight: 'bold' }}>{guardandoCaptura ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>
         </div>
@@ -911,10 +911,10 @@ function App() {
   return (
     <div className="app-wrapper">
 
-      {/* ✅ PWA: aviso global cuando el dispositivo pierde internet */}
+      {/* PWA: aviso global cuando el dispositivo pierde internet */}
       <AvisoSinConexion />
 
-      {/* ✅ MÓVIL: barra de navegación inferior fija y personalizable */}
+      {/* MÓVIL: barra de navegación inferior fija y personalizable */}
       <BarraNavMovil
         moduloActivo={moduloActivo}
         // Cast documentado: las claves salen de MODULOS_NAV, que es un
@@ -928,11 +928,11 @@ function App() {
 
       <RelojChecadorModal isOpen={modalChecadorAbierto} onClose={() => setModalChecadorAbierto(false)} usuario={usuarioActualDB} />
 
-      {/* ✅ BANNER DE VISTA PREVIA: siempre visible mientras se está "viendo como" */}
+      {/* BANNER DE VISTA PREVIA: siempre visible mientras se está "viendo como" */}
       {vistaComoAplicada && (
         <div className="app-x28">
           <span className="app-x29">
-            👁 Vista previa — {vistaComoAplicada.etiqueta}
+            Vista previa — {vistaComoAplicada.etiqueta}
           </span>
           <button className="app-x30" onClick={salirVistaComo}>
             Salir de la vista
@@ -940,12 +940,12 @@ function App() {
         </div>
       )}
 
-      {/* ✅ MODAL "VER COMO": elegir un rol del catálogo o buscar un usuario por correo */}
+      {/* MODAL "VER COMO": elegir un rol del catálogo o buscar un usuario por correo */}
       {modalVerComo && (
         <div className="modal-overlay app-x31">
           <div className="form-card app-x32">
             <div className="form-header app-x33">
-              <h2 className="app-x34">👁 Ver la app como...</h2>
+              <h2 className="app-x34">Ver la app como...</h2>
               <button className="app-x35" onClick={() => setModalVerComo(false)}>✕</button>
             </div>
 
@@ -1005,7 +1005,7 @@ function App() {
       <div className={`sidebar ${!menuAbierto ? 'collapsed' : ''}`}>
         <div className="sidebar-brand">
           <EmpresaBrand />
-          {/* ✅ MÓVIL: botón para cerrar el menú (oculto en escritorio vía CSS) */}
+          {/* MÓVIL: botón para cerrar el menú (oculto en escritorio vía CSS) */}
           <button className="sidebar-cerrar-movil" title="Cerrar menú" onClick={() => setMenuAbierto(false)}>✕</button>
         </div>
 
@@ -1148,7 +1148,7 @@ function App() {
                 {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => navegarA('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>}
                 {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => navegarA('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>}
                 {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => navegarA('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>}
-                {/* ✅ AUTORIZACIONES: lo ve quien tenga el módulo asignado en su rol (Admin siempre). */}
+                {/* AUTORIZACIONES: lo ve quien tenga el módulo asignado en su rol (Admin siempre). */}
                 {puede('autorizaciones') && <div className={`sidebar-subitem ${moduloActivo === 'autorizaciones' ? 'active' : ''}`} title="Autorizaciones" onClick={() => navegarA('autorizaciones')}><span className="sidebar-icon"><Ico><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></Ico></span><span className="sidebar-label">Autorizaciones</span></div>}
                 <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => navegarA('importacion')}><span className="sidebar-icon"><Ico><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Ico></span><span className="sidebar-label">Importar Datos</span></div>
               </div>
@@ -1175,7 +1175,7 @@ function App() {
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.35)'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.15)'}
               >
-                👁 Ver como
+                Ver como
               </button>
             )}
             {debeChecar && (
@@ -1184,7 +1184,7 @@ function App() {
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'}
               >
-                ⏱️ Checar Turno
+                Checar Turno
               </button>
             )}
             
@@ -1210,10 +1210,10 @@ function App() {
                 <div className="profile-actions">
                   <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setMiPerfilAbierto(true); }}>Mi Perfil (Foto y Contraseña)</button>
                   {accesoTotalReal && !vistaComoAplicada && (
-                    <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setModalVerComo(true); }}>👁 Ver como (rol o usuario)</button>
+                    <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setModalVerComo(true); }}>Ver como (rol o usuario)</button>
                   )}
                   {vistaComoAplicada && (
-                    <button className="btn-profile" onClick={() => { setPerfilAbierto(false); salirVistaComo(); }}>👁 Salir de la vista previa</button>
+                    <button className="btn-profile" onClick={() => { setPerfilAbierto(false); salirVistaComo(); }}>Salir de la vista previa</button>
                   )}
                   <button className="btn-profile logout" onClick={() => handleCerrarSesion('manual')}>Cerrar Sesión</button>
                 </div>
@@ -1224,7 +1224,7 @@ function App() {
 
         {sinModulos ? (
           <div className="app-x52">
-            <div className="app-x53">🔒</div>
+            <div className="app-x53"></div>
             <h2 className="app-x54">Sin módulos asignados</h2>
             <p className="app-x55">Tu usuario no tiene módulos habilitados todavía. Contacta al administrador para que te asigne un rol con acceso.</p>
           </div>

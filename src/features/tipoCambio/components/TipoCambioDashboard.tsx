@@ -436,8 +436,8 @@ export const TipoCambioDashboard = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
-      {/* ✅ MODAL DE DÍAS FESTIVOS */}
+      {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* MODAL DE DÍAS FESTIVOS */}
       {modalFestivos && (
         <div className="modal-overlay tcd-x46">
           <div className="tcd-x47">
@@ -512,7 +512,7 @@ export const TipoCambioDashboard = () => {
       )}
 
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Tipo de Cambio · historial) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Tipo de Cambio · historial) */}
       {drawerFiltrosAbierto && (
         <div className="tcd-x76" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="tcd-x77" onClick={(e) => e.stopPropagation()}>
@@ -548,7 +548,7 @@ export const TipoCambioDashboard = () => {
 
             <div className="tcd-x90">
               <button className="tcd-x91" onClick={() => { setBusqueda(''); setFiltroTendencia('Todos'); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="tcd-x92" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="tcd-x92" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

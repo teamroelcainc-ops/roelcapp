@@ -725,7 +725,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
         </div>
       </header>
 
-      {/* ⭐ PANEL: DESCARGAR PLANTILLA EXCEL (independiente de la importación) */}
+      {/* PANEL: DESCARGAR PLANTILLA EXCEL (independiente de la importación) */}
       <div style={{ ...s.card, marginBottom: '20px', borderColor: C.greenBorder }}>
         <div className="div-x3">
           <FileSpreadsheet size={16} color={C.green} />
@@ -925,7 +925,7 @@ export default function DataImportView({ onOpenMenu }: DataImportViewProps) {
             )}
           </div>
 
-          {/* ⭐ BARRA DE CONTROL: buscador + filtros por estado + acciones masivas */}
+          {/* BARRA DE CONTROL: buscador + filtros por estado + acciones masivas */}
           {selectedCollection && (
             <div style={{ marginBottom: '14px', padding: '14px 16px', backgroundColor: C.bg, border: `1px solid ${C.border}`, borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {/* Buscador */}

@@ -163,7 +163,7 @@ export const RolesDashboard: React.FC = () => {
       {/* SECCIÓN 1: CONFIGURACIÓN IP (EXCLUSIVO PARA EL RELOJ) */}
       <div className="rd-x2">
         <h3 className="rd-x3">
-          🛡️ Configuración de Red para Reloj Checador
+          Configuración de Red para Reloj Checador
         </h3>
         <p className="rd-x4">
           Define aquí la Dirección IP pública del internet de tu oficina. Los colaboradores operativos <strong>solo podrán registrar su asistencia</strong> si se encuentran conectados a esta red.
@@ -177,7 +177,7 @@ export const RolesDashboard: React.FC = () => {
             className="form-control rd-x6" 
           />
           <button onClick={detectarIp} className="btn btn-outline rd-x7">
-            📍 Detectar mi IP actual
+            Detectar mi IP actual
           </button>
           <button onClick={guardarIp} className="btn btn-primary rd-x8" disabled={guardandoIp}>
             {guardandoIp ? 'Guardando...' : 'Guardar IP Oficial'}

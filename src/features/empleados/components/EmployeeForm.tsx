@@ -362,18 +362,18 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     e.preventDefault();
     
     if (!formData.employeeId || formData.employeeId.trim() === '' || formData.employeeId === 'Generando...') {
-      return alert('⛔ El Número de Empleado (Ej. Col-001) es estrictamente necesario.');
+      return alert('El Número de Empleado (Ej. Col-001) es estrictamente necesario.');
     }
 
     if (!formData.activo && (!formData.fechaBaja || !formData.observacionBaja)) {
-      return alert('⛔ Para dar de baja a un empleado debe ingresar obligatoriamente la Fecha de Baja y el Motivo.');
+      return alert('Para dar de baja a un empleado debe ingresar obligatoriamente la Fecha de Baja y el Motivo.');
     }
 
     for (const campo of configuracionCampos) {
       if (isVis(campo.name) && isReq(campo.name)) {
         const valor = (formData as any)[campo.name];
         if (!valor || (Array.isArray(valor) && valor.length === 0)) {
-          return alert(`⛔ El campo "${campo.label}" es obligatorio.`);
+          return alert(`El campo "${campo.label}" es obligatorio.`);
         }
       }
     }
@@ -411,7 +411,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
             <h2 className="ef-x29">
               {estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Empleado` : 'Alta de Empleado')}
               <span style={{ fontSize: '0.8rem', padding: '4px 10px', borderRadius: '12px', backgroundColor: formData.activo ? 'rgba(35, 134, 54, 0.2)' : 'rgba(218, 54, 51, 0.2)', color: formData.activo ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>
-                {formData.activo ? '🟢 Activo' : '🔴 Baja'}
+                {formData.activo ? '🟢 Activo' : 'Baja'}
               </span>
             </h2>
             <div className="ef-x30">
@@ -445,7 +445,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
           <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', overflowY: 'auto', flex: 1 }}>
             <form id="employeeForm" onSubmit={handleSubmit}>
               
-              {/* ✅ PESTAÑA 1 */}
+              {/* PESTAÑA 1 */}
               {pestañaActiva === 'personales' && (
                 <div className="ef-x33">
                   
@@ -530,7 +530,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                 </div>
               )}
 
-              {/* ✅ PESTAÑA 2: ALTA DE LA EMPRESA */}
+              {/* PESTAÑA 2: ALTA DE LA EMPRESA */}
               {pestañaActiva === 'empresa' && (
                 <div className="ef-x33">
                   <div className="strict-3-col-grid">
@@ -569,7 +569,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                 </div>
               )}
 
-              {/* ✅ PESTAÑA 3: OPERADOR */}
+              {/* PESTAÑA 3: OPERADOR */}
               {pestañaActiva === 'operador' && (
                 <div className="ef-x33">
                   <div className="strict-3-col-grid">
@@ -583,7 +583,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                 </div>
               )}
 
-              {/* ✅ PESTAÑA 4: HERRAMIENTAS */}
+              {/* PESTAÑA 4: HERRAMIENTAS */}
               {pestañaActiva === 'herramientas' && (
                 <div className="ef-x33">
                   <div className="strict-3-col-grid">

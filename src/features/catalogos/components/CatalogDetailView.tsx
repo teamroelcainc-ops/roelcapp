@@ -43,10 +43,10 @@ export const CatalogDetailView: React.FC<Props> = ({ schema, parentData, details
           </h2>
         </div>
 
-        {/* ✅ BANNER DE BAJA (Renderizado Condicional) */}
+        {/* BANNER DE BAJA (Renderizado Condicional) */}
         {parentData.activo === false && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-4">
-            <div className="text-2xl">⚠️</div>
+            <div className="text-2xl"></div>
             <div>
               <h3 className="text-red-700 font-bold mb-2">Registro Dado de Baja</h3>
               <div className="flex flex-wrap gap-6 text-sm text-gray-700">
@@ -57,7 +57,7 @@ export const CatalogDetailView: React.FC<Props> = ({ schema, parentData, details
           </div>
         )}
         
-        {/* ✅ GRID ESTRICTO DE 3 COLUMNAS */}
+        {/* GRID ESTRICTO DE 3 COLUMNAS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {schema.fields.map((field) => (
             <div key={field.name} className="flex flex-col">

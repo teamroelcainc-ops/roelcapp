@@ -307,7 +307,7 @@ export const ContactosDashboard = () => {
         </div>
       </div>
 
-      {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
+      {/* MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
         <div className="modal-overlay cd-x37">
           <div className="cd-x38">
@@ -384,7 +384,7 @@ export const ContactosDashboard = () => {
       )}
 
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Contactos) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Contactos) */}
       {drawerFiltrosAbierto && (
         <div className="cd-x60" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="cd-x61" onClick={(e) => e.stopPropagation()}>
@@ -410,7 +410,7 @@ export const ContactosDashboard = () => {
 
             <div className="cd-x72">
               <button className="cd-x73" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
-              <button className="cd-x74" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
+              <button className="cd-x74" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
         </div>

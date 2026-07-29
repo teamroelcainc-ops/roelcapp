@@ -154,7 +154,7 @@ export function HistorialChequeosDashboard({ usuarioActual }: Props) {
                       </td>
                       <td>
                         {reg.ubicacion?.startsWith('http') ? (
-                          <a href={reg.ubicacion} target="_blank" rel="noopener noreferrer" className="hcheq-mapa-link">📍 Ver Mapa</a>
+                          <a href={reg.ubicacion} target="_blank" rel="noopener noreferrer" className="hcheq-mapa-link">Ver Mapa</a>
                         ) : (
                           reg.ubicacion
                         )}

@@ -1404,7 +1404,7 @@ export const ReferenciasDieselDashboard = () => {
                     cursor: operacionesMostradas.length === 0 ? 'not-allowed' : 'pointer',
                     backgroundColor: operacionesMostradas.length === 0 ? '#30363d' : '#1a7f37',
                     color: operacionesMostradas.length === 0 ? '#8b949e' : '#fff' }}>
-                  ⬇ Exportar Excel ({filtroEstadoOps === 'cargadas' ? 'Cargadas' : 'Pendientes'})
+                  Exportar Excel ({filtroEstadoOps === 'cargadas' ? 'Cargadas' : 'Pendientes'})
                 </button>
               </div>
             </div>
@@ -1515,7 +1515,7 @@ export const ReferenciasDieselDashboard = () => {
             )}
             {(fechaDesdeHist || fechaHastaHist) && (
               <span className="rdd-x18">
-                📅 {(fechaDesdeHist || '…')} → {(fechaHastaHist || '…')}
+                {(fechaDesdeHist || '…')} → {(fechaHastaHist || '…')}
                 <button className="rdd-x19" onClick={() => { setFechaDesdeHist(''); setFechaHastaHist(''); }}>✕</button>
               </span>
             )}
@@ -1527,7 +1527,7 @@ export const ReferenciasDieselDashboard = () => {
             </button>
           </div>
 
-          {/* ✅ RESUMEN: separa lo AUTORIZADO de lo CARGADO (galones y $) */}
+          {/* RESUMEN: separa lo AUTORIZADO de lo CARGADO (galones y $) */}
           {busquedaRefHecha && referenciasFiltradas.length > 0 && (
             <div className="rdd-x28">
               <div className="rdd-x54">
@@ -1757,7 +1757,7 @@ export const ReferenciasDieselDashboard = () => {
                 <textarea className="rdd-x114" value={observacionesForm} onChange={e => setObservacionesForm(e.target.value)} />
               </div>
 
-              {/* ✅ FOTOS DE LA REFERENCIA */}
+              {/* FOTOS DE LA REFERENCIA */}
               <div className="rdd-x113">
                 <label className="rdd-x115">
                   FOTOS <span className="rdd-x116">(se guardan en {sanitizarSegmentoRuta(consecutivoForm)}/{sanitizarSegmentoRuta(filtroUnidad)}/)</span>
@@ -1946,7 +1946,7 @@ export const ReferenciasDieselDashboard = () => {
                   </div>
                 </div>
 
-                {/* ✅ FOTOS DE LA REFERENCIA (ver y AGREGAR desde la ficha) */}
+                {/* FOTOS DE LA REFERENCIA (ver y AGREGAR desde la ficha) */}
                 <div className="rdd-x143">
                   <span className="rdd-x158">
                     Fotos ({Array.isArray(referenciaViendo.fotos) ? referenciaViendo.fotos.length : 0})
@@ -2050,7 +2050,7 @@ export const ReferenciasDieselDashboard = () => {
                           }}
                         >
                           {displayRef}
-                          {/* ✅ Caja Cargada / Vacía y Hazmat de la operación */}
+                          {/* Caja Cargada / Vacía y Hazmat de la operación */}
                           {match && (() => {
                             const atrib = atributosCajaOp(match);
                             return (
@@ -2099,7 +2099,7 @@ export const ReferenciasDieselDashboard = () => {
             <form onSubmit={handleGuardarEdicionRef}>
               <div className="rdd-x101">
 
-                {/* ✅ NÚMERO DE REFERENCIA EDITABLE (debe ser único) */}
+                {/* NÚMERO DE REFERENCIA EDITABLE (debe ser único) */}
                 <div className="rdd-x175">
                   <label className="rdd-x176">NÚMERO DE REFERENCIA (CONSECUTIVO)</label>
                   <input className="rdd-x177"
@@ -2236,7 +2236,7 @@ export const ReferenciasDieselDashboard = () => {
       )}
 
 
-      {/* ✅ NUEVO: panel lateral DERECHO de filtros (Referencias del Diesel) */}
+      {/* NUEVO: panel lateral DERECHO de filtros (Referencias del Diesel) */}
       {drawerFiltrosAbierto && (
         <div className="rdd-x200" onClick={() => setDrawerFiltrosAbierto(false)}>
           <div className="rdd-x201" onClick={(e) => e.stopPropagation()}>
@@ -2309,7 +2309,7 @@ export const ReferenciasDieselDashboard = () => {
                   </div>
                 </div>
 
-                {/* ✅ NUEVO: rango de fechas del historial (fecha de la referencia) */}
+                {/* NUEVO: rango de fechas del historial (fecha de la referencia) */}
                 <div className="rdd-x208">
                   <div className="rdd-x209">
                     <label className="rdd-x191">FECHA DESDE</label>
@@ -2340,7 +2340,7 @@ export const ReferenciasDieselDashboard = () => {
                   setBusquedaRefHecha(true);
                 }
                 setDrawerFiltrosAbierto(false);
-              }}>🔍 Buscar</button>
+              }}>Buscar</button>
             </div>
           </div>
         </div>
