@@ -10,6 +10,7 @@
 
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { almacenSesion } from '../../../utils/cacheMemoria';
 
 const CACHE_KEY = 'roelca_catalogo_tarifas_ref_v1';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 horas
@@ -19,7 +20,7 @@ let inFlight: Promise<Record<string, any>> | null = null;
 
 /**
  * Devuelve un mapa { tarifaId → docCompleto } de catalogo_tarifas_referencia.
- * Usa cache en memoria + sessionStorage. Sólo lee Firestore la primera vez
+ * Usa cache en memoria + almacenSesion. Sólo lee Firestore la primera vez
  * por sesión (o cuando expira el TTL).
  */
 export const obtenerTarifasReferencia = async (): Promise<Record<string, any>> => {
@@ -28,7 +29,7 @@ export const obtenerTarifasReferencia = async (): Promise<Record<string, any>> =
   }
 
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = almacenSesion.getItem(CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed.ts === 'number' && Date.now() - parsed.ts < CACHE_TTL_MS) {
@@ -48,7 +49,7 @@ export const obtenerTarifasReferencia = async (): Promise<Record<string, any>> =
 
       const ts = Date.now();
       memoryCache = { data, ts };
-      try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data, ts })); } catch { /* quota */ }
+      try { almacenSesion.setItem(CACHE_KEY, JSON.stringify({ data, ts })); } catch { /* quota */ }
       return data;
     } finally {
       inFlight = null;
@@ -76,5 +77,5 @@ export const descripcionDeTipoConvenio = (
  */
 export const limpiarCacheTarifasReferencia = () => {
   memoryCache = null;
-  try { sessionStorage.removeItem(CACHE_KEY); } catch { /* noop */ }
+  try { almacenSesion.removeItem(CACHE_KEY); } catch { /* noop */ }
 };

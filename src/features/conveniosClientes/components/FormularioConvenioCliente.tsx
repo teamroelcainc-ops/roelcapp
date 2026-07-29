@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, writeBatch, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import type { ConvenioClienteRecord, ConvenioDetalleRecord } from '../../../types/convenioCliente';
+import './FormularioConvenioCliente.css';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -28,7 +29,7 @@ const SearchableSelect: React.FC<{
   );
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div className="fcc-x1">
       <input
         type="text"
         className="form-control"
@@ -52,13 +53,10 @@ const SearchableSelect: React.FC<{
       />
       
       {isOpen && (
-        <ul style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '200px', overflowY: 'auto',
-          backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px', padding: '0', listStyle: 'none', zIndex: 1000, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)'
-        }}>
+        <ul className="fcc-x2">
           {filteredOptions.length > 0 ? (
             filteredOptions.map(opt => (
-              <li
+              <li className="fcc-x3"
                 key={opt.id}
                 // CORRECCIÓN 2: onMouseDown evita que se dispare el onBlur del input antes de seleccionar
                 onMouseDown={(e) => { 
@@ -67,7 +65,6 @@ const SearchableSelect: React.FC<{
                   setSearchTerm(opt.label); 
                   setIsOpen(false); 
                 }}
-                style={{ padding: '8px 12px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #21262d', fontSize: '0.85rem' }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
@@ -75,7 +72,7 @@ const SearchableSelect: React.FC<{
               </li>
             ))
           ) : (
-            <li style={{ padding: '8px 12px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>No se encontraron coincidencias</li>
+            <li className="fcc-x4">No se encontraron coincidencias</li>
           )}
         </ul>
       )}
@@ -95,28 +92,27 @@ const FieldConfigModal: React.FC<{
 }> = ({ isOpen, onClose, fields, requiredFields, toggleRequired }) => {
   if (!isOpen) return null;
   return (
-    <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 2000 }}>
-      <div className="form-card" style={{ maxWidth: '400px', borderRadius: '16px', border: '1px solid #444', backgroundColor: '#0d1117' }}>
-        <div className="form-header" style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', marginBottom: '0' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', margin: 0, color: '#f0f6fc' }}>⚙️ Campos Obligatorios</h3>
-          <button className="close-x" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+    <div className="modal-overlay fcc-x5">
+      <div className="form-card fcc-x6">
+        <div className="form-header fcc-x7">
+          <h3 className="fcc-x8">⚙️ Campos Obligatorios</h3>
+          <button className="close-x fcc-x9" onClick={onClose}>✕</button>
         </div>
-        <div style={{ padding: '24px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div className="fcc-x10">
+          <div className="fcc-x11">
             {fields.map(f => (
-              <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', fontSize: '0.95rem', color: '#c9d1d9' }}>
-                <input 
+              <label className="fcc-x12" key={f.name}>
+                <input className="fcc-x13" 
                   type="checkbox" 
                   checked={requiredFields.includes(f.name)} 
-                  onChange={() => toggleRequired(f.name)} 
-                  style={{ width: '18px', height: '18px', accentColor: '#D84315' }}
+                  onChange={() => toggleRequired(f.name)}
                 />
                 {f.label}
               </label>
             ))}
           </div>
-          <div style={{ marginTop: '30px' }}>
-            <button type="button" className="btn-primary" onClick={onClose} style={{ width: '100%', padding: '10px' }}>Listo</button>
+          <div className="fcc-x14">
+            <button type="button" className="btn-primary fcc-x15" onClick={onClose}>Listo</button>
           </div>
         </div>
       </div>
@@ -355,11 +351,11 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
       <FieldConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} fields={configuracionCampos} requiredFields={requiredFields} toggleRequired={toggleRequired} />
 
       <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
-        <div className="form-card" style={{ maxWidth: '850px' }}>
+        <div className="form-card fcc-x16">
           <div className="form-header">
             <h2>{initialData ? `Editar Convenio` : 'Nuevo Convenio de Cliente'}</h2>
             <div className="header-actions">
-              <button type="button" onClick={() => setIsConfigOpen(true)} className="btn-window" style={{ background: 'none' }}>⚙️</button>
+              <button type="button" onClick={() => setIsConfigOpen(true)} className="btn-window fcc-x17">⚙️</button>
               {estado === 'abierto' ? <button type="button" onClick={onMinimize} className="btn-window">🗕</button> : <button type="button" onClick={onRestore} className="btn-window restore">🗖</button>}
               <button type="button" onClick={onClose} className="btn-window close">✕</button>
             </div>
@@ -367,10 +363,10 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
 
           <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
             <form onSubmit={handleSubmit}>
-              <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div className="form-grid fcc-x18">
                 <div className="form-group">
                   <label className="form-label orange"># de Convenio</label>
-                  <input type="text" className="form-control" value={formData.numeroConvenio} disabled style={{ backgroundColor: '#21262d' }} />
+                  <input type="text" className="form-control fcc-x19" value={formData.numeroConvenio} disabled />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Cliente *</label>
@@ -406,17 +402,17 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
               </div>
 
               {/* TABLA DE DETALLES */}
-              <div style={{ marginTop: '32px', border: '1px solid #30363d', borderRadius: '8px', padding: '24px', backgroundColor: '#0d1117' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                  <h3 style={{ fontSize: '1rem', color: '#f0f6fc', margin: 0 }}>Lista de Detalles</h3>
+              <div className="fcc-x20">
+                <div className="fcc-x21">
+                  <h3 className="fcc-x22">Lista de Detalles</h3>
                   <button type="button" className="btn btn-outline" onClick={() => setMostrandoDetalleForm(!mostrandoDetalleForm)}>
                     {mostrandoDetalleForm ? 'Cancelar' : '+ Agregar Detalle'}
                   </button>
                 </div>
 
                 {mostrandoDetalleForm && (
-                  <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', marginBottom: '24px' }}>
-                    <div className="form-grid" style={{ gridTemplateColumns: '2fr 1fr 1fr auto', gap: '16px', alignItems: 'end' }}>
+                  <div className="fcc-x23">
+                    <div className="form-grid fcc-x24">
                       <div className="form-group">
                         <label className="form-label">Tipo de Convenio (Referencia)</label>
                         {/* ✅ Buscador en lugar de lista desplegable */}
@@ -441,31 +437,31 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                         <label className="form-label">Tarifa Final *</label>
                         <input type="number" step="0.01" className="form-control" value={detalleDraft.tarifa} onChange={(e) => setDetalleDraft({...detalleDraft, tarifa: parseFloat(e.target.value) || 0})} />
                       </div>
-                      <button type="button" className="btn btn-primary" style={{ height: '38px' }} onClick={handleAgregarDetalle}>Guardar</button>
+                      <button type="button" className="btn btn-primary fcc-x25" onClick={handleAgregarDetalle}>Guardar</button>
                     </div>
                   </div>
                 )}
 
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ backgroundColor: '#161b22', color: '#8b949e' }}>
+                <table className="data-table fcc-x26">
+                  <thead className="fcc-x27">
                     <tr>
-                      <th style={{ padding: '12px' }}>#</th>
-                      <th style={{ padding: '12px' }}>TIPO DE CONVENIO</th>
-                      <th style={{ padding: '12px' }}>TARIFA</th>
-                      <th style={{ padding: '12px', textAlign: 'center' }}>ACCIÓN</th>
+                      <th className="fcc-x28">#</th>
+                      <th className="fcc-x28">TIPO DE CONVENIO</th>
+                      <th className="fcc-x28">TARIFA</th>
+                      <th className="fcc-x29">ACCIÓN</th>
                     </tr>
                   </thead>
                   <tbody>
                     {detalles.length === 0 ? (
-                      <tr><td colSpan={4} style={{ textAlign: 'center', padding: '24px', color: '#8b949e' }}>No hay detalles agregados.</td></tr>
+                      <tr><td className="fcc-x30" colSpan={4}>No hay detalles agregados.</td></tr>
                     ) : (
                       detalles.map((det, index) => (
-                        <tr key={det.id} style={{ borderTop: '1px solid #30363d' }}>
-                          <td style={{ padding: '12px', color: '#8b949e' }}>{index + 1}</td>
-                          <td style={{ padding: '12px', color: '#c9d1d9' }}>{det.tipoConvenioNombre}</td>
-                          <td style={{ padding: '12px', color: '#f0f6fc', fontWeight: 'bold' }}>${Number(det.tarifa).toFixed(2)}</td>
-                          <td style={{ padding: '12px', textAlign: 'center' }}>
-                            <button type="button" onClick={() => handleEliminarDetalle(det.id!, det._isNew)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>✕</button>
+                        <tr className="fcc-x31" key={det.id}>
+                          <td className="fcc-x32">{index + 1}</td>
+                          <td className="fcc-x33">{det.tipoConvenioNombre}</td>
+                          <td className="fcc-x34">${Number(det.tarifa).toFixed(2)}</td>
+                          <td className="fcc-x29">
+                            <button className="fcc-x35" type="button" onClick={() => handleEliminarDetalle(det.id!, det._isNew)}>✕</button>
                           </td>
                         </tr>
                       ))
@@ -474,7 +470,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                 </table>
               </div>
 
-              <div className="form-actions" style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end', gap: '16px' }}>
+              <div className="form-actions fcc-x36">
                 <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
                 <button type="submit" className="btn btn-primary" disabled={cargando}>{cargando ? 'Guardando...' : 'Guardar Convenio Maestro'}</button>
               </div>

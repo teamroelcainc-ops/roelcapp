@@ -7,6 +7,8 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
+import './EmpresasDashboard.css';
+import { almacenSesion } from '../../../utils/cacheMemoria';
 
 const opcionesFiltro = [
   'Todo', 'Proveedor (Servicios)', 'Empresa Inactiva', 'Baja', 'Cliente (Mercancía)', 
@@ -135,7 +137,7 @@ const EmpresasDashboard = () => {
     // ✅ OPTIMIZACIÓN DE LECTURAS Y DICCIONARIOS A PRUEBA DE FALLOS
     const fetchDiccionarios = async () => {
       const cacheKey = 'roelca_empresas_dict_v2'; // Cambiamos la llave para obligar a que se limpie la caché antigua
-      const cacheData = sessionStorage.getItem(cacheKey);
+      const cacheData = almacenSesion.getItem(cacheKey);
       if (cacheData) {
         setDiccionarios(JSON.parse(cacheData));
         return;
@@ -175,7 +177,7 @@ const EmpresasDashboard = () => {
           tiposEmpresa: tEmpresa, tiposServicio: tServicio 
         };
 
-        sessionStorage.setItem(cacheKey, JSON.stringify(totalDict));
+        almacenSesion.setItem(cacheKey, JSON.stringify(totalDict));
         setDiccionarios(totalDict);
       } catch (error) {
         console.error("Error cargando diccionarios:", error);
@@ -485,7 +487,7 @@ const EmpresasDashboard = () => {
     switch (colId) {
       case 'numCliente':
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="ed-x1">
             {colorSemaforo !== 'transparent' && (
               <span 
                 title={`Último uso en operaciones: ${emp._fechaDinamicaUso}`} 
@@ -500,16 +502,16 @@ const EmpresasDashboard = () => {
       case 'nombre':
         return (
           <span style={{ fontWeight: '500', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc' }}>
-            {emp.nombre} {emp.status === 'Baja' && <span style={{ fontSize: '0.7rem', border: '1px solid #ef4444', padding: '2px 4px', borderRadius: '4px', marginLeft: '6px' }}>BAJA</span>}
+            {emp.nombre} {emp.status === 'Baja' && <span className="ed-x2">BAJA</span>}
           </span>
         );
-      case 'nombreCorto': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(emp.nombreCorto)}</span>;
-      case 'tiposEmpresa': return <span style={{ color: '#c9d1d9', fontSize: '0.85rem' }}>{renderArrayValues(emp._tiposEmpresaArray)}</span>;
-      case 'servicios': return <span style={{ color: '#c9d1d9', fontSize: '0.85rem' }}>{renderArrayValues(emp._tiposServicioArray)}</span>;
-      case 'rfcTaxId': return <span style={{ color: '#c9d1d9', fontFamily: 'monospace' }}>{mostrarDato(emp.rfcTaxId)}</span>;
+      case 'nombreCorto': return <span className="ed-x3">{mostrarDato(emp.nombreCorto)}</span>;
+      case 'tiposEmpresa': return <span className="ed-x4">{renderArrayValues(emp._tiposEmpresaArray)}</span>;
+      case 'servicios': return <span className="ed-x4">{renderArrayValues(emp._tiposServicioArray)}</span>;
+      case 'rfcTaxId': return <span className="ed-x5">{mostrarDato(emp.rfcTaxId)}</span>;
       case 'fechaService':
       case 'fechaServicio':
-        return <span style={{ color: '#c9d1d9' }}>{mostrarDato(emp._fechaDinamicaUso)}</span>;
+        return <span className="ed-x3">{mostrarDato(emp._fechaDinamicaUso)}</span>;
       default: return '-';
     }
   };
@@ -579,7 +581,7 @@ const EmpresasDashboard = () => {
   });
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container ed-x6">
       
       <style>{`
         .detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -598,74 +600,71 @@ const EmpresasDashboard = () => {
         />
       )}
 
-      <div style={{ width: '100%', margin: '0 auto' }}>
+      <div className="ed-x7">
         
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+        <h1 className="module-title ed-x8">
           Empresas
         </h1>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
+        <div className="ed-x9">
           
-          <div style={{ display: 'flex', gap: '10px', flex: '1 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="ed-x10">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busqueda || filtroActivo !== 'Todo') ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {(busqueda || filtroActivo !== 'Todo') && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[busqueda, filtroActivo !== 'Todo' ? filtroActivo : ''].filter(Boolean).length}</span>}
+              {(busqueda || filtroActivo !== 'Todo') && <span className="ed-x11">{[busqueda, filtroActivo !== 'Todo' ? filtroActivo : ''].filter(Boolean).length}</span>}
             </button>
             {filtroActivo !== 'Todo' && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(163,113,247,0.1)', border: '1px solid #a371f7', borderRadius: '14px', color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="ed-x12">
                 {filtroActivo}
-                <button onClick={() => setFiltroActivo('Todo')} style={{ background: 'transparent', border: 'none', color: '#a371f7', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="ed-x13" onClick={() => setFiltroActivo('Todo')}>✕</button>
               </span>
             )}
             {busqueda && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="ed-x14">
                 "{busqueda}"
-                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="ed-x15" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="ed-x16">
               {busquedaHecha ? `${registrosFiltrados.length} empresas` : 'Presiona Filtros y Buscar para ver las empresas.'}
             </span>
           </div>
 
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
+          <div className="ed-x17">
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline ed-x18" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline ed-x18" 
               title="Exportar a Excel"
-              onClick={() => setModalExcelAbierto(true)} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
+              onClick={() => setModalExcelAbierto(true)}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button 
-              className="btn btn-primary" 
+              className="btn btn-primary ed-x19" 
               title="Agregar Empresa"
-              onClick={handleNuevo} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}
+              onClick={handleNuevo}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
           </div>
         </div>
 
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#1f2937', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="content-body ed-x20">
+          <div className="table-container ed-x21">
+            <table className="data-table ed-x22">
+              <thead className="ed-x23">
                 <tr>
-                  <th style={{ padding: '16px', width: '140px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#1f2937', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                  <th className="ed-x24">Acciones</th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                    <th className="ed-x25" key={`th_${col.id}`}>
                       {col.label}
                     </th>
                   ))}
@@ -673,16 +672,16 @@ const EmpresasDashboard = () => {
               </thead>
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td colSpan={columnasTabla.length + 1} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="ed-x26" colSpan={columnasTabla.length + 1}>
+                    <div className="ed-x27">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las empresas.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="ed-x28">Define tus filtros y presiona <b className="ed-x29">Buscar</b> para ver las empresas.</span>
+                      <button className="ed-x30" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td className="ed-x31" colSpan={columnasTabla.length + 1}>
                       {busqueda || filtroActivo !== 'Todo' ? 'No se encontraron empresas con estos filtros.' : 'Aún no hay empresas registradas.'}
                     </td>
                   </tr>
@@ -695,14 +694,13 @@ const EmpresasDashboard = () => {
                       onMouseLeave={() => setHoveredRowId(null)}
                       onClick={() => verDetailDirecto(emp)}
                     >
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <td className="ed-x32" onClick={(e: any) => e.stopPropagation()}>
+                        <div className="actions-cell ed-x33">
                           
                           <button 
-                            className="btn-small btn-edit" 
+                            className="btn-small btn-edit ed-x34" 
                             title="Editar Empresa"
                             onClick={(e) => { e.stopPropagation(); editarEmpresa(emp); }}
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -711,10 +709,9 @@ const EmpresasDashboard = () => {
                           
                           {emp.status !== 'Baja' && (
                             <button 
-                              className="btn-small btn-warning" 
+                              className="btn-small btn-warning ed-x35" 
                               title="Dar de Baja"
                               onClick={(e) => { e.stopPropagation(); abrirModalBaja(emp); }}
-                              style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
@@ -723,10 +720,9 @@ const EmpresasDashboard = () => {
                           )}
 
                           <button 
-                            className="btn-small btn-danger" 
+                            className="btn-small btn-danger ed-x36" 
                             title="Eliminar"
                             onClick={(e) => { e.stopPropagation(); eliminarEmpresa(emp.id); }}
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -736,7 +732,7 @@ const EmpresasDashboard = () => {
                         </div>
                       </td>
                       {columnasTabla.filter(c => c.visible).map(col => (
-                        <td key={`cell_${emp.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                        <td className="ed-x37" key={`cell_${emp.id}_${col.id}`}>
                           {renderCellContent(emp, col.id)}
                         </td>
                       ))}
@@ -748,13 +744,13 @@ const EmpresasDashboard = () => {
           </div>
 
           {busquedaHecha && registrosFiltrados.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="ed-x38">
+              <div className="ed-x39">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="ed-x40">
                 <button title="Anterior" onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="ed-x41">{paginaActual} / {totalPaginas || 1}</span>
                 <button title="Siguiente" onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
               </div>
             </div>
@@ -764,15 +760,15 @@ const EmpresasDashboard = () => {
 
       {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay ed-x42">
+          <div className="ed-x43">
+            <div className="ed-x44">
+              <h3 className="ed-x45">Configurar Columnas de la Tabla</h3>
+              <button className="ed-x46" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            <p className="ed-x47">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
             
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <ul className="ed-x48">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -784,13 +780,13 @@ const EmpresasDashboard = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <input className="ed-x49" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="ed-x50">
+              <button className="ed-x51" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -798,38 +794,38 @@ const EmpresasDashboard = () => {
 
       {/* MODAL CONFIGURACIÓN REPORTE EXCEL */}
       {modalExcelAbierto && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div style={{ maxWidth: '600px', width: '100%', backgroundColor: '#0d1117', borderRadius: '12px', border: '1px solid #30363d', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="modal-overlay ed-x52">
+          <div className="ed-x53">
+            <div className="ed-x54">
+              <h2 className="ed-x55">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#238636" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                 Generar Reporte Excel
               </h2>
-              <button onClick={() => setModalExcelAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="ed-x46" onClick={() => setModalExcelAbierto(false)}>✕</button>
             </div>
-            <div style={{ padding: '24px', flex: 1, overflowY: 'auto' }}>
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', color: '#f0f6fc', fontWeight: 'bold', marginBottom: '8px', fontSize: '1rem' }}>1. Selecciona el Tipo de Cliente/Empresa a exportar:</label>
-                <select value={excelFiltroTipo} onChange={(e) => setExcelFiltroTipo(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem' }}>
+            <div className="ed-x56">
+              <div className="ed-x57">
+                <label className="ed-x58">1. Selecciona el Tipo de Cliente/Empresa a exportar:</label>
+                <select className="ed-x59" value={excelFiltroTipo} onChange={(e) => setExcelFiltroTipo(e.target.value)}>
                   {opcionesFiltro.map(opcion => (
                     <option key={`xls_${opcion}`} value={opcion}>{opcion === 'Todo' ? 'Todos los registros' : opcion}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '12px' }}>
-                  <label style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1rem', margin: 0 }}>2. Selecciona las columnas a incluir:</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={seleccionarTodasColumnas} style={{ background: 'transparent', border: 'none', color: '#58a6ff', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>Marcar todas</button>
-                    <button onClick={deseleccionarTodasColumnas} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: '0.8rem', cursor: 'pointer', textDecoration: 'underline' }}>Desmarcar todas</button>
+                <div className="ed-x60">
+                  <label className="ed-x61">2. Selecciona las columnas a incluir:</label>
+                  <div className="ed-x40">
+                    <button className="ed-x62" onClick={seleccionarTodasColumnas}>Marcar todas</button>
+                    <button className="ed-x63" onClick={deseleccionarTodasColumnas}>Desmarcar todas</button>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+                <div className="ed-x64">
                   {opcionesColumnasExcel.map(col => {
                     const isChecked = excelColumnasSeleccionadas.includes(col.key);
                     return (
                       <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isChecked ? '#f0f6fc' : '#8b949e', cursor: 'pointer', fontSize: '0.9rem' }}>
-                        <input type="checkbox" checked={isChecked} onChange={() => handleToggleColumnaExcel(col.key)} style={{ cursor: 'pointer' }} />
+                        <input className="ed-x49" type="checkbox" checked={isChecked} onChange={() => handleToggleColumnaExcel(col.key)} />
                         {col.label}
                       </label>
                     );
@@ -837,9 +833,9 @@ const EmpresasDashboard = () => {
                 </div>
               </div>
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button onClick={() => setModalExcelAbierto(false)} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-              <button onClick={ejecutarExportacionExcel} style={{ padding: '8px 16px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Generar y Descargar Excel</button>
+            <div className="ed-x65">
+              <button className="ed-x66" onClick={() => setModalExcelAbierto(false)}>Cancelar</button>
+              <button className="ed-x67" onClick={ejecutarExportacionExcel}>Generar y Descargar Excel</button>
             </div>
           </div>
         </div>
@@ -847,32 +843,31 @@ const EmpresasDashboard = () => {
 
       {/* MODAL DETALLES DE EMPRESA */}
       {empresaViendo && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-          <div className="form-card detail-card" style={{ maxWidth: '850px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px', overflow: 'hidden' }}>
+        <div className="modal-overlay ed-x68">
+          <div className="form-card detail-card ed-x69">
             
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="form-header ed-x70">
               <div>
-                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.25rem' }}>Detalle de Empresa <span style={{ color: '#D84315' }}>{empresaViendo.numCliente}</span></h2>
+                <h2 className="ed-x71">Detalle de Empresa <span className="ed-x29">{empresaViendo.numCliente}</span></h2>
                 {empresaViendo.status === 'Baja' && (
-                  <span style={{ display: 'inline-block', marginTop: '8px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+                  <span className="ed-x72">
                     EMPRESA DADA DE BAJA EL {empresaViendo.fechaBaja}
                   </span>
                 )}
               </div>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <button
+              <div className="ed-x73">
+                <button className="ed-x74"
                   onClick={() => setMostrarSubirDoc(true)}
                   title="Subir documentos de la empresa"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#D84315', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                   Subir Documentos
                 </button>
-                <button onClick={() => setEmpresaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+                <button className="ed-x46" onClick={() => setEmpresaViendo(null)}>✕</button>
               </div>
             </div>
             
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px', overflowX: 'auto' }}>
+            <div className="ed-x75">
               <button type="button" onClick={() => setActiveTabDetalle('general')} style={tabStyle(activeTabDetalle === 'general')}>General</button>
               <button type="button" onClick={() => setActiveTabDetalle('fiscal')} style={tabStyle(activeTabDetalle === 'fiscal')}>Comercial / Fiscal</button>
               <button type="button" onClick={() => setActiveTabDetalle('contacto')} style={tabStyle(activeTabDetalle === 'contacto')}>Contacto</button>
@@ -880,19 +875,19 @@ const EmpresasDashboard = () => {
               <button type="button" onClick={() => setActiveTabDetalle('documentos')} style={tabStyle(activeTabDetalle === 'documentos')}>Documentos</button>
             </div>
 
-            <div className="detail-content" style={{ padding: '24px', minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
+            <div className="detail-content ed-x76">
               
               {activeTabDetalle === 'general' && (
-                <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', animation: 'fadeIn 0.3s ease' }}>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Razón Social</span><span className="detail-value" style={{ color: '#f0f6fc', fontSize: '1rem', fontWeight: 'bold' }}>{mostrarDato(empresaViendo.nombre)}</span></div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Nombre Corto</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.nombreCorto)}</span></div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Status</span><span className="detail-value" style={{ color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}><span className={`dot ${empresaViendo.status === 'Activa' ? 'dot-green' : empresaViendo.status === 'Baja' ? 'dot-red' : 'dot-gray'}`}></span>{mostrarDato(empresaViendo.status)}</span></div>
+                <div className="detail-grid ed-x77">
+                  <div className="detail-item"><span className="detail-label ed-x78">Razón Social</span><span className="detail-value ed-x79">{mostrarDato(empresaViendo.nombre)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Nombre Corto</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo.nombreCorto)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Status</span><span className="detail-value ed-x80"><span className={`dot ${empresaViendo.status === 'Activa' ? 'dot-green' : empresaViendo.status === 'Baja' ? 'dot-red' : 'dot-gray'}`}></span>{mostrarDato(empresaViendo.status)}</span></div>
                   
-                  <div className="detail-item" style={{ gridColumn: 'span 3' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Tipo(s) de Empresa</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{renderArrayValues(empresaViendo._tiposEmpresaArray)}</span></div>
-                  <div className="detail-item" style={{ gridColumn: 'span 3' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Servicios Ofrecidos</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{renderArrayValues(empresaViendo._tiposServicioArray)}</span></div>
+                  <div className="detail-item ed-x81"><span className="detail-label ed-x78">Tipo(s) de Empresa</span><span className="detail-value ed-x3">{renderArrayValues(empresaViendo._tiposEmpresaArray)}</span></div>
+                  <div className="detail-item ed-x81"><span className="detail-label ed-x78">Servicios Ofrecidos</span><span className="detail-value ed-x3">{renderArrayValues(empresaViendo._tiposServicioArray)}</span></div>
                   
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>RFC / Tax ID</span><span className="detail-value font-mono" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.rfcTaxId)}</span></div>
-                  <div className="detail-item" style={{ gridColumn: 'span 2' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Fecha del último servicio</span><span className="detail-value" style={{ color: '#c9d1d9' }}>
+                  <div className="detail-item"><span className="detail-label ed-x78">RFC / Tax ID</span><span className="detail-value font-mono ed-x3">{mostrarDato(empresaViendo.rfcTaxId)}</span></div>
+                  <div className="detail-item ed-x82"><span className="detail-label ed-x78">Fecha del último servicio</span><span className="detail-value ed-x3">
                     {obtenerColorInactividad(empresaViendo._fechaDinamicaUso) !== 'transparent' && (
                       <span style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: obtenerColorInactividad(empresaViendo._fechaDinamicaUso), display: 'inline-block', marginRight: '6px', boxShadow: `0 0 5px ${obtenerColorInactividad(empresaViendo._fechaDinamicaUso)}` }}></span>
                     )}
@@ -900,32 +895,32 @@ const EmpresasDashboard = () => {
                   </span></div>
                   
                   {Array.isArray(empresaViendo.tiposEmpresa) && empresaViendo.tiposEmpresa.includes('Cliente (Mercancía)') && (
-                    <div className="detail-item" style={{ gridColumn: 'span 3' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Cliente Paga (Relacionado)</span><span className="detail-value" style={{ color: '#58a6ff', fontWeight: '500' }}>{mostrarDato(empresaViendo._clienteRelLabel)}</span></div>
+                    <div className="detail-item ed-x81"><span className="detail-label ed-x78">Cliente Paga (Relacionado)</span><span className="detail-value ed-x83">{mostrarDato(empresaViendo._clienteRelLabel)}</span></div>
                   )}
 
                   {empresaViendo.status === 'Baja' && (
-                    <div style={{ gridColumn: 'span 3', backgroundColor: 'rgba(239, 68, 68, 0.05)', padding: '16px', borderRadius: '8px', border: '1px dashed #ef4444', display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px' }}>
-                      <div className="detail-item" style={{ marginBottom: '0' }}><span className="detail-label" style={{ color: '#ef4444', fontSize: '0.8rem', display:'block' }}>Fecha de Baja</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.fechaBaja)}</span></div>
-                      <div className="detail-item"><span className="detail-label" style={{ color: '#ef4444', fontSize: '0.8rem', display:'block' }}>Observaciones de Baja</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.observacionesBaja)}</span></div>
+                    <div className="ed-x84">
+                      <div className="detail-item ed-x85"><span className="detail-label ed-x86">Fecha de Baja</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo.fechaBaja)}</span></div>
+                      <div className="detail-item"><span className="detail-label ed-x86">Observaciones de Baja</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo.observacionesBaja)}</span></div>
                     </div>
                   )}
                 </div>
               )}
 
               {activeTabDetalle === 'fiscal' && (
-                <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', animation: 'fadeIn 0.3s ease' }}>
-                  <div className="detail-item" style={{ gridColumn: 'span 3' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Régimen Fiscal</span><span className="detail-value" style={{ color: '#f0f6fc', fontSize: '0.95rem' }}>{mostrarDato(empresaViendo._regimenLabel)}</span></div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Moneda</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo._monedaLabel)}</span></div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Tipo de Factura</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo._facturaLabel)}</span></div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Condición de Pago</span><span className="detail-value" style={{ color: '#58a6ff', fontWeight: 'bold' }}>{mostrarDato(empresaViendo.condicionPago)}</span></div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Días de Crédito</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.diasCredito)}</span></div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Límite de Crédito</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{empresaViendo.limiteCredito ? `$${empresaViendo.limiteCredito}` : '-'}</span></div>
+                <div className="detail-grid ed-x77">
+                  <div className="detail-item ed-x81"><span className="detail-label ed-x78">Régimen Fiscal</span><span className="detail-value ed-x87">{mostrarDato(empresaViendo._regimenLabel)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Moneda</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo._monedaLabel)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Tipo de Factura</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo._facturaLabel)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Condición de Pago</span><span className="detail-value ed-x88">{mostrarDato(empresaViendo.condicionPago)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Días de Crédito</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo.diasCredito)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Límite de Crédito</span><span className="detail-value ed-x3">{empresaViendo.limiteCredito ? `$${empresaViendo.limiteCredito}` : '-'}</span></div>
                 </div>
               )}
 
               {activeTabDetalle === 'contacto' && (
-                <div className="detail-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', animation: 'fadeIn 0.3s ease' }}>
-                  <div className="detail-item" style={{ gridColumn: 'span 2' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Dirección de Facturación</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo._direccionLabel)}</span></div>
+                <div className="detail-grid ed-x89">
+                  <div className="detail-item ed-x82"><span className="detail-label ed-x78">Dirección de Facturación</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo._direccionLabel)}</span></div>
                   {/* ✅ Desglose de la dirección (campos del catálogo de direcciones). */}
                   {(() => {
                     // ✅ Por id y, si el id quedó desactualizado, por coincidencia
@@ -936,12 +931,12 @@ const EmpresasDashboard = () => {
                     const v = (x: any) => String(x ?? '').trim() || '—';
                     const itemDir = (etiqueta: string, valor: any) => (
                       <div className="detail-item">
-                        <span className="detail-label" style={{ color: '#8b949e', fontSize: '0.8rem', display: 'block' }}>{etiqueta}</span>
-                        <span className="detail-value" style={{ color: '#c9d1d9' }}>{v(valor)}</span>
+                        <span className="detail-label ed-x90">{etiqueta}</span>
+                        <span className="detail-value ed-x3">{v(valor)}</span>
                       </div>
                     );
                     return (
-                      <div style={{ gridColumn: 'span 2', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                      <div className="ed-x91">
                         {itemDir('País', dirSel.paisNombre)}
                         {itemDir('Estado', dirSel.estadoNombre)}
                         {itemDir('Municipio', dirSel.municipioNombre)}
@@ -953,45 +948,45 @@ const EmpresasDashboard = () => {
                       </div>
                     );
                   })()}
-                  <div className="detail-item" style={{ gridColumn: 'span 2' }}><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Link de Maps</span>
-                    {empresaViendo.maps ? <a href={empresaViendo.maps} target="_blank" rel="noopener noreferrer" style={{ color: '#58a6ff', textDecoration: 'none' }}>Ver en Google Maps ↗</a> : <span style={{ color: '#c9d1d9' }}>-</span>}
+                  <div className="detail-item ed-x82"><span className="detail-label ed-x78">Link de Maps</span>
+                    {empresaViendo.maps ? <a className="ed-x92" href={empresaViendo.maps} target="_blank" rel="noopener noreferrer">Ver en Google Maps ↗</a> : <span className="ed-x3">-</span>}
                   </div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Teléfono</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.telefono)}</span></div>
-                  <div className="detail-item"><span className="detail-label" style={{ color: '#8b949e', fontSize: '0.85rem', display:'block' }}>Correo Electrónico</span><span className="detail-value" style={{ color: '#c9d1d9' }}>{mostrarDato(empresaViendo.correo)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Teléfono</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo.telefono)}</span></div>
+                  <div className="detail-item"><span className="detail-label ed-x78">Correo Electrónico</span><span className="detail-value ed-x3">{mostrarDato(empresaViendo.correo)}</span></div>
                 </div>
               )}
 
               {/* ✅ TABLA HISTORIAL DE USO */}
               {activeTabDetalle === 'uso' && (
-                <div style={{ animation: 'fadeIn 0.3s ease' }}>
+                <div className="ed-x93">
                   {cargandoUso ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando historial detallado...</div>
+                    <div className="ed-x94">Cargando historial detallado...</div>
                   ) : operacionesUso.length === 0 ? (
-                    <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px' }}>
+                    <div className="ed-x95">
                       Esta empresa aún no ha sido utilizada en ninguna operación bajo los roles verificados.
                     </div>
                   ) : (
                     <>
-                      <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
+                      <p className="ed-x96">
                         Mostrando las operaciones donde esta empresa coincidió como: Cliente Paga, Cliente Mercancía, Prov. Servicios, Prov. Unidad, Destino u Origen.
                       </p>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', backgroundColor: '#161b22', borderRadius: '8px', overflow: 'hidden' }}>
-                        <thead style={{ backgroundColor: '#1f2937' }}>
+                      <table className="ed-x97">
+                        <thead className="ed-x98">
                           <tr>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>REF. OPERACIÓN</th>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>FECHA</th>
-                            <th style={{ padding: '12px 16px', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>ROLES EN LA OP.</th>
+                            <th className="ed-x99">REF. OPERACIÓN</th>
+                            <th className="ed-x99">FECHA</th>
+                            <th className="ed-x99">ROLES EN LA OP.</th>
                           </tr>
                         </thead>
                         <tbody>
                           {operacionesUso.map(op => (
-                            <tr key={op.id} style={{ borderBottom: '1px solid #30363d' }}>
-                              <td style={{ padding: '12px 16px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold' }}>{op.ref || op.id.substring(0,6)}</td>
-                              <td style={{ padding: '12px 16px', color: '#c9d1d9' }}>{op.fechaServicio || op.createdAt}</td>
-                              <td style={{ padding: '12px 16px', color: '#c9d1d9' }}>
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <tr className="ed-x100" key={op.id}>
+                              <td className="ed-x101">{op.ref || op.id.substring(0,6)}</td>
+                              <td className="ed-x102">{op.fechaServicio || op.createdAt}</td>
+                              <td className="ed-x102">
+                                <div className="ed-x103">
                                   {op.rolesUso.map((rol: string, idx: number) => (
-                                    <span key={idx} style={{ backgroundColor: '#21262d', border: '1px solid #30363d', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem' }}>
+                                    <span className="ed-x104" key={idx}>
                                       {rol}
                                     </span>
                                   ))}
@@ -1012,7 +1007,7 @@ const EmpresasDashboard = () => {
 
             </div>
             
-            <div style={{ padding: '16px 24px', textAlign: 'right', borderTop: '1px solid #30363d' }}>
+            <div className="ed-x105">
               <button onClick={() => setEmpresaViendo(null)} className="btn btn-outline">Cerrar Detalles</button>
             </div>
           </div>
@@ -1021,36 +1016,34 @@ const EmpresasDashboard = () => {
 
       {/* MODAL DE BAJA DE EMPRESA */}
       {modalBajaAbierto && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1100 }}>
-          <div className="form-card modal-content" style={{ maxWidth: '400px', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '8px' }}>
-            <h3 style={{ color: '#ef4444', marginTop: 0 }}>Dar de baja Empresa</h3>
-            <p style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>Vas a dar de baja a: <strong>{empresaParaBaja?.nombre}</strong></p>
+        <div className="modal-overlay ed-x106">
+          <div className="form-card modal-content ed-x107">
+            <h3 className="ed-x108">Dar de baja Empresa</h3>
+            <p className="ed-x109">Vas a dar de baja a: <strong>{empresaParaBaja?.nombre}</strong></p>
             <form onSubmit={confirmarBaja}>
-              <div className="form-group" style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', color: '#8b949e', marginBottom: '8px', fontSize: '0.9rem' }}>Fecha de Baja *</label>
+              <div className="form-group ed-x110">
+                <label className="ed-x111">Fecha de Baja *</label>
                 <input 
                   type="date" 
-                  className="form-control" 
+                  className="form-control ed-x112" 
                   value={fechaBaja} 
                   onChange={(e) => setFechaBaja(e.target.value)} 
-                  required 
-                  style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px' }}
+                  required
                 />
               </div>
-              <div className="form-group" style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', color: '#8b949e', marginBottom: '8px', fontSize: '0.9rem' }}>Observaciones (Opcional)</label>
+              <div className="form-group ed-x57">
+                <label className="ed-x111">Observaciones (Opcional)</label>
                 <textarea 
-                  className="form-control" 
+                  className="form-control ed-x112" 
                   rows={3} 
                   value={observacionesBaja} 
                   onChange={(e) => setObservacionesBaja(e.target.value)} 
                   placeholder="Motivo de la baja..."
-                  style={{ width: '100%', padding: '8px', backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px' }}
                 />
               </div>
-              <div className="form-actions" style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                <button type="button" className="btn btn-outline" onClick={() => setModalBajaAbierto(false)} disabled={guardandoBaja} style={{ padding: '8px 16px', background: 'none', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" className="btn btn-danger" disabled={guardandoBaja} style={{ padding: '8px 16px', backgroundColor: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+              <div className="form-actions ed-x113">
+                <button type="button" className="btn btn-outline ed-x114" onClick={() => setModalBajaAbierto(false)} disabled={guardandoBaja}>Cancelar</button>
+                <button type="submit" className="btn btn-danger ed-x115" disabled={guardandoBaja}>
                   {guardandoBaja ? 'Guardando...' : 'Confirmar Baja'}
                 </button>
               </div>
@@ -1073,27 +1066,26 @@ const EmpresasDashboard = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Empresas) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Empresas</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="ed-x116" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="ed-x117" onClick={(e) => e.stopPropagation()}>
+            <div className="ed-x118">
+              <h3 className="ed-x119">Filtros · Empresas</h3>
+              <button className="ed-x46" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Razón social, RFC, alias o # cliente..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="ed-x120">
+              <label className="ed-x121">BÚSQUEDA</label>
+              <div className="ed-x122">
+                <svg className="ed-x123" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="ed-x124" type="text" placeholder="Razón social, RFC, alias o # cliente..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="ed-x125" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>TIPO / STATUS</label>
+            <div className="ed-x120">
+              <label className="ed-x126">TIPO / STATUS</label>
               <select value={filtroActivo} onChange={(e) => setFiltroActivo(e.target.value)}
                 style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: `1px solid ${filtroActivo !== 'Todo' ? '#a371f7' : '#30363d'}`, borderRadius: '6px', color: filtroActivo !== 'Todo' ? '#a371f7' : '#c9d1d9', cursor: 'pointer', fontWeight: filtroActivo !== 'Todo' ? 'bold' : 'normal', boxSizing: 'border-box' }}>
                 {opcionesFiltro.map(opcion => (
@@ -1102,13 +1094,13 @@ const EmpresasDashboard = () => {
               </select>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todas las empresas.
+            <div className="ed-x127">
+              Todos los campos son <b className="ed-x128">opcionales</b>. Presiona <b className="ed-x29">Buscar</b> para ver todas las empresas.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setFiltroActivo('Todo'); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="ed-x129">
+              <button className="ed-x130" onClick={() => { setBusqueda(''); setFiltroActivo('Todo'); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="ed-x131" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

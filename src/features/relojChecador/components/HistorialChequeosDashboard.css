@@ -1,0 +1,149 @@
+/* Estilos hermanos de HistorialChequeosDashboard.tsx (convención CLAUDE.md:
+   sin estilos inline para valores fijos; ver regla general de Estilos). */
+
+.hcheq-container {
+  padding: 24px;
+  animation: fadeIn 0.3s ease;
+}
+
+.hcheq-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 24px;
+}
+
+.hcheq-title {
+  font-size: 1.25rem;
+  color: #8b949e;
+  margin: 0;
+  font-weight: 400;
+}
+
+.hcheq-title strong {
+  color: #f0f6fc;
+  font-weight: 600;
+}
+
+.hcheq-btn-export {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background-color: transparent;
+  border: 1px solid #8b949e;
+  color: #c9d1d9;
+  cursor: pointer;
+}
+
+.hcheq-btn-export:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.hcheq-busqueda {
+  margin-bottom: 24px;
+  max-width: 400px;
+}
+
+.hcheq-busqueda input {
+  background-color: #010409;
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  padding: 10px 16px;
+  border-radius: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.hcheq-body {
+  display: block;
+}
+
+.hcheq-tabla-marco {
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.hcheq-tabla-scroll {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 250px);
+}
+
+.hcheq-tabla {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  min-width: 800px;
+}
+
+.hcheq-tabla thead {
+  background-color: #161b22;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.hcheq-tabla th {
+  padding: 16px;
+  color: #8b949e;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  border-bottom: 1px solid #30363d;
+}
+
+.hcheq-tabla td {
+  padding: 16px;
+  color: #c9d1d9;
+}
+
+.hcheq-tabla tbody tr {
+  border-bottom: 1px solid #21262d;
+}
+
+.hcheq-vacio {
+  text-align: center;
+  padding: 40px;
+  color: #8b949e;
+}
+
+.hcheq-fecha { font-weight: bold; }
+.hcheq-hora { color: #58a6ff; }
+.hcheq-nombre { color: #f0f6fc; font-weight: 500; }
+
+/* Badge de tipo de registro: DOS estados conocidos → clase base + modificador
+   (regla CLAUDE.md "Cuándo NO usar style"), no ternarios inline. */
+.hcheq-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  background-color: rgba(218, 54, 51, 0.15);
+  color: #da3633;
+  border: 1px solid rgba(218, 54, 51, 0.3);
+}
+
+.hcheq-badge.llegada {
+  background-color: rgba(46, 160, 67, 0.15);
+  color: #2ea043;
+  border-color: rgba(46, 160, 67, 0.3);
+}
+
+.hcheq-mapa-link {
+  color: #10b981;
+  text-decoration: none;
+}
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .hcheq-container { padding: 14px 12px; }
+  .hcheq-header { flex-wrap: wrap; }
+  .hcheq-btn-export { flex-wrap: wrap; }
+  .hcheq-tabla { min-width: 0; }
+  .hcheq-vacio { padding: 14px 12px; }
+}

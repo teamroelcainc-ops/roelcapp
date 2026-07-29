@@ -12,6 +12,7 @@
 
 import React from 'react';
 import { useEmpresaConfig } from './useEmpresaConfig';
+import './EmpresaBrand.css';
 
 interface EmpresaBrandProps {
   soloLogo?: boolean;            // si true, no muestra el nombre (menú colapsado)
@@ -27,7 +28,7 @@ export const EmpresaBrand: React.FC<EmpresaBrandProps> = ({ soloLogo = false, ta
   const logoSrc = config?.logoBase64 || config?.logoUrl || '';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+    <div className="eb-x1">
       {logoSrc ? (
         <img
           src={logoSrc}

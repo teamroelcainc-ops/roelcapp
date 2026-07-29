@@ -1,0 +1,65 @@
+/* Estilos hermanos de MttoAgrupadosInvoice.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.mai-x1 { animation: fadeIn 0.3s ease; width: 100%; box-sizing: border-box; }
+.mai-x2 { display: flex; align-items: center; margin-bottom: 24px; background-color: #0d1117; padding: 12px 16px; border-radius: 8px; border: 1px solid #30363d; gap: 10px; flex-wrap: wrap; }
+.mai-x3 { background-color: #3fb950; color: #0d1117; border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; font-weight: bold; }
+.mai-x4 { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background-color: rgba(63,185,80,0.1); border: 1px solid #3fb950; border-radius: 14px; color: #3fb950; font-size: 0.8rem; font-weight: bold; }
+.mai-x5 { background: transparent; border: none; color: #3fb950; cursor: pointer; font-size: 0.9rem; line-height: 1; }
+.mai-x6 { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background-color: rgba(88,166,255,0.1); border: 1px solid #58a6ff; border-radius: 14px; color: #58a6ff; font-size: 0.8rem; font-weight: bold; }
+.mai-x7 { background: transparent; border: none; color: #58a6ff; cursor: pointer; font-size: 0.9rem; line-height: 1; }
+.mai-x8 { margin-left: auto; color: #8b949e; font-size: 0.9rem; }
+.mai-x9 { padding: 64px 24px; text-align: center; background-color: #0d1117; border-radius: 8px; border: 1px solid #30363d; }
+.mai-x10 { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.mai-x11 { color: #8b949e; font-size: 0.95rem; }
+.mai-x12 { color: #3fb950; }
+.mai-x13 { padding: 10px 20px; background-color: #3fb950; color: #0d1117; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.9rem; }
+.mai-x14 { padding: 40px; text-align: center; color: #8b949e; background-color: #0d1117; border-radius: 8px; border: 1px solid #30363d; }
+.mai-x15 { padding: 40px; text-align: center; color: #8b949e; background-color: #0d1117; border-radius: 8px; border: 1px dashed #30363d; }
+.mai-x16 { display: flex; flex-direction: column; gap: 16px; }
+.mai-x17 { display: flex; align-items: center; gap: 16px; }
+.mai-x18 { font-size: 0.8rem; padding: 2px 8px; border-radius: 12px; background-color: #21262d; border: 1px solid #30363d; color: #c9d1d9; font-weight: normal; }
+.mai-x19 { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.mai-x20 { display: flex; gap: 20px; text-align: right; }
+.mai-x21 { display: flex; flex-direction: column; }
+.mai-x22 { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; }
+.mai-x23 { color: #c9d1d9; font-weight: 500; }
+.mai-x24 { background-color: #238636; color: #ffffff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: background-color 0.2s; }
+.mai-x25 { display: block; color: #8b949e; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; margin-bottom: 12px; }
+.mai-x26 { display: flex; flex-wrap: wrap; gap: 8px; }
+.mai-x27 { background-color: #161b22; border: 1px solid #30363d; color: #58a6ff; padding: 6px 14px; border-radius: 16px; font-size: 0.9rem; font-family: monospace; font-weight: bold; }
+.mai-x28 { position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); z-index: 1400; backdrop-filter: blur(2px); }
+.mai-x29 { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 92%; background-color: #0d1117; border-left: 1px solid #30363d; box-shadow: -8px 0 28px rgba(0,0,0,0.5); padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; z-index: 1401; animation: fadeIn 0.15s ease; }
+.mai-x30 { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
+.mai-x31 { margin: 0; color: #f0f6fc; font-size: 1.05rem; }
+.mai-x32 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.mai-x33 { display: flex; flex-direction: column; gap: 6px; }
+.mai-x34 { color: #58a6ff; font-size: 0.8rem; font-weight: bold; }
+.mai-x35 { position: relative; }
+.mai-x36 { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #58a6ff; }
+.mai-x37 { width: 100%; padding: 9px 10px 9px 32px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.9rem; box-sizing: border-box; }
+.mai-x38 { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #8b949e; cursor: pointer; font-size: 0.95rem; }
+.mai-x39 { display: flex; gap: 12px; }
+.mai-x40 { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.mai-x41 { color: #8b949e; font-size: 0.8rem; font-weight: bold; }
+.mai-x42 { width: 100%; padding: 10px; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; color-scheme: dark; box-sizing: border-box; }
+.mai-x43 { color: #6e7681; font-size: 0.75rem; }
+.mai-x44 { color: #8b949e; }
+.mai-x45 { margin-top: auto; display: flex; gap: 10px; border-top: 1px solid #30363d; padding-top: 14px; }
+.mai-x46 { flex: 1; padding: 10px; background: none; color: #8b949e; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.mai-x47 { flex: 1; padding: 10px; background-color: #3fb950; color: #0d1117; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .mai-x9 { padding: 14px 12px; }
+  .mai-x14 { padding: 14px 12px; }
+  .mai-x15 { padding: 14px 12px; }
+  .mai-x17 { flex-wrap: wrap; }
+  .mai-x20 { flex-wrap: wrap; }
+  .mai-x24 { flex-wrap: wrap; }
+  .mai-x30 { flex-wrap: wrap; }
+  .mai-x39 { flex-wrap: wrap; }
+  .mai-x45 { flex-wrap: wrap; }
+}

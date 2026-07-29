@@ -36,6 +36,7 @@ import { db } from '../../../config/firebase';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from './ResumenDiarioOperaciones';
+import './ReportesDashboard.css';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ✅ (Conversiones del reporte de ventas) Se RECALCULAN SIEMPRE con la regla
@@ -1204,13 +1205,13 @@ export const ReportesDashboard = () => {
 
   return (
     <div style={{ padding: 24, width: '100%', boxSizing: 'border-box', color: '#c9d1d9', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      <h1 style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 4px', fontWeight: 'bold' }}>Reportes</h1>
-      <p style={{ color: '#8b949e', margin: '0 0 20px', fontSize: '0.92rem' }}>Reportes de operaciones por rango de fechas. Exporta a Excel o PDF.</p>
+      <h1 className="rd-x1">Reportes</h1>
+      <p className="rd-x2">Reportes de operaciones por rango de fechas. Exporta a Excel o PDF.</p>
 
       {/* ✅ Filtros en una sola barra: Módulo + Reporte + Desde + Hasta + acciones */}
-      <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, padding: 18, marginBottom: 18, display: 'flex', gap: 16, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 220px', minWidth: 200 }}>
-          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Módulo</label>
+      <div className="rd-x3">
+        <div className="rd-x4">
+          <label className="rd-x5">Módulo</label>
           <select
             value={moduloId}
             onChange={e => {
@@ -1226,24 +1227,24 @@ export const ReportesDashboard = () => {
             {MODULOS.map(m => (<option key={m.id} value={m.id}>{m.nombre}</option>))}
           </select>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 260px', minWidth: 220 }}>
-          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Reporte</label>
+        <div className="rd-x6">
+          <label className="rd-x5">Reporte</label>
           <select value={reporteId} onChange={e => { setReporteId(e.target.value); setResultado(null); setError(null); }} style={{ ...inputEstilo, width: '100%' }}>
             {reportesDelModulo.map(r => (<option key={r.id} value={r.id}>{r.nombre}</option>))}
           </select>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Desde</label>
+        <div className="rd-x7">
+          <label className="rd-x5">Desde</label>
           <input type="date" value={desde} onChange={e => setDesde(e.target.value)} style={inputEstilo} />
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Hasta</label>
+        <div className="rd-x7">
+          <label className="rd-x5">Hasta</label>
           <input type="date" value={hasta} onChange={e => setHasta(e.target.value)} style={inputEstilo} />
         </div>
         {/* ✅ NUEVO: filtro de estatus (solo para el reporte de ventas) */}
         {esReporteVentas && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 200px', minWidth: 180 }}>
-            <label style={{ fontSize: '0.72rem', color: '#8b949e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px' }}>Estatus a incluir</label>
+          <div className="rd-x8">
+            <label className="rd-x5">Estatus a incluir</label>
             <select value={statusFiltro} onChange={e => { setStatusFiltro(e.target.value); setResultado(null); setError(null); }} style={{ ...inputEstilo, width: '100%' }}>
               <option value="todos">Todos los estatus</option>
               <option value="completados">Solo completados</option>
@@ -1255,8 +1256,8 @@ export const ReportesDashboard = () => {
         <button onClick={generar} disabled={cargando} style={{ ...btnPrimary, opacity: cargando ? 0.6 : 1 }}>
           {cargando ? 'Generando…' : 'Generar reporte'}
         </button>
-        <div style={{ flex: 1 }} />
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div className="rd-x9" />
+        <div className="rd-x10">
           {/* ✅ NUEVO: abre los Resúmenes Diarios (Transfer / Logística / Fletes) */}
           <button onClick={() => setMostrarResumenDiario(true)} style={btnOutline} title="Resúmenes diarios de operaciones (Transfer / Logística / Fletes)">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
@@ -1277,32 +1278,32 @@ export const ReportesDashboard = () => {
         </div>
       </div>
 
-      {error && <div style={{ background: 'rgba(248,81,73,.08)', border: '1px solid rgba(248,81,73,.3)', color: '#ff9b94', borderRadius: 8, padding: '12px 14px', marginBottom: 16, fontSize: '0.88rem' }}>{error}</div>}
+      {error && <div className="rd-x11">{error}</div>}
 
       {resultado && vista && (
-        <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ padding: '16px 18px', borderBottom: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <img src={LOGO_DEFAULT} alt="Roelca Inc." style={{ height: 40, width: 'auto' }} />
+        <div className="rd-x12">
+          <div className="rd-x13">
+            <div className="rd-x14">
+              <img className="rd-x15" src={LOGO_DEFAULT} alt="Roelca Inc." />
               <div>
-                <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '1.05rem' }}>{vista.titulo}</div>
-                <div style={{ color: '#8b949e', fontSize: '0.8rem' }}>Del {fmtFechaCorta(desde)} al {fmtFechaCorta(hasta)}</div>
+                <div className="rd-x16">{vista.titulo}</div>
+                <div className="rd-x17">Del {fmtFechaCorta(desde)} al {fmtFechaCorta(hasta)}</div>
               </div>
             </div>
             {vista.resumen && (
-              <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+              <div className="rd-x18">
                 {vista.resumen.map((r, i) => (
-                  <div key={i} style={{ textAlign: 'right' }}>
-                    <div style={{ color: '#8b949e', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '.5px' }}>{r.label}</div>
-                    <div style={{ color: '#fb923c', fontWeight: 700, fontSize: '1.1rem' }}>{r.valor}</div>
+                  <div className="rd-x19" key={i}>
+                    <div className="rd-x20">{r.label}</div>
+                    <div className="rd-x21">{r.valor}</div>
                   </div>
                 ))}
               </div>
             )}
           </div>
-          <div style={{ overflowX: 'auto', maxHeight: '60vh', overflowY: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+          <div className="rd-x22">
+            <table className="rd-x23">
+              <thead className="rd-x24">
                 <tr>
                   {vista.columnas.map(c => (
                     <th key={c.key} style={{ padding: '12px 14px', background: '#161b22', color: '#8b949e', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', textAlign: c.align || 'left', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>{c.label}</th>
@@ -1311,7 +1312,7 @@ export const ReportesDashboard = () => {
               </thead>
               <tbody>
                 {vista.filas.length === 0 ? (
-                  <tr><td colSpan={vista.columnas.length} style={{ padding: 30, textAlign: 'center', color: '#8b949e' }}>Sin datos.</td></tr>
+                  <tr><td className="rd-x25" colSpan={vista.columnas.length}>Sin datos.</td></tr>
                 ) : vista.filas.map((f, i) => {
                   const esTotalRow = !!(vista.totalFlags && vista.totalFlags[i]);
                   const weekend = vista.weekendFlags && vista.weekendFlags[i];
@@ -1333,34 +1334,33 @@ export const ReportesDashboard = () => {
       )}
 
       {!resultado && !error && !cargando && (
-        <div style={{ background: '#0d1117', border: '1px dashed #30363d', borderRadius: 12, padding: 40, textAlign: 'center', color: '#6e7681' }}>
-          Reporte seleccionado: <b style={{ color: '#fb923c' }}>{nombreReporteActual}</b>. Elige el rango de fechas y pulsa <b style={{ color: '#fb923c' }}>Generar reporte</b>.
+        <div className="rd-x26">
+          Reporte seleccionado: <b className="rd-x27">{nombreReporteActual}</b>. Elige el rango de fechas y pulsa <b className="rd-x27">Generar reporte</b>.
         </div>
       )}
 
       {/* ✅ NUEVO: modal para elegir y ordenar columnas del reporte actual */}
       {modalColumnas && (
-        <div
+        <div className="rd-x28"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setModalColumnas(false); }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1200, padding: 16 }}
         >
-          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, width: 'min(460px, 96vw)', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #21262d', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="rd-x29">
+            <div className="rd-x30">
               <div>
-                <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '1.05rem' }}>Configurar columnas</div>
-                <div style={{ color: '#7d8590', fontSize: '0.78rem', marginTop: 2 }}>{nombreReporteActual}</div>
+                <div className="rd-x16">Configurar columnas</div>
+                <div className="rd-x31">{nombreReporteActual}</div>
               </div>
-              <button onClick={() => setModalColumnas(false)} title="Cerrar" style={{ background: 'transparent', border: '1px solid #2d333b', color: '#8b949e', width: 34, height: 34, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <button className="rd-x32" onClick={() => setModalColumnas(false)} title="Cerrar">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
 
-          <div style={{ padding: '10px 12px 4px', color: '#7d8590', fontSize: '0.76rem' }}>
-            Marca las columnas a incluir, ordénalas con las flechas <span style={{ color: '#fb923c' }}>▲▼</span> (o arrastrando) y renómbralas con el lápiz <span style={{ color: '#fb923c' }}>✎</span>. Pulsa <b style={{ color: '#fb923c' }}>Guardar para todos</b> para que el orden y los nombres queden fijos y los vean los demás usuarios.
+          <div className="rd-x33">
+            Marca las columnas a incluir, ordénalas con las flechas <span className="rd-x27">▲▼</span> (o arrastrando) y renómbralas con el lápiz <span className="rd-x27">✎</span>. Pulsa <b className="rd-x27">Guardar para todos</b> para que el orden y los nombres queden fijos y los vean los demás usuarios.
           </div>
 
           {/* Buscador de columnas (útil cuando hay muchos campos) */}
-          <div style={{ padding: '6px 12px 8px' }}>
+          <div className="rd-x34">
             <input
               type="text"
               value={filtroCol}
@@ -1370,7 +1370,7 @@ export const ReportesDashboard = () => {
             />
           </div>
 
-            <div style={{ overflowY: 'auto', padding: '0 12px 12px' }}>
+            <div className="rd-x35">
               {colConfigActual
                 .map((col, idx) => ({ col, idx }))
                 .filter(({ col }) => !filtroCol || norm(col.label).includes(norm(filtroCol)))
@@ -1389,7 +1389,7 @@ export const ReportesDashboard = () => {
                   }}
                 >
                   {/* Flechas rápidas */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <div className="rd-x36">
                     <button type="button" title="Subir" onClick={() => moverColumna(idx, -1)} disabled={idx === 0}
                       style={{ background: 'transparent', border: '1px solid #2d333b', color: idx === 0 ? '#3a414b' : '#8b949e', borderRadius: 5, width: 24, height: 18, cursor: idx === 0 ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
@@ -1399,17 +1399,16 @@ export const ReportesDashboard = () => {
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                     </button>
                   </div>
-                  <span style={{ color: '#6e7681', cursor: 'grab', fontSize: '1rem', lineHeight: 1 }} title="Arrastrar para reordenar">⠿</span>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumna(idx)} style={{ width: 16, height: 16, accentColor: '#ea580c', cursor: 'pointer', flexShrink: 0 }} />
+                  <span className="rd-x37" title="Arrastrar para reordenar">⠿</span>
+                  <input className="rd-x38" type="checkbox" checked={col.visible} onChange={() => toggleColumna(idx)} />
                   {editandoColKey === col.key ? (
-                    <input
+                    <input className="rd-x39"
                       type="text"
                       autoFocus
                       value={col.label}
                       onChange={(e) => renombrarColumna(idx, e.target.value)}
                       onBlur={() => confirmarRenombre(idx)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); confirmarRenombre(idx); } if (e.key === 'Escape') { restablecerNombre(idx); setEditandoColKey(null); } }}
-                      style={{ flex: 1, minWidth: 0, background: '#010409', border: '1px solid #ea580c', borderRadius: 6, color: '#e6edf3', fontSize: '0.9rem', padding: '5px 8px', outline: 'none' }}
                     />
                   ) : (
                     <span
@@ -1419,38 +1418,36 @@ export const ReportesDashboard = () => {
                     >
                       {col.label}
                       {col.labelOriginal && col.label !== col.labelOriginal && (
-                        <span style={{ color: '#fb923c', fontSize: '0.68rem', marginLeft: 6 }}>(renombrada)</span>
+                        <span className="rd-x40">(renombrada)</span>
                       )}
                     </span>
                   )}
                   {editandoColKey !== col.key && (
-                    <button type="button" title="Renombrar encabezado" onClick={() => setEditandoColKey(col.key)}
-                      style={{ background: 'transparent', border: '1px solid #2d333b', color: '#8b949e', borderRadius: 5, width: 26, height: 24, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0 }}>
+                    <button className="rd-x41" type="button" title="Renombrar encabezado" onClick={() => setEditandoColKey(col.key)}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
                     </button>
                   )}
                   {col.labelOriginal && col.label !== col.labelOriginal && editandoColKey !== col.key && (
-                    <button type="button" title={`Restablecer nombre original: ${col.labelOriginal}`} onClick={() => restablecerNombre(idx)}
-                      style={{ background: 'transparent', border: '1px solid #2d333b', color: '#fb923c', borderRadius: 5, width: 26, height: 24, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, flexShrink: 0, fontSize: '0.85rem', lineHeight: 1 }}>
+                    <button className="rd-x42" type="button" title={`Restablecer nombre original: ${col.labelOriginal}`} onClick={() => restablecerNombre(idx)}>
                       ↺
                     </button>
                   )}
-                  <span style={{ color: '#6e7681', fontSize: '0.7rem', flexShrink: 0 }}>{idx + 1}</span>
+                  <span className="rd-x43">{idx + 1}</span>
                 </div>
               ))}
               {colConfigActual.length === 0 && (
-                <div style={{ padding: 20, textAlign: 'center', color: '#6e7681', fontSize: '0.85rem' }}>Genera un reporte para configurar sus columnas.</div>
+                <div className="rd-x44">Genera un reporte para configurar sus columnas.</div>
               )}
             </div>
 
-            <div style={{ padding: '14px 20px', borderTop: '1px solid #21262d', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <div className="rd-x45">
               <button
                 onClick={() => setColConfigs(prev => ({ ...prev, [cfgKey]: colConfigActual.map(c => ({ ...c, visible: true })) }))}
                 style={{ ...btnOutline, padding: '9px 14px' }}
               >
                 Mostrar todas
               </button>
-              <div style={{ display: 'flex', gap: 10 }}>
+              <div className="rd-x10">
                 <button onClick={() => setModalColumnas(false)} style={{ ...btnOutline, padding: '9px 14px' }}>Cerrar</button>
                 <button onClick={async () => { await guardarConfigColumnas(); setModalColumnas(false); }} disabled={guardandoCols} style={{ ...btnPrimary, padding: '9px 18px', opacity: guardandoCols ? 0.6 : 1 }}>
                   {guardandoCols ? 'Guardando…' : 'Guardar para todos'}
@@ -1463,18 +1460,17 @@ export const ReportesDashboard = () => {
 
       {/* ✅ NUEVO: modal de Resúmenes Diarios (Transfer / Logística / Fletes) */}
       {mostrarResumenDiario && (
-        <div
+        <div className="rd-x46"
           onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarResumenDiario(false); }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(1, 4, 9, 0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1700, padding: 16 }}
         >
-          <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 12, width: 1180, maxWidth: '97%', maxHeight: '94vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
-              <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '1.05rem' }}>Resúmenes Diarios de Operaciones</div>
-              <button onClick={() => setMostrarResumenDiario(false)} title="Cerrar" style={{ background: 'transparent', border: '1px solid #30363d', color: '#8b949e', width: 36, height: 36, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="rd-x47">
+            <div className="rd-x48">
+              <div className="rd-x16">Resúmenes Diarios de Operaciones</div>
+              <button className="rd-x49" onClick={() => setMostrarResumenDiario(false)} title="Cerrar">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
-            <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div className="rd-x50">
               <ResumenDiarioOperaciones />
             </div>
           </div>

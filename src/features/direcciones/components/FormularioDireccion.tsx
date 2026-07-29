@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import type { DireccionRecord } from '../../../types/direccion';
+import './FormularioDireccion.css';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -457,8 +458,8 @@ export const FormularioDireccion: React.FC<FormProps> = ({
         <label className="form-label" style={{ color: conError ? '#f85149' : '#8b949e', fontSize: '0.85rem' }}>
           {cfg.label}{esObligatorio(keyId) ? ' *' : ''}
         </label>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <div style={{ position: 'relative', flex: 1 }}>
+        <div className="fd-x1">
+          <div className="fd-x2">
             <input
               type="text"
               className="form-control"
@@ -471,7 +472,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
               style={{ ...estiloInput(conError), opacity: bloqueado ? 0.55 : 1, cursor: bloqueado ? 'not-allowed' : 'text' }}
             />
             {seleccionadoId && !bloqueado && (
-              <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#3fb950', fontSize: '0.85rem', pointerEvents: 'none' }}>✓</span>
+              <span className="fd-x3">✓</span>
             )}
             {ddAbierto === nivel && !bloqueado && (
               <div style={estiloDropdown}>
@@ -484,9 +485,8 @@ export const FormularioDireccion: React.FC<FormProps> = ({
                     {op.nombre}
                   </div>
                 )) : (
-                  <div
+                  <div className="fd-x4"
                     onMouseDown={(e) => { e.preventDefault(); setDdAbierto(''); setModalNuevo({ nivel, valor: textos[nivel] }); }}
-                    style={{ padding: '10px 12px', cursor: 'pointer', color: '#fb923c', fontSize: '0.85rem' }}
                   >
                     Sin coincidencias{textos[nivel] ? ` para "${textos[nivel]}"` : ''}. Clic aquí para agregarlo ➕
                   </div>
@@ -511,17 +511,16 @@ export const FormularioDireccion: React.FC<FormProps> = ({
   return (
     <>
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`} style={{ backdropFilter: 'blur(4px)', zIndex: 2200 }}>
-      <div className="form-card" style={{ maxWidth: '800px', width: '100%', borderRadius: '12px', border: '1px solid #444', backgroundColor: '#0d1117' }}>
-        <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#f0f6fc', fontWeight: '500' }}>
+      <div className="form-card fd-x5">
+        <div className="form-header fd-x6">
+          <h2 className="fd-x7">
             {estado === 'minimizado' ? 'Editando...' : (initialData ? 'Editar Dirección' : 'Nueva Dirección')}
           </h2>
-          <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
+          <div className="header-actions fd-x8">
+            <button className="fd-x9"
               type="button"
               onClick={() => setModalConfigAbierto(true)}
               title="Configurar campos obligatorios"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 12px', borderRadius: '6px', border: '1px solid #30363d', backgroundColor: '#21262d', color: '#c9d1d9', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
               Obligatorios
@@ -531,21 +530,21 @@ export const FormularioDireccion: React.FC<FormProps> = ({
             ) : (
               <button type="button" onClick={onRestore} className="btn-window restore">🗖</button>
             )}
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+            <button className="fd-x10" onClick={onClose}>✕</button>
           </div>
         </div>
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block' }}>
-          <form onSubmit={handleSubmit} style={{ padding: '24px' }}>
+          <form className="fd-x11" onSubmit={handleSubmit}>
             
-            <div style={{ marginBottom: '24px', padding: '16px', backgroundColor: '#161b22', border: '1px dashed #30363d', borderRadius: '8px' }}>
-              <span style={{ display: 'block', fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', marginBottom: '8px' }}>Vista Previa de la Dirección:</span>
-              <span style={{ fontSize: '1.1rem', color: '#58a6ff', fontWeight: '500' }}>
+            <div className="fd-x12">
+              <span className="fd-x13">Vista Previa de la Dirección:</span>
+              <span className="fd-x14">
                 {formData.direccionCompleta || 'Complete los campos para generar la dirección...'}
               </span>
             </div>
 
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div className="form-grid fd-x15">
 
               {renderCampoBusqueda('pais')}
               {renderCampoBusqueda('estado')}
@@ -565,9 +564,9 @@ export const FormularioDireccion: React.FC<FormProps> = ({
 
             </div>
 
-            <div style={{ marginTop: '32px', display: 'flex', gap: '16px', justifyContent: 'flex-end', borderTop: '1px solid #30363d', paddingTop: '24px' }}>
-              <button type="button" onClick={onClose} style={{ backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}>Cancelar</button>
-              <button type="submit" disabled={cargando} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}>
+            <div className="fd-x16">
+              <button className="fd-x17" type="button" onClick={onClose}>Cancelar</button>
+              <button className="fd-x18" type="submit" disabled={cargando}>
                 {cargando ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
@@ -578,44 +577,43 @@ export const FormularioDireccion: React.FC<FormProps> = ({
 
     {/* ✅ Modal de creación rápida de catálogo (botón "+") */}
     {modalNuevo && (
-      <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 2400, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <div className="form-card" style={{ maxWidth: '420px', width: '95%', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
-          <div className="form-header" style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Nuevo {NIVELES[modalNuevo.nivel].label}</h3>
-            <button type="button" onClick={() => setModalNuevo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+      <div className="modal-overlay fd-x19">
+        <div className="form-card fd-x20">
+          <div className="form-header fd-x21">
+            <h3 className="fd-x22">Nuevo {NIVELES[modalNuevo.nivel].label}</h3>
+            <button className="fd-x23" type="button" onClick={() => setModalNuevo(null)}>✕</button>
           </div>
-          <div style={{ padding: '20px 24px' }}>
+          <div className="fd-x24">
             {(() => {
               const cfg = NIVELES[modalNuevo.nivel];
               const padre = padreSeleccionado(modalNuevo.nivel);
               return (
                 <>
                   {cfg.padre && padre && (
-                    <div style={{ marginBottom: '14px', padding: '10px 12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', fontSize: '0.85rem', color: '#8b949e' }}>
-                      {NIVELES[cfg.padre].label}: <span style={{ color: '#58a6ff', fontWeight: 600 }}>{padre.nombre || '—'}</span>
+                    <div className="fd-x25">
+                      {NIVELES[cfg.padre].label}: <span className="fd-x26">{padre.nombre || '—'}</span>
                     </div>
                   )}
-                  <label className="form-label" style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block', marginBottom: '6px' }}>{cfg.label} *</label>
+                  <label className="form-label fd-x27">{cfg.label} *</label>
                   <input
                     type="text"
-                    className="form-control"
+                    className="form-control fd-x28"
                     autoFocus
                     placeholder={`Escribe el ${cfg.label.toLowerCase()}...`}
                     value={modalNuevo.valor}
                     onChange={(e) => setModalNuevo(prev => prev ? { ...prev, valor: e.target.value } : prev)}
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); guardarNuevoCatalogo(); } }}
-                    style={{ backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', width: '100%', boxSizing: 'border-box' }}
                   />
-                  <p style={{ color: '#8b949e', fontSize: '0.78rem', marginTop: '10px', marginBottom: 0 }}>
+                  <p className="fd-x29">
                     Si ya existe uno igual{cfg.padre && padre?.nombre ? ` en ${padre.nombre}` : ''}, se seleccionará el existente en lugar de duplicarlo.
                   </p>
                 </>
               );
             })()}
           </div>
-          <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-            <button type="button" onClick={() => setModalNuevo(null)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-            <button type="button" onClick={guardarNuevoCatalogo} disabled={guardandoNuevo} style={{ padding: '8px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+          <div className="fd-x30">
+            <button className="fd-x31" type="button" onClick={() => setModalNuevo(null)}>Cancelar</button>
+            <button className="fd-x32" type="button" onClick={guardarNuevoCatalogo} disabled={guardandoNuevo}>
               {guardandoNuevo ? 'Guardando...' : 'Agregar'}
             </button>
           </div>
@@ -624,33 +622,32 @@ export const FormularioDireccion: React.FC<FormProps> = ({
     )}
 
     {modalConfigAbierto && (
-      <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 2300, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-        <div className="form-card" style={{ maxWidth: '460px', width: '95%', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
-          <div className="form-header" style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Campos Obligatorios</h3>
-            <button type="button" onClick={() => setModalConfigAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+      <div className="modal-overlay fd-x33">
+        <div className="form-card fd-x34">
+          <div className="form-header fd-x21">
+            <h3 className="fd-x22">Campos Obligatorios</h3>
+            <button className="fd-x23" type="button" onClick={() => setModalConfigAbierto(false)}>✕</button>
           </div>
-          <div style={{ padding: '20px 24px' }}>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginTop: 0, marginBottom: '16px' }}>
+          <div className="fd-x24">
+            <p className="fd-x35">
               Marca los campos que serán obligatorios al guardar una dirección. La configuración aplica para todos los usuarios.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+            <div className="fd-x36">
               {CAMPOS_DIRECCION.map(campo => (
                 <label key={campo.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', color: esObligatorio(campo.key) ? '#c9d1d9' : '#8b949e', fontSize: '0.9rem' }}>
-                  <input
+                  <input className="fd-x37"
                     type="checkbox"
                     checked={esObligatorio(campo.key)}
                     onChange={() => toggleObligatorio(campo.key)}
-                    style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
                   />
                   {campo.label}
                 </label>
               ))}
             </div>
           </div>
-          <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-            <button type="button" onClick={() => setModalConfigAbierto(false)} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-            <button type="button" onClick={guardarConfigObligatorios} disabled={guardandoConfig} style={{ padding: '8px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+          <div className="fd-x30">
+            <button className="fd-x31" type="button" onClick={() => setModalConfigAbierto(false)}>Cancelar</button>
+            <button className="fd-x32" type="button" onClick={guardarConfigObligatorios} disabled={guardandoConfig}>
               {guardandoConfig ? 'Guardando...' : 'Guardar Configuración'}
             </button>
           </div>

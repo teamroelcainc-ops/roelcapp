@@ -1,0 +1,27 @@
+/* Estilos hermanos de MigracionStatusOperaciones.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.mso-x1 { margin-top: 14px; background: #010409; border: 1px solid #30363d; border-radius: 8px; padding: 14px; min-height: 120px; max-height: 340px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6; }
+.mso-x2 { color: #6e7681; }
+.mso-x3 { max-width: 900px; margin: 0 auto; }
+.mso-x4 { font-size: 26px; font-weight: 700; color: #f0f6fc; margin: 0 0 4px; }
+.mso-x5 { color: #8b949e; margin: 0 0 24px; font-size: 14px; }
+.mso-x6 { color: #fb923c; }
+.mso-x7 { font-size: 18px; font-weight: 700; color: #f0f6fc; margin: 0 0 6px; }
+.mso-x8 { color: #8b949e; font-size: 13.5px; margin: 0 0 16px; }
+.mso-x9 { display: flex; gap: 10px; }
+.mso-x10 { color: #8b949e; font-size: 13.5px; margin: 0 0 14px; }
+.mso-x11 { background: #010409; border: 1px solid #21262d; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.mso-x12 { display: block; font-size: 12.5px; color: #8b949e; font-weight: 600; margin-bottom: 6px; }
+.mso-x13 { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 13.5px; color: #c9d1d9; cursor: pointer; }
+.mso-x14 { transform: scale(1.2); }
+.mso-x15 { color: #6e7681; font-size: 12px; margin: 8px 0 0; line-height: 1.5; }
+.mso-x16 { color: #6e7681; font-size: 12.5px; line-height: 1.6; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .mso-x9 { flex-wrap: wrap; }
+  .mso-x13 { flex-wrap: wrap; }
+}

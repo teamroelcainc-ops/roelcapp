@@ -1,0 +1,10 @@
+/* Estilos hermanos de SelectBuscable.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.sb-x1 { flex-shrink: 0; }
+.sb-x2 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.85rem; padding: 2px 4px; flex-shrink: 0; line-height: 1; }
+.sb-x3 { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 2000; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; max-height: 240px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.sb-x4 { padding: 12px 14px; color: #6e7681; font-size: 0.9rem; font-style: italic; }
+.sb-x5 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-x6 { flex-shrink: 0; color: #58a6ff; }

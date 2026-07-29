@@ -7,6 +7,8 @@ import MttoAgrupadosInvoice from './MttoAgrupadosInvoice';
 import * as XLSX from 'xlsx';
 // ✅ Logo de los PDF (mismas exportaciones que ya usa el historial de Invoice).
 import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
+import './MttoDashboard.css';
+import { almacenSesion } from '../../../../utils/cacheMemoria';
 
 type VistaMaestra = 'tabla' | 'agrupado';
 
@@ -108,7 +110,7 @@ const MttoDashboard = () => {
     setCargando(true);
     try {
       let catGuardados = null;
-      const cacheCatStr = sessionStorage.getItem('roelca_catalogos_v1');
+      const cacheCatStr = almacenSesion.getItem('roelca_catalogos_v1');
 
       if (cacheCatStr) {
         catGuardados = JSON.parse(cacheCatStr);
@@ -134,7 +136,7 @@ const MttoDashboard = () => {
           empleados: empColSnap.docs.map((d: any) => ({ id: d.id, ...d.data() }))
         };
         
-        sessionStorage.setItem('roelca_catalogos_v1', JSON.stringify(catGuardados));
+        almacenSesion.setItem('roelca_catalogos_v1', JSON.stringify(catGuardados));
         setCatalogosCacheados(catGuardados);
       }
 
@@ -585,32 +587,32 @@ const MttoDashboard = () => {
   // ✅ RENDERIZADOR DINÁMICO DE CELDAS MTTO
   const renderCellContent = (m: any, colId: string) => {
     switch (colId) {
-      case 'numeroGasto': return <span style={{ color: '#58a6ff', fontWeight: 'bold' }}>{formatearFolio(m)}</span>;
-      case 'invoice': return <span style={{ color: '#c9d1d9' }}>{m.invoice || '-'}</span>;
+      case 'numeroGasto': return <span className="md-x1">{formatearFolio(m)}</span>;
+      case 'invoice': return <span className="md-x2">{m.invoice || '-'}</span>;
       case 'estatus': return <span style={{ color: m.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>{m.estatus || '-'}</span>;
-      case 'fecha': return <span style={{ color: '#c9d1d9' }}>{m.fecha || '-'}</span>;
-      case 'unidad': return <span style={{ color: '#c9d1d9' }}>{mostrarNombreUnidad(m.unidadId || m.unidad)}</span>;
-      case 'operador': return <span style={{ color: '#c9d1d9' }}>{m.operadorNombre || m.operador || '-'}</span>;
-      case 'descripcion': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}>{m.descripcion || m.descripcionGeneral || '-'}</span>;
-      case 'proveedor': return <span style={{ color: '#c9d1d9' }}>{m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas')}</span>;
-      case 'tipoServicio': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(m.tipoServicioId, 'servicios')}</span>;
-      case 'autorizadoPor': return <span style={{ color: '#c9d1d9' }}>{m.autorizadoPor || '-'}</span>;
-      case 'condicionPago': return <span style={{ color: '#c9d1d9' }}>{m.condicionPago || '-'}</span>;
-      case 'plazo': return <span style={{ color: '#c9d1d9' }}>{m.plazo || '-'}</span>;
-      case 'moneda': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda')}</span>;
-      case 'importe': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(m.importe)}</span>;
-      case 'iva': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(m.ivaMonto)} <span style={{fontSize:'0.8rem'}}>({m.ivaPorcentaje || 0}%)</span></span>;
-      case 'retIva': return <span style={{ color: '#f85149' }}>{formatoMoneda(m.retIva)}</span>;
-      case 'retIsr': return <span style={{ color: '#f85149' }}>{formatoMoneda(m.retIsr)}</span>;
-      case 'total': return <span style={{ color: '#3fb950', fontWeight: 'bold' }}>{formatoMoneda(m.total)}</span>;
-      case 'facturaTexto': return <span style={{ color: '#c9d1d9' }}>{m.facturaTexto || '-'}</span>;
-      case 'fechaFactura': return <span style={{ color: '#c9d1d9' }}>{m.fechaFactura || '-'}</span>;
-      case 'descripcionFactura': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}>{m.descripcionFactura || '-'}</span>;
-      case 'fechaPago': return <span style={{ color: '#c9d1d9' }}>{m.fechaPago || '-'}</span>;
-      case 'formaPago': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago')}</span>;
-      case 'observaciones': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block' }}>{m.observaciones || '-'}</span>;
-      case 'operacionAsignada': return <span style={{ color: '#58a6ff' }}>{mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')}</span>;
-      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+      case 'fecha': return <span className="md-x2">{m.fecha || '-'}</span>;
+      case 'unidad': return <span className="md-x2">{mostrarNombreUnidad(m.unidadId || m.unidad)}</span>;
+      case 'operador': return <span className="md-x2">{m.operadorNombre || m.operador || '-'}</span>;
+      case 'descripcion': return <span className="md-x3">{m.descripcion || m.descripcionGeneral || '-'}</span>;
+      case 'proveedor': return <span className="md-x2">{m.proveedorNombre || mostrarDatoMapeado(m.proveedorId, 'empresas')}</span>;
+      case 'tipoServicio': return <span className="md-x2">{mostrarDatoMapeado(m.tipoServicioId, 'servicios')}</span>;
+      case 'autorizadoPor': return <span className="md-x2">{m.autorizadoPor || '-'}</span>;
+      case 'condicionPago': return <span className="md-x2">{m.condicionPago || '-'}</span>;
+      case 'plazo': return <span className="md-x2">{m.plazo || '-'}</span>;
+      case 'moneda': return <span className="md-x2">{mostrarDatoMapeado(m.monedaId, 'monedas', 'moneda')}</span>;
+      case 'importe': return <span className="md-x2">{formatoMoneda(m.importe)}</span>;
+      case 'iva': return <span className="md-x2">{formatoMoneda(m.ivaMonto)} <span className="md-x4">({m.ivaPorcentaje || 0}%)</span></span>;
+      case 'retIva': return <span className="md-x5">{formatoMoneda(m.retIva)}</span>;
+      case 'retIsr': return <span className="md-x5">{formatoMoneda(m.retIsr)}</span>;
+      case 'total': return <span className="md-x6">{formatoMoneda(m.total)}</span>;
+      case 'facturaTexto': return <span className="md-x2">{m.facturaTexto || '-'}</span>;
+      case 'fechaFactura': return <span className="md-x2">{m.fechaFactura || '-'}</span>;
+      case 'descripcionFactura': return <span className="md-x3">{m.descripcionFactura || '-'}</span>;
+      case 'fechaPago': return <span className="md-x2">{m.fechaPago || '-'}</span>;
+      case 'formaPago': return <span className="md-x2">{mostrarDatoMapeado(m.formaPagoId, 'formasPago', 'forma_pago')}</span>;
+      case 'observaciones': return <span className="md-x3">{m.observaciones || '-'}</span>;
+      case 'operacionAsignada': return <span className="md-x7">{mostrarDatoMapeado(m.operacionAsignadaId, 'operaciones', 'ref')}</span>;
+      default: return <span className="md-x2">-</span>;
     }
   };
 
@@ -674,7 +676,7 @@ const MttoDashboard = () => {
   const boxStyle = { backgroundColor:'#161b22', padding:'12px', borderRadius:'6px', color: '#c9d1d9', border: '1px solid #30363d', marginTop: '4px', minHeight: '60px' };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container md-x8">
       
       <style>{`
         .detail-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
@@ -693,9 +695,9 @@ const MttoDashboard = () => {
         />
       )}
 
-      <div style={{ marginBottom: '24px' }}>
-        <h1 className="module-title" style={{ fontSize: '1.8rem', color: '#f0f6fc', margin: '0 0 16px 0', fontWeight: 'bold' }}>Gastos Mantenimiento (MTTO)</h1>
-        <div style={{ display: 'flex', borderBottom: '1px solid #30363d', gap: '16px' }}>
+      <div className="md-x9">
+        <h1 className="module-title md-x10">Gastos Mantenimiento (MTTO)</h1>
+        <div className="md-x11">
           <button onClick={() => setVistaActiva('tabla')} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: vistaActiva === 'tabla' ? '2px solid #D84315' : '2px solid transparent', color: vistaActiva === 'tabla' ? '#f0f6fc' : '#8b949e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: vistaActiva === 'tabla' ? 'bold' : 'normal' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             Todos los Gastos (MTTO)
@@ -708,10 +710,10 @@ const MttoDashboard = () => {
       </div>
 
       {vistaActiva === 'agrupado' ? <MttoAgrupadosInvoice /> : (
-        <div style={{ width: '100%', margin: '0 auto' }}>
+        <div className="md-x12">
 
           {/* ✅ PESTAÑAS POR ESTATUS: No facturados / Facturados (con conteo y monto) */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+          <div className="md-x13">
             {([
               { id: 'no_facturado', label: 'No facturados', count: registrosNoFacturados.length, total: totalNoFacturado, color: '#f85149' },
               { id: 'facturado', label: 'Facturados', count: registrosFacturados.length, total: totalFacturado, color: '#3fb950' },
@@ -731,7 +733,7 @@ const MttoDashboard = () => {
                     transition: 'all 0.15s ease'
                   }}
                 >
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className="md-x14">
                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: t.color, display: 'inline-block' }} />
                     <span style={{ color: activo ? '#f0f6fc' : '#8b949e', fontWeight: activo ? 700 : 500, fontSize: '0.95rem' }}>{t.label}</span>
                   </span>
@@ -742,59 +744,56 @@ const MttoDashboard = () => {
             })}
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
+          <div className="md-x15">
             
-            <div style={{ display: 'flex', gap: '10px', flex: '1 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div className="md-x16">
               <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
                 style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busqueda || fechaDesde || fechaHasta) ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                 Filtros
-                {(busqueda || fechaDesde || fechaHasta) && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[busqueda, fechaDesde || fechaHasta].filter(Boolean).length}</span>}
+                {(busqueda || fechaDesde || fechaHasta) && <span className="md-x17">{[busqueda, fechaDesde || fechaHasta].filter(Boolean).length}</span>}
               </button>
               {(fechaDesde || fechaHasta) && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '14px', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                <span className="md-x18">
                   {(fechaDesde || '…')} → {(fechaHasta || '…')}
-                  <button onClick={() => { setFechaDesde(''); setFechaHasta(''); }} style={{ background: 'transparent', border: 'none', color: '#D84315', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                  <button className="md-x19" onClick={() => { setFechaDesde(''); setFechaHasta(''); }}>✕</button>
                 </span>
               )}
               {busqueda && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                <span className="md-x20">
                   "{busqueda}"
-                  <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                  <button className="md-x21" onClick={() => setBusqueda('')}>✕</button>
                 </span>
               )}
               {busquedaHecha && (
-                <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>{registrosEnPantalla.length} en pantalla</span>
+                <span className="md-x22">{registrosEnPantalla.length} en pantalla</span>
               )}
             </div>
 
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <div className="md-x23">
               {gastosSeleccionados.length > 0 && (
-                <button 
+                <button className="md-x24" 
                   title="Asignar Invoice Masivo"
-                  onClick={() => setModalInvoiceMasivo(true)} 
-                  style={{ backgroundColor: '#238636', color: '#ffffff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  onClick={() => setModalInvoiceMasivo(true)}
                 >
                   <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fillRule="evenodd" d="M1.5 1.5A.5.5 0 0 0 1 2v4.8a2.5 2.5 0 0 0 2.5 2.5h9.793l-3.347 3.346a.5.5 0 0 0 .708.708l4.2-4.2a.5.5 0 1 0-.708.708L13.293 8.3H3.5A1.5 1.5 0 0 1 2 6.8V2a.5.5 0 0 0-.5-.5z"/></svg>
                   ({gastosSeleccionados.length})
                 </button>
               )}
               
-              <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
+              <button className="btn btn-outline md-x25" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
               </button>
 
-              <button 
+              <button className="md-x26" 
                 title="Exportar a Excel"
-                onClick={exportarExcel} 
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', padding: '8px 12px', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer' }}
+                onClick={exportarExcel}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               </button>
-              <button 
+              <button className="md-x27" 
                 title="Agregar Gasto MTTO"
-                onClick={handleNuevo} 
-                style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                onClick={handleNuevo}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               </button>
@@ -803,53 +802,53 @@ const MttoDashboard = () => {
 
           {/* ✅ PANEL DE SUMARIO DE GASTOS */}
           {gastosSeleccionados.length > 0 && (
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '16px' }}>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Seleccionados</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenSeleccion.cantidad}</span>
+            <div className="md-x28">
+              <div className="md-x29">
+                <div className="md-x30">
+                  <span className="md-x31">Seleccionados</span>
+                  <span className="md-x32">{resumenSeleccion.cantidad}</span>
                 </div>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma Importe (Base)</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.totalImporte)}</span>
+                <div className="md-x30">
+                  <span className="md-x31">Suma Importe (Base)</span>
+                  <span className="md-x33">{formatoMoneda(resumenSeleccion.totalImporte)}</span>
                 </div>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Suma IVA</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.totalIva)}</span>
+                <div className="md-x30">
+                  <span className="md-x31">Suma IVA</span>
+                  <span className="md-x33">{formatoMoneda(resumenSeleccion.totalIva)}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Gran Total</span>
-                  <span style={{ color: '#f0f6fc', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.granTotal)}</span>
+                  <span className="md-x34">Gran Total</span>
+                  <span className="md-x35">{formatoMoneda(resumenSeleccion.granTotal)}</span>
                 </div>
               </div>
-              <div style={{ borderTop: '1px dashed #30363d', paddingTop: '16px' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '8px' }}>Gastos incluidos:</span>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              <div className="md-x36">
+                <span className="md-x37">Gastos incluidos:</span>
+                <div className="md-x38">
                   {resumenSeleccion.numerosGasto.map((ref, i) => (
-                    <span key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', color: '#c9d1d9', padding: '4px 10px', borderRadius: '12px', fontSize: '0.85rem', fontFamily: 'monospace' }}>{ref}</span>
+                    <span className="md-x39" key={i}>{ref}</span>
                   ))}
                 </div>
               </div>
             </div>
           )}
 
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
+          <div className="table-container md-x40">
             {!busquedaHecha ? (
-              <div style={{ padding: '64px 24px', textAlign: 'center' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+              <div className="md-x41">
+                <div className="md-x42">
                   <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                  <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver los gastos.</span>
-                  <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                  <span className="md-x43">Define tus filtros y presiona <b className="md-x44">Buscar</b> para ver los gastos.</span>
+                  <button className="md-x45" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                 </div>
               </div>
-            ) : cargando ? <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando datos...</div> : (
-              <table className="data-table" style={{ width: '100%', minWidth: '1500px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+            ) : cargando ? <div className="md-x46">Cargando datos...</div> : (
+              <table className="data-table md-x47">
+                <thead className="md-x48">
                   <tr>
-                    <th style={{ padding: '16px 8px', width: '40px', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}></th>
-                    <th style={{ padding: '16px', width: '100px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: '56px', backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                    <th className="md-x49"></th>
+                    <th className="md-x50">Acciones</th>
                     {columnasTabla.filter(c => c.visible).map(col => (
-                      <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                      <th className="md-x51" key={`th_${col.id}`}>
                         {col.label}
                       </th>
                     ))}
@@ -857,7 +856,7 @@ const MttoDashboard = () => {
                 </thead>
                 <tbody>
                   {registrosEnPantalla.length === 0 ? (
-                    <tr><td colSpan={columnasTabla.length + 2} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>
+                    <tr><td className="md-x52" colSpan={columnasTabla.length + 2}>Sin resultados.</td></tr>
                   ) : (
                     registrosEnPantalla.map((m: any) => {
                       const isSelected = gastosSeleccionados.includes(m.id);
@@ -870,32 +869,29 @@ const MttoDashboard = () => {
                         onClick={() => setMttoViendo(m)}
                       >
                         <td style={{ padding: '16px 8px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: isSelected ? '#1f2937' : 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                          {!yaFacturado && <input type="checkbox" checked={isSelected} onChange={() => toggleSeleccion(m.id)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />}
+                          {!yaFacturado && <input className="md-x53" type="checkbox" checked={isSelected} onChange={() => toggleSeleccion(m.id)} />}
                         </td>
                         <td style={{ padding: '16px', position: 'sticky', left: '56px', backgroundColor: isSelected ? '#1f2937' : 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            <button 
+                          <div className="md-x54">
+                            <button className="md-x55" 
                               title="Editar Gasto"
-                              onClick={() => editarMtto(m)} 
-                              style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#3b82f6', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onClick={() => editarMtto(m)}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             </button>
-                            <button 
+                            <button className="md-x56" 
                               title="Generar documento (Relación de Compras) con este gasto"
-                              onClick={() => generarDocumentoGasto(m)} 
-                              style={{ background: 'transparent', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onClick={() => generarDocumentoGasto(m)}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                             </button>
-                            <button 
+                            <button className="md-x57" 
                               title="Eliminar Gasto"
-                              onClick={() => eliminarMtto(m.id)} 
-                              style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                              onClick={() => eliminarMtto(m.id)}
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                             >
@@ -904,7 +900,7 @@ const MttoDashboard = () => {
                           </div>
                         </td>
                         {columnasTabla.filter(c => c.visible).map(col => (
-                          <td key={`cell_${m.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                          <td className="md-x58" key={`cell_${m.id}_${col.id}`}>
                             {renderCellContent(m, col.id)}
                           </td>
                         ))}
@@ -919,11 +915,11 @@ const MttoDashboard = () => {
 
           {/* CONTROLES DE PAGINACIÓN */}
           {busquedaHecha && registrosVista.length > 0 && !cargando && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="md-x59">
+              <div className="md-x60">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosVista.length)} de {registrosVista.length} gastos
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="md-x61">
                 <button 
                   title="Página Anterior"
                   onClick={irPaginaAnterior} 
@@ -932,7 +928,7 @@ const MttoDashboard = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="md-x62">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   title="Página Siguiente"
                   onClick={irPaginaSiguiente} 
@@ -949,22 +945,22 @@ const MttoDashboard = () => {
 
       {/* MODAL INVOICE MASIVO */}
       {modalInvoiceMasivo && (
-        <div className="modal-overlay" style={{ zIndex: 3000 }}>
-          <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px' }}>
-            <div className="form-header" style={{ padding: '16px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem' }}>Asignar Invoice Masivo</h2>
-              <button onClick={() => setModalInvoiceMasivo(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay md-x63">
+          <div className="form-card md-x64">
+            <div className="form-header md-x65">
+              <h2 className="md-x66">Asignar Invoice Masivo</h2>
+              <button className="md-x67" onClick={() => setModalInvoiceMasivo(false)}>✕</button>
             </div>
-            <div style={{ padding: '24px' }}>
-              <p style={{ color: '#8b949e', fontSize: '0.9rem', marginBottom: '20px' }}>Estás a punto de asignar el mismo número de Invoice a <strong>{gastosSeleccionados.length}</strong> registro(s).</p>
+            <div className="md-x68">
+              <p className="md-x69">Estás a punto de asignar el mismo número de Invoice a <strong>{gastosSeleccionados.length}</strong> registro(s).</p>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem', fontWeight: 'bold' }}>Número de Invoice a Asignar</label>
-                <input type="text" placeholder="Ej: INV-99234" value={nuevoInvoiceTexto} onChange={e => setNuevoInvoiceTexto(e.target.value)} autoFocus style={{ width: '100%', padding: '12px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#f0f6fc', fontSize: '1.1rem' }} />
+                <label className="md-x70">Número de Invoice a Asignar</label>
+                <input className="md-x71" type="text" placeholder="Ej: INV-99234" value={nuevoInvoiceTexto} onChange={e => setNuevoInvoiceTexto(e.target.value)} autoFocus />
               </div>
             </div>
-            <div className="form-actions" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px' }}>
-              <button onClick={() => setModalInvoiceMasivo(false)} disabled={cargandoMasivo} className="btn btn-outline" style={{ padding: '8px 16px', borderRadius: '6px' }}>Cancelar</button>
-              <button onClick={aplicarInvoiceMasivo} disabled={cargandoMasivo || !nuevoInvoiceTexto.trim()} className="btn btn-primary" style={{ padding: '8px 16px', borderRadius: '6px', backgroundColor: '#238636', border: 'none' }}>{cargandoMasivo ? 'Aplicando...' : 'Aplicar'}</button>
+            <div className="form-actions md-x72">
+              <button onClick={() => setModalInvoiceMasivo(false)} disabled={cargandoMasivo} className="btn btn-outline md-x73">Cancelar</button>
+              <button onClick={aplicarInvoiceMasivo} disabled={cargandoMasivo || !nuevoInvoiceTexto.trim()} className="btn btn-primary md-x74">{cargandoMasivo ? 'Aplicando...' : 'Aplicar'}</button>
             </div>
           </div>
         </div>
@@ -972,18 +968,15 @@ const MttoDashboard = () => {
 
       {/* ✅ MODAL PARA CONFIGURAR COLUMNAS EN GRID DE 3 COLUMNAS */}
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '1000px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay md-x75">
+          <div className="md-x76">
+            <div className="md-x77">
+              <h3 className="md-x78">Configurar Columnas</h3>
+              <button className="md-x67" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
+            <p className="md-x79">Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
             
-            <ul style={{ 
-              listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', 
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' 
-            }}>
+            <ul className="md-x80">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -1000,14 +993,14 @@ const MttoDashboard = () => {
                   }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                  <input className="md-x53" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="md-x81">
+              <button className="md-x82" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -1015,18 +1008,18 @@ const MttoDashboard = () => {
 
       {/* ✅ MODAL DE DETALLES RECONSTRUIDO */}
       {mttoViendo && (
-        <div className="modal-overlay" style={{ zIndex: 1500 }}>
-          <div className="form-card detail-card" style={{ maxWidth: '1000px', width: '100%', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div className="form-header" style={{ padding: '20px 24px', display: 'flex', justifyContent: 'space-between' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc' }}>Detalle de Gasto <span style={{ color: '#58a6ff' }}>{formatearFolio(mttoViendo)}</span></h2>
-              <button onClick={() => setMttoViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay md-x83">
+          <div className="form-card detail-card md-x84">
+            <div className="form-header md-x85">
+              <h2 className="md-x78">Detalle de Gasto <span className="md-x7">{formatearFolio(mttoViendo)}</span></h2>
+              <button className="md-x67" onClick={() => setMttoViendo(null)}>✕</button>
             </div>
             
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px' }}>
+            <div className="md-x86">
               {tabsDetalle.map(tab => (<button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)} style={{ padding: '12px 16px', background: 'none', border: 'none', borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #D84315' : '2px solid transparent', color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e', cursor: 'pointer' }}>{tab.label}</button>))}
             </div>
             
-            <div className="detail-content" style={{ padding: '24px', overflowY: 'auto' }}>
+            <div className="detail-content md-x87">
               
               {/* PESTAÑA 1: INFORMACIÓN GENERAL */}
               {pestañaDetalleActiva === 'general' && (
@@ -1038,19 +1031,19 @@ const MttoDashboard = () => {
                    <div><label style={labelStyle}>TIPO DE GASTO</label><span style={valStyle}>{mttoViendo.tipoGasto || '-'}</span></div>
                    <div><label style={labelStyle}>UNIDAD</label><span style={valStyle}>{mostrarNombreUnidad(mttoViendo.unidadId || mttoViendo.unidad)}</span></div>
                    <div><label style={labelStyle}>OPERADOR</label><span style={valStyle}>{mttoViendo.operadorNombre || mttoViendo.operador || '-'}</span></div>
-                   <div style={{gridColumn:'span 3'}}><label style={labelStyle}>DESCRIPCIÓN GENERAL</label><div style={boxStyle}>{mttoViendo.descripcion || mttoViendo.descripcionGeneral || '-'}</div></div>
+                   <div className="md-x88"><label style={labelStyle}>DESCRIPCIÓN GENERAL</label><div style={boxStyle}>{mttoViendo.descripcion || mttoViendo.descripcionGeneral || '-'}</div></div>
                 </div>
               )}
 
               {/* PESTAÑA 2: FINANZAS */}
               {pestañaDetalleActiva === 'finanzas' && (
                 <div className="detail-grid-3">
-                   <div style={{gridColumn: 'span 3'}}><label style={labelStyle}>PROVEEDOR</label><span style={valStyle}>{mttoViendo.proveedorNombre || mostrarDatoMapeado(mttoViendo.proveedorId, 'empresas')}</span></div>
-                   <div style={{gridColumn: 'span 3'}}><label style={labelStyle}>TIPO DE SERVICIO</label>
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px' }}>
+                   <div className="md-x88"><label style={labelStyle}>PROVEEDOR</label><span style={valStyle}>{mttoViendo.proveedorNombre || mostrarDatoMapeado(mttoViendo.proveedorId, 'empresas')}</span></div>
+                   <div className="md-x88"><label style={labelStyle}>TIPO DE SERVICIO</label>
+                      <div className="md-x89">
                           {Array.isArray(mttoViendo.tipoServicioId) && mttoViendo.tipoServicioId.length > 0 
                           ? mttoViendo.tipoServicioId.map((idS: string) => (
-                              <span key={idS} style={{ backgroundColor: '#21262d', padding: '4px 8px', borderRadius: '16px', fontSize: '0.85rem', border: '1px solid #30363d', color: '#c9d1d9' }}>
+                              <span className="md-x90" key={idS}>
                                   {mostrarDatoMapeado(idS, 'servicios')}
                               </span>
                               ))
@@ -1064,16 +1057,16 @@ const MttoDashboard = () => {
                    )}
                    <div><label style={labelStyle}>MONEDA</label><span style={valStyle}>{mostrarDatoMapeado(mttoViendo.monedaId, 'monedas', 'moneda')}</span></div>
 
-                   <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+                   <div className="md-x88"><hr className="md-x91" /></div>
 
-                   <div><label style={labelStyle}>IMPORTE (MONTO BASE)</label><span style={{color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem'}}>{formatoMoneda(mttoViendo.importe)}</span></div>
-                   <div><label style={labelStyle}>IVA (+)</label><span style={valStyle}>{formatoMoneda(mttoViendo.ivaMonto)} <span style={{fontSize:'0.8rem'}}>({mttoViendo.ivaPorcentaje || 0}%)</span></span></div>
+                   <div><label style={labelStyle}>IMPORTE (MONTO BASE)</label><span className="md-x92">{formatoMoneda(mttoViendo.importe)}</span></div>
+                   <div><label style={labelStyle}>IVA (+)</label><span style={valStyle}>{formatoMoneda(mttoViendo.ivaMonto)} <span className="md-x4">({mttoViendo.ivaPorcentaje || 0}%)</span></span></div>
                    <div></div>
                    
-                   <div><label style={labelStyle}>RET IVA (-)</label><span style={{color: '#f85149'}}>{formatoMoneda(mttoViendo.retIva)}</span></div>
-                   <div><label style={labelStyle}>RET ISR (-)</label><span style={{color: '#f85149'}}>{formatoMoneda(mttoViendo.retIsr)}</span></div>
+                   <div><label style={labelStyle}>RET IVA (-)</label><span className="md-x5">{formatoMoneda(mttoViendo.retIva)}</span></div>
+                   <div><label style={labelStyle}>RET ISR (-)</label><span className="md-x5">{formatoMoneda(mttoViendo.retIsr)}</span></div>
 
-                   <div style={{gridColumn:'span 3'}}><label style={{...labelStyle, color:'#3fb950'}}>TOTAL FINAL</label><span style={{fontSize:'1.8rem', fontWeight:'bold', color:'#3fb950'}}>{formatoMoneda(mttoViendo.total)}</span></div>
+                   <div className="md-x88"><label style={{...labelStyle, color:'#3fb950'}}>TOTAL FINAL</label><span className="md-x93">{formatoMoneda(mttoViendo.total)}</span></div>
                 </div>
               )}
 
@@ -1086,7 +1079,7 @@ const MttoDashboard = () => {
                    
                    <div><label style={labelStyle}>ARCHIVO (PDF)</label>
                       {mttoViendo.archivoPdfUrl ? (
-                          <a href={mttoViendo.archivoPdfUrl} target="_blank" rel="noreferrer" style={{color: '#58a6ff', textDecoration: 'underline'}}>Ver Documento</a>
+                          <a className="md-x94" href={mttoViendo.archivoPdfUrl} target="_blank" rel="noreferrer">Ver Documento</a>
                       ) : <span style={valStyle}>Sin archivo</span>}
                    </div>
 
@@ -1096,12 +1089,12 @@ const MttoDashboard = () => {
                    <div><label style={labelStyle}>AUTORIZADO POR</label><span style={valStyle}>{mttoViendo.autorizadoPor || '-'}</span></div>
                    <div><label style={labelStyle}>ASIGNAR A OPERACIÓN</label><span style={valStyle}>{mostrarDatoMapeado(mttoViendo.operacionAsignadaId, 'operaciones', 'ref')}</span></div>
 
-                   <div style={{gridColumn:'span 3'}}><label style={labelStyle}>OBSERVACIONES</label><div style={boxStyle}>{mttoViendo.observaciones || '-'}</div></div>
+                   <div className="md-x88"><label style={labelStyle}>OBSERVACIONES</label><div style={boxStyle}>{mttoViendo.observaciones || '-'}</div></div>
                 </div>
               )}
             </div>
             
-            <div style={{ padding: '16px 24px', textAlign: 'right', borderTop: '1px solid #30363d' }}>
+            <div className="md-x95">
               <button onClick={() => setMttoViendo(null)} className="btn btn-outline">Cerrar Detalles</button>
             </div>
           </div>
@@ -1110,43 +1103,42 @@ const MttoDashboard = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Gastos MTTO) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Gastos MTTO</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="md-x96" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="md-x97" onClick={(e) => e.stopPropagation()}>
+            <div className="md-x98">
+              <h3 className="md-x99">Filtros · Gastos MTTO</h3>
+              <button className="md-x67" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Folio, unidad, proveedor, montos, observaciones..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="md-x100">
+              <label className="md-x101">BÚSQUEDA</label>
+              <div className="md-x102">
+                <svg className="md-x103" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="md-x104" type="text" placeholder="Folio, unidad, proveedor, montos, observaciones..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="md-x105" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE</label>
-                <input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', colorScheme: 'dark', boxSizing: 'border-box' }} />
+            <div className="md-x106">
+              <div className="md-x107">
+                <label className="md-x108">FECHA DESDE</label>
+                <input className="md-x109" type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} />
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA</label>
-                <input type="date" value={fechaHasta} min={fechaDesde || undefined} onChange={(e) => setFechaHasta(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', colorScheme: 'dark', boxSizing: 'border-box' }} />
+              <div className="md-x107">
+                <label className="md-x108">FECHA HASTA</label>
+                <input className="md-x109" type="date" value={fechaHasta} min={fechaDesde || undefined} onChange={(e) => setFechaHasta(e.target.value)} />
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver los gastos.
+            <div className="md-x110">
+              Todos los campos son <b className="md-x111">opcionales</b>. Presiona <b className="md-x44">Buscar</b> para ver los gastos.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="md-x112">
+              <button className="md-x113" onClick={() => { setBusqueda(''); setFechaDesde(''); setFechaHasta(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="md-x114" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

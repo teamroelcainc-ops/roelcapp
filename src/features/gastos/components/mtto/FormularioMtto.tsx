@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, query, limit, orderBy, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../../config/firebase';
 import { guardarMttoSeguro } from '../services/mttoService';
+import './FormularioMtto.css';
 
 // ✅ Helpers de folio (mismo formato que el dashboard: MTTO-DDMMYY-NNN).
 //    Se usan solo para MOSTRAR el folio normalizado al editar registros viejos;
@@ -387,29 +388,29 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     { id: 'documentos', label: 'Documentos y Cierre' }
   ];
 
-  const RequeridoMark = () => <span style={{ color: '#f85149', marginLeft: '4px' }}>*</span>;
+  const RequeridoMark = () => <span className="fm-x1">*</span>;
 
   return (
     <div className="modal-overlay" onClick={() => setShowServicios(false)}>
-      <div className="form-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '1200px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+      <div className="form-card fm-x2" onClick={(e) => e.stopPropagation()}>
         
         {/* ENCABEZADO */}
-        <div className="form-header" style={{ padding: '16px 24px', borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="form-header fm-x3">
+          <h2 className="fm-x4">
             {initialData ? `Editar Gasto ${folioDisplay}` : 'Nuevo Gasto (MTTO)'}
           </h2>
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button type="button" onClick={() => setShowConfig(true)} title="Configuración de Formulario" style={{ background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9', cursor: 'pointer', padding: '6px 12px', borderRadius: '6px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px', transition: 'all 0.2s ease' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
+          <div className="fm-x5">
+            <button className="fm-x6" type="button" onClick={() => setShowConfig(true)} title="Configuración de Formulario" onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
               Configurar Formulario
             </button>
-            <div style={{ width: '1px', height: '24px', backgroundColor: '#30363d' }}></div>
-            <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem', padding: '4px' }}>✕</button>
+            <div className="fm-x7"></div>
+            <button className="fm-x8" type="button" onClick={onClose}>✕</button>
           </div>
         </div>
 
         {/* BARRA DE PESTAÑAS */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px', overflowX: 'auto', flexShrink: 0 }}>
+        <div className="fm-x9">
           {tabs.map(tab => (
             <button
               key={tab.id}
@@ -434,60 +435,60 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         </div>
 
         {/* CONTENIDO DEL FORMULARIO */}
-        <form onSubmit={handleSubmit} style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+        <form className="fm-x10" onSubmit={handleSubmit}>
           
           {/* PESTAÑA 1: INFORMACIÓN GENERAL */}
           {pestañaActiva === 'general' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', animation: 'fadeIn 0.2s ease' }}>
+            <div className="fm-x11">
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#8b949e', fontSize: '0.85rem' }}># de Gasto</label>
-                <input type="text" readOnly value={folioDisplay} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e' }} />
+                <label className="fm-x12"># de Gasto</label>
+                <input className="fm-x13" type="text" readOnly value={folioDisplay} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}># de Invoice {configuracion.requeridos.invoice && <RequeridoMark />}</label>
-                <input type="text" name="invoice" required={configuracion.requeridos.invoice} value={formData.invoice} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <label className="fm-x14"># de Invoice {configuracion.requeridos.invoice && <RequeridoMark />}</label>
+                <input className="fm-x15" type="text" name="invoice" required={configuracion.requeridos.invoice} value={formData.invoice} onChange={handleChange} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Estatus</label>
+                <label className="fm-x12">Estatus</label>
                 <input type="text" readOnly value={formData.estatus} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: formData.estatus === 'Facturado' ? '#3fb950' : '#f85149', fontWeight: 'bold' }} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#D84315', fontSize: '0.85rem', fontWeight: 'bold' }}>Fecha <RequeridoMark /></label>
-                <input type="date" name="fecha" value={formData.fecha} onChange={handleChange} required style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <label className="fm-x16">Fecha <RequeridoMark /></label>
+                <input className="fm-x15" type="date" name="fecha" value={formData.fecha} onChange={handleChange} required />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Tipo de Gasto <RequeridoMark /></label>
-                <select name="tipoGasto" value={formData.tipoGasto} onChange={handleChange} required style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
-                  <option value="" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>-- Seleccionar --</option>
-                  <option value="Gastos de Oficina" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>Gastos de Oficina</option>
-                  <option value="Gastos de Operación" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>Gastos de Operación</option>
+                <label className="fm-x14">Tipo de Gasto <RequeridoMark /></label>
+                <select className="fm-x15" name="tipoGasto" value={formData.tipoGasto} onChange={handleChange} required>
+                  <option className="fm-x17" value="">-- Seleccionar --</option>
+                  <option className="fm-x17" value="Gastos de Oficina">Gastos de Oficina</option>
+                  <option className="fm-x17" value="Gastos de Operación">Gastos de Operación</option>
                 </select>
               </div>
               
-              <div className="form-group" style={{ position: 'relative' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Unidad {configuracion.requeridos.unidad && <RequeridoMark />}</label>
+              <div className="form-group fm-x18">
+                <label className="fm-x14">Unidad {configuracion.requeridos.unidad && <RequeridoMark />}</label>
                 <input type="text" required={configuracion.requeridos.unidad && !formData.unidadId} value={searchUnidad} onChange={(e) => { setSearchUnidad(e.target.value); setShowUnidad(true); if (formData.unidadId) setFormData(prev => ({ ...prev, unidadId: '' })); }} onFocus={() => setShowUnidad(true)} readOnly={formData.tipoGasto === 'Gastos de Oficina'} style={{ width: '100%', padding: '10px', backgroundColor: formData.tipoGasto === 'Gastos de Oficina' ? '#161b22' : '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} placeholder={formData.tipoGasto === 'Gastos de Oficina' ? '' : 'Buscar unidad...'} />
                 {showUnidad && formData.tipoGasto !== 'Gastos de Oficina' && searchUnidad && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '150px', overflowY: 'auto' }}>
-                    {unidadesFiltro.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Sin resultados</div> : unidadesFiltro.map((u:any) => (
-                      <div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({...prev, unidadId: u.id})); setSearchUnidad(u.unidad || u.numeroEconomico || u.nombre); setShowUnidad(false); }}>
-                        <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{u.unidad || u.numeroEconomico || u.nombre}</div>
+                  <div className="fm-x19">
+                    {unidadesFiltro.length === 0 ? <div className="fm-x20">Sin resultados</div> : unidadesFiltro.map((u:any) => (
+                      <div className="fm-x21" key={u.id} onClick={() => { setFormData(prev => ({...prev, unidadId: u.id})); setSearchUnidad(u.unidad || u.numeroEconomico || u.nombre); setShowUnidad(false); }}>
+                        <div className="fm-x22">{u.unidad || u.numeroEconomico || u.nombre}</div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              <div className="form-group" style={{ position: 'relative' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Operador {configuracion.requeridos.operador && <RequeridoMark />}</label>
+              <div className="form-group fm-x18">
+                <label className="fm-x14">Operador {configuracion.requeridos.operador && <RequeridoMark />}</label>
                 <input type="text" required={configuracion.requeridos.operador && !formData.operadorId} value={searchOperador} onChange={(e) => { setSearchOperador(e.target.value); setShowOperador(true); if (formData.operadorId) setFormData(prev => ({ ...prev, operadorId: '', operadorNombre: '' })); }} onFocus={() => setShowOperador(true)} readOnly={formData.tipoGasto === 'Gastos de Oficina'} style={{ width: '100%', padding: '10px', backgroundColor: formData.tipoGasto === 'Gastos de Oficina' ? '#161b22' : '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} placeholder={formData.tipoGasto === 'Gastos de Oficina' ? '' : 'Buscar empleado...'} />
                 {showOperador && formData.tipoGasto !== 'Gastos de Oficina' && searchOperador && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '150px', overflowY: 'auto' }}>
-                    {operadoresFiltro.length === 0 ? <div style={{ padding: '8px', color: '#8b949e', fontSize: '0.85rem' }}>Sin resultados</div> : operadoresFiltro.map((e:any) => {
+                  <div className="fm-x19">
+                    {operadoresFiltro.length === 0 ? <div className="fm-x20">Sin resultados</div> : operadoresFiltro.map((e:any) => {
                       const fullName = `${e.firstName || ''} ${e.lastNamePaternal || ''}`.trim();
                       return (
-                        <div key={e.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({...prev, operadorId: e.id, operadorNombre: fullName, operador: fullName})); setSearchOperador(fullName); setShowOperador(false); }}>
-                          <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{fullName}</div>
+                        <div className="fm-x21" key={e.id} onClick={() => { setFormData(prev => ({...prev, operadorId: e.id, operadorNombre: fullName, operador: fullName})); setSearchOperador(fullName); setShowOperador(false); }}>
+                          <div className="fm-x22">{fullName}</div>
                         </div>
                       )
                     })}
@@ -496,16 +497,15 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
               </div>
 
               {/* ✅ DESCRIPCIÓN GENERAL: AHORA ADMITE SALTOS DE LÍNEA (TEXTAREA) */}
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Descripción General {configuracion.requeridos.descripcion && <RequeridoMark />}</label>
-                <textarea
+              <div className="form-group fm-x23">
+                <label className="fm-x14">Descripción General {configuracion.requeridos.descripcion && <RequeridoMark />}</label>
+                <textarea className="fm-x24"
                   name="descripcion"
                   required={configuracion.requeridos.descripcion}
                   value={formData.descripcion}
                   onChange={handleChange}
                   rows={4}
                   placeholder="Escribe la descripción. Presiona Enter para agregar saltos de línea..."
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', minHeight: '90px', resize: 'vertical', fontFamily: 'inherit', fontSize: '0.9rem', lineHeight: '1.5', boxSizing: 'border-box' }}
                 />
               </div>
             </div>
@@ -513,19 +513,18 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
 
           {/* PESTAÑA 2: DETALLES FINANCIEROS */}
           {pestañaActiva === 'finanzas' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', animation: 'fadeIn 0.2s ease' }}>
+            <div className="fm-x11">
               
-              <div className="form-group" style={{ position: 'relative' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Proveedor {configuracion.requeridos.proveedor && <RequeridoMark />}</label>
-                <input type="text" required={configuracion.requeridos.proveedor && !formData.proveedorId} value={searchProveedor} onChange={(e) => { setSearchProveedor(e.target.value); setShowProveedor(true); }} onFocus={() => setShowProveedor(true)} placeholder="Buscar proveedor..." style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+              <div className="form-group fm-x18">
+                <label className="fm-x14">Proveedor {configuracion.requeridos.proveedor && <RequeridoMark />}</label>
+                <input className="fm-x15" type="text" required={configuracion.requeridos.proveedor && !formData.proveedorId} value={searchProveedor} onChange={(e) => { setSearchProveedor(e.target.value); setShowProveedor(true); }} onFocus={() => setShowProveedor(true)} placeholder="Buscar proveedor..." />
                 {showProveedor && searchProveedor && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '150px', overflowY: 'auto' }}>
+                  <div className="fm-x19">
                     {proveedoresFiltro.map((p:any) => {
                       const dirProveedor = p.direccion || p.domicilio || p.direccionFiscal || p.direccion_fiscal || p.calle || p.ubicacion || '';
                       return (
-                      <div 
+                      <div className="fm-x21" 
                         key={p.id} 
-                        style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} 
                         onClick={() => { 
                           const defaultMoneda = p.moneda || p.monedaId || formData.monedaId;
                           setFormData(prev => ({
@@ -539,8 +538,8 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
                           setShowProveedor(false); 
                         }}
                       >
-                        <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{p.nombre}</div>
-                        {dirProveedor && <div style={{ fontSize: '0.8rem', color: '#8b949e', marginTop: '2px', whiteSpace: 'normal' }}>{dirProveedor}</div>}
+                        <div className="fm-x22">{p.nombre}</div>
+                        {dirProveedor && <div className="fm-x25">{dirProveedor}</div>}
                       </div>
                       );
                     })}
@@ -549,34 +548,34 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
               </div>
               
               {/* ENUMLIST: TIPO DE SERVICIO */}
-              <div className="form-group" style={{ position: 'relative' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Tipo de Servicio {configuracion.requeridos.tipoServicio && <RequeridoMark />}</label>
+              <div className="form-group fm-x18">
+                <label className="fm-x14">Tipo de Servicio {configuracion.requeridos.tipoServicio && <RequeridoMark />}</label>
                 
                 <div 
                   onClick={() => { if(formData.proveedorId) setShowServicios(!showServicios); }} 
                   style={{ width: '100%', padding: '8px 10px', backgroundColor: formData.proveedorId ? '#0d1117' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', cursor: formData.proveedorId ? 'pointer' : 'not-allowed', minHeight: '40px', display: 'flex', flexWrap: 'wrap', gap: '6px', boxSizing: 'border-box' }}
                 >
-                  {formData.tipoServicioId.length === 0 && <span style={{ color: '#8b949e', marginTop: '2px' }}>{formData.proveedorId ? '-- Seleccionar Servicios --' : 'Selecciona un proveedor primero'}</span>}
+                  {formData.tipoServicioId.length === 0 && <span className="fm-x26">{formData.proveedorId ? '-- Seleccionar Servicios --' : 'Selecciona un proveedor primero'}</span>}
                   
                   {formData.tipoServicioId.map(idSel => {
                     const nombreServicio = opcionesServicios.find((o:any) => o.id === idSel)?.nombre || idSel;
                     return (
-                      <span key={idSel} style={{ backgroundColor: '#21262d', padding: '4px 8px', borderRadius: '16px', fontSize: '0.8rem', border: '1px solid #30363d', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span className="fm-x27" key={idSel}>
                         {nombreServicio}
-                        <span onClick={(e) => { e.stopPropagation(); toggleServicio(idSel); }} style={{ color: '#f85149', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem', lineHeight: '10px' }}>×</span>
+                        <span className="fm-x28" onClick={(e) => { e.stopPropagation(); toggleServicio(idSel); }}>×</span>
                       </span>
                     )
                   })}
                 </div>
 
                 {showServicios && formData.proveedorId && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 20, maxHeight: '200px', overflowY: 'auto', borderRadius: '6px', marginTop: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                  <div className="fm-x29">
                     {opcionesServicios.length === 0 ? (
-                      <div style={{ padding: '12px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>Este proveedor no tiene servicios vinculados.</div>
+                      <div className="fm-x30">Este proveedor no tiene servicios vinculados.</div>
                     ) : (
                       opcionesServicios.map((op:any) => (
-                        <label key={op.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #21262d', color: '#c9d1d9', fontSize: '0.9rem', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
-                          <input type="checkbox" checked={formData.tipoServicioId.includes(op.id)} onChange={() => toggleServicio(op.id)} style={{ accentColor: '#D84315', width: '16px', height: '16px' }} />
+                        <label className="fm-x31" key={op.id} onMouseEnter={e => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={e => e.currentTarget.style.backgroundColor = 'transparent'}>
+                          <input className="fm-x32" type="checkbox" checked={formData.tipoServicioId.includes(op.id)} onChange={() => toggleServicio(op.id)} />
                           {op.nombre}
                         </label>
                       ))
@@ -586,118 +585,118 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
               </div>
 
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Condición de Pago {configuracion.requeridos.condicionPago && <RequeridoMark />}</label>
-                <select name="condicionPago" required={configuracion.requeridos.condicionPago} value={formData.condicionPago} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
-                  <option value="" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>-- Seleccionar --</option>
-                  <option value="Crédito" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>Crédito</option>
-                  <option value="Contado" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>Contado</option>
+                <label className="fm-x14">Condición de Pago {configuracion.requeridos.condicionPago && <RequeridoMark />}</label>
+                <select className="fm-x15" name="condicionPago" required={configuracion.requeridos.condicionPago} value={formData.condicionPago} onChange={handleChange}>
+                  <option className="fm-x17" value="">-- Seleccionar --</option>
+                  <option className="fm-x17" value="Crédito">Crédito</option>
+                  <option className="fm-x17" value="Contado">Contado</option>
                 </select>
               </div>
 
               {/* CAMPO CONDICIONAL DE PLAZO */}
               {formData.condicionPago === 'Crédito' && (
-                <div className="form-group" style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Plazo (Días) {configuracion.requeridos.plazo && <RequeridoMark />}</label>
-                  <input type="number" name="plazo" placeholder="Ej. 15, 30" required={configuracion.requeridos.plazo} value={formData.plazo} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <div className="form-group fm-x33">
+                  <label className="fm-x14">Plazo (Días) {configuracion.requeridos.plazo && <RequeridoMark />}</label>
+                  <input className="fm-x15" type="number" name="plazo" placeholder="Ej. 15, 30" required={configuracion.requeridos.plazo} value={formData.plazo} onChange={handleChange} />
                 </div>
               )}
 
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Moneda {configuracion.requeridos.moneda && <RequeridoMark />}</label>
-                <select name="monedaId" required={configuracion.requeridos.moneda} value={formData.monedaId} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
-                  <option value="" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>-- Seleccionar --</option>
+                <label className="fm-x14">Moneda {configuracion.requeridos.moneda && <RequeridoMark />}</label>
+                <select className="fm-x15" name="monedaId" required={configuracion.requeridos.moneda} value={formData.monedaId} onChange={handleChange}>
+                  <option className="fm-x17" value="">-- Seleccionar --</option>
                   {listaMonedasLocal.map((m:any) => (
-                    <option key={m.id} value={m.id} style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>
+                    <option className="fm-x17" key={m.id} value={m.id}>
                       {m.moneda || m.nombre || m.clave}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d' }} /></div>
+              <div className="form-group fm-x23"><hr className="fm-x34" /></div>
 
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#58a6ff', fontSize: '0.85rem', fontWeight: 'bold' }}>Importe (Monto Base) {configuracion.requeridos.importe && <RequeridoMark />}</label>
-                <input type="number" step="0.01" name="importe" required={configuracion.requeridos.importe} value={formData.importe} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #58a6ff', borderRadius: '6px', color: '#58a6ff', fontWeight: 'bold' }} />
+                <label className="fm-x35">Importe (Monto Base) {configuracion.requeridos.importe && <RequeridoMark />}</label>
+                <input className="fm-x36" type="number" step="0.01" name="importe" required={configuracion.requeridos.importe} value={formData.importe} onChange={handleChange} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>IVA (%)</label>
-                <select name="ivaPorcentaje" value={formData.ivaPorcentaje} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
-                  <option value="0" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>0%</option>
-                  <option value="8" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>8%</option>
-                  <option value="16" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>16%</option>
+                <label className="fm-x14">IVA (%)</label>
+                <select className="fm-x15" name="ivaPorcentaje" value={formData.ivaPorcentaje} onChange={handleChange}>
+                  <option className="fm-x17" value="0">0%</option>
+                  <option className="fm-x17" value="8">8%</option>
+                  <option className="fm-x17" value="16">16%</option>
                 </select>
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#8b949e', fontSize: '0.85rem' }}>IVA ($) Calculado (+)</label>
-                <input type="text" readOnly value={`$ ${formData.ivaMonto.toFixed(2)}`} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e' }} />
+                <label className="fm-x12">IVA ($) Calculado (+)</label>
+                <input className="fm-x13" type="text" readOnly value={`$ ${formData.ivaMonto.toFixed(2)}`} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>RET IVA ($) (-)</label>
-                <input type="number" step="0.01" name="retIva" value={formData.retIva} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#f85149' }} />
+                <label className="fm-x14">RET IVA ($) (-)</label>
+                <input className="fm-x37" type="number" step="0.01" name="retIva" value={formData.retIva} onChange={handleChange} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>RET ISR ($) (-)</label>
-                <input type="number" step="0.01" name="retIsr" value={formData.retIsr} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#f85149' }} />
+                <label className="fm-x14">RET ISR ($) (-)</label>
+                <input className="fm-x37" type="number" step="0.01" name="retIsr" value={formData.retIsr} onChange={handleChange} />
               </div>
 
-              <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #3fb950' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#8b949e', fontSize: '0.85rem', textTransform: 'uppercase' }}>TOTAL FINAL</label>
-                <div style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>$ {formData.total.toFixed(2)}</div>
+              <div className="form-group fm-x38">
+                <label className="fm-x39">TOTAL FINAL</label>
+                <div className="fm-x40">$ {formData.total.toFixed(2)}</div>
               </div>
             </div>
           )}
 
           {/* PESTAÑA 3: DOCUMENTOS Y CIERRE */}
           {pestañaActiva === 'documentos' && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', animation: 'fadeIn 0.2s ease' }}>
+            <div className="fm-x11">
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Factura (Texto) {configuracion.requeridos.facturaTexto && <RequeridoMark />}</label>
-                <input type="text" name="facturaTexto" required={configuracion.requeridos.facturaTexto} value={formData.facturaTexto} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <label className="fm-x14">Factura (Texto) {configuracion.requeridos.facturaTexto && <RequeridoMark />}</label>
+                <input className="fm-x15" type="text" name="facturaTexto" required={configuracion.requeridos.facturaTexto} value={formData.facturaTexto} onChange={handleChange} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Fecha de Factura {configuracion.requeridos.fechaFactura && <RequeridoMark />}</label>
-                <input type="date" name="fechaFactura" required={configuracion.requeridos.fechaFactura} value={formData.fechaFactura} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <label className="fm-x14">Fecha de Factura {configuracion.requeridos.fechaFactura && <RequeridoMark />}</label>
+                <input className="fm-x15" type="date" name="fechaFactura" required={configuracion.requeridos.fechaFactura} value={formData.fechaFactura} onChange={handleChange} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Descripción Factura {configuracion.requeridos.descripcionFactura && <RequeridoMark />}</label>
-                <input type="text" name="descripcionFactura" required={configuracion.requeridos.descripcionFactura} value={formData.descripcionFactura} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <label className="fm-x14">Descripción Factura {configuracion.requeridos.descripcionFactura && <RequeridoMark />}</label>
+                <input className="fm-x15" type="text" name="descripcionFactura" required={configuracion.requeridos.descripcionFactura} value={formData.descripcionFactura} onChange={handleChange} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Archivo (PDF) {configuracion.requeridos.archivoPdf && <RequeridoMark />}</label>
-                <input type="file" accept=".pdf" required={configuracion.requeridos.archivoPdf && !initialData?.archivoPdfUrl} onChange={handleFileChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <label className="fm-x14">Archivo (PDF) {configuracion.requeridos.archivoPdf && <RequeridoMark />}</label>
+                <input className="fm-x15" type="file" accept=".pdf" required={configuracion.requeridos.archivoPdf && !initialData?.archivoPdfUrl} onChange={handleFileChange} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Fecha de Pago {configuracion.requeridos.fechaPago && <RequeridoMark />}</label>
-                <input type="date" name="fechaPago" required={configuracion.requeridos.fechaPago} value={formData.fechaPago} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+                <label className="fm-x14">Fecha de Pago {configuracion.requeridos.fechaPago && <RequeridoMark />}</label>
+                <input className="fm-x15" type="date" name="fechaPago" required={configuracion.requeridos.fechaPago} value={formData.fechaPago} onChange={handleChange} />
               </div>
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Forma de Pago {configuracion.requeridos.formaPago && <RequeridoMark />}</label>
-                <select name="formaPagoId" required={configuracion.requeridos.formaPago} value={formData.formaPagoId} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }}>
-                  <option value="" style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>-- Seleccionar --</option>
-                  {listaFormasPagoLocal.map((f:any) => <option key={f.id} value={f.id} style={{ backgroundColor: '#0d1117', color: '#c9d1d9' }}>{f.forma_pago || f.nombre || f.clave}</option>)}
+                <label className="fm-x14">Forma de Pago {configuracion.requeridos.formaPago && <RequeridoMark />}</label>
+                <select className="fm-x15" name="formaPagoId" required={configuracion.requeridos.formaPago} value={formData.formaPagoId} onChange={handleChange}>
+                  <option className="fm-x17" value="">-- Seleccionar --</option>
+                  {listaFormasPagoLocal.map((f:any) => <option className="fm-x17" key={f.id} value={f.id}>{f.forma_pago || f.nombre || f.clave}</option>)}
                 </select>
               </div>
               
               <div className="form-group">
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Autorizado Por <span style={{ fontSize: '0.7rem', color: '#8b949e' }}>(Por Configuración)</span></label>
-                <input type="text" readOnly value={formData.autorizadoPor || configuracion.autorizadorNombreFijo || 'No asignado en configuración'} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', cursor: 'not-allowed' }} />
+                <label className="fm-x14">Autorizado Por <span className="fm-x41">(Por Configuración)</span></label>
+                <input className="fm-x42" type="text" readOnly value={formData.autorizadoPor || configuracion.autorizadorNombreFijo || 'No asignado en configuración'} />
               </div>
 
-              <div className="form-group" style={{ position: 'relative', gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Asignar a Operación {configuracion.requeridos.operacionAsignada && <RequeridoMark />}</label>
-                <input type="text" required={configuracion.requeridos.operacionAsignada && !formData.operacionAsignadaId} value={searchOperacion} onChange={(e) => { setSearchOperacion(e.target.value); setShowOperacion(true); }} onFocus={() => setShowOperacion(true)} placeholder="Buscar # Referencia..." style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+              <div className="form-group fm-x43">
+                <label className="fm-x14">Asignar a Operación {configuracion.requeridos.operacionAsignada && <RequeridoMark />}</label>
+                <input className="fm-x15" type="text" required={configuracion.requeridos.operacionAsignada && !formData.operacionAsignadaId} value={searchOperacion} onChange={(e) => { setSearchOperacion(e.target.value); setShowOperacion(true); }} onFocus={() => setShowOperacion(true)} placeholder="Buscar # Referencia..." />
                 {showOperacion && searchOperacion && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '150px', overflowY: 'auto' }}>
+                  <div className="fm-x19">
                     {operacionesFiltro.map((o:any) => (
-                      <div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onClick={() => { setFormData(prev => ({...prev, operacionAsignadaId: o.id})); setSearchOperacion(o.ref || o.id); setShowOperacion(false); }}>{o.ref || o.id}</div>
+                      <div className="fm-x21" key={o.id} onClick={() => { setFormData(prev => ({...prev, operacionAsignadaId: o.id})); setSearchOperacion(o.ref || o.id); setShowOperacion(false); }}>{o.ref || o.id}</div>
                     ))}
                   </div>
                 )}
               </div>
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                <label style={{ display: 'block', marginBottom: '8px', color: '#c9d1d9', fontSize: '0.85rem' }}>Observaciones {configuracion.requeridos.observaciones && <RequeridoMark />}</label>
-                <textarea name="observaciones" required={configuracion.requeridos.observaciones} value={formData.observaciones} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', minHeight: '80px', resize: 'vertical' }} />
+              <div className="form-group fm-x23">
+                <label className="fm-x14">Observaciones {configuracion.requeridos.observaciones && <RequeridoMark />}</label>
+                <textarea className="fm-x44" name="observaciones" required={configuracion.requeridos.observaciones} value={formData.observaciones} onChange={handleChange} />
               </div>
             </div>
           )}
@@ -705,8 +704,8 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         </form>
 
         {/* PIE DEL MODAL PRINCIPAL */}
-        <div className="form-actions" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#161b22', borderTop: '1px solid #30363d', borderBottomLeftRadius: '8px', borderBottomRightRadius: '8px', flexShrink: 0 }}>
-          <button type="button" onClick={onClose} disabled={cargando} style={{ padding: '10px 20px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', cursor: 'pointer', transition: 'all 0.2s' }}>Cancelar</button>
+        <div className="form-actions fm-x45">
+          <button className="fm-x46" type="button" onClick={onClose} disabled={cargando}>Cancelar</button>
           <button onClick={handleSubmit} disabled={cargando} style={{ padding: '10px 20px', borderRadius: '6px', backgroundColor: '#D84315', border: 'none', color: '#fff', fontWeight: 'bold', cursor: cargando ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>{cargando ? 'Guardando...' : (initialData ? 'Actualizar Gasto' : 'Guardar Gasto')}</button>
         </div>
 
@@ -714,28 +713,28 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
 
       {/* MODAL SUPERPUESTO DE CONFIGURACIÓN */}
       {showConfig && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', width: '500px', maxWidth: '90%', padding: '24px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-            <h3 style={{ margin: '0 0 20px 0', color: '#f0f6fc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="fm-x47">
+          <div className="fm-x48">
+            <h3 className="fm-x49">
               Configuración del Formulario
-              <button onClick={() => setShowConfig(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="fm-x50" onClick={() => setShowConfig(false)}>✕</button>
             </h3>
             
-            <div style={{ marginBottom: '24px' }}>
-              <h4 style={{ color: '#58a6ff', margin: '0 0 12px 0', fontSize: '0.95rem' }}>Autorizador por Defecto</h4>
-              <p style={{ fontSize: '0.8rem', color: '#8b949e', margin: '0 0 12px 0' }}>Este empleado se asignará automáticamente en el campo "Autorizado Por" de todos los nuevos gastos.</p>
+            <div className="fm-x51">
+              <h4 className="fm-x52">Autorizador por Defecto</h4>
+              <p className="fm-x53">Este empleado se asignará automáticamente en el campo "Autorizado Por" de todos los nuevos gastos.</p>
               
-              <div style={{ position: 'relative' }}>
-                <input type="text" placeholder="Buscar empleado..." value={searchAutorizadorConfig} onChange={(e) => { setSearchAutorizadorConfig(e.target.value); setShowAutorizadorConfig(true); }} onFocus={() => setShowAutorizadorConfig(true)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9' }} />
+              <div className="fm-x18">
+                <input className="fm-x54" type="text" placeholder="Buscar empleado..." value={searchAutorizadorConfig} onChange={(e) => { setSearchAutorizadorConfig(e.target.value); setShowAutorizadorConfig(true); }} onFocus={() => setShowAutorizadorConfig(true)} />
                 {showAutorizadorConfig && searchAutorizadorConfig && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#21262d', border: '1px solid #30363d', zIndex: 10, maxHeight: '150px', overflowY: 'auto', borderRadius: '6px', marginTop: '4px' }}>
+                  <div className="fm-x55">
                     {listaEmpleadosLocal.filter((e:any) => {
                       const fName = `${e.firstName || ''} ${e.lastNamePaternal || ''}`.trim();
                       return fName.toLowerCase().includes(searchAutorizadorConfig.toLowerCase());
                     }).map((e:any) => {
                       const fName = `${e.firstName || ''} ${e.lastNamePaternal || ''}`.trim();
                       return (
-                        <div key={e.id} style={{ padding: '10px', cursor: 'pointer', borderBottom: '1px solid #30363d', color: '#c9d1d9' }} onClick={() => { guardarConfiguracion({ ...configuracion, autorizadorFijo: e.id, autorizadorNombreFijo: fName }); setSearchAutorizadorConfig(fName); setShowAutorizadorConfig(false); }}>
+                        <div className="fm-x56" key={e.id} onClick={() => { guardarConfiguracion({ ...configuracion, autorizadorFijo: e.id, autorizadorNombreFijo: fName }); setSearchAutorizadorConfig(fName); setShowAutorizadorConfig(false); }}>
                           {fName}
                         </div>
                       )
@@ -746,21 +745,21 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
             </div>
 
             <div>
-              <h4 style={{ color: '#58a6ff', margin: '0 0 12px 0', fontSize: '0.95rem' }}>Campos Obligatorios</h4>
-              <p style={{ fontSize: '0.8rem', color: '#8b949e', margin: '0 0 12px 0' }}>Selecciona qué campos no pueden dejarse en blanco al guardar.</p>
+              <h4 className="fm-x52">Campos Obligatorios</h4>
+              <p className="fm-x53">Selecciona qué campos no pueden dejarse en blanco al guardar.</p>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="fm-x57">
                 {Object.keys(configuracion.requeridos).map((key) => (
-                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c9d1d9', fontSize: '0.85rem', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={configuracion.requeridos[key]} onChange={() => toggleRequerido(key)} style={{ accentColor: '#D84315', width: '16px', height: '16px' }} />
+                  <label className="fm-x58" key={key}>
+                    <input className="fm-x32" type="checkbox" checked={configuracion.requeridos[key]} onChange={() => toggleRequerido(key)} />
                     {key.charAt(0).toUpperCase() + key.slice(1).replace(/([A-Z])/g, ' $1')}
                   </label>
                 ))}
               </div>
             </div>
 
-            <div style={{ marginTop: '24px', textAlign: 'right' }}>
-              <button onClick={() => setShowConfig(false)} style={{ padding: '8px 24px', borderRadius: '6px', backgroundColor: '#D84315', border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>Hecho</button>
+            <div className="fm-x59">
+              <button className="fm-x60" onClick={() => setShowConfig(false)}>Hecho</button>
             </div>
           </div>
         </div>

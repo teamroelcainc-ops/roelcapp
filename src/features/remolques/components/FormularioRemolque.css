@@ -1,0 +1,40 @@
+/* Estilos hermanos de FormularioRemolque.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.fr-x1 { position: relative; width: 100%; }
+.fr-x2 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; padding: 0; list-style: none; z-index: 1000; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); }
+.fr-x3 { padding: 8px 12px; cursor: pointer; color: #c9d1d9; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
+.fr-x4 { padding: 8px 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
+.fr-x5 { max-width: 850px; background-color: #0d1117; border: 1px solid #30363d; }
+.fr-x6 { border-bottom: 1px solid #30363d; }
+.fr-x7 { font-size: 0.95rem; }
+.fr-x8 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.fr-x9 { grid-column: 1 / -1; }
+.fr-x10 { background-color: #010409; color: #f0f6fc; font-weight: bold; font-size: 1.1rem; }
+.fr-x11 { background-color: #010409; color: #c9d1d9; }
+.fr-x12 { margin-top: 32px; border-top: 1px solid #30363d; padding-top: 20px; }
+.fr-x13 { background-color: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+.fr-x14 { background-color: #D84315; border: none; }
+.fr-x15 { z-index: 3000; position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background-color: rgba(0,0,0,0.7); backdrop-filter: blur(4px); }
+.fr-x16 { max-width: 520px; width: 95%; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 24px; }
+.fr-x17 { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #30363d; padding-bottom: 12px; margin-bottom: 16px; }
+.fr-x18 { margin: 0; color: #f0f6fc; }
+.fr-x19 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.1rem; }
+.fr-x20 { color: #8b949e; font-size: 0.82rem; margin-top: 0; margin-bottom: 16px; }
+.fr-x21 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.fr-x22 { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; cursor: pointer; }
+.fr-x23 { width: 16px; height: 16px; cursor: pointer; }
+.fr-x24 { margin-top: 22px; display: flex; justify-content: flex-end; gap: 10px; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .fr-x8 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .fr-x15 { flex-wrap: wrap; }
+  .fr-x16 { padding: 14px 12px; }
+  .fr-x17 { flex-wrap: wrap; }
+  .fr-x21 { grid-template-columns: 1fr; }
+  .fr-x22 { flex-wrap: wrap; }
+  .fr-x24 { flex-wrap: wrap; }
+}

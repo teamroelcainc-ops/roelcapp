@@ -15,6 +15,8 @@ import { FormularioRemolque } from '../../remolques/components/FormularioRemolqu
 import { FormularioUnidad } from '../../unidades/components/FormularioUnidad';
 import { EmployeeForm } from '../../empleados/components/EmployeeForm';
 import { CostosAdicionalesDashboard } from '../../costosAdicionales/CostosAdicionalesDashboard';
+import './FormularioOperacion.css';
+import { almacenSesion } from '../../../utils/cacheMemoria';
 
 // ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
 //   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
@@ -184,9 +186,9 @@ const colorTipoOperacion = (nombre: any): string => {
 };
 
 // ✅ Envuelve un input de dinero y le antepone el símbolo "$" dentro del campo.
-const ConSimboloMoneda = ({ children, style }: { children: any; style?: any }) => (
-  <div style={{ position: 'relative', ...(style || {}) }}>
-    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 700, pointerEvents: 'none', zIndex: 2, fontSize: '0.9rem' }}>$</span>
+const ConSimboloMoneda = ({ children, style, className }: { children: any; style?: any; className?: string }) => (
+  <div className={className} style={{ position: 'relative', ...(style || {}) }}>
+    <span className="fo-x1">$</span>
     {cloneElement(children, { style: { ...((children.props as any)?.style || {}), paddingLeft: '24px' } })}
   </div>
 );
@@ -357,49 +359,35 @@ const subirDocumentoOperacion = async (
 };
 
 
-const IconBriefcase     = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>;
-const IconFileText      = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
-const IconTruck         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
-const IconClipboard     = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="13" y2="15"/></svg>;
-const IconDollar        = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
-const IconUsers         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-const IconMapPin        = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
-const IconCalendar      = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
-const IconPackage       = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
-const IconReceipt       = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M4 2h16v20l-3-2-2 2-3-2-3 2-2-2-3 2z"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg>;
-const IconTrendingUp    = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
-const IconRoute         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>;
-const IconEdit          = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const IconSave          = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>;
-const IconX             = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
-const IconMinimize      = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="5" y1="19" x2="19" y2="19"/></svg>;
-const IconAlert         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
-const IconCheck         = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><polyline points="20 6 9 17 4 12"/></svg>;
-const IconArrowRight    = (p: { size?: number }) => <svg width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>;
-const IconPlus          = (p: { size?: number }) => <svg width={p.size || 16} height={p.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block', flexShrink: 0 }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+const IconBriefcase     = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>;
+const IconFileText      = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>;
+const IconTruck         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>;
+const IconClipboard     = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9z"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="13" y2="15"/></svg>;
+const IconDollar        = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>;
+const IconUsers         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+const IconMapPin        = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>;
+const IconCalendar      = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
+const IconPackage       = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
+const IconReceipt       = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M4 2h16v20l-3-2-2 2-3-2-3 2-2-2-3 2z"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/></svg>;
+const IconTrendingUp    = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>;
+const IconRoute         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>;
+const IconEdit          = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+const IconSave          = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>;
+const IconX             = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+const IconMinimize      = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="19" x2="19" y2="19"/></svg>;
+const IconAlert         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>;
+const IconCheck         = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>;
+const IconArrowRight    = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 18} height={p.size || 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>;
+const IconPlus          = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 16} height={p.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 
 const tipoTarifarioCache = new Map<string, any>();
 const traficoCache = new Map<string, string>();
 
 const BotonAgregar = ({ onClick, title }: { onClick: () => void; title: string }) => (
-  <button
+  <button className="fo-x3"
     type="button"
     onClick={onClick}
     title={title}
-    style={{
-      flexShrink: 0,
-      width: '38px',
-      height: '38px',
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: 'rgba(251, 146, 60, 0.10)',
-      border: '1px solid rgba(251, 146, 60, 0.35)',
-      borderRadius: '8px',
-      color: '#fb923c',
-      cursor: 'pointer',
-      transition: 'all 0.15s ease',
-    }}
     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.20)'; }}
     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.10)'; }}
   >
@@ -514,16 +502,15 @@ const CampoArchivo = ({
           {arrastrando ? 'Suelta el archivo aquí…' : (cargado ? `✓ ${file!.name}` : 'Haz clic o arrastra un archivo aquí')}
         </span>
         {cargado && !arrastrando && (
-          <button
+          <button className="fo-x4"
             type="button"
             title="Quitar archivo"
             onClick={quitarArchivo}
-            style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '4px 10px', fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#f85149', backgroundColor: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.35)', borderRadius: '6px', cursor: 'pointer' }}
           >
             <IconX size={12} /> Quitar
           </button>
         )}
-        <input ref={inputRef} type="file" accept={accept} onChange={handleInputChange} style={{ display: 'none' }} />
+        <input className="fo-x5" ref={inputRef} type="file" accept={accept} onChange={handleInputChange} />
       </div>
     </div>
   );
@@ -816,14 +803,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     else if (coleccion === 'empleados') setEmpleadosLocalState(docs);
 
     try {
-      const cacheStr = sessionStorage.getItem('roelca_catalogos_v2');
+      const cacheStr = almacenSesion.getItem('roelca_catalogos_v2');
       if (cacheStr) {
         const cache = JSON.parse(cacheStr);
         if (coleccion === 'empresas') cache.empresas = docs;
         else if (coleccion === 'remolques') cache.remolques = docs;
         else if (coleccion === 'unidades') cache.unidades = docs;
         else if (coleccion === 'empleados') cache.empleados = docs;
-        sessionStorage.setItem('roelca_catalogos_v2', JSON.stringify(cache));
+        almacenSesion.setItem('roelca_catalogos_v2', JSON.stringify(cache));
       }
     } catch { /* noop */ }
 
@@ -2370,7 +2357,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const idOperacion = (initialData as any)?.id || '';
   const referenciaOperacion = referenciaDeOperacion(idOperacion, (initialData as any)?.ref);
 
-  if (!catalogosCacheados || !catalogosCacheados.empresas) return <div className={`modal-overlay`}><div className="form-card" style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando catálogos de Roelca...</div></div>;
+  if (!catalogosCacheados || !catalogosCacheados.empresas) return <div className={`modal-overlay`}><div className="form-card fo-x6">Cargando catálogos de Roelca...</div></div>;
 
   return (
     <div
@@ -2447,9 +2434,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
               <h2>{initialData ? `Editar Operación ${initialData.ref || initialData.id?.substring(0,6)}` : 'Nueva Operación'}</h2>
               <p>{initialData ? 'Modifica los datos y guarda los cambios' : 'Completa el formulario para registrar una nueva operación'}</p>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="fo-x7">
               <button type="button" onClick={() => { if (!idOperacion) { alert('Guarda la operación primero para poder adjuntarle documentos.'); return; } setMostrarSubirDoc(true); }} className="roelca-window-btn" title={idOperacion ? 'Subir documentos de la operación' : 'Guarda la operación primero'} style={{ width: 'auto', padding: '0 12px', gap: '6px', color: idOperacion ? '#fb923c' : '#6e7681', borderColor: idOperacion ? 'rgba(251,146,60,0.4)' : '#2d333b' }}>
-                <IconFileText size={15} /> <span style={{ fontSize: '0.82rem', fontWeight: 600 }}>Documentos</span>
+                <IconFileText size={15} /> <span className="fo-x8">Documentos</span>
               </button>
               <button type="button" onClick={onMinimize} className="roelca-window-btn" title="Minimizar"><IconMinimize size={16} /></button>
               <button type="button" onClick={handleCancelarConfirmado} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
@@ -2464,7 +2451,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             {pestanasVisibles.includes('cobrar') && (<button type="button" className={`roelca-tab ${pestañaActiva === 'cobrar' ? 'active' : ''}`} onClick={() => setPestañaActiva('cobrar')}><IconDollar size={15} /> Por Cobrar</button>)}
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <form className="fo-x9" onSubmit={handleSubmit}>
             <div className="roelca-scroll">
               {pestañaActiva === 'general' && pestanasVisibles.includes('general') && (
                 <>
@@ -2476,11 +2463,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {initialData ? (
                           <input type="text" name="referencia" className="form-control" value={referencia} onChange={(e) => setReferencia(e.target.value)} readOnly={!puedeEditarRef} title={puedeEditarRef ? 'Tienes permiso para corregir la referencia' : 'No tienes permiso para editar la referencia'} style={{ color: colorTipoOperacion(tiposOperacion?.find((op:any) => op.id === formData.tipoOperacionId)?.tipo_operacion), fontWeight: 'bold', ...(puedeEditarRef ? { borderColor: '#fb923c' } : { opacity: 0.65, cursor: 'not-allowed' }) }} />
                         ) : (
-                          <input type="text" className="form-control" value="Se generará al guardar" readOnly style={{ opacity: 0.6, cursor: 'not-allowed' }} />
+                          <input type="text" className="form-control fo-x10" value="Se generará al guardar" readOnly />
                         )}
                       </div>
                       <div className="form-group"><label className="form-label orange">Tipo de Operación <span className="campo-badge">tipoOperacionId</span></label><select name="tipoOperacionId" className={`form-control${claseSiFalta('tipoOperacionId')}`} value={formData.tipoOperacionId || ''} onChange={handleChange} required style={{ color: formData.tipoOperacionId ? colorTipoOperacion(tiposOperacion?.find((op:any) => op.id === formData.tipoOperacionId)?.tipo_operacion) : undefined, fontWeight: formData.tipoOperacionId ? 'bold' : undefined }}><option value="">-- Seleccionar --</option>{tiposOperacion?.map((op:any) => <option key={op.id} value={op.id} style={{ color: colorTipoOperacion(op.tipo_operacion), fontWeight: 'bold' }}>{op.tipo_operacion}</option>)}</select></div>
-                      <div className="form-group"><label className="form-label orange">Fecha de Servicio <span className="campo-badge">fechaServicio</span></label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small style={{ color: '#58a6ff' }}>Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
+                      <div className="form-group"><label className="form-label orange">Fecha de Servicio <span className="campo-badge">fechaServicio</span></label><input type="date" name="fechaServicio" className={`form-control${claseSiFalta('fechaServicio')}`} value={formData.fechaServicio || ''} onChange={handleChange} required />{buscandoTC ? <small className="fo-x11">Buscando TC...</small> : <small style={{ color: (formData.tipoCambioAprobado || tipoCambioDia) ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>TC Oficial: {(formData.tipoCambioAprobado || tipoCambioDia) ? `$${(formData.tipoCambioAprobado || tipoCambioDia)}` : 'Sin Registro'}</small>}</div>
                       {isFletes && (<div className="form-group"><label className="form-label orange">Fecha de Cita <span className="campo-badge">fechaCita</span></label><input type="datetime-local" name="fechaCita" className={`form-control${claseSiFalta('fechaCita')}`} value={formData.fechaCita || ''} onChange={handleChange} /></div>)}
                     </div>
                   </div>
@@ -2494,10 +2481,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('clientePaga')}`} placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga} onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }} onFocus={() => setShowDropdownClientePaga(true)} onBlur={() => setTimeout(() => setShowDropdownClientePaga(false), 200)} />
                             {showDropdownClientePaga && searchClientePaga && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                                {resultadosClientePaga.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClientePaga.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(nombreEmpresaMostrar(c)); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
+                              <div className="fo-x12">
+                                {resultadosClientePaga.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosClientePaga.map((c:any) => (
+                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, clientePaga: c.id, convenio: '', facturadoEnCobrar: monedaDefault })); setSearchClientePaga(nombreEmpresaMostrar(c)); setSearchConvenio(''); setShowDropdownClientePaga(false); }}>
+                                    <div className="fo-x15">{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
@@ -2507,43 +2494,43 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                       </div>
                       <div className="form-group">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                          <label className="form-label" style={{ margin: 0 }}>Convenio (Tarifa) <span className="campo-badge">convenio</span></label>
+                        <div className="fo-x16">
+                          <label className="form-label fo-x17">Convenio (Tarifa) <span className="campo-badge">convenio</span></label>
                           {(formData.clientePaga || searchClientePaga) && (
-                            <button type="button" onClick={() => setMostrarConveniosCliente(true)} title="Ver y editar los convenios (tarifas) de este cliente" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}>
+                            <button className="fo-x18" type="button" onClick={() => setMostrarConveniosCliente(true)} title="Ver y editar los convenios (tarifas) de este cliente">
                               <IconReceipt size={12} /> Ver / editar ({listaConveniosCliente.length})
                             </button>
                           )}
                         </div>
-                        <div style={{ position: 'relative' }}>
+                        <div className="fo-x19">
                           <input type="text" className={`form-control${claseSiFalta('convenio')}`} placeholder="Buscar por nombre o ID de tarifa..." required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio} onChange={e => { setSearchConvenio(e.target.value); setShowDropdownConvenio(true); if (formData.convenio) setFormData(prev => ({ ...prev, convenio: '' })); }} onFocus={() => setShowDropdownConvenio(true)} onBlur={() => setTimeout(() => setShowDropdownConvenio(false), 200)} />
                           {showDropdownConvenio && (
-                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                              {resultadosConvenio.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenio.map((c:any) => (
-                                <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(c.descripcion); setShowDropdownConvenio(false); }}>
-                                  <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.descripcion}</div>
-                                  <div style={{ fontSize: '0.72rem', color: '#3fb950', fontFamily: 'monospace', marginTop: '1px' }}>Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}</div>
+                            <div className="fo-x12">
+                              {resultadosConvenio.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosConvenio.map((c:any) => (
+                                <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(c.descripcion); setShowDropdownConvenio(false); }}>
+                                  <div className="fo-x15">{c.descripcion}</div>
+                                  <div className="fo-x20">Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}</div>
                                 </div>
                               ))}
                             </div>
                           )}
                         </div>
-                        {listaConveniosCliente.length === 0 && searchClientePaga && <small style={{ color: '#8b949e' }}>Este cliente no tiene convenios asignados</small>}
+                        {listaConveniosCliente.length === 0 && searchClientePaga && <small className="fo-x21">Este cliente no tiene convenios asignados</small>}
                       </div>
                       <div className="form-group">
                         <label className="form-label">Importación / Exportación <span className="campo-badge">trafico</span></label>
-                        <input type="text" className="form-control" value={(formData.trafico && formData.trafico !== 'N/A') ? formData.trafico : ''} readOnly placeholder="Se define por el convenio" title="Se asigna automáticamente según el convenio (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} />
+                        <input type="text" className="form-control fo-x22" value={(formData.trafico && formData.trafico !== 'N/A') ? formData.trafico : ''} readOnly placeholder="Se define por el convenio" title="Se asigna automáticamente según el convenio (no editable)" />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Cargada / Vacía <span className="campo-badge">carga</span></label>
-                        <input type="text" className="form-control" value={(formData.carga && formData.carga !== 'N/A') ? formData.carga : ''} readOnly placeholder="Se define por el convenio" title="Se asigna automáticamente según el convenio (no editable)" style={{ opacity: 0.75, cursor: 'not-allowed' }} />
+                        <input type="text" className="form-control fo-x22" value={(formData.carga && formData.carga !== 'N/A') ? formData.carga : ''} readOnly placeholder="Se define por el convenio" title="Se asigna automáticamente según el convenio (no editable)" />
                       </div>
                       <div className="form-group">
                         <label className="form-label"># de Remolque <span className="campo-badge">numeroRemolque</span></label>
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('numeroRemolque')}`} placeholder="Buscar remolque..." value={searchRemolque} onChange={e => { setSearchRemolque(e.target.value); setShowDropdownRemolque(true); if (formData.numeroRemolque) setFormData(prev => ({ ...prev, numeroRemolque: '' })); }} onFocus={() => setShowDropdownRemolque(true)} onBlur={() => setTimeout(() => setShowDropdownRemolque(false), 200)} />
-                            {showDropdownRemolque && searchRemolque && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosRemolque.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosRemolque.map((r:any) => (<div key={r.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(labelRemolque(r)); setShowDropdownRemolque(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelRemolque(r)}</div></div>))}</div>)}
+                            {showDropdownRemolque && searchRemolque && (<div className="fo-x12">{resultadosRemolque.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosRemolque.map((r:any) => (<div className="fo-x14" key={r.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, numeroRemolque: r.id })); setSearchRemolque(labelRemolque(r)); setShowDropdownRemolque(false); }}><div className="fo-x15">{labelRemolque(r)}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Remolque" onClick={() => abrirCreacion({ tipo: 'remolque', coleccion: 'remolques' }, (id, reg) => { setFormData(prev => ({ ...prev, numeroRemolque: id })); setSearchRemolque(labelRemolque(reg)); })} />
                         </div>
@@ -2560,7 +2547,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('origen')}`} placeholder="Buscar origen..." value={searchOrigen} onChange={e => { setSearchOrigen(e.target.value); setShowDropdownOrigen(true); }} onFocus={() => setShowDropdownOrigen(true)} onBlur={() => setTimeout(() => setShowDropdownOrigen(false), 200)} />
-                            {showDropdownOrigen && searchOrigen && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosOrigen.map((o:any) => (<div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>{nombreEmpresaMostrar(o)}{paisDeEmpresaOD(o) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950'}`, backgroundColor: paisDeEmpresaOD(o) === 'USA' ? 'rgba(59,130,246,0.15)' : 'rgba(63,185,80,0.15)', color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(o) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', fontWeight: 500, color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : paisDeEmpresaOD(o) === 'MX' ? '#3fb950' : '#8b949e' }}>{direccionFormateadaOD(o)}</div></div>))}</div>)}
+                            {showDropdownOrigen && searchOrigen && (<div className="fo-x12">{resultadosOrigen.map((o:any) => (<div className="fo-x14" key={o.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, origen: o.id })); setSearchOrigen(nombreEmpresaMostrar(o)); setShowDropdownOrigen(false); }}><div className="fo-x23">{nombreEmpresaMostrar(o)}{paisDeEmpresaOD(o) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950'}`, backgroundColor: paisDeEmpresaOD(o) === 'USA' ? 'rgba(59,130,246,0.15)' : 'rgba(63,185,80,0.15)', color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(o) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', fontWeight: 500, color: paisDeEmpresaOD(o) === 'USA' ? '#3b82f6' : paisDeEmpresaOD(o) === 'MX' ? '#3fb950' : '#8b949e' }}>{direccionFormateadaOD(o)}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); })} />
                         </div>
@@ -2570,12 +2557,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('destino')}`} placeholder="Buscar destino..." value={searchDestino} onChange={e => { setSearchDestino(e.target.value); setShowDropdownDestino(true); }} onFocus={() => setShowDropdownDestino(true)} onBlur={() => setTimeout(() => setShowDropdownDestino(false), 200)} />
-                            {showDropdownDestino && searchDestino && (<div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>{resultadosDestino.map((d:any) => (<div key={d.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div style={{ fontWeight: 'bold', color: '#c9d1d9', display: 'flex', alignItems: 'center', gap: '8px' }}>{nombreEmpresaMostrar(d)}{paisDeEmpresaOD(d) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950'}`, backgroundColor: paisDeEmpresaOD(d) === 'USA' ? 'rgba(59,130,246,0.15)' : 'rgba(63,185,80,0.15)', color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(d) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', fontWeight: 500, color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : paisDeEmpresaOD(d) === 'MX' ? '#3fb950' : '#8b949e' }}>{direccionFormateadaOD(d)}</div></div>))}</div>)}
+                            {showDropdownDestino && searchDestino && (<div className="fo-x12">{resultadosDestino.map((d:any) => (<div className="fo-x14" key={d.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, destino: d.id })); setSearchDestino(nombreEmpresaMostrar(d)); setShowDropdownDestino(false); }}><div className="fo-x23">{nombreEmpresaMostrar(d)}{paisDeEmpresaOD(d) && <span style={{ fontSize: '0.65rem', fontWeight: 'bold', padding: '1px 6px', borderRadius: '999px', border: `1px solid ${paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950'}`, backgroundColor: paisDeEmpresaOD(d) === 'USA' ? 'rgba(59,130,246,0.15)' : 'rgba(63,185,80,0.15)', color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : '#3fb950' }}>{paisDeEmpresaOD(d) === 'USA' ? 'EE.UU.' : 'MX'}</span>}</div><div style={{ fontSize: '0.8rem', fontWeight: 500, color: paisDeEmpresaOD(d) === 'USA' ? '#3b82f6' : paisDeEmpresaOD(d) === 'MX' ? '#3fb950' : '#8b949e' }}>{direccionFormateadaOD(d)}</div></div>))}</div>)}
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>
                       </div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Ejecutivo <span className="campo-badge">observacionesEjecutivo</span></label><input type="text" name="observacionesEjecutivo" className={`form-control${claseSiFalta('observacionesEjecutivo')}`} value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
+                      <div className="form-group fo-x24"><label className="form-label">Observaciones Ejecutivo <span className="campo-badge">observacionesEjecutivo</span></label><input type="text" name="observacionesEjecutivo" className={`form-control${claseSiFalta('observacionesEjecutivo')}`} value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                 </>
@@ -2592,10 +2579,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('clienteMercancia')}`} placeholder="Buscar cliente de mercancía..." value={searchClienteMercancia} onChange={e => { setSearchClienteMercancia(e.target.value); setShowDropdownClienteMercancia(true); if (formData.clienteMercancia) setFormData(prev => ({ ...prev, clienteMercancia: '' })); }} onFocus={() => setShowDropdownClienteMercancia(true)} onBlur={() => setTimeout(() => setShowDropdownClienteMercancia(false), 200)} />
                             {showDropdownClienteMercancia && searchClienteMercancia && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                                {resultadosClienteMercancia.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(nombreEmpresaMostrar(c)); setShowDropdownClienteMercancia(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
+                              <div className="fo-x12">
+                                {resultadosClienteMercancia.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosClienteMercancia.map((c:any) => (
+                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, clienteMercancia: c.id })); setSearchClienteMercancia(nombreEmpresaMostrar(c)); setShowDropdownClienteMercancia(false); }}>
+                                    <div className="fo-x15">{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
@@ -2635,7 +2622,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       </div>
                     </div>
                     {Number(formData.cantEntrys) > 0 && (
-                      <div className="form-grid" style={{ marginTop: '14px' }}>
+                      <div className="form-grid fo-x25">
                         {Array.from({ length: Number(formData.cantEntrys) }).map((_, i) => (
                           <CampoArchivo key={i} label={`PDF Entry #${i + 1}`} file={formData.pdfsEntrys?.[i]} onChange={(e) => handleFileChange(e, 'pdfsEntrys', i)} />
                         ))}
@@ -2653,10 +2640,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('provServicios')}`} placeholder="Buscar proveedor de servicios..." value={searchProvServicios} onChange={e => { setSearchProvServicios(e.target.value); setShowDropdownProvServicios(true); if (formData.provServicios) setFormData(prev => ({ ...prev, provServicios: '' })); }} onFocus={() => setShowDropdownProvServicios(true)} onBlur={() => setTimeout(() => setShowDropdownProvServicios(false), 200)} />
                             {showDropdownProvServicios && searchProvServicios && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                                {resultadosProvServicios.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvServicios.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id, montoManifiesto: montoManifiestoDeProveedor(c) })); setSearchProvServicios(nombreEmpresaMostrar(c)); setShowDropdownProvServicios(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
+                              <div className="fo-x12">
+                                {resultadosProvServicios.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosProvServicios.map((c:any) => (
+                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, provServicios: c.id, montoManifiesto: montoManifiestoDeProveedor(c) })); setSearchProvServicios(nombreEmpresaMostrar(c)); setShowDropdownProvServicios(false); }}>
+                                    <div className="fo-x15">{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
@@ -2668,7 +2655,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-group">
                         <label className="form-label">Costo Manifiesto <span className="campo-badge">montoManifiesto</span></label>
                         <ConSimboloMoneda><input type="number" step="0.01" name="montoManifiesto" className={`form-control${claseSiFalta('montoManifiesto')}`} value={formData.montoManifiesto || 0} onChange={handleChange} /></ConSimboloMoneda>
-                        <small style={{ color: '#8b949e' }}>Costo por defecto: ${COSTO_MANIFIESTO_DEFAULT.toFixed(2)}</small>
+                        <small className="fo-x21">Costo por defecto: ${COSTO_MANIFIESTO_DEFAULT.toFixed(2)}</small>
                       </div>
                       <CampoArchivo label="PDF Manifiesto" file={formData.pdfManifiesto} resaltar={camposObligatoriosFaltantesSet.has('pdfManifiesto')} onChange={(e) => handleFileChange(e, 'pdfManifiesto')} />
                     </div>
@@ -2687,10 +2674,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Buscar proveedor de transporte..." value={searchProvTransporte} disabled={proveedorForzado} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} style={proveedorForzado ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} />
                             {showDropdownProvTransporte && searchProvTransporte && !proveedorForzado && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                                {resultadosProvTransporte.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosProvTransporte.map((c:any) => (
-                                  <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, proveedorUnidad: c.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault || prev.facturadoEnUnidad })); setSearchProvTransporte(nombreEmpresaMostrar(c)); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{nombreEmpresaMostrar(c)}</div>
+                              <div className="fo-x12">
+                                {resultadosProvTransporte.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosProvTransporte.map((c:any) => (
+                                  <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); const monedaDefault = resolverMonedaIdDeEmpresa(c); setFormData(prev => ({ ...prev, proveedorUnidad: c.id, convenioProveedor: '', facturadoEnUnidad: monedaDefault || prev.facturadoEnUnidad })); setSearchProvTransporte(nombreEmpresaMostrar(c)); setSearchConvenioProveedor(''); setShowDropdownProvTransporte(false); }}>
+                                    <div className="fo-x15">{nombreEmpresaMostrar(c)}</div>
                                   </div>
                                 ))}
                               </div>
@@ -2704,28 +2691,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-                          <label className="form-label" style={{ margin: 0 }}>Convenio Proveedor <span className="campo-badge">convenioProveedor</span></label>
+                        <div className="fo-x16">
+                          <label className="form-label fo-x17">Convenio Proveedor <span className="campo-badge">convenioProveedor</span></label>
                           {(formData.proveedorUnidad || searchProvTransporte) && (
-                            <button type="button" onClick={() => setMostrarConveniosProveedor(true)} title="Ver y editar los convenios (tarifas) de este proveedor" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 9px', fontSize: '0.7rem', fontWeight: 600, color: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.10)', border: '1px solid rgba(88,166,255,0.35)', borderRadius: '6px', cursor: 'pointer' }}>
+                            <button className="fo-x18" type="button" onClick={() => setMostrarConveniosProveedor(true)} title="Ver y editar los convenios (tarifas) de este proveedor">
                               <IconReceipt size={12} /> Ver / editar ({listaConveniosProveedor.length})
                             </button>
                           )}
                         </div>
-                        <div style={{ position: 'relative' }}>
+                        <div className="fo-x19">
                           <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Buscar por nombre o ID de tarifa..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor} onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '' })); }} onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
                           {showDropdownConvenioProveedor && (
-                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                              {resultadosConvenioProveedor.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
-                                <div key={c.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
-                                  <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{c.tipoConvenioNombre}</div>
-                                  <div style={{ fontSize: '0.72rem', color: '#3fb950', fontFamily: 'monospace', marginTop: '1px' }}>Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}</div>
+                            <div className="fo-x12">
+                              {resultadosConvenioProveedor.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
+                                <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
+                                  <div className="fo-x15">{c.tipoConvenioNombre}</div>
+                                  <div className="fo-x20">Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}</div>
                                 </div>
                               ))}
                             </div>
                           )}
                         </div>
-                        {listaConveniosProveedor.length === 0 && searchProvTransporte && <small style={{ color: '#8b949e' }}>Este proveedor no tiene convenios asignados</small>}
+                        {listaConveniosProveedor.length === 0 && searchProvTransporte && <small className="fo-x21">Este proveedor no tiene convenios asignados</small>}
                       </div>
                       )}
 
@@ -2749,10 +2736,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <div className="roelca-lookup-input">
                               <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
                               {showDropdownUnidad && searchUnidad && (
-                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                                  {resultadosUnidad.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosUnidad.map((u:any) => (
-                                    <div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(labelUnidad(u)); setShowDropdownUnidad(false); }}>
-                                      <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelUnidad(u)}</div>
+                                <div className="fo-x12">
+                                  {resultadosUnidad.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosUnidad.map((u:any) => (
+                                    <div className="fo-x14" key={u.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidad: u.id })); setSearchUnidad(labelUnidad(u)); setShowDropdownUnidad(false); }}>
+                                      <div className="fo-x15">{labelUnidad(u)}</div>
                                     </div>
                                   ))}
                                 </div>
@@ -2767,10 +2754,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <div className="roelca-lookup-input">
                               <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
                               {showDropdownOperador && searchOperador && (
-                                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
-                                  {resultadosOperador.length === 0 ? <div style={{ padding: '8px', color: '#8b949e' }}>Sin resultados</div> : resultadosOperador.map((o:any) => (
-                                    <div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operador: o.id })); setSearchOperador(labelEmpleado(o)); setShowDropdownOperador(false); }}>
-                                      <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{labelEmpleado(o)}</div>
+                                <div className="fo-x12">
+                                  {resultadosOperador.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosOperador.map((o:any) => (
+                                    <div className="fo-x14" key={o.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operador: o.id })); setSearchOperador(labelEmpleado(o)); setShowDropdownOperador(false); }}>
+                                      <div className="fo-x15">{labelEmpleado(o)}</div>
                                     </div>
                                   ))}
                                 </div>
@@ -2782,17 +2769,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {/* ✅ Sueldo/Combustible base: BLOQUEADOS (vienen del tarifario de rendimientos). Los totales son calculados. */}
                         <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly={campoBloqueadoAut('sueldoOperador')} onChange={e => setFormData(prev => ({ ...prev, sueldoOperador: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('sueldoOperador') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('sueldoOperador') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                         <div className="form-group"><label className="form-label">Sueldo Extra <span className="campo-badge">sueldoExtra</span></label><ConSimboloMoneda><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></ConSimboloMoneda></div>
-                        <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoTotal || 0} readOnly style={{ opacity: 0.75, cursor: 'not-allowed' }} /></ConSimboloMoneda></div>
+                        <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x22" value={formData.sueldoTotal || 0} readOnly /></ConSimboloMoneda></div>
                         {/* ✅ Notas del Sueldo Extra: solo aparecen cuando el extra es distinto de 0. */}
                         {Number(formData.sueldoExtra) !== 0 && (
-                          <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label" style={{ color: '#fb923c' }}>Notas del Sueldo Extra <span className="campo-badge">sueldoExtraNotas</span></label><input type="text" name="sueldoExtraNotas" className="form-control" placeholder="Motivo del sueldo extra..." value={formData.sueldoExtraNotas || ''} onChange={handleChange} /></div>
+                          <div className="form-group fo-x24"><label className="form-label fo-x26">Notas del Sueldo Extra <span className="campo-badge">sueldoExtraNotas</span></label><input type="text" name="sueldoExtraNotas" className="form-control" placeholder="Motivo del sueldo extra..." value={formData.sueldoExtraNotas || ''} onChange={handleChange} /></div>
                         )}
                         <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustible) || 0)} readOnly={campoBloqueadoAut('combustible')} onChange={e => setFormData(prev => ({ ...prev, combustible: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('combustible') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('combustible') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></div>
                         <div className="form-group"><label className="form-label">Combustible Extra <span className="campo-badge">combustibleExtra</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustibleExtra) || 0)} onChange={(e) => setFormData(prev => ({ ...prev, combustibleExtra: Math.round(Number(e.target.value) || 0) }))} /></div>
-                        <div className="form-group"><label className="form-label">Combustible Total <span className="campo-badge">combustibleTotal</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustibleTotal) || 0)} readOnly style={{ opacity: 0.75, cursor: 'not-allowed' }} /></div>
+                        <div className="form-group"><label className="form-label">Combustible Total <span className="campo-badge">combustibleTotal</span></label><input type="number" step="1" className="form-control fo-x22" value={Math.round(Number(formData.combustibleTotal) || 0)} readOnly /></div>
                         {/* ✅ Notas del Combustible Extra: solo aparecen cuando el extra es distinto de 0. */}
                         {Number(formData.combustibleExtra) !== 0 && (
-                          <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label" style={{ color: '#fb923c' }}>Notas del Combustible Extra <span className="campo-badge">combustibleExtraNotas</span></label><input type="text" name="combustibleExtraNotas" className="form-control" placeholder="Motivo del combustible extra..." value={formData.combustibleExtraNotas || ''} onChange={handleChange} /></div>
+                          <div className="form-group fo-x24"><label className="form-label fo-x26">Notas del Combustible Extra <span className="campo-badge">combustibleExtraNotas</span></label><input type="text" name="combustibleExtraNotas" className="form-control" placeholder="Motivo del combustible extra..." value={formData.combustibleExtraNotas || ''} onChange={handleChange} /></div>
                         )}
                       </div>
                     </div>
@@ -2804,13 +2791,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-grid">
                         <div className="form-group">
                           <label className="form-label">Unidad del Proveedor <span className="campo-badge">unidadProveedor</span></label>
-                          <div style={{ position: 'relative' }}>
+                          <div className="fo-x19">
                             <input type="text" className={`form-control${claseSiFalta('unidadProveedor')}`} placeholder="Buscar/escribir unidad del proveedor..." value={searchUnidadProveedor} onChange={e => { setSearchUnidadProveedor(e.target.value); setShowDropdownUnidadProveedor(true); setFormData(prev => ({ ...prev, unidadProveedor: e.target.value })); }} onFocus={() => setShowDropdownUnidadProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownUnidadProveedor(false), 200)} />
                             {showDropdownUnidadProveedor && searchUnidadProveedor && resultadosUnidadProveedor.length > 0 && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                              <div className="fo-x12">
                                 {resultadosUnidadProveedor.map((u:any) => { const txt = String(u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || ''); return (
-                                  <div key={u.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidadProveedor: u.id })); setSearchUnidadProveedor(txt); setShowDropdownUnidadProveedor(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{txt}</div>
+                                  <div className="fo-x14" key={u.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, unidadProveedor: u.id })); setSearchUnidadProveedor(txt); setShowDropdownUnidadProveedor(false); }}>
+                                    <div className="fo-x15">{txt}</div>
                                   </div>
                                 ); })}
                               </div>
@@ -2819,13 +2806,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                         <div className="form-group">
                           <label className="form-label">Operador del Proveedor <span className="campo-badge">operadorProveedor</span></label>
-                          <div style={{ position: 'relative' }}>
+                          <div className="fo-x19">
                             <input type="text" className={`form-control${claseSiFalta('operadorProveedor')}`} placeholder="Buscar/escribir operador del proveedor..." value={searchOperadorProveedor} onChange={e => { setSearchOperadorProveedor(e.target.value); setShowDropdownOperadorProveedor(true); setFormData(prev => ({ ...prev, operadorProveedor: e.target.value })); }} onFocus={() => setShowDropdownOperadorProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownOperadorProveedor(false), 200)} />
                             {showDropdownOperadorProveedor && searchOperadorProveedor && resultadosOperadorProveedor.length > 0 && (
-                              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', zIndex: 10, maxHeight: '200px', overflowY: 'auto' }}>
+                              <div className="fo-x12">
                                 {resultadosOperadorProveedor.map((o:any) => { const txt = String(o.nombre || o.nombres || o.nombreCompleto || ''); return (
-                                  <div key={o.id} style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #21262d' }} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(txt); setShowDropdownOperadorProveedor(false); }}>
-                                    <div style={{ fontWeight: 'bold', color: '#c9d1d9' }}>{txt}</div>
+                                  <div className="fo-x14" key={o.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, operadorProveedor: o.id })); setSearchOperadorProveedor(txt); setShowDropdownOperadorProveedor(false); }}>
+                                    <div className="fo-x15">{txt}</div>
                                   </div>
                                 ); })}
                               </div>
@@ -2844,14 +2831,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales (Prov) <span className="campo-badge">cargosAdicionalesProv</span></label>
                         <div className="roelca-lookup-row">
-                          <ConSimboloMoneda style={{ flex: 1, minWidth: 0 }}><input type="number" step="0.01" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || 0} onChange={handleChange} style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda>
+                          <ConSimboloMoneda className="fo-x27"><input type="number" step="0.01" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || 0} onChange={handleChange} style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda>
                           <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Subtotal Proveedor <span className="campo-badge">subtotalProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalProv || 0} readOnly style={{ opacity: 0.9, color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda></div>
-                      <div className="form-group"><label className="form-label">Dólares (Prov) <span className="campo-badge">dolaresProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.dolaresProv || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#58a6ff' }} /></ConSimboloMoneda></div>
-                      <div className="form-group"><label className="form-label">Pesos (Prov) <span className="campo-badge">pesosProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.pesosProv || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
-                      <div className="form-group"><label className="form-label">Conversión (MXN) <span className="campo-badge">conversionProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Dólares (Prov) <span className="campo-badge">dolaresProv</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x28" value={Number(formData.dolaresProv || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Pesos (Prov) <span className="campo-badge">pesosProv</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x29" value={Number(formData.pesosProv || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Conversión (MXN) <span className="campo-badge">conversionProv</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x29" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
                     </div>
                   </div>
                   )}
@@ -2895,7 +2882,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
                         <div className="roelca-lookup-row">
-                          <ConSimboloMoneda style={{ flex: 1, minWidth: 0 }}><input type="number" step="0.01" name="cargosAdicionales" className={`form-control${claseSiFalta('cargosAdicionales')}`} value={formData.cargosAdicionales || 0} onChange={handleChange} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda>
+                          <ConSimboloMoneda className="fo-x27"><input type="number" step="0.01" name="cargosAdicionales" className={`form-control${claseSiFalta('cargosAdicionales')}`} value={formData.cargosAdicionales || 0} onChange={handleChange} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda>
                           <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
@@ -2907,17 +2894,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTrendingUp /></div><h3 className="roelca-card-title">Conversión y Utilidad</h3></div>
                     <div className="form-grid">
                       <div className="form-group"><label className="form-label">Subtotal Cliente <span className="campo-badge">subtotalCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.9, color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
-                      <div className="form-group"><label className="form-label">Dólares (Cliente) <span className="campo-badge">dolaresCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.dolaresCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#58a6ff' }} /></ConSimboloMoneda></div>
-                      <div className="form-group"><label className="form-label">Pesos (Cliente) <span className="campo-badge">pesosCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.pesosCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
-                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN) <span className="campo-badge">conversionCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Dólares (Cliente) <span className="campo-badge">dolaresCliente</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x28" value={Number(formData.dolaresCliente || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Pesos (Cliente) <span className="campo-badge">pesosCliente</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x29" value={Number(formData.pesosCliente || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Conversión Cliente (MXN) <span className="campo-badge">conversionCliente</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x29" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
                       {!esFlotaPropiaRoelca && (
-                        <div className="form-group"><label className="form-label">Conversión Proveedor (MXN) <span className="campo-badge">conversionProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly style={{ opacity: 0.9, color: '#3fb950' }} /></ConSimboloMoneda></div>
+                        <div className="form-group"><label className="form-label">Conversión Proveedor (MXN) <span className="campo-badge">conversionProv</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x29" value={Number(formData.conversionProv || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
                       )}
                       <div className="form-group">
                         <label className="form-label">Utilidad Estimada (MXN) <span className="campo-badge">utilidadEstimada</span></label>
                         <ConSimboloMoneda><input type="number" className="form-control" value={Number(formData.utilidadEstimada || 0).toFixed(2)} readOnly style={{ opacity: 0.95, color: Number(formData.utilidadEstimada) >= 0 ? '#3fb950' : '#f85149', fontWeight: 700 }} /></ConSimboloMoneda>
                       </div>
-                      <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Observaciones Cobranza <span className="campo-badge">observacionesCobrar</span></label><textarea name="observacionesCobrar" className="form-control" rows={2} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
+                      <div className="form-group fo-x24"><label className="form-label">Observaciones Cobranza <span className="campo-badge">observacionesCobrar</span></label><textarea name="observacionesCobrar" className="form-control" rows={2} value={formData.observacionesCobrar || ''} onChange={handleChange} /></div>
                     </div>
                   </div>
                 </>
@@ -2927,21 +2914,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         </div>
 
         <aside className="roelca-form-right">
-          <div className="roelca-scroll" style={{ padding: '20px' }}>
+          <div className="roelca-scroll fo-x30">
             {initialData && statusActualGuardado && (
-              <div className="status-preview-card" style={{ background: 'linear-gradient(135deg, rgba(88,166,255,0.08), rgba(88,166,255,0.02))', border: '1px solid rgba(88,166,255,0.3)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <span className="status-badge-ok" style={{ backgroundColor: 'rgba(88,166,255,0.1)', color: '#58a6ff', borderColor: 'rgba(88,166,255,0.25)' }}><IconCheck size={12} /> Status de la operación</span>
+              <div className="status-preview-card fo-x31">
+                <div className="fo-x32">
+                  <span className="status-badge-ok fo-x33"><IconCheck size={12} /> Status de la operación</span>
                 </div>
-                <div style={{ color: '#e6edf3', fontSize: '1rem', fontWeight: 700 }}>{statusActualGuardado}</div>
+                <div className="fo-x34">{statusActualGuardado}</div>
                 {nombreSiguienteAuto && camposSiguienteStatus.length > 0 && (
-                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(88,166,255,0.18)' }}>
-                    <div style={{ fontSize: '0.68rem', color: '#7d8590', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, marginBottom: '6px' }}>
+                  <div className="fo-x35">
+                    <div className="fo-x36">
                       Para avanzar a "{nombreSiguienteAuto}":
                     </div>
                     {camposSiguienteStatus.map((c) => (
                       <div key={c.campo} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: c.cumplido ? '#3fb950' : '#8b949e', padding: '2px 0' }}>
-                        <span style={{ width: '14px', display: 'inline-flex' }}>{c.cumplido ? <IconCheck size={12} /> : <IconArrowRight size={12} />}</span>
+                        <span className="fo-x37">{c.cumplido ? <IconCheck size={12} /> : <IconArrowRight size={12} />}</span>
                         {c.etiqueta}
                       </div>
                     ))}
@@ -2953,26 +2940,26 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             {statusError ? (
               (!initialData || camposSiguienteStatus.length === 0) && (
                 <div className="status-error-card">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <div className="fo-x32">
                     <span className="status-badge-error"><IconAlert size={12} /> Estatus</span>
                   </div>
-                  <div style={{ color: '#f0a3a0', fontSize: '0.82rem', lineHeight: 1.4 }}>{statusError}</div>
+                  <div className="fo-x38">{statusError}</div>
                 </div>
               )
             ) : statusPreview && !initialData ? (
               <div className="status-preview-card">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <div className="fo-x32">
                   <span className="status-badge-ok"><IconCheck size={12} /> Estatus calculado</span>
                 </div>
-                <div style={{ color: '#e6edf3', fontSize: '1rem', fontWeight: 700 }}>{statusPreview}</div>
+                <div className="fo-x34">{statusPreview}</div>
                 {nombreSiguienteAuto && camposSiguienteStatus.length > 0 && (
-                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(63,185,80,0.18)' }}>
-                    <div style={{ fontSize: '0.68rem', color: '#7d8590', textTransform: 'uppercase', letterSpacing: '0.6px', fontWeight: 600, marginBottom: '6px' }}>
+                  <div className="fo-x39">
+                    <div className="fo-x36">
                       Para avanzar a "{nombreSiguienteAuto}":
                     </div>
                     {camposSiguienteStatus.map((c) => (
                       <div key={c.campo} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.78rem', color: c.cumplido ? '#3fb950' : '#8b949e', padding: '2px 0' }}>
-                        <span style={{ width: '14px', display: 'inline-flex' }}>{c.cumplido ? <IconCheck size={12} /> : <IconArrowRight size={12} />}</span>
+                        <span className="fo-x37">{c.cumplido ? <IconCheck size={12} /> : <IconArrowRight size={12} />}</span>
                         {c.etiqueta}
                       </div>
                     ))}
@@ -2984,19 +2971,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             {(tarifaIdCliente || tarifaIdProveedor) && (
               <div className="roelca-sidebar-section">
                 <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconReceipt size={13} /></span> Tarifa (Convenio)</div>
-                <div className="roelca-money-row" style={{ alignItems: 'flex-start' }}>
+                <div className="roelca-money-row fo-x40">
                   <span className="lbl">Cliente</span>
-                  <span className="val" style={{ color: '#e6edf3', textAlign: 'right', maxWidth: '62%', lineHeight: 1.3 }}>
+                  <span className="val fo-x41">
                     {nombreTarifaCli || '—'}
-                    {tarifaIdCliente && <span style={{ display: 'block', fontSize: '0.66rem', color: '#7d8590', fontFamily: 'monospace', fontWeight: 400, marginTop: '2px' }}>ID: {tarifaIdCliente}</span>}
+                    {tarifaIdCliente && <span className="fo-x42">ID: {tarifaIdCliente}</span>}
                   </span>
                 </div>
                 {!esFlotaPropiaRoelca && (
-                  <div className="roelca-money-row" style={{ alignItems: 'flex-start' }}>
+                  <div className="roelca-money-row fo-x40">
                     <span className="lbl">Proveedor</span>
-                    <span className="val" style={{ color: '#e6edf3', textAlign: 'right', maxWidth: '62%', lineHeight: 1.3 }}>
+                    <span className="val fo-x41">
                       {nombreTarifaProv || '—'}
-                      {tarifaIdProveedor && <span style={{ display: 'block', fontSize: '0.66rem', color: '#7d8590', fontFamily: 'monospace', fontWeight: 400, marginTop: '2px' }}>ID: {tarifaIdProveedor}</span>}
+                      {tarifaIdProveedor && <span className="fo-x42">ID: {tarifaIdProveedor}</span>}
                     </span>
                   </div>
                 )}
@@ -3005,7 +2992,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-money-row"><span className="lbl">Monto Proveedor</span><span className="val">{fmtMoney(montoProveedor)}{nombreMoneda(monedaProveedorId) ? ` ${nombreMoneda(monedaProveedorId)}` : ''}</span></div>
                 )}
                 {!esFlotaPropiaRoelca && (
-                  <div className="roelca-money-row" style={{ borderTop: '1px solid #1f2733', marginTop: '4px', paddingTop: '8px' }}>
+                  <div className="roelca-money-row fo-x43">
                     <span className="lbl">¿Tarifas coinciden?</span>
                     <span className="val" style={{ color: tarifasCoinciden ? '#3fb950' : '#fb923c' }}>{tarifaIdCliente && tarifaIdProveedor ? (tarifasCoinciden ? '✓ Sí' : '✕ No') : '—'}</span>
                   </div>
@@ -3023,7 +3010,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
             <div className="roelca-sidebar-section">
               <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconBriefcase size={13} /></span> Servicio</div>
               <div className="roelca-sidebar-value">{tipoOpNombreResumen || <span className="roelca-sidebar-muted">Sin tipo de operación</span>}</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+              <div className="fo-x44">
                 {formData.trafico && formData.trafico !== 'N/A' && <span className="roelca-chip">{formData.trafico}</span>}
                 {formData.carga && formData.carga !== 'N/A' && <span className="roelca-chip">{formData.carga}</span>}
                 {searchProvTransporte && <span className="roelca-chip">{searchProvTransporte}</span>}
@@ -3063,10 +3050,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       </div>
 
       {estado === 'minimizado' && (
-        <div onClick={onRestore} style={{ position: 'fixed', bottom: '20px', right: '20px', backgroundColor: '#0d1117', border: '1px solid #fb923c', borderRadius: '10px', padding: '12px 18px', cursor: 'pointer', pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 1000 }}>
-          <span style={{ color: '#fb923c' }}><IconBriefcase size={18} /></span>
-          <div style={{ color: '#e6edf3', fontSize: '0.85rem', fontWeight: 600 }}>{initialData ? `Editar ${initialData.ref || initialData.id?.substring(0,6)}` : 'Nueva Operación'}</div>
-          <span style={{ color: '#8b949e' }}><IconArrowRight size={15} /></span>
+        <div className="fo-x45" onClick={onRestore}>
+          <span className="fo-x26"><IconBriefcase size={18} /></span>
+          <div className="fo-x46">{initialData ? `Editar ${initialData.ref || initialData.id?.substring(0,6)}` : 'Nueva Operación'}</div>
+          <span className="fo-x21"><IconArrowRight size={15} /></span>
         </div>
       )}
 
@@ -3084,7 +3071,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       )}
 
       {mostrarCostosAdic && (
-        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+        <div className="modal-overlay fo-x47">
           <CostosAdicionalesDashboard onCerrar={() => setMostrarCostosAdic(false)} onCostosActualizados={(totalProv?: any, totalCliente?: any) => { const p = Number(totalProv); const c = Number(totalCliente); setFormData(prev => ({ ...prev, ...(Number.isFinite(p) ? { cargosAdicionalesProv: p } : {}), ...(Number.isFinite(c) ? { cargosAdicionales: c } : {}), })); }} />
         </div>
       )}
@@ -3094,38 +3081,38 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       )}
 
       {mostrarConveniosCliente && (
-        <div className="modal-overlay" style={{ zIndex: 1100 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarConveniosCliente(false); }}>
-          <div className="form-card" style={{ width: 'min(820px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1f2733', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="modal-overlay fo-x47" onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarConveniosCliente(false); }}>
+          <div className="form-card fo-x48">
+            <div className="fo-x49">
               <div>
-                <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 700 }}>Convenios del Cliente</h3>
-                <p style={{ margin: '3px 0 0', color: '#7d8590', fontSize: '0.8rem' }}>{searchClientePaga || 'Cliente'} · {listaConveniosCliente.length} convenio(s)</p>
+                <h3 className="fo-x50">Convenios del Cliente</h3>
+                <p className="fo-x51">{searchClientePaga || 'Cliente'} · {listaConveniosCliente.length} convenio(s)</p>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" onClick={abrirNuevoConvenioCliente} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '0.82rem', fontWeight: 600, color: '#fff', background: 'linear-gradient(180deg, #ea580c, #c2410c)', border: 'none', borderRadius: '8px', cursor: 'pointer' }}><IconPlus size={14} /> Nuevo</button>
+              <div className="fo-x7">
+                <button className="fo-x52" type="button" onClick={abrirNuevoConvenioCliente}><IconPlus size={14} /> Nuevo</button>
                 <button type="button" onClick={() => setMostrarConveniosCliente(false)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
               </div>
             </div>
-            <div style={{ overflowY: 'auto', padding: '8px 0' }}>
+            <div className="fo-x53">
               {listaConveniosCliente.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#8b949e' }}>Este cliente no tiene convenios.</div>
+                <div className="fo-x54">Este cliente no tiene convenios.</div>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                <table className="fo-x55">
                   <thead>
-                    <tr style={{ color: '#7d8590', textAlign: 'left' }}>
-                      <th style={{ padding: '8px 16px', fontWeight: 600 }}>Tarifa</th>
-                      <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Monto</th>
-                      <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Acciones</th>
+                    <tr className="fo-x56">
+                      <th className="fo-x57">Tarifa</th>
+                      <th className="fo-x58">Monto</th>
+                      <th className="fo-x58">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {listaConveniosCliente.map((c:any) => (
-                      <tr key={c.id} style={{ borderTop: '1px solid #1f2733', color: '#c9d1d9' }}>
-                        <td style={{ padding: '10px 16px', fontWeight: 600 }}>{c.descripcion}</td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', color: '#3fb950', fontFamily: 'monospace' }}>{fmtMoney(c.tarifaMonto)}</td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <button type="button" onClick={() => abrirEditorConvenio(c)} title="Editar" style={{ background: 'transparent', border: '1px solid #2d333b', color: '#58a6ff', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', marginRight: '6px' }}><IconEdit size={13} /></button>
-                          <button type="button" onClick={() => eliminarDetalleConvenio(c)} title="Eliminar" style={{ background: 'transparent', border: '1px solid rgba(248,81,73,0.35)', color: '#f85149', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer' }}><IconX size={13} /></button>
+                      <tr className="fo-x59" key={c.id}>
+                        <td className="fo-x60">{c.descripcion}</td>
+                        <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
+                        <td className="fo-x62">
+                          <button className="fo-x63" type="button" onClick={() => abrirEditorConvenio(c)} title="Editar"><IconEdit size={13} /></button>
+                          <button className="fo-x64" type="button" onClick={() => eliminarDetalleConvenio(c)} title="Eliminar"><IconX size={13} /></button>
                         </td>
                       </tr>
                     ))}
@@ -3138,13 +3125,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       )}
 
       {detalleConvEditando && (
-        <div className="modal-overlay" style={{ zIndex: 1200 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setDetalleConvEditando(null); }}>
-          <div className="form-card" style={{ width: 'min(520px, 94vw)', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1f2733', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem', fontWeight: 700 }}>{detalleConvEditando.esNuevo ? 'Nuevo Convenio (Cliente)' : 'Editar Convenio (Cliente)'}</h3>
+        <div className="modal-overlay fo-x65" onMouseDown={(e) => { if (e.target === e.currentTarget) setDetalleConvEditando(null); }}>
+          <div className="form-card fo-x66">
+            <div className="fo-x49">
+              <h3 className="fo-x67">{detalleConvEditando.esNuevo ? 'Nuevo Convenio (Cliente)' : 'Editar Convenio (Cliente)'}</h3>
               <button type="button" onClick={() => setDetalleConvEditando(null)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
             </div>
-            <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="fo-x68">
               <div className="form-group">
                 <label className="form-label">Tarifa (catálogo)</label>
                 <select className="form-control" value={detalleConvEditando.tipoConvenioId || ''} onChange={(e) => { const id = e.target.value; const op = opcionesTarifasRef.find((o:any) => o.id === id); setDetalleConvEditando((prev:any) => ({ ...prev, tipoConvenioId: id, tipoConvenioNombre: op?.nombre || prev.tipoConvenioNombre })); }}>
@@ -3161,47 +3148,47 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 <input type="number" step="0.01" className="form-control" value={detalleConvEditando.tarifa ?? ''} onChange={(e) => setDetalleConvEditando((prev:any) => ({ ...prev, tarifa: e.target.value }))} />
               </div>
             </div>
-            <div style={{ padding: '16px 22px', borderTop: '1px solid #1f2733', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button type="button" onClick={() => setDetalleConvEditando(null)} className="roelca-btn-outline" style={{ width: 'auto', padding: '10px 16px' }}>Cancelar</button>
-              <button type="button" onClick={guardarDetalleConvenio} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 18px' }} disabled={guardandoDetalleConv}>{guardandoDetalleConv ? 'Guardando…' : 'Guardar'}</button>
+            <div className="fo-x69">
+              <button type="button" onClick={() => setDetalleConvEditando(null)} className="roelca-btn-outline fo-x70">Cancelar</button>
+              <button type="button" onClick={guardarDetalleConvenio} className="roelca-btn-primary fo-x71" disabled={guardandoDetalleConv}>{guardandoDetalleConv ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>
         </div>
       )}
 
       {mostrarConveniosProveedor && (
-        <div className="modal-overlay" style={{ zIndex: 1100 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarConveniosProveedor(false); }}>
-          <div className="form-card" style={{ width: 'min(820px, 94vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1f2733', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="modal-overlay fo-x47" onMouseDown={(e) => { if (e.target === e.currentTarget) setMostrarConveniosProveedor(false); }}>
+          <div className="form-card fo-x48">
+            <div className="fo-x49">
               <div>
-                <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 700 }}>Convenios del Proveedor</h3>
-                <p style={{ margin: '3px 0 0', color: '#7d8590', fontSize: '0.8rem' }}>{searchProvTransporte || 'Proveedor'} · {listaConveniosProveedor.length} convenio(s)</p>
+                <h3 className="fo-x50">Convenios del Proveedor</h3>
+                <p className="fo-x51">{searchProvTransporte || 'Proveedor'} · {listaConveniosProveedor.length} convenio(s)</p>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button type="button" onClick={abrirNuevoConvenioProv} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 12px', fontSize: '0.82rem', fontWeight: 600, color: '#fff', background: 'linear-gradient(180deg, #ea580c, #c2410c)', border: 'none', borderRadius: '8px', cursor: 'pointer' }}><IconPlus size={14} /> Nuevo</button>
+              <div className="fo-x7">
+                <button className="fo-x52" type="button" onClick={abrirNuevoConvenioProv}><IconPlus size={14} /> Nuevo</button>
                 <button type="button" onClick={() => setMostrarConveniosProveedor(false)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
               </div>
             </div>
-            <div style={{ overflowY: 'auto', padding: '8px 0' }}>
+            <div className="fo-x53">
               {listaConveniosProveedor.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#8b949e' }}>Este proveedor no tiene convenios.</div>
+                <div className="fo-x54">Este proveedor no tiene convenios.</div>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+                <table className="fo-x55">
                   <thead>
-                    <tr style={{ color: '#7d8590', textAlign: 'left' }}>
-                      <th style={{ padding: '8px 16px', fontWeight: 600 }}>Tarifa</th>
-                      <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Monto</th>
-                      <th style={{ padding: '8px 16px', fontWeight: 600, textAlign: 'right' }}>Acciones</th>
+                    <tr className="fo-x56">
+                      <th className="fo-x57">Tarifa</th>
+                      <th className="fo-x58">Monto</th>
+                      <th className="fo-x58">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {listaConveniosProveedor.map((c:any) => (
-                      <tr key={c.id} style={{ borderTop: '1px solid #1f2733', color: '#c9d1d9' }}>
-                        <td style={{ padding: '10px 16px', fontWeight: 600 }}>{c.tipoConvenioNombre}</td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', color: '#3fb950', fontFamily: 'monospace' }}>{fmtMoney(c.tarifaMonto)}</td>
-                        <td style={{ padding: '10px 16px', textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <button type="button" onClick={() => abrirEditorConvenioProv(c)} title="Editar" style={{ background: 'transparent', border: '1px solid #2d333b', color: '#58a6ff', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer', marginRight: '6px' }}><IconEdit size={13} /></button>
-                          <button type="button" onClick={() => eliminarDetalleConvenioProv(c)} title="Eliminar" style={{ background: 'transparent', border: '1px solid rgba(248,81,73,0.35)', color: '#f85149', borderRadius: '6px', padding: '5px 8px', cursor: 'pointer' }}><IconX size={13} /></button>
+                      <tr className="fo-x59" key={c.id}>
+                        <td className="fo-x60">{c.tipoConvenioNombre}</td>
+                        <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
+                        <td className="fo-x62">
+                          <button className="fo-x63" type="button" onClick={() => abrirEditorConvenioProv(c)} title="Editar"><IconEdit size={13} /></button>
+                          <button className="fo-x64" type="button" onClick={() => eliminarDetalleConvenioProv(c)} title="Eliminar"><IconX size={13} /></button>
                         </td>
                       </tr>
                     ))}
@@ -3214,13 +3201,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       )}
 
       {detalleConvProvEditando && (
-        <div className="modal-overlay" style={{ zIndex: 1200 }} onMouseDown={(e) => { if (e.target === e.currentTarget) setDetalleConvProvEditando(null); }}>
-          <div className="form-card" style={{ width: 'min(520px, 94vw)', backgroundColor: '#0d1117', border: '1px solid #1f2733', borderRadius: '12px', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #1f2733', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem', fontWeight: 700 }}>{detalleConvProvEditando.esNuevo ? 'Nuevo Convenio (Proveedor)' : 'Editar Convenio (Proveedor)'}</h3>
+        <div className="modal-overlay fo-x65" onMouseDown={(e) => { if (e.target === e.currentTarget) setDetalleConvProvEditando(null); }}>
+          <div className="form-card fo-x66">
+            <div className="fo-x49">
+              <h3 className="fo-x67">{detalleConvProvEditando.esNuevo ? 'Nuevo Convenio (Proveedor)' : 'Editar Convenio (Proveedor)'}</h3>
               <button type="button" onClick={() => setDetalleConvProvEditando(null)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
             </div>
-            <div style={{ padding: '20px 22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="fo-x68">
               <div className="form-group">
                 <label className="form-label">Tarifa (catálogo)</label>
                 <select className="form-control" value={detalleConvProvEditando.tipoConvenioId || ''} onChange={(e) => { const id = e.target.value; const op = opcionesTarifasRef.find((o:any) => o.id === id); setDetalleConvProvEditando((prev:any) => ({ ...prev, tipoConvenioId: id, tipoConvenioNombre: op?.nombre || prev.tipoConvenioNombre })); }}>
@@ -3237,9 +3224,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 <input type="number" step="0.01" className="form-control" value={detalleConvProvEditando.tarifa ?? ''} onChange={(e) => setDetalleConvProvEditando((prev:any) => ({ ...prev, tarifa: e.target.value }))} />
               </div>
             </div>
-            <div style={{ padding: '16px 22px', borderTop: '1px solid #1f2733', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button type="button" onClick={() => setDetalleConvProvEditando(null)} className="roelca-btn-outline" style={{ width: 'auto', padding: '10px 16px' }}>Cancelar</button>
-              <button type="button" onClick={guardarDetalleConvenioProv} className="roelca-btn-primary" style={{ width: 'auto', padding: '10px 18px' }} disabled={guardandoDetalleConvProv}>{guardandoDetalleConvProv ? 'Guardando…' : 'Guardar'}</button>
+            <div className="fo-x69">
+              <button type="button" onClick={() => setDetalleConvProvEditando(null)} className="roelca-btn-outline fo-x70">Cancelar</button>
+              <button type="button" onClick={guardarDetalleConvenioProv} className="roelca-btn-primary fo-x71" disabled={guardandoDetalleConvProv}>{guardandoDetalleConvProv ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>
         </div>

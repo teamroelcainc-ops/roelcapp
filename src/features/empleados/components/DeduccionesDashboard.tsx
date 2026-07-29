@@ -26,6 +26,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
+import './DeduccionesDashboard.css';
 
 const COLUMNAS_BASE = [
   { id: 'empleadoNombre',  label: 'Colaborador',      visible: true },
@@ -281,23 +282,23 @@ export const DeduccionesDashboard = () => {
 
   const renderCellContent = (d: any, colId: string) => {
     switch (colId) {
-      case 'empleadoNombre': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{d._empleadoNombre}</span>;
-      case 'gastos': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.gastos)}</span>;
-      case 'infonavit': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.infonavit)}</span>;
-      case 'imss': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.imss)}</span>;
-      case 'fonacot': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.fonacot)}</span>;
-      case 'fonacotInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.fonacotInicial)}</span>;
-      case 'saldoFonacot': return <span style={{ color: '#f59e0b' }}>{formatoMoneda4(d.saldoFonacot)}</span>;
-      case 'isr': return <span style={{ color: '#c9d1d9' }}>{formatoPorcentaje(d.isr)}</span>;
-      case 'descuento': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(d.descuento)}</span>;
-      case 'nominaFiscal': return <span style={{ color: '#58a6ff' }}>{formatoMoneda(d.nominaFiscal)}</span>;
-      case 'prestamoInicial': return <span style={{ color: '#d2a8ff' }}>{formatoMoneda4(d.prestamoInicial)}</span>;
-      case 'abonoInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.abonoInicial)}</span>;
-      case 'abonos': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.abonos)}</span>;
-      case 'saldoPrestamo': return <span style={{ color: '#d2a8ff', fontWeight: 'bold' }}>{formatoMoneda4(d.saldoPrestamo)}</span>;
-      case 'ahorro': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.ahorro)}</span>;
-      case 'ahorroInicial': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda4(d.ahorroInicial)}</span>;
-      case 'ahorroAcumulado': return <span style={{ color: '#3fb950', fontWeight: 'bold' }}>{formatoMoneda4(d.ahorroAcumulado)}</span>;
+      case 'empleadoNombre': return <span className="dd-x1">{d._empleadoNombre}</span>;
+      case 'gastos': return <span className="dd-x2">{formatoMoneda(d.gastos)}</span>;
+      case 'infonavit': return <span className="dd-x2">{formatoMoneda(d.infonavit)}</span>;
+      case 'imss': return <span className="dd-x2">{formatoMoneda(d.imss)}</span>;
+      case 'fonacot': return <span className="dd-x2">{formatoMoneda4(d.fonacot)}</span>;
+      case 'fonacotInicial': return <span className="dd-x2">{formatoMoneda4(d.fonacotInicial)}</span>;
+      case 'saldoFonacot': return <span className="dd-x3">{formatoMoneda4(d.saldoFonacot)}</span>;
+      case 'isr': return <span className="dd-x2">{formatoPorcentaje(d.isr)}</span>;
+      case 'descuento': return <span className="dd-x2">{formatoMoneda(d.descuento)}</span>;
+      case 'nominaFiscal': return <span className="dd-x4">{formatoMoneda(d.nominaFiscal)}</span>;
+      case 'prestamoInicial': return <span className="dd-x5">{formatoMoneda4(d.prestamoInicial)}</span>;
+      case 'abonoInicial': return <span className="dd-x2">{formatoMoneda4(d.abonoInicial)}</span>;
+      case 'abonos': return <span className="dd-x2">{formatoMoneda4(d.abonos)}</span>;
+      case 'saldoPrestamo': return <span className="dd-x6">{formatoMoneda4(d.saldoPrestamo)}</span>;
+      case 'ahorro': return <span className="dd-x2">{formatoMoneda4(d.ahorro)}</span>;
+      case 'ahorroInicial': return <span className="dd-x2">{formatoMoneda4(d.ahorroInicial)}</span>;
+      case 'ahorroAcumulado': return <span className="dd-x7">{formatoMoneda4(d.ahorroAcumulado)}</span>;
       default: return '-';
     }
   };
@@ -325,85 +326,85 @@ export const DeduccionesDashboard = () => {
   };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '24px', width: '100%' }}>
-        <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', margin: 0, fontWeight: 'bold' }}>Deducciones y Saldos</h1>
+    <div className="module-container dd-x8">
+      <div className="dd-x9">
+        <h1 className="dd-x10">Deducciones y Saldos</h1>
         
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="dd-x11">
           <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busqueda ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-            {busqueda && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+            {busqueda && <span className="dd-x12">1</span>}
             </button>
           {busqueda && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+            <span className="dd-x13">
                 "{busqueda}"
-              <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              <button className="dd-x14" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-          <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+          <span className="dd-x15">
             {busquedaHecha ? `${registrosFiltrados.length} registros` : 'Presiona Filtros y Buscar para ver los registros.'}
             </span>
-          <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '10px 12px', borderRadius: '6px', cursor: 'pointer' }} title="Configurar Columnas">
+          <button className="btn btn-outline dd-x16" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
           </button>
-          <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '10px 12px', borderRadius: '6px', cursor: 'pointer' }} title="Exportar Excel">
+          <button className="btn btn-outline dd-x16" onClick={exportarExcel} title="Exportar Excel">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           </button>
-          <button onClick={abrirModalNuevo} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+          <button className="dd-x17" onClick={abrirModalNuevo}>
             <span>+</span> Nuevo Registro
           </button>
         </div>
       </div>
 
-      <div className="content-body" style={{ display: 'block', width: '100%' }}>
-        <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-          <table style={{ width: '100%', minWidth: '1200px', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+      <div className="content-body dd-x18">
+        <div className="table-container dd-x19">
+          <table className="dd-x20">
+            <thead className="dd-x21">
               <tr>
-                <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                <th className="dd-x22">Acciones</th>
                 {columnasTabla.filter(c => c.visible).map(col => (
-                  <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>{col.label}</th>
+                  <th className="dd-x23" key={`th_${col.id}`}>{col.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {!busquedaHecha ? (
-                  <tr><td colSpan={columnasTabla.length + 1} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="dd-x24" colSpan={columnasTabla.length + 1}>
+                    <div className="dd-x25">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las deducciones.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="dd-x26">Define tus filtros y presiona <b className="dd-x27">Buscar</b> para ver las deducciones.</span>
+                      <button className="dd-x28" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
               ) : cargando ? (
                 <tr>
-                  <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                  <td className="dd-x29" colSpan={columnasTabla.length + 1}>
                     Cargando deducciones...
                   </td>
                 </tr>
               ) : registrosVisibles.length === 0 ? (
                 <tr>
-                  <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                  <td className="dd-x29" colSpan={columnasTabla.length + 1}>
                     {busqueda ? 'No se encontraron registros de deducciones.' : 'Aún no hay deducciones registradas.'}
                   </td>
                 </tr>
               ) : (
                 registrosVisibles.map(d => (
                   <tr key={d.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === d.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(d.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => abrirModalEditar(d)}>
-                    <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(ev) => ev.stopPropagation()}>
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                        <button onClick={(ev) => { ev.stopPropagation(); abrirModalEditar(d); }} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px' }}>
+                    <td className="dd-x30" onClick={(ev) => ev.stopPropagation()}>
+                      <div className="dd-x31">
+                        <button className="dd-x32" onClick={(ev) => { ev.stopPropagation(); abrirModalEditar(d); }}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                         </button>
-                        <button onClick={(ev) => handleEliminar(ev, d.id)} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px' }}>
+                        <button className="dd-x33" onClick={(ev) => handleEliminar(ev, d.id)}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                         </button>
                       </div>
                     </td>
                     {columnasTabla.filter(c => c.visible).map(col => (
-                      <td key={`cell_${d.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>{renderCellContent(d, col.id)}</td>
+                      <td className="dd-x34" key={`cell_${d.id}_${col.id}`}>{renderCellContent(d, col.id)}</td>
                     ))}
                   </tr>
                 ))
@@ -413,15 +414,15 @@ export const DeduccionesDashboard = () => {
         </div>
 
         {busquedaHecha && registrosFiltrados.length > 0 && !cargando && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-            <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+          <div className="dd-x35">
+            <div className="dd-x36">
               Mostrando {registrosFiltrados.length === 0 ? 0 : indexFirst + 1} - {Math.min(indexLast, registrosFiltrados.length)} de {registrosFiltrados.length} registros
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="dd-x37">
               <button onClick={irPaginaAnterior} disabled={paginaActual === 1} title="Página Anterior" style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
               </button>
-              <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+              <span className="dd-x38">{paginaActual} / {totalPaginas || 1}</span>
               <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} title="Página Siguiente" style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
               </button>
@@ -431,53 +432,53 @@ export const DeduccionesDashboard = () => {
       </div>
 
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button type="button" onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay dd-x39">
+          <div className="dd-x40">
+            <div className="dd-x41">
+              <h3 className="dd-x42">Configurar Columnas</h3>
+              <button className="dd-x43" type="button" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <ul className="dd-x44">
               {columnasTabla.map((col, idx) => (
                 <li key={col.id} draggable onDragStart={() => handleDragStart(idx)} onDragEnter={() => handleDragEnter(idx)} onDragEnd={() => setDraggedColIndex(null)} onDragOver={(e) => e.preventDefault()} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <input className="dd-x45" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button type="button" onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="dd-x46">
+              <button className="dd-x47" type="button" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
       )}
 
       {modalAbierto && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(8px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '1000px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 40px rgba(0,0,0,0.7)' }}>
-            <div style={{ position: 'sticky', top: 0, backgroundColor: '#0d1117', zIndex: 10, padding: '24px 24px 16px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.4rem' }}>{deduccionEditando ? 'Editar Deducción' : 'Nueva Deducción'}</h2>
-              <button type="button" onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.4rem' }}>✕</button>
+        <div className="modal-overlay dd-x48">
+          <div className="dd-x49">
+            <div className="dd-x50">
+              <h2 className="dd-x51">{deduccionEditando ? 'Editar Deducción' : 'Nueva Deducción'}</h2>
+              <button className="dd-x52" type="button" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
             
-            <form onSubmit={handleGuardar} style={{ padding: '24px' }}>
-              <div style={{ marginBottom: '32px', backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', border: '1px dashed #30363d' }}>
-                <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>EMPLEADO (NÓMINA)</label>
+            <form className="dd-x53" onSubmit={handleGuardar}>
+              <div className="dd-x54">
+                <label className="dd-x55">EMPLEADO (NÓMINA)</label>
                 <select required value={empleadoSeleccionado} onChange={e => setEmpleadoSeleccionado(e.target.value)} disabled={!!deduccionEditando} style={{ width: '100%', maxWidth: '400px', padding: '12px', backgroundColor: deduccionEditando ? '#010409' : '#1f2937', color: deduccionEditando ? '#8b949e' : '#fff', border: '1px solid #30363d', borderRadius: '6px', fontSize: '1rem', cursor: deduccionEditando ? 'not-allowed' : 'pointer' }}>
                   <option value="">Seleccionar Empleado...</option>
                   {empleadosDisponibles.map(emp => (
                     <option key={emp.id} value={emp.id}>{`${emp.firstName || ''} ${emp.lastNamePaternal || ''}`.trim()}</option>
                   ))}
                 </select>
-                {!deduccionEditando && <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginTop: '8px' }}>* Solo se muestran los empleados que no tienen un registro activo.</span>}
+                {!deduccionEditando && <span className="dd-x56">* Solo se muestran los empleados que no tienen un registro activo.</span>}
               </div>
 
-              <h3 style={{ color: '#D84315', fontSize: '1rem', borderBottom: '1px solid #30363d', paddingBottom: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 className="dd-x57">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
                 Cantidades (MXN)
               </h3>
               
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+              <div className="dd-x58">
                 {[
                   {label: 'GASTOS', val: gastos, setter: setGastos, conPeso: true, deshabilitado: false},
                   {label: 'INFONAVIT', val: infonavit, setter: setInfonavit, conPeso: true, deshabilitado: false},
@@ -494,19 +495,19 @@ export const DeduccionesDashboard = () => {
                   {label: 'AHORRO ACUMULADO', val: ahorroAcumulado, setter: setAhorroAcumulado, conPeso: true, deshabilitado: true},
                 ].map((campo, i) => (
                   <div key={i} style={{ backgroundColor: '#161b22', padding: '12px', borderRadius: '6px', border: '1px solid #21262d', opacity: campo.deshabilitado ? 0.6 : 1 }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.7rem', display: 'block', marginBottom: '6px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{campo.label}{campo.deshabilitado ? ' (SOLO LECTURA)' : ''}</label>
-                    <div style={{ position: 'relative' }}>
-                      {campo.conPeso && <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>$</span>}
-                      {(campo as any).esPorcentaje && <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>%</span>}
+                    <label className="dd-x59">{campo.label}{campo.deshabilitado ? ' (SOLO LECTURA)' : ''}</label>
+                    <div className="dd-x60">
+                      {campo.conPeso && <span className="dd-x61">$</span>}
+                      {(campo as any).esPorcentaje && <span className="dd-x62">%</span>}
                       <input type="number" step="0.0001" value={campo.val} disabled={campo.deshabilitado} onChange={e => campo.setter(e.target.valueAsNumber || '')} style={{ width: '100%', padding: campo.conPeso ? '8px 8px 8px 24px' : (campo as any).esPorcentaje ? '8px 24px 8px 8px' : '8px', backgroundColor: '#010409', color: campo.deshabilitado ? '#8b949e' : '#3fb950', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold', boxSizing: 'border-box', cursor: campo.deshabilitado ? 'not-allowed' : 'text' }} />
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div style={{ position: 'sticky', bottom: 0, backgroundColor: '#0d1117', padding: '16px 0', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px', zIndex: 10 }}>
-                <button type="button" onClick={() => setModalAbierto(false)} disabled={guardando} style={{ padding: '10px 24px', background: 'none', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" disabled={guardando} style={{ padding: '10px 24px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : deduccionEditando ? 'Actualizar Registro' : 'Guardar Nuevo Registro'}</button>
+              <div className="dd-x63">
+                <button className="dd-x64" type="button" onClick={() => setModalAbierto(false)} disabled={guardando}>Cancelar</button>
+                <button className="dd-x65" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : deduccionEditando ? 'Actualizar Registro' : 'Guardar Nuevo Registro'}</button>
               </div>
             </form>
           </div>
@@ -515,32 +516,31 @@ export const DeduccionesDashboard = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Deducciones y Saldos) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Deducciones y Saldos</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="dd-x66" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="dd-x67" onClick={(e) => e.stopPropagation()}>
+            <div className="dd-x68">
+              <h3 className="dd-x69">Filtros · Deducciones y Saldos</h3>
+              <button className="dd-x43" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Nombre del empleado..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="dd-x70">
+              <label className="dd-x71">BÚSQUEDA</label>
+              <div className="dd-x60">
+                <svg className="dd-x72" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="dd-x73" type="text" placeholder="Nombre del empleado..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="dd-x74" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              La búsqueda es <b style={{ color: '#8b949e' }}>opcional</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todos los registros.
+            <div className="dd-x75">
+              La búsqueda es <b className="dd-x76">opcional</b>. Presiona <b className="dd-x27">Buscar</b> para ver todos los registros.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="dd-x77">
+              <button className="dd-x78" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="dd-x79" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

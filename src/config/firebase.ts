@@ -1,6 +1,12 @@
 // src/config/firebase.ts
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore";
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  collection, addDoc, updateDoc, deleteDoc, doc,
+} from "firebase/firestore";
+import type { DocumentData, UpdateData } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 
@@ -16,19 +22,34 @@ const firebaseConfig = {
 // Inicializar Firebase (Solo una vez)
 const app = initializeApp(firebaseConfig);
 
-// Exportar base de datos, autenticación y storage
-export const db = getFirestore(app);
+// ✅ CACHÉ PERSISTENTE DE FIRESTORE (IndexedDB, multi-pestaña).
+//    · Los datos ya vistos quedan guardados EN EL DISPOSITIVO: al reabrir la
+//      app, las vistas pintan al instante desde el caché mientras el SDK
+//      sincroniza en segundo plano (sensación de app instalada).
+//    · Los listeners onSnapshot sirven primero desde caché (latencia ~0) y
+//      solo se facturan lecturas por los documentos que CAMBIARON.
+//    · La app funciona offline: consultas y escrituras se encolan y se
+//      sincronizan solas al volver la conexión.
+//    · persistentMultipleTabManager permite varias pestañas sin conflicto.
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+});
+
 export const auth = getAuth(app);
 // ✅ Storage ligado explícitamente a la app principal (mismo proyecto/bucket que db/auth)
 export const storage = getStorage(app);
 
 // --- ESTAS SON LAS FUNCIONES CRUD ---
-export const agregarRegistro = async (nombreColeccion: string, data: any) => {
-  return await addDoc(collection(db, nombreColeccion), data);
+// ✅ Sin `any` en las firmas: aceptan cualquier registro tipado del proyecto.
+//    El cast interno a los tipos del SDK está documentado: updateDoc exige
+//    índices con notación de punto (`a.b`) que nuestros tipos de dominio no
+//    declaran, pero el dato en runtime es un objeto plano válido.
+export const agregarRegistro = async (nombreColeccion: string, data: object) => {
+  return await addDoc(collection(db, nombreColeccion), data as DocumentData);
 };
 
-export const actualizarRegistro = async (nombreColeccion: string, id: string, data: any) => {
-  return await updateDoc(doc(db, nombreColeccion, id), data);
+export const actualizarRegistro = async (nombreColeccion: string, id: string, data: object) => {
+  return await updateDoc(doc(db, nombreColeccion, id), data as UpdateData<DocumentData>);
 };
 
 export const eliminarRegistro = async (nombreColeccion: string, id: string) => {

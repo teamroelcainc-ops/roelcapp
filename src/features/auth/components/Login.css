@@ -1,0 +1,27 @@
+/* Estilos hermanos de Login.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.log-x1 { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; display: flex; background-color: #010409; align-items: center; justify-content: center; z-index: 9999; }
+.log-x2 { max-width: 400px; width: 100%; padding: 40px; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+.log-x3 { text-align: center; margin-bottom: 32px; }
+.log-x4 { max-width: 120px; height: auto; margin-bottom: 16px; }
+.log-x5 { color: #8b949e; margin: 0; font-size: 0.9rem; }
+.log-x6 { background-color: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.4); color: #ef4444; padding: 16px; border-radius: 6px; margin-bottom: 20px; font-size: 0.85rem; text-align: center; line-height: 1.5; font-weight: 500; }
+.log-x7 { background-color: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; padding: 16px; border-radius: 6px; margin-bottom: 20px; font-size: 0.85rem; text-align: center; line-height: 1.5; font-weight: 500; }
+.log-x8 { margin-bottom: 20px; }
+.log-x9 { display: block; color: #8b949e; font-size: 0.85rem; margin-bottom: 8px; }
+.log-x10 { width: 100%; padding: 12px; background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; }
+.log-x11 { margin-bottom: 8px; }
+.log-x12 { position: relative; }
+.log-x13 { width: 100%; padding: 12px 46px 12px 12px; background-color: #010409; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; box-sizing: border-box; }
+.log-x14 { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; color: #8b949e; cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; }
+.log-x15 { text-align: right; margin-bottom: 24px; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .log-x1 { flex-wrap: wrap; }
+  .log-x2 { padding: 14px 12px; }
+  .log-x14 { flex-wrap: wrap; }
+}

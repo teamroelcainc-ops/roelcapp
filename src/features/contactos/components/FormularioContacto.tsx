@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import './FormularioContacto.css';
 
 interface Props {
   estado: 'cerrado' | 'abierto' | 'minimizado';
@@ -88,35 +89,35 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
 
   if (estado === 'minimizado') {
     return (
-      <div style={{ position: 'fixed', bottom: 20, right: 20, backgroundColor: '#161b22', border: '1px solid #30363d', padding: '12px 20px', borderRadius: '8px', zIndex: 9999, display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
-        <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{initialData ? 'Editando Contacto' : 'Nuevo Contacto'}</span>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={onRestore} style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer' }}>🗖 Restaurar</button>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>✕</button>
+      <div className="fc-x1">
+        <span className="fc-x2">{initialData ? 'Editando Contacto' : 'Nuevo Contacto'}</span>
+        <div className="fc-x3">
+          <button className="fc-x4" onClick={onRestore}>🗖 Restaurar</button>
+          <button className="fc-x5" onClick={onClose}>✕</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1600, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-      <div style={{ maxWidth: '600px', width: '100%', backgroundColor: '#0d1117', borderRadius: '12px', border: '1px solid #30363d', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+    <div className="modal-overlay fc-x6">
+      <div className="fc-x7">
         
-        <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem' }}>{initialData ? 'Editar Contacto' : 'Agregar Contacto'}</h2>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button onClick={onMinimize} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>—</button>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="fc-x8">
+          <h2 className="fc-x9">{initialData ? 'Editar Contacto' : 'Agregar Contacto'}</h2>
+          <div className="fc-x10">
+            <button className="fc-x11" onClick={onMinimize}>—</button>
+            <button className="fc-x11" onClick={onClose}>✕</button>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <form className="fc-x12" onSubmit={handleSubmit}>
+          <div className="fc-x13">
             
             {/* BUSCADOR DE EMPRESAS */}
-            <div style={{ position: 'relative' }}>
-              <label style={{ color: '#8b949e', fontSize: '0.9rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Empresa / Cliente *</label>
-              <input 
+            <div className="fc-x14">
+              <label className="fc-x15">Empresa / Cliente *</label>
+              <input className="fc-x16" 
                 type="text"
                 placeholder="Buscar empresa..."
                 value={busquedaEmpresa}
@@ -126,16 +127,14 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
                   setFormData({ ...formData, id_cliente: '' }); // Resetear ID si el usuario escribe algo nuevo
                 }}
                 onFocus={() => setMostrarDropdown(true)}
-                style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }}
                 required
               />
               {mostrarDropdown && empresasFiltradas.length > 0 && (
-                <ul style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '200px', overflowY: 'auto', listStyle: 'none', padding: 0, margin: '4px 0 0 0', zIndex: 10 }}>
+                <ul className="fc-x17">
                   {empresasFiltradas.map(emp => (
-                    <li 
+                    <li className="fc-x18" 
                       key={emp.id} 
                       onClick={() => seleccionarEmpresa(emp)}
-                      style={{ padding: '10px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #30363d' }}
                       onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                       onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                     >
@@ -147,31 +146,31 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
             </div>
 
             <div>
-              <label style={{ color: '#8b949e', fontSize: '0.9rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Persona Encargada *</label>
-              <input type="text" value={formData.persona_encargada} onChange={(e) => setFormData({ ...formData, persona_encargada: e.target.value })} required style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+              <label className="fc-x15">Persona Encargada *</label>
+              <input className="fc-x16" type="text" value={formData.persona_encargada} onChange={(e) => setFormData({ ...formData, persona_encargada: e.target.value })} required />
             </div>
 
             <div>
-              <label style={{ color: '#8b949e', fontSize: '0.9rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Puesto *</label>
-              <input type="text" value={formData.puesto} onChange={(e) => setFormData({ ...formData, puesto: e.target.value })} required style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+              <label className="fc-x15">Puesto *</label>
+              <input className="fc-x16" type="text" value={formData.puesto} onChange={(e) => setFormData({ ...formData, puesto: e.target.value })} required />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div className="fc-x19">
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.9rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Teléfono</label>
-                <input type="tel" value={formData.telefono} onChange={(e) => setFormData({ ...formData, telefono: e.target.value })} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+                <label className="fc-x15">Teléfono</label>
+                <input className="fc-x16" type="tel" value={formData.telefono} onChange={(e) => setFormData({ ...formData, telefono: e.target.value })} />
               </div>
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.9rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>Correo Electrónico</label>
-                <input type="email" value={formData.correo} onChange={(e) => setFormData({ ...formData, correo: e.target.value })} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' }} />
+                <label className="fc-x15">Correo Electrónico</label>
+                <input className="fc-x16" type="email" value={formData.correo} onChange={(e) => setFormData({ ...formData, correo: e.target.value })} />
               </div>
             </div>
 
           </div>
 
-          <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-            <button type="button" onClick={onClose} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-            <button type="submit" disabled={guardando} style={{ padding: '8px 16px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : 'Guardar Contacto'}</button>
+          <div className="fc-x20">
+            <button className="fc-x21" type="button" onClick={onClose}>Cancelar</button>
+            <button className="fc-x22" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar Contacto'}</button>
           </div>
         </form>
 

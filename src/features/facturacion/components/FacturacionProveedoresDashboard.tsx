@@ -41,6 +41,8 @@ import { generarConfirmacionTarifaPDF, generarRateProveedorPDF } from './generar
 import type { ConfirmacionTarifaData, RateProveedorData } from './generarDocumentosProveedorPDF';
 import { getAuth } from 'firebase/auth';
 import { registrarLog } from '../../../utils/logger';
+import './FacturacionProveedoresDashboard.css';
+import { almacenSesion } from '../../../utils/cacheMemoria';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -650,7 +652,7 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   const guardarCacheFacturas = (docs: any[]) => {
-    try { sessionStorage.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
+    try { almacenSesion.setItem(SS_FACTURAS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
 
   // Descarga TODAS las facturas desde Firestore (reutilizable por el botón Refrescar).
@@ -687,7 +689,7 @@ export const FacturacionProveedoresDashboard = () => {
 
   // Fuerza el refresco de la colección de facturas: limpia la caché y vuelve a leer.
   const recargarFacturas = () => {
-    try { sessionStorage.removeItem(SS_FACTURAS); } catch { /* noop */ }
+    try { almacenSesion.removeItem(SS_FACTURAS); } catch { /* noop */ }
     descargarFacturas();
   };
 
@@ -697,7 +699,7 @@ export const FacturacionProveedoresDashboard = () => {
   useEffect(() => {
     if (facturasClientesGlobales.length > 0) return;
     try {
-      const raw = sessionStorage.getItem(SS_FACTURAS_CLIENTES);
+      const raw = almacenSesion.getItem(SS_FACTURAS_CLIENTES);
       if (raw) {
         const obj = JSON.parse(raw);
         if (obj && Array.isArray(obj.data) && (Date.now() - (obj.ts || 0)) < SS_FACTURAS_TTL) {
@@ -734,7 +736,7 @@ export const FacturacionProveedoresDashboard = () => {
           if (snap.docs.length < PAG_FACTURAS) break;
         }
         setFacturasClientesGlobales(todas);
-        try { sessionStorage.setItem(SS_FACTURAS_CLIENTES, JSON.stringify({ ts: Date.now(), data: todas })); } catch { /* cuota */ }
+        try { almacenSesion.setItem(SS_FACTURAS_CLIENTES, JSON.stringify({ ts: Date.now(), data: todas })); } catch { /* cuota */ }
       } catch (e) {
         console.error('[Proveedores] Error cargando facturas de clientes (cruce):', e);
       }
@@ -778,7 +780,7 @@ export const FacturacionProveedoresDashboard = () => {
   useEffect(() => {
     if (facturasGlobales.length > 0) return;
     try {
-      const raw = sessionStorage.getItem(SS_FACTURAS);
+      const raw = almacenSesion.getItem(SS_FACTURAS);
       if (raw) {
         const obj = JSON.parse(raw);
         if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_FACTURAS_TTL) {
@@ -829,14 +831,14 @@ export const FacturacionProveedoresDashboard = () => {
   }, [facturasGlobales]);
 
   const guardarCacheOps = (docs: any[]) => {
-    try { sessionStorage.setItem(SS_OPS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
+    try { almacenSesion.setItem(SS_OPS, JSON.stringify({ ts: Date.now(), data: docs })); } catch { /* cuota */ }
   };
 
   const descargarOpsCompletadas = async (forzar = false) => {
     if (!forzar && operacionesGlobales.length > 0) return;
     if (!forzar) {
       try {
-        const raw = sessionStorage.getItem(SS_OPS);
+        const raw = almacenSesion.getItem(SS_OPS);
         if (raw) {
           const obj = JSON.parse(raw);
           if (obj && Array.isArray(obj.data) && obj.data.length && (Date.now() - (obj.ts || 0)) < SS_OPS_TTL) {
@@ -912,7 +914,7 @@ export const FacturacionProveedoresDashboard = () => {
   }, [operacionesGlobales]);
 
   const recargarOperaciones = () => {
-    try { sessionStorage.removeItem(SS_OPS); } catch { /* noop */ }
+    try { almacenSesion.removeItem(SS_OPS); } catch { /* noop */ }
     setSeleccionadas([]);
     descargarOpsCompletadas(true);
   };
@@ -1242,25 +1244,24 @@ export const FacturacionProveedoresDashboard = () => {
     switch (key) {
       case 'factura': {
         const inv = invoiceDeOp(op);
-        if (inv) return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', color: '#58a6ff', border: '1px solid #58a6ff', backgroundColor: 'rgba(88,166,255,0.1)', fontFamily: 'monospace' }}>{inv}</span></td>;
-        return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ color: '#8b949e', fontSize: '0.8rem' }}>Por facturar</span></td>;
+        if (inv) return <td className="fpd-x1" key={key}><span className="fpd-x2">{inv}</span></td>;
+        return <td className="fpd-x1" key={key}><span className="fpd-x3">Por facturar</span></td>;
       }
       case 'facturaRoelca': {
         const fc = getFacturaClienteDeOp(op);
         if (fc && (fc.invoice || fc.facturaId)) {
-          return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
-            <button
+          return <td className="fpd-x1" key={key}>
+            <button className="fpd-x4"
               onClick={(e) => { e.stopPropagation(); setFacturaClienteViendo({ ...fc, opRef: op.numReferencia || op.referencia || op.ref || op.id }); }}
-              title="Ver dónde fue facturada (Facturación de Clientes)"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '3px 10px', borderRadius: '12px', fontSize: '0.78rem', fontWeight: 'bold', color: '#3fb950', border: '1px solid #3fb950', backgroundColor: 'rgba(63,185,80,0.12)', fontFamily: 'monospace', cursor: 'pointer' }}>
+              title="Ver dónde fue facturada (Facturación de Clientes)">
               {fc.invoice || 'Facturada'}
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
             </button>
           </td>;
         }
-        return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}><span style={{ color: '#8b949e', fontSize: '0.8rem' }}>No facturada</span></td>;
+        return <td className="fpd-x1" key={key}><span className="fpd-x3">No facturada</span></td>;
       }
-      case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.numReferencia || op.referencia || op.ref || op.id.substring(0, 6)}</td>;
+      case 'ref': return <td className="fpd-x5" key={key}>{op.numReferencia || op.referencia || op.ref || op.id.substring(0, 6)}</td>;
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
       case 'proveedor': return <td key={key} style={tdBase}>{getNombreEmpresa(provDeOp(op) || op.proveedorUnidadNombre)}</td>;
       case 'cartaPorte': return <td key={key} style={tdBase}>{op.cartaPorte || op.numeroCartaPorte || op.numDoda || '-'}</td>;
@@ -1269,7 +1270,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'subtotal': return <td key={key} style={tdBase}>{formatoMoneda(m.subtotal)}</td>;
       case 'dolares': return <td key={key} style={{ ...tdBase, color: '#10b981' }}>{formatoMoneda(m.dol)}</td>;
       case 'pesos': return <td key={key} style={{ ...tdBase, color: '#3b82f6' }}>{formatoMoneda(m.pes)}</td>;
-      case 'conv': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(m.conv)}</td>;
+      case 'conv': return <td className="fpd-x6" key={key}>{formatoMoneda(m.conv)}</td>;
       default: {
         const col = columnasOps.find(c => c.id === key);
         const text = formatearValorGenericoOp(valorGenericoOp(op, col), col?.tipo);
@@ -2709,31 +2710,30 @@ export const FacturacionProveedoresDashboard = () => {
   const renderCeldaFactura = (f: any, colId: string) => {
     switch (colId) {
       case 'statusFactura': return chipStatusFactura(f.statusFactura);
-      case 'invoice': return <span style={{ color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace' }}>{f.invoice}</span>;
-      case 'fecha': return <span style={{ color: '#c9d1d9' }}>{formatearFechaSpanish(f.fecha)}</span>;
-      case 'proveedor': return <span style={{ color: '#f0f6fc' }}>{nombreProveedorFactura_(f)}</span>;
+      case 'invoice': return <span className="fpd-x7">{f.invoice}</span>;
+      case 'fecha': return <span className="fpd-x8">{formatearFechaSpanish(f.fecha)}</span>;
+      case 'proveedor': return <span className="fpd-x9">{nombreProveedorFactura_(f)}</span>;
       case 'moneda': { const mon = monedaFacturaMostrar(f); return <span style={{ color: mon === 'N/A' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{mon}</span>; }
-      case 'facturaCcp': return <span style={{ color: '#c9d1d9' }}>{f.facturaCcp || '-'}</span>;
-      case 'cantOps': return <span style={{ color: '#8b949e' }}>{f.operacionesIds?.length || 0}</span>;
+      case 'facturaCcp': return <span className="fpd-x8">{f.facturaCcp || '-'}</span>;
+      case 'cantOps': return <span className="fpd-x10">{f.operacionesIds?.length || 0}</span>;
       case 'referencias': {
         const ops: any[] = Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas : [];
-        if (ops.length === 0) return <span style={{ color: '#8b949e' }}>-</span>;
+        if (ops.length === 0) return <span className="fpd-x10">-</span>;
         return (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxWidth: '420px', whiteSpace: 'normal' }}>
+          <div className="fpd-x11">
             {ops.map((op: any, idx: number) => (
-              <button
+              <button className="fpd-x12"
                 key={`${f.id}_ref_${op?.id || idx}`}
                 onClick={(e) => { e.stopPropagation(); if (op?.id) verDetalleOperacion(op.id); }}
-                title="Ver detalle de la operación"
-                style={{ backgroundColor: '#21262d', border: '1px solid #58a6ff', color: '#58a6ff', padding: '3px 8px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.78rem', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                title="Ver detalle de la operación">
                 {refDeOp(op)}
               </button>
             ))}
           </div>
         );
       }
-      case 'total': return <span style={{ color: '#58a6ff', fontWeight: 'bold' }}>{formatoMoneda(f.subtotalFactura)}</span>;
-      case 'createdAt': return <span style={{ color: '#8b949e' }}>{f.createdAt ? formatearFechaHora(f.createdAt) : '-'}</span>;
+      case 'total': return <span className="fpd-x13">{formatoMoneda(f.subtotalFactura)}</span>;
+      case 'createdAt': return <span className="fpd-x10">{f.createdAt ? formatearFechaHora(f.createdAt) : '-'}</span>;
       default: return '-';
     }
   };
@@ -2821,36 +2821,34 @@ export const FacturacionProveedoresDashboard = () => {
   });
 
   const BuscadorProveedor = () => (
-    <div style={{ flex: 1, minWidth: '280px', position: 'relative' }}>
-      <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>PROVEEDOR (opcional)</label>
+    <div className="fpd-x14">
+      <label className="fpd-x15">PROVEEDOR (opcional)</label>
       {filtroProveedor ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
+        <div className="fpd-x16">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-          <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombreProveedorSeleccionado}</span>
-          <button onClick={() => { setFiltroProveedor(''); setTextoBuscarProveedor(''); setMostrarSugerenciasProveedor(false); setSeleccionadas([]); }} title="Quitar proveedor" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+          <span className="fpd-x17">{nombreProveedorSeleccionado}</span>
+          <button className="fpd-x18" onClick={() => { setFiltroProveedor(''); setTextoBuscarProveedor(''); setMostrarSugerenciasProveedor(false); setSeleccionadas([]); }} title="Quitar proveedor">✕</button>
         </div>
       ) : (
-        <div style={{ position: 'relative' }}>
-          <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          <input type="text" placeholder="Buscar proveedor por nombre o RFC (opcional)..." value={textoBuscarProveedor}
+        <div className="fpd-x19">
+          <svg className="fpd-x20" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input className="fpd-x21" type="text" placeholder="Buscar proveedor por nombre o RFC (opcional)..." value={textoBuscarProveedor}
             onChange={(e) => { setTextoBuscarProveedor(e.target.value); setMostrarSugerenciasProveedor(true); }}
-            onFocus={() => setMostrarSugerenciasProveedor(true)} onBlur={() => setTimeout(() => setMostrarSugerenciasProveedor(false), 180)}
-            style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            onFocus={() => setMostrarSugerenciasProveedor(true)} onBlur={() => setTimeout(() => setMostrarSugerenciasProveedor(false), 180)} />
         </div>
       )}
       {!filtroProveedor && mostrarSugerenciasProveedor && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+        <div className="fpd-x22">
           {proveedoresFiltradosBuscador.length === 0 ? (
-            <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>{textoBuscarProveedor.trim() ? 'Sin coincidencias' : 'No hay proveedores cargados'}</div>
+            <div className="fpd-x23">{textoBuscarProveedor.trim() ? 'Sin coincidencias' : 'No hay proveedores cargados'}</div>
           ) : (
             <>
-              <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>{proveedoresFiltradosBuscador.length} {proveedoresFiltradosBuscador.length === 1 ? 'proveedor' : 'proveedores'}{textoBuscarProveedor.trim() ? '' : ' (primeros 30)'}</div>
+              <div className="fpd-x24">{proveedoresFiltradosBuscador.length} {proveedoresFiltradosBuscador.length === 1 ? 'proveedor' : 'proveedores'}{textoBuscarProveedor.trim() ? '' : ' (primeros 30)'}</div>
               {proveedoresFiltradosBuscador.map((cli: any) => (
-                <div key={cli.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setFiltroProveedor(cli.id); setTextoBuscarProveedor(''); setMostrarSugerenciasProveedor(false); setSeleccionadas([]); }}
-                  style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                <div className="fpd-x25" key={cli.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setFiltroProveedor(cli.id); setTextoBuscarProveedor(''); setMostrarSugerenciasProveedor(false); setSeleccionadas([]); }}
                   onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
-                  {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                  <div className="fpd-x26">{cli.nombre || cli.id}</div>
+                  {cli.rfc && <div className="fpd-x27">{cli.rfc}</div>}
                 </div>
               ))}
             </>
@@ -2875,95 +2873,94 @@ export const FacturacionProveedoresDashboard = () => {
   };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
-      <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Facturación de Proveedores</h1>
+    <div className="module-container fpd-x28">
+      <h1 className="fpd-x29">Facturación de Proveedores</h1>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '24px' }}>
+      <div className="fpd-x30">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' }}>
+      <div className="fpd-x31">
         <button onClick={() => setFiltrosAbiertos(true)} title="Mostrar filtros"
           style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${filtrosActivos > 0 ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
           Filtros
-          {filtrosActivos > 0 && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{filtrosActivos}</span>}
+          {filtrosActivos > 0 && <span className="fpd-x32">{filtrosActivos}</span>}
         </button>
         {filtrosActivos > 0 && (
           <button onClick={() => { limpiarFiltros(); if (activeTab === 'operaciones') setBusquedaOpsHecha(false); else setBusquedaHistHecha(false); }} style={{ ...btnDirStyle, color: '#8b949e' }} title="Quitar todos los filtros">✕ Limpiar filtros</button>
         )}
         {activeTab === 'operaciones' && filtroTipoOp && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(163,113,247,0.1)', border: '1px solid #a371f7', borderRadius: '14px', color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>
+          <span className="fpd-x33">
             {filtroTipoOp}
-            <button onClick={() => setFiltroTipoOp('')} style={{ background: 'transparent', border: 'none', color: '#a371f7', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+            <button className="fpd-x34" onClick={() => setFiltroTipoOp('')}>✕</button>
           </span>
         )}
         {filtroProveedor && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid #10b981', borderRadius: '14px', color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold' }}>
+          <span className="fpd-x35">
             {nombreProveedorSeleccionado}
-            <button onClick={() => { setFiltroProveedor(''); setTextoBuscarProveedor(''); }} style={{ background: 'transparent', border: 'none', color: '#10b981', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+            <button className="fpd-x36" onClick={() => { setFiltroProveedor(''); setTextoBuscarProveedor(''); }}>✕</button>
           </span>
         )}
       </div>
 
       {filtrosAbiertos && (
-        <div onClick={() => setFiltrosAbiertos(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '380px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
-              <button onClick={() => setFiltrosAbiertos(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="fpd-x37" onClick={() => setFiltrosAbiertos(false)}>
+          <div className="fpd-x38" onClick={(e) => e.stopPropagation()}>
+            <div className="fpd-x39">
+              <h3 className="fpd-x40">Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
+              <button className="fpd-x41" onClick={() => setFiltrosAbiertos(false)}>✕</button>
             </div>
 
             {activeTab === 'operaciones' ? (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}># REMOLQUE / REFERENCIA (opcional)</label>
-                  <div style={{ position: 'relative' }}>
-                    <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input type="text" placeholder="Buscar por # remolque o referencia..." value={textoBuscarRemolqueOps}
-                      onChange={(e) => setTextoBuscarRemolqueOps(e.target.value)}
-                      style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                <div className="fpd-x42">
+                  <label className="fpd-x43"># REMOLQUE / REFERENCIA (opcional)</label>
+                  <div className="fpd-x19">
+                    <svg className="fpd-x44" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input className="fpd-x45" type="text" placeholder="Buscar por # remolque o referencia..." value={textoBuscarRemolqueOps}
+                      onChange={(e) => setTextoBuscarRemolqueOps(e.target.value)} />
                     {textoBuscarRemolqueOps && (
-                      <button onClick={() => setTextoBuscarRemolqueOps('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                      <button className="fpd-x46" onClick={() => setTextoBuscarRemolqueOps('')} title="Limpiar">✕</button>
                     )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold' }}>TIPO DE OPERACIÓN (opcional)</label>
+                <div className="fpd-x42">
+                  <label className="fpd-x47">TIPO DE OPERACIÓN (opcional)</label>
                   <select value={filtroTipoOp} onChange={(e) => setFiltroTipoOp(e.target.value)}
                     style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: `1px solid ${filtroTipoOp ? '#a371f7' : '#30363d'}`, borderRadius: '6px', color: filtroTipoOp ? '#a371f7' : '#c9d1d9', fontSize: '0.9rem', fontWeight: filtroTipoOp ? 'bold' : 'normal', boxSizing: 'border-box' }}>
                     <option value="">Todos los tipos ({tiposOperacionDisponibles.length})</option>
                     {tiposOperacionDisponibles.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                   {tiposOperacionDisponibles.length === 0 && (
-                    <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>Carga las operaciones para ver los tipos disponibles.</span>
+                    <span className="fpd-x48">Carga las operaciones para ver los tipos disponibles.</span>
                   )}
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE</label>
+                <div className="fpd-x49">
+                  <div className="fpd-x50">
+                    <label className="fpd-x43">FECHA DESDE</label>
                     <input type="date" value={fechaDesdeOps} onChange={(e) => setFechaDesdeOps(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
                   </div>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA</label>
+                  <div className="fpd-x50">
+                    <label className="fpd-x43">FECHA HASTA</label>
                     <input type="date" value={fechaHastaOps} onChange={(e) => setFechaHastaOps(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
                   </div>
                 </div>
                 {(fechaDesdeOps || fechaHastaOps) && (
                   <button onClick={() => { setFechaDesdeOps(''); setFechaHastaOps(''); }} style={{ ...btnDirStyle, color: '#8b949e', alignSelf: 'flex-start' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#f59e0b', fontSize: '0.8rem', fontWeight: 'bold' }}>VISTA</label>
-                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                <div className="fpd-x42">
+                  <label className="fpd-x51">VISTA</label>
+                  <div className="fpd-x52">
                     <button onClick={() => { setVistaOps('pendientes'); setSeleccionadas([]); }} style={{ ...segBtnStyle(vistaOps === 'pendientes', '#f59e0b'), flex: 1 }}>Pendientes ({resumenOps.porFacturar})</button>
                     <button onClick={() => { setVistaOps('facturadas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(vistaOps === 'facturadas', '#10b981'), flex: 1 }}>Facturadas ({resumenOps.facturadas})</button>
                     <button onClick={() => { setVistaOps('todas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(vistaOps === 'todas', '#58a6ff'), flex: 1 }}>Todas ({resumenOps.total})</button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ORDENAR POR</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="fpd-x42">
+                  <label className="fpd-x43">ORDENAR POR</label>
+                  <div className="fpd-x53">
                     <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
                       {columnasOps.filter(c => c.visible && c.orden).map(c => (
                         <option key={c.id} value={c.id}>{c.label}</option>
@@ -2975,39 +2972,38 @@ export const FacturacionProveedoresDashboard = () => {
                   </div>
                 </div>
                 {BuscadorProveedor()}
-                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-                  Por defecto se muestran <b style={{ color: '#8b949e' }}>todas</b> las operaciones completadas. El rango de fechas y el proveedor son <b style={{ color: '#8b949e' }}>opcionales</b> para acotar.
+                <div className="fpd-x54">
+                  Por defecto se muestran <b className="fpd-x10">todas</b> las operaciones completadas. El rango de fechas y el proveedor son <b className="fpd-x10">opcionales</b> para acotar.
                 </div>
               </>
             ) : (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BUSCAR EN HISTORIAL</label>
-                  <div style={{ position: 'relative' }}>
-                    <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input type="text" placeholder="Factura, proveedor, status, referencia o # remolque..." value={textoBuscarFactura} onChange={(e) => setTextoBuscarFactura(e.target.value)}
-                      style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                <div className="fpd-x42">
+                  <label className="fpd-x55">BUSCAR EN HISTORIAL</label>
+                  <div className="fpd-x19">
+                    <svg className="fpd-x44" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input className="fpd-x21" type="text" placeholder="Factura, proveedor, status, referencia o # remolque..." value={textoBuscarFactura} onChange={(e) => setTextoBuscarFactura(e.target.value)} />
                     {textoBuscarFactura && (
-                      <button onClick={() => setTextoBuscarFactura('')} title="Limpiar búsqueda" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                      <button className="fpd-x46" onClick={() => setTextoBuscarFactura('')} title="Limpiar búsqueda">✕</button>
                     )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA DESDE</label>
+                <div className="fpd-x49">
+                  <div className="fpd-x50">
+                    <label className="fpd-x43">FECHA DESDE</label>
                     <input type="date" value={fechaDesdeHist} onChange={(e) => setFechaDesdeHist(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
                   </div>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA HASTA</label>
+                  <div className="fpd-x50">
+                    <label className="fpd-x43">FECHA HASTA</label>
                     <input type="date" value={fechaHastaHist} onChange={(e) => setFechaHastaHist(e.target.value)} style={{ ...dateInputStyle, width: '100%', boxSizing: 'border-box' }} />
                   </div>
                 </div>
                 {(fechaDesdeHist || fechaHastaHist) && (
                   <button onClick={() => { setFechaDesdeHist(''); setFechaHastaHist(''); }} style={{ ...btnDirStyle, color: '#8b949e', alignSelf: 'flex-start' }} title="Quitar filtro de fechas">✕ Limpiar fechas</button>
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>STATUS DE FACTURA</label>
-                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden', flexWrap: 'wrap' }}>
+                <div className="fpd-x42">
+                  <label className="fpd-x43">STATUS DE FACTURA</label>
+                  <div className="fpd-x56">
                     {statusBotones.map(s => {
                       const col = s === 'Todos' ? '#58a6ff' : colorStatusFactura(s);
                       return (
@@ -3018,9 +3014,9 @@ export const FacturacionProveedoresDashboard = () => {
                     })}
                   </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ORDENAR POR</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="fpd-x42">
+                  <label className="fpd-x43">ORDENAR POR</label>
+                  <div className="fpd-x53">
                     <select value={ordenFac.campo} onChange={(e) => setOrdenFac(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
                 <option value="statusFactura">Status</option>
                 <option value="invoice">Factura</option>
@@ -3036,15 +3032,15 @@ export const FacturacionProveedoresDashboard = () => {
                   </div>
                 </div>
                 {BuscadorProveedor()}
-                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-                  Por defecto se muestran <b style={{ color: '#8b949e' }}>todas</b> las facturas (sin filtro de fechas). Las facturas importadas sin fecha se ocultan al filtrar por fecha.
+                <div className="fpd-x54">
+                  Por defecto se muestran <b className="fpd-x10">todas</b> las facturas (sin filtro de fechas). Las facturas importadas sin fecha se ocultan al filtrar por fecha.
                 </div>
               </>
             )}
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { limpiarFiltros(); if (activeTab === 'operaciones') setBusquedaOpsHecha(false); else setBusquedaHistHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true); setFiltrosAbiertos(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="fpd-x57">
+              <button className="fpd-x58" onClick={() => { limpiarFiltros(); if (activeTab === 'operaciones') setBusquedaOpsHecha(false); else setBusquedaHistHecha(false); }}>Limpiar</button>
+              <button className="fpd-x59" onClick={() => { if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true); setFiltrosAbiertos(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>
@@ -3052,29 +3048,29 @@ export const FacturacionProveedoresDashboard = () => {
 
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '16px' }}>
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px 20px' }}>
-              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones en espera por facturar</span>
-              <span style={{ color: '#f59e0b', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenOps.porFacturar}</span>
+          <div className="fpd-x60">
+            <div className="fpd-x61">
+              <span className="fpd-x62">Operaciones en espera por facturar</span>
+              <span className="fpd-x63">{resumenOps.porFacturar}</span>
             </div>
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px 20px' }}>
-              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones ya facturadas (en historial)</span>
-              <span style={{ color: '#10b981', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenOps.facturadas}</span>
+            <div className="fpd-x61">
+              <span className="fpd-x62">Operaciones ya facturadas (en historial)</span>
+              <span className="fpd-x64">{resumenOps.facturadas}</span>
             </div>
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px 20px' }}>
-              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total completadas cargadas</span>
-              <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{resumenOps.total}</span>
+            <div className="fpd-x61">
+              <span className="fpd-x62">Total completadas cargadas</span>
+              <span className="fpd-x65">{resumenOps.total}</span>
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
+          <div className="fpd-x66">
+            <div className="fpd-x67">
+              <span className="fpd-x3">
                 {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'mostrada' : 'mostradas'}
               </span>
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <div className="fpd-x68">
               <button onClick={recargarTodo} disabled={cargandoFacturas} style={btnDirStyle} title="Volver a leer operaciones y facturas desde la base de datos (limpia la caché)">↻ Recargar</button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button title="Editar el encabezado de las remisiones (emisor por moneda: USD→Camila, MXN→Rolando)" onClick={() => setModalEmisores(true)} style={{ ...btnDirStyle, borderColor: '#fb923c', color: '#fb923c' }}>⚙ Encabezado Remisión</button>
@@ -3098,46 +3094,46 @@ export const FacturacionProveedoresDashboard = () => {
           </div>
 
           {topeOpsAlcanzado && (
-            <div style={{ backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.85rem' }}>
+            <div className="fpd-x69">
               Se alcanzó el tope de <b>{LIMITE_OPS_TODAS}</b> operaciones cargadas, por lo que podría haber más que no se muestran. Usa el <b>rango de fechas</b> o el <b>proveedor</b> para acotar.
             </div>
           )}
 
           {seleccionMultiProveedor && (
-            <div style={{ backgroundColor: 'rgba(248,81,73,0.08)', border: '1px solid rgba(248,81,73,0.4)', color: '#ff7b72', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '0.85rem' }}>
+            <div className="fpd-x70">
               Seleccionaste operaciones de <b>distintos proveedores</b>. Una factura debe ser de un solo proveedor: usa el filtro de proveedor o selecciona operaciones del mismo proveedor.
             </div>
           )}
 
           {seleccionadas.length > 0 && !seleccionMultiProveedor && (
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Seleccionadas</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{seleccionadas.length}</span>
+            <div className="fpd-x71">
+              <div className="fpd-x72">
+                <div className="fpd-x73">
+                  <span className="fpd-x74">Seleccionadas</span>
+                  <span className="fpd-x65">{seleccionadas.length}</span>
                 </div>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Conversión Estimada</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
+                <div className="fpd-x73">
+                  <span className="fpd-x74">Conversión Estimada</span>
+                  <span className="fpd-x75">{formatoMoneda(resumenSeleccion.subtotal)}</span>
                 </div>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Proveedor</span>
-                  <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{nombreProveedorFactura || '—'}</span>
+                <div className="fpd-x73">
+                  <span className="fpd-x74">Proveedor</span>
+                  <span className="fpd-x76">{nombreProveedorFactura || '—'}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Moneda</span>
-                  <span style={{ color: '#D84315', fontSize: '1.8rem', fontWeight: 'bold' }}>{monedaProveedor}</span>
+                  <span className="fpd-x74">Moneda</span>
+                  <span className="fpd-x77">{monedaProveedor}</span>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div className="table-container fpd-x78">
+            <table className="fpd-x79">
+              <thead className="fpd-x80">
                 <tr>
-                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>ACCIONES</th>
-                  <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}></th>
+                  <th className="fpd-x81">ACCIONES</th>
+                  <th className="fpd-x82"></th>
                   {columnasOps.filter(c => c.visible).map(col => (
                     <th key={col.id}
                       style={col.orden ? thOrdenStyle : { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}
@@ -3149,17 +3145,17 @@ export const FacturacionProveedoresDashboard = () => {
               </thead>
               <tbody>
                 {!busquedaOpsHecha ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="fpd-x83" colSpan={columnasOps.filter(c => c.visible).length + 2}>
+                    <div className="fpd-x84">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las operaciones.</span>
-                      <button onClick={() => setFiltrosAbiertos(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="fpd-x85">Define tus filtros y presiona <b className="fpd-x86">Buscar</b> para ver las operaciones.</span>
+                      <button className="fpd-x87" onClick={() => setFiltrosAbiertos(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : cargandoOperaciones ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando todas las operaciones completadas...</td></tr>
+                  <tr><td className="fpd-x88" colSpan={columnasOps.filter(c => c.visible).length + 2}>Cargando todas las operaciones completadas...</td></tr>
                 ) : operacionesMostradas.length === 0 ? (
-                  <tr><td colSpan={columnasOps.filter(c => c.visible).length + 2} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>No hay operaciones {vistaOps === 'facturadas' ? 'facturadas' : vistaOps === 'pendientes' ? 'pendientes' : 'completadas'} con los filtros actuales{filtroProveedor ? ' para el proveedor seleccionado' : ''}.</td></tr>
+                  <tr><td className="fpd-x88" colSpan={columnasOps.filter(c => c.visible).length + 2}>No hay operaciones {vistaOps === 'facturadas' ? 'facturadas' : vistaOps === 'pendientes' ? 'pendientes' : 'completadas'} con los filtros actuales{filtroProveedor ? ' para el proveedor seleccionado' : ''}.</td></tr>
                 ) : (
                   operacionesPagina.map(op => {
                     const m = obtenerMontoOperacion(op);
@@ -3167,30 +3163,25 @@ export const FacturacionProveedoresDashboard = () => {
                     return (
                       <tr key={op.id} onClick={() => { if (!yaFacturada) toggleSeleccion(op.id); }}
                         style={{ cursor: yaFacturada ? 'default' : 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : (yaFacturada ? 'rgba(16,185,129,0.04)' : 'transparent') }}>
-                        <td style={{ padding: '12px 16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <td className="fpd-x89">
                           {yaFacturada ? (
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                              <button onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF"
-                                style={{ backgroundColor: 'transparent', border: '1px solid #fb923c', color: '#fb923c', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>📋 Tarifa</button>
-                              <button onClick={(e) => abrirGestionOp(e, op)} title="Editar el # de factura de esta operación"
-                                style={{ backgroundColor: 'transparent', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>✎ #</button>
-                              <button onClick={(e) => { e.stopPropagation(); quitarOpDeFactura(op); }} title="Quitar esta operación de la factura (vuelve a Pendientes)"
-                                style={{ backgroundColor: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>✕ Quitar</button>
+                            <div className="fpd-x90">
+                              <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">📋 Tarifa</button>
+                              <button className="fpd-x92" onClick={(e) => abrirGestionOp(e, op)} title="Editar el # de factura de esta operación">✎ #</button>
+                              <button className="fpd-x93" onClick={(e) => { e.stopPropagation(); quitarOpDeFactura(op); }} title="Quitar esta operación de la factura (vuelve a Pendientes)">✕ Quitar</button>
                             </div>
                           ) : (
-                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                              <button onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF"
-                                style={{ backgroundColor: 'transparent', border: '1px solid #fb923c', color: '#fb923c', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>📋 Tarifa</button>
-                              <button onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }} title="Agregar costo adicional a esta operación"
-                                style={{ backgroundColor: 'transparent', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '6px', padding: '5px 10px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>＋ Costo</button>
+                            <div className="fpd-x90">
+                              <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">📋 Tarifa</button>
+                              <button className="fpd-x94" onClick={(e) => { e.stopPropagation(); abrirCostoAdicParaOp(op.id); }} title="Agregar costo adicional a esta operación">＋ Costo</button>
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <td className="fpd-x95">
                           {yaFacturada ? (
-                            <span title="Ya facturada" style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                            <span className="fpd-x96" title="Ya facturada" />
                           ) : (
-                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#ffffff' }} />
+                            <input className="fpd-x97" type="checkbox" checked={seleccionadas.includes(op.id)} readOnly />
                           )}
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id, m))}
@@ -3202,10 +3193,10 @@ export const FacturacionProveedoresDashboard = () => {
             </table>
           </div>
           {busquedaOpsHecha && totalPaginasOps > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px', marginTop: '16px' }}>
+            <div className="fpd-x98">
               <button onClick={() => setPaginaOps(p => Math.max(1, p - 1))} disabled={paginaOpsSegura === 1}
                 style={{ padding: '8px 16px', background: 'none', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaOpsSegura === 1 ? 'not-allowed' : 'pointer', color: paginaOpsSegura === 1 ? '#484f58' : '#c9d1d9' }}>Anterior</button>
-              <span style={{ color: '#8b949e', fontSize: '0.85rem' }}>
+              <span className="fpd-x99">
                 Página {paginaOpsSegura} / {totalPaginasOps} · {operacionesMostradas.length} operaciones
               </span>
               <button onClick={() => setPaginaOps(p => Math.min(totalPaginasOps, p + 1))} disabled={paginaOpsSegura === totalPaginasOps}
@@ -3216,41 +3207,41 @@ export const FacturacionProveedoresDashboard = () => {
 
       ) : (
         <div className="animation-fade-in">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px' }}>
-              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>Facturas Listadas</span>
-              <span style={{ color: '#58a6ff', fontSize: '2rem', fontWeight: 'bold' }}>{resumenHistorial.cuenta}</span>
+          <div className="fpd-x100">
+            <div className="fpd-x101">
+              <span className="fpd-x102">Facturas Listadas</span>
+              <span className="fpd-x103">{resumenHistorial.cuenta}</span>
             </div>
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px' }}>
-              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>Ops. Facturadas</span>
-              <span style={{ color: '#3fb950', fontSize: '2rem', fontWeight: 'bold' }}>{resumenHistorial.totalOps}</span>
+            <div className="fpd-x101">
+              <span className="fpd-x102">Ops. Facturadas</span>
+              <span className="fpd-x104">{resumenHistorial.totalOps}</span>
             </div>
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px' }}>
-              <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>Total Facturado (USD)</span>
-              <span style={{ color: '#10b981', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatoMoneda(resumenHistorial.totalUSD)}</span>
+            <div className="fpd-x101">
+              <span className="fpd-x105">Total Facturado (USD)</span>
+              <span className="fpd-x106">{formatoMoneda(resumenHistorial.totalUSD)}</span>
             </div>
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px' }}>
-              <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '6px' }}>Total Facturado (MXN)</span>
-              <span style={{ color: '#3b82f6', fontSize: '1.5rem', fontWeight: 'bold' }}>{formatoMoneda(resumenHistorial.totalMXN)}</span>
+            <div className="fpd-x101">
+              <span className="fpd-x105">Total Facturado (MXN)</span>
+              <span className="fpd-x107">{formatoMoneda(resumenHistorial.totalMXN)}</span>
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
+          <div className="fpd-x66">
+            <div className="fpd-x108">
+              <span className="fpd-x3">{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="fpd-x109">
               <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>🩺 Verificar</button>
               <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
               <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>⬇ Exportar Excel</button>
             </div>
           </div>
 
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div className="table-container fpd-x78">
+            <table className="fpd-x79">
+              <thead className="fpd-x80">
                 <tr>
-                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>ACCIONES</th>
+                  <th className="fpd-x81">ACCIONES</th>
                   {columnasFactura.filter(c => c.visible).map(col => (
                     <th key={`th_${col.id}`} style={thOrdenStyle} onClick={() => toggleOrdenFac(col.id)}>
                       {col.label.toUpperCase()}{flechaFac(col.id)}
@@ -3260,42 +3251,42 @@ export const FacturacionProveedoresDashboard = () => {
               </thead>
               <tbody>
                 {!busquedaHistHecha ? (
-                  <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="fpd-x83" colSpan={columnasFactura.filter(c => c.visible).length + 1}>
+                    <div className="fpd-x84">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las facturas.</span>
-                      <button onClick={() => setFiltrosAbiertos(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="fpd-x85">Define tus filtros y presiona <b className="fpd-x86">Buscar</b> para ver las facturas.</span>
+                      <button className="fpd-x87" onClick={() => setFiltrosAbiertos(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : cargandoFacturas ? (
-                  <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Cargando facturas...</td></tr>
+                  <tr><td className="fpd-x110" colSpan={columnasFactura.filter(c => c.visible).length + 1}>Cargando facturas...</td></tr>
                 ) : registrosVisibles.length === 0 ? (
-                  <tr><td colSpan={columnasFactura.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                  <tr><td className="fpd-x110" colSpan={columnasFactura.filter(c => c.visible).length + 1}>
                     {facturasGlobales.length === 0
                       ? 'Aún no hay facturas registradas.'
                       : `No se encontraron facturas con los filtros actuales${textoBuscarFactura ? ` (búsqueda: "${textoBuscarFactura}")` : ''}${filtroStatusFactura !== 'Todos' ? ` (status: "${filtroStatusFactura}")` : ''}${filtroProveedor ? ' para el proveedor seleccionado' : ''}.`}
                   </td></tr>
                 ) : (
                   registrosVisibles.map(f => (
-                    <tr key={f.id} style={{ borderBottom: '1px solid #21262d' }}>
-                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                          <button title="Ver Ficha" onClick={() => setFacturaViendo(f)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                    <tr className="fpd-x111" key={f.id}>
+                      <td className="fpd-x95">
+                        <div className="fpd-x112">
+                          <button className="fpd-x113" title="Ver Ficha" onClick={() => setFacturaViendo(f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
                           <button title="Generar el Rate de Proveedor en PDF (relación de referencias de esta factura)" disabled={cargandoRate} onClick={() => abrirRate(f)} style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: cargandoRate ? 'not-allowed' : 'pointer', padding: '6px', display: 'flex', opacity: cargandoRate ? 0.6 : 1 }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line></svg>
                           </button>
-                          <button title="Editar Factura" onClick={(e) => abrirEditarFactura(e, f)} style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                          <button className="fpd-x114" title="Editar Factura" onClick={(e) => abrirEditarFactura(e, f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                           </button>
-                          <button title="Eliminar Factura" onClick={(e) => handleEliminarFactura(e, f)} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                          <button className="fpd-x115" title="Eliminar Factura" onClick={(e) => handleEliminarFactura(e, f)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                           </button>
                         </div>
                       </td>
                       {columnasFactura.filter(c => c.visible).map(col => (
-                        <td key={`cell_${f.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>{renderCeldaFactura(f, col.id)}</td>
+                        <td className="fpd-x1" key={`cell_${f.id}_${col.id}`}>{renderCeldaFactura(f, col.id)}</td>
                       ))}
                     </tr>
                   ))
@@ -3304,9 +3295,9 @@ export const FacturacionProveedoresDashboard = () => {
             </table>
           </div>
           {busquedaHistHecha && totalPaginas > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
+            <div className="fpd-x116">
               <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '8px 16px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Anterior</button>
-              <span style={{ color: '#fff', alignSelf: 'center' }}>{paginaActual} / {totalPaginas}</span>
+              <span className="fpd-x117">{paginaActual} / {totalPaginas}</span>
               <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas} style={{ padding: '8px 16px', cursor: (paginaActual === totalPaginas) ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Siguiente</button>
             </div>
           )}
@@ -3314,24 +3305,24 @@ export const FacturacionProveedoresDashboard = () => {
       )}
 
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay fpd-x118">
+          <div className="fpd-x119">
+            <div className="fpd-x120">
+              <h3 className="fpd-x121">Configurar Columnas</h3>
+              <button className="fpd-x41" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '20px' }}>Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel. <b style={{ color: '#58a6ff' }}>Esta configuración se guarda y se aplica para todos los usuarios.</b></p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <p className="fpd-x122">Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel. <b className="fpd-x123">Esta configuración se guarda y se aplica para todos los usuarios.</b></p>
+            <ul className="fpd-x124">
               {columnasFactura.map((col, idx) => (
                 <li key={col.id} draggable onDragStart={(e) => handleDragStart(e, idx)} onDragEnter={() => handleDragEnter(idx)} onDragEnd={() => setDraggedColIndex(null)} onDragOver={(e) => e.preventDefault()}
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                  <input className="fpd-x125" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+            <div className="fpd-x126">
               <button onClick={guardarConfigColumnasHistorial} disabled={guardandoCols} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: guardandoCols ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoCols ? 0.7 : 1 }}>{guardandoCols ? 'Guardando...' : 'Guardar para todos'}</button>
             </div>
           </div>
@@ -3339,31 +3330,30 @@ export const FacturacionProveedoresDashboard = () => {
       )}
 
       {modalColumnasOps && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '860px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
+        <div className="modal-overlay fpd-x118">
+          <div className="fpd-x127">
+            <div className="fpd-x128">
               <div>
-                <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-                <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>
+                <h3 className="fpd-x121">Configurar Columnas</h3>
+                <span className="fpd-x129">
                   {columnasOps.filter(c => c.visible).length} visibles de {columnasOps.length} disponibles
                 </span>
               </div>
-              <button onClick={() => { setModalColumnasOps(false); setBusquedaColOps(''); }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="fpd-x41" onClick={() => { setModalColumnasOps(false); setBusquedaColOps(''); }}>✕</button>
             </div>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: '220px', position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Buscar columna por nombre o grupo..." value={busquedaColOps} onChange={(e) => setBusquedaColOps(e.target.value)}
-                  style={{ width: '100%', padding: '8px 8px 8px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.88rem', boxSizing: 'border-box' }} />
+            <div className="fpd-x130">
+              <div className="fpd-x131">
+                <svg className="fpd-x44" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="fpd-x132" type="text" placeholder="Buscar columna por nombre o grupo..." value={busquedaColOps} onChange={(e) => setBusquedaColOps(e.target.value)} />
               </div>
               <button onClick={() => setColumnasOps(cs => cs.map(c => ({ ...c, visible: false })))} style={{ ...btnDirStyle, color: '#8b949e' }} title="Ocultar todas">Ocultar todas</button>
               <button onClick={() => setColumnasOps(cs => cs.map(c => ({ ...c, visible: true })))} style={{ ...btnDirStyle, color: '#10b981' }} title="Mostrar todas">Mostrar todas</button>
               <button onClick={() => setColumnasOps(COLUMNAS_OPS_BASE.map(c => ({ ...c })))} style={{ ...btnDirStyle, color: '#D84315' }} title="Restablecer al estado por defecto">Restablecer</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.8rem', marginBottom: '14px' }}>
-              Arrastra para reordenar. Marca las que quieras ver en la tabla y en el Excel. El grupo entre paréntesis indica de qué pestaña del detalle viene el campo. <b style={{ color: '#58a6ff' }}>Esta configuración se guarda y se aplica para todos los usuarios.</b>
+            <p className="fpd-x133">
+              Arrastra para reordenar. Marca las que quieras ver en la tabla y en el Excel. El grupo entre paréntesis indica de qué pestaña del detalle viene el campo. <b className="fpd-x123">Esta configuración se guarda y se aplica para todos los usuarios.</b>
             </p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+            <ul className="fpd-x134">
               {columnasOps
                 .map((col, idx) => ({ col, idx }))
                 .filter(({ col }) => {
@@ -3375,17 +3365,17 @@ export const FacturacionProveedoresDashboard = () => {
                   <li key={col.id} draggable={!busquedaColOps} onDragStart={(e) => handleDragStartOps(e, idx)} onDragEnter={() => handleDragEnterOps(idx)} onDragEnd={() => setDraggedColOpsIndex(null)} onDragOver={(e) => e.preventDefault()}
                     style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', backgroundColor: draggedColOpsIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: busquedaColOps ? 'default' : 'grab' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                    <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisibleOps(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                    <input className="fpd-x125" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisibleOps(idx)} />
+                    <div className="fpd-x135">
                       <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
                       {col.grupo && (
-                        <span style={{ color: '#6e7681', fontSize: '0.7rem' }}>({col.grupo})</span>
+                        <span className="fpd-x136">({col.grupo})</span>
                       )}
                     </div>
                   </li>
                 ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
+            <div className="fpd-x126">
               <button onClick={guardarConfigColumnasOps} disabled={guardandoCols} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: guardandoCols ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoCols ? 0.7 : 1 }}>{guardandoCols ? 'Guardando...' : 'Guardar para todos'}</button>
             </div>
           </div>
@@ -3393,20 +3383,19 @@ export const FacturacionProveedoresDashboard = () => {
       )}
 
       {modalCostoAdic && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1700, padding: '20px', backdropFilter: 'blur(6px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '520px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '16px' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Costo adicional al proveedor</h2>
-              <button onClick={() => setModalCostoAdic(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay fpd-x137">
+          <div className="fpd-x138">
+            <div className="fpd-x139">
+              <h2 className="fpd-x140">Costo adicional al proveedor</h2>
+              <button className="fpd-x41" onClick={() => setModalCostoAdic(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.82rem', marginBottom: '16px' }}>
-              Se suma a los <b style={{ color: '#c9d1d9' }}>Cargos Adicionales</b> del proveedor en la operación elegida y se recalcula su subtotal/conversión. Usa un monto negativo para aplicar un descuento.
+            <p className="fpd-x141">
+              Se suma a los <b className="fpd-x8">Cargos Adicionales</b> del proveedor en la operación elegida y se recalcula su subtotal/conversión. Usa un monto negativo para aplicar un descuento.
             </p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="fpd-x142">
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>OPERACIÓN</label>
-                <select value={costoAdicOpId} onChange={e => setCostoAdicOpId(e.target.value)}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box' }}>
+                <label className="fpd-x143">OPERACIÓN</label>
+                <select className="fpd-x144" value={costoAdicOpId} onChange={e => setCostoAdicOpId(e.target.value)}>
                   <option value="">-- Selecciona una operación --</option>
                   {Array.from(new Set([costoAdicOpId, ...seleccionadas].filter(Boolean))).map(id => {
                     const o = operacionesGlobales.find(x => x.id === id);
@@ -3420,24 +3409,22 @@ export const FacturacionProveedoresDashboard = () => {
                 if (!o) return null;
                 const mm = obtenerMontoOperacion(o);
                 return (
-                  <div style={{ backgroundColor: '#010409', border: '1px dashed #30363d', borderRadius: '8px', padding: '12px 14px', fontSize: '0.82rem', color: '#8b949e' }}>
-                    Cargos actuales: <b style={{ color: '#c9d1d9' }}>{formatoMoneda(o.cargosAdicionalesProv)}</b> · Conversión actual: <b style={{ color: '#3fb950' }}>{formatoMoneda(mm.conv)}</b>
+                  <div className="fpd-x145">
+                    Cargos actuales: <b className="fpd-x8">{formatoMoneda(o.cargosAdicionalesProv)}</b> · Conversión actual: <b className="fpd-x146">{formatoMoneda(mm.conv)}</b>
                   </div>
                 );
               })()}
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>MONTO ADICIONAL (en la moneda del convenio)</label>
-                <input type="number" step="any" value={costoAdicMonto} onChange={e => setCostoAdicMonto(e.target.value)} placeholder="Ej. 150.00"
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.05rem', boxSizing: 'border-box' }} />
+                <label className="fpd-x143">MONTO ADICIONAL (en la moneda del convenio)</label>
+                <input className="fpd-x147" type="number" step="any" value={costoAdicMonto} onChange={e => setCostoAdicMonto(e.target.value)} placeholder="Ej. 150.00" />
               </div>
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>CONCEPTO (opcional)</label>
-                <input type="text" value={costoAdicConcepto} onChange={e => setCostoAdicConcepto(e.target.value)} placeholder="Ej. Estadía, maniobras, demora..."
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box' }} />
+                <label className="fpd-x143">CONCEPTO (opcional)</label>
+                <input className="fpd-x148" type="text" value={costoAdicConcepto} onChange={e => setCostoAdicConcepto(e.target.value)} placeholder="Ej. Estadía, maniobras, demora..." />
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px', marginTop: '20px' }}>
-              <button onClick={() => setModalCostoAdic(false)} disabled={guardandoCostoAdic} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+            <div className="fpd-x149">
+              <button className="fpd-x150" onClick={() => setModalCostoAdic(false)} disabled={guardandoCostoAdic}>Cancelar</button>
               <button onClick={handleGuardarCostoAdic} disabled={guardandoCostoAdic || !costoAdicOpId} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: (guardandoCostoAdic || !costoAdicOpId) ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: (guardandoCostoAdic || !costoAdicOpId) ? 0.7 : 1 }}>{guardandoCostoAdic ? 'Guardando...' : 'Agregar costo'}</button>
             </div>
           </div>
@@ -3445,51 +3432,51 @@ export const FacturacionProveedoresDashboard = () => {
       )}
 
       {modalAbierto && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(8px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '700px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '16px' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0 }}>Registrar Factura de Proveedor</h2>
-              <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay fpd-x151">
+          <div className="fpd-x152">
+            <div className="fpd-x139">
+              <h2 className="fpd-x153">Registrar Factura de Proveedor</h2>
+              <button className="fpd-x41" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d', marginBottom: '24px' }}>
+            <div className="fpd-x154">
               <div>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Proveedor</span>
-                <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{nombreProveedorFactura || getNombreEmpresa(proveedorFacturaId)}</span>
+                <span className="fpd-x155">Proveedor</span>
+                <span className="fpd-x76">{nombreProveedorFactura || getNombreEmpresa(proveedorFacturaId)}</span>
               </div>
-              <div style={{ textAlign: 'center', borderLeft: '1px solid #30363d', borderRight: '1px solid #30363d', padding: '0 20px' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Moneda Proveedor</span>
-                <span style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>{monedaProveedor}</span>
+              <div className="fpd-x156">
+                <span className="fpd-x155">Moneda Proveedor</span>
+                <span className="fpd-x157">{monedaProveedor}</span>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Conversión ({seleccionadas.length} Ops)</span>
-                <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
+              <div className="fpd-x158">
+                <span className="fpd-x155">Conversión ({seleccionadas.length} Ops)</span>
+                <span className="fpd-x159">{formatoMoneda(resumenSeleccion.subtotal)}</span>
               </div>
             </div>
             <form onSubmit={handleGuardarFactura}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>STATUS DE LA FACTURA</label>
+              <div className="fpd-x160">
+                <div className="fpd-x161">
+                  <label className="fpd-x143">STATUS DE LA FACTURA</label>
                   <select value={statusFacturaForm} onChange={e => setStatusFacturaForm(e.target.value)}
                     style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: colorStatusFactura(statusFacturaForm), border: `1px solid ${colorStatusFactura(statusFacturaForm)}`, borderRadius: '4px', fontWeight: 'bold' }}>
                     {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>N° DE FACTURA DEL PROVEEDOR</label>
-                  <input type="text" required placeholder="Ej. A-1234" value={invoiceForm} onChange={e => setInvoiceForm(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '4px', fontWeight: 'bold', fontSize: '1.1rem' }} />
+                <div className="fpd-x161">
+                  <label className="fpd-x143">N° DE FACTURA DEL PROVEEDOR</label>
+                  <input className="fpd-x162" type="text" required placeholder="Ej. A-1234" value={invoiceForm} onChange={e => setInvoiceForm(e.target.value)} />
                 </div>
                 <div>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FECHA DE FACTURACIÓN</label>
-                  <input type="date" required value={fechaForm} onChange={e => setFechaForm(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
+                  <label className="fpd-x143">FECHA DE FACTURACIÓN</label>
+                  <input className="fpd-x163" type="date" required value={fechaForm} onChange={e => setFechaForm(e.target.value)} />
                 </div>
                 <div>
-                  <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>REFERENCIA (Opcional)</label>
-                  <input type="text" placeholder="Referencia interna..." value={facturaCcpForm} onChange={e => setFacturaCcpForm(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '4px' }} />
+                  <label className="fpd-x143">REFERENCIA (Opcional)</label>
+                  <input className="fpd-x163" type="text" placeholder="Referencia interna..." value={facturaCcpForm} onChange={e => setFacturaCcpForm(e.target.value)} />
                 </div>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '20px' }}>
-                <button type="button" onClick={() => setModalAbierto(false)} disabled={guardando} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : 'Confirmar Factura'}</button>
+              <div className="fpd-x164">
+                <button className="fpd-x150" type="button" onClick={() => setModalAbierto(false)} disabled={guardando}>Cancelar</button>
+                <button className="fpd-x165" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Confirmar Factura'}</button>
               </div>
             </form>
           </div>
@@ -3497,14 +3484,14 @@ export const FacturacionProveedoresDashboard = () => {
       )}
 
       {facturaClienteViendo && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1850, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setFacturaClienteViendo(null)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '460px', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 22px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Factura Roelca (Cliente)</h3>
-              <button onClick={() => setFacturaClienteViendo(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1 }}>✕</button>
+        <div className="modal-overlay fpd-x166" onClick={() => setFacturaClienteViendo(null)}>
+          <div className="fpd-x167" onClick={(e) => e.stopPropagation()}>
+            <div className="fpd-x168">
+              <h3 className="fpd-x169">Factura Roelca (Cliente)</h3>
+              <button className="fpd-x170" onClick={() => setFacturaClienteViendo(null)}>✕</button>
             </div>
-            <div style={{ padding: '22px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ backgroundColor: 'rgba(63,185,80,0.1)', border: '1px solid rgba(63,185,80,0.4)', borderRadius: '8px', padding: '12px 14px', color: '#3fb950', fontSize: '0.85rem' }}>
+            <div className="fpd-x171">
+              <div className="fpd-x172">
                 Esta operación <strong>ya fue facturada al cliente</strong> en <strong>Facturación de Clientes</strong>.
               </div>
               {[
@@ -3516,33 +3503,33 @@ export const FacturacionProveedoresDashboard = () => {
                 ['Moneda', facturaClienteViendo.moneda || '-'],
                 ['Total facturado', formatoMoneda(facturaClienteViendo.total)],
               ].map(([label, val]: any, i: number) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', borderBottom: '1px solid #21262d', paddingBottom: '8px' }}>
-                  <span style={{ color: '#8b949e', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{label}</span>
-                  <span style={{ color: '#f0f6fc', fontSize: '0.92rem', fontWeight: 600, textAlign: 'right' }}>{val}</span>
+                <div className="fpd-x173" key={i}>
+                  <span className="fpd-x174">{label}</span>
+                  <span className="fpd-x175">{val}</span>
                 </div>
               ))}
-              <div style={{ color: '#6e7681', fontSize: '0.72rem' }}>Ref. factura (id): {facturaClienteViendo.facturaId}</div>
+              <div className="fpd-x48">Ref. factura (id): {facturaClienteViendo.facturaId}</div>
             </div>
-            <div style={{ padding: '14px 22px', borderTop: '1px solid #30363d', textAlign: 'right' }}>
-              <button onClick={() => setFacturaClienteViendo(null)} style={{ padding: '9px 22px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}>Cerrar</button>
+            <div className="fpd-x176">
+              <button className="fpd-x177" onClick={() => setFacturaClienteViendo(null)}>Cerrar</button>
             </div>
           </div>
         </div>
       )}
 
       {facturaViendo && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>Ficha de Factura</h2>
-              <button onClick={() => setFacturaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay fpd-x178">
+          <div className="fpd-x179">
+            <div className="fpd-x180">
+              <h2 className="fpd-x181">Ficha de Factura</h2>
+              <button className="fpd-x41" onClick={() => setFacturaViendo(null)}>✕</button>
             </div>
-            <div style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', marginBottom: '20px', flexWrap: 'wrap' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Status de la factura</span>
+            <div className="fpd-x182">
+              <div className="fpd-x183">
+                <span className="fpd-x184">Status de la factura</span>
                 <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold', color: colorStatusFactura(facturaViendo.statusFactura), border: `1px solid ${colorStatusFactura(facturaViendo.statusFactura)}`, backgroundColor: `${colorStatusFactura(facturaViendo.statusFactura)}1a`, whiteSpace: 'nowrap' }}>{facturaViendo.statusFactura || 'Facturado'}</span>
-                <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>Cambiar a:</span>
+                <div className="fpd-x185">
+                  <span className="fpd-x129">Cambiar a:</span>
                   <select value={facturaViendo.statusFactura || 'Facturado'} onChange={(e) => handleCambiarStatusFactura(facturaViendo, e.target.value)}
                     style={{ backgroundColor: '#0d1117', border: `1px solid ${colorStatusFactura(facturaViendo.statusFactura)}`, color: colorStatusFactura(facturaViendo.statusFactura), borderRadius: '6px', padding: '6px 10px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' }}>
                     {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -3550,63 +3537,61 @@ export const FacturacionProveedoresDashboard = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-                <div style={{ gridColumn: 'span 3', display: 'flex', justifyContent: 'space-between', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', alignItems: 'center' }}>
+              <div className="fpd-x186">
+                <div className="fpd-x187">
                   <div>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Factura Prov.</span>
-                    <span style={{ color: '#D84315', fontSize: '1.4rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{facturaViendo.invoice}</span>
+                    <span className="fpd-x188">Factura Prov.</span>
+                    <span className="fpd-x189">{facturaViendo.invoice}</span>
                   </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Moneda</span>
-                    <span style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>{monedaFacturaMostrar(facturaViendo)}</span>
+                  <div className="fpd-x190">
+                    <span className="fpd-x188">Moneda</span>
+                    <span className="fpd-x157">{monedaFacturaMostrar(facturaViendo)}</span>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Fecha de Facturación</span>
-                    <span style={{ color: '#c9d1d9', fontSize: '1.1rem', fontWeight: 'bold' }}>{formatearFechaSpanish(facturaViendo.fecha)}</span>
+                  <div className="fpd-x158">
+                    <span className="fpd-x188">Fecha de Facturación</span>
+                    <span className="fpd-x191">{formatearFechaSpanish(facturaViendo.fecha)}</span>
                   </div>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Proveedor Facturado</span>
-                  <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{facturaViendo.proveedorNombre || getNombreEmpresa(facturaViendo.proveedorId) || '-'}</span>
+                  <span className="fpd-x188">Proveedor Facturado</span>
+                  <span className="fpd-x76">{facturaViendo.proveedorNombre || getNombreEmpresa(facturaViendo.proveedorId) || '-'}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Referencia</span>
-                  <span style={{ color: '#c9d1d9', fontSize: '1rem' }}>{facturaViendo.facturaCcp || '-'}</span>
+                  <span className="fpd-x188">Referencia</span>
+                  <span className="fpd-x192">{facturaViendo.facturaCcp || '-'}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Facturado</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>{formatoMoneda(facturaViendo.subtotalFactura)}</span>
+                  <span className="fpd-x188">Total Facturado</span>
+                  <span className="fpd-x193">{formatoMoneda(facturaViendo.subtotalFactura)}</span>
                 </div>
 
-                <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
+                <div className="fpd-x194"><hr className="fpd-x195" /></div>
 
-                <div style={{ gridColumn: 'span 3', marginTop: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                    <span style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>
+                <div className="fpd-x196">
+                  <div className="fpd-x197">
+                    <span className="fpd-x184">
                       Referencias / Operaciones Facturadas ({facturaViendo.operacionesGuardadas?.length || 0}) — haz clic para ver el detalle
                     </span>
-                    <button
+                    <button className="fpd-x198"
                       onClick={() => { setAgregarRefFactura(facturaViendo); setBusquedaRefPendiente(''); if (operacionesGlobales.length === 0) descargarOpsCompletadas(); }}
-                      title="Agregar una operación pendiente (sin facturar) a esta factura"
-                      style={{ backgroundColor: 'transparent', border: '1px solid #10b981', color: '#10b981', borderRadius: '6px', padding: '7px 14px', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                      title="Agregar una operación pendiente (sin facturar) a esta factura">
                       ＋ Agregar referencia
                     </button>
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                  <div className="fpd-x199">
                     {facturaViendo.operacionesGuardadas?.map((op: any) => (
-                      <button key={op.id} onClick={() => verDetalleOperacion(op.id)} title="Ver detalle de la operación"
-                        style={{ backgroundColor: '#21262d', border: '1px solid #58a6ff', padding: '8px 14px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '4px', cursor: 'pointer', textAlign: 'left', transition: 'all 0.15s' }}
+                      <button className="fpd-x200" key={op.id} onClick={() => verDetalleOperacion(op.id)} title="Ver detalle de la operación"
                         onMouseEnter={(e: any) => { e.currentTarget.style.backgroundColor = '#1f2d44'; e.currentTarget.style.borderColor = '#79b8ff'; }}
                         onMouseLeave={(e: any) => { e.currentTarget.style.backgroundColor = '#21262d'; e.currentTarget.style.borderColor = '#58a6ff'; }}>
-                        <span style={{ color: '#58a6ff', fontSize: '0.9rem', fontFamily: 'monospace', fontWeight: 'bold' }}>{refDeOp(op)}</span>
-                        <span style={{ color: '#3fb950', fontSize: '0.85rem' }}>{formatoMoneda(op.monto)}</span>
+                        <span className="fpd-x201">{refDeOp(op)}</span>
+                        <span className="fpd-x202">{formatoMoneda(op.monto)}</span>
                       </button>
-                    )) || <span style={{ color: '#8b949e' }}>Sin detalle de operaciones.</span>}
+                    )) || <span className="fpd-x10">Sin detalle de operaciones.</span>}
                   </div>
                 </div>
               </div>
             </div>
-            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
+            <div className="fpd-x203">
               <button onClick={() => abrirRate(facturaViendo)} disabled={cargandoRate}
                 title="Generar el Rate de Proveedor en PDF (relación de referencias de esta factura)"
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#10b981', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRate ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRate ? 0.7 : 1, marginRight: '8px' }}>
@@ -3617,56 +3602,56 @@ export const FacturacionProveedoresDashboard = () => {
                 style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', padding: '8px 16px', cursor: cargandoRemision ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: cargandoRemision ? 0.7 : 1, marginRight: '8px' }}>
                 🧾 {cargandoRemision ? 'Preparando...' : 'Remisión'}
               </button>
-              <button onClick={() => setFacturaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
+              <button onClick={() => setFacturaViendo(null)} className="btn btn-outline fpd-x204">Cerrar Ficha</button>
             </div>
           </div>
         </div>
       )}
 
       {modalDiagnostico && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1900, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setModalDiagnostico(false)}>
-          <div style={{ width: '720px', maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: '#f0f6fc', fontSize: '1.15rem', fontWeight: 'bold' }}>🩺 Verificación de Facturación (Proveedores)</span>
-              <button onClick={() => setModalDiagnostico(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', fontSize: '1.4rem', cursor: 'pointer' }}>×</button>
+        <div className="modal-overlay fpd-x205" onClick={() => setModalDiagnostico(false)}>
+          <div className="fpd-x206" onClick={(e) => e.stopPropagation()}>
+            <div className="fpd-x180">
+              <span className="fpd-x207">🩺 Verificación de Facturación (Proveedores)</span>
+              <button className="fpd-x208" onClick={() => setModalDiagnostico(false)}>×</button>
             </div>
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+            <div className="fpd-x209">
               {cargandoFacturas && (
-                <div style={{ color: '#f59e0b', fontSize: '0.85rem' }}>Cargando facturas… los números pueden cambiar al terminar.</div>
+                <div className="fpd-x210">Cargando facturas… los números pueden cambiar al terminar.</div>
               )}
               <div>
-                <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Resumen global (facturas cargadas)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <div className="fpd-x211">Resumen global (facturas cargadas)</div>
+                <div className="fpd-x212">
                   {[
                     { lbl: 'Facturas', val: diagnostico.totalFacturas, col: '#58a6ff' },
                     { lbl: 'Ops facturadas (únicas)', val: diagnostico.opsFacturadasUnicas, col: '#3fb950' },
                     { lbl: 'Invoices duplicados', val: diagnostico.invoicesDuplicados, col: diagnostico.invoicesDuplicados > 0 ? '#f85149' : '#3fb950' },
                   ].map((c, i) => (
-                    <div key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px' }}>
-                      <div style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>{c.lbl}</div>
+                    <div className="fpd-x213" key={i}>
+                      <div className="fpd-x214">{c.lbl}</div>
                       <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
                     </div>
                   ))}
                 </div>
               </div>
               <div>
-                <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Operaciones cargadas (pestaña “Asignar Operaciones”)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+                <div className="fpd-x211">Operaciones cargadas (pestaña “Asignar Operaciones”)</div>
+                <div className="fpd-x212">
                   {[
                     { lbl: (fechaDesdeOps || fechaHastaOps) ? 'Completadas en rango' : 'Completadas (todas)', val: diagnostico.rangoTotal, col: '#c9d1d9' },
                     { lbl: 'Ya facturadas', val: diagnostico.rangoFacturadas, col: '#3fb950' },
                     { lbl: 'Por facturar', val: diagnostico.rangoPorFacturar, col: '#f59e0b' },
                   ].map((c, i) => (
-                    <div key={i} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px' }}>
-                      <div style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase' }}>{c.lbl}</div>
+                    <div className="fpd-x213" key={i}>
+                      <div className="fpd-x214">{c.lbl}</div>
                       <div style={{ color: c.col, fontSize: '1.5rem', fontWeight: 'bold' }}>{c.val}</div>
                     </div>
                   ))}
                 </div>
               </div>
               <div>
-                <div style={{ color: '#8b949e', fontSize: '0.78rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>Posibles pendientes a revisar</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.88rem' }}>
+                <div className="fpd-x211">Posibles pendientes a revisar</div>
+                <div className="fpd-x215">
                   {[
                     { ok: diagnostico.huerfanas === 0, txt: diagnostico.huerfanas === 0 ? 'No hay operaciones marcadas como facturadas sin factura asociada.' : `${diagnostico.huerfanas} operación(es) marcadas como facturadas pero sin factura que las referencie.` },
                     { ok: diagnostico.invoicesDuplicados === 0, txt: diagnostico.invoicesDuplicados === 0 ? 'No hay invoices duplicados (mismo # y proveedor).' : `${diagnostico.invoicesDuplicados} invoice(s) aparecen duplicados (mismo # y proveedor).` },
@@ -3676,51 +3661,50 @@ export const FacturacionProveedoresDashboard = () => {
                     { ok: !diagnostico.topeFacturas, txt: diagnostico.topeFacturas ? `Se alcanzó el tope de ${LIMITE_FACTURAS_TODAS} facturas cargadas: podría faltar información.` : `Se cargaron todas las facturas (sin alcanzar el tope de ${LIMITE_FACTURAS_TODAS}).` },
                   ].map((r, i) => (
                     <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', color: r.ok ? '#3fb950' : (r.warn ? '#f59e0b' : '#f85149') }}>
-                      <span style={{ flexShrink: 0 }}>{r.ok ? '✓' : (r.warn ? '⚠' : '✕')}</span>
-                      <span style={{ color: '#c9d1d9' }}>{r.txt}</span>
+                      <span className="fpd-x216">{r.ok ? '✓' : (r.warn ? '⚠' : '✕')}</span>
+                      <span className="fpd-x8">{r.txt}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              <div style={{ backgroundColor: 'rgba(88,166,255,0.06)', border: '1px solid rgba(88,166,255,0.3)', borderRadius: '8px', padding: '12px 14px', color: '#8b949e', fontSize: '0.8rem' }}>
+              <div className="fpd-x217">
                 Nota: el total en $0 y la fecha vacía en facturas importadas vienen del sistema anterior. La moneda se completa con la del proveedor cuando la factura no la trae. El # de referencia (TR) y el # de remolque se resuelven al ver cada página del historial.
               </div>
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-              <button onClick={() => { try { sessionStorage.removeItem(SS_FACTURAS); } catch {} ; setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
+            <div className="fpd-x218">
+              <button onClick={() => { try { almacenSesion.removeItem(SS_FACTURAS); } catch {} ; setFacturasGlobales([]); setOpInfoMap({}); setModalDiagnostico(false); }}
                 style={{ ...btnDirStyle }} title="Volver a leer todas las facturas desde la base de datos">↻ Recargar facturas</button>
-              <button onClick={() => setModalDiagnostico(false)} style={{ padding: '8px 24px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
+              <button className="fpd-x219" onClick={() => setModalDiagnostico(false)}>Cerrar</button>
             </div>
           </div>
         </div>
       )}
 
       {gestionOp && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1750, padding: '20px', backdropFilter: 'blur(6px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '520px', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '18px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.15rem' }}>Gestionar operación facturada</h2>
-              <button onClick={() => setGestionOp(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay fpd-x220">
+          <div className="fpd-x138">
+            <div className="fpd-x221">
+              <h2 className="fpd-x222">Gestionar operación facturada</h2>
+              <button className="fpd-x41" onClick={() => setGestionOp(null)}>✕</button>
             </div>
-            <div style={{ backgroundColor: '#010409', border: '1px dashed #30363d', borderRadius: '8px', padding: '12px 14px', marginBottom: '18px', fontSize: '0.85rem', color: '#8b949e' }}>
-              Operación: <b style={{ color: '#58a6ff', fontFamily: 'monospace' }}>{gestionOp.numReferencia || gestionOp.referencia || gestionOp.ref || String(gestionOp.id).substring(0, 6)}</b><br />
-              Factura actual: <b style={{ color: '#D84315', fontFamily: 'monospace' }}>{invoiceDeOp(gestionOp) || '—'}</b>
+            <div className="fpd-x223">
+              Operación: <b className="fpd-x224">{gestionOp.numReferencia || gestionOp.referencia || gestionOp.ref || String(gestionOp.id).substring(0, 6)}</b><br />
+              Factura actual: <b className="fpd-x225">{invoiceDeOp(gestionOp) || '—'}</b>
             </div>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '6px' }}>NUEVO NÚMERO DE FACTURA</label>
-              <input type="text" value={gestionInvoice} onChange={e => setGestionInvoice(e.target.value)} placeholder="Ej. A-1234"
-                style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.05rem', boxSizing: 'border-box' }} />
-              <p style={{ color: '#6e7681', fontSize: '0.75rem', marginTop: '8px' }}>
+            <div className="fpd-x226">
+              <label className="fpd-x227">NUEVO NÚMERO DE FACTURA</label>
+              <input className="fpd-x147" type="text" value={gestionInvoice} onChange={e => setGestionInvoice(e.target.value)} placeholder="Ej. A-1234" />
+              <p className="fpd-x228">
                 La operación se moverá a la factura con ese número (del mismo proveedor). Si no existe, se crea; si la factura original queda sin operaciones, se elimina. El Historial se actualiza solo.
               </p>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '16px', flexWrap: 'wrap' }}>
+            <div className="fpd-x229">
               <button onClick={() => quitarOpDeFactura(gestionOp)} disabled={guardandoGestionOp}
                 style={{ padding: '8px 18px', backgroundColor: 'transparent', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: guardandoGestionOp ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoGestionOp ? 0.7 : 1 }}>
                 ✕ Quitar de la factura
               </button>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => setGestionOp(null)} disabled={guardandoGestionOp} style={{ padding: '8px 18px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <div className="fpd-x109">
+                <button className="fpd-x230" onClick={() => setGestionOp(null)} disabled={guardandoGestionOp}>Cancelar</button>
                 <button onClick={() => editarInvoiceDeOp(gestionOp, gestionInvoice)} disabled={guardandoGestionOp || !gestionInvoice.trim()}
                   style={{ padding: '8px 18px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: (guardandoGestionOp || !gestionInvoice.trim()) ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: (guardandoGestionOp || !gestionInvoice.trim()) ? 0.7 : 1 }}>
                   {guardandoGestionOp ? 'Guardando...' : 'Cambiar número'}
@@ -3732,44 +3716,43 @@ export const FacturacionProveedoresDashboard = () => {
       )}
 
       {agregarRefFactura && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1750, padding: '20px', backdropFilter: 'blur(6px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '640px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+        <div className="modal-overlay fpd-x220">
+          <div className="fpd-x231">
+            <div className="fpd-x232">
               <div>
-                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.15rem' }}>Agregar referencia a la factura</h2>
-                <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
-                  Factura <b style={{ color: '#D84315', fontFamily: 'monospace' }}>{agregarRefFactura.invoice}</b> · {agregarRefFactura.proveedorNombre || getNombreEmpresa(agregarRefFactura.proveedorId) || '-'}
+                <h2 className="fpd-x222">Agregar referencia a la factura</h2>
+                <span className="fpd-x3">
+                  Factura <b className="fpd-x225">{agregarRefFactura.invoice}</b> · {agregarRefFactura.proveedorNombre || getNombreEmpresa(agregarRefFactura.proveedorId) || '-'}
                 </span>
               </div>
-              <button onClick={() => setAgregarRefFactura(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="fpd-x41" onClick={() => setAgregarRefFactura(null)}>✕</button>
             </div>
-            <div style={{ position: 'relative', marginBottom: '12px' }}>
-              <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" autoFocus placeholder="Buscar operación pendiente por referencia o # remolque..." value={busquedaRefPendiente} onChange={e => setBusquedaRefPendiente(e.target.value)}
-                style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="fpd-x233">
+              <svg className="fpd-x20" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input className="fpd-x21" type="text" autoFocus placeholder="Buscar operación pendiente por referencia o # remolque..." value={busquedaRefPendiente} onChange={e => setBusquedaRefPendiente(e.target.value)} />
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #30363d', borderRadius: '8px', backgroundColor: '#010409' }}>
+            <div className="fpd-x234">
               {cargandoOperaciones ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones pendientes...</div>
+                <div className="fpd-x235">Cargando operaciones pendientes...</div>
               ) : operacionesGlobales.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#8b949e' }}>
+                <div className="fpd-x236">
                   No hay operaciones cargadas.
-                  <div style={{ marginTop: '12px' }}>
+                  <div className="fpd-x237">
                     <button onClick={() => descargarOpsCompletadas(true)} style={{ ...btnDirStyle, color: '#58a6ff', margin: '0 auto' }}>↻ Cargar operaciones</button>
                   </div>
                 </div>
               ) : candidatosPendientes.length === 0 ? (
-                <div style={{ padding: '24px', textAlign: 'center', color: '#8b949e' }}>
+                <div className="fpd-x236">
                   No se encontraron operaciones pendientes{agregarRefFactura.proveedorId ? ' de este proveedor' : ''}{busquedaRefPendiente.trim() ? ` para "${busquedaRefPendiente}"` : ''}.
                 </div>
               ) : (
                 candidatosPendientes.map((op: any) => {
                   const mm = obtenerMontoOperacion(op);
                   return (
-                    <div key={op.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', padding: '10px 14px', borderBottom: '1px solid #21262d' }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', fontSize: '0.9rem' }}>{op.numReferencia || op.referencia || op.ref || String(op.id).substring(0, 6)}</div>
-                        <div style={{ color: '#8b949e', fontSize: '0.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <div className="fpd-x238" key={op.id}>
+                      <div className="fpd-x239">
+                        <div className="fpd-x240">{op.numReferencia || op.referencia || op.ref || String(op.id).substring(0, 6)}</div>
+                        <div className="fpd-x241">
                           {formatearFechaSpanish(op.fechaServicio || op.createdAt)} · {txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)} · {formatoMoneda(mm.conv)}
                         </div>
                       </div>
@@ -3782,71 +3765,66 @@ export const FacturacionProveedoresDashboard = () => {
                 })
               )}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #30363d', paddingTop: '14px', marginTop: '14px' }}>
-              <span style={{ color: '#6e7681', fontSize: '0.78rem' }}>Solo se muestran operaciones <b style={{ color: '#8b949e' }}>sin facturar</b>{agregarRefFactura.proveedorId ? ' del mismo proveedor' : ''} (máx. 50).</span>
-              <button onClick={() => setAgregarRefFactura(null)} style={{ padding: '8px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Listo</button>
+            <div className="fpd-x242">
+              <span className="fpd-x243">Solo se muestran operaciones <b className="fpd-x10">sin facturar</b>{agregarRefFactura.proveedorId ? ' del mismo proveedor' : ''} (máx. 50).</span>
+              <button className="fpd-x244" onClick={() => setAgregarRefFactura(null)}>Listo</button>
             </div>
           </div>
         </div>
       )}
 
       {facturaEditando && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1600, padding: '20px', backdropFilter: 'blur(6px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '16px' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Editar Factura</h2>
-              <button onClick={() => setFacturaEditando(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay fpd-x245">
+          <div className="fpd-x246">
+            <div className="fpd-x139">
+              <h2 className="fpd-x140">Editar Factura</h2>
+              <button className="fpd-x41" onClick={() => setFacturaEditando(null)}>✕</button>
             </div>
 
-            <div style={{ backgroundColor: '#010409', border: '1px dashed #30363d', borderRadius: '8px', padding: '12px 14px', marginBottom: '18px', fontSize: '0.82rem', color: '#8b949e' }}>
-              Proveedor: <b style={{ color: '#c9d1d9' }}>{facturaEditando.proveedorNombre || getNombreEmpresa(facturaEditando.proveedorId) || '-'}</b>
+            <div className="fpd-x247">
+              Proveedor: <b className="fpd-x8">{facturaEditando.proveedorNombre || getNombreEmpresa(facturaEditando.proveedorId) || '-'}</b>
               {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
-                <span> · <b style={{ color: '#f59e0b' }}>{facturaEditando.__groupIds.length} documentos agrupados</b> (el total se asigna al primero)</span>
+                <span> · <b className="fpd-x248">{facturaEditando.__groupIds.length} documentos agrupados</b> (el total se asigna al primero)</span>
               )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-              <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>STATUS DE LA FACTURA</label>
+            <div className="fpd-x160">
+              <div className="fpd-x161">
+                <label className="fpd-x143">STATUS DE LA FACTURA</label>
                 <select value={editStatus} onChange={e => setEditStatus(e.target.value)}
                   style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: colorStatusFactura(editStatus), border: `1px solid ${colorStatusFactura(editStatus)}`, borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }}>
                   {STATUS_FACTURA_OPCIONES.map(s => <option key={s} value={s}>{s}</option>)}
                   {!STATUS_FACTURA_OPCIONES.includes(editStatus) && editStatus && <option value={editStatus}>{editStatus}</option>}
                 </select>
               </div>
-              <div style={{ gridColumn: 'span 2' }}>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>NÚMERO DE FACTURA</label>
-                <input type="text" value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Ej. A-1234"
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#D84315', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.05rem', boxSizing: 'border-box' }} />
+              <div className="fpd-x161">
+                <label className="fpd-x143">NÚMERO DE FACTURA</label>
+                <input className="fpd-x147" type="text" value={editInvoice} onChange={e => setEditInvoice(e.target.value)} placeholder="Ej. A-1234" />
               </div>
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>FECHA DE FACTURACIÓN</label>
-                <input type="date" value={editFecha} onChange={e => setEditFecha(e.target.value)}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box', colorScheme: 'dark' }} />
+                <label className="fpd-x143">FECHA DE FACTURACIÓN</label>
+                <input className="fpd-x249" type="date" value={editFecha} onChange={e => setEditFecha(e.target.value)} />
               </div>
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>MONEDA</label>
-                <select value={editMoneda} onChange={e => setEditMoneda(e.target.value)}
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#10b981', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }}>
+                <label className="fpd-x143">MONEDA</label>
+                <select className="fpd-x250" value={editMoneda} onChange={e => setEditMoneda(e.target.value)}>
                   <option value="">(Sin definir / del proveedor)</option>
                   <option value="USD">USD</option>
                   <option value="MXN">MXN</option>
                 </select>
               </div>
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>TOTAL FACTURADO</label>
-                <input type="number" step="any" value={editTotal} onChange={e => setEditTotal(e.target.value)} placeholder="0.00"
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#3fb950', border: '1px solid #30363d', borderRadius: '6px', fontWeight: 'bold', boxSizing: 'border-box' }} />
+                <label className="fpd-x143">TOTAL FACTURADO</label>
+                <input className="fpd-x251" type="number" step="any" value={editTotal} onChange={e => setEditTotal(e.target.value)} placeholder="0.00" />
               </div>
               <div>
-                <label style={{ color: '#8b949e', fontSize: '0.75rem', display: 'block', marginBottom: '4px' }}>REFERENCIA (Opcional)</label>
-                <input type="text" value={editCcp} onChange={e => setEditCcp(e.target.value)} placeholder="Referencia interna..."
-                  style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#fff', border: '1px solid #30363d', borderRadius: '6px', boxSizing: 'border-box' }} />
+                <label className="fpd-x143">REFERENCIA (Opcional)</label>
+                <input className="fpd-x148" type="text" value={editCcp} onChange={e => setEditCcp(e.target.value)} placeholder="Referencia interna..." />
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
-              <button onClick={() => setFacturaEditando(null)} disabled={guardandoEdit} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+            <div className="fpd-x252">
+              <button className="fpd-x150" onClick={() => setFacturaEditando(null)} disabled={guardandoEdit}>Cancelar</button>
               <button onClick={handleGuardarEdicionFactura} disabled={guardandoEdit} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoEdit ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoEdit ? 0.7 : 1 }}>{guardandoEdit ? 'Guardando...' : 'Guardar cambios'}</button>
             </div>
           </div>
@@ -3854,28 +3832,28 @@ export const FacturacionProveedoresDashboard = () => {
       )}
 
       {(operacionDetalle || cargandoDetalle) && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1800, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
-          <div className="form-card detail-card" style={{ width: '1100px', maxWidth: '100%', maxHeight: '94vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-overlay fpd-x253">
+          <div className="form-card detail-card fpd-x254">
             {cargandoDetalle || !operacionDetalle ? (
-              <div style={{ padding: '60px', textAlign: 'center', color: '#8b949e' }}>Cargando detalle de la operación...</div>
+              <div className="fpd-x255">Cargando detalle de la operación...</div>
             ) : (
               <>
-                <div className="form-header" style={{ padding: '16px 32px 0 32px', borderBottom: 'none', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="form-header fpd-x256">
+                  <div className="fpd-x257">
                     <div>
-                      <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.5px' }}>Detalle de Operación</h2>
-                      <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>{det.ref || det.id?.substring(0, 6)}</span>
-                        <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>{txt(det.statusNombre, det.status)}</span>
+                      <h2 className="fpd-x258">Detalle de Operación</h2>
+                      <div className="fpd-x259">
+                        <span className="fpd-x260">{det.ref || det.id?.substring(0, 6)}</span>
+                        <span className="fpd-x261">{txt(det.statusNombre, det.status)}</span>
                       </div>
                     </div>
-                    <button onClick={() => setOperacionDetalle(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%' }} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
+                    <button className="fpd-x262" onClick={() => setOperacionDetalle(null)} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
                       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                     </button>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '12px 32px 0 32px', overflowX: 'auto', flexShrink: 0 }}>
+                <div className="fpd-x263">
                   {tabsDetalle.map(tab => (
                     <button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)}
                       style={{ padding: '12px 16px', background: 'none', border: 'none', borderBottom: pestañaDetalleActiva === tab.id ? '2px solid #D84315' : '2px solid transparent', color: pestañaDetalleActiva === tab.id ? '#f0f6fc' : '#8b949e', cursor: 'pointer', fontWeight: pestañaDetalleActiva === tab.id ? 600 : 'normal', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
@@ -3884,140 +3862,140 @@ export const FacturacionProveedoresDashboard = () => {
                   ))}
                 </div>
 
-                <div className="detail-content" style={{ padding: '18px 32px', overflowY: 'auto', flex: 1 }}>
+                <div className="detail-content fpd-x264">
                   {pestañaDetalleActiva === 'general' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Operación</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.tipoOperacionNombre, det.tipoOperacionId)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Servicio / Status</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.fechaServicio)} <span style={{ color: '#30363d', margin: '0 8px' }}>|</span> <span style={{ color: '#10b981', fontWeight: 'bold' }}>{txt(det.statusNombre, det.status)}</span></span></div>
+                    <div className="fpd-x265">
+                      <div><span className="fpd-x266">Tipo de Operación</span><span className="fpd-x267">{txt(det.tipoOperacionNombre, det.tipoOperacionId)}</span></div>
+                      <div><span className="fpd-x266">Fecha de Servicio / Status</span><span className="fpd-x267">{mostrarDato(det.fechaServicio)} <span className="fpd-x268">|</span> <span className="fpd-x269">{txt(det.statusNombre, det.status)}</span></span></div>
                       {evalIsFletes ? (
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Cita</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatearFechaHora(det.fechaCita)}</span></div>
+                        <div><span className="fpd-x266">Fecha de Cita</span><span className="fpd-x267">{formatearFechaHora(det.fechaCita)}</span></div>
                       ) : (<div></div>)}
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Paga)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.clienteNombre, det.nombreCliente, det.clientePaga)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio (Tarifa)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.convenioNombre, det.convenio)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.remolqueNombre, det.remolquePlaca, det.numeroRemolque)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Ref Cliente</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.refCliente)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Origen</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.origenNombre, det.origen)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Destino</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.destinoNombre, det.destino)}</span></div>
-                      <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones Ejecutivo</span><div style={{ color: '#c9d1d9', fontWeight: 500, backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>{mostrarDato(det.observacionesEjecutivo)}</div></div>
+                      <div className="fpd-x194"><hr className="fpd-x270" /></div>
+                      <div><span className="fpd-x271">Cliente (Paga)</span><span className="fpd-x267">{txt(det.clienteNombre, det.nombreCliente, det.clientePaga)}</span></div>
+                      <div><span className="fpd-x271">Convenio (Tarifa)</span><span className="fpd-x267">{txt(det.convenioNombre, det.convenio)}</span></div>
+                      <div><span className="fpd-x271"># de Remolque</span><span className="fpd-x267">{txt(det.remolqueNombre, det.remolquePlaca, det.numeroRemolque)}</span></div>
+                      <div><span className="fpd-x271">Ref Cliente</span><span className="fpd-x267">{mostrarDato(det.refCliente)}</span></div>
+                      <div><span className="fpd-x272">Origen</span><span className="fpd-x267">{txt(det.origenNombre, det.origen)}</span></div>
+                      <div><span className="fpd-x272">Destino</span><span className="fpd-x267">{txt(det.destinoNombre, det.destino)}</span></div>
+                      <div className="fpd-x273"><span className="fpd-x271">Observaciones Ejecutivo</span><div className="fpd-x274">{mostrarDato(det.observacionesEjecutivo)}</div></div>
                     </div>
                   )}
 
                   {pestañaDetalleActiva === 'pedimento' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                      <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Mercancía)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.clienteMercanciaNombre, det.clienteMercancia)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descripción de la Mercancía</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.descripcionMercancia)}</span></div>
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad (Enteros)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.cantidad)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Embalaje</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.embalajeNombre, det.embalaje)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Peso (Kg)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.pesoKg)}</span></div>
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># DODA</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.numDoda)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Emisión (DODA)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.fechaEmisionDoda)}</span></div>
+                    <div className="fpd-x265">
+                      <div className="fpd-x161"><span className="fpd-x271">Cliente (Mercancía)</span><span className="fpd-x267">{txt(det.clienteMercanciaNombre, det.clienteMercancia)}</span></div>
+                      <div><span className="fpd-x271">Descripción de la Mercancía</span><span className="fpd-x267">{mostrarDato(det.descripcionMercancia)}</span></div>
+                      <div className="fpd-x194"><hr className="fpd-x270" /></div>
+                      <div><span className="fpd-x271">Cantidad (Enteros)</span><span className="fpd-x267">{mostrarDato(det.cantidad)}</span></div>
+                      <div><span className="fpd-x271">Embalaje</span><span className="fpd-x267">{txt(det.embalajeNombre, det.embalaje)}</span></div>
+                      <div><span className="fpd-x271">Peso (Kg)</span><span className="fpd-x267">{mostrarDato(det.pesoKg)}</span></div>
+                      <div className="fpd-x194"><hr className="fpd-x270" /></div>
+                      <div><span className="fpd-x271"># DODA</span><span className="fpd-x267">{mostrarDato(det.numDoda)}</span></div>
+                      <div><span className="fpd-x271">Fecha de Emisión (DODA)</span><span className="fpd-x267">{mostrarDato(det.fechaEmisionDoda)}</span></div>
                     </div>
                   )}
 
                   {pestañaDetalleActiva === 'manifiestos' && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Entry's</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.numeroEntrys)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad de Entry's</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.cantEntrys)}</span></div>
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># Manifiesto</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.numManifiesto)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Servicios</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.provServiciosNombre, det.provServicios)}</span></div>
-                      <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Costo Manifiesto ($)</span><span style={{ color: '#c9d1d9', fontWeight: 'bold', fontSize: '1.05rem' }}>{formatoMoneda(det.montoManifiesto)}</span></div>
+                    <div className="fpd-x265">
+                      <div><span className="fpd-x271"># de Entry's</span><span className="fpd-x267">{mostrarDato(det.numeroEntrys)}</span></div>
+                      <div><span className="fpd-x271">Cantidad de Entry's</span><span className="fpd-x267">{mostrarDato(det.cantEntrys)}</span></div>
+                      <div className="fpd-x194"><hr className="fpd-x270" /></div>
+                      <div><span className="fpd-x271"># Manifiesto</span><span className="fpd-x267">{mostrarDato(det.numManifiesto)}</span></div>
+                      <div><span className="fpd-x271">Proveedor de Servicios</span><span className="fpd-x267">{txt(det.provServiciosNombre, det.provServicios)}</span></div>
+                      <div><span className="fpd-x271">Costo Manifiesto ($)</span><span className="fpd-x275">{formatoMoneda(det.montoManifiesto)}</span></div>
                     </div>
                   )}
 
                   {pestañaDetalleActiva === 'unidad' && (
                     <div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                        <div style={{ gridColumn: 'span 3' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Transporte</span><span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{txt(det.proveedorUnidadNombre, det.proveedorUnidad)}</span></div>
+                      <div className="fpd-x276">
+                        <div className="fpd-x194"><span className="fpd-x271">Proveedor de Transporte</span><span className="fpd-x277">{txt(det.proveedorUnidadNombre, det.proveedorUnidad)}</span></div>
                       </div>
-                      <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '24px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Facturado En:</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Proveedor</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.convenioProveedorNombre, det.convenioProveedor)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Moneda del Convenio (Base)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarMoneda(det.monedaConvenioProv)}</span></div>
+                      <div className="fpd-x278">
+                        <div className="fpd-x279">
+                          <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267">{det.monedaUnidadNombre || mostrarMoneda(det.facturadoEnUnidad)}</span></div>
+                          <div><span className="fpd-x271">Convenio Proveedor</span><span className="fpd-x267">{txt(det.convenioProveedorNombre, det.convenioProveedor)}</span></div>
+                          <div><span className="fpd-x271">Moneda del Convenio (Base)</span><span className="fpd-x267">{mostrarMoneda(det.monedaConvenioProv)}</span></div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d', marginBottom: '16px' }}>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Monto a Pagar (Base)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.totalAPagarProv)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Costos Adicionales</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.cargosAdicionalesProv)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Subtotal (Convenio + Costos)</span><span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.subtotalProv)}</span></div>
+                        <div className="fpd-x280">
+                          <div><span className="fpd-x271">Monto a Pagar (Base)</span><span className="fpd-x267">{formatoMoneda(det.totalAPagarProv)}</span></div>
+                          <div><span className="fpd-x271">Costos Adicionales</span><span className="fpd-x267">{formatoMoneda(det.cargosAdicionalesProv)}</span></div>
+                          <div><span className="fpd-x266">Subtotal (Convenio + Costos)</span><span className="fpd-x281">{formatoMoneda(det.subtotalProv)}</span></div>
                         </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Dólares</span><span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.dolaresProv)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Pesos</span><span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.pesosProv)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#f85149', fontWeight: 'bold', marginBottom: '4px' }}>Conversión Final (Gasto)</span><span style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.conversionProv)}</span></div>
+                        <div className="fpd-x282">
+                          <div><span className="fpd-x271">Dólares</span><span className="fpd-x283">{formatoMoneda(det.dolaresProv)}</span></div>
+                          <div><span className="fpd-x271">Pesos</span><span className="fpd-x283">{formatoMoneda(det.pesosProv)}</span></div>
+                          <div><span className="fpd-x284">Conversión Final (Gasto)</span><span className="fpd-x285">{formatoMoneda(det.conversionProv)}</span></div>
                         </div>
                       </div>
 
                       {showDetailInternalFleet && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                          <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0 0 8px 0' }}>Flota Operativa (Roelca)</h4></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Asignada</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.unidadNombre, det.unidad)}</span></div>
-                          <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operador Asignado</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{txt(det.operadorNombre, det.operador)}</span></div>
-                          <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo del Operador</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.sueldoOperador)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo Extra</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.sueldoExtra)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo Total</span><span style={{ color: '#f0f6fc', fontWeight: 'bold', backgroundColor: '#161b22', padding: '6px 10px', borderRadius: '4px', border: '1px solid #30363d', display: 'inline-block' }}>{formatoMoneda(det.sueldoTotal)}</span></div>
-                          <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Combustible</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.combustible)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Combustible Extra</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.combustibleExtra)}</span></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Total Combustible</span><span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.combustibleTotal)}</span></div>
+                        <div className="fpd-x276">
+                          <div className="fpd-x194"><h4 className="fpd-x286">Flota Operativa (Roelca)</h4></div>
+                          <div><span className="fpd-x271">Unidad Asignada</span><span className="fpd-x267">{txt(det.unidadNombre, det.unidad)}</span></div>
+                          <div className="fpd-x161"><span className="fpd-x271">Operador Asignado</span><span className="fpd-x267">{txt(det.operadorNombre, det.operador)}</span></div>
+                          <div className="fpd-x194"><hr className="fpd-x195" /></div>
+                          <div><span className="fpd-x271">Sueldo del Operador</span><span className="fpd-x267">{formatoMoneda(det.sueldoOperador)}</span></div>
+                          <div><span className="fpd-x271">Sueldo Extra</span><span className="fpd-x267">{formatoMoneda(det.sueldoExtra)}</span></div>
+                          <div><span className="fpd-x266">Sueldo Total</span><span className="fpd-x287">{formatoMoneda(det.sueldoTotal)}</span></div>
+                          <div className="fpd-x194"><hr className="fpd-x195" /></div>
+                          <div><span className="fpd-x271">Combustible</span><span className="fpd-x267">{formatoMoneda(det.combustible)}</span></div>
+                          <div><span className="fpd-x271">Combustible Extra</span><span className="fpd-x267">{formatoMoneda(det.combustibleExtra)}</span></div>
+                          <div><span className="fpd-x266">Total Combustible</span><span className="fpd-x281">{formatoMoneda(det.combustibleTotal)}</span></div>
                         </div>
                       )}
 
                       {showDetailExternalFleet && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                          <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#58a6ff', margin: '0 0 8px 0' }}>Flota Externa (Proveedor)</h4></div>
-                          <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Externa</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.unidadProveedor)}</span></div>
-                          <div style={{ gridColumn: 'span 2' }}><span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Operador Externo</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.operadorProveedor)}</span></div>
+                        <div className="fpd-x276">
+                          <div className="fpd-x194"><h4 className="fpd-x288">Flota Externa (Proveedor)</h4></div>
+                          <div><span className="fpd-x272">Unidad Externa</span><span className="fpd-x267">{mostrarDato(det.unidadProveedor)}</span></div>
+                          <div className="fpd-x161"><span className="fpd-x272">Operador Externo</span><span className="fpd-x267">{mostrarDato(det.operadorProveedor)}</span></div>
                         </div>
                       )}
 
-                      <div style={{ marginTop: '20px' }}>
-                        <div style={{ backgroundColor: '#0d1117', border: '1px solid #f85149', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-                          <div style={{ color: '#8b949e', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Total Gastos [Sueldos + Manifiesto]</div>
-                          <div style={{ color: '#f85149', fontSize: '2rem', fontWeight: 'bold' }}>{formatoMoneda(det.totalGastos)}</div>
+                      <div className="fpd-x289">
+                        <div className="fpd-x290">
+                          <div className="fpd-x291">Total Gastos [Sueldos + Manifiesto]</div>
+                          <div className="fpd-x292">{formatoMoneda(det.totalGastos)}</div>
                         </div>
                       </div>
 
-                      <div style={{ marginTop: '24px' }}>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '8px' }}>Observaciones (Unidad / Proveedor)</span>
-                        <div style={{ color: '#c9d1d9', fontWeight: 500, backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>{mostrarDato(det.observacionesUnidad)}</div>
+                      <div className="fpd-x293">
+                        <span className="fpd-x294">Observaciones (Unidad / Proveedor)</span>
+                        <div className="fpd-x295">{mostrarDato(det.observacionesUnidad)}</div>
                       </div>
                     </div>
                   )}
 
                   {pestañaDetalleActiva === 'cobrar' && (
                     <div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Facturado En:</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{det.monedaCobroNombre || mostrarMoneda(det.facturadoEnCobrar)}</span></div>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Moneda Convenio (Cliente)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarMoneda(det.monedaConvenioCliente)}</span></div>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Seleccionado (Base)</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.montoConvenioCliente)}</span></div>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cargos Adicionales</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{formatoMoneda(det.cargosAdicionales)}</span></div>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Subtotal (Convenio + Cargos)</span><span style={{ color: '#c9d1d9', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.subtotalCliente)}</span></div>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Cambio del Día</span><span style={{ color: '#c9d1d9', fontWeight: 500, fontSize: '1.05rem' }}>{mostrarDato(det.tipoCambioAprobado)}</span></div>
+                      <div className="fpd-x276">
+                        <div><span className="fpd-x271">Facturado En:</span><span className="fpd-x267">{det.monedaCobroNombre || mostrarMoneda(det.facturadoEnCobrar)}</span></div>
+                        <div><span className="fpd-x271">Moneda Convenio (Cliente)</span><span className="fpd-x267">{mostrarMoneda(det.monedaConvenioCliente)}</span></div>
+                        <div><span className="fpd-x271">Convenio Seleccionado (Base)</span><span className="fpd-x267">{formatoMoneda(det.montoConvenioCliente)}</span></div>
+                        <div><span className="fpd-x271">Cargos Adicionales</span><span className="fpd-x267">{formatoMoneda(det.cargosAdicionales)}</span></div>
+                        <div><span className="fpd-x266">Subtotal (Convenio + Cargos)</span><span className="fpd-x296">{formatoMoneda(det.subtotalCliente)}</span></div>
+                        <div><span className="fpd-x271">Tipo de Cambio del Día</span><span className="fpd-x267">{mostrarDato(det.tipoCambioAprobado)}</span></div>
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingBottom: '24px', borderBottom: '1px solid #30363d' }}>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Dólares (Cliente)</span><span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.dolaresCliente)}</span></div>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Pesos (Cliente)</span><span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.pesosCliente)}</span></div>
-                        <div><span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Conversión Final (Ingreso)</span><span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(det.conversionCliente)}</span></div>
+                      <div className="fpd-x297">
+                        <div><span className="fpd-x271">Dólares (Cliente)</span><span className="fpd-x298">{formatoMoneda(det.dolaresCliente)}</span></div>
+                        <div><span className="fpd-x271">Pesos (Cliente)</span><span className="fpd-x283">{formatoMoneda(det.pesosCliente)}</span></div>
+                        <div><span className="fpd-x266">Conversión Final (Ingreso)</span><span className="fpd-x299">{formatoMoneda(det.conversionCliente)}</span></div>
                       </div>
-                      <div style={{ marginTop: '24px', padding: '24px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '12px', textAlign: 'center' }}>
-                        <span style={{ display: 'block', fontSize: '0.9rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Utilidad Estimada de la Operación (Ingreso - Gasto)</span>
-                        <span style={{ fontSize: '2.5rem', color: '#10b981', fontWeight: 'bold' }}>{formatoMoneda(det.utilidadEstimada)}</span>
+                      <div className="fpd-x300">
+                        <span className="fpd-x301">Utilidad Estimada de la Operación (Ingreso - Gasto)</span>
+                        <span className="fpd-x302">{formatoMoneda(det.utilidadEstimada)}</span>
                       </div>
-                      <div style={{ marginTop: '24px' }}>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '8px' }}>Observaciones (Facturación / Cobro)</span>
-                        <div style={{ color: '#c9d1d9', fontWeight: 500, backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>{mostrarDato(det.observacionesCobrar)}</div>
+                      <div className="fpd-x293">
+                        <span className="fpd-x294">Observaciones (Facturación / Cobro)</span>
+                        <div className="fpd-x295">{mostrarDato(det.observacionesCobrar)}</div>
                       </div>
                     </div>
                   )}
                 </div>
 
-                <div className="form-actions" style={{ padding: '12px 32px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
-                  <button onClick={() => setOperacionDetalle(null)} className="btn btn-outline" style={{ padding: '10px 32px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Detalle</button>
+                <div className="form-actions fpd-x303">
+                  <button onClick={() => setOperacionDetalle(null)} className="btn btn-outline fpd-x304">Cerrar Detalle</button>
                 </div>
               </>
             )}
@@ -4027,31 +4005,31 @@ export const FacturacionProveedoresDashboard = () => {
 
       {/* ════════════════ MODAL ENCABEZADO (EMISOR) DE REMISIONES ════════════════ */}
       {modalEmisores && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1900, padding: '20px', backdropFilter: 'blur(6px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '760px', maxHeight: '92vh', overflowY: 'auto', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Encabezado de las Remisiones</h2>
-              <button onClick={() => setModalEmisores(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay fpd-x305">
+          <div className="fpd-x306">
+            <div className="fpd-x307">
+              <h2 className="fpd-x140">Encabezado de las Remisiones</h2>
+              <button className="fpd-x41" onClick={() => setModalEmisores(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.82rem', margin: '12px 0 20px' }}>
-              El nombre y los datos que van en la parte superior de la remisión dependen de la <b style={{ color: '#c9d1d9' }}>moneda</b> de la factura:
-              las remisiones en <b style={{ color: '#3b82f6' }}>PESOS (MXN)</b> salen a nombre de <b style={{ color: '#c9d1d9' }}>Rolando</b> y las de
-              <b style={{ color: '#10b981' }}> DÓLARES (USD)</b> a nombre de <b style={{ color: '#c9d1d9' }}>Camila</b>. Esta configuración se guarda para todos los usuarios.
+            <p className="fpd-x308">
+              El nombre y los datos que van en la parte superior de la remisión dependen de la <b className="fpd-x8">moneda</b> de la factura:
+              las remisiones en <b className="fpd-x309">PESOS (MXN)</b> salen a nombre de <b className="fpd-x8">Rolando</b> y las de
+              <b className="fpd-x310"> DÓLARES (USD)</b> a nombre de <b className="fpd-x8">Camila</b>. Esta configuración se guarda para todos los usuarios.
             </p>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+            <div className="fpd-x311">
               {/* MXN → Rolando */}
-              <div style={{ border: '1px solid #3b82f6', borderRadius: '10px', padding: '16px', backgroundColor: 'rgba(59,130,246,0.05)' }}>
-                <div style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '12px' }}>PESOS (MXN) · Rolando</div>
-                <div style={{ marginBottom: '10px' }}>
+              <div className="fpd-x312">
+                <div className="fpd-x313">PESOS (MXN) · Rolando</div>
+                <div className="fpd-x314">
                   <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
                   <input type="text" value={emisorMXN.facturaNombre} onChange={e => setEmisorMXN({ ...emisorMXN, facturaNombre: e.target.value })} style={rInputStyle} />
                 </div>
-                <div style={{ marginBottom: '10px' }}>
+                <div className="fpd-x314">
                   <label style={rLabelStyle}>DIRECCIÓN</label>
                   <input type="text" value={emisorMXN.direccion} onChange={e => setEmisorMXN({ ...emisorMXN, direccion: e.target.value })} style={rInputStyle} />
                 </div>
-                <div style={{ marginBottom: '10px' }}>
+                <div className="fpd-x314">
                   <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
                   <input type="text" value={emisorMXN.ciudadEstado} onChange={e => setEmisorMXN({ ...emisorMXN, ciudadEstado: e.target.value })} style={rInputStyle} />
                 </div>
@@ -4062,17 +4040,17 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
 
               {/* USD → Camila */}
-              <div style={{ border: '1px solid #10b981', borderRadius: '10px', padding: '16px', backgroundColor: 'rgba(16,185,129,0.05)' }}>
-                <div style={{ color: '#10b981', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '12px' }}>DÓLARES (USD) · Camila</div>
-                <div style={{ marginBottom: '10px' }}>
+              <div className="fpd-x315">
+                <div className="fpd-x316">DÓLARES (USD) · Camila</div>
+                <div className="fpd-x314">
                   <label style={rLabelStyle}>NOMBRE (aparece arriba)</label>
                   <input type="text" value={emisorUSD.facturaNombre} onChange={e => setEmisorUSD({ ...emisorUSD, facturaNombre: e.target.value })} style={rInputStyle} />
                 </div>
-                <div style={{ marginBottom: '10px' }}>
+                <div className="fpd-x314">
                   <label style={rLabelStyle}>DIRECCIÓN</label>
                   <input type="text" value={emisorUSD.direccion} onChange={e => setEmisorUSD({ ...emisorUSD, direccion: e.target.value })} style={rInputStyle} />
                 </div>
-                <div style={{ marginBottom: '10px' }}>
+                <div className="fpd-x314">
                   <label style={rLabelStyle}>CIUDAD / ESTADO / TEL.</label>
                   <input type="text" value={emisorUSD.ciudadEstado} onChange={e => setEmisorUSD({ ...emisorUSD, ciudadEstado: e.target.value })} style={rInputStyle} />
                 </div>
@@ -4083,8 +4061,8 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px', marginTop: '20px' }}>
-              <button onClick={() => setModalEmisores(false)} disabled={guardandoEmisores} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+            <div className="fpd-x149">
+              <button className="fpd-x150" onClick={() => setModalEmisores(false)} disabled={guardandoEmisores}>Cancelar</button>
               <button onClick={guardarEmisores} disabled={guardandoEmisores} style={{ padding: '8px 24px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoEmisores ? 'not-allowed' : 'pointer', fontWeight: 'bold', opacity: guardandoEmisores ? 0.7 : 1 }}>{guardandoEmisores ? 'Guardando...' : 'Guardar para todos'}</button>
             </div>
           </div>
@@ -4093,25 +4071,25 @@ export const FacturacionProveedoresDashboard = () => {
 
       {/* ════════════════ MODAL VISTA PREVIA DE REMISIÓN (editable) ════════════════ */}
       {remisionPreview && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 1850, padding: '20px', backdropFilter: 'blur(6px)', overflowY: 'auto' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '960px', margin: 'auto', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
+        <div className="modal-overlay fpd-x317">
+          <div className="fpd-x318">
+            <div className="fpd-x319">
               <div>
-                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>Remisión · vista previa</h2>
+                <h2 className="fpd-x140">Remisión · vista previa</h2>
                 <span style={{ color: remisionPreview.esUSD ? '#10b981' : '#3b82f6', fontSize: '0.82rem', fontWeight: 'bold' }}>
                   {remisionPreview.esUSD ? 'DÓLARES (USD) → Camila' : 'PESOS (MXN) → Rolando'}
                 </span>
               </div>
-              <button onClick={() => setRemisionPreview(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="fpd-x41" onClick={() => setRemisionPreview(null)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.8rem', margin: '10px 0 18px' }}>
-              Revisa y edita lo que necesites; luego pulsa <b style={{ color: '#fb923c' }}>Generar PDF</b>. Se descargará la remisión en PDF con el logo.
+            <p className="fpd-x320">
+              Revisa y edita lo que necesites; luego pulsa <b className="fpd-x321">Generar PDF</b>. Se descargará la remisión en PDF con el logo.
             </p>
 
             {/* Emisor (encabezado) */}
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#fb923c', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>ENCABEZADO (EMISOR)</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x323">ENCABEZADO (EMISOR)</div>
+              <div className="fpd-x324">
                 <div><label style={rLabelStyle}>NOMBRE</label><input type="text" value={remisionPreview.emisorNombre} onChange={e => setRP('emisorNombre', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>EMAIL</label><input type="text" value={remisionPreview.emisorEmail} onChange={e => setRP('emisorEmail', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={remisionPreview.emisorDireccion} onChange={e => setRP('emisorDireccion', e.target.value)} style={rInputStyle} /></div>
@@ -4120,55 +4098,55 @@ export const FacturacionProveedoresDashboard = () => {
             </div>
 
             {/* Datos de la remisión y del proveedor */}
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>DATOS DE LA REMISIÓN Y DEL PROVEEDOR</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x325">DATOS DE LA REMISIÓN Y DEL PROVEEDOR</div>
+              <div className="fpd-x326">
                 <div><label style={rLabelStyle}># REMISIÓN</label><input type="text" value={remisionPreview.numero} onChange={e => setRP('numero', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>FECHA</label><input type="text" value={remisionPreview.fecha} onChange={e => setRP('fecha', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>DENOMINACIÓN</label><input type="text" value={remisionPreview.moneda} onChange={e => setRP('moneda', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>DÍAS CRÉDITO</label><input type="text" value={remisionPreview.diasCredito} onChange={e => setRP('diasCredito', e.target.value)} style={rInputStyle} /></div>
-                <div style={{ gridColumn: 'span 2' }}><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={remisionPreview.clienteNombre} onChange={e => setRP('clienteNombre', e.target.value)} style={rInputStyle} /></div>
+                <div className="fpd-x161"><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={remisionPreview.clienteNombre} onChange={e => setRP('clienteNombre', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>NUM. EXT/INT</label><input type="text" value={remisionPreview.numExtInt} onChange={e => setRP('numExtInt', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>COLONIA</label><input type="text" value={remisionPreview.colonia} onChange={e => setRP('colonia', e.target.value)} style={rInputStyle} /></div>
-                <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={remisionPreview.direccion} onChange={e => setRP('direccion', e.target.value)} style={rInputStyle} /></div>
+                <div className="fpd-x194"><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={remisionPreview.direccion} onChange={e => setRP('direccion', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>CIUDAD</label><input type="text" value={remisionPreview.ciudad} onChange={e => setRP('ciudad', e.target.value)} style={rInputStyle} /></div>
               </div>
             </div>
 
             {/* Renglones de servicios */}
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>SERVICIOS ({(remisionPreview.filas || []).length})</div>
-              <div style={{ overflowX: 'auto', border: '1px solid #30363d', borderRadius: '8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '820px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x327">SERVICIOS ({(remisionPreview.filas || []).length})</div>
+              <div className="fpd-x328">
+                <table className="fpd-x329">
                   <thead>
-                    <tr style={{ backgroundColor: '#161b22', color: '#8b949e', fontSize: '0.72rem' }}>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>REF#</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>FECHA</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>EQ.</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>ORIGEN</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>DESTINO</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>DESCRIPCIÓN</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>IMPORTE</th>
-                      <th style={{ padding: '8px' }}></th>
+                    <tr className="fpd-x330">
+                      <th className="fpd-x331">REF#</th>
+                      <th className="fpd-x331">FECHA</th>
+                      <th className="fpd-x331">EQ.</th>
+                      <th className="fpd-x331">ORIGEN</th>
+                      <th className="fpd-x331">DESTINO</th>
+                      <th className="fpd-x331">DESCRIPCIÓN</th>
+                      <th className="fpd-x332">IMPORTE</th>
+                      <th className="fpd-x333"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {(remisionPreview.filas || []).map((r: any, idx: number) => (
-                      <tr key={idx} style={{ borderTop: '1px solid #21262d' }}>
-                        <td style={{ padding: '4px' }}><input value={r.ref} onChange={e => setRPFila(idx, 'ref', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
-                        <td style={{ padding: '4px' }}><input value={r.fecha} onChange={e => setRPFila(idx, 'fecha', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
-                        <td style={{ padding: '4px' }}><input value={r.equipo} onChange={e => setRPFila(idx, 'equipo', e.target.value)} style={{ ...rCellStyle, minWidth: '60px' }} /></td>
-                        <td style={{ padding: '4px' }}><input value={r.origen} onChange={e => setRPFila(idx, 'origen', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
-                        <td style={{ padding: '4px' }}><input value={r.destino} onChange={e => setRPFila(idx, 'destino', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
-                        <td style={{ padding: '4px' }}><input value={r.descripcion} onChange={e => setRPFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '160px' }} /></td>
-                        <td style={{ padding: '4px' }}><input type="number" step="any" value={r.importe} onChange={e => setRPFila(idx, 'importe', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
-                        <td style={{ padding: '4px', textAlign: 'center' }}>
-                          <button onClick={() => quitarFilaRemision(idx)} title="Quitar renglón" style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '4px 8px', fontSize: '0.75rem' }}>✕</button>
+                      <tr className="fpd-x334" key={idx}>
+                        <td className="fpd-x335"><input value={r.ref} onChange={e => setRPFila(idx, 'ref', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
+                        <td className="fpd-x335"><input value={r.fecha} onChange={e => setRPFila(idx, 'fecha', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
+                        <td className="fpd-x335"><input value={r.equipo} onChange={e => setRPFila(idx, 'equipo', e.target.value)} style={{ ...rCellStyle, minWidth: '60px' }} /></td>
+                        <td className="fpd-x335"><input value={r.origen} onChange={e => setRPFila(idx, 'origen', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                        <td className="fpd-x335"><input value={r.destino} onChange={e => setRPFila(idx, 'destino', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                        <td className="fpd-x335"><input value={r.descripcion} onChange={e => setRPFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '160px' }} /></td>
+                        <td className="fpd-x335"><input type="number" step="any" value={r.importe} onChange={e => setRPFila(idx, 'importe', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
+                        <td className="fpd-x336">
+                          <button className="fpd-x337" onClick={() => quitarFilaRemision(idx)} title="Quitar renglón">✕</button>
                         </td>
                       </tr>
                     ))}
                     {(remisionPreview.filas || []).length === 0 && (
-                      <tr><td colSpan={8} style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.82rem' }}>Sin renglones.</td></tr>
+                      <tr><td className="fpd-x338" colSpan={8}>Sin renglones.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -4176,16 +4154,16 @@ export const FacturacionProveedoresDashboard = () => {
             </div>
 
             {/* Pie: tipo de cambio, total, observaciones */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginBottom: '16px' }}>
+            <div className="fpd-x339">
               <div><label style={rLabelStyle}>FECHA TIPO DE CAMBIO (DOF)</label><input type="text" value={remisionPreview.fechaTipoCambio} onChange={e => setRP('fechaTipoCambio', e.target.value)} placeholder="Ej. 24/06/2026" style={rInputStyle} /></div>
               <div><label style={rLabelStyle}>TIPO DE CAMBIO</label><input type="text" value={remisionPreview.tipoCambio} onChange={e => setRP('tipoCambio', e.target.value)} placeholder="Ej. 17.5505" style={rInputStyle} /></div>
               <div><label style={rLabelStyle}>TOTAL</label><input type="number" step="any" value={remisionPreview.total} onChange={e => setRP('total', e.target.value)} style={{ ...rInputStyle, color: '#3fb950', fontWeight: 'bold' }} /></div>
-              <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>OBSERVACIONES</label><input type="text" value={remisionPreview.observaciones} onChange={e => setRP('observaciones', e.target.value)} style={rInputStyle} /></div>
+              <div className="fpd-x194"><label style={rLabelStyle}>OBSERVACIONES</label><input type="text" value={remisionPreview.observaciones} onChange={e => setRP('observaciones', e.target.value)} style={rInputStyle} /></div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
-              <button onClick={() => setRemisionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
-              <button onClick={generarPDFDeRemision} style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🧾 Generar PDF</button>
+            <div className="fpd-x252">
+              <button className="fpd-x150" onClick={() => setRemisionPreview(null)}>Cerrar</button>
+              <button className="fpd-x340" onClick={generarPDFDeRemision}>🧾 Generar PDF</button>
             </div>
           </div>
         </div>
@@ -4193,22 +4171,22 @@ export const FacturacionProveedoresDashboard = () => {
 
       {/* ✅ (CONFIRMACIÓN DE TARIFA) Vista previa editable → PDF */}
       {confirmacionPreview && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2600, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setConfirmacionPreview(null)}>
-          <div style={{ width: '860px', maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>📋 Confirmación de Tarifa a Proveedor</h2>
-                <span style={{ color: '#fb923c', fontSize: '0.82rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{confirmacionPreview.referencia}</span>
+        <div className="modal-overlay fpd-x341" onClick={() => setConfirmacionPreview(null)}>
+          <div className="fpd-x342" onClick={(e) => e.stopPropagation()}>
+            <div className="fpd-x39">
+              <div className="fpd-x343">
+                <h2 className="fpd-x140">📋 Confirmación de Tarifa a Proveedor</h2>
+                <span className="fpd-x344">{confirmacionPreview.referencia}</span>
               </div>
-              <button onClick={() => setConfirmacionPreview(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="fpd-x41" onClick={() => setConfirmacionPreview(null)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.8rem', margin: '10px 0 18px' }}>
-              Revisa y completa lo que falte (los campos vacíos salen en blanco en el documento); luego pulsa <b style={{ color: '#fb923c' }}>Generar PDF</b>. Se descargará la confirmación con el logo.
+            <p className="fpd-x320">
+              Revisa y completa lo que falte (los campos vacíos salen en blanco en el documento); luego pulsa <b className="fpd-x321">Generar PDF</b>. Se descargará la confirmación con el logo.
             </p>
 
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#fb923c', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>DATOS GENERALES</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x323">DATOS GENERALES</div>
+              <div className="fpd-x345">
                 <div><label style={rLabelStyle}>COORDINADOR</label><input type="text" value={confirmacionPreview.coordinador} onChange={e => setCT('coordinador', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>No. REFERENCIA</label><input type="text" value={confirmacionPreview.referencia} onChange={e => setCT('referencia', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>FECHA DEL SERVICIO</label><input type="text" value={confirmacionPreview.fechaServicio} onChange={e => setCT('fechaServicio', e.target.value)} style={rInputStyle} /></div>
@@ -4219,20 +4197,20 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
             </div>
 
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>UNIDAD / EQUIPO</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x325">UNIDAD / EQUIPO</div>
+              <div className="fpd-x345">
                 <div><label style={rLabelStyle}>REMOLQUE</label><input type="text" value={confirmacionPreview.remolque} onChange={e => setCT('remolque', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>TIPO DE UNIDAD</label><input type="text" value={confirmacionPreview.tipoUnidad} onChange={e => setCT('tipoUnidad', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>PLACAS REMOLQUE</label><input type="text" value={confirmacionPreview.placasRemolque} onChange={e => setCT('placasRemolque', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>UNIDAD</label><input type="text" value={confirmacionPreview.unidad} onChange={e => setCT('unidad', e.target.value)} style={rInputStyle} /></div>
-                <div style={{ gridColumn: 'span 2' }}><label style={rLabelStyle}>OPERADOR</label><input type="text" value={confirmacionPreview.operador} onChange={e => setCT('operador', e.target.value)} style={rInputStyle} /></div>
+                <div className="fpd-x161"><label style={rLabelStyle}>OPERADOR</label><input type="text" value={confirmacionPreview.operador} onChange={e => setCT('operador', e.target.value)} style={rInputStyle} /></div>
               </div>
             </div>
 
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>RUTA</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x327">RUTA</div>
+              <div className="fpd-x324">
                 <div><label style={rLabelStyle}>CLIENTE ORIGEN</label><input type="text" value={confirmacionPreview.clienteOrigen} onChange={e => setCT('clienteOrigen', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>CIUDAD ORIGEN (DIRECCIÓN)</label><input type="text" value={confirmacionPreview.ciudadOrigen} onChange={e => setCT('ciudadOrigen', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>CLIENTE DESTINO</label><input type="text" value={confirmacionPreview.clienteDestino} onChange={e => setCT('clienteDestino', e.target.value)} style={rInputStyle} /></div>
@@ -4241,9 +4219,9 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
             </div>
 
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#f85149', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>MONTOS</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x346">MONTOS</div>
+              <div className="fpd-x345">
                 <div><label style={rLabelStyle}>FACTURADO EN</label><input type="text" value={confirmacionPreview.facturadoEn} onChange={e => setCTMonto('facturadoEn', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>MONEDA DEL CONVENIO</label><input type="text" value={confirmacionPreview.monedaConvenio} onChange={e => setCTMonto('monedaConvenio', e.target.value)} style={rInputStyle} /></div>
                 {/* ✅ MONEDA DE PAGO: define en qué moneda se pagan los montos */}
@@ -4261,8 +4239,8 @@ export const FacturacionProveedoresDashboard = () => {
               </div>
             </div>
 
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#a371f7', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>OBSERVACIONES</div>
+            <div className="fpd-x322">
+              <div className="fpd-x347">OBSERVACIONES</div>
               {/* ✅ NUEVO: se guardan con la confirmación y salen en el PDF */}
               <textarea
                 value={confirmacionPreview.observaciones || ''}
@@ -4273,51 +4251,50 @@ export const FacturacionProveedoresDashboard = () => {
               />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
+            <div className="fpd-x348">
               {/* ✅ NUEVO: log de generación del PDF (fecha, hora y usuario) */}
-              <button onClick={() => setLogConfirmacionAbierto(true)} title="Ver quién y cuándo ha generado el PDF de esta confirmación"
-                style={{ padding: '8px 18px', background: 'none', color: '#a371f7', border: '1px solid #a371f7', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+              <button className="fpd-x349" onClick={() => setLogConfirmacionAbierto(true)} title="Ver quién y cuándo ha generado el PDF de esta confirmación">
                 📜 Log ({logDeConfirmacionActual().length})
               </button>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <button onClick={() => setConfirmacionPreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
-                <button onClick={() => guardarConfirmacion(true)} title="Guardar los cambios para que los demás usuarios los vean" style={{ padding: '8px 24px', backgroundColor: 'transparent', color: '#58a6ff', border: '1px solid #58a6ff', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>💾 Guardar</button>
-                <button onClick={generarPDFDeConfirmacion} title="Guarda los cambios, registra el log y descarga el PDF" style={{ padding: '8px 24px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📋 Generar PDF</button>
+              <div className="fpd-x49">
+                <button className="fpd-x150" onClick={() => setConfirmacionPreview(null)}>Cerrar</button>
+                <button className="fpd-x350" onClick={() => guardarConfirmacion(true)} title="Guardar los cambios para que los demás usuarios los vean">💾 Guardar</button>
+                <button className="fpd-x340" onClick={generarPDFDeConfirmacion} title="Guarda los cambios, registra el log y descarga el PDF">📋 Generar PDF</button>
               </div>
             </div>
           </div>
 
           {/* ✅ NUEVO: MODAL DE LOG — quién y cuándo generó el PDF */}
           {logConfirmacionAbierto && (
-            <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 2700, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { e.stopPropagation(); setLogConfirmacionAbierto(false); }}>
-              <div style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', width: '100%', maxWidth: '520px', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #30363d' }}>
+            <div className="fpd-x351" onClick={(e) => { e.stopPropagation(); setLogConfirmacionAbierto(false); }}>
+              <div className="fpd-x352" onClick={e => e.stopPropagation()}>
+                <div className="fpd-x353">
                   <div>
-                    <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1rem' }}>📜 Log de generación de PDF</div>
-                    <div style={{ color: '#8b949e', fontSize: '0.78rem', marginTop: '2px' }}>Confirmación de Tarifa · <span style={{ color: '#fb923c', fontFamily: 'monospace' }}>{confirmacionPreview.referencia}</span></div>
+                    <div className="fpd-x354">📜 Log de generación de PDF</div>
+                    <div className="fpd-x355">Confirmación de Tarifa · <span className="fpd-x356">{confirmacionPreview.referencia}</span></div>
                   </div>
-                  <button onClick={() => setLogConfirmacionAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+                  <button className="fpd-x357" onClick={() => setLogConfirmacionAbierto(false)}>✕</button>
                 </div>
-                <div style={{ overflowY: 'auto', padding: '8px 0' }}>
+                <div className="fpd-x358">
                   {logDeConfirmacionActual().length === 0 ? (
-                    <div style={{ color: '#8b949e', textAlign: 'center', padding: '28px 16px', fontSize: '0.9rem' }}>
+                    <div className="fpd-x359">
                       Aún no se ha generado el PDF de esta confirmación.
                     </div>
                   ) : (
-                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <table className="fpd-x360">
                       <thead>
-                        <tr style={{ color: '#8b949e', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          <th style={{ textAlign: 'left', padding: '8px 20px' }}>Fecha</th>
-                          <th style={{ textAlign: 'left', padding: '8px 12px' }}>Hora</th>
-                          <th style={{ textAlign: 'left', padding: '8px 20px 8px 12px' }}>Generó el PDF</th>
+                        <tr className="fpd-x361">
+                          <th className="fpd-x362">Fecha</th>
+                          <th className="fpd-x363">Hora</th>
+                          <th className="fpd-x364">Generó el PDF</th>
                         </tr>
                       </thead>
                       <tbody>
                         {logDeConfirmacionActual().map((l: any, i: number) => (
-                          <tr key={`${l.ts || i}`} style={{ borderTop: '1px solid #21262d', color: '#c9d1d9', fontSize: '0.86rem' }}>
-                            <td style={{ padding: '9px 20px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{l.fecha || '-'}</td>
-                            <td style={{ padding: '9px 12px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{l.hora || '-'}</td>
-                            <td style={{ padding: '9px 20px 9px 12px' }}>{l.usuario || 'Desconocido'}</td>
+                          <tr className="fpd-x365" key={`${l.ts || i}`}>
+                            <td className="fpd-x366">{l.fecha || '-'}</td>
+                            <td className="fpd-x367">{l.hora || '-'}</td>
+                            <td className="fpd-x368">{l.usuario || 'Desconocido'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -4332,97 +4309,97 @@ export const FacturacionProveedoresDashboard = () => {
 
       {/* ✅ (RATE DE PROVEEDOR) Vista previa editable → PDF */}
       {ratePreview && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 2600, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }} onClick={() => setRatePreview(null)}>
-          <div style={{ width: '1080px', maxWidth: '100%', maxHeight: '92vh', overflowY: 'auto', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.2rem' }}>📄 Rate de Proveedor</h2>
-                <span style={{ color: '#10b981', fontSize: '0.82rem', fontWeight: 'bold', fontFamily: 'monospace' }}>Factura {ratePreview.facturaProveedor}</span>
+        <div className="modal-overlay fpd-x341" onClick={() => setRatePreview(null)}>
+          <div className="fpd-x369" onClick={(e) => e.stopPropagation()}>
+            <div className="fpd-x39">
+              <div className="fpd-x343">
+                <h2 className="fpd-x140">📄 Rate de Proveedor</h2>
+                <span className="fpd-x370">Factura {ratePreview.facturaProveedor}</span>
               </div>
-              <button onClick={() => setRatePreview(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="fpd-x41" onClick={() => setRatePreview(null)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.8rem', margin: '10px 0 18px' }}>
-              Relación de referencias amparadas con la factura del proveedor. La <b style={{ color: '#c9d1d9' }}>utilidad</b> se calcula sola (cobrado − proveedor). Pulsa <b style={{ color: '#10b981' }}>Generar PDF</b> para descargar en horizontal con el logo.
+            <p className="fpd-x320">
+              Relación de referencias amparadas con la factura del proveedor. La <b className="fpd-x8">utilidad</b> se calcula sola (cobrado − proveedor). Pulsa <b className="fpd-x310">Generar PDF</b> para descargar en horizontal con el logo.
             </p>
 
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>DATOS DEL PROVEEDOR Y DE LA FACTURA</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x371">DATOS DEL PROVEEDOR Y DE LA FACTURA</div>
+              <div className="fpd-x326">
                 <div><label style={rLabelStyle}>FACTURA DEL PROVEEDOR</label><input type="text" value={ratePreview.facturaProveedor} onChange={e => setRT('facturaProveedor', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>FECHA</label><input type="text" value={ratePreview.fecha} onChange={e => setRT('fecha', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>DÍAS DE CRÉDITO</label><input type="text" value={ratePreview.diasCredito} onChange={e => setRT('diasCredito', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>VENCIMIENTO</label><input type="text" value={ratePreview.vencimiento} onChange={e => setRT('vencimiento', e.target.value)} style={rInputStyle} /></div>
-                <div style={{ gridColumn: 'span 2' }}><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={ratePreview.proveedorNombre} onChange={e => setRT('proveedorNombre', e.target.value)} style={rInputStyle} /></div>
+                <div className="fpd-x161"><label style={rLabelStyle}>PROVEEDOR</label><input type="text" value={ratePreview.proveedorNombre} onChange={e => setRT('proveedorNombre', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>MONEDA</label><input type="text" value={ratePreview.moneda} onChange={e => setRT('moneda', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={{ ...rLabelStyle, color: '#f59e0b' }}>TIPO DE CAMBIO</label><input type="text" value={ratePreview.tipoCambio || ''} onChange={e => setTipoCambioRate(e.target.value)} placeholder="Ej. 17.5505" style={{ ...rInputStyle, borderColor: '#f59e0b' }} /></div>
                 <div><label style={rLabelStyle}>CIUDAD</label><input type="text" value={ratePreview.ciudad} onChange={e => setRT('ciudad', e.target.value)} style={rInputStyle} /></div>
-                <div style={{ gridColumn: 'span 3' }}><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={ratePreview.direccion} onChange={e => setRT('direccion', e.target.value)} style={rInputStyle} /></div>
+                <div className="fpd-x194"><label style={rLabelStyle}>DIRECCIÓN</label><input type="text" value={ratePreview.direccion} onChange={e => setRT('direccion', e.target.value)} style={rInputStyle} /></div>
                 <div><label style={rLabelStyle}>COLONIA</label><input type="text" value={ratePreview.colonia} onChange={e => setRT('colonia', e.target.value)} style={rInputStyle} /></div>
               </div>
             </div>
 
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>REFERENCIAS ({(ratePreview.filas || []).length})</div>
-              <div style={{ overflowX: 'auto', border: '1px solid #30363d', borderRadius: '8px' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '960px' }}>
+            <div className="fpd-x322">
+              <div className="fpd-x325">REFERENCIAS ({(ratePreview.filas || []).length})</div>
+              <div className="fpd-x328">
+                <table className="fpd-x372">
                   <thead>
-                    <tr style={{ backgroundColor: '#161b22', color: '#8b949e', fontSize: '0.72rem' }}>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>REF#</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>EQ.</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>ORIGEN</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>DESTINO</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>DESCRIPCIÓN</th>
-                      <th style={{ padding: '8px', textAlign: 'left' }}>FACTURA ROELCA</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>COBRADO (PESOS)</th>
-                      <th style={{ padding: '8px', textAlign: 'right', color: '#f59e0b' }}>SUBTOTAL PROV.</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>CONVERSIÓN (PESOS)</th>
-                      <th style={{ padding: '8px', textAlign: 'right' }}>UTILIDAD</th>
-                      <th style={{ padding: '8px' }}></th>
+                    <tr className="fpd-x330">
+                      <th className="fpd-x331">REF#</th>
+                      <th className="fpd-x331">EQ.</th>
+                      <th className="fpd-x331">ORIGEN</th>
+                      <th className="fpd-x331">DESTINO</th>
+                      <th className="fpd-x331">DESCRIPCIÓN</th>
+                      <th className="fpd-x331">FACTURA ROELCA</th>
+                      <th className="fpd-x332">COBRADO (PESOS)</th>
+                      <th className="fpd-x373">SUBTOTAL PROV.</th>
+                      <th className="fpd-x332">CONVERSIÓN (PESOS)</th>
+                      <th className="fpd-x332">UTILIDAD</th>
+                      <th className="fpd-x333"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {(ratePreview.filas || []).map((r: any, idx: number) => {
                       const utilidad = (Number(r.cobrado) || 0) - (Number(r.proveedor) || 0);
                       return (
-                        <tr key={idx} style={{ borderTop: '1px solid #21262d' }}>
-                          <td style={{ padding: '4px' }}><input value={r.ref} onChange={e => setRTFila(idx, 'ref', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
-                          <td style={{ padding: '4px' }}><input value={r.equipo} onChange={e => setRTFila(idx, 'equipo', e.target.value)} style={{ ...rCellStyle, minWidth: '80px' }} /></td>
-                          <td style={{ padding: '4px' }}><input value={r.origen} onChange={e => setRTFila(idx, 'origen', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
-                          <td style={{ padding: '4px' }}><input value={r.destino} onChange={e => setRTFila(idx, 'destino', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
-                          <td style={{ padding: '4px' }}><input value={r.descripcion} onChange={e => setRTFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '140px' }} /></td>
-                          <td style={{ padding: '4px' }}><input value={r.facturaRoelca} onChange={e => setRTFila(idx, 'facturaRoelca', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
-                          <td style={{ padding: '4px' }}><input type="number" step="any" value={r.cobrado} onChange={e => setRTFila(idx, 'cobrado', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
-                          <td style={{ padding: '4px' }}><input type="number" step="any" value={r.subtotalProv} onChange={e => setRTFila(idx, 'subtotalProv', e.target.value)} title="Subtotal del proveedor (convenio + costos, en la moneda del convenio); la CONVERSIÓN = subtotal × TC si el convenio es en dólares" style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#f59e0b' }} /></td>
-                          <td style={{ padding: '4px' }}><input type="number" step="any" value={r.proveedor} onChange={e => setRTFila(idx, 'proveedor', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3b82f6' }} /></td>
+                        <tr className="fpd-x334" key={idx}>
+                          <td className="fpd-x335"><input value={r.ref} onChange={e => setRTFila(idx, 'ref', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                          <td className="fpd-x335"><input value={r.equipo} onChange={e => setRTFila(idx, 'equipo', e.target.value)} style={{ ...rCellStyle, minWidth: '80px' }} /></td>
+                          <td className="fpd-x335"><input value={r.origen} onChange={e => setRTFila(idx, 'origen', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                          <td className="fpd-x335"><input value={r.destino} onChange={e => setRTFila(idx, 'destino', e.target.value)} style={{ ...rCellStyle, minWidth: '110px' }} /></td>
+                          <td className="fpd-x335"><input value={r.descripcion} onChange={e => setRTFila(idx, 'descripcion', e.target.value)} style={{ ...rCellStyle, minWidth: '140px' }} /></td>
+                          <td className="fpd-x335"><input value={r.facturaRoelca} onChange={e => setRTFila(idx, 'facturaRoelca', e.target.value)} style={{ ...rCellStyle, minWidth: '90px' }} /></td>
+                          <td className="fpd-x335"><input type="number" step="any" value={r.cobrado} onChange={e => setRTFila(idx, 'cobrado', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3fb950' }} /></td>
+                          <td className="fpd-x335"><input type="number" step="any" value={r.subtotalProv} onChange={e => setRTFila(idx, 'subtotalProv', e.target.value)} title="Subtotal del proveedor (convenio + costos, en la moneda del convenio); la CONVERSIÓN = subtotal × TC si el convenio es en dólares" style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#f59e0b' }} /></td>
+                          <td className="fpd-x335"><input type="number" step="any" value={r.proveedor} onChange={e => setRTFila(idx, 'proveedor', e.target.value)} style={{ ...rCellStyle, minWidth: '90px', textAlign: 'right', color: '#3b82f6' }} /></td>
                           <td style={{ padding: '4px 10px', textAlign: 'right', color: utilidad < 0 ? '#f85149' : '#c9d1d9', fontSize: '0.82rem', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(utilidad)}</td>
-                          <td style={{ padding: '4px', textAlign: 'center' }}>
-                            <button onClick={() => quitarFilaRate(idx)} title="Quitar renglón" style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '4px 8px', fontSize: '0.75rem' }}>✕</button>
+                          <td className="fpd-x336">
+                            <button className="fpd-x337" onClick={() => quitarFilaRate(idx)} title="Quitar renglón">✕</button>
                           </td>
                         </tr>
                       );
                     })}
                     {(ratePreview.filas || []).length === 0 && (
-                      <tr><td colSpan={11} style={{ padding: '16px', textAlign: 'center', color: '#8b949e', fontSize: '0.82rem' }}>Sin renglones.</td></tr>
+                      <tr><td className="fpd-x338" colSpan={11}>Sin renglones.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '24px', padding: '10px 12px', color: '#8b949e', fontSize: '0.82rem', flexWrap: 'wrap' }}>
-                <span>Cobrado: <b style={{ color: '#3fb950' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.cobrado) || 0), 0))}</b></span>
-                <span>Subtotal Prov.: <b style={{ color: '#f59e0b' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.subtotalProv) || 0), 0))}</b></span>
-                <span>Conversión: <b style={{ color: '#3b82f6' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.proveedor) || 0), 0))}</b></span>
-                <span>Utilidad: <b style={{ color: '#f0f6fc' }}>{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + ((Number(r.cobrado) || 0) - (Number(r.proveedor) || 0)), 0))}</b></span>
+              <div className="fpd-x374">
+                <span>Cobrado: <b className="fpd-x146">{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.cobrado) || 0), 0))}</b></span>
+                <span>Subtotal Prov.: <b className="fpd-x248">{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.subtotalProv) || 0), 0))}</b></span>
+                <span>Conversión: <b className="fpd-x309">{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + (Number(r.proveedor) || 0), 0))}</b></span>
+                <span>Utilidad: <b className="fpd-x9">{formatoMoneda((ratePreview.filas || []).reduce((s: number, r: any) => s + ((Number(r.cobrado) || 0) - (Number(r.proveedor) || 0)), 0))}</b></span>
               </div>
             </div>
 
-            <div style={{ marginBottom: '16px' }}>
+            <div className="fpd-x322">
               <label style={rLabelStyle}>OBSERVACIONES</label>
               <input type="text" value={ratePreview.observaciones} onChange={e => setRT('observaciones', e.target.value)} style={rInputStyle} />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '18px' }}>
-              <button onClick={() => setRatePreview(null)} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
-              <button onClick={generarPDFDeRate} style={{ padding: '8px 24px', backgroundColor: '#10b981', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>📄 Generar PDF</button>
+            <div className="fpd-x252">
+              <button className="fpd-x150" onClick={() => setRatePreview(null)}>Cerrar</button>
+              <button className="fpd-x375" onClick={generarPDFDeRate}>📄 Generar PDF</button>
             </div>
           </div>
         </div>

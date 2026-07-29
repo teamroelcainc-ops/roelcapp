@@ -14,6 +14,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
+import './DocumentosLista.css';
 
 interface DocumentosListaProps {
   coleccionOrigen: string;    // 'empresas' | 'empleados' | ...
@@ -86,42 +87,42 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
   };
 
   if (cargando) {
-    return <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando documentos...</div>;
+    return <div className="dl-x1">Cargando documentos...</div>;
   }
 
   if (error) {
-    return <div style={{ padding: '24px', textAlign: 'center', color: '#ef4444', backgroundColor: 'rgba(239,68,68,0.05)', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)' }}>{error}</div>;
+    return <div className="dl-x2">{error}</div>;
   }
 
   if (docs.length === 0) {
     return (
-      <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', backgroundColor: '#161b22', borderRadius: '8px', border: '1px solid #30363d' }}>
+      <div className="dl-x3">
         Aún no se han cargado documentos para este registro.
       </div>
     );
   }
 
   return (
-    <div style={{ animation: 'fadeIn 0.3s ease', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-      <p style={{ color: '#8b949e', fontSize: '0.85rem', margin: '0 0 4px 0' }}>
+    <div className="dl-x4">
+      <p className="dl-x5">
         {docs.length} documento(s) cargado(s).
       </p>
 
       {docs.map(d => {
         const venc = estadoVencimiento(d.vence, d.fechaVencimiento);
         return (
-          <div key={d.id} style={{ backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '14px 16px', display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+          <div className="dl-x6" key={d.id}>
             {/* Icono */}
-            <div style={{ flexShrink: 0, marginTop: '2px' }}>
+            <div className="dl-x7">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
             </div>
 
             {/* Datos */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ color: '#f0f6fc', fontWeight: 600, fontSize: '0.92rem' }}>{d.tipoDocumento || 'Documento'}</div>
-              <div style={{ color: '#8b949e', fontSize: '0.8rem', wordBreak: 'break-all', marginTop: '2px' }}>{d.nombreArchivo || '-'}</div>
+            <div className="dl-x8">
+              <div className="dl-x9">{d.tipoDocumento || 'Documento'}</div>
+              <div className="dl-x10">{d.nombreArchivo || '-'}</div>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginTop: '8px', fontSize: '0.78rem', color: '#8b949e' }}>
+              <div className="dl-x11">
                 <span>Subido: {formatearFecha(d.createdAt)}</span>
                 {d.vence && <span>Expedición: {formatearFecha(d.fechaExpedicion)}</span>}
               </div>
@@ -133,29 +134,27 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
               )}
 
               {d.observaciones && (
-                <div style={{ marginTop: '8px', fontSize: '0.8rem', color: '#c9d1d9', fontStyle: 'italic' }}>“{d.observaciones}”</div>
+                <div className="dl-x12">“{d.observaciones}”</div>
               )}
             </div>
 
             {/* Acciones */}
-            <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
+            <div className="dl-x13">
               {d.url && (
-                <a
+                <a className="dl-x14"
                   href={d.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 600, whiteSpace: 'nowrap' }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                   Ver / Descargar
                 </a>
               )}
               {permitirEliminar && (
-                <button
+                <button className="dl-x15"
                   type="button"
                   onClick={() => eliminarDocumento(d)}
                   title="Eliminar documento"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap' }}
                 >
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                   Eliminar

@@ -1,0 +1,28 @@
+/* Estilos hermanos de DocumentosLista.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.dl-x1 { padding: 40px; text-align: center; color: #8b949e; }
+.dl-x2 { padding: 24px; text-align: center; color: #ef4444; background-color: rgba(239,68,68,0.05); border-radius: 8px; border: 1px solid rgba(239,68,68,0.3); }
+.dl-x3 { padding: 40px; text-align: center; color: #8b949e; background-color: #161b22; border-radius: 8px; border: 1px solid #30363d; }
+.dl-x4 { animation: fadeIn 0.3s ease; display: flex; flex-direction: column; gap: 12px; }
+.dl-x5 { color: #8b949e; font-size: 0.85rem; margin: 0 0 4px 0; }
+.dl-x6 { background-color: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 14px 16px; display: flex; gap: 14px; align-items: flex-start; }
+.dl-x7 { flex-shrink: 0; margin-top: 2px; }
+.dl-x8 { flex: 1; min-width: 0; }
+.dl-x9 { color: #f0f6fc; font-weight: 600; font-size: 0.92rem; }
+.dl-x10 { color: #8b949e; font-size: 0.8rem; word-break: break-all; margin-top: 2px; }
+.dl-x11 { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: 0.78rem; color: #8b949e; }
+.dl-x12 { margin-top: 8px; font-size: 0.8rem; color: #c9d1d9; font-style: italic; }
+.dl-x13 { flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.dl-x14 { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background-color: #D84315; color: #fff; text-decoration: none; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+.dl-x15 { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: transparent; border: 1px solid #ef4444; color: #ef4444; cursor: pointer; font-size: 0.8rem; white-space: nowrap; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .dl-x1 { padding: 14px 12px; }
+  .dl-x2 { padding: 14px 12px; }
+  .dl-x3 { padding: 14px 12px; }
+  .dl-x6 { flex-wrap: wrap; }
+}

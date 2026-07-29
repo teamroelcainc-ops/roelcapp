@@ -7,6 +7,7 @@ import { registrarLog } from '../../../utils/logger'; // ✅ Importación del lo
 import { listaCatalogos } from '../config/catalogSchemas';
 import type { CatalogSchema, CatalogField } from '../config/catalogSchemas';
 import { SelectBuscable } from './SelectBuscable';
+import './CatalogosDashboard.css';
 
 // ✅ Helper compartido: resuelve la etiqueta a mostrar de una opción dinámica
 //    (misma cadena de respaldos que usaban los <select> nativos)
@@ -419,8 +420,8 @@ const CatalogosDashboard = () => {
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
   if (!catalogoSeleccionado) return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
-      <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+    <div className="module-container cd-x1">
+      <h1 className="module-title cd-x2">
         Administración de Catálogos
       </h1>
       <div className="catalog-grid">
@@ -435,7 +436,7 @@ const CatalogosDashboard = () => {
   );
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container cd-x3">
       <style>{`
         .detail-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
         @media (max-width: 768px) { .detail-grid-3 { grid-template-columns: 1fr; } }
@@ -444,16 +445,16 @@ const CatalogosDashboard = () => {
         .form-input-elegante:focus { outline: none; border-color: #58a6ff; }
       `}</style>
 
-      <div style={{ width: '100%', margin: '0 auto' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '24px' }}>
-          <button onClick={() => setCatalogoSeleccionado(null)} style={{ background: 'none', border: 'none', color: '#58a6ff', cursor: 'pointer', textAlign: 'left', padding: 0, fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <div className="cd-x4">
+        <div className="cd-x5">
+          <button className="cd-x6" onClick={() => setCatalogoSeleccionado(null)}>
             ← Volver a Catálogos
           </button>
-          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: 0, fontWeight: 'bold' }}>{catalogoSeleccionado.titulo}</h1>
+          <h1 className="module-title cd-x7">{catalogoSeleccionado.titulo}</h1>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
-          <div style={{ flex: '1 1 auto', maxWidth: '250px', minWidth: '150px' }}>
+        <div className="cd-x8">
+          <div className="cd-x9">
             <SelectBuscable
               opciones={opcionesDeFiltroDropdown.map((opt) => ({ value: `${opt.field}|||${opt.value}`, label: opt.label }))}
               value={filtroFijo}
@@ -461,53 +462,52 @@ const CatalogosDashboard = () => {
               placeholder="Filtro: Todas las colecciones"
             />
           </div>
-          <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'center' }}>
-            <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
-              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder={`Buscar en ${catalogoSeleccionado.titulo.toLowerCase()}...`} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }} />
+          <div className="cd-x10">
+            <div className="cd-x11">
+              <svg className="cd-x12" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input className="cd-x13" type="text" placeholder={`Buscar en ${catalogoSeleccionado.titulo.toLowerCase()}...`} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
             </div>
           </div>
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '320px' }}>
-            <button className="btn btn-outline" title="Configurar Obligatorios" onClick={() => setModalEstado('config_obligatorios')} style={{ backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="cd-x14">
+            <button className="btn btn-outline cd-x15" title="Configurar Obligatorios" onClick={() => setModalEstado('config_obligatorios')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             </button>
-            <button className="btn btn-primary" title="Agregar Registro" onClick={() => { setRegistroActual(null); setFormData({}); setModalEstado('formulario'); }} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button className="btn btn-primary cd-x16" title="Agregar Registro" onClick={() => { setRegistroActual(null); setFormData({}); setModalEstado('formulario'); }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
           </div>
         </div>
 
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '800px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="content-body cd-x17">
+          <div className="table-container cd-x18">
+            <table className="data-table cd-x19">
+              <thead className="cd-x20">
                 <tr>
-                  <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                  <th className="cd-x21">Acciones</th>
                   
                   {catalogoSeleccionado.details && catalogoSeleccionado.details.length > 0 && (
-                    <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d', textAlign: 'center' }}>
+                    <th className="cd-x22">
                       Sub-Registros
                     </th>
                   )}
 
                   {catalogoSeleccionado.fields.map((f: CatalogField) => (
-                    <th key={f.name} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>{f.label}</th>
+                    <th className="cd-x23" key={f.name}>{f.label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {registrosEnPantalla.length === 0 ? (
-                  <tr><td colSpan={catalogoSeleccionado.fields.length + 2} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay registros.</td></tr>
+                  <tr><td className="cd-x24" colSpan={catalogoSeleccionado.fields.length + 2}>No hay registros.</td></tr>
                 ) : (
                   registrosEnPantalla.map((reg: any) => (
                     <tr key={reg.id} onClick={() => { setRegistroActual(reg); setViendoDetalles(true); }} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === reg.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(reg.id!)} onMouseLeave={() => setHoveredRowId(null)}>
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <td className="cd-x25" onClick={(e: any) => e.stopPropagation()}>
+                        <div className="actions-cell cd-x26">
                           <button 
-                            className="btn-small btn-edit" 
+                            className="btn-small btn-edit cd-x27" 
                             title="Editar Registro"
-                            onClick={(e) => { e.stopPropagation(); setRegistroActual(reg); setFormData(reg); setModalEstado('formulario'); }} 
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                            onClick={(e) => { e.stopPropagation(); setRegistroActual(reg); setFormData(reg); setModalEstado('formulario'); }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} 
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -516,10 +516,9 @@ const CatalogosDashboard = () => {
                           
                           {/* ✅ LLAMADA A LA FUNCIÓN REFACTORIZADA PARA ELIMINAR CON LOG */}
                           <button 
-                            className="btn-small btn-danger" 
+                            className="btn-small btn-danger cd-x28" 
                             title="Eliminar Registro"
-                            onClick={async (e) => { e.stopPropagation(); await eliminarRegistroPrincipal(reg.id); }} 
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                            onClick={async (e) => { e.stopPropagation(); await eliminarRegistroPrincipal(reg.id); }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -529,15 +528,15 @@ const CatalogosDashboard = () => {
                       </td>
 
                       {catalogoSeleccionado.details && catalogoSeleccionado.details.length > 0 && (
-                        <td style={{ padding: '16px', textAlign: 'center', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>
-                          <span style={{ backgroundColor: '#161b22', padding: '4px 10px', borderRadius: '12px', color: '#58a6ff', fontSize: '0.8rem', border: '1px solid #30363d' }}>
+                        <td className="cd-x29">
+                          <span className="cd-x30">
                             {conteoDetallesGlobal[String(reg.id).toLowerCase()] || 0} vinculados
                           </span>
                         </td>
                       )}
 
                       {catalogoSeleccionado.fields.map((f: CatalogField) => (
-                        <td key={f.name} style={{ padding: '16px', color: '#c9d1d9', fontSize: '0.95rem', whiteSpace: 'nowrap' }}>{getDisplayValue(reg, f)}</td>
+                        <td className="cd-x31" key={f.name}>{getDisplayValue(reg, f)}</td>
                       ))}
                     </tr>
                   ))
@@ -546,11 +545,11 @@ const CatalogosDashboard = () => {
             </table>
           </div>
           {registrosFiltrados.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros</div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="cd-x32">
+              <div className="cd-x33">Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros</div>
+              <div className="cd-x34">
                 <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="cd-x35">{paginaActual} / {totalPaginas || 1}</span>
                 <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
               </div>
             </div>
@@ -560,23 +559,23 @@ const CatalogosDashboard = () => {
 
       {/* ✅ VISTA: MODAL DETALLES (RENDERIZADO INSTANTÁNEO 0 LECTURAS) */}
       {viendoDetalles && registroActual && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="form-card detail-card" style={{ maxWidth: '1000px', width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', backgroundColor: '#0d1117', borderRadius: '12px', border: '1px solid #30363d', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div className="form-header" style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem' }}>Detalles: <span style={{ color: '#58a6ff' }}>{catalogoSeleccionado.titulo}</span></h2>
-              <button onClick={() => { setViendoDetalles(false); setRegistroActual(null); }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay cd-x36">
+          <div className="form-card detail-card cd-x37">
+            <div className="form-header cd-x38">
+              <h2 className="cd-x39">Detalles: <span className="cd-x40">{catalogoSeleccionado.titulo}</span></h2>
+              <button className="cd-x41" onClick={() => { setViendoDetalles(false); setRegistroActual(null); }}>✕</button>
             </div>
-            <div className="detail-content" style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-              <div className="detail-grid-3" style={{ marginBottom: '32px' }}>
+            <div className="detail-content cd-x42">
+              <div className="detail-grid-3 cd-x43">
                 {catalogoSeleccionado.fields.map((f: CatalogField) => (
                   <div key={f.name}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px', textTransform: 'uppercase' }}>{f.label}</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '0.95rem' }}>{getDisplayValue(registroActual, f)}</span>
+                    <span className="cd-x44">{f.label}</span>
+                    <span className="cd-x45">{getDisplayValue(registroActual, f)}</span>
                   </div>
                 ))}
               </div>
               {catalogoSeleccionado.details && catalogoSeleccionado.details.length > 0 && (
-                <div style={{ marginTop: '32px' }}>
+                <div className="cd-x46">
                   {catalogoSeleccionado.details.map((det: any) => {
                     const rawData = subDocsSnapshot[det.collection] || [];
                     const parentId = String(registroActual.id).trim().toLowerCase();
@@ -595,50 +594,47 @@ const CatalogosDashboard = () => {
                     const keysToRender = det.fields ? det.fields.filter((f: any) => f.name !== det.foreignKey) : Object.keys(dataList[0] || {}).filter(k => k !== 'id' && k !== det.foreignKey).map(k => ({ name: k, label: k }));
                     
                     return (
-                      <div key={det.collection} style={{ marginBottom: '32px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '8px' }}>
-                          <h3 style={{ color: '#D84315', fontSize: '1.1rem', margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div className="cd-x43" key={det.collection}>
+                        <div className="cd-x47">
+                          <h3 className="cd-x48">
                             <span>{tituloColeccion}</span>
-                            <span style={{ backgroundColor: '#161b22', padding: '4px 10px', borderRadius: '12px', fontSize: '0.8rem', color: '#8b949e', border: '1px solid #30363d' }}>{dataList.length} Filtrados (de {totalRaw} DB)</span>
+                            <span className="cd-x49">{dataList.length} Filtrados (de {totalRaw} DB)</span>
                           </h3>
-                          <button 
+                          <button className="cd-x50" 
                             onClick={() => handleAgregarEditarSubdetalle(det.collection)} 
                             title="Agregar Detalle"
-                            style={{ backgroundColor: '#D84315', color: '#ffffff', border: 'none', padding: '6px 12px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                           </button>
                         </div>
                         {dataList.length === 0 ? (
-                          <div style={{ padding: '24px', backgroundColor: '#161b22', borderRadius: '8px', color: '#8b949e', textAlign: 'center', border: '1px dashed #30363d' }}>No se encontró el ID vinculado en esta tabla.</div>
+                          <div className="cd-x51">No se encontró el ID vinculado en esta tabla.</div>
                         ) : (
-                          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', backgroundColor: '#161b22' }}>
-                            <table className="sub-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-                              <thead style={{ backgroundColor: '#1f2937' }}>
+                          <div className="table-container cd-x52">
+                            <table className="sub-table cd-x53">
+                              <thead className="cd-x54">
                                 <tr>
-                                  {keysToRender.map((subF: any) => <th key={subF.name} style={{ color: '#8b949e', fontWeight: '600', borderBottom: '1px solid #30363d', textTransform: 'uppercase' }}>{subF.label || subF.name}</th>)}
-                                  <th style={{ color: '#8b949e', fontWeight: '600', borderBottom: '1px solid #30363d', textTransform: 'uppercase', textAlign: 'center', width: '100px' }}>Acciones</th>
+                                  {keysToRender.map((subF: any) => <th className="cd-x55" key={subF.name}>{subF.label || subF.name}</th>)}
+                                  <th className="cd-x56">Acciones</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {dataList.map((subItem: any) => (
-                                  <tr key={subItem.id} style={{ borderBottom: '1px solid #21262d' }}>
-                                    {keysToRender.map((subF: any) => <td key={subF.name} style={{ color: '#c9d1d9' }}>{getDisplayValue(subItem, subF)}</td>)}
-                                    <td style={{ textAlign: 'center' }}>
-                                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                                        <button 
+                                  <tr className="cd-x57" key={subItem.id}>
+                                    {keysToRender.map((subF: any) => <td className="cd-x58" key={subF.name}>{getDisplayValue(subItem, subF)}</td>)}
+                                    <td className="cd-x59">
+                                      <div className="cd-x26">
+                                        <button className="cd-x60" 
                                           title="Editar Detalle"
-                                          onClick={() => handleAgregarEditarSubdetalle(det.collection, subItem)} 
-                                          style={{ background: 'transparent', border: '1px solid #3b82f6', color: '#3b82f6', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                                          onClick={() => handleAgregarEditarSubdetalle(det.collection, subItem)}
                                           onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} 
                                           onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                                         >
                                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                                         </button>
-                                        <button 
+                                        <button className="cd-x61" 
                                           title="Eliminar Detalle"
-                                          onClick={() => handleEliminarSubdetalle(det.collection, subItem.id)} 
-                                          style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', padding: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
+                                          onClick={() => handleEliminarSubdetalle(det.collection, subItem.id)}
                                           onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
                                           onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                                         >
@@ -658,35 +654,35 @@ const CatalogosDashboard = () => {
                 </div>
               )}
             </div>
-            <div className="form-actions detail-actions" style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button onClick={() => { setViendoDetalles(false); setRegistroActual(null); }} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar</button>
+            <div className="form-actions detail-actions cd-x62">
+              <button className="cd-x63" onClick={() => { setViendoDetalles(false); setRegistroActual(null); }}>Cerrar</button>
             </div>
           </div>
         </div>
       )}
 
       {modalEstado === 'config_obligatorios' && catalogoSeleccionado && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div style={{ maxWidth: '500px', width: '100%', backgroundColor: '#0d1117', borderRadius: '12px', border: '1px solid #30363d', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem' }}>Campos Obligatorios</h2>
-              <button onClick={() => setModalEstado('cerrado')} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay cd-x36">
+          <div className="cd-x64">
+            <div className="cd-x65">
+              <h2 className="cd-x39">Campos Obligatorios</h2>
+              <button className="cd-x41" onClick={() => setModalEstado('cerrado')}>✕</button>
             </div>
-            <div style={{ padding: '24px', flex: 1, overflowY: 'auto', maxHeight: '60vh' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div className="cd-x66">
+              <div className="cd-x67">
                 {catalogoSeleccionado.fields.map((f: CatalogField) => {
                   const isChecked = (camposRequeridos[catalogoSeleccionado.id] || []).includes(f.name);
                   return (
                     <label key={f.name} style={{ display: 'flex', alignItems: 'center', gap: '12px', color: isChecked ? '#f0f6fc' : '#c9d1d9', cursor: 'pointer', padding: '8px', borderRadius: '6px', backgroundColor: isChecked ? '#161b22' : 'transparent', border: '1px solid', borderColor: isChecked ? '#30363d' : 'transparent' }}>
-                      <input type="checkbox" checked={isChecked} onChange={() => handleToggleRequerido(f.name)} style={{ width: '18px', height: '18px', cursor: 'pointer' }} />
-                      <span style={{ fontSize: '1rem' }}>{f.label}</span>
+                      <input className="cd-x68" type="checkbox" checked={isChecked} onChange={() => handleToggleRequerido(f.name)} />
+                      <span className="cd-x69">{f.label}</span>
                     </label>
                   );
                 })}
               </div>
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end' }}>
-              <button onClick={() => setModalEstado('cerrado')} style={{ padding: '8px 24px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Listo</button>
+            <div className="cd-x70">
+              <button className="cd-x71" onClick={() => setModalEstado('cerrado')}>Listo</button>
             </div>
           </div>
         </div>
@@ -694,20 +690,20 @@ const CatalogosDashboard = () => {
 
       {/* ✅ FORMULARIO DE AGREGAR / EDITAR PRINCIPAL */}
       {modalEstado === 'formulario' && catalogoSeleccionado && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1600, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div style={{ maxWidth: '600px', width: '100%', backgroundColor: '#0d1117', borderRadius: '12px', border: '1px solid #30363d', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem' }}>{registroActual ? 'Editar' : 'Agregar'} {catalogoSeleccionado.titulo}</h2>
-              <button onClick={() => setModalEstado('cerrado')} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay cd-x72">
+          <div className="cd-x73">
+            <div className="cd-x38">
+              <h2 className="cd-x39">{registroActual ? 'Editar' : 'Agregar'} {catalogoSeleccionado.titulo}</h2>
+              <button className="cd-x41" onClick={() => setModalEstado('cerrado')}>✕</button>
             </div>
             
-            <form onSubmit={guardarRegistro} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form className="cd-x74" onSubmit={guardarRegistro}>
+              <div className="cd-x75">
                 {catalogoSeleccionado.fields.map((f: CatalogField) => {
                   const isReq = (camposRequeridos[catalogoSeleccionado.id] || []).includes(f.name);
                   return (
                     <div key={f.name}>
-                      <label style={{ color: '#8b949e', fontSize: '0.9rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>{f.label} {isReq && <span style={{ color: '#ef4444' }}>*</span>}</label>
+                      <label className="cd-x76">{f.label} {isReq && <span className="cd-x77">*</span>}</label>
                       {f.dynamicOptions && opcionesDinamicas[f.dynamicOptions.collection] ? (
                         <SelectBuscable
                           opciones={opcionesDinamicas[f.dynamicOptions.collection].map((opt: any) => {
@@ -733,9 +729,9 @@ const CatalogosDashboard = () => {
                   );
                 })}
               </div>
-              <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#0d1117' }}>
-                <button type="button" onClick={() => setModalEstado('cerrado')} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" style={{ padding: '8px 16px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Guardar Registro</button>
+              <div className="cd-x78">
+                <button className="cd-x63" type="button" onClick={() => setModalEstado('cerrado')}>Cancelar</button>
+                <button className="cd-x79" type="submit">Guardar Registro</button>
               </div>
             </form>
           </div>
@@ -744,18 +740,18 @@ const CatalogosDashboard = () => {
 
       {/* ✅ MODAL DE FORMULARIO PARA SUB-DETALLES */}
       {subModalEstado === 'abierto' && subColeccionActual && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1700, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div style={{ maxWidth: '600px', width: '100%', backgroundColor: '#0d1117', borderRadius: '12px', border: '1px solid #30363d', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem' }}>{subRegistroActual ? 'Editar' : 'Agregar'} Detalles</h2>
-              <button onClick={() => setSubModalEstado('cerrado')} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay cd-x80">
+          <div className="cd-x73">
+            <div className="cd-x38">
+              <h2 className="cd-x39">{subRegistroActual ? 'Editar' : 'Agregar'} Detalles</h2>
+              <button className="cd-x41" onClick={() => setSubModalEstado('cerrado')}>✕</button>
             </div>
-            <form onSubmit={guardarSubRegistro} style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-              <div style={{ padding: '24px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <form className="cd-x74" onSubmit={guardarSubRegistro}>
+              <div className="cd-x75">
                 {subColeccionActual.fields?.filter((f:any) => f.name !== subColeccionActual.foreignKey).map((f: any) => {
                   return (
                     <div key={f.name}>
-                      <label style={{ color: '#8b949e', fontSize: '0.9rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>{f.label || f.name}</label>
+                      <label className="cd-x76">{f.label || f.name}</label>
                       {f.dynamicOptions && opcionesDinamicas[f.dynamicOptions.collection] ? (
                         <SelectBuscable
                           opciones={opcionesDinamicas[f.dynamicOptions.collection].map((opt: any) => {
@@ -781,9 +777,9 @@ const CatalogosDashboard = () => {
                   );
                 })}
               </div>
-              <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#0d1117' }}>
-                <button type="button" onClick={() => setSubModalEstado('cerrado')} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" style={{ padding: '8px 16px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Guardar Detalle</button>
+              <div className="cd-x78">
+                <button className="cd-x63" type="button" onClick={() => setSubModalEstado('cerrado')}>Cancelar</button>
+                <button className="cd-x79" type="submit">Guardar Detalle</button>
               </div>
             </form>
           </div>

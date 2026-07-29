@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
+import './RolesDashboard.css';
 
 // ============================================================================
 // Módulos del sistema, agrupados igual que el menú lateral (App.tsx).
@@ -157,77 +158,74 @@ export const RolesDashboard: React.FC = () => {
   const todosSeleccionados = TODOS_LOS_MODULOS.every(m => modulos.includes(m));
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
+    <div className="module-container rd-x1">
       
       {/* SECCIÓN 1: CONFIGURACIÓN IP (EXCLUSIVO PARA EL RELOJ) */}
-      <div style={{ backgroundColor: '#0d1117', border: '1px solid #3b82f6', borderRadius: '12px', padding: '24px', marginBottom: '32px' }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '0 0 12px 0', color: '#f0f6fc', fontSize: '1.1rem' }}>
+      <div className="rd-x2">
+        <h3 className="rd-x3">
           🛡️ Configuración de Red para Reloj Checador
         </h3>
-        <p style={{ color: '#8b949e', fontSize: '0.9rem', marginBottom: '20px' }}>
+        <p className="rd-x4">
           Define aquí la Dirección IP pública del internet de tu oficina. Los colaboradores operativos <strong>solo podrán registrar su asistencia</strong> si se encuentran conectados a esta red.
         </p>
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+        <div className="rd-x5">
           <input 
             type="text" 
             value={ipOficial} 
             onChange={(e) => setIpOficial(e.target.value)} 
             placeholder="Ej. 192.168.1.1" 
-            className="form-control" 
-            style={{ width: '250px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d' }} 
+            className="form-control rd-x6" 
           />
-          <button onClick={detectarIp} className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button onClick={detectarIp} className="btn btn-outline rd-x7">
             📍 Detectar mi IP actual
           </button>
-          <button onClick={guardarIp} className="btn btn-primary" disabled={guardandoIp} style={{ backgroundColor: '#3b82f6', border: 'none' }}>
+          <button onClick={guardarIp} className="btn btn-primary rd-x8" disabled={guardandoIp}>
             {guardandoIp ? 'Guardando...' : 'Guardar IP Oficial'}
           </button>
         </div>
       </div>
 
       {/* SECCIÓN 2: LISTA DE ROLES */}
-      <div className="module-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '16px' }}>
-        <h2 style={{ fontSize: '1.25rem', color: '#8b949e', margin: 0, fontWeight: '400' }}>
-          Configuración {'>'} <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Roles y Permisos ({roles.length})</span>
+      <div className="module-header rd-x9">
+        <h2 className="rd-x10">
+          Configuración {'>'} <span className="rd-x11">Roles y Permisos ({roles.length})</span>
         </h2>
         <button className="btn btn-primary" onClick={abrirModalNuevo}>+ Nuevo Rol</button>
       </div>
 
-      <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden' }}>
-        <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-          <thead style={{ backgroundColor: '#161b22' }}>
+      <div className="table-container rd-x12">
+        <table className="data-table rd-x13">
+          <thead className="rd-x14">
             <tr>
-              <th style={{ padding: '16px', width: '160px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d' }}>ACCIONES</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d' }}>NOMBRE DEL ROL</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', borderBottom: '1px solid #30363d' }}>MÓDULOS PERMITIDOS</th>
+              <th className="rd-x15">ACCIONES</th>
+              <th className="rd-x16">NOMBRE DEL ROL</th>
+              <th className="rd-x16">MÓDULOS PERMITIDOS</th>
             </tr>
           </thead>
           <tbody>
             {roles.map(rol => (
-              <tr key={rol.id} style={{ borderBottom: '1px solid #21262d' }}>
-                <td style={{ padding: '16px', textAlign: 'center' }}>
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+              <tr className="rd-x17" key={rol.id}>
+                <td className="rd-x18">
+                  <div className="rd-x19">
                     <button 
                       onClick={() => abrirModalEditar(rol)} 
-                      className="btn-small btn-edit"
-                      style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '4px 12px' }}
+                      className="btn-small btn-edit rd-x20"
                     >
                       Editar
                     </button>
                     <button 
                       onClick={() => eliminarRol(rol.id, rol.nombre)} 
-                      className="btn-small btn-danger"
-                      style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '4px 12px' }}
+                      className="btn-small btn-danger rd-x21"
                     >
                       Eliminar
                     </button>
                   </div>
                 </td>
-                <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: 'bold' }}>{rol.nombre}</td>
-                <td style={{ padding: '16px' }}>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <td className="rd-x22">{rol.nombre}</td>
+                <td className="rd-x23">
+                  <div className="rd-x24">
                     {rol.modulosPermitidos?.map((mod: string) => (
-                      <span key={mod} style={{ backgroundColor: '#21262d', color: '#c9d1d9', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', border: '1px solid #30363d' }}>
+                      <span className="rd-x25" key={mod}>
                         {mod}
                       </span>
                     ))}
@@ -241,69 +239,65 @@ export const RolesDashboard: React.FC = () => {
 
       {/* MODAL DE EDICIÓN DE ROL */}
       {modalAbierto && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-          <div className="form-card" style={{ maxWidth: '600px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
-            <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '1.25rem', color: '#f0f6fc', margin: 0, fontWeight: '500' }}>
+        <div className="modal-overlay rd-x26">
+          <div className="form-card rd-x27">
+            <div className="form-header rd-x28">
+              <h2 className="rd-x29">
                 {rolEditando ? 'Editar Rol' : 'Nuevo Rol'}
               </h2>
-              <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="rd-x30" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
 
-            <form onSubmit={guardarRol} style={{ padding: '24px' }}>
-              <div className="form-group" style={{ marginBottom: '24px' }}>
-                <label className="form-label" style={{ color: '#8b949e' }}>Nombre del Rol (Ej. VENTAS, ADMIN) *</label>
+            <form className="rd-x31" onSubmit={guardarRol}>
+              <div className="form-group rd-x32">
+                <label className="form-label rd-x33">Nombre del Rol (Ej. VENTAS, ADMIN) *</label>
                 <input 
                   type="text" 
-                  className="form-control" 
+                  className="form-control rd-x34" 
                   value={nombreRol} 
                   onChange={(e) => setNombreRol(e.target.value)} 
-                  required 
-                  style={{ backgroundColor: '#010409', color: '#f0f6fc', border: '1px solid #30363d' }}
+                  required
                 />
               </div>
 
-              <div className="form-group" style={{ marginBottom: '0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <label className="form-label" style={{ color: '#8b949e', margin: 0 }}>Selecciona los módulos a los que tendrá acceso:</label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#58a6ff', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600 }}>
-                    <input
+              <div className="form-group rd-x35">
+                <div className="rd-x36">
+                  <label className="form-label rd-x37">Selecciona los módulos a los que tendrá acceso:</label>
+                  <label className="rd-x38">
+                    <input className="rd-x39"
                       type="checkbox"
                       checked={todosSeleccionados}
                       onChange={toggleTodos}
-                      style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
                     />
                     Seleccionar todo
                   </label>
                 </div>
 
-                <div style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', maxHeight: '45vh', overflowY: 'auto' }}>
+                <div className="rd-x40">
                   {GRUPOS_MODULOS.map(g => {
                     const todosGrupo = g.modulos.every(m => modulos.includes(m));
                     const algunosGrupo = g.modulos.some(m => modulos.includes(m));
                     return (
-                      <div key={g.grupo} style={{ marginBottom: '18px' }}>
+                      <div className="rd-x41" key={g.grupo}>
                         {/* Encabezado del grupo (equivale al item del MENÚ) */}
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginBottom: '10px', borderBottom: '1px solid #30363d', paddingBottom: '8px' }}>
-                          <input
+                        <label className="rd-x42">
+                          <input className="rd-x39"
                             type="checkbox"
                             checked={todosGrupo}
                             ref={el => { if (el) el.indeterminate = !todosGrupo && algunosGrupo; }}
                             onChange={() => toggleGrupoModulos(g.modulos)}
-                            style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
                           />
-                          <span style={{ color: '#f0f6fc', fontWeight: 600, fontSize: '0.9rem' }}>{g.grupo}</span>
+                          <span className="rd-x43">{g.grupo}</span>
                         </label>
 
                         {/* Módulos del grupo (equivalen a los items del SUBMENÚ) */}
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', paddingLeft: '24px' }}>
+                        <div className="rd-x44">
                           {g.modulos.map(mod => (
-                            <label key={mod} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c9d1d9', cursor: 'pointer', fontSize: '0.88rem' }}>
-                              <input 
+                            <label className="rd-x45" key={mod}>
+                              <input className="rd-x39" 
                                 type="checkbox" 
                                 checked={modulos.includes(mod)} 
-                                onChange={() => toggleModulo(mod)} 
-                                style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
+                                onChange={() => toggleModulo(mod)}
                               />
                               {mod}
                             </label>
@@ -315,9 +309,9 @@ export const RolesDashboard: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', marginTop: '32px', paddingTop: '24px', borderTop: '1px solid #30363d' }}>
-                <button type="button" onClick={() => setModalAbierto(false)} className="btn btn-outline" style={{ flex: 1 }}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={cargandoRol} style={{ flex: 1, backgroundColor: '#D84315', border: 'none' }}>
+              <div className="rd-x46">
+                <button type="button" onClick={() => setModalAbierto(false)} className="btn btn-outline rd-x47">Cancelar</button>
+                <button type="submit" className="btn btn-primary rd-x48" disabled={cargandoRol}>
                   {cargandoRol ? 'Guardando...' : 'Guardar Rol'}
                 </button>
               </div>

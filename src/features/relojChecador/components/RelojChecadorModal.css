@@ -1,0 +1,49 @@
+/* Estilos hermanos de RelojChecadorModal.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.rcm-x1 { backdrop-filter: blur(6px); z-index: 3000; }
+.rcm-x2 { max-width: 450px; background-color: #0d1117; border: 1px solid #3b82f6; border-radius: 16px; overflow: hidden; box-shadow: 0 20px 40px rgba(0,0,0,0.8); }
+.rcm-x3 { background-color: #161b22; padding: 24px; border-bottom: 1px solid #30363d; text-align: center; }
+.rcm-x4 { margin: 0; color: #f0f6fc; font-size: 1.4rem; }
+.rcm-x5 { color: #8b949e; margin: 8px 0 0 0; font-size: 0.9rem; }
+.rcm-x6 { padding: 60px 40px; text-align: center; color: #8b949e; }
+.rcm-x7 { margin-bottom: 16px; font-size: 1.5rem; }
+.rcm-x8 { padding: 40px 24px; text-align: center; }
+.rcm-x9 { background-color: rgba(218, 54, 51, 0.1); border: 1px solid rgba(218, 54, 51, 0.4); padding: 24px; border-radius: 8px; }
+.rcm-x10 { font-size: 3rem; display: block; margin-bottom: 16px; }
+.rcm-x11 { color: #ff4d4d; margin: 0 0 12px 0; font-size: 1.2rem; }
+.rcm-x12 { color: #c9d1d9; font-size: 0.95rem; margin: 0; line-height: 1.5; }
+.rcm-x13 { color: #f0f6fc; }
+.rcm-x14 { margin-top: 24px; width: 100%; }
+.rcm-x15 { padding: 24px; }
+.rcm-x16 { text-align: center; margin-bottom: 24px; background-color: #010409; padding: 16px; border-radius: 8px; border: 1px solid #30363d; }
+.rcm-x17 { color: #58a6ff; font-size: 2.5rem; font-weight: bold; font-family: monospace; letter-spacing: 2px; }
+.rcm-x18 { color: #c9d1d9; font-size: 0.9rem; margin-top: 4px; text-transform: uppercase; }
+.rcm-x19 { color: #8b949e; }
+.rcm-x20 { background-color: #21262d; color: #f0f6fc; font-weight: bold; cursor: not-allowed; }
+.rcm-x21 { background-color: rgba(46, 160, 67, 0.1); border: 1px solid rgba(46, 160, 67, 0.4); padding: 16px; border-radius: 8px; text-align: center; margin-bottom: 24px; }
+.rcm-x22 { color: #3fb950; font-weight: bold; font-size: 1.1rem; display: block; margin-bottom: 8px; }
+.rcm-x23 { color: #8b949e; font-size: 0.9rem; }
+.rcm-x24 { background-color: #010409; color: #c9d1d9; border: 1px solid #30363d; }
+.rcm-x25 { display: flex; gap: 10px; }
+.rcm-x26 { flex: 1; background-color: #010409; color: #c9d1d9; border: 1px solid #30363d; font-size: 0.9rem; }
+.rcm-x27 { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.rcm-x28 { display: flex; justify-content: flex-end; gap: 12px; margin-top: 32px; }
+.rcm-x29 { background-color: #3b82f6; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: bold; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .rcm-x3 { padding: 14px 12px; }
+  .rcm-x6 { padding: 14px 12px; }
+  .rcm-x7 { font-size: 1.3rem; }
+  .rcm-x8 { padding: 14px 12px; }
+  .rcm-x9 { padding: 14px 12px; }
+  .rcm-x10 { font-size: 1.3rem; }
+  .rcm-x15 { padding: 14px 12px; }
+  .rcm-x17 { font-size: 1.3rem; }
+  .rcm-x25 { flex-wrap: wrap; }
+  .rcm-x27 { flex-wrap: wrap; }
+  .rcm-x28 { flex-wrap: wrap; }
+}

@@ -1,0 +1,11 @@
+/* Estilos hermanos de EmpresaBrand.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.eb-x1 { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .eb-x1 { flex-wrap: wrap; }
+}

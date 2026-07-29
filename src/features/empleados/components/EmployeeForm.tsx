@@ -6,6 +6,7 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { guardarEmpleadoConTransaccion } from '../../../services/employeeService';
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion';
 import type { Employee } from '../../../types/empleado';
+import './EmployeeForm.css';
 
 // Roles disponibles en la empresa
 const ROLES_DISPONIBLES = ['Administrador', 'Recursos Humanos', 'Operaciones', 'Contabilidad', 'Gerencia'];
@@ -46,13 +47,13 @@ const SearchableSelect: React.FC<{ options: { id: string, label: string }[]; val
   const filteredOptions = options.filter(opt => opt.label.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div className="ef-x1">
       <input type="text" className="form-control" placeholder={placeholder} value={isOpen ? searchTerm : selectedLabel} onChange={(e) => { setSearchTerm(e.target.value); setIsOpen(true); }} onFocus={() => { setSearchTerm(''); setIsOpen(true); }} onBlur={() => { setTimeout(() => setIsOpen(false), 200); setSearchTerm(selectedLabel); }} required={required && !value} style={{ backgroundColor: '#010409', border: isOpen ? '1px solid #3b82f6' : '1px solid #30363d', color: '#c9d1d9', width: '100%' }} />
       {isOpen && (
-        <ul style={{ position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '200px', overflowY: 'auto', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px', padding: 0, listStyle: 'none', zIndex: 1000 }}>
+        <ul className="ef-x2">
           {filteredOptions.length > 0 ? filteredOptions.map(opt => (
-            <li key={opt.id} onClick={() => { onChange(opt.id, opt.label); setSearchTerm(opt.label); setIsOpen(false); }} style={{ padding: '8px 12px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #21262d', fontSize: '0.85rem' }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>{opt.label}</li>
-          )) : <li style={{ padding: '8px 12px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>Sin resultados</li>}
+            <li className="ef-x3" key={opt.id} onClick={() => { onChange(opt.id, opt.label); setSearchTerm(opt.label); setIsOpen(false); }} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>{opt.label}</li>
+          )) : <li className="ef-x4">Sin resultados</li>}
         </ul>
       )}
     </div>
@@ -70,19 +71,19 @@ const MultiSelect: React.FC<{ options: { id: string, label: string }[]; selected
   };
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
-      {required && <input type="text" style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }} value={selectedIds.length > 0 ? 'valid' : ''} required readOnly />}
+    <div className="ef-x1">
+      {required && <input className="ef-x5" type="text" value={selectedIds.length > 0 ? 'valid' : ''} required readOnly />}
       <div onClick={() => setIsOpen(!isOpen)} style={{ padding: '8px 12px', backgroundColor: '#010409', border: isOpen ? '1px solid #3b82f6' : '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', cursor: 'pointer', minHeight: '38px', display: 'flex', flexWrap: 'wrap', gap: '4px', alignItems: 'center' }}>
-        {selectedIds.length === 0 ? <span style={{ color: '#8b949e' }}>Seleccione operaciones...</span> : selectedIds.map(id => {
+        {selectedIds.length === 0 ? <span className="ef-x6">Seleccione operaciones...</span> : selectedIds.map(id => {
           const opt = options.find(o => o.id === id);
-          return opt ? <span key={id} style={{ backgroundColor: '#21262d', border: '1px solid #30363d', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem' }}>{opt.label} ✕</span> : null;
+          return opt ? <span className="ef-x7" key={id}>{opt.label} ✕</span> : null;
         })}
       </div>
       {isOpen && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '200px', overflowY: 'auto', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px', zIndex: 1000, padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="ef-x8">
           {options.map(opt => (
-            <label key={opt.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c9d1d9', cursor: 'pointer', fontSize: '0.85rem' }}>
-              <input type="checkbox" checked={selectedIds.includes(opt.id)} onChange={() => toggleSelect(opt.id)} style={{ accentColor: '#D84315' }} /> {opt.label}
+            <label className="ef-x9" key={opt.id}>
+              <input className="ef-x10" type="checkbox" checked={selectedIds.includes(opt.id)} onChange={() => toggleSelect(opt.id)} /> {opt.label}
             </label>
           ))}
         </div>
@@ -105,32 +106,32 @@ const FieldConfigModal: React.FC<{
 }> = ({ isOpen, onClose, fields, requiredFields, toggleRequired, fieldRoles, toggleRole }) => {
   if (!isOpen) return null;
   return (
-    <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 2000 }}>
-      <div className="form-card" style={{ maxWidth: '1100px', width: '95%', borderRadius: '16px', border: '1px solid #444', backgroundColor: '#0d1117', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
-        <div className="form-header" style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', marginBottom: '0', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.25rem', margin: 0, color: '#f0f6fc' }}>⚙️ Configuración de Campos y Accesos</h3>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+    <div className="modal-overlay ef-x11">
+      <div className="form-card ef-x12">
+        <div className="form-header ef-x13">
+          <h3 className="ef-x14">⚙️ Configuración de Campos y Accesos</h3>
+          <button className="ef-x15" type="button" onClick={onClose}>✕</button>
         </div>
         
-        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
-          <p style={{ color: '#8b949e', marginBottom: '24px', fontSize: '0.9rem' }}>Define qué campos son obligatorios y qué roles de usuario tienen permiso para verlos.</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+        <div className="ef-x16">
+          <p className="ef-x17">Define qué campos son obligatorios y qué roles de usuario tienen permiso para verlos.</p>
+          <div className="ef-x18">
             {fields.map(f => {
               const rolesPermitidos = fieldRoles[f.name] || ROLES_DISPONIBLES;
               return (
-              <div key={f.name} style={{ backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                <h4 style={{ margin: '0 0 12px 0', color: '#58a6ff', fontSize: '0.95rem' }}>{f.label}</h4>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.9rem', fontWeight: 'bold' }}>
-                  <input type="checkbox" checked={requiredFields.includes(f.name)} onChange={() => toggleRequired(f.name)} style={{ width: '16px', height: '16px', accentColor: '#D84315' }} /> 
+              <div className="ef-x19" key={f.name}>
+                <h4 className="ef-x20">{f.label}</h4>
+                <label className="ef-x21">
+                  <input className="ef-x22" type="checkbox" checked={requiredFields.includes(f.name)} onChange={() => toggleRequired(f.name)} /> 
                   Hacer Obligatorio
                 </label>
-                <div style={{ fontSize: '0.75rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '8px', borderTop: '1px solid #30363d', paddingTop: '12px' }}>Roles que pueden ver este campo:</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                <div className="ef-x23">Roles que pueden ver este campo:</div>
+                <div className="ef-x24">
                   {ROLES_DISPONIBLES.map(rol => {
                     const hasAccess = rolesPermitidos.includes(rol);
                     return (
                       <label key={rol} style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', color: hasAccess ? '#c9d1d9' : '#8b949e', cursor: 'pointer', opacity: hasAccess ? 1 : 0.5 }}>
-                        <input type="checkbox" checked={hasAccess} onChange={() => toggleRole(f.name, rol)} style={{ accentColor: '#D84315' }} /> 
+                        <input className="ef-x10" type="checkbox" checked={hasAccess} onChange={() => toggleRole(f.name, rol)} /> 
                         {rol}
                       </label>
                     );
@@ -140,8 +141,8 @@ const FieldConfigModal: React.FC<{
             )})}
           </div>
         </div>
-        <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', flexShrink: 0, display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="button" className="btn-primary" onClick={onClose} style={{ padding: '10px 32px', backgroundColor: '#D84315', border: 'none', borderRadius: '6px', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>Guardar Cambios</button>
+        <div className="ef-x25">
+          <button type="button" className="btn-primary ef-x26" onClick={onClose}>Guardar Cambios</button>
         </div>
       </div>
     </div>
@@ -404,16 +405,16 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
       <FieldConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} fields={configuracionCampos} requiredFields={requiredFields} toggleRequired={toggleRequired} fieldRoles={fieldRoles} toggleRole={toggleRole} />
 
       <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`} style={{ backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-        <div className="form-card" style={{ maxWidth: '1100px', width: '100%', borderRadius: '12px', border: '1px solid #30363d', backgroundColor: '#0d1117', display: 'flex', flexDirection: 'column', maxHeight: '95vh' }}>
+        <div className="form-card ef-x27">
           
-          <div className="form-header" style={{ padding: '20px 24px', borderBottom: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '500', margin: 0, color: '#f0f6fc', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="form-header ef-x28">
+            <h2 className="ef-x29">
               {estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Empleado` : 'Alta de Empleado')}
               <span style={{ fontSize: '0.8rem', padding: '4px 10px', borderRadius: '12px', backgroundColor: formData.activo ? 'rgba(35, 134, 54, 0.2)' : 'rgba(218, 54, 51, 0.2)', color: formData.activo ? '#3fb950' : '#f85149', fontWeight: 'bold' }}>
                 {formData.activo ? '🟢 Activo' : '🔴 Baja'}
               </span>
             </h2>
-            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <div className="ef-x30">
               <button
                 type="button"
                 onClick={() => { if (!initialData) { alert('Guarda el empleado primero para poder subir documentos.'); return; } setMostrarSubirDoc(true); }}
@@ -423,13 +424,13 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                 Subir Documentos
               </button>
-              <button type="button" onClick={() => setIsConfigOpen(true)} className="btn-window" style={{ background: 'none', fontSize: '1.2rem', cursor: 'pointer' }} title="Configurar campos y accesos">⚙️</button>
+              <button type="button" onClick={() => setIsConfigOpen(true)} className="btn-window ef-x31" title="Configurar campos y accesos">⚙️</button>
               {estado === 'abierto' ? <button type="button" onClick={onMinimize} className="btn-window">🗕</button> : <button type="button" onClick={onRestore} className="btn-window restore">🗖</button>}
-              <button type="button" onClick={onClose} className="btn-window close" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button type="button" onClick={onClose} className="btn-window close ef-x15">✕</button>
             </div>
           </div>
 
-          <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 24px', overflowX: 'auto', flexShrink: 0 }}>
+          <div className="ef-x32">
             {tabs.map(tab => (
               <button
                 key={tab.id}
@@ -446,36 +447,36 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
               
               {/* ✅ PESTAÑA 1 */}
               {pestañaActiva === 'personales' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
+                <div className="ef-x33">
                   
                   {isVis('activo') && (
                     <div style={{ gridColumn: '1 / -1', backgroundColor: '#161b22', padding: '20px', borderRadius: '8px', border: formData.activo ? '1px solid #30363d' : '1px solid #f85149', marginBottom: '24px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div className="ef-x34">
                         <div>
-                          <span style={{ fontSize: '0.85rem', color: '#8b949e', display: 'block', marginBottom: '4px', textTransform: 'uppercase' }}>Gestión de Estado</span>
+                          <span className="ef-x35">Gestión de Estado</span>
                           {formData.activo ? (
-                            <span style={{ color: '#3fb950', fontWeight: 'bold', fontSize: '1rem' }}>Empleado habilitado en el sistema</span>
+                            <span className="ef-x36">Empleado habilitado en el sistema</span>
                           ) : (
-                            <span style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1rem' }}>Empleado dado de baja</span>
+                            <span className="ef-x37">Empleado dado de baja</span>
                           )}
                         </div>
                         <div>
                           {formData.activo ? (
-                            <button type="button" onClick={handleDarDeBaja} style={{ backgroundColor: 'transparent', border: '1px solid #f85149', color: '#f85149', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Dar de Baja</button>
+                            <button className="ef-x38" type="button" onClick={handleDarDeBaja}>Dar de Baja</button>
                           ) : (
-                            <button type="button" onClick={handleReactivar} style={{ backgroundColor: '#2ea043', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Reactivar Empleado</button>
+                            <button className="ef-x39" type="button" onClick={handleReactivar}>Reactivar Empleado</button>
                           )}
                         </div>
                       </div>
                       
                       {!formData.activo && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px', marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #30363d' }}>
+                        <div className="ef-x40">
                           <div className="form-group">
-                            <label className="form-label" style={{ color: '#f85149' }}>Fecha de Baja *</label>
+                            <label className="form-label ef-x41">Fecha de Baja *</label>
                             <input type="date" name="fechaBaja" className="form-control" value={formData.fechaBaja || ''} onChange={handleChange} required />
                           </div>
                           <div className="form-group">
-                            <label className="form-label" style={{ color: '#f85149' }}>Observación / Motivo de Baja *</label>
+                            <label className="form-label ef-x41">Observación / Motivo de Baja *</label>
                             <input type="text" name="observacionBaja" className="form-control" value={formData.observacionBaja || ''} onChange={handleChange} required placeholder="Explique el motivo..." />
                           </div>
                         </div>
@@ -490,11 +491,10 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                       <input 
                         type="text" 
                         name="employeeId"
-                        className="form-control" 
+                        className="form-control ef-x42" 
                         value={formData.employeeId} 
                         onChange={handleChange}
-                        required
-                        style={{ backgroundColor: '#010409', color: '#58a6ff', fontWeight: 'bold', border: '1px solid #3b82f6' }} 
+                        required 
                       />
                     </div>
 
@@ -508,38 +508,38 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                     {isVis('personalEmail') && <div className="form-group"><label className="form-label">Correo Personal {isReq('personalEmail') && '*'}</label><input type="email" name="personalEmail" className="form-control" value={formData.personalEmail} onChange={handleChange} required={isReq('personalEmail')} /></div>}
                     
                     {isVis('addressId') && (
-                    <div className="form-group" style={{ gridColumn: '1 / -1', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                      <label className="form-label" style={{ color: '#58a6ff' }}>Dirección Exacta {isReq('addressId') && '*'}</label>
-                      <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                        <div style={{ flex: '1 1 300px' }}>
+                    <div className="form-group ef-x43">
+                      <label className="form-label ef-x44">Dirección Exacta {isReq('addressId') && '*'}</label>
+                      <div className="ef-x45">
+                        <div className="ef-x46">
                           <SearchableSelect options={direccionesDB} value={formData.addressId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, addressId: id, addressLabel: label }))} required={isReq('addressId')} />
                         </div>
                         <button type="button" className="btn btn-outline" onClick={() => setModalDireccionAbierto(true)}>+ Nueva</button>
-                        <button type="button" className="btn btn-primary" onClick={abrirGoogleMaps} style={{ backgroundColor: '#2ea043', color: 'white', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <button type="button" className="btn btn-primary ef-x47" onClick={abrirGoogleMaps}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
                           Maps
                         </button>
                       </div>
                     </div>
                     )}
-                    {isVis('mapsLink') && <div className="form-group" style={{ gridColumn: '1 / -1' }}><label className="form-label">Enlace Google Maps {isReq('mapsLink') && '*'}</label><input type="url" name="mapsLink" className="form-control" value={formData.mapsLink} onChange={handleChange} placeholder="https://maps.google.com/..." required={isReq('mapsLink')} /></div>}
+                    {isVis('mapsLink') && <div className="form-group ef-x48"><label className="form-label">Enlace Google Maps {isReq('mapsLink') && '*'}</label><input type="url" name="mapsLink" className="form-control" value={formData.mapsLink} onChange={handleChange} placeholder="https://maps.google.com/..." required={isReq('mapsLink')} /></div>}
                     
-                    {isVis('emergencyContactName') && <><div className="form-group" style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d' }} /></div><div className="form-group"><label className="form-label" style={{ color: '#ff7b72' }}>Contacto de Emergencia {isReq('emergencyContactName') && '*'}</label><input type="text" name="emergencyContactName" className="form-control" value={formData.emergencyContactName} onChange={handleChange} required={isReq('emergencyContactName')} /></div></>}
-                    {isVis('emergencyContactPhone') && <div className="form-group"><label className="form-label" style={{ color: '#ff7b72' }}>Teléfono Emergencia {isReq('emergencyContactPhone') && '*'}</label><input type="tel" name="emergencyContactPhone" className="form-control" value={formData.emergencyContactPhone} onChange={handleChange} required={isReq('emergencyContactPhone')} /></div>}
+                    {isVis('emergencyContactName') && <><div className="form-group ef-x48"><hr className="ef-x49" /></div><div className="form-group"><label className="form-label ef-x50">Contacto de Emergencia {isReq('emergencyContactName') && '*'}</label><input type="text" name="emergencyContactName" className="form-control" value={formData.emergencyContactName} onChange={handleChange} required={isReq('emergencyContactName')} /></div></>}
+                    {isVis('emergencyContactPhone') && <div className="form-group"><label className="form-label ef-x50">Teléfono Emergencia {isReq('emergencyContactPhone') && '*'}</label><input type="tel" name="emergencyContactPhone" className="form-control" value={formData.emergencyContactPhone} onChange={handleChange} required={isReq('emergencyContactPhone')} /></div>}
                   </div>
                 </div>
               )}
 
               {/* ✅ PESTAÑA 2: ALTA DE LA EMPRESA */}
               {pestañaActiva === 'empresa' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
+                <div className="ef-x33">
                   <div className="strict-3-col-grid">
                     {isVis('empresaId') && <div className="form-group"><label className="form-label">Empresa {isReq('empresaId') && '*'}</label><SearchableSelect options={empresasDB} value={formData.empresaId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, empresaId: id, empresaNombre: label }))} required={isReq('empresaId')} /></div>}
                     {isVis('cargoId') && <div className="form-group"><label className="form-label">Cargo {isReq('cargoId') && '*'}</label><SearchableSelect options={cargosDB} value={formData.cargoId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, cargoId: id, cargoNombre: label }))} required={isReq('cargoId')} /></div>}
                     {isVis('departamentoId') && <div className="form-group"><label className="form-label">Departamento {isReq('departamentoId') && '*'}</label><SearchableSelect options={departamentosDB} value={formData.departamentoId} onChange={(id, label) => setFormData((prev:any) => ({ ...prev, departamentoId: id, departamentoNombre: label }))} required={isReq('departamentoId')} /></div>}
                     
                     {isVis('operacionesIds') && (
-                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                    <div className="form-group ef-x48">
                       <label className="form-label">Operaciones Autorizadas {isReq('operacionesIds') && '*'}</label>
                       <MultiSelect options={operacionesDB} selectedIds={formData.operacionesIds} onChange={(ids) => setFormData((prev:any) => ({ ...prev, operacionesIds: ids }))} required={isReq('operacionesIds')} />
                     </div>
@@ -548,21 +548,20 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
                     {isVis('fechaIngreso') && <div className="form-group"><label className="form-label">Fecha de Ingreso {isReq('fechaIngreso') && '*'}</label><input type="date" name="fechaIngreso" className="form-control" value={formData.fechaIngreso} onChange={handleChange} required={isReq('fechaIngreso')} /></div>}
                     {isVis('fechaAltaIMSS') && <div className="form-group"><label className="form-label">Fecha Alta IMSS {isReq('fechaAltaIMSS') && '*'}</label><input type="date" name="fechaAltaIMSS" className="form-control" value={formData.fechaAltaIMSS} onChange={handleChange} required={isReq('fechaAltaIMSS')} /></div>}
                     
-                    {isVis('salarioDiario') && <><div className="form-group" style={{ gridColumn: '1 / -1' }}><hr style={{ borderColor: '#30363d' }} /></div><div className="form-group"><label className="form-label">Salario Diario Integrado ($) {isReq('salarioDiario') && '*'}</label><input type="number" name="salarioDiario" className="form-control" value={formData.salarioDiario} onChange={handleChange} required={isReq('salarioDiario')} /></div></>}
+                    {isVis('salarioDiario') && <><div className="form-group ef-x48"><hr className="ef-x49" /></div><div className="form-group"><label className="form-label">Salario Diario Integrado ($) {isReq('salarioDiario') && '*'}</label><input type="number" name="salarioDiario" className="form-control" value={formData.salarioDiario} onChange={handleChange} required={isReq('salarioDiario')} /></div></>}
                     {isVis('descuentoIMSS') && <div className="form-group"><label className="form-label">Descuento IMSS ($) {isReq('descuentoIMSS') && '*'}</label><input type="number" name="descuentoIMSS" className="form-control" value={formData.descuentoIMSS} onChange={handleChange} required={isReq('descuentoIMSS')} /></div>}
                     {isVis('descuentoInfonavit') && <div className="form-group"><label className="form-label">Descuento INFONAVIT ($) {isReq('descuentoInfonavit') && '*'}</label><input type="number" name="descuentoInfonavit" className="form-control" value={formData.descuentoInfonavit} onChange={handleChange} required={isReq('descuentoInfonavit')} /></div>}
                     
                     {isVis('observacionesEmpresa') && (
-                      <div className="form-group" style={{ gridColumn: '1 / -1', marginTop: '16px' }}>
+                      <div className="form-group ef-x51">
                         <label className="form-label text-gray-400">Observaciones {isReq('observacionesEmpresa') && '*'}</label>
                         <textarea 
                           name="observacionesEmpresa" 
-                          className="form-control" 
+                          className="form-control ef-x52" 
                           value={formData.observacionesEmpresa} 
                           onChange={handleChange} 
                           required={isReq('observacionesEmpresa')}
                           placeholder="Añade notas o comentarios relevantes sobre el alta de este empleado..."
-                          style={{ minHeight: '80px', resize: 'vertical', width: '100%', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px' }}
                         />
                       </div>
                     )}
@@ -572,28 +571,28 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
 
               {/* ✅ PESTAÑA 3: OPERADOR */}
               {pestañaActiva === 'operador' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
+                <div className="ef-x33">
                   <div className="strict-3-col-grid">
                     {isVis('gastosAsignados') ? (
                     <div className="form-group">
                       <label className="form-label">Gastos Asignados ($) {isReq('gastosAsignados') && '*'}</label>
                       <input type="number" name="gastosAsignados" className="form-control" value={formData.gastosAsignados} onChange={handleChange} required={isReq('gastosAsignados')} />
                     </div>
-                    ) : <div style={{ color: '#8b949e', gridColumn: '1 / -1' }}>No tienes permiso para ver esta información.</div>}
+                    ) : <div className="ef-x53">No tienes permiso para ver esta información.</div>}
                   </div>
                 </div>
               )}
 
               {/* ✅ PESTAÑA 4: HERRAMIENTAS */}
               {pestañaActiva === 'herramientas' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
+                <div className="ef-x33">
                   <div className="strict-3-col-grid">
                     {isVis('telefonoAsignado') ? (
                     <div className="form-group">
                       <label className="form-label">Teléfono Asignado (Flota) {isReq('telefonoAsignado') && '*'}</label>
                       <input type="tel" name="telefonoAsignado" className="form-control" value={formData.telefonoAsignado} onChange={handleChange} required={isReq('telefonoAsignado')} />
                     </div>
-                    ) : <div style={{ color: '#8b949e', gridColumn: '1 / -1' }}>No tienes permiso para ver esta información.</div>}
+                    ) : <div className="ef-x53">No tienes permiso para ver esta información.</div>}
                   </div>
                 </div>
               )}
@@ -602,8 +601,8 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
           </div>
 
           <div className="form-actions" style={{ display: estado === 'minimizado' ? 'none' : 'flex', gap: '16px', justifyContent: 'flex-end', borderTop: '1px solid #30363d', padding: '16px 24px', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
-            <button type="button" onClick={onClose} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cancelar</button>
-            <button type="submit" form="employeeForm" disabled={cargando} className="btn btn-primary" style={{ backgroundColor: '#D84315', padding: '10px 24px', borderRadius: '6px', border: 'none', fontWeight: 'bold' }}>
+            <button type="button" onClick={onClose} className="btn btn-outline ef-x54">Cancelar</button>
+            <button type="submit" form="employeeForm" disabled={cargando} className="btn btn-primary ef-x55">
               {cargando ? 'Guardando...' : 'Guardar Empleado'}
             </button>
           </div>
@@ -612,7 +611,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
       </div>
 
       {modalDireccionAbierto && (
-        <div style={{ zIndex: 2000, position: 'relative' }}>
+        <div className="ef-x56">
           <FormularioDireccion estado="abierto" onClose={() => setModalDireccionAbierto(false)} />
         </div>
       )}

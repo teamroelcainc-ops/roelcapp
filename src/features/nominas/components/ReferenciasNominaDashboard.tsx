@@ -21,6 +21,7 @@ import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 // ✅ Para abrir el DETALLE editable de una operación desde la nómina.
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import './ReferenciasNominaDashboard.css';
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
 // ✅ IDs de status "completada" en el catálogo (los mismos que usa Facturación
@@ -828,19 +829,18 @@ export const ReferenciasNominaDashboard = () => {
   const renderCeldaOps = (op: any, key: string) => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
-      case 'ref': return <td key={key} onClick={(e) => { e.stopPropagation(); abrirDetalleOperacion(op.id); }} title="Abrir el detalle de la operación para editar"
-        style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline' }}>{op.ref || op.id.substring(0, 6)}</td>;
+      case 'ref': return <td className="rnd-x1" key={key} onClick={(e) => { e.stopPropagation(); abrirDetalleOperacion(op.id); }} title="Abrir el detalle de la operación para editar">{op.ref || op.id.substring(0, 6)}</td>;
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
       case 'operador': return <td key={key} style={tdBase}>{getNombreOperador(op.operadorNombre || op.operadorId || op.operador)}</td>;
       case 'origen': return <td key={key} style={tdBase}>{resolverLugar(op, 'origen')}</td>;
       case 'destino': return <td key={key} style={tdBase}>{resolverLugar(op, 'destino')}</td>;
-      case 'remolque': return <td key={key} style={{ padding: '16px', color: '#c9d1d9', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{remolqueDeOp(op)}</td>;
+      case 'remolque': return <td className="rnd-x2" key={key}>{remolqueDeOp(op)}</td>;
       case 'convenio': return <td key={key} style={tdBase}>{convenioDeOp(op)}</td>;
-      case 'sueldo': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(sueldoBaseDeOp(op))}</td>;
+      case 'sueldo': return <td className="rnd-x3" key={key}>{formatoMoneda(sueldoBaseDeOp(op))}</td>;
       case 'sueldoExtra': {
         const tieneExtra = Number(op.sueldoExtra || 0) > 0;
         return (
-          <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+          <td className="rnd-x4" key={key}>
             <button type="button" onClick={(e) => abrirEditorExtra(e, op)} title="Editar sueldo extra de esta operación"
               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem',
                 backgroundColor: tieneExtra ? 'rgba(245,158,11,0.12)' : 'transparent',
@@ -853,7 +853,7 @@ export const ReferenciasNominaDashboard = () => {
         );
       }
       case 'sueldoTotal': {
-        return <td key={key} style={{ padding: '16px', color: '#f0f6fc', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(sueldoTotalDeOp(op))}</td>;
+        return <td className="rnd-x5" key={key}>{formatoMoneda(sueldoTotalDeOp(op))}</td>;
       }
       default: return <td key={key} style={tdBase}>-</td>;
     }
@@ -1863,35 +1863,33 @@ export const ReferenciasNominaDashboard = () => {
   const gridTres: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' };
 
   const renderBuscadorOperador = () => (
-    <div style={{ flex: 1, minWidth: '320px', position: 'relative' }}>
-      <label style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>OPERADOR ★</label>
+    <div className="rnd-x6">
+      <label className="rnd-x7">OPERADOR ★</label>
       {filtroOperador ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
+        <div className="rnd-x8">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-          <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filtroOperador}</span>
-          <button onClick={() => { setFiltroOperador(''); setTextoBuscarOperador(''); setMostrarSugerenciasOperador(false); setSeleccionadas([]); }} title="Cambiar operador" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}>✕</button>
+          <span className="rnd-x9">{filtroOperador}</span>
+          <button className="rnd-x10" onClick={() => { setFiltroOperador(''); setTextoBuscarOperador(''); setMostrarSugerenciasOperador(false); setSeleccionadas([]); }} title="Cambiar operador">✕</button>
         </div>
       ) : (
-        <div style={{ position: 'relative' }}>
-          <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          <input type="text" placeholder="Buscar operador por nombre..." value={textoBuscarOperador}
+        <div className="rnd-x11">
+          <svg className="rnd-x12" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input className="rnd-x13" type="text" placeholder="Buscar operador por nombre..." value={textoBuscarOperador}
             onChange={(e) => { setTextoBuscarOperador(e.target.value); setMostrarSugerenciasOperador(true); }}
-            onFocus={() => setMostrarSugerenciasOperador(true)} onBlur={() => setTimeout(() => setMostrarSugerenciasOperador(false), 180)}
-            style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#161b22', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            onFocus={() => setMostrarSugerenciasOperador(true)} onBlur={() => setTimeout(() => setMostrarSugerenciasOperador(false), 180)} />
         </div>
       )}
       {!filtroOperador && mostrarSugerenciasOperador && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px', boxShadow: '0 6px 16px rgba(0,0,0,0.5)' }}>
+        <div className="rnd-x14">
           {operadoresFiltradosBuscador.length === 0 ? (
-            <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>{textoBuscarOperador.trim() ? 'Sin coincidencias' : 'No hay operadores (cargo Operador) cargados'}</div>
+            <div className="rnd-x15">{textoBuscarOperador.trim() ? 'Sin coincidencias' : 'No hay operadores (cargo Operador) cargados'}</div>
           ) : (
             <>
-              <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>{operadoresFiltradosBuscador.length} {operadoresFiltradosBuscador.length === 1 ? 'operador' : 'operadores'}{textoBuscarOperador.trim() ? '' : ' (primeros 30)'}</div>
+              <div className="rnd-x16">{operadoresFiltradosBuscador.length} {operadoresFiltradosBuscador.length === 1 ? 'operador' : 'operadores'}{textoBuscarOperador.trim() ? '' : ' (primeros 30)'}</div>
               {operadoresFiltradosBuscador.map((op: any) => (
-                <div key={op.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setFiltroOperador(op.nombre); setTextoBuscarOperador(''); setMostrarSugerenciasOperador(false); setSeleccionadas([]); }}
-                  style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
+                <div className="rnd-x17" key={op.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { setFiltroOperador(op.nombre); setTextoBuscarOperador(''); setMostrarSugerenciasOperador(false); setSeleccionadas([]); }}
                   onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'} onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
-                  <div style={{ fontWeight: '500' }}>{op.nombre}</div>
+                  <div className="rnd-x18">{op.nombre}</div>
                 </div>
               ))}
             </>
@@ -1902,10 +1900,10 @@ export const ReferenciasNominaDashboard = () => {
   );
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
-      <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Referencias de Nómina</h1>
+    <div className="module-container rnd-x19">
+      <h1 className="rnd-x20">Referencias de Nómina</h1>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '24px' }}>
+      <div className="rnd-x21">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Nóminas</button>
         <button onClick={() => setActiveTab('prestamos')} style={tabStyle(activeTab === 'prestamos')}>Préstamos</button>
@@ -1914,27 +1912,27 @@ export const ReferenciasNominaDashboard = () => {
 
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
+          <div className="rnd-x22">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(filtroOperador || fechaInicio || fechaFin) ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {(filtroOperador || fechaInicio || fechaFin) && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[filtroOperador, fechaInicio || fechaFin].filter(Boolean).length}</span>}
+              {(filtroOperador || fechaInicio || fechaFin) && <span className="rnd-x23">{[filtroOperador, fechaInicio || fechaFin].filter(Boolean).length}</span>}
             </button>
             {filtroOperador && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid #10b981', borderRadius: '14px', color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold', maxWidth: '260px' }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{filtroOperador}</span>
-                <button onClick={() => { setFiltroOperador(''); setTextoBuscarOperador(''); setSeleccionadas([]); }} style={{ background: 'transparent', border: 'none', color: '#10b981', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+              <span className="rnd-x24">
+                <span className="rnd-x25">{filtroOperador}</span>
+                <button className="rnd-x26" onClick={() => { setFiltroOperador(''); setTextoBuscarOperador(''); setSeleccionadas([]); }}>✕</button>
               </span>
             )}
             {(fechaInicio || fechaFin) && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '14px', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="rnd-x27">
                 {(fechaInicio || '…')} → {(fechaFin || '…')}
-                <button onClick={() => { setFechaInicio(''); setFechaFin(''); setSeleccionadas([]); }} style={{ background: 'transparent', border: 'none', color: '#D84315', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="rnd-x28" onClick={() => { setFechaInicio(''); setFechaFin(''); setSeleccionadas([]); }}>✕</button>
               </span>
             )}
-            {!busquedaOpsHecha && <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Presiona Filtros y Buscar para ver las operaciones.</span>}
-            <div style={{ marginLeft: 'auto' }}>
+            {!busquedaOpsHecha && <span className="rnd-x29">Presiona Filtros y Buscar para ver las operaciones.</span>}
+            <div className="rnd-x30">
               <button
                 disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas' || !filtroOperador}
                 onClick={abrirModalNomina}
@@ -1948,11 +1946,11 @@ export const ReferenciasNominaDashboard = () => {
 
           {busquedaOpsHecha && (
             <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
-              <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
+            <div className="rnd-x31">
+              <span className="rnd-x32">
                 {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}
               </span>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="rnd-x33">
                 <button onClick={refrescarOperacionesNomina} disabled={refrescandoOps} style={{ ...btnDirStyle, opacity: refrescandoOps ? 0.6 : 1, cursor: refrescandoOps ? 'wait' : 'pointer' }} title="Volver a leer las operaciones de la base y recalcular todos los totales">
                   {refrescandoOps ? '⏳ Actualizando…' : '↻ Actualizar'}
                 </button>
@@ -1970,31 +1968,31 @@ export const ReferenciasNominaDashboard = () => {
           )}
 
           {seleccionadas.length > 0 && filtroEstadoOps === 'pendientes' && (
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', alignItems: 'center' }}>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones Seleccionadas</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{seleccionadas.length}</span>
+            <div className="rnd-x34">
+              <div className="rnd-x35">
+                <div className="rnd-x36">
+                  <span className="rnd-x37">Operaciones Seleccionadas</span>
+                  <span className="rnd-x38">{seleccionadas.length}</span>
                 </div>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Sueldo Base (sin extras)</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotalBase)}</span>
+                <div className="rnd-x36">
+                  <span className="rnd-x39">Sueldo Base (sin extras)</span>
+                  <span className="rnd-x40">{formatoMoneda(resumenSeleccion.subtotalBase)}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Sueldo Extra (operaciones)</span>
-                  <span style={{ color: '#f59e0b', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotalExtra)}</span>
+                  <span className="rnd-x41">Sueldo Extra (operaciones)</span>
+                  <span className="rnd-x42">{formatoMoneda(resumenSeleccion.subtotalExtra)}</span>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 350px)', backgroundColor: '#161b22' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div className="table-container rnd-x43">
+            <table className="rnd-x44">
+              <thead className="rnd-x45">
                 <tr>
-                  <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>
+                  <th className="rnd-x46">
                     {filtroEstadoOps === 'pendientes' && operacionesMostradas.length > 0 && (
-                      <input type="checkbox" checked={todasMostradasSeleccionadas} onChange={toggleSeleccionarTodo} title="Seleccionar / deseleccionar todas las operaciones mostradas" style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                      <input className="rnd-x47" type="checkbox" checked={todasMostradasSeleccionadas} onChange={toggleSeleccionarTodo} title="Seleccionar / deseleccionar todas las operaciones mostradas" />
                     )}
                   </th>
                   {columnasOps.filter(c => c.visible).map(col => (
@@ -2008,15 +2006,15 @@ export const ReferenciasNominaDashboard = () => {
               </thead>
               <tbody>
                 {!busquedaOpsHecha ? (
-                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="rnd-x48" colSpan={colsOpsVisibles}>
+                    <div className="rnd-x49">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las operaciones.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="rnd-x50">Define tus filtros y presiona <b className="rnd-x51">Buscar</b> para ver las operaciones.</span>
+                      <button className="rnd-x52" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : operacionesMostradas.length === 0 ? (
-                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
+                  <tr><td className="rnd-x53" colSpan={colsOpsVisibles}>
                     {filtroEstadoOps === 'pendientes'
                       ? (filtroOperador ? 'No hay operaciones completadas pendientes de nómina para este operador.' : 'No hay operaciones completadas pendientes de nómina.')
                       : (filtroOperador ? 'No hay operaciones asignadas a nómina para este operador.' : 'No hay operaciones asignadas a nómina.')}
@@ -2030,11 +2028,11 @@ export const ReferenciasNominaDashboard = () => {
                     return (
                       <tr key={op.id} onClick={() => seleccionable && toggleSeleccion(op.id)}
                         style={{ cursor: seleccionable ? 'pointer' : 'default', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
-                        <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <td className="rnd-x54">
                           {seleccionable ? (
-                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                            <input className="rnd-x47" type="checkbox" checked={seleccionadas.includes(op.id)} readOnly />
                           ) : (
-                            <span title={op.referenciaNominaConsecutivo || 'Asignada'} style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                            <span className="rnd-x55" title={op.referenciaNominaConsecutivo || 'Asignada'} />
                           )}
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id))}
@@ -2049,89 +2047,89 @@ export const ReferenciasNominaDashboard = () => {
 
       ) : activeTab === 'historial' ? (
         <div className="animation-fade-in">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
+          <div className="rnd-x56">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(busquedaHistorial || histFechaInicio || histFechaFin) ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {(busquedaHistorial || histFechaInicio || histFechaFin) && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[busquedaHistorial, histFechaInicio || histFechaFin].filter(Boolean).length}</span>}
+              {(busquedaHistorial || histFechaInicio || histFechaFin) && <span className="rnd-x23">{[busquedaHistorial, histFechaInicio || histFechaFin].filter(Boolean).length}</span>}
             </button>
             {busquedaHistorial && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="rnd-x57">
                 "{busquedaHistorial}"
-                <button onClick={() => setBusquedaHistorial('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="rnd-x58" onClick={() => setBusquedaHistorial('')}>✕</button>
               </span>
             )}
             {(histFechaInicio || histFechaFin) && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '14px', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="rnd-x27">
                 {(histFechaInicio || '…')} → {(histFechaFin || '…')}
-                <button onClick={() => { setHistFechaInicio(''); setHistFechaFin(''); }} style={{ background: 'transparent', border: 'none', color: '#D84315', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="rnd-x28" onClick={() => { setHistFechaInicio(''); setHistFechaFin(''); }}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="rnd-x29">
               {busquedaHistHecha ? `${historialFiltrado.length} ${historialFiltrado.length === 1 ? 'nómina' : 'nóminas'}` : 'Presiona Filtros y Buscar para ver el historial.'}
             </span>
-            <button title="Exportar a Excel" onClick={exportarCSV} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+            <button className="rnd-x59" title="Exportar a Excel" onClick={exportarCSV}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
 
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 320px)', backgroundColor: '#161b22' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div className="table-container rnd-x60">
+            <table className="rnd-x44">
+              <thead className="rnd-x45">
                 <tr>
-                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>ACCIONES</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CONSECUTIVO</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>STATUS</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>OPERADOR</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA PAGO</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PERÍODO (SEMANA)</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>TOTAL A PAGAR</th>
+                  <th className="rnd-x61">ACCIONES</th>
+                  <th className="rnd-x62">CONSECUTIVO</th>
+                  <th className="rnd-x62">STATUS</th>
+                  <th className="rnd-x62">OPERADOR</th>
+                  <th className="rnd-x62">FECHA PAGO</th>
+                  <th className="rnd-x62">PERÍODO (SEMANA)</th>
+                  <th className="rnd-x62">TOTAL A PAGAR</th>
                 </tr>
               </thead>
               <tbody>
                 {!busquedaHistHecha ? (
-                  <tr><td colSpan={7} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="rnd-x48" colSpan={7}>
+                    <div className="rnd-x49">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las nóminas.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="rnd-x50">Define tus filtros y presiona <b className="rnd-x51">Buscar</b> para ver las nóminas.</span>
+                      <button className="rnd-x52" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosVisibles.length === 0 ? (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                  <tr><td className="rnd-x63" colSpan={7}>
                     {filtroEstadoHist === 'pendientes' ? 'No hay nóminas pendientes de pago.' : 'No hay nóminas pagadas.'}
                   </td></tr>
                 ) : (
                   registrosVisibles.map(r => (
-                    <tr key={r.id} style={{ borderBottom: '1px solid #21262d' }}>
-                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                    <tr className="rnd-x64" key={r.id}>
+                      <td className="rnd-x54">
+                        <div className="rnd-x65">
                           {r.statusPagado ? (
-                            <button title="Regresar a Pendiente" onClick={(e) => handleTogglePagoNomina(e, r)} style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                            <button className="rnd-x66" title="Regresar a Pendiente" onClick={(e) => handleTogglePagoNomina(e, r)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
                             </button>
                           ) : (
-                            <button title="Marcar como Pagada" onClick={(e) => handleTogglePagoNomina(e, r)} style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                            <button className="rnd-x67" title="Marcar como Pagada" onClick={(e) => handleTogglePagoNomina(e, r)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
                             </button>
                           )}
-                          <button title="Editar Nómina" onClick={(e) => abrirEditarNomina(e, r)} style={{ background: 'transparent', border: '1px solid #a371f7', borderRadius: '4px', color: '#a371f7', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                          <button className="rnd-x68" title="Editar Nómina" onClick={(e) => abrirEditarNomina(e, r)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
-                          <button title="Ver Ficha" onClick={() => setNominaViendo(r)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                          <button className="rnd-x69" title="Ver Ficha" onClick={() => setNominaViendo(r)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
-                          <button title="Recibo (PDF)" onClick={(e) => { e.stopPropagation(); generarReciboNomina(r); }} style={{ background: 'transparent', border: '1px solid #f37021', borderRadius: '4px', color: '#f37021', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                          <button className="rnd-x70" title="Recibo (PDF)" onClick={(e) => { e.stopPropagation(); generarReciboNomina(r); }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
                           </button>
-                          <button title="Eliminar Nómina" onClick={(e) => handleEliminarNomina(e, r)} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                          <button className="rnd-x71" title="Eliminar Nómina" onClick={(e) => handleEliminarNomina(e, r)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                           </button>
                         </div>
                       </td>
-                      <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{getConsecutivoNomina(r)}</td>
-                      <td style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                      <td className="rnd-x72">{getConsecutivoNomina(r)}</td>
+                      <td className="rnd-x4">
                         <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold',
                           backgroundColor: r.statusPagado ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                           color: r.statusPagado ? '#10b981' : '#f59e0b',
@@ -2139,10 +2137,10 @@ export const ReferenciasNominaDashboard = () => {
                           {r.statusPagado ? 'PAGADA' : 'PENDIENTE'}
                         </span>
                       </td>
-                      <td style={{ padding: '16px', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{getNombreOperador(r.operadorNombre || r.operadorId)}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaPago)}</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaInicio)} <br/>al {formatearFechaSpanish(r.fechaFin)}</td>
-                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(calcularTotalAPagar(r))}</td>
+                      <td className="rnd-x73">{getNombreOperador(r.operadorNombre || r.operadorId)}</td>
+                      <td className="rnd-x74">{formatearFechaSpanish(r.fechaPago)}</td>
+                      <td className="rnd-x75">{formatearFechaSpanish(r.fechaInicio)} <br/>al {formatearFechaSpanish(r.fechaFin)}</td>
+                      <td className="rnd-x76">{formatoMoneda(calcularTotalAPagar(r))}</td>
                     </tr>
                   ))
                 )}
@@ -2150,9 +2148,9 @@ export const ReferenciasNominaDashboard = () => {
             </table>
           </div>
           {busquedaHistHecha && totalPaginas > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
+            <div className="rnd-x77">
               <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '8px 16px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Anterior</button>
-              <span style={{ color: '#fff', alignSelf: 'center' }}>{paginaActual} / {totalPaginas}</span>
+              <span className="rnd-x78">{paginaActual} / {totalPaginas}</span>
               <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas} style={{ padding: '8px 16px', cursor: (paginaActual === totalPaginas) ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Siguiente</button>
             </div>
           )}
@@ -2160,71 +2158,71 @@ export const ReferenciasNominaDashboard = () => {
 
       ) : activeTab === 'prestamos' ? (
         <div className="animation-fade-in">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+          <div className="rnd-x79">
             {renderBuscadorOperador()}
             {filtroOperador && (
-              <button title="Exportar a Excel" onClick={exportarPrestamosCSV} style={{ padding: '10px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: '#1a7f37', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              <button className="rnd-x80" title="Exportar a Excel" onClick={exportarPrestamosCSV}>
                 ⬇ Exportar Préstamos
               </button>
             )}
           </div>
 
           {!filtroOperador ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', border: '1px solid #30363d', borderRadius: '8px', backgroundColor: '#161b22' }}>
+            <div className="rnd-x81">
               Selecciona un operador para ver su historial de préstamos.
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
-                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Inicial (heredado)</span>
-                  <span style={{ color: '#8b949e', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosPrestamo.inicial)}</span>
+              <div className="rnd-x82">
+                <div className="rnd-x83">
+                  <span className="rnd-x84">Saldo Inicial (heredado)</span>
+                  <span className="rnd-x85">{formatoMoneda(datosPrestamo.inicial)}</span>
                 </div>
-                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Otorgado</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenPrestamos.otorgado)}</span>
+                <div className="rnd-x83">
+                  <span className="rnd-x84">Total Otorgado</span>
+                  <span className="rnd-x86">{formatoMoneda(resumenPrestamos.otorgado)}</span>
                 </div>
-                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Pagado</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(resumenPrestamos.pagado)}</span>
+                <div className="rnd-x83">
+                  <span className="rnd-x84">Total Pagado</span>
+                  <span className="rnd-x87">{formatoMoneda(resumenPrestamos.pagado)}</span>
                 </div>
-                <div style={{ backgroundColor: '#0d1117', border: '1px solid #f59e0b', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Actual</span>
-                  <span style={{ color: '#f59e0b', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosPrestamo.saldoFinal)}</span>
+                <div className="rnd-x88">
+                  <span className="rnd-x89">Saldo Actual</span>
+                  <span className="rnd-x90">{formatoMoneda(datosPrestamo.saldoFinal)}</span>
                 </div>
               </div>
 
-              <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+              <div className="table-container rnd-x91">
+                <table className="rnd-x44">
+                  <thead className="rnd-x45">
                     <tr>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA PAGO</th>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CONSECUTIVO</th>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PRÉSTAMO OTORGADO</th>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PAGO PRÉSTAMO</th>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>SALDO</th>
+                      <th className="rnd-x62">FECHA PAGO</th>
+                      <th className="rnd-x62">CONSECUTIVO</th>
+                      <th className="rnd-x62">PRÉSTAMO OTORGADO</th>
+                      <th className="rnd-x62">PAGO PRÉSTAMO</th>
+                      <th className="rnd-x62">SALDO</th>
                     </tr>
                   </thead>
                   <tbody>
                     {datosPrestamo.filas.length === 0 ? (
-                      <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este operador no tiene movimientos de préstamo en las nóminas registradas.</td></tr>
+                      <tr><td className="rnd-x63" colSpan={5}>Este operador no tiene movimientos de préstamo en las nóminas registradas.</td></tr>
                     ) : (
                       [...datosPrestamo.filas].reverse().map(mv => (
-                        <tr key={mv.id} style={{ borderBottom: '1px solid #21262d' }}>
-                          <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(mv.fecha)}</td>
-                          <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{mv.consecutivo}</td>
-                          <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(mv.agregado)}</td>
-                          <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(mv.pago)}</td>
-                          <td style={{ padding: '16px', color: '#f59e0b', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(mv.saldo)}</td>
+                        <tr className="rnd-x64" key={mv.id}>
+                          <td className="rnd-x74">{formatearFechaSpanish(mv.fecha)}</td>
+                          <td className="rnd-x72">{mv.consecutivo}</td>
+                          <td className="rnd-x76">{formatoMoneda(mv.agregado)}</td>
+                          <td className="rnd-x3">{formatoMoneda(mv.pago)}</td>
+                          <td className="rnd-x92">{formatoMoneda(mv.saldo)}</td>
                         </tr>
                       ))
                     )}
-                    <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
-                      <td style={{ padding: '16px', color: '#8b949e', fontStyle: 'italic', whiteSpace: 'nowrap' }}>Saldo inicial (heredado)</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(datosPrestamo.inicial)}</td>
+                    <tr className="rnd-x93">
+                      <td className="rnd-x94">Saldo inicial (heredado)</td>
+                      <td className="rnd-x75">-</td>
+                      <td className="rnd-x75">-</td>
+                      <td className="rnd-x75">-</td>
+                      <td className="rnd-x95">{formatoMoneda(datosPrestamo.inicial)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -2235,71 +2233,71 @@ export const ReferenciasNominaDashboard = () => {
 
       ) : (
         <div className="animation-fade-in">
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', marginBottom: '20px', alignItems: 'flex-end', backgroundColor: '#0d1117', padding: '20px', borderRadius: '8px', border: '1px solid #30363d' }}>
+          <div className="rnd-x79">
             {renderBuscadorOperador()}
             {filtroOperador && (
-              <button title="Exportar a Excel" onClick={exportarAhorroCSV} style={{ padding: '10px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: '#1a7f37', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              <button className="rnd-x80" title="Exportar a Excel" onClick={exportarAhorroCSV}>
                 ⬇ Exportar Ahorro
               </button>
             )}
           </div>
 
           {!filtroOperador ? (
-            <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e', border: '1px solid #30363d', borderRadius: '8px', backgroundColor: '#161b22' }}>
+            <div className="rnd-x81">
               Selecciona un operador para ver su historial de ahorro.
             </div>
           ) : (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '20px' }}>
-                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Inicial (heredado)</span>
-                  <span style={{ color: '#8b949e', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.inicial)}</span>
+              <div className="rnd-x82">
+                <div className="rnd-x83">
+                  <span className="rnd-x84">Saldo Inicial (heredado)</span>
+                  <span className="rnd-x85">{formatoMoneda(datosAhorro.inicial)}</span>
                 </div>
-                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Ahorrado</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.sumaAgregado)}</span>
+                <div className="rnd-x83">
+                  <span className="rnd-x84">Total Ahorrado</span>
+                  <span className="rnd-x86">{formatoMoneda(datosAhorro.sumaAgregado)}</span>
                 </div>
-                <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total Pagado / Retirado</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.sumaPago)}</span>
+                <div className="rnd-x83">
+                  <span className="rnd-x84">Total Pagado / Retirado</span>
+                  <span className="rnd-x87">{formatoMoneda(datosAhorro.sumaPago)}</span>
                 </div>
-                <div style={{ backgroundColor: '#0d1117', border: '1px solid #58a6ff', borderRadius: '8px', padding: '16px' }}>
-                  <span style={{ display: 'block', color: '#58a6ff', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Saldo Actual</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.4rem', fontWeight: 'bold' }}>{formatoMoneda(datosAhorro.saldoFinal)}</span>
+                <div className="rnd-x96">
+                  <span className="rnd-x97">Saldo Actual</span>
+                  <span className="rnd-x86">{formatoMoneda(datosAhorro.saldoFinal)}</span>
                 </div>
               </div>
 
-              <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+              <div className="table-container rnd-x91">
+                <table className="rnd-x44">
+                  <thead className="rnd-x45">
                     <tr>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA PAGO</th>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CONSECUTIVO</th>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>AHORRO AGREGADO</th>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PAGO / RETIRO</th>
-                      <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>SALDO</th>
+                      <th className="rnd-x62">FECHA PAGO</th>
+                      <th className="rnd-x62">CONSECUTIVO</th>
+                      <th className="rnd-x62">AHORRO AGREGADO</th>
+                      <th className="rnd-x62">PAGO / RETIRO</th>
+                      <th className="rnd-x62">SALDO</th>
                     </tr>
                   </thead>
                   <tbody>
                     {datosAhorro.filas.length === 0 ? (
-                      <tr><td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Este operador no tiene movimientos de ahorro en las nóminas registradas.</td></tr>
+                      <tr><td className="rnd-x63" colSpan={5}>Este operador no tiene movimientos de ahorro en las nóminas registradas.</td></tr>
                     ) : (
                       [...datosAhorro.filas].reverse().map(mv => (
-                        <tr key={mv.id} style={{ borderBottom: '1px solid #21262d' }}>
-                          <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(mv.fecha)}</td>
-                          <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{mv.consecutivo}</td>
-                          <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(mv.agregado)}</td>
-                          <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(mv.pago)}</td>
-                          <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(mv.saldo)}</td>
+                        <tr className="rnd-x64" key={mv.id}>
+                          <td className="rnd-x74">{formatearFechaSpanish(mv.fecha)}</td>
+                          <td className="rnd-x72">{mv.consecutivo}</td>
+                          <td className="rnd-x76">{formatoMoneda(mv.agregado)}</td>
+                          <td className="rnd-x3">{formatoMoneda(mv.pago)}</td>
+                          <td className="rnd-x76">{formatoMoneda(mv.saldo)}</td>
                         </tr>
                       ))
                     )}
-                    <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
-                      <td style={{ padding: '16px', color: '#8b949e', fontStyle: 'italic', whiteSpace: 'nowrap' }}>Saldo inicial (heredado)</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>-</td>
-                      <td style={{ padding: '16px', color: '#8b949e', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(datosAhorro.inicial)}</td>
+                    <tr className="rnd-x93">
+                      <td className="rnd-x94">Saldo inicial (heredado)</td>
+                      <td className="rnd-x75">-</td>
+                      <td className="rnd-x75">-</td>
+                      <td className="rnd-x75">-</td>
+                      <td className="rnd-x95">{formatoMoneda(datosAhorro.inicial)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -2313,7 +2311,7 @@ export const ReferenciasNominaDashboard = () => {
       {/* ✅ DETALLE editable de la operación (se abre al oprimir la referencia).
           El contenedor con z-index alto lo pone POR ENCIMA del modal de nómina. */}
       {opDetalle && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000 }}>
+        <div className="rnd-x98">
           <FormularioOperacion
             estado="abierto"
             initialData={opDetalle}
@@ -2327,25 +2325,25 @@ export const ReferenciasNominaDashboard = () => {
       )}
 
       {modalColumnasOps && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button onClick={() => setModalColumnasOps(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rnd-x99">
+          <div className="rnd-x100">
+            <div className="rnd-x101">
+              <h3 className="rnd-x102">Configurar Columnas</h3>
+              <button className="rnd-x103" onClick={() => setModalColumnasOps(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '20px' }}>Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel.</p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <p className="rnd-x104">Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel.</p>
+            <ul className="rnd-x105">
               {columnasOps.map((col, idx) => (
                 <li key={col.id} draggable onDragStart={(e) => handleDragStartOps(e, idx)} onDragEnter={() => handleDragEnterOps(idx)} onDragEnd={() => setDraggedColOpsIndex(null)} onDragOver={(e) => e.preventDefault()}
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColOpsIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisibleOps(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                  <input className="rnd-x106" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisibleOps(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={guardarColumnasCompartidas} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Guardar para todos</button>
+            <div className="rnd-x107">
+              <button className="rnd-x108" onClick={guardarColumnasCompartidas}>Guardar para todos</button>
             </div>
           </div>
         </div>
@@ -2353,24 +2351,23 @@ export const ReferenciasNominaDashboard = () => {
 
       {/* MINI MODAL: SUELDO EXTRA DE LA OPERACIÓN */}
       {editandoExtra && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '20px', backdropFilter: 'blur(6px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '420px', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Sueldo Extra · <span style={{ color: '#58a6ff', fontFamily: 'monospace' }}>{editandoExtra.ref}</span></h3>
-              <button onClick={() => setEditandoExtra(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rnd-x109">
+          <div className="rnd-x110">
+            <div className="rnd-x111">
+              <h3 className="rnd-x112">Sueldo Extra · <span className="rnd-x113">{editandoExtra.ref}</span></h3>
+              <button className="rnd-x103" onClick={() => setEditandoExtra(null)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: 0, marginBottom: '14px' }}>Se guarda directamente en la operación. Se sumará al sueldo de esta operación en la nómina.</p>
-            <label style={{ color: '#f59e0b', fontSize: '0.72rem', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 'bold' }}>Monto del sueldo extra</label>
-            <div style={{ position: 'relative', marginBottom: '20px' }}>
-              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold' }}>$</span>
-              <input type="number" step="0.01" autoFocus value={editandoExtra.valor} placeholder="0.00"
+            <p className="rnd-x114">Se guarda directamente en la operación. Se sumará al sueldo de esta operación en la nómina.</p>
+            <label className="rnd-x115">Monto del sueldo extra</label>
+            <div className="rnd-x116">
+              <span className="rnd-x117">$</span>
+              <input className="rnd-x118" type="number" step="0.01" autoFocus value={editandoExtra.valor} placeholder="0.00"
                 onChange={e => setEditandoExtra(prev => prev ? { ...prev, valor: e.target.valueAsNumber || '' } : prev)}
-                onKeyDown={e => { if (e.key === 'Enter') guardarExtraOperacion(); }}
-                style={{ width: '100%', padding: '12px 12px 12px 26px', backgroundColor: '#161b22', color: '#3fb950', border: '1px solid #f59e0b', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.2rem', boxSizing: 'border-box' }} />
+                onKeyDown={e => { if (e.key === 'Enter') guardarExtraOperacion(); }} />
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button type="button" onClick={() => setEditandoExtra(null)} disabled={guardandoExtra} style={{ padding: '9px 20px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-              <button type="button" onClick={guardarExtraOperacion} disabled={guardandoExtra} style={{ padding: '9px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoExtra ? 'Guardando...' : 'Guardar Extra'}</button>
+            <div className="rnd-x119">
+              <button className="rnd-x120" type="button" onClick={() => setEditandoExtra(null)} disabled={guardandoExtra}>Cancelar</button>
+              <button className="rnd-x121" type="button" onClick={guardarExtraOperacion} disabled={guardandoExtra}>{guardandoExtra ? 'Guardando...' : 'Guardar Extra'}</button>
             </div>
           </div>
         </div>
@@ -2378,24 +2375,23 @@ export const ReferenciasNominaDashboard = () => {
 
       {/* ✅ NUEVO — MINI MODAL: SUELDO BASE DE LA OPERACIÓN */}
       {editandoSueldo && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '20px', backdropFilter: 'blur(6px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '420px', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Sueldo Base · <span style={{ color: '#58a6ff', fontFamily: 'monospace' }}>{editandoSueldo.ref}</span></h3>
-              <button onClick={() => setEditandoSueldo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rnd-x109">
+          <div className="rnd-x110">
+            <div className="rnd-x111">
+              <h3 className="rnd-x112">Sueldo Base · <span className="rnd-x113">{editandoSueldo.ref}</span></h3>
+              <button className="rnd-x103" onClick={() => setEditandoSueldo(null)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: 0, marginBottom: '14px' }}>Se guarda directamente en la operación (campo Sueldo). Recalcula el Sueldo Total y los subtotales de la nómina.</p>
-            <label style={{ color: '#3fb950', fontSize: '0.72rem', display: 'block', marginBottom: '6px', textTransform: 'uppercase', fontWeight: 'bold' }}>Monto del sueldo base</label>
-            <div style={{ position: 'relative', marginBottom: '20px' }}>
-              <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e', fontWeight: 'bold' }}>$</span>
-              <input type="number" step="0.01" autoFocus value={editandoSueldo.valor} placeholder="0.00"
+            <p className="rnd-x114">Se guarda directamente en la operación (campo Sueldo). Recalcula el Sueldo Total y los subtotales de la nómina.</p>
+            <label className="rnd-x122">Monto del sueldo base</label>
+            <div className="rnd-x116">
+              <span className="rnd-x117">$</span>
+              <input className="rnd-x123" type="number" step="0.01" autoFocus value={editandoSueldo.valor} placeholder="0.00"
                 onChange={e => setEditandoSueldo(prev => prev ? { ...prev, valor: e.target.valueAsNumber || '' } : prev)}
-                onKeyDown={e => { if (e.key === 'Enter') guardarSueldoOperacion(); }}
-                style={{ width: '100%', padding: '12px 12px 12px 26px', backgroundColor: '#161b22', color: '#3fb950', border: '1px solid #3fb950', borderRadius: '6px', fontWeight: 'bold', fontSize: '1.2rem', boxSizing: 'border-box' }} />
+                onKeyDown={e => { if (e.key === 'Enter') guardarSueldoOperacion(); }} />
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button type="button" onClick={() => setEditandoSueldo(null)} disabled={guardandoSueldo} style={{ padding: '9px 20px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-              <button type="button" onClick={guardarSueldoOperacion} disabled={guardandoSueldo} style={{ padding: '9px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardandoSueldo ? 'Guardando...' : 'Guardar Sueldo'}</button>
+            <div className="rnd-x119">
+              <button className="rnd-x120" type="button" onClick={() => setEditandoSueldo(null)} disabled={guardandoSueldo}>Cancelar</button>
+              <button className="rnd-x121" type="button" onClick={guardarSueldoOperacion} disabled={guardandoSueldo}>{guardandoSueldo ? 'Guardando...' : 'Guardar Sueldo'}</button>
             </div>
           </div>
         </div>
@@ -2403,41 +2399,41 @@ export const ReferenciasNominaDashboard = () => {
 
       {/* MODAL GENERAR / EDITAR NÓMINA */}
       {modalAbierto && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(8px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '16px' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0 }}>{modoEdicion ? 'Editar Nómina' : 'Generar Nómina'}: <span style={{ color: '#D84315' }}>{consecutivoForm}</span></h2>
-              <button onClick={cerrarModalNomina} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rnd-x124">
+          <div className="rnd-x125">
+            <div className="rnd-x126">
+              <h2 className="rnd-x127">{modoEdicion ? 'Editar Nómina' : 'Generar Nómina'}: <span className="rnd-x51">{consecutivoForm}</span></h2>
+              <button className="rnd-x103" onClick={cerrarModalNomina}>✕</button>
             </div>
 
             {modoEdicion && (
-              <div style={{ backgroundColor: 'rgba(163,113,247,0.1)', border: '1px solid #a371f7', color: '#a371f7', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.82rem' }}>
+              <div className="rnd-x128">
                 ✎ Estás <b>editando</b> una nómina existente. Se conserva el mismo consecutivo. Al guardar se actualizará el registro (no se crea uno nuevo).
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d', marginBottom: '16px' }}>
+            <div className="rnd-x129">
               <div>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operador Seleccionado</span>
-                <span style={{ color: '#f0f6fc', fontSize: '1.1rem', fontWeight: 'bold' }}>{filtroOperador}</span>
+                <span className="rnd-x84">Operador Seleccionado</span>
+                <span className="rnd-x130">{filtroOperador}</span>
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Referencias ({seleccionadas.length})</span>
-                <span style={{ color: '#58a6ff', fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(subtotalReferencias)}</span>
+              <div className="rnd-x131">
+                <span className="rnd-x84">Subtotal Referencias ({seleccionadas.length})</span>
+                <span className="rnd-x132">{formatoMoneda(subtotalReferencias)}</span>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Total a Pagar</span>
-                <span style={{ color: '#3fb950', fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(totalAPagarCalc)}</span>
+              <div className="rnd-x133">
+                <span className="rnd-x84">Total a Pagar</span>
+                <span className="rnd-x134">{formatoMoneda(totalAPagarCalc)}</span>
               </div>
             </div>
 
             {operadorIdSeleccionado && !deduccionOperador && (
-              <div style={{ backgroundColor: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', color: '#f59e0b', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '0.82rem' }}>
+              <div className="rnd-x135">
                 ⚠ No se encontró un registro en <b>deducciones</b> para este operador. Los valores se inician en cero (puedes capturarlos manualmente).
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '4px', borderBottom: '1px solid #30363d', marginBottom: '24px', overflowX: 'auto' }}>
+            <div className="rnd-x136">
               {[
                 { id: 'general', label: 'Información General' },
                 { id: 'referencia', label: 'Referencia' },
@@ -2487,39 +2483,37 @@ export const ReferenciasNominaDashboard = () => {
                     {campoTotal('Diferencia Aplicable', diferenciaAplicableCalc, '#58a6ff')}
                   </div>
 
-                  <div style={{ marginTop: '20px' }}>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '10px' }}>
+                  <div className="rnd-x137">
+                    <span className="rnd-x138">
                       Referencias en esta nómina ({detalleSeleccionadas.length})
                     </span>
-                    <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', maxHeight: '300px', overflowY: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', position: 'sticky', top: 0 }}>
+                    <div className="rnd-x139">
+                      <table className="rnd-x140">
+                        <thead className="rnd-x141">
                           <tr>
-                            <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>REFERENCIA</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>FECHA</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>SUELDO</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>EXTRA</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>SUELDO TOTAL</th>
+                            <th className="rnd-x142">REFERENCIA</th>
+                            <th className="rnd-x142">FECHA</th>
+                            <th className="rnd-x143">SUELDO</th>
+                            <th className="rnd-x143">EXTRA</th>
+                            <th className="rnd-x144">SUELDO TOTAL</th>
                           </tr>
                         </thead>
                         <tbody>
                           {detalleSeleccionadas.length === 0 ? (
-                            <tr><td colSpan={5} style={{ padding: '20px', textAlign: 'center', color: '#8b949e' }}>No hay referencias seleccionadas.</td></tr>
+                            <tr><td className="rnd-x145" colSpan={5}>No hay referencias seleccionadas.</td></tr>
                           ) : (
                             detalleSeleccionadas.map(d => (
-                              <tr key={d.id} style={{ borderTop: '1px solid #21262d' }}>
-                                <td onClick={() => abrirDetalleOperacion(d.id)} title="Abrir el detalle de la operación para editar"
-                                  style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline' }}>{d.ref}</td>
-                                <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{d.fecha ? formatearFechaSpanish(d.fecha) : '-'}</td>
-                                <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                  <button type="button" onClick={(e) => abrirEditorSueldo(e, { id: d.id, ref: d.ref, sueldo: d.sueldo })} title="Editar sueldo base de esta operación"
-                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', backgroundColor: 'rgba(63,185,80,0.12)', border: '1px solid #3fb950', color: '#3fb950' }}>
+                              <tr className="rnd-x146" key={d.id}>
+                                <td className="rnd-x147" onClick={() => abrirDetalleOperacion(d.id)} title="Abrir el detalle de la operación para editar">{d.ref}</td>
+                                <td className="rnd-x148">{d.fecha ? formatearFechaSpanish(d.fecha) : '-'}</td>
+                                <td className="rnd-x143">
+                                  <button className="rnd-x149" type="button" onClick={(e) => abrirEditorSueldo(e, { id: d.id, ref: d.ref, sueldo: d.sueldo })} title="Editar sueldo base de esta operación">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                                     {formatoMoneda(d.sueldo)}
                                   </button>
                                 </td>
-                                <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <td className="rnd-x143">
+                                  <span className="rnd-x150">
                                     <button type="button" onClick={(e) => abrirEditorExtra(e, { id: d.id, ref: d.ref, sueldoExtra: d.extra })} title="Agregar o editar el sueldo extra de esta operación"
                                       style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem',
                                         backgroundColor: d.extra > 0 ? 'rgba(245,158,11,0.12)' : 'transparent',
@@ -2529,19 +2523,18 @@ export const ReferenciasNominaDashboard = () => {
                                       {d.extra > 0 ? formatoMoneda(d.extra) : 'Agregar'}
                                     </button>
                                     {d.extra > 0 && (
-                                      <button type="button" onClick={(e) => quitarExtraOperacion(e, d.id)} title="Eliminar el sueldo extra"
-                                        style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', borderRadius: '4px', cursor: 'pointer', padding: '3px 7px', fontSize: '0.75rem', fontWeight: 'bold' }}>✕</button>
+                                      <button className="rnd-x151" type="button" onClick={(e) => quitarExtraOperacion(e, d.id)} title="Eliminar el sueldo extra">✕</button>
                                     )}
                                   </span>
                                 </td>
-                                <td style={{ padding: '10px 12px', color: '#58a6ff', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(d.total)}</td>
+                                <td className="rnd-x152">{formatoMoneda(d.total)}</td>
                               </tr>
                             ))
                           )}
                           {detalleSeleccionadas.length > 0 && (
-                            <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
-                              <td colSpan={4} style={{ padding: '10px 12px', color: '#8b949e', fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase' }}>Subtotal a Referencias</td>
-                              <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalReferencias)}</td>
+                            <tr className="rnd-x93">
+                              <td className="rnd-x153" colSpan={4}>Subtotal a Referencias</td>
+                              <td className="rnd-x154">{formatoMoneda(subtotalReferencias)}</td>
                             </tr>
                           )}
                         </tbody>
@@ -2566,11 +2559,11 @@ export const ReferenciasNominaDashboard = () => {
                   {campoNumerico('Pago Préstamo', pagoPrestamo, setPagoPrestamo)}
                   {campoTotal('Saldo del Préstamo', saldoPrestamoCalc, '#f59e0b')}
                   <div></div>
-                  <div style={{ gridColumn: 'span 3', color: '#8b949e', fontSize: '0.78rem', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '10px 14px' }}>
-                    Saldo inicial heredado <b style={{ color: '#c9d1d9' }}>{formatoMoneda(prestamoBaseCalc)}</b>
-                    {' + esta nómina '}<b style={{ color: '#58a6ff' }}>{formatoMoneda(Number(prestamoNuevo) || 0)}</b>
-                    {' − pago '}<b style={{ color: '#3fb950' }}>{formatoMoneda(Number(pagoPrestamo) || 0)}</b>
-                    {' = saldo '}<b style={{ color: '#f59e0b' }}>{formatoMoneda(saldoPrestamoCalc)}</b>
+                  <div className="rnd-x155">
+                    Saldo inicial heredado <b className="rnd-x156">{formatoMoneda(prestamoBaseCalc)}</b>
+                    {' + esta nómina '}<b className="rnd-x157">{formatoMoneda(Number(prestamoNuevo) || 0)}</b>
+                    {' − pago '}<b className="rnd-x158">{formatoMoneda(Number(pagoPrestamo) || 0)}</b>
+                    {' = saldo '}<b className="rnd-x159">{formatoMoneda(saldoPrestamoCalc)}</b>
                   </div>
 
                   {campoNumerico('Ahorro (esta nómina)', ahorroNuevo, setAhorroNuevo)}
@@ -2579,11 +2572,11 @@ export const ReferenciasNominaDashboard = () => {
                   {campoNumerico('Pago / Retiro de Ahorro', pagoAhorro, setPagoAhorro)}
                   {campoTotal('Saldo del Ahorro', saldoAhorroCalc, '#58a6ff')}
                   <div></div>
-                  <div style={{ gridColumn: 'span 3', color: '#8b949e', fontSize: '0.78rem', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '10px 14px' }}>
-                    Saldo inicial heredado <b style={{ color: '#c9d1d9' }}>{formatoMoneda(ahorroBaseCalc)}</b>
-                    {' + ahorro de esta nómina '}<b style={{ color: '#58a6ff' }}>{formatoMoneda(Number(ahorroNuevo) || 0)}</b>
-                    {' − pago/retiro '}<b style={{ color: '#3fb950' }}>{formatoMoneda(Number(pagoAhorro) || 0)}</b>
-                    {' = saldo '}<b style={{ color: '#58a6ff' }}>{formatoMoneda(saldoAhorroCalc)}</b>
+                  <div className="rnd-x155">
+                    Saldo inicial heredado <b className="rnd-x156">{formatoMoneda(ahorroBaseCalc)}</b>
+                    {' + ahorro de esta nómina '}<b className="rnd-x157">{formatoMoneda(Number(ahorroNuevo) || 0)}</b>
+                    {' − pago/retiro '}<b className="rnd-x158">{formatoMoneda(Number(pagoAhorro) || 0)}</b>
+                    {' = saldo '}<b className="rnd-x157">{formatoMoneda(saldoAhorroCalc)}</b>
                   </div>
                 </div>
               )}
@@ -2610,15 +2603,15 @@ export const ReferenciasNominaDashboard = () => {
                       </select>
                     </div>
                   </div>
-                  <div style={{ marginBottom: '8px' }}>
+                  <div className="rnd-x160">
                     <label style={labelNomStyle}>Notas / Observaciones</label>
                     <textarea value={notaDepositos} onChange={e => setNotaDepositos(e.target.value)} style={{ ...inputBaseStyle, color: '#fff', height: '60px' }} />
                   </div>
                 </>
               )}
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '20px', marginTop: '24px' }}>
-                <button type="button" onClick={cerrarModalNomina} disabled={guardando} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
+              <div className="rnd-x161">
+                <button className="rnd-x162" type="button" onClick={cerrarModalNomina} disabled={guardando}>Cancelar</button>
                 <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: modoEdicion ? '#a371f7' : '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : (modoEdicion ? 'Guardar Cambios' : 'Confirmar Nómina')}</button>
               </div>
             </form>
@@ -2628,21 +2621,21 @@ export const ReferenciasNominaDashboard = () => {
 
       {/* MODAL FICHA NÓMINA */}
       {nominaViendo && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '900px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>Ficha de Nómina</h2>
-              <button onClick={() => setNominaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rnd-x163">
+          <div className="rnd-x164">
+            <div className="rnd-x165">
+              <h2 className="rnd-x166">Ficha de Nómina</h2>
+              <button className="rnd-x103" onClick={() => setNominaViendo(null)}>✕</button>
             </div>
-            <div style={{ padding: '24px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '24px' }}>
-                <div style={{ gridColumn: 'span 3', display: 'flex', justifyContent: 'space-between', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', alignItems: 'center' }}>
+            <div className="rnd-x167">
+              <div className="rnd-x168">
+                <div className="rnd-x169">
                   <div>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Consecutivo</span>
-                    <span style={{ color: '#D84315', fontSize: '1.2rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{getConsecutivoNomina(nominaViendo)}</span>
+                    <span className="rnd-x170">Consecutivo</span>
+                    <span className="rnd-x171">{getConsecutivoNomina(nominaViendo)}</span>
                   </div>
-                  <div style={{ textAlign: 'center' }}>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Status</span>
+                  <div className="rnd-x131">
+                    <span className="rnd-x37">Status</span>
                     <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold',
                         backgroundColor: nominaViendo.statusPagado ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                         color: nominaViendo.statusPagado ? '#10b981' : '#f59e0b',
@@ -2650,28 +2643,28 @@ export const ReferenciasNominaDashboard = () => {
                         {nominaViendo.statusPagado ? 'PAGADA' : 'PENDIENTE'}
                     </span>
                   </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Fecha de Pago</span>
-                    <span style={{ color: '#c9d1d9', fontSize: '1rem', fontWeight: 'bold' }}>{formatearFechaSpanish(nominaViendo.fechaPago)}</span>
+                  <div className="rnd-x133">
+                    <span className="rnd-x170">Fecha de Pago</span>
+                    <span className="rnd-x172">{formatearFechaSpanish(nominaViendo.fechaPago)}</span>
                   </div>
                 </div>
 
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Operador</span>
-                  <span style={{ color: '#f0f6fc', fontSize: '1rem', fontWeight: 'bold' }}>{getNombreOperador(nominaViendo.operadorNombre || nominaViendo.operadorId)}</span>
+                  <span className="rnd-x170">Operador</span>
+                  <span className="rnd-x173">{getNombreOperador(nominaViendo.operadorNombre || nominaViendo.operadorId)}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Período Reportado</span>
-                  <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>{formatearFechaSpanish(nominaViendo.fechaInicio)} al {formatearFechaSpanish(nominaViendo.fechaFin)}</span>
+                  <span className="rnd-x170">Período Reportado</span>
+                  <span className="rnd-x174">{formatearFechaSpanish(nominaViendo.fechaInicio)} al {formatearFechaSpanish(nominaViendo.fechaFin)}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Método</span>
-                  <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>{resolverMetodoNomina(nominaViendo)}</span>
+                  <span className="rnd-x170">Método</span>
+                  <span className="rnd-x174">{resolverMetodoNomina(nominaViendo)}</span>
                 </div>
 
-                <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
+                <div className="rnd-x175"><hr className="rnd-x176" /></div>
 
-                <div style={{ gridColumn: 'span 3', display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '16px', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d' }}>
+                <div className="rnd-x177">
                   {[
                     {lbl: 'SUBTOTAL REFERENCIAS', val: subtotalReferenciasFicha},
                     {lbl: 'EXTRA', val: nominaViendo.extras},
@@ -2695,44 +2688,44 @@ export const ReferenciasNominaDashboard = () => {
                     {lbl: 'TOTAL A PAGAR', val: fichaTotales.totalAPagar},
                   ].map((it, idx) => (
                     <div key={idx}>
-                      <span style={{ display: 'block', color: '#8b949e', fontSize: '0.65rem', fontWeight: 'bold', textTransform: 'uppercase' }}>{it.lbl}</span>
+                      <span className="rnd-x178">{it.lbl}</span>
                       <span style={{ color: it.lbl === 'TOTAL A PAGAR' ? '#3fb950' : (it.lbl === 'TOTAL DEDUCCIONES' || it.lbl === 'ISR MONTO') ? '#f85149' : '#58a6ff', fontSize: '0.95rem', fontWeight: 'bold' }}>{formatoMoneda(it.val)}</span>
                     </div>
                   ))}
                   {nominaViendo.ahorroPagado && (
-                    <div style={{ gridColumn: 'span 5', color: '#3fb950', fontSize: '0.8rem', fontWeight: 'bold' }}>✔ En esta nómina se registró un pago/retiro de ahorro al operador.</div>
+                    <div className="rnd-x179">✔ En esta nómina se registró un pago/retiro de ahorro al operador.</div>
                   )}
                 </div>
 
-                <div style={{ gridColumn: 'span 3' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Notas / Observaciones</span>
-                  <div style={{ color: '#c9d1d9', backgroundColor: '#161b22', padding: '12px', borderRadius: '6px', border: '1px solid #30363d', minHeight: '40px' }}>
+                <div className="rnd-x175">
+                  <span className="rnd-x170">Notas / Observaciones</span>
+                  <div className="rnd-x180">
                     {nominaViendo.notaDepositos || '-'}
                   </div>
                 </div>
 
-                <div style={{ gridColumn: 'span 3', marginTop: '16px' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
+                <div className="rnd-x181">
+                  <span className="rnd-x182">
                     Operaciones (Referencias) Pagadas en esta Nómina ({opsFicha.length})
                   </span>
 
                   {cargandoOpsFicha ? (
-                    <div style={{ color: '#8b949e', fontSize: '0.85rem', padding: '12px' }}>Buscando las referencias ligadas a esta nómina...</div>
+                    <div className="rnd-x183">Buscando las referencias ligadas a esta nómina...</div>
                   ) : opsFicha.length === 0 ? (
-                    <div style={{ color: '#8b949e', fontSize: '0.85rem', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', padding: '12px' }}>
+                    <div className="rnd-x184">
                       No hay detalle de operaciones ligado a esta nómina. Las nóminas generadas desde la app guardan el detalle automáticamente; las nóminas importadas necesitan el vínculo con sus operaciones (ver nota).
                     </div>
                   ) : (
-                    <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                        <thead style={{ backgroundColor: '#1f2937', color: '#8b949e' }}>
+                    <div className="rnd-x185">
+                      <table className="rnd-x140">
+                        <thead className="rnd-x186">
                           <tr>
-                            <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>REFERENCIA</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'left', whiteSpace: 'nowrap' }}>FECHA</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'left' }}>CLIENTE</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>SUELDO</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>SUELDO EXTRA</th>
-                            <th style={{ padding: '10px 12px', textAlign: 'right', whiteSpace: 'nowrap' }}>SUELDO TOTAL</th>
+                            <th className="rnd-x142">REFERENCIA</th>
+                            <th className="rnd-x142">FECHA</th>
+                            <th className="rnd-x187">CLIENTE</th>
+                            <th className="rnd-x143">SUELDO</th>
+                            <th className="rnd-x143">SUELDO EXTRA</th>
+                            <th className="rnd-x144">SUELDO TOTAL</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2741,22 +2734,17 @@ export const ReferenciasNominaDashboard = () => {
                             const extraOp = aNum(op.sueldoExtra);
                             const tieneExtra = extraOp > 0;
                             return (
-                              <tr key={op.id} style={{ borderTop: '1px solid #21262d' }}>
-                                <td onClick={() => abrirDetalleOperacion(op.id)} title="Abrir el detalle de la operación para editar"
-                                  style={{ padding: '10px 12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap', cursor: 'pointer', textDecoration: 'underline' }}>{op.ref}</td>
-                                <td style={{ padding: '10px 12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.fecha ? formatearFechaSpanish(op.fecha) : '-'}</td>
-                                <td style={{ padding: '10px 12px', color: '#c9d1d9' }}>{op.cliente || getNombreEmpresa(op.clientePagaId) || '-'}</td>
-                                <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                                  <button type="button" onClick={(e) => abrirEditorSueldo(e, op)} title="Editar sueldo base de esta operación"
-                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem',
-                                      backgroundColor: 'rgba(63,185,80,0.12)',
-                                      border: '1px solid #3fb950',
-                                      color: '#3fb950' }}>
+                              <tr className="rnd-x146" key={op.id}>
+                                <td className="rnd-x147" onClick={() => abrirDetalleOperacion(op.id)} title="Abrir el detalle de la operación para editar">{op.ref}</td>
+                                <td className="rnd-x148">{op.fecha ? formatearFechaSpanish(op.fecha) : '-'}</td>
+                                <td className="rnd-x188">{op.cliente || getNombreEmpresa(op.clientePagaId) || '-'}</td>
+                                <td className="rnd-x143">
+                                  <button className="rnd-x149" type="button" onClick={(e) => abrirEditorSueldo(e, op)} title="Editar sueldo base de esta operación">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                                     {formatoMoneda(sueldoOp)}
                                   </button>
                                 </td>
-                                <td style={{ padding: '10px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                <td className="rnd-x143">
                                   <button type="button" onClick={(e) => abrirEditorExtra(e, op)} title="Editar sueldo extra de esta operación"
                                     style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '5px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem',
                                       backgroundColor: tieneExtra ? 'rgba(245,158,11,0.12)' : 'transparent',
@@ -2766,15 +2754,15 @@ export const ReferenciasNominaDashboard = () => {
                                     {tieneExtra ? formatoMoneda(extraOp) : 'Agregar'}
                                   </button>
                                 </td>
-                                <td style={{ padding: '10px 12px', color: '#58a6ff', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(sueldoOp + extraOp)}</td>
+                                <td className="rnd-x152">{formatoMoneda(sueldoOp + extraOp)}</td>
                               </tr>
                             );
                           })}
-                          <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#010409' }}>
-                            <td colSpan={3} style={{ padding: '10px 12px', color: '#8b949e', fontWeight: 'bold', textAlign: 'right', textTransform: 'uppercase' }}>Subtotales</td>
-                            <td style={{ padding: '10px 12px', color: '#3fb950', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalesFicha.sueldo)}</td>
-                            <td style={{ padding: '10px 12px', color: '#f59e0b', fontWeight: 'bold', textAlign: 'center', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalesFicha.extra)}</td>
-                            <td style={{ padding: '10px 12px', color: '#58a6ff', fontWeight: 'bold', textAlign: 'right', whiteSpace: 'nowrap' }}>{formatoMoneda(subtotalesFicha.total)}</td>
+                          <tr className="rnd-x93">
+                            <td className="rnd-x153" colSpan={3}>Subtotales</td>
+                            <td className="rnd-x189">{formatoMoneda(subtotalesFicha.sueldo)}</td>
+                            <td className="rnd-x190">{formatoMoneda(subtotalesFicha.extra)}</td>
+                            <td className="rnd-x152">{formatoMoneda(subtotalesFicha.total)}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -2783,10 +2771,10 @@ export const ReferenciasNominaDashboard = () => {
                 </div>
               </div>
             </div>
-            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
-              <button onClick={(e) => abrirEditarNomina(e as any, nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#a371f7', cursor: 'pointer', fontWeight: 'bold' }}>✎ Editar Nómina</button>
-              <button onClick={() => generarReciboNomina(nominaViendo)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#fff', border: 'none', background: '#f37021', cursor: 'pointer', fontWeight: 'bold' }}>Descargar Recibo (PDF)</button>
-              <button onClick={() => setNominaViendo(null)} className="btn btn-outline" style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar Ficha</button>
+            <div className="rnd-x191">
+              <button className="rnd-x192" onClick={(e) => abrirEditarNomina(e as any, nominaViendo)}>✎ Editar Nómina</button>
+              <button className="rnd-x193" onClick={() => generarReciboNomina(nominaViendo)}>Descargar Recibo (PDF)</button>
+              <button onClick={() => setNominaViendo(null)} className="btn btn-outline rnd-x194">Cerrar Ficha</button>
             </div>
           </div>
         </div>
@@ -2794,39 +2782,39 @@ export const ReferenciasNominaDashboard = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Referencias de Nómina) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '380px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="rnd-x195" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="rnd-x196" onClick={(e) => e.stopPropagation()}>
+            <div className="rnd-x197">
+              <h3 className="rnd-x198">Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
+              <button className="rnd-x103" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
             {activeTab === 'operaciones' ? (
               <>
                 {renderBuscadorOperador()}
 
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA INICIO</label>
-                    <input type="date" value={fechaInicio} onChange={e => { setFechaInicio(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                <div className="rnd-x199">
+                  <div className="rnd-x200">
+                    <label className="rnd-x201">FECHA INICIO</label>
+                    <input className="rnd-x202" type="date" value={fechaInicio} onChange={e => { setFechaInicio(e.target.value); setSeleccionadas([]); }} />
                   </div>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA FIN</label>
-                    <input type="date" value={fechaFin} min={fechaInicio || undefined} onChange={e => { setFechaFin(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                  <div className="rnd-x200">
+                    <label className="rnd-x201">FECHA FIN</label>
+                    <input className="rnd-x202" type="date" value={fechaFin} min={fechaInicio || undefined} onChange={e => { setFechaFin(e.target.value); setSeleccionadas([]); }} />
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ESTADO</label>
-                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                <div className="rnd-x203">
+                  <label className="rnd-x201">ESTADO</label>
+                  <div className="rnd-x204">
                     <button onClick={() => { setFiltroEstadoOps('pendientes'); }} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoOps === 'pendientes' ? 'rgba(239,68,68,0.15)' : 'transparent', color: filtroEstadoOps === 'pendientes' ? '#ef4444' : '#8b949e' }}>● Pendientes ({conteoOps.pendientes})</button>
                     <button onClick={() => { setFiltroEstadoOps('asignadas'); setSeleccionadas([]); }} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoOps === 'asignadas' ? 'rgba(16,185,129,0.15)' : 'transparent', color: filtroEstadoOps === 'asignadas' ? '#10b981' : '#8b949e' }}>● Asignadas ({conteoOps.asignadas})</button>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ORDENAR POR</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="rnd-x203">
+                  <label className="rnd-x201">ORDENAR POR</label>
+                  <div className="rnd-x205">
                     <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
                       <option value="ref">Referencia</option>
                       <option value="fechaServicio">Fecha Servicio</option>
@@ -2841,58 +2829,57 @@ export const ReferenciasNominaDashboard = () => {
                   </div>
                 </div>
 
-                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-                  Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las operaciones.
+                <div className="rnd-x206">
+                  Todos los campos son <b className="rnd-x207">opcionales</b>. Presiona <b className="rnd-x51">Buscar</b> para ver las operaciones.
                 </div>
               </>
             ) : (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-                  <div style={{ position: 'relative' }}>
-                    <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input type="text" placeholder="Consecutivo, operador..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)}
-                      style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                <div className="rnd-x203">
+                  <label className="rnd-x208">BÚSQUEDA</label>
+                  <div className="rnd-x11">
+                    <svg className="rnd-x209" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input className="rnd-x210" type="text" placeholder="Consecutivo, operador..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)} />
                     {busquedaHistorial && (
-                      <button onClick={() => setBusquedaHistorial('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                      <button className="rnd-x211" onClick={() => setBusquedaHistorial('')} title="Limpiar">✕</button>
                     )}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ESTADO</label>
-                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                <div className="rnd-x203">
+                  <label className="rnd-x201">ESTADO</label>
+                  <div className="rnd-x204">
                     <button onClick={() => setFiltroEstadoHist('pendientes')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoHist === 'pendientes' ? 'rgba(245,158,11,0.15)' : 'transparent', color: filtroEstadoHist === 'pendientes' ? '#f59e0b' : '#8b949e' }}>● Pendientes ({conteoHist.pendientes})</button>
                     <button onClick={() => setFiltroEstadoHist('pagadas')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoHist === 'pagadas' ? 'rgba(16,185,129,0.15)' : 'transparent', color: filtroEstadoHist === 'pagadas' ? '#10b981' : '#8b949e' }}>● Pagadas ({conteoHist.pagadas})</button>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA PAGO DESDE</label>
-                    <input type="date" value={histFechaInicio} onChange={e => setHistFechaInicio(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                <div className="rnd-x199">
+                  <div className="rnd-x200">
+                    <label className="rnd-x201">FECHA PAGO DESDE</label>
+                    <input className="rnd-x202" type="date" value={histFechaInicio} onChange={e => setHistFechaInicio(e.target.value)} />
                   </div>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA PAGO HASTA</label>
-                    <input type="date" value={histFechaFin} min={histFechaInicio || undefined} onChange={e => setHistFechaFin(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
+                  <div className="rnd-x200">
+                    <label className="rnd-x201">FECHA PAGO HASTA</label>
+                    <input className="rnd-x202" type="date" value={histFechaFin} min={histFechaInicio || undefined} onChange={e => setHistFechaFin(e.target.value)} />
                   </div>
                 </div>
 
-                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-                  Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver el historial.
+                <div className="rnd-x206">
+                  Todos los campos son <b className="rnd-x207">opcionales</b>. Presiona <b className="rnd-x51">Buscar</b> para ver el historial.
                 </div>
               </>
             )}
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => {
+            <div className="rnd-x212">
+              <button className="rnd-x213" onClick={() => {
                 if (activeTab === 'operaciones') { setFiltroOperador(''); setTextoBuscarOperador(''); setFechaInicio(''); setFechaFin(''); setSeleccionadas([]); setBusquedaOpsHecha(false); }
                 else { setBusquedaHistorial(''); setHistFechaInicio(''); setHistFechaFin(''); setBusquedaHistHecha(false); }
-              }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => {
+              }}>Limpiar</button>
+              <button className="rnd-x214" onClick={() => {
                 if (activeTab === 'operaciones') setBusquedaOpsHecha(true); else setBusquedaHistHecha(true);
                 setDrawerFiltrosAbierto(false);
-              }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+              }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

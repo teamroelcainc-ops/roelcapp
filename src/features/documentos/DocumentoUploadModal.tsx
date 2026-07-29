@@ -21,6 +21,7 @@ import React, { useState } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
+import './DocumentoUploadModal.css';
 
 // Catálogo por defecto (genérico). Cada módulo puede pasar su propia lista por props.
 const TIPOS_DOCUMENTO_DEFAULT = [
@@ -132,17 +133,17 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 2100 }}>
-      <div className="form-card" style={{ maxWidth: '720px', width: '95%', borderRadius: '14px', border: '1px solid #30363d', backgroundColor: '#0d1117', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
-        <div className="form-header" style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.15rem' }}>Subir Documento{registroNombre ? ` — ${registroNombre}` : ''}</h3>
-          <button type="button" onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+    <div className="modal-overlay dum-x1">
+      <div className="form-card dum-x2">
+        <div className="form-header dum-x3">
+          <h3 className="dum-x4">Subir Documento{registroNombre ? ` — ${registroNombre}` : ''}</h3>
+          <button className="dum-x5" type="button" onClick={onClose}>✕</button>
         </div>
 
-        <div style={{ padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ fontSize: '0.75rem', color: '#6e7681', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', padding: '10px 12px' }}>
-            Se guardará en: <span style={{ color: '#8b949e' }}>{sanitizarRuta(coleccionOrigen)} / {carpeta} / {subcarpeta} / {nombreFinalPreview}</span>
-            <span style={{ color: '#6e7681' }}> · ligado a {coleccionOrigen} ({registroId || '—'})</span>
+        <div className="dum-x6">
+          <div className="dum-x7">
+            Se guardará en: <span className="dum-x8">{sanitizarRuta(coleccionOrigen)} / {carpeta} / {subcarpeta} / {nombreFinalPreview}</span>
+            <span className="dum-x9"> · ligado a {coleccionOrigen} ({registroId || '—'})</span>
           </div>
 
           <div style={filaStyle}>
@@ -161,20 +162,20 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', minHeight: '90px', padding: '16px', borderRadius: '8px', cursor: 'pointer', backgroundColor: arrastrando ? 'rgba(216,67,21,0.1)' : '#010409', border: arrastrando ? '1px dashed #D84315' : (archivo ? '1px solid rgba(63,185,80,0.5)' : '1px solid #30363d') }}
             >
               {archivo ? (
-                <span style={{ color: '#3fb950', fontWeight: 600, fontSize: '0.85rem', textAlign: 'center', wordBreak: 'break-all' }}>✓ {archivo.name}</span>
+                <span className="dum-x10">✓ {archivo.name}</span>
               ) : (
                 <>
                   <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                  <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Haz clic o arrastra un archivo aquí</span>
+                  <span className="dum-x11">Haz clic o arrastra un archivo aquí</span>
                 </>
               )}
-              <input type="file" accept=".pdf,image/*" onChange={(e) => setArchivo(e.target.files?.[0] || null)} style={{ display: 'none' }} />
+              <input className="dum-x12" type="file" accept=".pdf,image/*" onChange={(e) => setArchivo(e.target.files?.[0] || null)} />
             </label>
           </div>
 
           <div style={filaStyle}>
             <label style={labelStyle}>¿Vence?</label>
-            <div style={{ display: 'inline-flex', border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden', width: 'fit-content' }}>
+            <div className="dum-x13">
               <button type="button" onClick={() => setVence(false)} style={segBtn(!vence, '#30363d')}>No</button>
               <button type="button" onClick={() => setVence(true)} style={segBtn(vence, '#D84315')}>Si</button>
             </div>
@@ -199,8 +200,8 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
           </div>
         </div>
 
-        <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px', flexShrink: 0 }}>
-          <button type="button" onClick={onClose} disabled={subiendo} className="btn btn-outline" style={{ padding: '10px 20px', borderRadius: '6px' }}>Cancelar</button>
+        <div className="dum-x14">
+          <button type="button" onClick={onClose} disabled={subiendo} className="btn btn-outline dum-x15">Cancelar</button>
           <button type="button" onClick={handleSubir} disabled={subiendo} style={{ padding: '10px 24px', borderRadius: '6px', border: 'none', backgroundColor: subiendo ? '#21262d' : '#D84315', color: subiendo ? '#6e7681' : '#fff', fontWeight: 'bold', cursor: subiendo ? 'not-allowed' : 'pointer' }}>
             {subiendo ? 'Subiendo...' : 'Subir Documento'}
           </button>

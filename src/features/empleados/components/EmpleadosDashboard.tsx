@@ -7,6 +7,7 @@ import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { HerramientasEmpleado } from './HerramientasEmpleado'; 
 import type { Employee } from '../../../types/empleado';
 import * as XLSX from 'xlsx';
+import './EmpleadosDashboard.css';
 
 const COLUMNAS_BASE = [
   { id: 'employeeId', label: '# Empleado', visible: true },
@@ -123,16 +124,16 @@ export const EmpleadosDashboard = () => {
 
   const renderCellContent = (emp: any, colId: string) => {
     switch (colId) {
-      case 'employeeId': return <span className="font-mono" style={{ color: '#58a6ff', fontWeight: 'bold' }}>{emp.employeeId}</span>;
+      case 'employeeId': return <span className="font-mono ed-x1">{emp.employeeId}</span>;
       case 'activo': return <span style={{ padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', backgroundColor: emp.activo ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', color: emp.activo ? '#10b981' : '#ef4444', fontWeight: 'bold', border: emp.activo ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)' }}>{emp.activo ? 'Activo' : 'Baja'}</span>;
-      case 'firstName': return <span style={{ color: '#f0f6fc', fontWeight: '500' }}>{emp.firstName}</span>;
-      case 'lastNamePaternal': return <span style={{ color: '#c9d1d9' }}>{emp.lastNamePaternal}</span>;
-      case 'lastNameMaternal': return <span style={{ color: '#c9d1d9' }}>{emp.lastNameMaternal || '-'}</span>;
-      case 'cargo': return <span style={{ color: '#c9d1d9' }}>{emp.cargoNombre || '-'}</span>;
-      case 'operaciones': return <span style={{ color: '#8b949e', fontSize: '0.85rem' }}>{emp.operacionesIds?.length > 0 ? `${emp.operacionesIds.length} Asig.` : '-'}</span>;
-      case 'telefono': return <span style={{ color: '#c9d1d9' }}>{emp.telefonoAsignado || '-'}</span>;
-      case 'fNacimiento': return <span style={{ color: '#c9d1d9' }}>{formatearFecha(emp.birthDate)}</span>;
-      case 'fIngreso': return <span style={{ color: '#c9d1d9' }}>{formatearFecha(emp.fechaIngreso)}</span>;
+      case 'firstName': return <span className="ed-x2">{emp.firstName}</span>;
+      case 'lastNamePaternal': return <span className="ed-x3">{emp.lastNamePaternal}</span>;
+      case 'lastNameMaternal': return <span className="ed-x3">{emp.lastNameMaternal || '-'}</span>;
+      case 'cargo': return <span className="ed-x3">{emp.cargoNombre || '-'}</span>;
+      case 'operaciones': return <span className="ed-x4">{emp.operacionesIds?.length > 0 ? `${emp.operacionesIds.length} Asig.` : '-'}</span>;
+      case 'telefono': return <span className="ed-x3">{emp.telefonoAsignado || '-'}</span>;
+      case 'fNacimiento': return <span className="ed-x3">{formatearFecha(emp.birthDate)}</span>;
+      case 'fIngreso': return <span className="ed-x3">{formatearFecha(emp.fechaIngreso)}</span>;
       default: return '-';
     }
   };
@@ -173,7 +174,7 @@ export const EmpleadosDashboard = () => {
   });
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container ed-x5">
       {estadoFormulario !== 'cerrado' && (
         <EmployeeForm 
           estado={estadoFormulario} initialData={empleadoEditando}
@@ -183,79 +184,79 @@ export const EmpleadosDashboard = () => {
         />
       )}
 
-      <div style={{ width: '100%', margin: '0 auto' }}>
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>Directorio de Empleados</h1>
+      <div className="ed-x6">
+        <h1 className="module-title ed-x7">Directorio de Empleados</h1>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
-          <div style={{ display: 'flex', gap: '10px', flex: '1 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="ed-x8">
+          <div className="ed-x9">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busqueda ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busqueda && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+              {busqueda && <span className="ed-x10">1</span>}
             </button>
             {busqueda && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="ed-x11">
                 "{busqueda}"
-                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="ed-x12" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="ed-x13">
               {busquedaHecha ? `${registrosFiltrados.length} empleados` : 'Presiona Filtros y Buscar para ver el directorio.'}
             </span>
           </div>
           
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }} title="Configurar Columnas">
+          <div className="ed-x14">
+            <button className="btn btn-outline ed-x15" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
-            <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }} title="Exportar Excel">
+            <button className="btn btn-outline ed-x15" onClick={exportarExcel} title="Exportar Excel">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
-            <button className="btn btn-primary" title="Agregar Empleado" onClick={handleNuevo} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '500' }}>
+            <button className="btn btn-primary ed-x16" title="Agregar Empleado" onClick={handleNuevo}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
             </button>
           </div>
         </div>
 
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
+        <div className="content-body ed-x17">
+          <div className="table-container ed-x18">
             {cargando ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando empleados...</div>
+              <div className="ed-x19">Cargando empleados...</div>
             ) : (
-              <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+              <table className="data-table ed-x20">
+                <thead className="ed-x21">
                   <tr>
-                    <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>Acciones</th>
+                    <th className="ed-x22">Acciones</th>
                     {columnasTabla.filter(c => c.visible).map(col => (
-                      <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>{col.label}</th>
+                      <th className="ed-x23" key={`th_${col.id}`}>{col.label}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {!busquedaHecha ? (
-                    <tr><td colSpan={columnasTabla.filter(c => c.visible).length + 1} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                    <tr><td className="ed-x24" colSpan={columnasTabla.filter(c => c.visible).length + 1}>
+                      <div className="ed-x25">
                         <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                        <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver el directorio.</span>
-                        <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                        <span className="ed-x26">Define tus filtros y presiona <b className="ed-x27">Buscar</b> para ver el directorio.</span>
+                        <button className="ed-x28" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                       </div>
                     </td></tr>
                   ) : empleadosEnPantalla.length === 0 ? (
-                    <tr><td colSpan={columnasTabla.filter(c => c.visible).length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <tr><td className="ed-x29" colSpan={columnasTabla.filter(c => c.visible).length + 1}>
                       {busqueda ? 'No se encontraron empleados para tu búsqueda.' : 'Aún no hay empleados registrados.'}
                     </td></tr>
                   ) : (
                   empleadosEnPantalla.map(emp => (
                     <tr key={emp.id} onClick={() => verDetalle(emp)} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === emp.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(emp.id!)} onMouseLeave={() => setHoveredRowId(null)}>
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(ev: any) => ev.stopPropagation()}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                          <button onClick={(ev) => { ev.stopPropagation(); editarEmpleado(emp); }} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
-                          <button onClick={(ev) => { ev.stopPropagation(); eliminarEmpleado(emp.id!); }} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
+                      <td className="ed-x30" onClick={(ev: any) => ev.stopPropagation()}>
+                        <div className="ed-x31">
+                          <button className="ed-x32" onClick={(ev) => { ev.stopPropagation(); editarEmpleado(emp); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
+                          <button className="ed-x33" onClick={(ev) => { ev.stopPropagation(); eliminarEmpleado(emp.id!); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
                         </div>
                       </td>
                       {columnasTabla.filter(c => c.visible).map(col => (
-                        <td key={`cell_${emp.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>{renderCellContent(emp, col.id)}</td>
+                        <td className="ed-x34" key={`cell_${emp.id}_${col.id}`}>{renderCellContent(emp, col.id)}</td>
                       ))}
                     </tr>
                   ))
@@ -266,11 +267,11 @@ export const EmpleadosDashboard = () => {
           </div>
 
           {busquedaHecha && registrosFiltrados.length > 0 && !cargando && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="ed-x35">
+              <div className="ed-x36">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} empleados
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="ed-x37">
                 <button 
                   onClick={irPaginaAnterior} 
                   disabled={paginaActual === 1}
@@ -279,7 +280,7 @@ export const EmpleadosDashboard = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="ed-x38">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   onClick={irPaginaSiguiente} 
                   disabled={paginaActual === totalPaginas || totalPaginas === 0}
@@ -296,13 +297,13 @@ export const EmpleadosDashboard = () => {
       </div>
 
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay ed-x39">
+          <div className="ed-x40">
+            <div className="ed-x41">
+              <h3 className="ed-x42">Configurar Columnas</h3>
+              <button className="ed-x43" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <ul className="ed-x44">
               {columnasTabla.map((col, idx) => (
                 <li key={col.id} draggable onDragStart={() => handleDragStart(idx)} onDragEnter={() => handleDragEnter(idx)} onDragEnd={() => setDraggedColIndex(null)} onDragOver={(e) => e.preventDefault()} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}>
                   <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
@@ -310,47 +311,46 @@ export const EmpleadosDashboard = () => {
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}><button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar</button></div>
+            <div className="ed-x45"><button className="ed-x46" onClick={() => setModalColumnas(false)}>Aplicar</button></div>
           </div>
         </div>
       )}
 
       {/* MODAL DETALLE EMPLEADO */}
       {empleadoViendo && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1500, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="form-card detail-card" style={{ maxWidth: '850px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', overflow: 'hidden' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0, fontSize: '1.25rem' }}>Ficha: {empleadoViendo.firstName}</h2>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                <button
+        <div className="modal-overlay ed-x47">
+          <div className="form-card detail-card ed-x48">
+            <div className="form-header ed-x49">
+              <h2 className="ed-x50">Ficha: {empleadoViendo.firstName}</h2>
+              <div className="ed-x51">
+                <button className="ed-x52"
                   onClick={() => setMostrarSubirDoc(true)}
                   title="Subir documentos del empleado"
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '7px 14px', borderRadius: '6px', border: 'none', backgroundColor: '#D84315', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                   Subir Documentos
                 </button>
-                <button onClick={() => setEmpleadoViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+                <button className="ed-x53" onClick={() => setEmpleadoViendo(null)}>✕</button>
               </div>
             </div>
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px' }}>
+            <div className="ed-x54">
               <button type="button" onClick={() => setActiveTabDetalle('general')} style={tabStyle(activeTabDetalle === 'general')}>Datos Personales</button>
               <button type="button" onClick={() => setActiveTabDetalle('empresa')} style={tabStyle(activeTabDetalle === 'empresa')}>Alta en Empresa</button>
               <button type="button" onClick={() => setActiveTabDetalle('herramientas')} style={tabStyle(activeTabDetalle === 'herramientas')}>Herramientas / Operativa</button>
               <button type="button" onClick={() => setActiveTabDetalle('documentos')} style={tabStyle(activeTabDetalle === 'documentos')}>Documentos</button>
             </div>
-            <div className="detail-content" style={{ padding: '24px', minHeight: '300px', maxHeight: '60vh', overflowY: 'auto' }}>
+            <div className="detail-content ed-x55">
               {activeTabDetalle === 'general' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                   <div><span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem' }}>Nombres</span><span style={{ color: '#f0f6fc' }}>{empleadoViendo.firstName}</span></div>
-                   <div><span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem' }}>Ap. Paterno</span><span style={{ color: '#c9d1d9' }}>{empleadoViendo.lastNamePaternal}</span></div>
-                   <div><span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem' }}>Ap. Materno</span><span style={{ color: '#c9d1d9' }}>{empleadoViendo.lastNameMaternal || '-'}</span></div>
+                <div className="ed-x56">
+                   <div><span className="ed-x57">Nombres</span><span className="ed-x58">{empleadoViendo.firstName}</span></div>
+                   <div><span className="ed-x57">Ap. Paterno</span><span className="ed-x3">{empleadoViendo.lastNamePaternal}</span></div>
+                   <div><span className="ed-x57">Ap. Materno</span><span className="ed-x3">{empleadoViendo.lastNameMaternal || '-'}</span></div>
                 </div>
               )}
               {activeTabDetalle === 'empresa' && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div><span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem' }}>Cargo</span><span style={{ color: '#58a6ff' }}>{empleadoViendo.cargoNombre || '-'}</span></div>
-                  <div><span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem' }}>Ingreso</span><span style={{ color: '#c9d1d9' }}>{formatearFecha(empleadoViendo.fechaIngreso)}</span></div>
+                <div className="ed-x56">
+                  <div><span className="ed-x57">Cargo</span><span className="ed-x59">{empleadoViendo.cargoNombre || '-'}</span></div>
+                  <div><span className="ed-x57">Ingreso</span><span className="ed-x3">{formatearFecha(empleadoViendo.fechaIngreso)}</span></div>
                 </div>
               )}
               {activeTabDetalle === 'herramientas' && (
@@ -360,8 +360,8 @@ export const EmpleadosDashboard = () => {
                  <DocumentosLista coleccionOrigen="empleados" registroId={empleadoViendo.id ?? ''} />
               )}
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#0d1117' }}>
-              <button onClick={() => setEmpleadoViendo(null)} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cerrar Ficha</button>
+            <div className="ed-x60">
+              <button className="ed-x61" onClick={() => setEmpleadoViendo(null)}>Cerrar Ficha</button>
             </div>
           </div>
         </div>
@@ -380,32 +380,31 @@ export const EmpleadosDashboard = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Directorio de Empleados) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Directorio de Empleados</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="ed-x62" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="ed-x63" onClick={(e) => e.stopPropagation()}>
+            <div className="ed-x64">
+              <h3 className="ed-x65">Filtros · Directorio de Empleados</h3>
+              <button className="ed-x43" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Nombre, puesto, teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="ed-x66">
+              <label className="ed-x67">BÚSQUEDA</label>
+              <div className="ed-x68">
+                <svg className="ed-x69" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="ed-x70" type="text" placeholder="Nombre, puesto, teléfono..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="ed-x71" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              La búsqueda es <b style={{ color: '#8b949e' }}>opcional</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todo el directorio.
+            <div className="ed-x72">
+              La búsqueda es <b className="ed-x73">opcional</b>. Presiona <b className="ed-x27">Buscar</b> para ver todo el directorio.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="ed-x74">
+              <button className="ed-x75" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="ed-x76" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

@@ -1,0 +1,54 @@
+/* Estilos hermanos de FormularioConvenioCliente.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.fcc-x1 { position: relative; width: 100%; }
+.fcc-x2 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; padding: 0; list-style: none; z-index: 1000; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); }
+.fcc-x3 { padding: 8px 12px; cursor: pointer; color: #c9d1d9; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
+.fcc-x4 { padding: 8px 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
+.fcc-x5 { backdrop-filter: blur(4px); z-index: 2000; }
+.fcc-x6 { max-width: 400px; border-radius: 16px; border: 1px solid #444; background-color: #0d1117; }
+.fcc-x7 { padding: 20px 24px; border-bottom: 1px solid #30363d; margin-bottom: 0; }
+.fcc-x8 { display: flex; align-items: center; gap: 8px; font-size: 1.1rem; margin: 0; color: #f0f6fc; }
+.fcc-x9 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.fcc-x10 { padding: 24px; }
+.fcc-x11 { display: flex; flex-direction: column; gap: 14px; }
+.fcc-x12 { display: flex; align-items: center; gap: 12px; cursor: pointer; font-size: 0.95rem; color: #c9d1d9; }
+.fcc-x13 { width: 18px; height: 18px; accent-color: #D84315; }
+.fcc-x14 { margin-top: 30px; }
+.fcc-x15 { width: 100%; padding: 10px; }
+.fcc-x16 { max-width: 850px; }
+.fcc-x17 { background: none; }
+.fcc-x18 { grid-template-columns: 1fr 1fr; gap: 20px; }
+.fcc-x19 { background-color: #21262d; }
+.fcc-x20 { margin-top: 32px; border: 1px solid #30363d; border-radius: 8px; padding: 24px; background-color: #0d1117; }
+.fcc-x21 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.fcc-x22 { font-size: 1rem; color: #f0f6fc; margin: 0; }
+.fcc-x23 { background-color: #161b22; padding: 20px; border-radius: 8px; margin-bottom: 24px; }
+.fcc-x24 { grid-template-columns: 2fr 1fr 1fr auto; gap: 16px; align-items: end; }
+.fcc-x25 { height: 38px; }
+.fcc-x26 { width: 100%; border-collapse: collapse; }
+.fcc-x27 { background-color: #161b22; color: #8b949e; }
+.fcc-x28 { padding: 12px; }
+.fcc-x29 { padding: 12px; text-align: center; }
+.fcc-x30 { text-align: center; padding: 24px; color: #8b949e; }
+.fcc-x31 { border-top: 1px solid #30363d; }
+.fcc-x32 { padding: 12px; color: #8b949e; }
+.fcc-x33 { padding: 12px; color: #c9d1d9; }
+.fcc-x34 { padding: 12px; color: #f0f6fc; font-weight: bold; }
+.fcc-x35 { background: none; border: none; color: #ef4444; cursor: pointer; }
+.fcc-x36 { margin-top: 32px; display: flex; justify-content: flex-end; gap: 16px; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .fcc-x8 { flex-wrap: wrap; }
+  .fcc-x10 { padding: 14px 12px; }
+  .fcc-x12 { flex-wrap: wrap; }
+  .fcc-x18 { grid-template-columns: 1fr; }
+  .fcc-x20 { padding: 14px 12px; }
+  .fcc-x21 { flex-wrap: wrap; }
+  .fcc-x24 { grid-template-columns: 1fr; }
+  .fcc-x30 { padding: 14px 12px; }
+  .fcc-x36 { flex-wrap: wrap; }
+}

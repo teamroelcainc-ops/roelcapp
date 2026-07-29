@@ -1,33 +1,64 @@
 // src/features/relojChecador/components/HistorialChequeosDashboard.tsx
-import React, { useState, useEffect } from 'react';
+//
+// ✅ Refactor CLAUDE.md (archivo ejemplar de la convención):
+//   · Estilos fijos → clases en el CSS hermano (0 style={{...}}).
+//   · Sin `any`: registros y usuario con tipos con nombre.
+//   · Ícono con lucide-react en lugar de SVG a mano.
+//   · Sin React.FC (convención de componentes del proyecto).
+import { useState, useEffect } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
+import { Download } from 'lucide-react';
+import './HistorialChequeosDashboard.css';
 
-interface Props {
-  usuarioActual: any;
+// ⭐ Tipo local: la colección reloj_checador solo se lee aquí y se escribe en
+//    RelojChecadorModal; estos campos aún no viven en src/types.
+export interface ChequeoRegistro {
+  id: string;
+  userId?: string;
+  userName?: string;
+  tipoRegistro?: string;
+  fecha?: string;
+  hora?: string;
+  ubicacion?: string;
+  timestamp?: unknown;
 }
 
-export const HistorialChequeosDashboard: React.FC<Props> = ({ usuarioActual }) => {
-  const [registros, setRegistros] = useState<any[]>([]);
+// ⭐ Solo los campos del usuario que esta vista usa (el doc completo de
+//    `usuarios` no tiene tipo canónico todavía).
+interface UsuarioSesion {
+  id: string;
+  rol?: string;
+}
+
+interface Props {
+  usuarioActual: UsuarioSesion | null;
+}
+
+const ROLES_FULL_ACCESS = ['Admin', 'Gerencia', 'Sistemas'];
+
+export function HistorialChequeosDashboard({ usuarioActual }: Props) {
+  const [registros, setRegistros] = useState<ChequeoRegistro[]>([]);
   const [busqueda, setBusqueda] = useState('');
 
   // Identificar si el usuario tiene privilegios totales
-  const rolesFullAccess = ['Admin', 'Gerencia', 'Sistemas'];
-  const tieneFullAccess = usuarioActual && rolesFullAccess.includes(usuarioActual.rol);
+  const tieneFullAccess = !!usuarioActual && ROLES_FULL_ACCESS.includes(usuarioActual.rol || '');
 
   useEffect(() => {
     if (!usuarioActual) return;
 
-    // Traemos todos los registros ordenados por tiempo (el más reciente primero)
+    // Todos los registros ordenados por tiempo (el más reciente primero).
+    // onSnapshot + caché persistente de Firestore: pinta al instante desde
+    // IndexedDB y solo factura lecturas por documentos nuevos/cambiados.
     const q = query(collection(db, 'reloj_checador'), orderBy('timestamp', 'desc'));
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      let data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as ChequeoRegistro);
 
-      // Si NO es admin/gerencia/sistemas, filtramos para que solo vea los suyos en memoria
+      // Si NO es admin/gerencia/sistemas, solo ve los suyos (filtro en memoria)
       if (!tieneFullAccess) {
-        data = data.filter((d: any) => d.userId === usuarioActual.id);
+        data = data.filter(d => d.userId === usuarioActual.id);
       }
 
       setRegistros(data);
@@ -54,7 +85,7 @@ export const HistorialChequeosDashboard: React.FC<Props> = ({ usuarioActual }) =
       'Hora': reg.hora,
       'Colaborador': reg.userName,
       'Tipo de Registro': reg.tipoRegistro,
-      'Ubicación (Maps)': reg.ubicacion
+      'Ubicación (Maps)': reg.ubicacion,
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(datosExcel);
@@ -64,73 +95,66 @@ export const HistorialChequeosDashboard: React.FC<Props> = ({ usuarioActual }) =
   };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
-      
-      <div className="module-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '24px' }}>
-        <h1 className="module-title" style={{ fontSize: '1.25rem', color: '#8b949e', margin: 0, fontWeight: '400' }}>
-          Empleados {'>'} <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Historial de Chequeo</span>
+    <div className="module-container hcheq-container">
+
+      <div className="module-header hcheq-header">
+        <h1 className="module-title hcheq-title">
+          Empleados {'>'} <strong>Historial de Chequeo</strong>
         </h1>
-        <button 
-          className="btn btn-outline" 
+        <button
+          className="hcheq-btn-export"
           title="Exportar a Excel"
-          onClick={exportarExcel} 
-          disabled={registrosFiltrados.length === 0} 
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', cursor: registrosFiltrados.length === 0 ? 'not-allowed' : 'pointer' }}
+          onClick={exportarExcel}
+          disabled={registrosFiltrados.length === 0}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          <Download size={16} />
         </button>
       </div>
 
-      <div style={{ marginBottom: '24px', maxWidth: '400px' }}>
-        <input 
-          type="text" 
+      <div className="hcheq-busqueda">
+        <input
+          type="text"
           placeholder="Buscar por nombre, tipo o fecha..."
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
           className="form-control"
-          style={{ backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', padding: '10px 16px', borderRadius: '8px', width: '100%' }} 
         />
       </div>
 
-      <div className="content-body" style={{ display: 'block' }}>
-        <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 250px)' }}> 
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+      <div className="content-body hcheq-body">
+        <div className="table-container hcheq-tabla-marco">
+          <div className="hcheq-tabla-scroll">
+            <table className="data-table hcheq-tabla">
+              <thead>
                 <tr>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Fecha</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Hora</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Colaborador</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Registro</th>
-                  <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', borderBottom: '1px solid #30363d' }}>Ubicación</th>
+                  <th>Fecha</th>
+                  <th>Hora</th>
+                  <th>Colaborador</th>
+                  <th>Registro</th>
+                  <th>Ubicación</th>
                 </tr>
               </thead>
               <tbody>
                 {registrosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td colSpan={5} className="hcheq-vacio">
                       {busqueda ? 'No se encontraron registros.' : 'Aún no hay registros de asistencia.'}
                     </td>
                   </tr>
                 ) : (
                   registrosFiltrados.map((reg) => (
-                    <tr key={reg.id} style={{ borderBottom: '1px solid #21262d' }}>
-                      <td style={{ padding: '16px', color: '#c9d1d9', fontWeight: 'bold' }}>{reg.fecha}</td>
-                      <td className="font-mono" style={{ padding: '16px', color: '#58a6ff' }}>{reg.hora}</td>
-                      <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '500' }}>{reg.userName}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9' }}>
-                        <span style={{ 
-                          padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold',
-                          backgroundColor: reg.tipoRegistro.includes('Llegada') ? 'rgba(46, 160, 67, 0.15)' : 'rgba(218, 54, 51, 0.15)',
-                          color: reg.tipoRegistro.includes('Llegada') ? '#2ea043' : '#da3633',
-                          border: reg.tipoRegistro.includes('Llegada') ? '1px solid rgba(46, 160, 67, 0.3)' : '1px solid rgba(218, 54, 51, 0.3)'
-                        }}>
+                    <tr key={reg.id}>
+                      <td className="hcheq-fecha">{reg.fecha}</td>
+                      <td className="font-mono hcheq-hora">{reg.hora}</td>
+                      <td className="hcheq-nombre">{reg.userName}</td>
+                      <td>
+                        <span className={`hcheq-badge${(reg.tipoRegistro || '').includes('Llegada') ? ' llegada' : ''}`}>
                           {reg.tipoRegistro}
                         </span>
                       </td>
-                      <td style={{ padding: '16px', color: '#c9d1d9' }}>
+                      <td>
                         {reg.ubicacion?.startsWith('http') ? (
-                          <a href={reg.ubicacion} target="_blank" rel="noopener noreferrer" style={{ color: '#10b981', textDecoration: 'none' }}>📍 Ver Mapa</a>
+                          <a href={reg.ubicacion} target="_blank" rel="noopener noreferrer" className="hcheq-mapa-link">📍 Ver Mapa</a>
                         ) : (
                           reg.ubicacion
                         )}
@@ -145,4 +169,4 @@ export const HistorialChequeosDashboard: React.FC<Props> = ({ usuarioActual }) =
       </div>
     </div>
   );
-};
+}

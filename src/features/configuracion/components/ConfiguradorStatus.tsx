@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { collection, doc, getDoc, setDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import './ConfiguradorStatus.css';
 
 /* ============================================================
    TIPOS
@@ -234,31 +235,17 @@ const ModalCamposRequeridos = ({
   const meta = TIPO_META[tipoMecanismo];
 
   return (
-    <div
+    <div className="cs-x1"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 3000,
-        background: 'rgba(5,7,12,0.7)',
-        backdropFilter: 'blur(6px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20,
-      }}
     >
-      <div style={{
-        width: 'min(720px, 100%)', maxHeight: '88vh',
-        background: 'linear-gradient(180deg, #11151d 0%, #0d1118 100%)',
-        border: '1px solid #232a3a', borderRadius: 14,
-        display: 'flex', flexDirection: 'column',
-        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
-        overflow: 'hidden',
-      }}>
+      <div className="cs-x2">
         {/* Header */}
         <div style={{
           padding: '18px 20px',
           borderBottom: '1px solid #1c2230',
           background: `linear-gradient(180deg, ${meta.bg}, transparent)`,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <div className="cs-x3">
             <div style={{
               width: 30, height: 30, borderRadius: 8,
               background: meta.bg, color: meta.color,
@@ -266,74 +253,50 @@ const ModalCamposRequeridos = ({
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 16, fontWeight: 700,
             }}>{meta.icon}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#e6ebf5', letterSpacing: -0.2 }}>
+            <div className="cs-x4">
+              <div className="cs-x5">
                 Campos requeridos para avanzar
               </div>
-              <div style={{ fontSize: 12, color: '#7a8499', marginTop: 2 }}>
+              <div className="cs-x6">
                 Marca los campos del formulario de operaciones que deben estar llenos.
               </div>
             </div>
-            <button onClick={onCerrar} style={{
-              background: 'none', border: 'none', color: '#7a8499',
-              cursor: 'pointer', fontSize: 20, padding: '0 4px',
-            }} title="Cerrar (Esc)">×</button>
+            <button className="cs-x7" onClick={onCerrar} title="Cerrar (Esc)">×</button>
           </div>
 
           {/* Buscador */}
-          <input
+          <input className="cs-x8"
             autoFocus
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Buscar campo…"
-            style={{
-              width: '100%',
-              background: '#0a0d14',
-              border: '1px solid #232a3a',
-              color: '#e6ebf5',
-              borderRadius: 8,
-              padding: '9px 12px',
-              fontSize: 13,
-              outline: 'none',
-              marginTop: 10,
-            }}
           />
         </div>
 
         {/* Lista */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
+        <div className="cs-x9">
           {seccionesFiltradas.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#5f697d', fontSize: 13 }}>
+            <div className="cs-x10">
               No se encontraron campos.
             </div>
           ) : seccionesFiltradas.map(sec => {
             const totalSec = sec.campos.length;
             const marcadosSec = sec.campos.filter(c => seleccion.has(c.id)).length;
             return (
-              <div key={sec.seccion} style={{ marginBottom: 16 }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  marginBottom: 8,
-                }}>
-                  <div style={{
-                    fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2,
-                    color: '#a9b3c7', fontWeight: 700,
-                  }}>
+              <div className="cs-x11" key={sec.seccion}>
+                <div className="cs-x12">
+                  <div className="cs-x13">
                     {sec.seccion}
-                    <span style={{
-                      marginLeft: 8, background: '#1a1f2b', border: '1px solid #2a3142',
-                      borderRadius: 999, padding: '1px 8px', fontSize: 10.5, color: '#7a8499',
-                      fontWeight: 600,
-                    }}>
+                    <span className="cs-x14">
                       {marcadosSec}/{totalSec}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div className="cs-x15">
                     <button onClick={() => marcarSeccion(sec.campos)} style={miniBtn}>Marcar todos</button>
                     <button onClick={() => limpiarSeccion(sec.campos)} style={miniBtn}>Limpiar</button>
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                <div className="cs-x16">
                   {sec.campos.map(c => {
                     const checked = seleccion.has(c.id);
                     return (
@@ -354,7 +317,7 @@ const ModalCamposRequeridos = ({
                           onChange={() => toggle(c.id)}
                           style={{ accentColor: meta.color, flexShrink: 0 }}
                         />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span className="cs-x17">
                           {c.label}
                         </span>
                       </label>
@@ -367,34 +330,16 @@ const ModalCamposRequeridos = ({
         </div>
 
         {/* Footer */}
-        <div style={{
-          padding: '14px 20px',
-          borderTop: '1px solid #1c2230',
-          background: '#0a0d14',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 12,
-        }}>
-          <div style={{ fontSize: 12, color: '#7a8499' }}>
-            <b style={{ color: '#e6ebf5' }}>{seleccion.size}</b> campo{seleccion.size === 1 ? '' : 's'} seleccionado{seleccion.size === 1 ? '' : 's'}
+        <div className="cs-x18">
+          <div className="cs-x19">
+            <b className="cs-x20">{seleccion.size}</b> campo{seleccion.size === 1 ? '' : 's'} seleccionado{seleccion.size === 1 ? '' : 's'}
             {seleccion.size > 0 && (
-              <button onClick={limpiarTodo} style={{
-                marginLeft: 10, background: 'none', border: 'none',
-                color: '#f87171', cursor: 'pointer', fontSize: 12, padding: 0,
-              }}>Limpiar todo</button>
+              <button className="cs-x21" onClick={limpiarTodo}>Limpiar todo</button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onCerrar} style={{
-              background: '#1a1f2b', color: '#c9d1d9',
-              border: '1px solid #2c3344', borderRadius: 8,
-              padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            }}>Cancelar</button>
-            <button onClick={() => onConfirmar(Array.from(seleccion))} style={{
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              color: '#fff', border: 'none', borderRadius: 8,
-              padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
-            }}>Aplicar</button>
+          <div className="cs-x22">
+            <button className="cs-x23" onClick={onCerrar}>Cancelar</button>
+            <button className="cs-x24" onClick={() => onConfirmar(Array.from(seleccion))}>Aplicar</button>
           </div>
         </div>
       </div>
@@ -500,31 +445,17 @@ const ModalConfigurarFormulario = ({
   const sinPestanas = pestanas.size === 0;
 
   return (
-    <div
+    <div className="cs-x1"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCerrar(); }}
-      style={{
-        position: 'fixed', inset: 0, zIndex: 3000,
-        background: 'rgba(5,7,12,0.7)',
-        backdropFilter: 'blur(6px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20,
-      }}
     >
-      <div style={{
-        width: 'min(760px, 100%)', maxHeight: '88vh',
-        background: 'linear-gradient(180deg, #11151d 0%, #0d1118 100%)',
-        border: '1px solid #232a3a', borderRadius: 14,
-        display: 'flex', flexDirection: 'column',
-        boxShadow: '0 24px 60px rgba(0,0,0,0.6)',
-        overflow: 'hidden',
-      }}>
+      <div className="cs-x25">
         {/* Header */}
         <div style={{
           padding: '18px 20px',
           borderBottom: '1px solid #1c2230',
           background: `linear-gradient(180deg, ${ACCENT_FORM.bg}, transparent)`,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="cs-x26">
             <div style={{
               width: 30, height: 30, borderRadius: 8,
               background: ACCENT_FORM.bg, color: ACCENT_FORM.color,
@@ -532,33 +463,30 @@ const ModalConfigurarFormulario = ({
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 16, fontWeight: 700,
             }}>⚙</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#e6ebf5', letterSpacing: -0.2 }}>
+            <div className="cs-x4">
+              <div className="cs-x5">
                 Configurar formulario de operaciones
               </div>
-              <div style={{ fontSize: 12, color: '#7a8499', marginTop: 2 }}>
+              <div className="cs-x6">
                 Define, para este flujo, qué pestañas se muestran y qué campos son obligatorios para guardar.
               </div>
             </div>
-            <button onClick={onCerrar} style={{
-              background: 'none', border: 'none', color: '#7a8499',
-              cursor: 'pointer', fontSize: 20, padding: '0 4px',
-            }} title="Cerrar (Esc)">×</button>
+            <button className="cs-x7" onClick={onCerrar} title="Cerrar (Esc)">×</button>
           </div>
         </div>
 
         {/* Contenido scroll */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 22 }}>
+        <div className="cs-x27">
 
           {/* Pestañas visibles */}
           <div>
-            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, color: '#a9b3c7', fontWeight: 700, marginBottom: 8 }}>
+            <div className="cs-x28">
               Pestañas visibles en el formulario
             </div>
-            <div style={{ fontSize: 11.5, color: '#7a8499', marginBottom: 10, lineHeight: 1.5 }}>
+            <div className="cs-x29">
               Marca las pestañas que debe mostrar el formulario para este flujo. Si no guardas ninguna configuración, se muestran todas por defecto.
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 8 }}>
+            <div className="cs-x30">
               {TABS_FORMULARIO.map(t => {
                 const checked = pestanas.has(t.id);
                 return (
@@ -585,11 +513,7 @@ const ModalConfigurarFormulario = ({
               })}
             </div>
             {sinPestanas && (
-              <div style={{
-                marginTop: 8, fontSize: 11.5, color: '#f87171',
-                background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.3)',
-                borderRadius: 8, padding: '8px 10px',
-              }}>
+              <div className="cs-x31">
                 Debes dejar al menos una pestaña visible; de lo contrario el formulario quedaría sin contenido.
               </div>
             )}
@@ -597,44 +521,27 @@ const ModalConfigurarFormulario = ({
 
           {/* Campos obligatorios */}
           <div>
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-              marginBottom: 8, flexWrap: 'wrap',
-            }}>
-              <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2, color: '#a9b3c7', fontWeight: 700 }}>
+            <div className="cs-x32">
+              <div className="cs-x13">
                 Campos obligatorios para guardar
               </div>
               {campos.size > 0 && (
-                <button onClick={() => setCampos(new Set())} style={{
-                  background: 'none', border: 'none',
-                  color: '#f87171', cursor: 'pointer', fontSize: 12, padding: 0,
-                }}>Limpiar todo ({campos.size})</button>
+                <button className="cs-x33" onClick={() => setCampos(new Set())}>Limpiar todo ({campos.size})</button>
               )}
             </div>
-            <div style={{ fontSize: 11.5, color: '#7a8499', marginBottom: 10, lineHeight: 1.5 }}>
+            <div className="cs-x29">
               El formulario no permitirá guardar la operación si estos campos están vacíos. Si ocultas una pestaña, sus campos se ignoran aunque estén marcados aquí.
             </div>
 
-            <input
+            <input className="cs-x34"
               autoFocus
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               placeholder="Buscar campo…"
-              style={{
-                width: '100%',
-                background: '#0a0d14',
-                border: '1px solid #232a3a',
-                color: '#e6ebf5',
-                borderRadius: 8,
-                padding: '9px 12px',
-                fontSize: 13,
-                outline: 'none',
-                marginBottom: 12,
-              }}
             />
 
             {seccionesFiltradas.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 30, color: '#5f697d', fontSize: 13 }}>
+              <div className="cs-x35">
                 No se encontraron campos.
               </div>
             ) : seccionesFiltradas.map(sec => {
@@ -643,22 +550,11 @@ const ModalConfigurarFormulario = ({
               const tabInfo = TABS_FORMULARIO.find(t => t.id === sec.tab);
               const pestanaOculta = !pestanas.has(sec.tab);
               return (
-                <div key={sec.seccion} style={{ marginBottom: 16 }}>
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    marginBottom: 8, flexWrap: 'wrap', gap: 6,
-                  }}>
-                    <div style={{
-                      fontSize: 11, textTransform: 'uppercase', letterSpacing: 1.2,
-                      color: '#a9b3c7', fontWeight: 700,
-                      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-                    }}>
+                <div className="cs-x11" key={sec.seccion}>
+                  <div className="cs-x36">
+                    <div className="cs-x37">
                       {sec.seccion}
-                      <span style={{
-                        background: '#1a1f2b', border: '1px solid #2a3142',
-                        borderRadius: 999, padding: '1px 8px', fontSize: 10.5, color: '#7a8499',
-                        fontWeight: 600,
-                      }}>
+                      <span className="cs-x38">
                         {marcadosSec}/{totalSec}
                       </span>
                       <span style={{
@@ -671,12 +567,12 @@ const ModalConfigurarFormulario = ({
                         Pestaña «{tabInfo?.label}» {pestanaOculta ? 'oculta' : 'visible'}
                       </span>
                     </div>
-                    <div style={{ display: 'flex', gap: 6 }}>
+                    <div className="cs-x15">
                       <button onClick={() => marcarSeccion(sec.campos)} style={miniBtn}>Marcar todos</button>
                       <button onClick={() => limpiarSeccion(sec.campos)} style={miniBtn}>Limpiar</button>
                     </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  <div className="cs-x16">
                     {sec.campos.map(c => {
                       const checked = campos.has(c.id);
                       return (
@@ -697,7 +593,7 @@ const ModalConfigurarFormulario = ({
                             onChange={() => toggleCampo(c.id)}
                             style={{ accentColor: ACCENT_FORM.color, flexShrink: 0 }}
                           />
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span className="cs-x17">
                             {c.label}
                           </span>
                         </label>
@@ -711,24 +607,14 @@ const ModalConfigurarFormulario = ({
         </div>
 
         {/* Footer */}
-        <div style={{
-          padding: '14px 20px',
-          borderTop: '1px solid #1c2230',
-          background: '#0a0d14',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 12,
-        }}>
-          <div style={{ fontSize: 12, color: '#7a8499' }}>
-            <b style={{ color: '#e6ebf5' }}>{pestanas.size}</b>/{TABS_FORMULARIO.length} pestañas visibles
+        <div className="cs-x18">
+          <div className="cs-x19">
+            <b className="cs-x20">{pestanas.size}</b>/{TABS_FORMULARIO.length} pestañas visibles
             {' · '}
-            <b style={{ color: '#e6ebf5' }}>{campos.size}</b> campo{campos.size === 1 ? '' : 's'} obligatorio{campos.size === 1 ? '' : 's'}
+            <b className="cs-x20">{campos.size}</b> campo{campos.size === 1 ? '' : 's'} obligatorio{campos.size === 1 ? '' : 's'}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onCerrar} style={{
-              background: '#1a1f2b', color: '#c9d1d9',
-              border: '1px solid #2c3344', borderRadius: 8,
-              padding: '8px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer',
-            }}>Cancelar</button>
+          <div className="cs-x22">
+            <button className="cs-x23" onClick={onCerrar}>Cancelar</button>
             <button
               disabled={sinPestanas}
               onClick={() => onConfirmar(Array.from(pestanas), Array.from(campos))}
@@ -1396,7 +1282,7 @@ const EditorFlujoAppSheet = ({
       <header style={S.topbar}>
         <div style={S.topLeft}>
           <button onClick={onVolver} style={S.backBtn} title="Volver">
-            <span style={{ fontSize: 18, lineHeight: 1 }}>←</span>
+            <span className="cs-x39">←</span>
             <span>Volver</span>
           </button>
           <div style={S.divider} />
@@ -1444,17 +1330,8 @@ const EditorFlujoAppSheet = ({
 
         <div style={S.topRight}>
           {seleccionados.size > 1 && (
-            <div style={{
-              padding: '4px 10px',
-              background: 'rgba(167,139,250,0.10)',
-              border: '1px solid rgba(167,139,250,0.35)',
-              borderRadius: 999,
-              fontSize: 11.5,
-              color: '#cfc1ff',
-              fontWeight: 600,
-              display: 'flex', alignItems: 'center', gap: 6,
-            }}>
-              <span style={{ fontSize: 14 }}>✓</span>
+            <div className="cs-x40">
+              <span className="cs-x41">✓</span>
               {seleccionados.size} seleccionados
             </div>
           )}
@@ -1470,50 +1347,30 @@ const EditorFlujoAppSheet = ({
           )}
 
           {/* ✅ NUEVO: Botón "Agregar paso" prominente con dropdown */}
-          <div style={{ position: 'relative' }}>
+          <div className="cs-x42">
             <button
               onClick={() => setMenuAgregarAbierto(v => !v)}
               style={S.addStepBtn}
               title="Agregar nuevo paso al flujo"
             >
-              <span style={{ fontSize: 15, lineHeight: 1, marginRight: 2 }}>+</span>
+              <span className="cs-x43">+</span>
               Agregar paso
-              <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.8 }}>▾</span>
+              <span className="cs-x44">▾</span>
             </button>
             {menuAgregarAbierto && (
               <>
                 {/* backdrop para cerrar el menú clickeando fuera */}
-                <div
+                <div className="cs-x45"
                   onClick={() => setMenuAgregarAbierto(false)}
-                  style={{ position: 'fixed', inset: 0, zIndex: 1100 }}
                 />
-                <div style={{
-                  position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-                  width: 260,
-                  background: '#11151d',
-                  border: '1px solid #2a3142',
-                  borderRadius: 12,
-                  padding: 6,
-                  boxShadow: '0 16px 40px rgba(0,0,0,0.55)',
-                  zIndex: 1200,
-                }}>
+                <div className="cs-x46">
                   {(Object.keys(TIPO_META) as ReglaStatus['tipoMecanismo'][]).map(t => {
                     const m = TIPO_META[t];
                     return (
                       <button
                         key={t}
                         onClick={() => agregarNodo(t)}
-                        className="hov-tile"
-                        style={{
-                          width: '100%',
-                          display: 'flex', gap: 10, alignItems: 'flex-start',
-                          background: 'transparent',
-                          border: 'none',
-                          borderRadius: 8,
-                          padding: '9px 10px',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                        }}
+                        className="hov-tile cs-x47"
                       >
                         <div style={{
                           width: 28, height: 28, borderRadius: 7,
@@ -1526,7 +1383,7 @@ const EditorFlujoAppSheet = ({
                           <div style={{ fontWeight: 600, fontSize: 13, color: m.color, marginBottom: 2 }}>
                             {m.label}
                           </div>
-                          <div style={{ fontSize: 11, color: '#7a8499', lineHeight: 1.35 }}>
+                          <div className="cs-x48">
                             {t === 'automatico' && 'Avanza solo cuando los campos requeridos se llenan.'}
                             {t === 'manual'     && 'El usuario presiona un botón para avanzar.'}
                             {t === 'boton_decision' && 'Divide el flujo en múltiples caminos.'}
@@ -1551,14 +1408,10 @@ const EditorFlujoAppSheet = ({
             }}
             title="Configura qué pestañas se muestran y qué campos son obligatorios en el formulario de operaciones para este flujo"
           >
-            <span style={{ fontSize: 14 }}>⚙</span>
+            <span className="cs-x41">⚙</span>
             Configurar formulario
             {(pestanasVisibles !== null || camposObligatorios !== null) && (
-              <span style={{
-                width: 7, height: 7, borderRadius: '50%',
-                background: '#a78bfa', boxShadow: '0 0 8px rgba(167,139,250,0.7)',
-                display: 'inline-block',
-              }} title="Este flujo ya tiene una configuración de formulario guardada" />
+              <span className="cs-x49" title="Este flujo ya tiene una configuración de formulario guardada" />
             )}
           </button>
 
@@ -1611,32 +1464,19 @@ const EditorFlujoAppSheet = ({
             </div>
 
             {clipboardInfo && (
-              <div style={{
-                background: 'linear-gradient(180deg, rgba(167,139,250,0.10), rgba(99,102,241,0.06))',
-                border: '1px solid rgba(167,139,250,0.32)',
-                borderRadius: 10,
-                padding: '10px 12px',
-                marginBottom: 10,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                  <div style={{
-                    fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1,
-                    color: '#a78bfa', fontWeight: 700,
-                  }}>En portapapeles</div>
-                  <button
+              <div className="cs-x50">
+                <div className="cs-x51">
+                  <div className="cs-x52">En portapapeles</div>
+                  <button className="cs-x53"
                     onClick={limpiarClipboard}
                     title="Vaciar portapapeles"
-                    style={{
-                      background: 'none', border: 'none', color: '#7a8499',
-                      cursor: 'pointer', fontSize: 13, padding: 0,
-                    }}
                   >×</button>
                 </div>
-                <div style={{ fontSize: 13, color: '#e6ebf5', fontWeight: 600, marginTop: 4 }}>
+                <div className="cs-x54">
                   {clipboardInfo.count} {clipboardInfo.count === 1 ? 'paso' : 'pasos'}
                 </div>
-                <div style={{ fontSize: 11, color: '#7a8499', marginTop: 2 }}>
-                  desde <span style={{ color: '#a9b3c7' }}>{clipboardInfo.origen}</span>
+                <div className="cs-x55">
+                  desde <span className="cs-x56">{clipboardInfo.origen}</span>
                 </div>
               </div>
             )}
@@ -1739,10 +1579,9 @@ const EditorFlujoAppSheet = ({
             }}
           >
             {/* SVG de conexiones */}
-            <svg
+            <svg className="cs-x57"
               width={worldSize.w}
               height={worldSize.h}
-              style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'visible' }}
             >
               <defs>
                 <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
@@ -1762,22 +1601,20 @@ const EditorFlujoAppSheet = ({
                   const isHi = nodoSel === r.id || nodoSel === toId
                             || seleccionados.has(r.id) || seleccionados.has(toId);
                   return (
-                    <g key={`${r.id}-${toId}`} style={{ pointerEvents: 'auto' }}>
-                      <path
+                    <g className="cs-x58" key={`${r.id}-${toId}`}>
+                      <path className="cs-x59"
                         d={curva(p1.x, p1.y, p2.x, p2.y)}
                         stroke={isHi ? '#a78bfa' : '#4b5566'}
                         strokeWidth={isHi ? 2.4 : 1.8}
                         fill="none"
                         markerEnd={isHi ? 'url(#arrowHi)' : 'url(#arrow)'}
-                        style={{ transition: 'stroke 120ms ease' }}
                       />
-                      <g
+                      <g className="cs-x60"
                         transform={`translate(${(p1.x + p2.x) / 2}, ${(p1.y + p2.y) / 2})`}
-                        style={{ cursor: 'pointer' }}
                         onClick={(e) => { e.stopPropagation(); eliminarConexion(r.id, toId); }}
                       >
                         <circle r={10} fill="#1a1f2b" stroke="#3a4252" />
-                        <text textAnchor="middle" dominantBaseline="central" fontSize="13" fill="#f87171" style={{ userSelect: 'none' }}>×</text>
+                        <text className="cs-x61" textAnchor="middle" dominantBaseline="central" fontSize="13" fill="#f87171">×</text>
                       </g>
                     </g>
                   );
@@ -1801,21 +1638,7 @@ const EditorFlujoAppSheet = ({
             </svg>
 
             {/* Nodo START */}
-            <div style={{
-              position: 'absolute',
-              left: 40,
-              top: 40,
-              padding: '10px 18px',
-              borderRadius: 999,
-              background: 'linear-gradient(135deg, rgba(167,139,250,0.18), rgba(96,165,250,0.18))',
-              border: '1px solid rgba(167,139,250,0.4)',
-              color: '#e9e4ff',
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing: 0.4,
-              textTransform: 'uppercase',
-              boxShadow: '0 4px 18px rgba(167,139,250,0.18)',
-            }}>
+            <div className="cs-x62">
               ▶ Evento: Nueva Operación
             </div>
 
@@ -1853,15 +1676,7 @@ const EditorFlujoAppSheet = ({
                   }}
                 >
                   {isMulti && !isSel && (
-                    <div style={{
-                      position: 'absolute', top: -8, right: -8,
-                      width: 18, height: 18, borderRadius: '50%',
-                      background: '#a78bfa', color: '#0a0d14',
-                      fontSize: 11, fontWeight: 700,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      border: '2px solid #0a0d14',
-                      boxShadow: '0 2px 6px rgba(167,139,250,0.5)',
-                    }}>✓</div>
+                    <div className="cs-x63">✓</div>
                   )}
                   <div style={{
                     height: 6,
@@ -1875,7 +1690,7 @@ const EditorFlujoAppSheet = ({
                     overflow: 'hidden',
                     padding: '10px 14px 12px',
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <div className="cs-x64">
                       <div style={{
                         width: 24, height: 24, borderRadius: 7,
                         background: meta.bg,
@@ -1922,14 +1737,7 @@ const EditorFlujoAppSheet = ({
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: 8.5, fontWeight: 700, flexShrink: 0,
                         }}>{r.camposRequeridos.length}</span>
-                        <span style={{
-                          fontSize: 10.5,
-                          fontWeight: 500,
-                          color: '#8b94a9',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}>
+                        <span className="cs-x65">
                           campo{r.camposRequeridos.length === 1 ? '' : 's'} requerido{r.camposRequeridos.length === 1 ? '' : 's'} para avanzar
                         </span>
                       </div>
@@ -1966,18 +1774,11 @@ const EditorFlujoAppSheet = ({
             })}
 
             {reglas.length === 0 && (
-              <div style={{
-                position: 'absolute',
-                left: '50%', top: '40%',
-                transform: 'translate(-50%, -50%)',
-                textAlign: 'center',
-                color: '#5a6275',
-                pointerEvents: 'none',
-              }}>
-                <div style={{ fontSize: 44, marginBottom: 6 }}>◇</div>
-                <div style={{ fontWeight: 600, color: '#8b94a9', fontSize: 16 }}>Lienzo vacío</div>
-                <div style={{ marginTop: 4, fontSize: 13 }}>
-                  Usa el botón <b style={{ color: '#a78bfa' }}>+ Agregar paso</b> arriba o la paleta lateral para comenzar.
+              <div className="cs-x66">
+                <div className="cs-x67">◇</div>
+                <div className="cs-x68">Lienzo vacío</div>
+                <div className="cs-x69">
+                  Usa el botón <b className="cs-x70">+ Agregar paso</b> arriba o la paleta lateral para comenzar.
                 </div>
               </div>
             )}
@@ -1988,7 +1789,7 @@ const EditorFlujoAppSheet = ({
             <button style={S.zoomBtn} onClick={() => setZoom(z => Math.min(1.6, z + 0.1))}>+</button>
             <div style={S.zoomLabel}>{Math.round(zoom * 100)}%</div>
             <button style={S.zoomBtn} onClick={() => setZoom(z => Math.max(0.4, z - 0.1))}>−</button>
-            <div style={{ height: 1, background: '#2a3142', margin: '4px 0' }} />
+            <div className="cs-x71" />
             <button style={S.zoomBtn} onClick={() => { setZoom(1); centrarFlujo(); }} title="Centrar">⌂</button>
           </div>
 
@@ -2002,9 +1803,9 @@ const EditorFlujoAppSheet = ({
           <aside style={S.inspector}>
             {!reglaSel ? (
               <div style={S.emptyInspector}>
-                <div style={{ fontSize: 40, marginBottom: 8 }}>◌</div>
-                <div style={{ fontWeight: 600, color: '#c9d1d9' }}>Inspector</div>
-                <div style={{ marginTop: 6, fontSize: 13, color: '#7a8499', lineHeight: 1.5 }}>
+                <div className="cs-x72">◌</div>
+                <div className="cs-x73">Inspector</div>
+                <div className="cs-x74">
                   Selecciona un nodo del lienzo para configurar su nombre, mecanismo de avance, campos requeridos y conexiones.
                 </div>
               </div>
@@ -2062,21 +1863,11 @@ const SelectorCampo = ({ label, value, onChange, options, placeholder }: {
   options: string[];
   placeholder?: string;
 }) => (
-  <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-    <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 1, color: '#7a8499', fontWeight: 600 }}>{label}</span>
-    <select
+  <label className="cs-x75">
+    <span className="cs-x76">{label}</span>
+    <select className="cs-x77"
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      style={{
-        background: '#11151d',
-        border: '1px solid #2a3142',
-        color: '#e6ebf5',
-        borderRadius: 8,
-        padding: '7px 10px',
-        fontSize: 13,
-        minWidth: 150,
-        outline: 'none',
-      }}
     >
       <option value="">{placeholder || '—'}</option>
       {options.map(o => <option key={o} value={o}>{o}</option>)}
@@ -2092,19 +1883,7 @@ const BlockTile = ({ tipo, title, desc, onClick }: {
 }) => {
   const meta = TIPO_META[tipo];
   return (
-    <button onClick={onClick} className="hov-tile" style={{
-      display: 'flex', gap: 10, alignItems: 'flex-start',
-      width: '100%',
-      textAlign: 'left',
-      background: 'linear-gradient(180deg, #1a1f2b, #151a24)',
-      border: '1px solid #262d3e',
-      borderRadius: 10,
-      padding: '11px 12px',
-      cursor: 'pointer',
-      color: '#c9d1d9',
-      marginBottom: 8,
-      transition: 'transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease',
-    }}>
+    <button onClick={onClick} className="hov-tile cs-x78">
       <div style={{
         width: 30, height: 30, borderRadius: 8,
         background: meta.bg,
@@ -2116,7 +1895,7 @@ const BlockTile = ({ tipo, title, desc, onClick }: {
       }}>{meta.icon}</div>
       <div>
         <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2, color: meta.color }}>{title}</div>
-        <div style={{ fontSize: 11.5, color: '#7a8499', lineHeight: 1.35 }}>{desc}</div>
+        <div className="cs-x79">{desc}</div>
       </div>
     </button>
   );
@@ -2139,14 +1918,14 @@ const Inspector = ({
   const camposCount = (regla.camposRequeridos || []).length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="cs-x80">
       {/* Encabezado */}
       <div style={{
         padding: '14px 16px',
         borderBottom: '1px solid #232a3a',
         background: `linear-gradient(180deg, ${meta.bg}, transparent)`,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div className="cs-x81">
           <div style={{
             width: 26, height: 26, borderRadius: 7,
             background: meta.bg, color: meta.color,
@@ -2158,13 +1937,13 @@ const Inspector = ({
             {meta.label}
           </div>
         </div>
-        <div style={{ fontSize: 16, fontWeight: 600, color: '#e6ebf5' }}>
+        <div className="cs-x82">
           {regla.nombreStatus || 'Configurar nodo'}
         </div>
       </div>
 
       {/* Contenido scroll */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div className="cs-x83">
         {/* Nombre del estatus */}
         <Section title="Nombre del estatus">
           <select
@@ -2179,7 +1958,7 @@ const Inspector = ({
 
         {/* Tipo de mecanismo */}
         <Section title="Mecanismo de avance">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+          <div className="cs-x84">
             {(Object.keys(TIPO_META) as ReglaStatus['tipoMecanismo'][]).map(t => {
               const m = TIPO_META[t];
               const active = regla.tipoMecanismo === t;
@@ -2200,13 +1979,13 @@ const Inspector = ({
                   }}
                   title={m.label}
                 >
-                  <div style={{ fontSize: 14 }}>{m.icon}</div>
+                  <div className="cs-x41">{m.icon}</div>
                   {m.label}
                 </button>
               );
             })}
           </div>
-          <div style={{ fontSize: 11.5, color: '#7a8499', marginTop: 6, lineHeight: 1.5 }}>
+          <div className="cs-x85">
             {regla.tipoMecanismo === 'automatico' && 'El sistema avanzará automáticamente cuando los campos requeridos se llenen.'}
             {regla.tipoMecanismo === 'manual'     && 'Se mostrará como botón en la app; el usuario decide cuándo avanzar.'}
             {regla.tipoMecanismo === 'boton_decision' && 'Se mostrará como botón; permite múltiples caminos siguientes.'}
@@ -2219,29 +1998,11 @@ const Inspector = ({
           hint="Marca los campos del formulario de operaciones que deben estar llenos para que este paso se active."
         >
           {camposCount === 0 ? (
-            <div style={{
-              padding: '12px 14px',
-              background: '#0f1320',
-              border: '1px dashed #2a3142',
-              borderRadius: 8,
-              fontSize: 12.5,
-              color: '#7a8499',
-              textAlign: 'center',
-              marginBottom: 8,
-            }}>
+            <div className="cs-x86">
               Sin campos requeridos.
             </div>
           ) : (
-            <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: 5,
-              marginBottom: 10,
-              padding: '8px 10px',
-              background: '#0f1320',
-              border: '1px solid #222a39',
-              borderRadius: 8,
-              maxHeight: 140,
-              overflowY: 'auto',
-            }}>
+            <div className="cs-x87">
               {(regla.camposRequeridos || []).map(id => (
                 <span key={id} style={{
                   fontSize: 11,
@@ -2273,7 +2034,7 @@ const Inspector = ({
               transition: 'all 120ms ease',
             }}
           >
-            <span style={{ fontSize: 14 }}>⚙</span>
+            <span className="cs-x41">⚙</span>
             {camposCount === 0 ? 'Configurar campos' : `Editar campos (${camposCount})`}
           </button>
         </Section>
@@ -2281,34 +2042,21 @@ const Inspector = ({
         {/* Conexiones salientes */}
         <Section title="Caminos siguientes" hint="Estos son los nodos a los que conecta este paso.">
           {(regla.opcionesSiguientes || []).length === 0 ? (
-            <div style={{ fontSize: 12.5, color: '#6b7385', fontStyle: 'italic', padding: '8px 0' }}>
+            <div className="cs-x88">
               Aún no hay conexiones. Arrastra desde el puerto derecho de este nodo hacia otro.
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="cs-x89">
               {regla.opcionesSiguientes.map(toId => {
                 const target = todosNodos.find(n => n.id === toId);
                 const tMeta = target ? TIPO_META[target.tipoMecanismo] : null;
                 return (
-                  <div key={toId} style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '7px 10px',
-                    background: '#11151d',
-                    border: '1px solid #222a39',
-                    borderRadius: 8,
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                  <div className="cs-x90" key={toId}>
+                    <div className="cs-x91">
                       <span style={{ color: tMeta?.color ?? '#8b94a9' }}>→</span>
-                      <span style={{
-                        fontSize: 13,
-                        color: '#c9d1d9',
-                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                      }}>{target?.nombreStatus || '(sin nombre)'}</span>
+                      <span className="cs-x92">{target?.nombreStatus || '(sin nombre)'}</span>
                     </div>
-                    <button onClick={() => onDesconectar(toId)} style={{
-                      background: 'none', border: 'none', color: '#f87171', cursor: 'pointer',
-                      fontSize: 14, padding: '0 4px',
-                    }} title="Desconectar">×</button>
+                    <button className="cs-x93" onClick={() => onDesconectar(toId)} title="Desconectar">×</button>
                   </div>
                 );
               })}
@@ -2318,13 +2066,7 @@ const Inspector = ({
       </div>
 
       {/* Acciones inferiores */}
-      <div style={{
-        padding: 12,
-        borderTop: '1px solid #232a3a',
-        display: 'flex',
-        gap: 8,
-        background: '#0f1320',
-      }}>
+      <div className="cs-x94">
         <button onClick={onDuplicar} style={S.actionBtn}>Duplicar</button>
         <button onClick={onEliminar} style={{ ...S.actionBtn, color: '#f87171', borderColor: '#5a2424' }}>Eliminar</button>
       </div>
@@ -2334,11 +2076,11 @@ const Inspector = ({
 
 const Section = ({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) => (
   <div>
-    <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: '#7a8499', fontWeight: 700, marginBottom: 6 }}>
+    <div className="cs-x95">
       {title}
     </div>
     {children}
-    {hint && <div style={{ fontSize: 11.5, color: '#5f697d', marginTop: 6, lineHeight: 1.45 }}>{hint}</div>}
+    {hint && <div className="cs-x96">{hint}</div>}
   </div>
 );
 
@@ -2372,111 +2114,66 @@ export const ConfiguradorStatus = () => {
   });
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0a0d14', color: '#c9d1d9', padding: '32px 28px' }}>
+    <div className="cs-x97">
       <style>{CSS_GLOBAL}</style>
-      <div style={{ maxWidth: 1200, margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
+      <div className="cs-x98">
+        <div className="cs-x99">
           <div>
-            <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 2, color: '#7a8499', fontWeight: 600 }}>
+            <div className="cs-x100">
               Configuración
             </div>
-            <h1 style={{ margin: '4px 0 6px', fontSize: 28, fontWeight: 700, letterSpacing: -0.5 }}>
+            <h1 className="cs-x101">
               Reglas de Estatus
             </h1>
-            <div style={{ color: '#7a8499', fontSize: 14 }}>
+            <div className="cs-x102">
               Diseña visualmente cómo avanzan tus operaciones entre estados.
             </div>
           </div>
-          <button
+          <button className="cs-x103"
             onClick={() => { setCombinacion(undefined); setVista('configurar'); }}
-            style={{
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 10,
-              padding: '11px 18px',
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 8px 24px rgba(99,102,241,0.32)',
-            }}
           >
             + Crear nuevo flujo
           </button>
         </div>
 
-        <input
+        <input className="cs-x104"
           placeholder="Buscar por servicio, tráfico o carga…"
           value={filtro}
           onChange={(e) => setFiltro(e.target.value)}
-          style={{
-            width: '100%',
-            background: '#11151d',
-            border: '1px solid #232a3a',
-            borderRadius: 10,
-            padding: '11px 14px',
-            color: '#e6ebf5',
-            fontSize: 14,
-            outline: 'none',
-            marginBottom: 16,
-          }}
         />
 
-        <div style={{
-          background: '#0f1320',
-          border: '1px solid #1c2230',
-          borderRadius: 14,
-          overflow: 'hidden',
-        }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="cs-x105">
+          <table className="cs-x106">
             <thead>
-              <tr style={{ background: '#11151d', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, color: '#7a8499' }}>
-                <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Servicio</th>
-                <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Tráfico</th>
-                <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Carga</th>
-                <th style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600 }}>Pasos</th>
-                <th style={{ textAlign: 'right', padding: '12px 16px', fontWeight: 600 }}>Acción</th>
+              <tr className="cs-x107">
+                <th className="cs-x108">Servicio</th>
+                <th className="cs-x108">Tráfico</th>
+                <th className="cs-x108">Carga</th>
+                <th className="cs-x108">Pasos</th>
+                <th className="cs-x109">Acción</th>
               </tr>
             </thead>
             <tbody>
               {filtrados.length === 0 && (
                 <tr>
-                  <td colSpan={5} style={{ padding: 36, textAlign: 'center', color: '#5f697d' }}>
+                  <td className="cs-x110" colSpan={5}>
                     No hay flujos guardados todavía.
                   </td>
                 </tr>
               )}
               {filtrados.map(f => (
-                <tr key={f.id} style={{ borderTop: '1px solid #1c2230' }} className="hov-row">
-                  <td style={{ padding: '14px 16px', fontWeight: 500 }}>{f.tipoServicio}</td>
-                  <td style={{ padding: '14px 16px', color: '#a9b3c7' }}>{f.trafico}</td>
-                  <td style={{ padding: '14px 16px', color: '#a9b3c7' }}>{f.carga}</td>
-                  <td style={{ padding: '14px 16px' }}>
-                    <span style={{
-                      background: 'rgba(96,165,250,0.12)',
-                      color: '#7eb6ff',
-                      border: '1px solid rgba(96,165,250,0.3)',
-                      borderRadius: 999,
-                      padding: '2px 10px',
-                      fontSize: 12,
-                      fontWeight: 600,
-                    }}>
+                <tr key={f.id} className="hov-row cs-x111">
+                  <td className="cs-x112">{f.tipoServicio}</td>
+                  <td className="cs-x113">{f.trafico}</td>
+                  <td className="cs-x113">{f.carga}</td>
+                  <td className="cs-x114">
+                    <span className="cs-x115">
                       {(f.flujo || []).length} pasos
                     </span>
                   </td>
-                  <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                    <button
+                  <td className="cs-x116">
+                    <button className="cs-x117"
                       onClick={() => { setCombinacion(f); setVista('configurar'); }}
-                      style={{
-                        background: '#1a1f2b',
-                        color: '#c9d1d9',
-                        border: '1px solid #2c3344',
-                        borderRadius: 8,
-                        padding: '6px 14px',
-                        fontSize: 13,
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                      }}
                     >
                       Editar →
                     </button>

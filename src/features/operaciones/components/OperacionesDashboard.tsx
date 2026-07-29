@@ -9,6 +9,7 @@ import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
+import './OperacionesDashboard.css';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -1340,8 +1341,8 @@ const OperacionesDashboard = () => {
     switch (colId) {
       // ✅ Referencia coloreada por tipo de operación (Fletes verde / Logística azul / Transfer naranja)
       case 'ref': return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}</span>;
-      case 'fechaServicio': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.fechaServicio)}</span>;
-      case 'fechaCita': return <span style={{ color: '#c9d1d9' }}>{formatearFechaHora(op.fechaCita)}</span>;
+      case 'fechaServicio': return <span className="od-x1">{mostrarDato(op.fechaServicio)}</span>;
+      case 'fechaCita': return <span className="od-x1">{formatearFechaHora(op.fechaCita)}</span>;
       case 'tipoOperacion': {
         const nombreTipoOp = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre);
         return <span style={{ color: colorTipoOperacion(nombreTipoOp), fontWeight: 'bold' }}>{nombreTipoOp}</span>;
@@ -1356,58 +1357,58 @@ const OperacionesDashboard = () => {
         }
         return <span style={{ color: nombreStatus === '-' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{nombreStatus}</span>;
       }
-      case 'trafico': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.trafico)}</span>;
-      case 'cliente': return <span style={{ color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
-      case 'convenioTarifa': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
-      case 'refCliente': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.refCliente)}</span>;
-      case 'facturadoEnCobrar': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)}</span>;
-      case 'montoConvenioCliente': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.montoConvenioCliente)}</span>;
-      case 'cargosAdicionales': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.cargosAdicionales)}</span>;
-      case 'subtotal': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.subtotalCliente)}</span>;
-      case 'tipoCambioAprobado': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.tipoCambioAprobado)}</span>;
-      case 'dolaresCliente': return <span style={{ color: '#10b981' }}>{formatoMoneda(op.dolaresCliente)}</span>;
-      case 'pesosCliente': return <span style={{ color: '#3b82f6' }}>{formatoMoneda(op.pesosCliente)}</span>;
-      case 'conversionCliente': return <span style={{ color: '#D84315' }}>{formatoMoneda(op.conversionCliente)}</span>;
-      case 'origen': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.origen, 'empresas', 'nombre', op.origenNombre)}</span>;
-      case 'destino': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.destino, 'empresas', 'nombre', op.destinoNombre)}</span>;
-      case 'remolque': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</span>;
-      case 'proveedor': return <span style={{ color: '#c9d1d9', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={op.proveedorUnidadNombre || op.proveedorUnidad}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</span>;
-      case 'unidadProveedor': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.unidadProveedor)}</span>;
-      case 'operadorProveedor': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.operadorProveedor)}</span>;
-      case 'convenioProv': return <span style={{ color: '#c9d1d9', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}>{obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}</span>;
-      case 'facturadoEnUnidad': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre)}</span>;
-      case 'monedaConvenioProv': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre)}</span>;
-      case 'totalAPagarProv': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.totalAPagarProv)}</span>;
-      case 'cargosAdicionalesProv': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.cargosAdicionalesProv)}</span>;
-      case 'subtotalProv': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.subtotalProv)}</span>;
-      case 'dolaresProv': return <span style={{ color: '#3b82f6' }}>{formatoMoneda(op.dolaresProv)}</span>;
-      case 'pesosProv': return <span style={{ color: '#3b82f6' }}>{formatoMoneda(op.pesosProv)}</span>;
-      case 'conversionProv': return <span style={{ color: '#f85149' }}>{formatoMoneda(op.conversionProv)}</span>;
-      case 'unidad': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</span>;
-      case 'operador': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.operador, 'empleados', 'nombre', op.operadorNombre)}</span>;
-      case 'sueldoOperador': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.sueldoOperador)}</span>;
-      case 'sueldoExtra': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.sueldoExtra)}</span>;
-      case 'sueldoTotal': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.sueldoTotal)}</span>;
-      case 'combustible': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.combustible)}</span>;
-      case 'combustibleExtra': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.combustibleExtra)}</span>;
-      case 'combustibleTotal': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.combustibleTotal)}</span>;
-      case 'clienteMercancia': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre)}</span>;
-      case 'descripcionMercancia': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.descripcionMercancia)}</span>;
-      case 'cantidad': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.cantidad)}</span>;
-      case 'embalaje': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.embalaje, 'embalajes', 'nombre', op.embalajeNombre)}</span>;
-      case 'pesoKg': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.pesoKg)}</span>;
-      case 'numDoda': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.numDoda)}</span>;
-      case 'fechaEmisionDoda': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.fechaEmisionDoda)}</span>;
-      case 'numeroEntrys': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.numeroEntrys)}</span>;
-      case 'cantEntrys': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.cantEntrys)}</span>;
-      case 'numManifiesto': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.numManifiesto)}</span>;
-      case 'provServicios': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.provServicios, 'empresas', 'nombre', op.provServiciosNombre)}</span>;
-      case 'montoManifiesto': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.montoManifiesto)}</span>;
-      case 'totalGastos': return <span style={{ color: '#f85149', fontWeight: 'bold' }}>{formatoMoneda(op.totalGastos)}</span>;
-      case 'utilidadEstimada': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{formatoMoneda(op.utilidadEstimada)}</span>;
-      case 'observacionesEjecutivo': return <span style={{ color: '#8b949e', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mostrarDato(op.observacionesEjecutivo)}</span>;
-      case 'observacionesUnidad': return <span style={{ color: '#8b949e', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mostrarDato(op.observacionesUnidad)}</span>;
-      case 'observacionesCobrar': return <span style={{ color: '#8b949e', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mostrarDato(op.observacionesCobrar)}</span>;
+      case 'trafico': return <span className="od-x1">{mostrarDato(op.trafico)}</span>;
+      case 'cliente': return <span className="od-x2">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
+      case 'convenioTarifa': return <span className="od-x3" title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
+      case 'refCliente': return <span className="od-x1">{mostrarDato(op.refCliente)}</span>;
+      case 'facturadoEnCobrar': return <span className="od-x1">{mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)}</span>;
+      case 'montoConvenioCliente': return <span className="od-x1">{formatoMoneda(op.montoConvenioCliente)}</span>;
+      case 'cargosAdicionales': return <span className="od-x1">{formatoMoneda(op.cargosAdicionales)}</span>;
+      case 'subtotal': return <span className="od-x4">{formatoMoneda(op.subtotalCliente)}</span>;
+      case 'tipoCambioAprobado': return <span className="od-x1">{mostrarDato(op.tipoCambioAprobado)}</span>;
+      case 'dolaresCliente': return <span className="od-x5">{formatoMoneda(op.dolaresCliente)}</span>;
+      case 'pesosCliente': return <span className="od-x6">{formatoMoneda(op.pesosCliente)}</span>;
+      case 'conversionCliente': return <span className="od-x7">{formatoMoneda(op.conversionCliente)}</span>;
+      case 'origen': return <span className="od-x1">{mostrarDatoMapeado(op.origen, 'empresas', 'nombre', op.origenNombre)}</span>;
+      case 'destino': return <span className="od-x1">{mostrarDatoMapeado(op.destino, 'empresas', 'nombre', op.destinoNombre)}</span>;
+      case 'remolque': return <span className="od-x1">{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</span>;
+      case 'proveedor': return <span className="od-x8" title={op.proveedorUnidadNombre || op.proveedorUnidad}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</span>;
+      case 'unidadProveedor': return <span className="od-x1">{mostrarDato(op.unidadProveedor)}</span>;
+      case 'operadorProveedor': return <span className="od-x1">{mostrarDato(op.operadorProveedor)}</span>;
+      case 'convenioProv': return <span className="od-x8" title={obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}>{obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}</span>;
+      case 'facturadoEnUnidad': return <span className="od-x1">{mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre)}</span>;
+      case 'monedaConvenioProv': return <span className="od-x1">{mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre)}</span>;
+      case 'totalAPagarProv': return <span className="od-x1">{formatoMoneda(op.totalAPagarProv)}</span>;
+      case 'cargosAdicionalesProv': return <span className="od-x1">{formatoMoneda(op.cargosAdicionalesProv)}</span>;
+      case 'subtotalProv': return <span className="od-x4">{formatoMoneda(op.subtotalProv)}</span>;
+      case 'dolaresProv': return <span className="od-x6">{formatoMoneda(op.dolaresProv)}</span>;
+      case 'pesosProv': return <span className="od-x6">{formatoMoneda(op.pesosProv)}</span>;
+      case 'conversionProv': return <span className="od-x9">{formatoMoneda(op.conversionProv)}</span>;
+      case 'unidad': return <span className="od-x1">{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</span>;
+      case 'operador': return <span className="od-x1">{mostrarDatoMapeado(op.operador, 'empleados', 'nombre', op.operadorNombre)}</span>;
+      case 'sueldoOperador': return <span className="od-x1">{formatoMoneda(op.sueldoOperador)}</span>;
+      case 'sueldoExtra': return <span className="od-x1">{formatoMoneda(op.sueldoExtra)}</span>;
+      case 'sueldoTotal': return <span className="od-x4">{formatoMoneda(op.sueldoTotal)}</span>;
+      case 'combustible': return <span className="od-x1">{formatoMoneda(op.combustible)}</span>;
+      case 'combustibleExtra': return <span className="od-x1">{formatoMoneda(op.combustibleExtra)}</span>;
+      case 'combustibleTotal': return <span className="od-x4">{formatoMoneda(op.combustibleTotal)}</span>;
+      case 'clienteMercancia': return <span className="od-x1">{mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre)}</span>;
+      case 'descripcionMercancia': return <span className="od-x1">{mostrarDato(op.descripcionMercancia)}</span>;
+      case 'cantidad': return <span className="od-x1">{mostrarDato(op.cantidad)}</span>;
+      case 'embalaje': return <span className="od-x1">{mostrarDatoMapeado(op.embalaje, 'embalajes', 'nombre', op.embalajeNombre)}</span>;
+      case 'pesoKg': return <span className="od-x1">{mostrarDato(op.pesoKg)}</span>;
+      case 'numDoda': return <span className="od-x1">{mostrarDato(op.numDoda)}</span>;
+      case 'fechaEmisionDoda': return <span className="od-x1">{mostrarDato(op.fechaEmisionDoda)}</span>;
+      case 'numeroEntrys': return <span className="od-x1">{mostrarDato(op.numeroEntrys)}</span>;
+      case 'cantEntrys': return <span className="od-x1">{mostrarDato(op.cantEntrys)}</span>;
+      case 'numManifiesto': return <span className="od-x1">{mostrarDato(op.numManifiesto)}</span>;
+      case 'provServicios': return <span className="od-x1">{mostrarDatoMapeado(op.provServicios, 'empresas', 'nombre', op.provServiciosNombre)}</span>;
+      case 'montoManifiesto': return <span className="od-x1">{formatoMoneda(op.montoManifiesto)}</span>;
+      case 'totalGastos': return <span className="od-x10">{formatoMoneda(op.totalGastos)}</span>;
+      case 'utilidadEstimada': return <span className="od-x11">{formatoMoneda(op.utilidadEstimada)}</span>;
+      case 'observacionesEjecutivo': return <span className="od-x12">{mostrarDato(op.observacionesEjecutivo)}</span>;
+      case 'observacionesUnidad': return <span className="od-x12">{mostrarDato(op.observacionesUnidad)}</span>;
+      case 'observacionesCobrar': return <span className="od-x12">{mostrarDato(op.observacionesCobrar)}</span>;
       default: return '-';
     }
   };
@@ -1522,7 +1523,7 @@ const OperacionesDashboard = () => {
   const filtroSelectStyle: React.CSSProperties = { padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', fontSize: '0.9rem', minWidth: '180px' };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container od-x13">
       
       {estadoFormulario !== 'cerrado' && (
         <FormularioOperacion 
@@ -1534,63 +1535,63 @@ const OperacionesDashboard = () => {
         />
       )}
 
-     <div style={{ width: '100%', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', margin: '0 0 24px 0' }}>
-          <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: 0, fontWeight: 'bold' }}>
+     <div className="od-x14">
+        <div className="od-x15">
+          <h1 className="module-title od-x16">
             Operaciones Activas
           </h1>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '16px', width: '100%' }}>
-          <div style={{ flex: '2 1 250px', display: 'flex', justifyContent: 'flex-start' }}>
-            <div style={{ position: 'relative', width: '100%', maxWidth: '500px' }}>
-              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Buscar en todas las columnas..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 40px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }} />
+        <div className="od-x17">
+          <div className="od-x18">
+            <div className="od-x19">
+              <svg className="od-x20" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input className="od-x21" type="text" placeholder="Buscar en todas las columnas..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
             </div>
           </div>
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
+          <div className="od-x22">
             <button className="btn btn-outline" onClick={actualizarOperaciones} disabled={cargandoOperaciones || cargandoMas} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: (cargandoOperaciones || cargandoMas) ? 'wait' : 'pointer' }} title="Actualizar operaciones (vuelve a leer la colección desde Firestore)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: cargandoOperaciones ? 'spin 1s linear infinite' : 'none' }}><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
               <span>{cargandoOperaciones ? 'Actualizando...' : 'Actualizar'}</span>
             </button>
-            <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Configurar Columnas">
+            <button className="btn btn-outline od-x23" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>
-            <button className="btn btn-outline" onClick={exportarExcel} style={{ display: 'flex', alignItems: 'center', padding: '8px 12px' }} title="Exportar a Excel">
+            <button className="btn btn-outline od-x24" onClick={exportarExcel} title="Exportar a Excel">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
-            <button className="btn btn-outline" onClick={() => setMostrarResumenDiario(true)} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px' }} title="Resúmenes diarios (Transfer / Logística / Fletes) en PDF">
+            <button className="btn btn-outline od-x23" onClick={() => setMostrarResumenDiario(true)} title="Resúmenes diarios (Transfer / Logística / Fletes) en PDF">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line></svg>
               <span>Resúmenes</span>
             </button>
-            <button className="btn btn-primary" onClick={handleNuevo} style={{ display: 'flex', alignItems: 'center', padding: '8px 16px', gap: '6px' }}>
+            <button className="btn btn-primary od-x25" onClick={handleNuevo}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'flex-end', marginBottom: '20px', width: '100%' }}>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div className="od-x26">
+          <div className="od-x27">
             <label style={filtroLabelStyle}>Tipo de Operación</label>
             <select value={filtroTipoOperacion} onChange={(e) => setFiltroTipoOperacion(e.target.value)} style={filtroSelectStyle}>
               <option value="">Todos</option>
               {opcionesTipoOperacion.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="od-x27">
             <label style={filtroLabelStyle}>Status</label>
             <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} style={filtroSelectStyle}>
               <option value="">Todos</option>
               {opcionesStatus.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="od-x27">
             <label style={filtroLabelStyle}>Unidad Roelca</label>
             <select value={filtroUnidad} onChange={(e) => setFiltroUnidad(e.target.value)} style={filtroSelectStyle}>
               <option value="">Todas</option>
               {opcionesUnidad.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="od-x27">
             <label style={filtroLabelStyle}>Remolque</label>
             <select value={filtroRemolque} onChange={(e) => setFiltroRemolque(e.target.value)} style={filtroSelectStyle}>
               <option value="">Todos</option>
@@ -1598,26 +1599,26 @@ const OperacionesDashboard = () => {
             </select>
           </div>
           {hayFiltrosActivos && (
-            <button onClick={limpiarFiltros} style={{ padding: '9px 14px', borderRadius: '6px', border: '1px solid #30363d', background: 'transparent', color: '#8b949e', cursor: 'pointer', fontSize: '0.85rem', height: 'fit-content' }} title="Quitar todos los filtros">
+            <button className="od-x28" onClick={limpiarFiltros} title="Quitar todos los filtros">
               ✕ Limpiar filtros
             </button>
           )}
           {hayFiltrosActivos && (
-            <span style={{ color: '#8b949e', fontSize: '0.82rem', marginLeft: 'auto', alignSelf: 'center' }}>
+            <span className="od-x29">
               {operacionesFiltradas.length} {operacionesFiltradas.length === 1 ? 'resultado' : 'resultados'}
             </span>
           )}
         </div>
 
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
+        <div className="content-body od-x30">
+          <div className="table-container od-x31">
             {cargandoOperaciones ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>Cargando operaciones activas...</div>
+              <div className="od-x32">Cargando operaciones activas...</div>
             ) : (
-              <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+              <table className="data-table od-x33">
+                <thead className="od-x34">
                   <tr>
-                    <th style={{ padding: '16px', width: '100px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                    <th className="od-x35">
                       Acciones
                     </th>
                     {columnasTabla.filter(c => c.visible).map(col => (
@@ -1629,7 +1630,7 @@ const OperacionesDashboard = () => {
                       >
                         {col.label}
                         {ordenColumna === col.id && (
-                          <span style={{ marginLeft: '6px', color: '#58a6ff', fontSize: '0.7rem' }}>
+                          <span className="od-x36">
                             {ordenDireccion === 'asc' ? '▲' : '▼'}
                           </span>
                         )}
@@ -1639,22 +1640,20 @@ const OperacionesDashboard = () => {
                 </thead>
                 <tbody>
                   {operacionesEnPantalla.length === 0 ? (
-                    <tr><td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>Sin resultados.</td></tr>
+                    <tr><td className="od-x37" colSpan={columnasTabla.length + 1}>Sin resultados.</td></tr>
                   ) : (
                     operacionesEnPantalla.map((op: any) => (
                       <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
-                        <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                          <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                            <button type="button" title="Editar Operación"
+                        <td className="od-x38" onClick={(e: any) => e.stopPropagation()}>
+                          <div className="actions-cell od-x39">
+                            <button className="od-x40" type="button" title="Editar Operación"
                               onClick={(e) => { e.stopPropagation(); editarOperacion(op); }} 
-                              style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'} 
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                             </button>
-                            <button type="button" title="Eliminar Operación"
+                            <button className="od-x41" type="button" title="Eliminar Operación"
                               onClick={(e) => { e.stopPropagation(); eliminarOperacion(op); }} 
-                              style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'} 
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
@@ -1662,7 +1661,7 @@ const OperacionesDashboard = () => {
                           </div>
                         </td>
                         {columnasTabla.filter(c => c.visible).map(col => (
-                          <td key={`cell_${op.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                          <td className="od-x42" key={`cell_${op.id}_${col.id}`}>
                             {renderCellContent(op, col.id)}
                           </td>
                         ))}
@@ -1675,12 +1674,12 @@ const OperacionesDashboard = () => {
           </div>
 
           {operacionesFiltradas.length > 0 && !cargandoOperaciones && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="od-x43">
+              <div className="od-x44">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesFiltradas.length)} de {operacionesFiltradas.length} operaciones activas
-                {hayMasOperaciones && <span style={{ color: '#8b949e', marginLeft: 8, fontStyle: 'italic' }}>(hay más en el servidor)</span>}
+                {hayMasOperaciones && <span className="od-x45">(hay más en el servidor)</span>}
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div className="od-x46">
                 {hayMasOperaciones && (
                   <button
                     onClick={cargarMasOperaciones}
@@ -1692,7 +1691,7 @@ const OperacionesDashboard = () => {
                   </button>
                 )}
                 <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="od-x47">{paginaActual} / {totalPaginas || 1}</span>
                 <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
               </div>
             </div>
@@ -1701,14 +1700,14 @@ const OperacionesDashboard = () => {
       </div>
 
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '1000px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay od-x48">
+          <div className="od-x49">
+            <div className="od-x50">
+              <h3 className="od-x51">Configurar Columnas</h3>
+              <button className="od-x52" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
+            <p className="od-x53">Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
+            <ul className="od-x54">
               {columnasTabla.map((col, idx) => (
                 <li key={col.id} draggable
                   onDragStart={(e) => handleDragStart(e, idx)}
@@ -1717,13 +1716,13 @@ const OperacionesDashboard = () => {
                   onDragOver={(e) => e.preventDefault()}
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                  <input className="od-x55" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="od-x56">
+              <button className="od-x57" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -1731,15 +1730,15 @@ const OperacionesDashboard = () => {
 
       {/* ✅ NUEVO: Modal de Resúmenes Diarios (Transfer / Logística / Fletes) */}
       {mostrarResumenDiario && (
-        <div className="modal-overlay" style={{ zIndex: 1700, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(1, 4, 9, 0.7)', padding: '16px' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '1180px', maxWidth: '97%', maxHeight: '94vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Resúmenes Diarios de Operaciones</h3>
-              <button onClick={() => setMostrarResumenDiario(false)} title="Cerrar" style={{ background: 'transparent', border: '1px solid #30363d', color: '#8b949e', width: 36, height: 36, borderRadius: 8, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-overlay od-x58">
+          <div className="od-x59">
+            <div className="od-x60">
+              <h3 className="od-x61">Resúmenes Diarios de Operaciones</h3>
+              <button className="od-x62" onClick={() => setMostrarResumenDiario(false)} title="Cerrar">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
-            <div style={{ overflowY: 'auto', flex: 1 }}>
+            <div className="od-x63">
               <ResumenDiarioOperaciones />
             </div>
           </div>
@@ -1747,36 +1746,36 @@ const OperacionesDashboard = () => {
       )}
 
       {operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 1500 }}>
-          <div className="form-card detail-card" style={{ maxWidth: '1100px', maxHeight: '94vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-overlay od-x64">
+          <div className="form-card detail-card od-x65">
             
-           <div className="form-header" style={{ padding: '16px 32px 0 32px', borderBottom: 'none', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+           <div className="form-header od-x66">
+              <div className="od-x67">
                 <div>
-                 <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.25rem', fontWeight: 600, letterSpacing: '-0.5px' }}>Detalle de Operación</h2>
-                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>
+                 <h2 className="od-x68">Detalle de Operación</h2>
+                  <div className="od-x69">
+                    <span className="od-x70">
                       {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
                     </span>
-                    <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>
+                    <span className="od-x71">
                       {valorTextoColumna(operacionViendo, 'status')}
                     </span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <div className="od-x72">
                   <button onClick={verHistorial} title="Ver Bitácora (Historial)" style={btnSecondaryActionStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#30363d'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#21262d'}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Bitácora
                   </button>
-                  <div style={{ width: '1px', height: '24px', backgroundColor: '#30363d', margin: '0 8px' }}></div>
-                  <button onClick={() => setOperacionViendo(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', transition: '0.2s' }} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
+                  <div className="od-x73"></div>
+                  <button className="od-x74" onClick={() => setOperacionViendo(null)} onMouseEnter={(e) => e.currentTarget.style.color = '#f0f6fc'} onMouseLeave={(e) => e.currentTarget.style.color = '#8b949e'}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 0 10px 0', borderTop: '1px solid #30363d', flexWrap: 'wrap' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>SIGUIENTE PASO</span>
+              <div className="od-x75">
+                <span className="od-x76">SIGUIENTE PASO</span>
                 {botonesDisponibles.length > 0 ? (
                   <>
                     {botonesDisponibles.map((botonStr: string) => {
@@ -1790,9 +1789,9 @@ const OperacionesDashboard = () => {
                             transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                             opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden' }}
                           title={`Marcar como: ${botonStr}`}>
-                          <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span className="od-x77">
                             {esExitoso ? (
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pop 0.3s ease-out' }}>
+                              <svg className="od-x78" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="20 6 9 17 4 12"></polyline>
                               </svg>
                             ) : (
@@ -1801,13 +1800,11 @@ const OperacionesDashboard = () => {
                               </svg>
                             )}
                           </span>
-                          <span style={{ whiteSpace: 'nowrap' }}>{botonStr}</span>
+                          <span className="od-x79">{botonStr}</span>
                         </button>
                       );
                     })}
-                    <button onClick={abrirRegistroHorario} className="status-circle-btn"
-                      style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#8b949e',
-                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0 }}
+                    <button onClick={abrirRegistroHorario} className="status-circle-btn od-x80"
                       title="Registrar con fecha/hora distinta (retroactivo)">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -1819,15 +1816,12 @@ const OperacionesDashboard = () => {
                   </>
                 ) : (
                   <>
-                    <span style={{ color: '#8b949e', fontSize: '0.85rem', fontStyle: 'italic', marginRight: '8px' }}>
+                    <span className="od-x81">
                       No hay transiciones automáticas configuradas.
                     </span>
-                    <button onClick={abrirRegistroHorario} className="status-pill"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
-                        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
-                        boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)', transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                    <button onClick={abrirRegistroHorario} className="status-pill od-x82"
                       title="Registrar status manualmente">
-                      <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span className="od-x83">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="12" y1="5" x2="12" y2="19"></line>
                           <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -1839,8 +1833,8 @@ const OperacionesDashboard = () => {
                 )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderTop: '1px solid #30363d', marginTop: '4px', flexWrap: 'wrap' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '0.5px', marginRight: '8px' }}>GENERAR DOCUMENTOS:</span>
+              <div className="od-x84">
+                <span className="od-x85">GENERAR DOCUMENTOS:</span>
                 {(docsPermitidos ? puedeMostrarDoc('carta') : evalIsFletes) && (
                   <button onClick={handleDescargarCartaInstrucciones} style={btnDocStyle} onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
@@ -1874,7 +1868,7 @@ const OperacionesDashboard = () => {
               </div>
             </div>
             
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 32px', overflowX: 'auto', flexShrink: 0 }}>
+            <div className="od-x86">
               {tabsDetalle.map(tab => (
                 <button key={tab.id} onClick={() => setPestañaDetalleActiva(tab.id)}
                   style={{ padding: '12px 16px', background: 'none', border: 'none',
@@ -1886,51 +1880,51 @@ const OperacionesDashboard = () => {
               ))}
             </div>
 
-            <div className="detail-content" style={{ padding: '18px 32px', overflowY: 'auto', flex: 1 }}>
+            <div className="detail-content od-x87">
               
               {pestañaDetalleActiva === 'general' && (
-                <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                <div className="od-x88">
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Operación</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span>
+                    <span className="od-x89">Tipo de Operación</span>
+                    <span className="od-x90">{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Servicio / Status</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.fechaServicio)} <span style={{color: '#30363d', margin: '0 8px'}}>|</span> <span style={{color: '#10b981', fontWeight: 'bold'}}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span>
+                    <span className="od-x89">Fecha de Servicio / Status</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.fechaServicio)} <span className="od-x91">|</span> <span className="od-x11">{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span>
                   </div>
                   {evalIsFletes ? (
                      <div>
-                       <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Cita</span>
-                       <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatearFechaHora(operacionViendo.fechaCita)}</span>
+                       <span className="od-x89">Fecha de Cita</span>
+                       <span className="od-x90">{formatearFechaHora(operacionViendo.fechaCita)}</span>
                      </div>
                   ) : (<div></div>)}
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+                  <div className="od-x92"><hr className="od-x93" /></div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Paga)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span>
+                    <span className="od-x94">Cliente (Paga)</span>
+                    <span className="od-x90">{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio (Tarifa)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span> 
+                    <span className="od-x94">Convenio (Tarifa)</span>
+                    <span className="od-x90">{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span> 
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre)}</span>
+                    <span className="od-x94"># de Remolque</span>
+                    <span className="od-x90">{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Ref Cliente</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.refCliente)}</span>
+                    <span className="od-x94">Ref Cliente</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.refCliente)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Origen</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span>
+                    <span className="od-x95">Origen</span>
+                    <span className="od-x90">{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Destino</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span></div>
-                  <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones Ejecutivo</span>
-                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
+                    <span className="od-x95">Destino</span>
+                    <span className="od-x90">{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span></div>
+                  <div className="od-x96">
+                    <span className="od-x94">Observaciones Ejecutivo</span>
+                    <div className="od-x97">
                       {mostrarDato(operacionViendo.observacionesEjecutivo)}
                     </div>
                   </div>
@@ -1938,243 +1932,243 @@ const OperacionesDashboard = () => {
               )}
 
               {pestañaDetalleActiva === 'pedimento' && (
-                <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Mercancía)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas', 'nombre', operacionViendo.clienteMercanciaNombre)}</span>
+                <div className="od-x88">
+                  <div className="od-x98">
+                    <span className="od-x94">Cliente (Mercancía)</span>
+                    <span className="od-x90">{mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas', 'nombre', operacionViendo.clienteMercanciaNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descripción de la Mercancía</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.descripcionMercancia)}</span>
+                    <span className="od-x94">Descripción de la Mercancía</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.descripcionMercancia)}</span>
                   </div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+                  <div className="od-x92"><hr className="od-x93" /></div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad (Enteros)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantidad)}</span>
-                  </div>
-                  <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Embalaje</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.embalaje, 'embalajes', 'nombre', operacionViendo.embalajeNombre)}</span>
+                    <span className="od-x94">Cantidad (Enteros)</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.cantidad)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Peso (Kg) Decimales</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.pesoKg)}</span>
-                  </div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># DODA</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.numDoda)}</span>
+                    <span className="od-x94">Embalaje</span>
+                    <span className="od-x90">{mostrarDatoMapeado(operacionViendo.embalaje, 'embalajes', 'nombre', operacionViendo.embalajeNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Emisión (DODA)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.fechaEmisionDoda)}</span>
+                    <span className="od-x94">Peso (Kg) Decimales</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.pesoKg)}</span>
+                  </div>
+                  <div className="od-x92"><hr className="od-x93" /></div>
+                  <div>
+                    <span className="od-x94"># DODA</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.numDoda)}</span>
+                  </div>
+                  <div>
+                    <span className="od-x94">Fecha de Emisión (DODA)</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.fechaEmisionDoda)}</span>
                   </div>
                 </div>
               )}
 
               {pestañaDetalleActiva === 'manifiestos' && (
-                <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                <div className="od-x88">
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Entry's</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.numeroEntrys)}</span>
+                    <span className="od-x94"># de Entry's</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.numeroEntrys)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad de Entry's</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantEntrys)}</span>
+                    <span className="od-x94">Cantidad de Entry's</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.cantEntrys)}</span>
                   </div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+                  <div className="od-x92"><hr className="od-x93" /></div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># Manifiesto</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.numManifiesto)}</span>
-                  </div>
-                  <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Servicios</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.provServicios, 'empresas', 'nombre', operacionViendo.provServiciosNombre)}</span>
+                    <span className="od-x94"># Manifiesto</span>
+                    <span className="od-x90">{mostrarDato(operacionViendo.numManifiesto)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Costo Manifiesto ($)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: 'bold', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.montoManifiesto)}</span>
+                    <span className="od-x94">Proveedor de Servicios</span>
+                    <span className="od-x90">{mostrarDatoMapeado(operacionViendo.provServicios, 'empresas', 'nombre', operacionViendo.provServiciosNombre)}</span>
+                  </div>
+                  <div>
+                    <span className="od-x94">Costo Manifiesto ($)</span>
+                    <span className="od-x99">{formatoMoneda(operacionViendo.montoManifiesto)}</span>
                   </div>
                 </div>
               )}
 
               {pestañaDetalleActiva === 'unidad' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                    <div style={{ gridColumn: 'span 3' }}>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Transporte</span>
-                      <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span>
+                <div className="od-x100">
+                  <div className="od-x101">
+                    <div className="od-x92">
+                      <span className="od-x94">Proveedor de Transporte</span>
+                      <span className="od-x102">{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span>
                     </div>
                   </div>
 
-                  <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '24px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
+                  <div className="od-x103">
+                    <div className="od-x104">
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Facturado En:</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span>
+                        <span className="od-x94">Facturado En:</span>
+                        <span className="od-x90">{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Proveedor</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span>
+                        <span className="od-x94">Convenio Proveedor</span>
+                        <span className="od-x90">{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Moneda del Convenio (Base)</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span>
-                      </div>
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d', marginBottom: '16px' }}>
-                      <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Monto a Pagar (Base)</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.totalAPagarProv)}</span>
-                      </div>
-                      <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Costos Adicionales</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.cargosAdicionalesProv)}</span>
-                      </div>
-                      <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Subtotal (Convenio + Costos)</span>
-                        <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.subtotalProv)}</span>
+                        <span className="od-x94">Moneda del Convenio (Base)</span>
+                        <span className="od-x90">{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span>
                       </div>
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
+                    <div className="od-x105">
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Dólares</span>
-                        <span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.dolaresProv)}</span>
+                        <span className="od-x94">Monto a Pagar (Base)</span>
+                        <span className="od-x90">{formatoMoneda(operacionViendo.totalAPagarProv)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Pesos</span>
-                        <span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.pesosProv)}</span>
+                        <span className="od-x94">Costos Adicionales</span>
+                        <span className="od-x90">{formatoMoneda(operacionViendo.cargosAdicionalesProv)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#f85149', fontWeight: 'bold', marginBottom: '4px' }}>Conversión Final (Gasto)</span>
-                        <span style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.conversionProv)}</span>
+                        <span className="od-x89">Subtotal (Convenio + Costos)</span>
+                        <span className="od-x106">{formatoMoneda(operacionViendo.subtotalProv)}</span>
+                      </div>
+                    </div>
+                    <div className="od-x107">
+                      <div>
+                        <span className="od-x94">Dólares</span>
+                        <span className="od-x108">{formatoMoneda(operacionViendo.dolaresProv)}</span>
+                      </div>
+                      <div>
+                        <span className="od-x94">Pesos</span>
+                        <span className="od-x108">{formatoMoneda(operacionViendo.pesosProv)}</span>
+                      </div>
+                      <div>
+                        <span className="od-x109">Conversión Final (Gasto)</span>
+                        <span className="od-x110">{formatoMoneda(operacionViendo.conversionProv)}</span>
                       </div>
                     </div>
                   </div>
 
                   {showDetailInternalFleet && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                      <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0 0 8px 0' }}>Flota Operativa (Roelca)</h4></div>
+                    <div className="od-x101">
+                      <div className="od-x92"><h4 className="od-x111">Flota Operativa (Roelca)</h4></div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Asignada</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span>
+                        <span className="od-x94">Unidad Asignada</span>
+                        <span className="od-x90">{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span>
                       </div>
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operador Asignado</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span>
+                      <div className="od-x98">
+                        <span className="od-x94">Operador Asignado</span>
+                        <span className="od-x90">{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span>
                       </div>
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
+                      <div className="od-x92"><hr className="od-x112" /></div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo del Operador</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.sueldoOperador)}</span>
-                      </div>
-                      <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo Extra</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.sueldoExtra)}</span>
+                        <span className="od-x94">Sueldo del Operador</span>
+                        <span className="od-x90">{formatoMoneda(operacionViendo.sueldoOperador)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo Total</span>
-                        <span style={{ color: '#f0f6fc', fontWeight: 'bold', backgroundColor: '#161b22', padding: '6px 10px', borderRadius: '4px', border: '1px solid #30363d', display: 'inline-block' }}>{formatoMoneda(operacionViendo.sueldoTotal)}</span>
-                      </div>
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
-                      <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Combustible</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.combustible)}</span>
+                        <span className="od-x94">Sueldo Extra</span>
+                        <span className="od-x90">{formatoMoneda(operacionViendo.sueldoExtra)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Combustible Extra</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.combustibleExtra)}</span>
+                        <span className="od-x89">Sueldo Total</span>
+                        <span className="od-x113">{formatoMoneda(operacionViendo.sueldoTotal)}</span>
+                      </div>
+                      <div className="od-x92"><hr className="od-x112" /></div>
+                      <div>
+                        <span className="od-x94">Combustible</span>
+                        <span className="od-x90">{formatoMoneda(operacionViendo.combustible)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Total Combustible</span>
-                        <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.combustibleTotal)}</span>
+                        <span className="od-x94">Combustible Extra</span>
+                        <span className="od-x90">{formatoMoneda(operacionViendo.combustibleExtra)}</span>
+                      </div>
+                      <div>
+                        <span className="od-x89">Total Combustible</span>
+                        <span className="od-x106">{formatoMoneda(operacionViendo.combustibleTotal)}</span>
                       </div>
                     </div>
                   )}
 
                   {showDetailExternalFleet && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                      <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#58a6ff', margin: '0 0 8px 0' }}>Flota Externa (Proveedor)</h4></div>
+                    <div className="od-x101">
+                      <div className="od-x92"><h4 className="od-x114">Flota Externa (Proveedor)</h4></div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Externa</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.unidadProveedor)}</span>
+                        <span className="od-x95">Unidad Externa</span>
+                        <span className="od-x90">{mostrarDato(operacionViendo.unidadProveedor)}</span>
                       </div>
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Operador Externo</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.operadorProveedor)}</span>
+                      <div className="od-x98">
+                        <span className="od-x95">Operador Externo</span>
+                        <span className="od-x90">{mostrarDato(operacionViendo.operadorProveedor)}</span>
                       </div>
                     </div>
                   )}
 
                   {/* ✅ Observaciones ARRIBA del bloque de gastos (a petición) */}
-                  <div style={{ marginTop: '24px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '8px' }}>Observaciones (Unidad / Proveedor)</span>
-                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
+                  <div className="od-x115">
+                    <span className="od-x116">Observaciones (Unidad / Proveedor)</span>
+                    <div className="od-x117">
                       {mostrarDato(operacionViendo.observacionesUnidad)}
                     </div>
                   </div>
 
-                  <div style={{ gridColumn: 'span 3', marginTop: '20px' }}>
-                    <div style={{ backgroundColor: '#0d1117', border: '1px solid #f85149', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-                      <div style={{ color: '#8b949e', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Total Gastos [Sueldos + Manifiesto]</div>
-                      <div style={{ color: '#f85149', fontSize: '2rem', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.totalGastos)}</div>
+                  <div className="od-x118">
+                    <div className="od-x119">
+                      <div className="od-x120">Total Gastos [Sueldos + Manifiesto]</div>
+                      <div className="od-x121">{formatoMoneda(operacionViendo.totalGastos)}</div>
                     </div>
                   </div>
                 </div>
               )}
 
               {pestañaDetalleActiva === 'cobrar' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
+                <div className="od-x100">
+                  <div className="od-x101">
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Facturado En:</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.facturadoEnCobrar)}</span>
+                      <span className="od-x94">Facturado En:</span>
+                      <span className="od-x90">{mostrarMoneda(operacionViendo.facturadoEnCobrar)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Moneda Convenio (Cliente)</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.monedaConvenioCliente)}</span>
+                      <span className="od-x94">Moneda Convenio (Cliente)</span>
+                      <span className="od-x90">{mostrarMoneda(operacionViendo.monedaConvenioCliente)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Seleccionado (Base)</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.montoConvenioCliente)}</span>
+                      <span className="od-x94">Convenio Seleccionado (Base)</span>
+                      <span className="od-x90">{formatoMoneda(operacionViendo.montoConvenioCliente)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cargos Adicionales</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.cargosAdicionales)}</span>
+                      <span className="od-x94">Cargos Adicionales</span>
+                      <span className="od-x90">{formatoMoneda(operacionViendo.cargosAdicionales)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Subtotal (Convenio + Cargos)</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.subtotalCliente)}</span>
+                      <span className="od-x89">Subtotal (Convenio + Cargos)</span>
+                      <span className="od-x122">{formatoMoneda(operacionViendo.subtotalCliente)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Cambio del Día</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.tipoCambioAprobado)}</span>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingBottom: '24px', borderBottom: '1px solid #30363d' }}>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Dólares (Cliente)</span>
-                      <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.dolaresCliente)}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Pesos (Cliente)</span>
-                      <span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.pesosCliente)}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Conversión Final (Ingreso)</span>
-                      <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.conversionCliente)}</span>
+                      <span className="od-x94">Tipo de Cambio del Día</span>
+                      <span className="od-x90">{mostrarDato(operacionViendo.tipoCambioAprobado)}</span>
                     </div>
                   </div>
 
-                  <div style={{ marginTop: '24px', padding: '24px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '12px', textAlign: 'center' }}>
-                    <span style={{ display: 'block', fontSize: '0.9rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Utilidad Estimada de la Operación (Ingreso - Gasto)</span>
-                    <span style={{ fontSize: '2.5rem', color: '#10b981', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.utilidadEstimada)}</span>
+                  <div className="od-x123">
+                    <div>
+                      <span className="od-x94">Dólares (Cliente)</span>
+                      <span className="od-x124">{formatoMoneda(operacionViendo.dolaresCliente)}</span>
+                    </div>
+                    <div>
+                      <span className="od-x94">Pesos (Cliente)</span>
+                      <span className="od-x108">{formatoMoneda(operacionViendo.pesosCliente)}</span>
+                    </div>
+                    <div>
+                      <span className="od-x89">Conversión Final (Ingreso)</span>
+                      <span className="od-x125">{formatoMoneda(operacionViendo.conversionCliente)}</span>
+                    </div>
                   </div>
 
-                  <div style={{ marginTop: '24px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '8px' }}>Observaciones (Facturación / Cobro)</span>
-                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
+                  <div className="od-x126">
+                    <span className="od-x127">Utilidad Estimada de la Operación (Ingreso - Gasto)</span>
+                    <span className="od-x128">{formatoMoneda(operacionViendo.utilidadEstimada)}</span>
+                  </div>
+
+                  <div className="od-x115">
+                    <span className="od-x116">Observaciones (Facturación / Cobro)</span>
+                    <div className="od-x117">
                       {mostrarDato(operacionViendo.observacionesCobrar)}
                     </div>
                   </div>
@@ -2182,74 +2176,73 @@ const OperacionesDashboard = () => {
               )}
 
               {/* ✅ Auditoría de la referencia: botón que abre el detalle en un modal */}
-              <div style={{ margin: '24px 24px 12px', display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición"
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
+              <div className="od-x129">
+                <button className="od-x130" onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición">
                   🕓 Ver auditoría
-                  <span style={{ backgroundColor: '#f59e0b', color: '#0d1117', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem', fontWeight: 'bold' }}>{(operacionViendo.historialEdiciones || []).length}</span>
+                  <span className="od-x131">{(operacionViendo.historialEdiciones || []).length}</span>
                 </button>
               </div>
 
               {/* ✅ Modal de auditoría (solo lectura) */}
               {mostrarAuditoria && (
-                <div onClick={() => setMostrarAuditoria(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 1450, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
-                  <div onClick={(e) => e.stopPropagation()} style={{ width: '620px', maxWidth: '94%', maxHeight: '82vh', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #30363d' }}>
-                      <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>🕓 Auditoría de la referencia <span style={{ color: '#D84315', fontSize: '0.85rem', marginLeft: '8px' }}>{operacionViendo.ref || ''}</span></h3>
-                      <button onClick={() => setMostrarAuditoria(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+                <div className="od-x132" onClick={() => setMostrarAuditoria(false)}>
+                  <div className="od-x133" onClick={(e) => e.stopPropagation()}>
+                    <div className="od-x134">
+                      <h3 className="od-x61">🕓 Auditoría de la referencia <span className="od-x135">{operacionViendo.ref || ''}</span></h3>
+                      <button className="od-x52" onClick={() => setMostrarAuditoria(false)}>✕</button>
                     </div>
-                    <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Creación</span>
-                        <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>
-                          Creada por <b style={{ color: '#58a6ff' }}>{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
-                          {operacionViendo.creadoEn ? <> el <b style={{ color: '#c9d1d9' }}>{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
+                    <div className="od-x136">
+                      <div className="od-x137">
+                        <span className="od-x138">Creación</span>
+                        <span className="od-x139">
+                          Creada por <b className="od-x140">{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
+                          {operacionViendo.creadoEn ? <> el <b className="od-x1">{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ color: '#8b949e', fontSize: '0.82rem', fontWeight: 'bold' }}>EDICIONES REGISTRADAS:</span>
-                        <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{(operacionViendo.historialEdiciones || []).length}</span>
+                      <div className="od-x141">
+                        <span className="od-x142">EDICIONES REGISTRADAS:</span>
+                        <span className="od-x143">{(operacionViendo.historialEdiciones || []).length}</span>
                       </div>
                       {(operacionViendo.historialEdiciones || []).slice().reverse().map((h: any, i: number) => (
-                        <details key={i} open={i === 0} style={{ border: '1px solid #21262d', borderRadius: '8px', padding: '10px 14px', backgroundColor: '#010409' }}>
-                          <summary style={{ cursor: 'pointer', color: '#8b949e', fontSize: '0.85rem' }}>
-                            <b style={{ color: '#c9d1d9' }}>{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b style={{ color: '#f59e0b' }}>{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
+                        <details className="od-x144" key={i} open={i === 0}>
+                          <summary className="od-x145">
+                            <b className="od-x1">{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b className="od-x146">{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
                           </summary>
-                          <ul style={{ margin: '10px 0 2px 18px', padding: 0, color: '#8b949e', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <ul className="od-x147">
                             {(h.cambios || []).map((c: any, j: number) => (<li key={j}>{String(c)}</li>))}
                           </ul>
                         </details>
                       ))}
                       {(operacionViendo.historialEdiciones || []).length === 0 && (
-                        <span style={{ color: '#6e7681', fontSize: '0.85rem' }}>Sin ediciones desde su creación.</span>
+                        <span className="od-x148">Sin ediciones desde su creación.</span>
                       )}
                     </div>
-                    <div style={{ padding: '12px 20px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end' }}>
-                      <button onClick={() => setMostrarAuditoria(false)} style={{ padding: '9px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
+                    <div className="od-x149">
+                      <button className="od-x150" onClick={() => setMostrarAuditoria(false)}>Cerrar</button>
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="form-actions detail-actions" style={{ padding: '12px 32px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
-              <button onClick={() => setOperacionViendo(null)} className="btn btn-outline" style={{ padding: '10px 32px', borderRadius: '6px' }}>Cerrar Ficha</button>
+            <div className="form-actions detail-actions od-x151">
+              <button onClick={() => setOperacionViendo(null)} className="btn btn-outline od-x152">Cerrar Ficha</button>
             </div>
           </div>
         </div>
       )}
 
       {modalHorarios === 'registrar' && operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 1600, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(1, 4, 9, 0.7)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '480px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '14px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Registrar Movimiento</h3>
-              <button onClick={() => setModalHorarios('cerrado')} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay od-x153">
+          <div className="od-x154">
+            <div className="od-x155">
+              <h3 className="od-x51">Registrar Movimiento</h3>
+              <button className="od-x52" onClick={() => setModalHorarios('cerrado')}>✕</button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div className="od-x156">
               <div>
-                <label style={{ display: 'block', color: '#8b949e', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Estatus</label>
-                <select value={nuevoStatus} onChange={(e) => setNuevoStatus(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box' }}>
+                <label className="od-x157">Estatus</label>
+                <select className="od-x158" value={nuevoStatus} onChange={(e) => setNuevoStatus(e.target.value)}>
                   <option value="">Selecciona un estatus...</option>
                   {(statusServicioOrdenado.length > 0
                     ? statusServicioOrdenado.map((s: any) => String(s.nombre))
@@ -2260,12 +2253,12 @@ const OperacionesDashboard = () => {
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', color: '#8b949e', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '6px' }}>Fecha y Hora</label>
-                <input type="datetime-local" value={nuevaFechaHora} onChange={(e) => setNuevaFechaHora(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.95rem', boxSizing: 'border-box', colorScheme: 'dark' }} />
+                <label className="od-x157">Fecha y Hora</label>
+                <input className="od-x159" type="datetime-local" value={nuevaFechaHora} onChange={(e) => setNuevaFechaHora(e.target.value)} />
               </div>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline" style={{ padding: '10px 20px', borderRadius: '6px' }}>Cancelar</button>
+            <div className="od-x160">
+              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline od-x161">Cancelar</button>
               <button onClick={guardarHorario} disabled={cargandoHorarios} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: cargandoHorarios ? 'wait' : 'pointer', fontWeight: 'bold' }}>
                 {cargandoHorarios ? 'Guardando...' : 'Guardar'}
               </button>
@@ -2275,39 +2268,39 @@ const OperacionesDashboard = () => {
       )}
 
       {modalHorarios === 'historial' && operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 1600, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(1, 4, 9, 0.7)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '560px', maxWidth: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px 24px', borderBottom: '1px solid #30363d' }}>
+        <div className="modal-overlay od-x153">
+          <div className="od-x162">
+            <div className="od-x163">
               <div>
-                <h3 style={{ margin: 0, color: '#f0f6fc' }}>Bitácora de la Operación</h3>
-                <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '0.9rem' }}>{refOperacionViendo}</span>
+                <h3 className="od-x51">Bitácora de la Operación</h3>
+                <span className="od-x164">{refOperacionViendo}</span>
               </div>
-              <button onClick={() => setModalHorarios('cerrado')} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button className="od-x52" onClick={() => setModalHorarios('cerrado')}>✕</button>
             </div>
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+            <div className="od-x165">
               {cargandoHorarios ? (
-                <div style={{ textAlign: 'center', color: '#8b949e', padding: '40px' }}>Cargando bitácora...</div>
+                <div className="od-x166">Cargando bitácora...</div>
               ) : historialList.length === 0 ? (
-                <div style={{ textAlign: 'center', color: '#8b949e', padding: '40px' }}>No hay movimientos registrados.</div>
+                <div className="od-x166">No hay movimientos registrados.</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="od-x167">
                   {historialList.map((h: any) => (
-                    <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 16px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px' }}>
+                    <div className="od-x168" key={h.id}>
                       <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: h.esAutomatico ? '#8b949e' : '#10b981', flexShrink: 0 }}></div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>
+                      <div className="od-x169">
+                        <div className="od-x170">
                           {h.statusNombre || resolverStatus(h.status).nombre || h.status}
-                          {h.esAutomatico && <span style={{ marginLeft: 8, color: '#8b949e', fontSize: '0.75rem', fontWeight: 'normal', fontStyle: 'italic' }}>(automático)</span>}
+                          {h.esAutomatico && <span className="od-x171">(automático)</span>}
                         </div>
-                        <div style={{ color: '#8b949e', fontSize: '0.82rem', marginTop: '2px' }}>{formatearFechaHora(h.fechaHora)}</div>
+                        <div className="od-x172">{formatearFechaHora(h.fechaHora)}</div>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-            <div style={{ padding: '12px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar</button>
+            <div className="od-x173">
+              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline od-x174">Cerrar</button>
             </div>
           </div>
         </div>

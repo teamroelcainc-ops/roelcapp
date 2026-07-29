@@ -3,7 +3,11 @@ import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase'; 
-import { registrarLog } from './utils/logger'; 
+import { registrarLog } from './utils/logger';
+import { AvisoSinConexion } from './components/AvisoSinConexion';
+import { BarraNavMovil } from './components/BarraNavMovil';
+import { EditorNavMovil } from './components/EditorNavMovil';
+import { useUsuarioStore } from './stores/useUsuarioStore'; 
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // ── Estáticos: críticos o siempre presentes (login, marca y modales). ──
@@ -57,6 +61,7 @@ const DataImportView = lazyWithRetry(() => import('./features/importacion/compon
 const AutorizacionesDashboard = lazyWithRetry(() => import('./features/autorizaciones/components/AutorizacionesDashboard').then(m => ({ default: m.AutorizacionesDashboard })), 'AutorizacionesDashboard');
 
 import './App.css';
+import { almacenSesion } from './utils/cacheMemoria';
 
 // ============================================================================
 // Mapa: etiqueta del módulo (como se guarda en el rol) -> clave interna (moduloActivo).
@@ -105,8 +110,8 @@ const ORDEN_CLAVES = Object.values(MODULOS_A_CLAVE);
 // Iconos del menú lateral (estilo lucide/feather: trazo, currentColor)
 // ============================================================================
 const Ico = ({ children }: { children: React.ReactNode }) => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+  <svg className="app-x1" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     {children}
   </svg>
 );
@@ -217,8 +222,8 @@ const ICON: Record<string, React.ReactNode> = {
 
 // Indicador mientras se descarga el chunk de un módulo (carga diferida).
 const CargandoModulo = () => (
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', height: 'calc(100vh - 160px)', color: '#8b949e' }}>
-    <span style={{ width: 18, height: 18, border: '2px solid #30363d', borderTopColor: '#D84315', borderRadius: '50%', display: 'inline-block', animation: 'spinRoelca 0.7s linear infinite' }} />
+  <div className="app-x2">
+    <span className="app-x3" />
     Cargando módulo…<style>{`@keyframes spinRoelca { to { transform: rotate(360deg); } }`}</style>
   </div>
 );
@@ -460,18 +465,18 @@ function ResumenDelDia() {
   const sub: CSSProperties = { color: '#6e7681', fontSize: '0.7rem' };
 
   return (
-    <div style={{ padding: '20px 28px 0 28px', boxSizing: 'border-box', width: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-        <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
-          Resumen del día · <span style={{ color: '#c9d1d9', fontWeight: 600, textTransform: 'capitalize' }}>{fechaLegible}</span>
+    <div className="app-x4">
+      <div className="app-x5">
+        <span className="app-x6">
+          Resumen del día · <span className="app-x7">{fechaLegible}</span>
         </span>
         <button onClick={cargar} disabled={cargando} title="Actualizar resumen"
           style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px', backgroundColor: 'transparent', border: '1px solid #30363d', borderRadius: '6px', color: '#8b949e', cursor: cargando ? 'wait' : 'pointer', fontSize: '0.78rem', opacity: cargando ? 0.6 : 1 }}>
-          <span style={{ fontSize: '0.9rem', lineHeight: 1 }}>↻</span>{cargando ? 'Actualizando…' : 'Actualizar'}
+          <span className="app-x8">↻</span>{cargando ? 'Actualizando…' : 'Actualizar'}
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+      <div className="app-x9">
         <div style={tarjeta}>
           <span style={etiqueta}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="2.2"><rect x="1" y="3" width="15" height="13" rx="1"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
@@ -509,8 +514,7 @@ function ResumenDelDia() {
             {cargando ? ' ' : datos.tc == null ? 'Sin registro' : (datos.tcFecha === hoyISO ? 'DOF de hoy' : `al ${fmtDia(datos.tcFecha)}`)}
           </span>
           {!cargando && datos.tcFecha !== hoyISO && (
-            <button onClick={() => setModalTCAbierto(true)} title="Capturar el tipo de cambio de hoy"
-              style={{ marginTop: '2px', padding: '5px 10px', backgroundColor: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 'bold', alignSelf: 'flex-start' }}>
+            <button className="app-x10" onClick={() => setModalTCAbierto(true)} title="Capturar el tipo de cambio de hoy">
               + Capturar el de hoy
             </button>
           )}
@@ -526,8 +530,7 @@ function ResumenDelDia() {
             {cargando ? ' ' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedores > 1 ? `Prom. ${datos.dieselProveedores} proveedores` : 'Por litro'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
           </span>
           {!cargando && datos.dieselFecha !== hoyISO && (
-            <button onClick={abrirModalDiesel} title="Capturar el costo del diesel de hoy"
-              style={{ marginTop: '2px', padding: '5px 10px', backgroundColor: 'rgba(251,146,60,0.12)', color: '#fb923c', border: '1px solid #fb923c', borderRadius: '6px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 'bold', alignSelf: 'flex-start' }}>
+            <button className="app-x11" onClick={abrirModalDiesel} title="Capturar el costo del diesel de hoy">
               + Capturar el de hoy
             </button>
           )}
@@ -536,22 +539,21 @@ function ResumenDelDia() {
 
       {/* ✅ Modal: capturar TIPO DE CAMBIO de hoy */}
       {modalTCAbierto && (
-        <div onClick={() => !guardandoCaptura && setModalTCAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '380px', maxWidth: '92%', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.02rem' }}>💱 Tipo de cambio de hoy</h3>
-              <button onClick={() => setModalTCAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+        <div className="app-x12" onClick={() => !guardandoCaptura && setModalTCAbierto(false)}>
+          <div className="app-x13" onClick={(e) => e.stopPropagation()}>
+            <div className="app-x14">
+              <h3 className="app-x15">💱 Tipo de cambio de hoy</h3>
+              <button className="app-x16" onClick={() => setModalTCAbierto(false)}>✕</button>
             </div>
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Se registrará para el <b style={{ color: '#c9d1d9' }}>{fmtDia(hoyISO)}</b> en el catálogo de Tipo de Cambio.</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#f59e0b', fontSize: '0.75rem', fontWeight: 'bold' }}>TIPO DE CAMBIO DOF $</label>
-              <input type="number" step="0.0001" min="0" autoFocus placeholder="Ej. 17.5993" value={nuevoTC}
+            <span className="app-x6">Se registrará para el <b className="app-x17">{fmtDia(hoyISO)}</b> en el catálogo de Tipo de Cambio.</span>
+            <div className="app-x18">
+              <label className="app-x19">TIPO DE CAMBIO DOF $</label>
+              <input className="app-x20" type="number" step="0.0001" min="0" autoFocus placeholder="Ej. 17.5993" value={nuevoTC}
                 onChange={(e) => setNuevoTC(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') guardarTCDia(); }}
-                style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#f0f6fc', fontSize: '1.05rem', fontWeight: 'bold', boxSizing: 'border-box' }} />
+                onKeyDown={(e) => { if (e.key === 'Enter') guardarTCDia(); }} />
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setModalTCAbierto(false)} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cancelar</button>
+            <div className="app-x21">
+              <button className="app-x22" onClick={() => setModalTCAbierto(false)} disabled={guardandoCaptura}>Cancelar</button>
               <button onClick={guardarTCDia} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', backgroundColor: '#f59e0b', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: guardandoCaptura ? 'wait' : 'pointer', fontWeight: 'bold' }}>{guardandoCaptura ? 'Guardando…' : '💾 Guardar'}</button>
             </div>
           </div>
@@ -560,17 +562,16 @@ function ResumenDelDia() {
 
       {/* ✅ Modal: capturar DIESEL de hoy */}
       {modalDieselAbierto && (
-        <div onClick={() => !guardandoCaptura && setModalDieselAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 1500, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '420px', maxWidth: '92%', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.02rem' }}>⛽ Diesel de hoy</h3>
-              <button onClick={() => setModalDieselAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+        <div className="app-x12" onClick={() => !guardandoCaptura && setModalDieselAbierto(false)}>
+          <div className="app-x23" onClick={(e) => e.stopPropagation()}>
+            <div className="app-x14">
+              <h3 className="app-x15">⛽ Diesel de hoy</h3>
+              <button className="app-x16" onClick={() => setModalDieselAbierto(false)}>✕</button>
             </div>
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Se registrará para el <b style={{ color: '#c9d1d9' }}>{fmtDia(hoyISO)}</b> en el catálogo de Combustible.</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold' }}>PROVEEDOR</label>
-              <input type="text" placeholder="Buscar proveedor..." value={buscarProvDiesel} onChange={(e) => setBuscarProvDiesel(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.88rem', boxSizing: 'border-box' }} />
+            <span className="app-x6">Se registrará para el <b className="app-x17">{fmtDia(hoyISO)}</b> en el catálogo de Combustible.</span>
+            <div className="app-x18">
+              <label className="app-x24">PROVEEDOR</label>
+              <input className="app-x25" type="text" placeholder="Buscar proveedor..." value={buscarProvDiesel} onChange={(e) => setBuscarProvDiesel(e.target.value)} />
               <select value={provDieselId} onChange={(e) => setProvDieselId(e.target.value)} size={5}
                 style={{ width: '100%', padding: '6px', backgroundColor: '#0d1117', border: `1px solid ${provDieselId ? '#fb923c' : '#30363d'}`, borderRadius: '6px', color: '#c9d1d9', fontSize: '0.88rem', boxSizing: 'border-box' }}>
                 {empresasDiesel.length === 0 && <option value="" disabled>Cargando proveedores…</option>}
@@ -579,15 +580,14 @@ function ResumenDelDia() {
                 ))}
               </select>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#fb923c', fontSize: '0.75rem', fontWeight: 'bold' }}>COSTO POR LITRO $</label>
-              <input type="number" step="0.01" min="0" placeholder="Ej. 26.50" value={nuevoDieselCosto}
+            <div className="app-x18">
+              <label className="app-x26">COSTO POR LITRO $</label>
+              <input className="app-x20" type="number" step="0.01" min="0" placeholder="Ej. 26.50" value={nuevoDieselCosto}
                 onChange={(e) => setNuevoDieselCosto(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') guardarDieselDia(); }}
-                style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#f0f6fc', fontSize: '1.05rem', fontWeight: 'bold', boxSizing: 'border-box' }} />
+                onKeyDown={(e) => { if (e.key === 'Enter') guardarDieselDia(); }} />
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setModalDieselAbierto(false)} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cancelar</button>
+            <div className="app-x21">
+              <button className="app-x22" onClick={() => setModalDieselAbierto(false)} disabled={guardandoCaptura}>Cancelar</button>
               <button onClick={guardarDieselDia} disabled={guardandoCaptura} style={{ flex: 1, padding: '10px', backgroundColor: '#fb923c', color: '#0d1117', border: 'none', borderRadius: '6px', cursor: guardandoCaptura ? 'wait' : 'pointer', fontWeight: 'bold' }}>{guardandoCaptura ? 'Guardando…' : '💾 Guardar'}</button>
             </div>
           </div>
@@ -608,7 +608,9 @@ function App() {
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [miPerfilAbierto, setMiPerfilAbierto] = useState(false); // modal "Mi Perfil"
-  const [menuAbierto, setMenuAbierto] = useState(true);
+  // ✅ MÓVIL: en pantallas chicas el menú inicia CERRADO (flota sobre el
+  //   contenido); en escritorio inicia abierto como siempre.
+  const [menuAbierto, setMenuAbierto] = useState(() => window.innerWidth > 768);
   
   const [menuBasesDatosAbierto, setMenuBasesDatosAbierto] = useState(false);
   const [menuClientesAbierto, setMenuClientesAbierto] = useState(false);
@@ -618,6 +620,8 @@ function App() {
   const [menuGastosAbierto, setMenuGastosAbierto] = useState(false);
 
   const [modalChecadorAbierto, setModalChecadorAbierto] = useState(false);
+  // ✅ MÓVIL: editor de accesos de la barra de navegación inferior.
+  const [editorNavAbierto, setEditorNavAbierto] = useState(false);
 
   // ══════════════════════════════════════════════════════════════════════════
   // ✅ VISTA PREVIA "VER COMO": permite a un administrador ver la app con los
@@ -629,7 +633,7 @@ function App() {
   type VistaComo = { tipo: 'rol' | 'usuario'; etiqueta: string; roles: string[] };
   const CLAVE_VISTA_COMO = 'roelca_vista_como';
   const [vistaComo, setVistaComo] = useState<VistaComo | null>(() => {
-    try { const g = sessionStorage.getItem(CLAVE_VISTA_COMO); return g ? JSON.parse(g) : null; } catch { return null; }
+    try { const g = almacenSesion.getItem(CLAVE_VISTA_COMO); return g ? JSON.parse(g) : null; } catch { return null; }
   });
   const [modalVerComo, setModalVerComo] = useState(false);
   const [verComoModo, setVerComoModo] = useState<'rol' | 'usuario'>('rol');
@@ -640,7 +644,7 @@ function App() {
 
   const activarVistaComo = (v: VistaComo) => {
     setVistaComo(v);
-    try { sessionStorage.setItem(CLAVE_VISTA_COMO, JSON.stringify(v)); } catch { /* sin storage */ }
+    try { almacenSesion.setItem(CLAVE_VISTA_COMO, JSON.stringify(v)); } catch { /* sin storage */ }
     setModalVerComo(false);
     setPerfilAbierto(false);
     setVerComoError('');
@@ -649,7 +653,7 @@ function App() {
 
   const salirVistaComo = () => {
     setVistaComo(null);
-    try { sessionStorage.removeItem(CLAVE_VISTA_COMO); } catch { /* sin storage */ }
+    try { almacenSesion.removeItem(CLAVE_VISTA_COMO); } catch { /* sin storage */ }
     registrarLog('Seguridad', 'Vista Previa', 'Salió de la vista previa y regresó a sus permisos.').catch(() => {});
   };
 
@@ -681,6 +685,13 @@ function App() {
     } finally {
       setVerComoBuscando(false);
     }
+  };
+
+  // ✅ MÓVIL: navegar desde el sidebar cierra el menú automáticamente (en
+  //   teléfono el sidebar flota sobre el contenido; ver src/styles/mobile.css).
+  const navegarA = (modulo: typeof moduloActivo) => {
+    setModuloActivo(modulo);
+    if (window.innerWidth <= 768) setMenuAbierto(false);
   };
 
   const toggleGrupo = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
@@ -821,6 +832,20 @@ function App() {
 
   // Roles EFECTIVOS: los simulados si hay vista previa activa; si no, los reales.
   const rolesEfectivos: string[] = vistaComoAplicada ? (vistaComoAplicada.roles || []) : (usuarioActualDB?.roles || []);
+
+  // ✅ Zustand: espejo global del usuario de sesión y roles efectivos.
+  //   Las vistas nuevas pueden leerlo del store en vez de recibirlo por props.
+  useEffect(() => {
+    useUsuarioStore.getState().setUsuario(usuarioActualDB ? {
+      id: String(usuarioActualDB.id || ''),
+      nombre: usuarioActualDB.nombre,
+      email: usuarioActualDB.email,
+      rol: usuarioActualDB.rol,
+      roles: usuarioActualDB.roles,
+    } : null);
+    useUsuarioStore.getState().setRolesEfectivos(rolesEfectivos);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuarioActualDB, JSON.stringify(rolesEfectivos)]);
   const accesoTotal = vistaComoAplicada
     ? rolesEfectivos.some((r: string) => String(r).toUpperCase() === 'ADMIN')
     : accesoTotalReal;
@@ -855,7 +880,7 @@ function App() {
   }, [clavesPermitidas, accesoTotal, moduloActivo]);
 
   if (cargandoAuth) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#010409', color: '#8b949e' }}>Cargando Roelca Inc...</div>;
+    return <div className="app-x27">Cargando Roelca Inc...</div>;
   }
 
   if (!estaAutenticado) {
@@ -885,16 +910,31 @@ function App() {
 
   return (
     <div className="app-wrapper">
-      
+
+      {/* ✅ PWA: aviso global cuando el dispositivo pierde internet */}
+      <AvisoSinConexion />
+
+      {/* ✅ MÓVIL: barra de navegación inferior fija y personalizable */}
+      <BarraNavMovil
+        moduloActivo={moduloActivo}
+        // Cast documentado: las claves salen de MODULOS_NAV, que es un
+        // subconjunto de la unión de moduloActivo (y se filtran por permisos).
+        onNavegar={(m) => navegarA(m as typeof moduloActivo)}
+        onAbrirMenu={() => setMenuAbierto(true)}
+        onEditar={() => setEditorNavAbierto(true)}
+        puedeVer={puede}
+      />
+      <EditorNavMovil abierto={editorNavAbierto} onCerrar={() => setEditorNavAbierto(false)} puedeVer={puede} />
+
       <RelojChecadorModal isOpen={modalChecadorAbierto} onClose={() => setModalChecadorAbierto(false)} usuario={usuarioActualDB} />
 
       {/* ✅ BANNER DE VISTA PREVIA: siempre visible mientras se está "viendo como" */}
       {vistaComoAplicada && (
-        <div style={{ position: 'fixed', top: '10px', left: '50%', transform: 'translateX(-50%)', zIndex: 3000, display: 'flex', alignItems: 'center', gap: '14px', backgroundColor: '#3b0764', border: '1px solid #a855f7', borderRadius: '999px', padding: '8px 10px 8px 18px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)', maxWidth: '92vw' }}>
-          <span style={{ color: '#e9d5ff', fontSize: '0.85rem', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <div className="app-x28">
+          <span className="app-x29">
             👁 Vista previa — {vistaComoAplicada.etiqueta}
           </span>
-          <button onClick={salirVistaComo} style={{ backgroundColor: '#a855f7', color: '#fff', border: 'none', borderRadius: '999px', padding: '6px 16px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
+          <button className="app-x30" onClick={salirVistaComo}>
             Salir de la vista
           </button>
         </div>
@@ -902,48 +942,47 @@ function App() {
 
       {/* ✅ MODAL "VER COMO": elegir un rol del catálogo o buscar un usuario por correo */}
       {modalVerComo && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: '20px', backdropFilter: 'blur(6px)' }}>
-          <div className="form-card" style={{ maxWidth: '480px', width: '100%', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
-            <div className="form-header" style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '1.1rem', color: '#f0f6fc', margin: 0, fontWeight: 500 }}>👁 Ver la app como...</h2>
-              <button onClick={() => setModalVerComo(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay app-x31">
+          <div className="form-card app-x32">
+            <div className="form-header app-x33">
+              <h2 className="app-x34">👁 Ver la app como...</h2>
+              <button className="app-x35" onClick={() => setModalVerComo(false)}>✕</button>
             </div>
 
-            <div style={{ padding: '24px' }}>
-              <p style={{ color: '#8b949e', fontSize: '0.82rem', margin: '0 0 16px 0' }}>
+            <div className="app-x36">
+              <p className="app-x37">
                 Verás el menú y los módulos exactamente como los ve ese rol o usuario. Tu sesión no cambia y puedes salir de la vista en cualquier momento.
               </p>
 
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '18px' }}>
+              <div className="app-x38">
                 <button onClick={() => { setVerComoModo('rol'); setVerComoError(''); }} style={{ flex: 1, padding: '9px', borderRadius: '6px', cursor: 'pointer', border: '1px solid ' + (verComoModo === 'rol' ? '#a855f7' : '#30363d'), backgroundColor: verComoModo === 'rol' ? 'rgba(168,85,247,0.15)' : 'transparent', color: verComoModo === 'rol' ? '#e9d5ff' : '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>Por Rol</button>
                 <button onClick={() => { setVerComoModo('usuario'); setVerComoError(''); }} style={{ flex: 1, padding: '9px', borderRadius: '6px', cursor: 'pointer', border: '1px solid ' + (verComoModo === 'usuario' ? '#a855f7' : '#30363d'), backgroundColor: verComoModo === 'usuario' ? 'rgba(168,85,247,0.15)' : 'transparent', color: verComoModo === 'usuario' ? '#e9d5ff' : '#8b949e', fontWeight: 'bold', fontSize: '0.85rem' }}>Por Usuario (correo)</button>
               </div>
 
               {verComoError && (
-                <div style={{ backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', padding: '10px 12px', borderRadius: '6px', marginBottom: '14px', fontSize: '0.82rem' }}>{verComoError}</div>
+                <div className="app-x39">{verComoError}</div>
               )}
 
               {verComoModo === 'rol' ? (
                 <>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', display: 'block', marginBottom: '6px' }}>Rol a simular</label>
-                  <select value={verComoRol} onChange={(e) => setVerComoRol(e.target.value)} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box', marginBottom: '18px' }}>
+                  <label className="app-x40">Rol a simular</label>
+                  <select className="app-x41" value={verComoRol} onChange={(e) => setVerComoRol(e.target.value)}>
                     <option value="">-- Seleccionar rol --</option>
                     {rolesCatalogo.map((r: any) => (
                       <option key={r.id} value={r.nombre}>{r.nombre}</option>
                     ))}
                   </select>
-                  <button onClick={aplicarVerComoRol} style={{ width: '100%', padding: '11px', backgroundColor: '#a855f7', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Activar vista previa</button>
+                  <button className="app-x42" onClick={aplicarVerComoRol}>Activar vista previa</button>
                 </>
               ) : (
                 <>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', display: 'block', marginBottom: '6px' }}>Correo del usuario</label>
-                  <input
+                  <label className="app-x40">Correo del usuario</label>
+                  <input className="app-x41"
                     type="email"
                     value={verComoCorreo}
                     onChange={(e) => setVerComoCorreo(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') aplicarVerComoUsuario(); }}
                     placeholder="usuario@roelca.com"
-                    style={{ width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box', marginBottom: '18px' }}
                   />
                   <button onClick={aplicarVerComoUsuario} disabled={verComoBuscando} style={{ width: '100%', padding: '11px', backgroundColor: '#a855f7', color: '#fff', border: 'none', borderRadius: '6px', cursor: verComoBuscando ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.9rem', opacity: verComoBuscando ? 0.6 : 1 }}>
                     {verComoBuscando ? 'Buscando usuario...' : 'Buscar y activar vista previa'}
@@ -966,31 +1005,33 @@ function App() {
       <div className={`sidebar ${!menuAbierto ? 'collapsed' : ''}`}>
         <div className="sidebar-brand">
           <EmpresaBrand />
+          {/* ✅ MÓVIL: botón para cerrar el menú (oculto en escritorio vía CSS) */}
+          <button className="sidebar-cerrar-movil" title="Cerrar menú" onClick={() => setMenuAbierto(false)}>✕</button>
         </div>
 
         {puede('operaciones') && (
-          <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} title="Operaciones Activas" onClick={() => setModuloActivo('operaciones')}>
+          <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} title="Operaciones Activas" onClick={() => navegarA('operaciones')}>
             <span className="sidebar-icon">{ICON.operaciones}</span>
             <span className="sidebar-label">Operaciones Activas</span>
           </div>
         )}
 
         {puede('serviciosCompletados') && (
-          <div className={`sidebar-item ${moduloActivo === 'serviciosCompletados' ? 'active' : ''}`} title="Servicios Completados" onClick={() => setModuloActivo('serviciosCompletados')}>
+          <div className={`sidebar-item ${moduloActivo === 'serviciosCompletados' ? 'active' : ''}`} title="Servicios Completados" onClick={() => navegarA('serviciosCompletados')}>
             <span className="sidebar-icon">{ICON.serviciosCompletados}</span>
             <span className="sidebar-label">Servicios Completados</span>
           </div>
         )}
 
         {puede('serviciosCancelados') && (
-          <div className={`sidebar-item ${moduloActivo === 'serviciosCancelados' ? 'active' : ''}`} title="Servicios Cancelados" onClick={() => setModuloActivo('serviciosCancelados')}>
+          <div className={`sidebar-item ${moduloActivo === 'serviciosCancelados' ? 'active' : ''}`} title="Servicios Cancelados" onClick={() => navegarA('serviciosCancelados')}>
             <span className="sidebar-icon">{ICON.serviciosCancelados}</span>
             <span className="sidebar-label">Servicios Cancelados</span>
           </div>
         )}
 
         {puede('reportes') && (
-          <div className={`sidebar-item ${moduloActivo === 'reportes' ? 'active' : ''}`} title="Reportes" onClick={() => setModuloActivo('reportes')}>
+          <div className={`sidebar-item ${moduloActivo === 'reportes' ? 'active' : ''}`} title="Reportes" onClick={() => navegarA('reportes')}>
             <span className="sidebar-icon">{ICON.reportes}</span>
             <span className="sidebar-label">Reportes</span>
           </div>
@@ -1000,14 +1041,14 @@ function App() {
           <>
             <div className={`sidebar-item sidebar-item-with-icon ${esGastosActivo && !menuGastosAbierto ? 'active' : ''}`} title="Gastos" onClick={() => toggleGrupo(setMenuGastosAbierto)}>
               <span className="sidebar-icon">{ICON.gastos}</span><span className="sidebar-label">Gastos</span>
-              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuGastosAbierto ? '▼' : '▶'}</span>
+              <span className="sidebar-chevron app-x43">{menuGastosAbierto ? '▼' : '▶'}</span>
             </div>
             {menuGastosAbierto && (
               <div className="sidebar-submenu">
-                {puede('mtto') && <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => setModuloActivo('mtto')}><span className="sidebar-icon">{ICON.mtto}</span><span className="sidebar-label">MTTO</span></div>}
-                {puede('referenciasDiesel') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasDiesel')}><span className="sidebar-icon">{ICON.referenciasDiesel}</span><span className="sidebar-label">Referencias del Diesel</span></div>}
-                {puede('referenciasPuentes') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasPuentes' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasPuentes')}><span className="sidebar-icon">{ICON.referenciasPuentes}</span><span className="sidebar-label">Referencias de Puentes</span></div>}
-                {puede('costosAdicionales') && <div className={`sidebar-subitem ${moduloActivo === 'costosAdicionales' ? 'active' : ''}`} onClick={() => setModuloActivo('costosAdicionales')}><span className="sidebar-icon">{ICON.costosAdicionales}</span><span className="sidebar-label">Costos Adicionales</span></div>}
+                {puede('mtto') && <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => navegarA('mtto')}><span className="sidebar-icon">{ICON.mtto}</span><span className="sidebar-label">MTTO</span></div>}
+                {puede('referenciasDiesel') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => navegarA('referenciasDiesel')}><span className="sidebar-icon">{ICON.referenciasDiesel}</span><span className="sidebar-label">Referencias del Diesel</span></div>}
+                {puede('referenciasPuentes') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasPuentes' ? 'active' : ''}`} onClick={() => navegarA('referenciasPuentes')}><span className="sidebar-icon">{ICON.referenciasPuentes}</span><span className="sidebar-label">Referencias de Puentes</span></div>}
+                {puede('costosAdicionales') && <div className={`sidebar-subitem ${moduloActivo === 'costosAdicionales' ? 'active' : ''}`} onClick={() => navegarA('costosAdicionales')}><span className="sidebar-icon">{ICON.costosAdicionales}</span><span className="sidebar-label">Costos Adicionales</span></div>}
               </div>
             )}
           </>
@@ -1018,12 +1059,12 @@ function App() {
             <div className={`sidebar-item sidebar-item-with-icon ${esClientesActivo && !menuClientesAbierto ? 'active' : ''}`} title="Clientes" onClick={() => toggleGrupo(setMenuClientesAbierto)}>
               <span className="sidebar-icon">{ICON.clientes}</span>
               <span className="sidebar-label">Clientes</span>
-              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuClientesAbierto ? '▼' : '▶'}</span>
+              <span className="sidebar-chevron app-x43">{menuClientesAbierto ? '▼' : '▶'}</span>
             </div>
             {menuClientesAbierto && (
               <div className="sidebar-submenu">
-                {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">Convenio de Clientes</span></div>}
-                {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">Facturación</span></div>}
+                {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => navegarA('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">Convenio de Clientes</span></div>}
+                {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => navegarA('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">Facturación</span></div>}
               </div>
             )}
           </>
@@ -1034,12 +1075,12 @@ function App() {
             <div className={`sidebar-item sidebar-item-with-icon ${esProveedoresActivo && !menuProveedoresAbierto ? 'active' : ''}`} title="Proveedores" onClick={() => toggleGrupo(setMenuProveedoresAbierto)}>
               <span className="sidebar-icon">{ICON.proveedores}</span>
               <span className="sidebar-label">Proveedores</span>
-              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuProveedoresAbierto ? '▼' : '▶'}</span>
+              <span className="sidebar-chevron app-x43">{menuProveedoresAbierto ? '▼' : '▶'}</span>
             </div>
             {menuProveedoresAbierto && (
               <div className="sidebar-submenu">
-                {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => setModuloActivo('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">Convenio de Proveedores</span></div>}
-                {puede('facturacionProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => setModuloActivo('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">Facturación</span></div>}
+                {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => navegarA('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">Convenio de Proveedores</span></div>}
+                {puede('facturacionProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => navegarA('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">Facturación</span></div>}
               </div>
             )}
           </>
@@ -1050,14 +1091,14 @@ function App() {
             <div className={`sidebar-item sidebar-item-with-icon ${esEmpleadosActivo && !menuEmpleadosAbierto ? 'active' : ''}`} title="Empleados" onClick={() => toggleGrupo(setMenuEmpleadosAbierto)}>
               <span className="sidebar-icon">{ICON.empleados}</span>
               <span className="sidebar-label">Empleados</span>
-              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuEmpleadosAbierto ? '▼' : '▶'}</span>
+              <span className="sidebar-chevron app-x43">{menuEmpleadosAbierto ? '▼' : '▶'}</span>
             </div>
             {menuEmpleadosAbierto && (
               <div className="sidebar-submenu">
-                {puede('colaboradores') && <div className={`sidebar-subitem ${moduloActivo === 'colaboradores' ? 'active' : ''}`} onClick={() => setModuloActivo('colaboradores')}><span className="sidebar-icon">{ICON.colaboradores}</span><span className="sidebar-label">Colaboradores</span></div>}
-                {puede('historialAsistencia') && <div className={`sidebar-subitem ${moduloActivo === 'historialAsistencia' ? 'active' : ''}`} onClick={() => setModuloActivo('historialAsistencia')}><span className="sidebar-icon">{ICON.historialAsistencia}</span><span className="sidebar-label">Historial de Chequeo</span></div>}
-                {puede('referenciasNomina') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasNomina' ? 'active' : ''}`} onClick={() => setModuloActivo('referenciasNomina')}><span className="sidebar-icon">{ICON.referenciasNomina}</span><span className="sidebar-label">Nómina</span></div>}
-                {puede('deducciones') && <div className={`sidebar-subitem ${moduloActivo === 'deducciones' ? 'active' : ''}`} onClick={() => setModuloActivo('deducciones')}><span className="sidebar-icon">{ICON.deducciones}</span><span className="sidebar-label">Deducciones</span></div>}
+                {puede('colaboradores') && <div className={`sidebar-subitem ${moduloActivo === 'colaboradores' ? 'active' : ''}`} onClick={() => navegarA('colaboradores')}><span className="sidebar-icon">{ICON.colaboradores}</span><span className="sidebar-label">Colaboradores</span></div>}
+                {puede('historialAsistencia') && <div className={`sidebar-subitem ${moduloActivo === 'historialAsistencia' ? 'active' : ''}`} onClick={() => navegarA('historialAsistencia')}><span className="sidebar-icon">{ICON.historialAsistencia}</span><span className="sidebar-label">Historial de Chequeo</span></div>}
+                {puede('referenciasNomina') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasNomina' ? 'active' : ''}`} onClick={() => navegarA('referenciasNomina')}><span className="sidebar-icon">{ICON.referenciasNomina}</span><span className="sidebar-label">Nómina</span></div>}
+                {puede('deducciones') && <div className={`sidebar-subitem ${moduloActivo === 'deducciones' ? 'active' : ''}`} onClick={() => navegarA('deducciones')}><span className="sidebar-icon">{ICON.deducciones}</span><span className="sidebar-label">Deducciones</span></div>}
               </div>
             )}
           </>
@@ -1068,26 +1109,26 @@ function App() {
             <div className={`sidebar-item sidebar-item-with-icon ${esBaseDeDatosActiva && !menuBasesDatosAbierto ? 'active' : ''}`} title="Bases de Datos" onClick={() => toggleGrupo(setMenuBasesDatosAbierto)}>
               <span className="sidebar-icon">{ICON.basesDatos}</span>
               <span className="sidebar-label">Bases de Datos</span>
-              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuBasesDatosAbierto ? '▼' : '▶'}</span>
+              <span className="sidebar-chevron app-x43">{menuBasesDatosAbierto ? '▼' : '▶'}</span>
             </div>
             {menuBasesDatosAbierto && (
               <div className="sidebar-submenu">
-                {puede('empresas') && <div className={`sidebar-subitem ${moduloActivo === 'empresas' ? 'active' : ''}`} onClick={() => setModuloActivo('empresas')}><span className="sidebar-icon">{ICON.empresas}</span><span className="sidebar-label">Empresas</span></div>}
-                {puede('contactos') && <div className={`sidebar-subitem ${moduloActivo === 'contactos' ? 'active' : ''}`} onClick={() => setModuloActivo('contactos')}><span className="sidebar-icon">{ICON.contactos}</span><span className="sidebar-label">Contactos</span></div>}
-                {puede('direcciones') && <div className={`sidebar-subitem ${moduloActivo === 'direcciones' ? 'active' : ''}`} onClick={() => setModuloActivo('direcciones')}><span className="sidebar-icon">{ICON.direcciones}</span><span className="sidebar-label">Direcciones</span></div>}
-                {puede('tipoCambio') && <div className={`sidebar-subitem ${moduloActivo === 'tipoCambio' ? 'active' : ''}`} onClick={() => setModuloActivo('tipoCambio')}><span className="sidebar-icon">{ICON.tipoCambio}</span><span className="sidebar-label">Tipo de Cambio</span></div>}
-                {puede('combustible') && <div className={`sidebar-subitem ${moduloActivo === 'combustible' ? 'active' : ''}`} onClick={() => setModuloActivo('combustible')}><span className="sidebar-icon">{ICON.combustible}</span><span className="sidebar-label">Combustible</span></div>}
-                {puede('unidades') && <div className={`sidebar-subitem ${moduloActivo === 'unidades' ? 'active' : ''}`} onClick={() => setModuloActivo('unidades')}><span className="sidebar-icon">{ICON.unidades}</span><span className="sidebar-label">Unidades Propias</span></div>}
-                {puede('remolques') && <div className={`sidebar-subitem ${moduloActivo === 'remolques' ? 'active' : ''}`} onClick={() => setModuloActivo('remolques')}><span className="sidebar-icon">{ICON.remolques}</span><span className="sidebar-label">Remolques</span></div>}
-                {puede('proveedoresUnidad') && <div className={`sidebar-subitem ${moduloActivo === 'proveedoresUnidad' ? 'active' : ''}`} onClick={() => setModuloActivo('proveedoresUnidad')}><span className="sidebar-icon">{ICON.proveedoresUnidad}</span><span className="sidebar-label">Proveedores de Unidad</span></div>}
-                {puede('unidadesProveedor') && <div className={`sidebar-subitem ${moduloActivo === 'unidadesProveedor' ? 'active' : ''}`} onClick={() => setModuloActivo('unidadesProveedor')}><span className="sidebar-icon">{ICON.unidadesProveedor}</span><span className="sidebar-label">Unidades del Proveedor</span></div>}
+                {puede('empresas') && <div className={`sidebar-subitem ${moduloActivo === 'empresas' ? 'active' : ''}`} onClick={() => navegarA('empresas')}><span className="sidebar-icon">{ICON.empresas}</span><span className="sidebar-label">Empresas</span></div>}
+                {puede('contactos') && <div className={`sidebar-subitem ${moduloActivo === 'contactos' ? 'active' : ''}`} onClick={() => navegarA('contactos')}><span className="sidebar-icon">{ICON.contactos}</span><span className="sidebar-label">Contactos</span></div>}
+                {puede('direcciones') && <div className={`sidebar-subitem ${moduloActivo === 'direcciones' ? 'active' : ''}`} onClick={() => navegarA('direcciones')}><span className="sidebar-icon">{ICON.direcciones}</span><span className="sidebar-label">Direcciones</span></div>}
+                {puede('tipoCambio') && <div className={`sidebar-subitem ${moduloActivo === 'tipoCambio' ? 'active' : ''}`} onClick={() => navegarA('tipoCambio')}><span className="sidebar-icon">{ICON.tipoCambio}</span><span className="sidebar-label">Tipo de Cambio</span></div>}
+                {puede('combustible') && <div className={`sidebar-subitem ${moduloActivo === 'combustible' ? 'active' : ''}`} onClick={() => navegarA('combustible')}><span className="sidebar-icon">{ICON.combustible}</span><span className="sidebar-label">Combustible</span></div>}
+                {puede('unidades') && <div className={`sidebar-subitem ${moduloActivo === 'unidades' ? 'active' : ''}`} onClick={() => navegarA('unidades')}><span className="sidebar-icon">{ICON.unidades}</span><span className="sidebar-label">Unidades Propias</span></div>}
+                {puede('remolques') && <div className={`sidebar-subitem ${moduloActivo === 'remolques' ? 'active' : ''}`} onClick={() => navegarA('remolques')}><span className="sidebar-icon">{ICON.remolques}</span><span className="sidebar-label">Remolques</span></div>}
+                {puede('proveedoresUnidad') && <div className={`sidebar-subitem ${moduloActivo === 'proveedoresUnidad' ? 'active' : ''}`} onClick={() => navegarA('proveedoresUnidad')}><span className="sidebar-icon">{ICON.proveedoresUnidad}</span><span className="sidebar-label">Proveedores de Unidad</span></div>}
+                {puede('unidadesProveedor') && <div className={`sidebar-subitem ${moduloActivo === 'unidadesProveedor' ? 'active' : ''}`} onClick={() => navegarA('unidadesProveedor')}><span className="sidebar-icon">{ICON.unidadesProveedor}</span><span className="sidebar-label">Unidades del Proveedor</span></div>}
               </div>
             )}
           </>
         )}
 
         {puede('catalogos') && (
-          <div className={`sidebar-item ${moduloActivo === 'catalogos' ? 'active' : ''}`} title="Catálogos" onClick={() => setModuloActivo('catalogos')}>
+          <div className={`sidebar-item ${moduloActivo === 'catalogos' ? 'active' : ''}`} title="Catálogos" onClick={() => navegarA('catalogos')}>
             <span className="sidebar-icon">{ICON.catalogos}</span>
             <span className="sidebar-label">Catálogos</span>
           </div>
@@ -1098,18 +1139,18 @@ function App() {
             <div className={`sidebar-item sidebar-item-with-icon ${esConfiguracionActivo && !menuConfiguracionAbierto ? 'active' : ''}`} title="Configuración" onClick={() => toggleGrupo(setMenuConfiguracionAbierto)}>
               <span className="sidebar-icon">{ICON.configuracion}</span>
               <span className="sidebar-label">Configuración</span>
-              <span className="sidebar-chevron" style={{ fontSize: '0.7rem' }}>{menuConfiguracionAbierto ? '▼' : '▶'}</span>
+              <span className="sidebar-chevron app-x43">{menuConfiguracionAbierto ? '▼' : '▶'}</span>
             </div>
             {menuConfiguracionAbierto && (
               <div className="sidebar-submenu">
-                {puede('usuarios') && <div className={`sidebar-subitem ${moduloActivo === 'usuarios' ? 'active' : ''}`} onClick={() => setModuloActivo('usuarios')}><span className="sidebar-icon">{ICON.usuarios}</span><span className="sidebar-label">Usuarios</span></div>}
-                {puede('roles') && <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => setModuloActivo('roles')}><span className="sidebar-icon">{ICON.roles}</span><span className="sidebar-label">Roles y Permisos</span></div>}
-                {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => setModuloActivo('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>}
-                {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => setModuloActivo('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>}
-                {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => setModuloActivo('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>}
+                {puede('usuarios') && <div className={`sidebar-subitem ${moduloActivo === 'usuarios' ? 'active' : ''}`} onClick={() => navegarA('usuarios')}><span className="sidebar-icon">{ICON.usuarios}</span><span className="sidebar-label">Usuarios</span></div>}
+                {puede('roles') && <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => navegarA('roles')}><span className="sidebar-icon">{ICON.roles}</span><span className="sidebar-label">Roles y Permisos</span></div>}
+                {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => navegarA('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>}
+                {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => navegarA('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>}
+                {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => navegarA('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>}
                 {/* ✅ AUTORIZACIONES: lo ve quien tenga el módulo asignado en su rol (Admin siempre). */}
-                {puede('autorizaciones') && <div className={`sidebar-subitem ${moduloActivo === 'autorizaciones' ? 'active' : ''}`} title="Autorizaciones" onClick={() => setModuloActivo('autorizaciones')}><span className="sidebar-icon"><Ico><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></Ico></span><span className="sidebar-label">Autorizaciones</span></div>}
-                <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => setModuloActivo('importacion')}><span className="sidebar-icon"><Ico><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Ico></span><span className="sidebar-label">Importar Datos</span></div>
+                {puede('autorizaciones') && <div className={`sidebar-subitem ${moduloActivo === 'autorizaciones' ? 'active' : ''}`} title="Autorizaciones" onClick={() => navegarA('autorizaciones')}><span className="sidebar-icon"><Ico><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></Ico></span><span className="sidebar-label">Autorizaciones</span></div>}
+                <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => navegarA('importacion')}><span className="sidebar-icon"><Ico><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Ico></span><span className="sidebar-label">Importar Datos</span></div>
               </div>
             )}
           </>
@@ -1121,21 +1162,16 @@ function App() {
       </div>
 
       <div className="main-area">
-        <div className="topbar" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div className="topbar app-x44">
+          <div className="app-x45">
             <button className="menu-toggle-btn" onClick={() => setMenuAbierto(!menuAbierto)} title="Ocultar/Mostrar Menú">☰</button>
           </div>
           
-          <div className="topbar-right" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <div className="topbar-right app-x46">
             {accesoTotalReal && !vistaComoAplicada && (
-              <button
+              <button className="app-x47"
                 onClick={() => setModalVerComo(true)}
                 title="Ver la app como otro rol o usuario"
-                style={{
-                  backgroundColor: 'rgba(168, 85, 247, 0.15)', border: '1px solid #a855f7', color: '#e9d5ff',
-                  padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold',
-                  display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s ease', whiteSpace: 'nowrap'
-                }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.35)'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.15)'}
               >
@@ -1143,13 +1179,8 @@ function App() {
               </button>
             )}
             {debeChecar && (
-              <button 
+              <button className="app-x48" 
                 onClick={() => setModalChecadorAbierto(true)}
-                style={{ 
-                  backgroundColor: 'rgba(59, 130, 246, 0.15)', border: '1px solid #3b82f6', color: '#58a6ff',
-                  padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', fontWeight: 'bold',
-                  display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.2s ease', whiteSpace: 'nowrap'
-                }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#3b82f6'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.15)'}
               >
@@ -1157,18 +1188,18 @@ function App() {
               </button>
             )}
             
-            <div className="avatar" style={{ cursor: 'pointer', backgroundColor: '#D84315', color: 'white', border: 'none', overflow: 'hidden' }} onClick={() => setPerfilAbierto(!perfilAbierto)}>
+            <div className="avatar app-x49" onClick={() => setPerfilAbierto(!perfilAbierto)}>
               {fotoUsuario
-                ? <img src={fotoUsuario} alt="Perfil" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                ? <img className="app-x50" src={fotoUsuario} alt="Perfil" />
                 : inicialesUsuario}
             </div>
 
             {perfilAbierto && (
               <div className="profile-dropdown">
                 <div className="profile-header-info">
-                  <div className="profile-avatar-large" style={{ backgroundColor: '#D84315', color: 'white', overflow: 'hidden' }}>
+                  <div className="profile-avatar-large app-x51">
                     {fotoUsuario
-                      ? <img src={fotoUsuario} alt="Perfil" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+                      ? <img className="app-x50" src={fotoUsuario} alt="Perfil" />
                       : inicialesUsuario}
                   </div>
                   <div className="profile-text">
@@ -1192,10 +1223,10 @@ function App() {
         </div>
 
         {sinModulos ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 'calc(100vh - 120px)', color: '#8b949e', textAlign: 'center', padding: '24px' }}>
-            <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>🔒</div>
-            <h2 style={{ color: '#f0f6fc', margin: '0 0 8px 0' }}>Sin módulos asignados</h2>
-            <p style={{ maxWidth: '420px' }}>Tu usuario no tiene módulos habilitados todavía. Contacta al administrador para que te asigne un rol con acceso.</p>
+          <div className="app-x52">
+            <div className="app-x53">🔒</div>
+            <h2 className="app-x54">Sin módulos asignados</h2>
+            <p className="app-x55">Tu usuario no tiene módulos habilitados todavía. Contacta al administrador para que te asigne un rol con acceso.</p>
           </div>
         ) : (
           <Suspense fallback={<CargandoModulo />}>

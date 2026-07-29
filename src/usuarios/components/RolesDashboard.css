@@ -1,0 +1,72 @@
+/* Estilos hermanos de RolesDashboard.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.rd-x1 { padding: 24px; animation: fadeIn 0.3s ease; }
+.rd-x2 { background-color: #0d1117; border: 1px solid #3b82f6; border-radius: 12px; padding: 24px; margin-bottom: 32px; }
+.rd-x3 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px 0; color: #f0f6fc; font-size: 1.1rem; }
+.rd-x4 { color: #8b949e; font-size: 0.9rem; margin-bottom: 20px; }
+.rd-x5 { display: flex; gap: 16px; align-items: center; }
+.rd-x6 { width: 250px; background-color: #010409; color: #c9d1d9; border: 1px solid #30363d; }
+.rd-x7 { display: flex; align-items: center; gap: 6px; }
+.rd-x8 { background-color: #3b82f6; border: none; }
+.rd-x9 { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; }
+.rd-x10 { font-size: 1.25rem; color: #8b949e; margin: 0; font-weight: 400; }
+.rd-x11 { color: #f0f6fc; font-weight: 600; }
+.rd-x12 { border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+.rd-x13 { width: 100%; border-collapse: collapse; text-align: left; }
+.rd-x14 { background-color: #161b22; }
+.rd-x15 { padding: 16px; width: 160px; text-align: center; color: #8b949e; font-size: 0.8rem; font-weight: 600; border-bottom: 1px solid #30363d; }
+.rd-x16 { padding: 16px; color: #8b949e; font-size: 0.8rem; font-weight: 600; border-bottom: 1px solid #30363d; }
+.rd-x17 { border-bottom: 1px solid #21262d; }
+.rd-x18 { padding: 16px; text-align: center; }
+.rd-x19 { display: flex; gap: 8px; justify-content: center; }
+.rd-x20 { background: transparent; border: 1px solid #3b82f6; border-radius: 4px; color: #3b82f6; cursor: pointer; padding: 4px 12px; }
+.rd-x21 { background: transparent; border: 1px solid #ef4444; border-radius: 4px; color: #ef4444; cursor: pointer; padding: 4px 12px; }
+.rd-x22 { padding: 16px; color: #f0f6fc; font-weight: bold; }
+.rd-x23 { padding: 16px; }
+.rd-x24 { display: flex; flex-wrap: wrap; gap: 6px; }
+.rd-x25 { background-color: #21262d; color: #c9d1d9; padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; border: 1px solid #30363d; }
+.rd-x26 { backdrop-filter: blur(4px); z-index: 1000; }
+.rd-x27 { max-width: 600px; width: 100%; background-color: #0d1117; border: 1px solid #444; border-radius: 12px; }
+.rd-x28 { padding: 24px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+.rd-x29 { font-size: 1.25rem; color: #f0f6fc; margin: 0; font-weight: 500; }
+.rd-x30 { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.rd-x31 { padding: 24px; }
+.rd-x32 { margin-bottom: 24px; }
+.rd-x33 { color: #8b949e; }
+.rd-x34 { background-color: #010409; color: #f0f6fc; border: 1px solid #30363d; }
+.rd-x35 { margin-bottom: 0; }
+.rd-x36 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.rd-x37 { color: #8b949e; margin: 0; }
+.rd-x38 { display: flex; align-items: center; gap: 8px; color: #58a6ff; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
+.rd-x39 { accent-color: #D84315; width: 16px; height: 16px; cursor: pointer; }
+.rd-x40 { background-color: #161b22; padding: 16px; border-radius: 8px; border: 1px solid #30363d; max-height: 45vh; overflow-y: auto; }
+.rd-x41 { margin-bottom: 18px; }
+.rd-x42 { display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 10px; border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+.rd-x43 { color: #f0f6fc; font-weight: 600; font-size: 0.9rem; }
+.rd-x44 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding-left: 24px; }
+.rd-x45 { display: flex; align-items: center; gap: 8px; color: #c9d1d9; cursor: pointer; font-size: 0.88rem; }
+.rd-x46 { display: flex; justify-content: center; gap: 16px; margin-top: 32px; padding-top: 24px; border-top: 1px solid #30363d; }
+.rd-x47 { flex: 1; }
+.rd-x48 { flex: 1; background-color: #D84315; border: none; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .rd-x1 { padding: 14px 12px; }
+  .rd-x2 { padding: 14px 12px; }
+  .rd-x3 { flex-wrap: wrap; }
+  .rd-x5 { flex-wrap: wrap; }
+  .rd-x7 { flex-wrap: wrap; }
+  .rd-x9 { flex-wrap: wrap; }
+  .rd-x19 { flex-wrap: wrap; }
+  .rd-x28 { flex-wrap: wrap; padding: 14px 12px; }
+  .rd-x31 { padding: 14px 12px; }
+  .rd-x36 { flex-wrap: wrap; }
+  .rd-x38 { flex-wrap: wrap; }
+  .rd-x42 { flex-wrap: wrap; }
+  .rd-x44 { grid-template-columns: 1fr; }
+  .rd-x45 { flex-wrap: wrap; }
+  .rd-x46 { flex-wrap: wrap; }
+}

@@ -33,6 +33,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import './MigracionStatusOperaciones.css';
 
 type LogTipo = 'info' | 'ok' | 'warn' | 'err';
 interface LogLinea { tipo: LogTipo; texto: string; }
@@ -351,8 +352,8 @@ export const MigracionStatusOperaciones = () => {
   // ---------- UI ----------
   const colorLog = (t: LogTipo) => t === 'ok' ? '#3fb950' : t === 'warn' ? '#d29922' : t === 'err' ? '#f85149' : '#8b949e';
   const Panel = ({ logs }: { logs: LogLinea[] }) => (
-    <div style={{ marginTop: 14, background: '#010409', border: '1px solid #30363d', borderRadius: 8, padding: 14, minHeight: 120, maxHeight: 340, overflowY: 'auto', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12.5, lineHeight: 1.6 }}>
-      {logs.length === 0 ? <span style={{ color: '#6e7681' }}>Sin ejecutar. Empieza por "Previsualizar".</span>
+    <div className="mso-x1">
+      {logs.length === 0 ? <span className="mso-x2">Sin ejecutar. Empieza por "Previsualizar".</span>
         : logs.map((l, i) => <div key={i} style={{ color: colorLog(l.tipo), whiteSpace: 'pre-wrap' }}>{l.texto}</div>)}
     </div>
   );
@@ -363,14 +364,14 @@ export const MigracionStatusOperaciones = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0d14', color: '#c9d1d9', padding: '32px 28px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
-      <div style={{ maxWidth: 900, margin: '0 auto' }}>
-        <h1 style={{ fontSize: 26, fontWeight: 700, color: '#f0f6fc', margin: '0 0 4px' }}>Migración de Status</h1>
-        <p style={{ color: '#8b949e', margin: '0 0 24px', fontSize: 14 }}>Corre <b style={{ color: '#fb923c' }}>A</b> y luego <b style={{ color: '#fb923c' }}>B</b>. Cada una tiene "Previsualizar" (no escribe) para revisar números antes de aplicar.</p>
+      <div className="mso-x3">
+        <h1 className="mso-x4">Migración de Status</h1>
+        <p className="mso-x5">Corre <b className="mso-x6">A</b> y luego <b className="mso-x6">B</b>. Cada una tiene "Previsualizar" (no escribe) para revisar números antes de aplicar.</p>
 
         <div style={card}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: '#f0f6fc', margin: '0 0 6px' }}>A · Flujos → <code style={{ color: '#fb923c' }}>statusID</code></h2>
-          <p style={{ color: '#8b949e', fontSize: 13.5, margin: '0 0 16px' }}>Agrega <code>statusID</code> a cada nodo de <code>config_flujos_operacion</code>. No toca <code>nombreStatus</code>. (Necesario para que B mapee bitácora → flujo.)</p>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <h2 className="mso-x7">A · Flujos → <code className="mso-x6">statusID</code></h2>
+          <p className="mso-x8">Agrega <code>statusID</code> a cada nodo de <code>config_flujos_operacion</code>. No toca <code>nombreStatus</code>. (Necesario para que B mapee bitácora → flujo.)</p>
+          <div className="mso-x9">
             <button style={btnOutline} disabled={corriendoA} onClick={() => migrarFlujos(false)}>{corriendoA ? 'Procesando…' : 'Previsualizar'}</button>
             <button style={btn('linear-gradient(180deg,#ea580c,#c2410c)')} disabled={corriendoA} onClick={() => { if (window.confirm('¿Aplicar Migración A?')) migrarFlujos(true); }}>{corriendoA ? 'Procesando…' : 'Aplicar Migración A'}</button>
           </div>
@@ -378,30 +379,30 @@ export const MigracionStatusOperaciones = () => {
         </div>
 
         <div style={card}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: '#f0f6fc', margin: '0 0 6px' }}>B · Operaciones (status final)</h2>
-          <p style={{ color: '#8b949e', fontSize: 13.5, margin: '0 0 14px' }}>Con horarios: toma el status más avanzado de la bitácora y avanza por los pasos automáticos del flujo hasta el final (p.ej. → Servicio Completado). Sin horarios: status por defecto.</p>
+          <h2 className="mso-x7">B · Operaciones (status final)</h2>
+          <p className="mso-x10">Con horarios: toma el status más avanzado de la bitácora y avanza por los pasos automáticos del flujo hasta el final (p.ej. → Servicio Completado). Sin horarios: status por defecto.</p>
 
-          <div style={{ background: '#010409', border: '1px solid #21262d', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12.5, color: '#8b949e', fontWeight: 600, marginBottom: 6 }}>Status por defecto (operaciones sin horario)</label>
+          <div className="mso-x11">
+            <label className="mso-x12">Status por defecto (operaciones sin horario)</label>
             <select style={selEstilo} value={defaultStatusId} onChange={e => setDefaultStatusId(e.target.value)} disabled={cargandoCatalogo || corriendoB}>
               <option value="">{cargandoCatalogo ? 'Cargando catálogo…' : '— Selecciona un status —'}</option>
               {statusOpciones.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}
             </select>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14, fontSize: 13.5, color: '#c9d1d9', cursor: 'pointer' }}>
-              <input type="checkbox" checked={respetarCampos} onChange={e => setRespetarCampos(e.target.checked)} style={{ transform: 'scale(1.2)' }} disabled={corriendoB} />
+            <label className="mso-x13">
+              <input className="mso-x14" type="checkbox" checked={respetarCampos} onChange={e => setRespetarCampos(e.target.checked)} disabled={corriendoB} />
               Avanzar automático solo si la operación cumple los <b>campos requeridos</b> del nodo (recomendado)
             </label>
-            <p style={{ color: '#6e7681', fontSize: 12, margin: '8px 0 0', lineHeight: 1.5 }}>Desmárcalo para avanzar por la topología del flujo ignorando campos (más agresivo).</p>
+            <p className="mso-x15">Desmárcalo para avanzar por la topología del flujo ignorando campos (más agresivo).</p>
           </div>
 
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div className="mso-x9">
             <button style={btnOutline} disabled={corriendoB} onClick={() => migrarOperaciones(false)}>{corriendoB ? 'Procesando…' : 'Previsualizar'}</button>
             <button style={btn('linear-gradient(180deg,#238636,#196c2e)')} disabled={corriendoB || !defaultStatusId} onClick={() => { if (window.confirm('¿Aplicar Migración B? Se escribirá status/statusNombre en las operaciones.')) migrarOperaciones(true); }}>{corriendoB ? 'Procesando…' : 'Aplicar Migración B'}</button>
           </div>
           <Panel logs={logsB} />
         </div>
 
-        <p style={{ color: '#6e7681', fontSize: 12.5, lineHeight: 1.6 }}>Llegar a "Servicio Completado" depende de que el flujo de esa operación tenga ese paso como automático tras "Entregada". El preview lo refleja. La Migración B lee colecciones completas; córrela en baja demanda si tu cuota es ajustada.</p>
+        <p className="mso-x16">Llegar a "Servicio Completado" depende de que el flujo de esa operación tenga ese paso como automático tras "Entregada". El preview lo refleja. La Migración B lee colecciones completas; córrela en baja demanda si tu cuota es ajustada.</p>
       </div>
     </div>
   );

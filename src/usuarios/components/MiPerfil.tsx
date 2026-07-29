@@ -4,6 +4,7 @@ import { updateDoc, doc } from 'firebase/firestore';
 import { EmailAuthProvider, reauthenticateWithCredential, updatePassword } from 'firebase/auth';
 import { auth, db } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
+import './MiPerfil.css';
 
 interface MiPerfilProps {
   usuario: any;                       // documento del usuario (id, email, nombre, fotoPerfil, ...)
@@ -166,50 +167,50 @@ export const MiPerfil: React.FC<MiPerfilProps> = ({ usuario, onClose, onActualiz
   const inputStyle: React.CSSProperties = { width: '100%', padding: '10px', backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '6px', boxSizing: 'border-box' };
 
   return (
-    <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '20px', backdropFilter: 'blur(6px)' }}>
-      <div className="form-card" style={{ maxWidth: '560px', width: '100%', maxHeight: '90vh', overflowY: 'auto', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
-        <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ fontSize: '1.25rem', color: '#f0f6fc', margin: 0, fontWeight: 500 }}>Mi Perfil</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+    <div className="modal-overlay mp-x1">
+      <div className="form-card mp-x2">
+        <div className="form-header mp-x3">
+          <h2 className="mp-x4">Mi Perfil</h2>
+          <button className="mp-x5" onClick={onClose}>✕</button>
         </div>
 
-        <div style={{ padding: '24px' }}>
+        <div className="mp-x6">
           {error && (
-            <div style={{ backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444', padding: '12px 14px', borderRadius: '6px', marginBottom: '18px', fontSize: '0.85rem' }}>{error}</div>
+            <div className="mp-x7">{error}</div>
           )}
           {mensaje && (
-            <div style={{ backgroundColor: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.4)', color: '#10b981', padding: '12px 14px', borderRadius: '6px', marginBottom: '18px', fontSize: '0.85rem' }}>{mensaje}</div>
+            <div className="mp-x8">{mensaje}</div>
           )}
 
           {/* ───── FOTO DE PERFIL ───── */}
-          <h3 style={{ color: '#f0f6fc', fontSize: '1rem', margin: '0 0 16px 0' }}>Foto de Perfil</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '12px' }}>
-            <div style={{ width: '80px', height: '80px', borderRadius: '50%', backgroundColor: '#D84315', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', fontWeight: 'bold', overflow: 'hidden', flexShrink: 0, border: '2px solid #30363d' }}>
-              {foto ? <img src={foto} alt="Perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : iniciales}
+          <h3 className="mp-x9">Foto de Perfil</h3>
+          <div className="mp-x10">
+            <div className="mp-x11">
+              {foto ? <img className="mp-x12" src={foto} alt="Perfil" /> : iniciales}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <input ref={fileRef} type="file" accept="image/*" onChange={onArchivo} style={{ display: 'none' }} />
-              <button type="button" onClick={elegirFoto} style={{ padding: '8px 16px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>Elegir imagen</button>
+            <div className="mp-x13">
+              <input className="mp-x14" ref={fileRef} type="file" accept="image/*" onChange={onArchivo} />
+              <button className="mp-x15" type="button" onClick={elegirFoto}>Elegir imagen</button>
               {foto && (
-                <button type="button" onClick={quitarFoto} disabled={guardandoFoto} style={{ padding: '8px 16px', background: 'none', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontSize: '0.85rem' }}>Quitar foto</button>
+                <button className="mp-x16" type="button" onClick={quitarFoto} disabled={guardandoFoto}>Quitar foto</button>
               )}
             </div>
           </div>
-          <p style={{ color: '#8b949e', fontSize: '0.78rem', margin: '0 0 16px 0' }}>La imagen se ajusta automáticamente a un tamaño pequeño antes de guardarse.</p>
+          <p className="mp-x17">La imagen se ajusta automáticamente a un tamaño pequeño antes de guardarse.</p>
           <button type="button" onClick={guardarFoto} disabled={guardandoFoto} style={{ padding: '10px 20px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: guardandoFoto ? 'not-allowed' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
             {guardandoFoto ? 'Guardando...' : 'Guardar Foto'}
           </button>
 
-          <hr style={{ border: 'none', borderTop: '1px solid #30363d', margin: '28px 0' }} />
+          <hr className="mp-x18" />
 
           {/* ───── CONTRASEÑA ───── */}
-          <h3 style={{ color: '#f0f6fc', fontSize: '1rem', margin: '0 0 16px 0' }}>Cambiar Contraseña</h3>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '14px', marginBottom: '16px' }}>
+          <h3 className="mp-x9">Cambiar Contraseña</h3>
+          <div className="mp-x19">
             <div>
               <label style={labelStyle}>Contraseña actual</label>
               <input type="password" value={passActual} onChange={e => setPassActual(e.target.value)} placeholder="••••••••" style={inputStyle} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+            <div className="mp-x20">
               <div>
                 <label style={labelStyle}>Nueva contraseña</label>
                 <input type="password" value={passNueva} onChange={e => setPassNueva(e.target.value)} placeholder="Mín. 6 caracteres" style={inputStyle} />
@@ -225,8 +226,8 @@ export const MiPerfil: React.FC<MiPerfilProps> = ({ usuario, onClose, onActualiz
           </button>
         </div>
 
-        <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
-          <button onClick={onClose} style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar</button>
+        <div className="mp-x21">
+          <button className="mp-x22" onClick={onClose}>Cerrar</button>
         </div>
       </div>
     </div>

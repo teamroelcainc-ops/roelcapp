@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
+import './FormularioProveedorUnidad.css';
 
 interface FormProps {
   estado: 'abierto' | 'minimizado';
@@ -134,7 +135,7 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
 
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
-      <div className="form-card" style={{ maxWidth: '750px' }}>
+      <div className="form-card fpu-x1">
         <div className="form-header">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Proveedor` : 'Nuevo Proveedor de Unidad')}</h2>
           <div className="header-actions">
@@ -149,9 +150,9 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '10px 0' }}>
           <form onSubmit={handleSubmit}>
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div className="form-grid fpu-x2">
               
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+              <div className="form-group fpu-x3">
                 <label className="form-label">Proveedor (Transportista Autorizado) *</label>
                 <select 
                   className="form-control" 
@@ -167,7 +168,7 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
                   ))}
                 </select>
                 {empresasProveedoras.length === 0 && (
-                  <small style={{ color: '#8b949e', marginTop: '4px', display: 'block' }}>
+                  <small className="fpu-x4">
                     No se encontraron empresas con el ID ca21ab07.
                   </small>
                 )}
@@ -208,7 +209,7 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
 
             </div>
 
-            <div className="form-actions" style={{ marginTop: '24px' }}>
+            <div className="form-actions fpu-x5">
               <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
               <button type="submit" className="btn btn-primary" disabled={cargando || empresasProveedoras.length === 0}>
                 {cargando ? 'Guardando...' : (initialData ? 'Guardar Cambios' : 'Guardar')}

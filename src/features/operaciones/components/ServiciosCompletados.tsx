@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase'; 
+import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
@@ -11,6 +12,8 @@ import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
+import './ServiciosCompletados.css';
+import { almacenSesion } from '../../../utils/cacheMemoria';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -466,12 +469,22 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     }
 
     // [0] Caché (mismo dataset completo para cualquier rango/cliente).
+    //     ✅ VELOCIDAD: primero MEMORIA (sin límite de cuota — el sessionStorage
+    //     falla en silencio cuando el dataset excede ~5MB y por eso cada
+    //     búsqueda volvía a descargar todo). Luego sessionStorage como respaldo.
     if (!opciones.ignorarCache) {
+      const enMemoria = obtenerCacheMemoria<(Record<string, unknown> & { id: string })[]>(CACHE_KEY_TODOS, CACHE_TTL_MS);
+      if (enMemoria) {
+        setOperacionesGlobales(enMemoria);
+        setHayMasOperaciones(false);
+        return;
+      }
       try {
-        const cacheStr = sessionStorage.getItem(CACHE_KEY_TODOS);
+        const cacheStr = almacenSesion.getItem(CACHE_KEY_TODOS);
         if (cacheStr) {
           const cache = JSON.parse(cacheStr);
           if (cache && Date.now() - cache.ts < CACHE_TTL_MS && Array.isArray(cache.ops)) {
+            guardarCacheMemoria(CACHE_KEY_TODOS, cache.ops);
             setOperacionesGlobales(cache.ops);
             setHayMasOperaciones(false);
             return;
@@ -543,9 +556,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       setOperacionesGlobales(soloCompletados);
       setHayMasOperaciones(false);
 
+      guardarCacheMemoria(CACHE_KEY_TODOS, soloCompletados);
       try {
-        sessionStorage.setItem(CACHE_KEY_TODOS, JSON.stringify({ ts: Date.now(), ops: soloCompletados }));
-      } catch { /* cuota agotada: ignorar */ }
+        almacenSesion.setItem(CACHE_KEY_TODOS, JSON.stringify({ ts: Date.now(), ops: soloCompletados }));
+      } catch { /* cuota agotada: ignorar (la memoria ya lo tiene) */ }
 
       console.log(`[ServiciosCompletados v3] descargados ${soloCompletados.length} completados (status ${STATUS_COMPLETADOS_VALORES.join(' / ')}). Filtro de fecha aplicado en memoria.`);
     } catch (e: any) {
@@ -725,7 +739,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       alert('Primero realiza una búsqueda con Fecha Inicio y Fecha Fin.');
       return;
     }
-    try { sessionStorage.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
+    limpiarCacheMemoria(CACHE_KEY_TODOS);
+    try { almacenSesion.removeItem(CACHE_KEY_TODOS); } catch { /* ignorar */ }
     yaDescargado.current = true;
     descargarOperaciones(filtrosAplicados.fechaInicio, filtrosAplicados.fechaFin, filtrosAplicados.cliente, { ignorarCache: true });
   };
@@ -836,7 +851,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setOperacionesGlobales(prev => {
       const next = prev.map((o: any) => (o.id === opId ? { ...o, status: statusId, statusNombre } : o));
       if (filtrosAplicados) {
-        try { sessionStorage.setItem(claveCacheActual(), JSON.stringify({ ts: Date.now(), ops: next })); } catch { /* ignorar */ }
+        guardarCacheMemoria(claveCacheActual(), next);
+        try { almacenSesion.setItem(claveCacheActual(), JSON.stringify({ ts: Date.now(), ops: next })); } catch { /* ignorar */ }
       }
       return next;
     });
@@ -1196,7 +1212,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
       if (filtrosAplicados) {
         try {
-          sessionStorage.setItem(
+          almacenSesion.setItem(
             claveCacheActual(),
             JSON.stringify({ ts: Date.now(), ops: nuevasGlobales })
           );
@@ -1233,7 +1249,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       if (operacionViendo?.id === op.id) setOperacionViendo(null);
       if (filtrosAplicados) {
         try {
-          sessionStorage.setItem(
+          almacenSesion.setItem(
             claveCacheActual(),
             JSON.stringify({ ts: Date.now(), ops: restantes })
           );
@@ -1584,69 +1600,69 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     switch (colId) {
       // ✅ Referencia coloreada por tipo de operación (Fletes verde / Logística azul / Transfer naranja)
       case 'ref': return <span className="font-mono" style={{ color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold' }}>{op.ref || op.id?.substring(0,6)}</span>;
-      case 'fechaServicio': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.fechaServicio)}</span>;
-      case 'fechaCita': return <span style={{ color: '#c9d1d9' }}>{formatearFechaHora(op.fechaCita)}</span>;
+      case 'fechaServicio': return <span className="sc-x1">{mostrarDato(op.fechaServicio)}</span>;
+      case 'fechaCita': return <span className="sc-x1">{formatearFechaHora(op.fechaCita)}</span>;
       case 'tipoOperacion': {
         const nombreTipoOp = mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre);
         return <span style={{ color: colorTipoOperacion(nombreTipoOp), fontWeight: 'bold' }}>{nombreTipoOp}</span>;
       }
-      case 'status': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</span>;
-      case 'refDiesel': return op.referenciaDieselConsecutivo ? chipConexion(op.referenciaDieselConsecutivo, '#f59e0b') : <span style={{ color: '#8b949e' }}>-</span>;
-      case 'refNomina': return op.referenciaNominaConsecutivo ? chipConexion(op.referenciaNominaConsecutivo, '#a371f7') : <span style={{ color: '#8b949e' }}>-</span>;
-      case 'invoiceCliente': return (op.facturaClienteInvoice || op.facturado) ? chipConexion(op.facturaClienteInvoice || 'Facturada', '#10b981') : <span style={{ color: '#8b949e' }}>-</span>;
-      case 'invoiceProveedor': return (op.facturaProveedorFolio || op.facturadoProveedor) ? chipConexion(op.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span style={{ color: '#8b949e' }}>-</span>;
-      case 'trafico': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.trafico)}</span>;
-      case 'cliente': return <span style={{ color: '#f0f6fc', fontWeight: '500' }}>{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
-      case 'convenioTarifa': return <span style={{ color: '#c9d1d9', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
-      case 'refCliente': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.refCliente)}</span>;
-      case 'facturadoEnCobrar': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)}</span>;
-      case 'montoConvenioCliente': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.montoConvenioCliente)}</span>;
-      case 'cargosAdicionales': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.cargosAdicionales)}</span>;
-      case 'subtotal': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.subtotalCliente)}</span>;
-      case 'tipoCambioAprobado': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.tipoCambioAprobado)}</span>;
-      case 'dolaresCliente': return <span style={{ color: '#10b981' }}>{formatoMoneda(op.dolaresCliente)}</span>;
-      case 'pesosCliente': return <span style={{ color: '#3b82f6' }}>{formatoMoneda(op.pesosCliente)}</span>;
-      case 'conversionCliente': return <span style={{ color: '#D84315' }}>{formatoMoneda(op.conversionCliente)}</span>;
-      case 'origen': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.origen, 'empresas', 'nombre', op.origenNombre)}</span>;
-      case 'destino': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.destino, 'empresas', 'nombre', op.destinoNombre)}</span>;
-      case 'remolque': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</span>;
-      case 'proveedor': return <span style={{ color: '#c9d1d9', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={op.proveedorUnidadNombre || op.proveedorUnidad}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</span>;
-      case 'unidadProveedor': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidadProveedor, 'unidades_proveedor', 'numeroUnidad', op.unidadProveedorNombre)}</span>;
-      case 'operadorProveedor': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.operadorProveedor, 'proveedores_unidad', 'nombre', op.operadorProveedorNombre)}</span>;
-      case 'convenioProv': return <span style={{ color: '#c9d1d9', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }} title={obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}>{obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}</span>;
-      case 'facturadoEnUnidad': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre)}</span>;
-      case 'monedaConvenioProv': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre)}</span>;
-      case 'totalAPagarProv': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.totalAPagarProv)}</span>;
-      case 'cargosAdicionalesProv': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.cargosAdicionalesProv)}</span>;
-      case 'subtotalProv': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.subtotalProv)}</span>;
-      case 'dolaresProv': return <span style={{ color: '#3b82f6' }}>{formatoMoneda(op.dolaresProv)}</span>;
-      case 'pesosProv': return <span style={{ color: '#3b82f6' }}>{formatoMoneda(op.pesosProv)}</span>;
-      case 'conversionProv': return <span style={{ color: '#f85149' }}>{formatoMoneda(op.conversionProv)}</span>;
-      case 'unidad': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</span>;
-      case 'operador': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.operador, 'empleados', 'nombre', op.operadorNombre)}</span>;
-      case 'sueldoOperador': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.sueldoOperador)}</span>;
-      case 'sueldoExtra': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.sueldoExtra)}</span>;
-      case 'sueldoTotal': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.sueldoTotal)}</span>;
-      case 'combustible': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.combustible)}</span>;
-      case 'combustibleExtra': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.combustibleExtra)}</span>;
-      case 'combustibleTotal': return <span style={{ color: '#f0f6fc', fontWeight: 'bold' }}>{formatoMoneda(op.combustibleTotal)}</span>;
-      case 'clienteMercancia': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre)}</span>;
-      case 'descripcionMercancia': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.descripcionMercancia)}</span>;
-      case 'cantidad': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.cantidad)}</span>;
-      case 'embalaje': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.embalaje, 'embalajes', 'clave', op.embalajeNombre)}</span>;
-      case 'pesoKg': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.pesoKg)}</span>;
-      case 'numDoda': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.numDoda)}</span>;
-      case 'fechaEmisionDoda': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.fechaEmisionDoda)}</span>;
-      case 'numeroEntrys': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.numeroEntrys)}</span>;
-      case 'cantEntrys': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.cantEntrys)}</span>;
-      case 'numManifiesto': return <span style={{ color: '#c9d1d9' }}>{mostrarDato(op.numManifiesto)}</span>;
-      case 'provServicios': return <span style={{ color: '#c9d1d9' }}>{mostrarDatoMapeado(op.provServicios, 'empresas', 'nombre', op.provServiciosNombre)}</span>;
-      case 'montoManifiesto': return <span style={{ color: '#c9d1d9' }}>{formatoMoneda(op.montoManifiesto)}</span>;
-      case 'totalGastos': return <span style={{ color: '#f85149', fontWeight: 'bold' }}>{formatoMoneda(op.totalGastos)}</span>;
-      case 'utilidadEstimada': return <span style={{ color: '#10b981', fontWeight: 'bold' }}>{formatoMoneda(op.utilidadEstimada)}</span>;
-      case 'observacionesEjecutivo': return <span style={{ color: '#8b949e', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mostrarDato(op.observacionesEjecutivo)}</span>;
-      case 'observacionesUnidad': return <span style={{ color: '#8b949e', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mostrarDato(op.observacionesUnidad)}</span>;
-      case 'observacionesCobrar': return <span style={{ color: '#8b949e', maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mostrarDato(op.observacionesCobrar)}</span>;
+      case 'status': return <span className="sc-x2">{mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre)}</span>;
+      case 'refDiesel': return op.referenciaDieselConsecutivo ? chipConexion(op.referenciaDieselConsecutivo, '#f59e0b') : <span className="sc-x3">-</span>;
+      case 'refNomina': return op.referenciaNominaConsecutivo ? chipConexion(op.referenciaNominaConsecutivo, '#a371f7') : <span className="sc-x3">-</span>;
+      case 'invoiceCliente': return (op.facturaClienteInvoice || op.facturado) ? chipConexion(op.facturaClienteInvoice || 'Facturada', '#10b981') : <span className="sc-x3">-</span>;
+      case 'invoiceProveedor': return (op.facturaProveedorFolio || op.facturadoProveedor) ? chipConexion(op.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span className="sc-x3">-</span>;
+      case 'trafico': return <span className="sc-x1">{mostrarDato(op.trafico)}</span>;
+      case 'cliente': return <span className="sc-x4">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
+      case 'convenioTarifa': return <span className="sc-x5" title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
+      case 'refCliente': return <span className="sc-x1">{mostrarDato(op.refCliente)}</span>;
+      case 'facturadoEnCobrar': return <span className="sc-x1">{mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)}</span>;
+      case 'montoConvenioCliente': return <span className="sc-x1">{formatoMoneda(op.montoConvenioCliente)}</span>;
+      case 'cargosAdicionales': return <span className="sc-x1">{formatoMoneda(op.cargosAdicionales)}</span>;
+      case 'subtotal': return <span className="sc-x6">{formatoMoneda(op.subtotalCliente)}</span>;
+      case 'tipoCambioAprobado': return <span className="sc-x1">{mostrarDato(op.tipoCambioAprobado)}</span>;
+      case 'dolaresCliente': return <span className="sc-x7">{formatoMoneda(op.dolaresCliente)}</span>;
+      case 'pesosCliente': return <span className="sc-x8">{formatoMoneda(op.pesosCliente)}</span>;
+      case 'conversionCliente': return <span className="sc-x9">{formatoMoneda(op.conversionCliente)}</span>;
+      case 'origen': return <span className="sc-x1">{mostrarDatoMapeado(op.origen, 'empresas', 'nombre', op.origenNombre)}</span>;
+      case 'destino': return <span className="sc-x1">{mostrarDatoMapeado(op.destino, 'empresas', 'nombre', op.destinoNombre)}</span>;
+      case 'remolque': return <span className="sc-x1">{mostrarDatoMapeado(op.numeroRemolque, 'remolques', 'nombre', op.remolqueNombre)}</span>;
+      case 'proveedor': return <span className="sc-x10" title={op.proveedorUnidadNombre || op.proveedorUnidad}>{mostrarDatoMapeado(op.proveedorUnidad, 'empresas', 'nombre', op.proveedorUnidadNombre)}</span>;
+      case 'unidadProveedor': return <span className="sc-x1">{mostrarDatoMapeado(op.unidadProveedor, 'unidades_proveedor', 'numeroUnidad', op.unidadProveedorNombre)}</span>;
+      case 'operadorProveedor': return <span className="sc-x1">{mostrarDatoMapeado(op.operadorProveedor, 'proveedores_unidad', 'nombre', op.operadorProveedorNombre)}</span>;
+      case 'convenioProv': return <span className="sc-x10" title={obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}>{obtenerNombreConvenioProv(op.convenioProveedor, op.convenioProveedorNombre)}</span>;
+      case 'facturadoEnUnidad': return <span className="sc-x1">{mostrarDatoMapeado(op.facturadoEnUnidad, 'catalogoMoneda', 'moneda', op.monedaUnidadNombre)}</span>;
+      case 'monedaConvenioProv': return <span className="sc-x1">{mostrarDatoMapeado(op.monedaConvenioProv, 'catalogoMoneda', 'moneda', op.monedaConvProvNombre)}</span>;
+      case 'totalAPagarProv': return <span className="sc-x1">{formatoMoneda(op.totalAPagarProv)}</span>;
+      case 'cargosAdicionalesProv': return <span className="sc-x1">{formatoMoneda(op.cargosAdicionalesProv)}</span>;
+      case 'subtotalProv': return <span className="sc-x6">{formatoMoneda(op.subtotalProv)}</span>;
+      case 'dolaresProv': return <span className="sc-x8">{formatoMoneda(op.dolaresProv)}</span>;
+      case 'pesosProv': return <span className="sc-x8">{formatoMoneda(op.pesosProv)}</span>;
+      case 'conversionProv': return <span className="sc-x11">{formatoMoneda(op.conversionProv)}</span>;
+      case 'unidad': return <span className="sc-x1">{mostrarDatoMapeado(op.unidad, 'unidades', 'unidad', op.unidadNombre)}</span>;
+      case 'operador': return <span className="sc-x1">{mostrarDatoMapeado(op.operador, 'empleados', 'nombre', op.operadorNombre)}</span>;
+      case 'sueldoOperador': return <span className="sc-x1">{formatoMoneda(op.sueldoOperador)}</span>;
+      case 'sueldoExtra': return <span className="sc-x1">{formatoMoneda(op.sueldoExtra)}</span>;
+      case 'sueldoTotal': return <span className="sc-x6">{formatoMoneda(op.sueldoTotal)}</span>;
+      case 'combustible': return <span className="sc-x1">{formatoMoneda(op.combustible)}</span>;
+      case 'combustibleExtra': return <span className="sc-x1">{formatoMoneda(op.combustibleExtra)}</span>;
+      case 'combustibleTotal': return <span className="sc-x6">{formatoMoneda(op.combustibleTotal)}</span>;
+      case 'clienteMercancia': return <span className="sc-x1">{mostrarDatoMapeado(op.clienteMercancia, 'empresas', 'nombre', op.clienteMercanciaNombre)}</span>;
+      case 'descripcionMercancia': return <span className="sc-x1">{mostrarDato(op.descripcionMercancia)}</span>;
+      case 'cantidad': return <span className="sc-x1">{mostrarDato(op.cantidad)}</span>;
+      case 'embalaje': return <span className="sc-x1">{mostrarDatoMapeado(op.embalaje, 'embalajes', 'clave', op.embalajeNombre)}</span>;
+      case 'pesoKg': return <span className="sc-x1">{mostrarDato(op.pesoKg)}</span>;
+      case 'numDoda': return <span className="sc-x1">{mostrarDato(op.numDoda)}</span>;
+      case 'fechaEmisionDoda': return <span className="sc-x1">{mostrarDato(op.fechaEmisionDoda)}</span>;
+      case 'numeroEntrys': return <span className="sc-x1">{mostrarDato(op.numeroEntrys)}</span>;
+      case 'cantEntrys': return <span className="sc-x1">{mostrarDato(op.cantEntrys)}</span>;
+      case 'numManifiesto': return <span className="sc-x1">{mostrarDato(op.numManifiesto)}</span>;
+      case 'provServicios': return <span className="sc-x1">{mostrarDatoMapeado(op.provServicios, 'empresas', 'nombre', op.provServiciosNombre)}</span>;
+      case 'montoManifiesto': return <span className="sc-x1">{formatoMoneda(op.montoManifiesto)}</span>;
+      case 'totalGastos': return <span className="sc-x12">{formatoMoneda(op.totalGastos)}</span>;
+      case 'utilidadEstimada': return <span className="sc-x2">{formatoMoneda(op.utilidadEstimada)}</span>;
+      case 'observacionesEjecutivo': return <span className="sc-x13">{mostrarDato(op.observacionesEjecutivo)}</span>;
+      case 'observacionesUnidad': return <span className="sc-x13">{mostrarDato(op.observacionesUnidad)}</span>;
+      case 'observacionesCobrar': return <span className="sc-x13">{mostrarDato(op.observacionesCobrar)}</span>;
       default: return '-';
     }
   };
@@ -1824,7 +1840,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const cardValueStyle: React.CSSProperties = { fontSize: '1.05rem', fontWeight: 'bold', lineHeight: 1.15 };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container sc-x14">
 
       {estadoFormulario !== 'cerrado' && (
         <FormularioOperacion
@@ -1838,8 +1854,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         />
       )}
 
-      <div style={{ width: '100%', margin: '0 auto' }}>
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#10b981', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+      <div className="sc-x15">
+        <h1 className="module-title sc-x16">
           ✓ Servicios Completados
         </h1>
 
@@ -1847,34 +1863,34 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               pantalla, con fondo oscurecido; se abre con el botón Filtros. */}
           {drawerFiltrosAbierto && (
             <>
-              <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1200, animation: 'fadeIn 0.2s ease' }} />
-              <aside style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92vw', backgroundColor: '#161b22', borderLeft: '1px solid #30363d', zIndex: 1201, display: 'flex', flexDirection: 'column', boxShadow: '-10px 0 30px rgba(0, 0, 0, 0.55)', animation: 'fadeIn 0.2s ease' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="sc-x17" onClick={() => setDrawerFiltrosAbierto(false)} />
+              <aside className="sc-x18">
+              <div className="sc-x19">
+                <div className="sc-x20">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                  <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>Filtros</span>
+                  <span className="sc-x21">Filtros</span>
                 </div>
-                <button onClick={() => setDrawerFiltrosAbierto(false)} title="Cerrar filtros" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '4px' }}>✕</button>
+                <button className="sc-x22" onClick={() => setDrawerFiltrosAbierto(false)} title="Cerrar filtros">✕</button>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="sc-x23">
 
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA INICIO ★</label>
-            <input type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
+          <div className="sc-x24">
+            <label className="sc-x25">FECHA INICIO ★</label>
+            <input className="sc-x26" type="date" value={filterFechaInicio} onChange={(e) => setFilterFechaInicio(e.target.value)} />
           </div>
 
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', color: '#10b981', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FECHA FIN ★</label>
-            <input type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9' }} />
+          <div className="sc-x24">
+            <label className="sc-x25">FECHA FIN ★</label>
+            <input className="sc-x26" type="date" value={filterFechaFin} min={filterFechaInicio || undefined} onChange={(e) => setFilterFechaFin(e.target.value)} />
           </div>
 
           {/* ✅ NUEVO: filtro por # DE REFERENCIA (busca en las referencias ya
               guardadas dentro del rango). Requiere rango de fechas. */}
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}># REFERENCIA (requiere rango de fechas)</label>
-            <div style={{ position: 'relative' }}>
-              <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <div className="sc-x24">
+            <label className="sc-x27"># REFERENCIA (requiere rango de fechas)</label>
+            <div className="sc-x28">
+              <svg className="sc-x29" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
               <input
                 type="text"
                 placeholder={rangoFechasListo ? 'Ej. TR-220726-016 (acepta parcial)' : 'Coloca un rango de fechas primero'}
@@ -1886,60 +1902,53 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               />
             </div>
             {!rangoFechasListo && (
-              <div style={{ color: '#6e7681', fontSize: '0.72rem', marginTop: '4px' }}>⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+              <div className="sc-x30">⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
             )}
           </div>
 
-          <div style={{ width: '100%', position: 'relative' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>CLIENTE QUE PAGA (opcional)</label>
+          <div className="sc-x31">
+            <label className="sc-x27">CLIENTE QUE PAGA (opcional)</label>
 
             {filterCliente ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', minHeight: '20px' }}>
+              <div className="sc-x32">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                <span style={{ color: '#10b981', fontWeight: 'bold', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span className="sc-x33">
                   {nombreClienteSeleccionado}
                 </span>
-                <button
+                <button className="sc-x34"
                   onClick={() => { setFilterCliente(''); setTextoBuscarCliente(''); setMostrarSugerenciasCliente(false); }}
                   title="Cambiar cliente"
-                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
                 >
                   ✕
                 </button>
               </div>
             ) : (
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#10b981' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input
+              <div className="sc-x28">
+                <svg className="sc-x35" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="sc-x36"
                   type="text"
                   placeholder="Buscar cliente por nombre o RFC..."
                   value={textoBuscarCliente}
                   onChange={(e) => { setTextoBuscarCliente(e.target.value); setMostrarSugerenciasCliente(true); }}
                   onFocus={() => setMostrarSugerenciasCliente(true)}
                   onBlur={() => setTimeout(() => setMostrarSugerenciasCliente(false), 180)}
-                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
                 />
               </div>
             )}
 
             {!filterCliente && mostrarSugerenciasCliente && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0,
-                backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
-                maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px',
-                boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
-              }}>
+              <div className="sc-x37">
                 {clientesFiltradosBuscador.length === 0 ? (
-                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                  <div className="sc-x38">
                     {textoBuscarCliente.trim() ? 'Sin coincidencias' : 'No hay clientes (tipo Cliente-Paga) cargados'}
                   </div>
                 ) : (
                   <>
-                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                    <div className="sc-x39">
                       {clientesFiltradosBuscador.length} {clientesFiltradosBuscador.length === 1 ? 'cliente' : 'clientes'}{textoBuscarCliente.trim() ? '' : ' (primeros 30)'}
                     </div>
                     {clientesFiltradosBuscador.map((cli: any) => (
-                      <div
+                      <div className="sc-x40"
                         key={cli.id}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
@@ -1947,12 +1956,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                           setTextoBuscarCliente('');
                           setMostrarSugerenciasCliente(false);
                         }}
-                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
                         onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                         onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
-                        <div style={{ fontWeight: '500' }}>{cli.nombre || cli.id}</div>
-                        {cli.rfc && <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '2px' }}>{cli.rfc}</div>}
+                        <div className="sc-x41">{cli.nombre || cli.id}</div>
+                        {cli.rfc && <div className="sc-x42">{cli.rfc}</div>}
                       </div>
                     ))}
                   </>
@@ -1961,26 +1969,25 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
           </div>
 
-          <div style={{ width: '100%', position: 'relative' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}># REMOLQUE (requiere rango de fechas)</label>
+          <div className="sc-x31">
+            <label className="sc-x27"># REMOLQUE (requiere rango de fechas)</label>
 
             {filterRemolque ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', minHeight: '20px' }}>
+              <div className="sc-x43">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
-                <span style={{ color: '#c9d1d9', fontWeight: '500', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span className="sc-x44">
                   {nombreRemolqueSeleccionado}
                 </span>
-                <button
+                <button className="sc-x34"
                   onClick={() => { setFilterRemolque(''); setTextoBuscarRemolque(''); setMostrarSugerenciasRemolque(false); }}
                   title="Quitar remolque"
-                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
                 >
                   ✕
                 </button>
               </div>
             ) : (
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <div className="sc-x28">
+                <svg className="sc-x29" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                 <input
                   type="text"
                   placeholder={rangoFechasListo ? 'Buscar remolque por nombre o placa...' : 'Coloca un rango de fechas primero'}
@@ -1996,27 +2003,22 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             )}
 
             {!rangoFechasListo && !filterRemolque && (
-              <div style={{ color: '#6e7681', fontSize: '0.72rem', marginTop: '4px' }}>⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
+              <div className="sc-x30">⚠️ Requiere Fecha Inicio y Fecha Fin.</div>
             )}
 
             {rangoFechasListo && !filterRemolque && mostrarSugerenciasRemolque && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0,
-                backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
-                maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px',
-                boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
-              }}>
+              <div className="sc-x37">
                 {remolquesFiltradosBuscador.length === 0 ? (
-                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                  <div className="sc-x38">
                     {textoBuscarRemolque.trim() ? 'Sin coincidencias' : 'No hay remolques cargados'}
                   </div>
                 ) : (
                   <>
-                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                    <div className="sc-x39">
                       {remolquesFiltradosBuscador.length} {remolquesFiltradosBuscador.length === 1 ? 'remolque' : 'remolques'}{textoBuscarRemolque.trim() ? '' : ' (primeros 30)'}
                     </div>
                     {remolquesFiltradosBuscador.map((rem: any) => (
-                      <div
+                      <div className="sc-x40"
                         key={rem.id}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
@@ -2024,11 +2026,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                           setTextoBuscarRemolque('');
                           setMostrarSugerenciasRemolque(false);
                         }}
-                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
                         onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                         onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
-                        <div style={{ fontWeight: '500' }}>{etiquetaRemolque(rem) || rem.id}</div>
+                        <div className="sc-x41">{etiquetaRemolque(rem) || rem.id}</div>
                       </div>
                     ))}
                   </>
@@ -2038,56 +2039,49 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
 
           {/* ✅ NUEVO: filtro por OPERADOR (búsqueda con sugerencias) */}
-          <div style={{ width: '100%', position: 'relative' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>OPERADOR (opcional)</label>
+          <div className="sc-x31">
+            <label className="sc-x27">OPERADOR (opcional)</label>
 
             {filterOperador ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', minHeight: '20px' }}>
+              <div className="sc-x43">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                <span style={{ color: '#c9d1d9', fontWeight: '500', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span className="sc-x44">
                   {nombreOperadorSeleccionado}
                 </span>
-                <button
+                <button className="sc-x34"
                   onClick={() => { setFilterOperador(''); setTextoBuscarOperador(''); setMostrarSugerenciasOperador(false); }}
                   title="Quitar operador"
-                  style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '0 4px', fontSize: '1rem', lineHeight: 1 }}
                 >
                   ✕
                 </button>
               </div>
             ) : (
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input
+              <div className="sc-x28">
+                <svg className="sc-x29" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="sc-x45"
                   type="text"
                   placeholder="Buscar operador por nombre..."
                   value={textoBuscarOperador}
                   onChange={(e) => { setTextoBuscarOperador(e.target.value); setMostrarSugerenciasOperador(true); }}
                   onFocus={() => setMostrarSugerenciasOperador(true)}
                   onBlur={() => setTimeout(() => setMostrarSugerenciasOperador(false), 180)}
-                  style={{ width: '100%', padding: '10px 10px 10px 32px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
                 />
               </div>
             )}
 
             {!filterOperador && mostrarSugerenciasOperador && (
-              <div style={{
-                position: 'absolute', top: '100%', left: 0, right: 0,
-                backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px',
-                maxHeight: '320px', overflowY: 'auto', zIndex: 100, marginTop: '4px',
-                boxShadow: '0 6px 16px rgba(0,0,0,0.5)'
-              }}>
+              <div className="sc-x37">
                 {operadoresFiltradosBuscador.length === 0 ? (
-                  <div style={{ padding: '14px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+                  <div className="sc-x38">
                     {textoBuscarOperador.trim() ? 'Sin coincidencias' : 'No hay operadores cargados'}
                   </div>
                 ) : (
                   <>
-                    <div style={{ padding: '6px 12px', fontSize: '0.7rem', color: '#8b949e', borderBottom: '1px solid #21262d', backgroundColor: '#161b22' }}>
+                    <div className="sc-x39">
                       {operadoresFiltradosBuscador.length} {operadoresFiltradosBuscador.length === 1 ? 'operador' : 'operadores'}{textoBuscarOperador.trim() ? '' : ' (primeros 30)'}
                     </div>
                     {operadoresFiltradosBuscador.map((emp: any) => (
-                      <div
+                      <div className="sc-x40"
                         key={emp.id}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => {
@@ -2095,11 +2089,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                           setTextoBuscarOperador('');
                           setMostrarSugerenciasOperador(false);
                         }}
-                        style={{ padding: '10px 12px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.88rem', borderBottom: '1px solid #21262d', transition: 'background-color 0.15s' }}
                         onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = '#21262d'}
                         onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                       >
-                        <div style={{ fontWeight: '500' }}>{etiquetaOperador(emp) || emp.id}</div>
+                        <div className="sc-x41">{etiquetaOperador(emp) || emp.id}</div>
                       </div>
                     ))}
                   </>
@@ -2109,12 +2102,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
 
           {/* ✅ NUEVO: filtro por TIPO DE OPERACIÓN (Transfer / Logística / Fletes) */}
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>TIPO DE OPERACIÓN (opcional)</label>
-            <select
+          <div className="sc-x24">
+            <label className="sc-x27">TIPO DE OPERACIÓN (opcional)</label>
+            <select className="sc-x46"
               value={filterTipoOperacion}
               onChange={(e) => setFilterTipoOperacion(e.target.value)}
-              style={{ width: '100%', padding: '10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
             >
               <option value="">Todas</option>
               <option value="transfer">Transfer</option>
@@ -2123,19 +2115,18 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             </select>
           </div>
 
-          <div style={{ width: '100%' }}>
-            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '6px', fontWeight: 'bold' }}>FILTRO GENERAL (opcional)</label>
-            <div style={{ position: 'relative' }}>
-              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} style={{ width: '100%', padding: '10px 10px 10px 36px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+          <div className="sc-x24">
+            <label className="sc-x27">FILTRO GENERAL (opcional)</label>
+            <div className="sc-x28">
+              <svg className="sc-x47" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input className="sc-x48" type="text" placeholder="Buscar por Ref..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
             </div>
           </div>
               </div>
 
-              <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', flexShrink: 0 }}>
-                <button
+              <div className="sc-x49">
+                <button className="sc-x50"
                   onClick={limpiarFiltrosPanel}
-                  style={{ flex: 1, padding: '11px', backgroundColor: 'transparent', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600 }}
                 >
                   Limpiar
                 </button>
@@ -2158,22 +2149,22 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             incluye/excluye la columna. Por defecto usa las columnas de la tabla. */}
         {modalExportar && (
           <>
-            <div onClick={() => setModalExportar(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(1, 4, 9, 0.65)', zIndex: 1300, animation: 'fadeIn 0.2s ease' }} />
-            <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '480px', maxWidth: '94vw', maxHeight: '86vh', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '10px', zIndex: 1301, display: 'flex', flexDirection: 'column', overflow: 'hidden', animation: 'fadeIn 0.2s ease' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #30363d', flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="sc-x51" onClick={() => setModalExportar(false)} />
+            <div className="sc-x52">
+              <div className="sc-x19">
+                <div className="sc-x20">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                  <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '0.95rem' }}>Exportar a Excel</span>
-                  <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>({columnasExport.filter(c => c.visible).length} columnas)</span>
+                  <span className="sc-x21">Exportar a Excel</span>
+                  <span className="sc-x53">({columnasExport.filter(c => c.visible).length} columnas)</span>
                 </div>
-                <button onClick={() => setModalExportar(false)} title="Cerrar" style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.1rem', lineHeight: 1, padding: '4px' }}>✕</button>
+                <button className="sc-x22" onClick={() => setModalExportar(false)} title="Cerrar">✕</button>
               </div>
 
-              <div style={{ padding: '10px 16px', color: '#8b949e', fontSize: '0.78rem', borderBottom: '1px solid #21262d', flexShrink: 0 }}>
-                Arrastra <span style={{ color: '#c9d1d9' }}>⋮⋮</span> o usa las flechas para cambiar el orden. Marca las columnas que quieres incluir.
+              <div className="sc-x54">
+                Arrastra <span className="sc-x1">⋮⋮</span> o usa las flechas para cambiar el orden. Marca las columnas que quieres incluir.
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+              <div className="sc-x55">
                 {columnasExport.map((c, idx) => (
                   <div
                     key={c.id}
@@ -2183,12 +2174,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                     onDrop={() => soltarColumnaExport(idx)}
                     style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', marginBottom: '4px', backgroundColor: c.visible ? '#0d1117' : 'rgba(13, 17, 23, 0.5)', border: '1px solid #21262d', borderRadius: '6px', cursor: 'grab', opacity: c.visible ? 1 : 0.55 }}
                   >
-                    <span title="Arrastrar para reordenar" style={{ color: '#484f58', fontSize: '0.85rem', letterSpacing: '-2px', userSelect: 'none' }}>⋮⋮</span>
-                    <input
+                    <span className="sc-x56" title="Arrastrar para reordenar">⋮⋮</span>
+                    <input className="sc-x57"
                       type="checkbox"
                       checked={c.visible}
                       onChange={() => setColumnasExport(prev => prev.map((x, i) => (i === idx ? { ...x, visible: !x.visible } : x)))}
-                      style={{ accentColor: '#10b981', cursor: 'pointer', width: '15px', height: '15px', flexShrink: 0 }}
                     />
                     <span style={{ flex: 1, color: c.visible ? '#c9d1d9' : '#8b949e', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
                     <button onClick={() => moverColumnaExport(idx, -1)} disabled={idx === 0} title="Subir" style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '4px', color: idx === 0 ? '#30363d' : '#8b949e', cursor: idx === 0 ? 'default' : 'pointer', padding: '2px 7px', fontSize: '0.7rem' }}>▲</button>
@@ -2197,19 +2187,17 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 ))}
               </div>
 
-              <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-                <button
+              <div className="sc-x58">
+                <button className="sc-x59"
                   onClick={() => setColumnasExport(columnasExportPorDefecto())}
                   title="Restablecer con las columnas visibles de la tabla, en su orden actual"
-                  style={{ padding: '9px 12px', backgroundColor: 'transparent', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem' }}
                 >
                   Columnas de la tabla
                 </button>
-                <div style={{ flex: 1 }} />
-                <button onClick={() => setModalExportar(false)} style={{ padding: '9px 14px', backgroundColor: 'transparent', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}>Cancelar</button>
-                <button
+                <div className="sc-x60" />
+                <button className="sc-x61" onClick={() => setModalExportar(false)}>Cancelar</button>
+                <button className="sc-x62"
                   onClick={exportarExcel}
-                  style={{ padding: '9px 16px', backgroundColor: '#10b981', color: '#0d1117', border: '1px solid #10b981', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
                 >
                   Exportar
                 </button>
@@ -2222,7 +2210,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         {/* ✅ NUEVO: barra compacta — los filtros viven en un panel lateral
             izquierdo; aquí solo queda el botón Filtros, el resumen de la última
             búsqueda y las acciones de la tabla. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '20px', width: '100%', backgroundColor: '#161b22', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+        <div className="sc-x63">
           <button
             onClick={() => setDrawerFiltrosAbierto(v => !v)}
             title={drawerFiltrosAbierto ? 'Ocultar el panel de filtros' : 'Mostrar el panel de filtros'}
@@ -2231,28 +2219,28 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
             Filtros
             {contadorFiltrosActivos > 0 && (
-              <span style={{ backgroundColor: '#0d1117', color: '#10b981', borderRadius: '999px', padding: '1px 8px', fontSize: '0.75rem', fontWeight: 'bold' }}>{contadorFiltrosActivos}</span>
+              <span className="sc-x64">{contadorFiltrosActivos}</span>
             )}
           </button>
 
           {filtrosAplicados ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center', flex: 1, minWidth: '200px' }}>
+            <div className="sc-x65">
               {resumenFiltrosChips.map((chip, i) => (
-                <span key={`chip_${i}`} style={{ backgroundColor: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.35)', color: '#7ee2b8', padding: '4px 10px', borderRadius: '999px', fontSize: '0.75rem', whiteSpace: 'nowrap' }}>{chip}</span>
+                <span className="sc-x66" key={`chip_${i}`}>{chip}</span>
               ))}
             </div>
           ) : (
-            <span style={{ color: '#8b949e', fontSize: '0.82rem', flex: 1, minWidth: '200px' }}>Presiona Filtros para definir el rango de fechas y buscar.</span>
+            <span className="sc-x67">Presiona Filtros para definir el rango de fechas y buscar.</span>
           )}
 
-          <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto', flexShrink: 0 }}>
+          <div className="sc-x68">
             <button className="btn btn-outline" onClick={refrescarDatos} disabled={cargandoOperaciones} style={{ padding: '10px 12px', cursor: cargandoOperaciones ? 'wait' : 'pointer' }} title="Actualizar (recargar desde la base de datos)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
             </button>
-            <button className="btn btn-outline" onClick={() => setModalColumnas(true)} style={{ padding: '10px 12px' }} title="Configurar Columnas">
+            <button className="btn btn-outline sc-x69" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
-            <button className="btn btn-outline" onClick={abrirModalExportar} style={{ padding: '10px 12px' }} title="Exportar a Excel (elegir y ordenar columnas)">
+            <button className="btn btn-outline sc-x69" onClick={abrirModalExportar} title="Exportar a Excel (elegir y ordenar columnas)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
@@ -2260,8 +2248,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
 
         {filtrosAplicados && (
-          <div style={{ marginBottom: '14px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))', gap: '8px' }}>
+          <div className="sc-x70">
+            <div className="sc-x71">
               <div style={cardResumenStyle}>
                 <span style={cardLabelStyle}>Servicios (rango)</span>
                 <span style={{ ...cardValueStyle, color: '#f0f6fc' }}>{resumenServicios.total}</span>
@@ -2284,7 +2272,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginTop: '12px' }}>
+            <div className="sc-x72">
               <div style={cardResumenStyle}>
                 <span style={cardLabelStyle}>Facturados Cliente</span>
                 <span style={{ ...cardValueStyle, color: '#10b981' }}>{resumenServicios.factCliente}</span>
@@ -2306,17 +2294,17 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
         )}
 
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
+        <div className="content-body sc-x73">
+          <div className="table-container sc-x74">
             {cargandoOperaciones ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
+              <div className="sc-x75">
                 Cargando operaciones completadas...
               </div>
             ) : (
-              <table className="data-table" style={{ width: '100%', minWidth: '1300px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+              <table className="data-table sc-x76">
+                <thead className="sc-x77">
                   <tr>
-                    <th style={{ padding: '16px', width: '150px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                    <th className="sc-x78">
                       Acciones
                     </th>
                     {columnasTabla.filter(c => c.visible).map(col => (
@@ -2328,7 +2316,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       >
                         {col.label}
                         {ordenColumna === col.id && (
-                          <span style={{ marginLeft: '6px', color: '#10b981', fontSize: '0.7rem' }}>
+                          <span className="sc-x79">
                             {ordenDireccion === 'asc' ? '▲' : '▼'}
                           </span>
                         )}
@@ -2339,38 +2327,35 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 <tbody>
                   {!filtrosAplicados ? (
                     <tr>
-                      <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e', fontWeight: '500' }}>
-                        Selecciona <strong style={{ color: '#10b981' }}>Fecha Inicio</strong> y <strong style={{ color: '#10b981' }}>Fecha Fin</strong> y presiona <strong style={{ color: '#10b981' }}>Buscar</strong> para ver las operaciones completadas.
+                      <td className="sc-x80" colSpan={columnasTabla.length + 1}>
+                        Selecciona <strong className="sc-x7">Fecha Inicio</strong> y <strong className="sc-x7">Fecha Fin</strong> y presiona <strong className="sc-x7">Buscar</strong> para ver las operaciones completadas.
                       </td>
                     </tr>
                   ) : operacionesEnPantalla.length === 0 ? (
                     <tr>
-                      <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                      <td className="sc-x81" colSpan={columnasTabla.length + 1}>
                         Sin resultados para el rango de fechas y los filtros seleccionados.
                       </td>
                     </tr>
                   ) : (
                     operacionesEnPantalla.map((op: any) => (
                       <tr key={op.id} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === op.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(op.id)} onMouseLeave={() => setHoveredRowId(null)} onClick={() => { setOperacionViendo(op); setPestañaDetalleActiva('general'); }}>
-                        <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                          <div className="actions-cell" style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                            <button type="button" title="Ver Detalles"
+                        <td className="sc-x82" onClick={(e: any) => e.stopPropagation()}>
+                          <div className="actions-cell sc-x83">
+                            <button className="sc-x84" type="button" title="Ver Detalles"
                               onClick={(e) => { e.stopPropagation(); setOperacionViendo(op); setPestañaDetalleActiva('general'); }} 
-                              style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(16, 185, 129, 0.1)'} 
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                             </button>
-                            <button type="button" title="Editar"
+                            <button className="sc-x85" type="button" title="Editar"
                               onClick={(e) => handleEditarOperacion(op, e)} 
-                              style={{ background: 'transparent', border: '1px solid #58a6ff', borderRadius: '4px', color: '#58a6ff', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(88, 166, 255, 0.1)'} 
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                             </button>
-                            <button type="button" title="Eliminar"
+                            <button className="sc-x86" type="button" title="Eliminar"
                               onClick={(e) => handleEliminarOperacion(op, e)} 
-                              style={{ background: 'transparent', border: '1px solid #f85149', borderRadius: '4px', color: '#f85149', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(248, 81, 73, 0.1)'} 
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
@@ -2378,7 +2363,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                           </div>
                         </td>
                         {columnasTabla.filter(c => c.visible).map(col => (
-                          <td key={`cell_${op.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                          <td className="sc-x87" key={`cell_${op.id}_${col.id}`}>
                             {renderCellContent(op, col.id)}
                           </td>
                         ))}
@@ -2391,12 +2376,12 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           </div>
 
           {operacionesOrdenadas.length > 0 && !cargandoOperaciones && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="sc-x88">
+              <div className="sc-x89">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, operacionesOrdenadas.length)} de {operacionesOrdenadas.length} operaciones completadas
-                {hayMasOperaciones && <span style={{ color: '#fb923c', marginLeft: '8px' }}>(hay más disponibles)</span>}
+                {hayMasOperaciones && <span className="sc-x90">(hay más disponibles)</span>}
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <div className="sc-x91">
                 {hayMasOperaciones && (
                   <button
                     onClick={cargarMasOperaciones}
@@ -2408,7 +2393,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   </button>
                 )}
                 <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '6px 12px', backgroundColor: paginaActual === 1 ? '#0d1117' : '#21262d', color: paginaActual === 1 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer' }}>Anterior</button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="sc-x92">{paginaActual} / {totalPaginas || 1}</span>
                 <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas || totalPaginas === 0} style={{ padding: '6px 12px', backgroundColor: paginaActual === totalPaginas || totalPaginas === 0 ? '#0d1117' : '#21262d', color: paginaActual === totalPaginas || totalPaginas === 0 ? '#484f58' : '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: paginaActual === totalPaginas || totalPaginas === 0 ? 'not-allowed' : 'pointer' }}>Siguiente</button>
               </div>
             </div>
@@ -2417,39 +2402,34 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       </div>
 
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '1000px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button onClick={() => { setModalColumnas(false); setBusquedaColumnas(''); }} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay sc-x93">
+          <div className="sc-x94">
+            <div className="sc-x95">
+              <h3 className="sc-x96">Configurar Columnas</h3>
+              <button className="sc-x97" onClick={() => { setModalColumnas(false); setBusquedaColumnas(''); }}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
+            <p className="sc-x98">Arrastra los campos para reordenarlos. Desmarca los que desees ocultar de la tabla principal y del reporte de Excel.</p>
 
             {/* ✅ NUEVO: buscador de columnas por nombre */}
-            <div style={{ position: 'relative', marginBottom: '20px' }}>
-              <svg style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              <input
+            <div className="sc-x99">
+              <svg className="sc-x47" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input className="sc-x100"
                 type="text"
                 value={busquedaColumnas}
                 onChange={(e) => setBusquedaColumnas(e.target.value)}
                 placeholder="Buscar columna por nombre..."
-                style={{ width: '100%', padding: '10px 12px 10px 38px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }}
               />
               {busquedaColumnas && (
-                <button
+                <button className="sc-x101"
                   onClick={() => setBusquedaColumnas('')}
                   title="Limpiar búsqueda"
-                  style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}
                 >
                   ✕
                 </button>
               )}
             </div>
 
-            <ul style={{ 
-              listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', 
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' 
-            }}>
+            <ul className="sc-x102">
               {columnasTabla.map((col, idx) => {
                 // Se conserva el índice real (idx) para que arrastrar y marcar/desmarcar
                 // sigan funcionando; solo ocultamos los que no coinciden con la búsqueda.
@@ -2472,7 +2452,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                     }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                    <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                    <input className="sc-x103" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                     <span style={{ color: col.visible ? '#c9d1d9' : '#8b949e', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.label}</span>
                   </li>
                 );
@@ -2480,39 +2460,39 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
             </ul>
 
             {busquedaColumnas.trim() && !columnasTabla.some(c => c.label.toLowerCase().includes(busquedaColumnas.trim().toLowerCase())) && (
-              <div style={{ color: '#8b949e', fontSize: '0.85rem', textAlign: 'center', padding: '20px' }}>
+              <div className="sc-x104">
                 No hay columnas que coincidan con "{busquedaColumnas}".
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => { setModalColumnas(false); setBusquedaColumnas(''); }} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="sc-x105">
+              <button className="sc-x106" onClick={() => { setModalColumnas(false); setBusquedaColumnas(''); }}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
       )}
 
       {operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 1500 }}>
-          <div className="form-card detail-card" style={{ maxWidth: '1100px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-overlay sc-x107">
+          <div className="form-card detail-card sc-x108">
             
-            <div className="form-header" style={{ padding: '24px 32px 16px 32px', borderBottom: 'none', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="form-header sc-x109">
+              <div className="sc-x110">
                 <div>
-                  <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.6rem', fontWeight: 600, letterSpacing: '-0.5px' }}>
+                  <h2 className="sc-x111">
                     Detalle de Operación Completada
                   </h2>
-                  <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '1.1rem', letterSpacing: '0.5px' }}>
+                  <div className="sc-x112">
+                    <span className="sc-x113">
                       {operacionViendo.ref || operacionViendo.id?.substring(0,6)}
                     </span>
-                    <span style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 'bold' }}>
+                    <span className="sc-x114">
                       {mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}
                     </span>
                   </div>
                 </div>
                 
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <div className="sc-x115">
                   <button onClick={() => setMostrarDocumentos(true)} title="Ver / Subir Documentos" style={{ ...btnSecondaryActionStyle, color: '#fb923c', borderColor: 'rgba(251, 146, 60, 0.4)' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
                     Documentos
@@ -2529,27 +2509,27 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                     Eliminar
                   </button>
-                  <div style={{ width: '1px', height: '24px', backgroundColor: '#30363d', margin: '0 8px' }}></div>
-                  <button onClick={() => setOperacionViendo(null)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', transition: '0.2s' }}>
+                  <div className="sc-x116"></div>
+                  <button className="sc-x117" onClick={() => setOperacionViendo(null)}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                   </button>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', paddingBottom: '4px' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>CONEXIONES</span>
-                <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>Diésel:</span>
-                {operacionViendo.referenciaDieselConsecutivo ? chipConexion(operacionViendo.referenciaDieselConsecutivo, '#f59e0b') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Sin cargar</span>}
-                <span style={{ color: '#8b949e', fontSize: '0.78rem', marginLeft: '8px' }}>Nómina:</span>
-                {operacionViendo.referenciaNominaConsecutivo ? chipConexion(operacionViendo.referenciaNominaConsecutivo, '#a371f7') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Sin pagar</span>}
-                <span style={{ color: '#8b949e', fontSize: '0.78rem', marginLeft: '8px' }}>Factura Cliente:</span>
-                {(operacionViendo.facturaClienteInvoice || operacionViendo.facturado) ? chipConexion(operacionViendo.facturaClienteInvoice || 'Facturada', '#10b981') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Pendiente</span>}
-                <span style={{ color: '#8b949e', fontSize: '0.78rem', marginLeft: '8px' }}>Factura Proveedor:</span>
-                {(operacionViendo.facturaProveedorFolio || operacionViendo.facturadoProveedor) ? chipConexion(operacionViendo.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span style={{ color: '#484f58', fontSize: '0.8rem' }}>Pendiente</span>}
+              <div className="sc-x118">
+                <span className="sc-x119">CONEXIONES</span>
+                <span className="sc-x53">Diésel:</span>
+                {operacionViendo.referenciaDieselConsecutivo ? chipConexion(operacionViendo.referenciaDieselConsecutivo, '#f59e0b') : <span className="sc-x120">Sin cargar</span>}
+                <span className="sc-x121">Nómina:</span>
+                {operacionViendo.referenciaNominaConsecutivo ? chipConexion(operacionViendo.referenciaNominaConsecutivo, '#a371f7') : <span className="sc-x120">Sin pagar</span>}
+                <span className="sc-x121">Factura Cliente:</span>
+                {(operacionViendo.facturaClienteInvoice || operacionViendo.facturado) ? chipConexion(operacionViendo.facturaClienteInvoice || 'Facturada', '#10b981') : <span className="sc-x120">Pendiente</span>}
+                <span className="sc-x121">Factura Proveedor:</span>
+                {(operacionViendo.facturaProveedorFolio || operacionViendo.facturadoProveedor) ? chipConexion(operacionViendo.facturaProveedorFolio || 'Facturada', '#58a6ff') : <span className="sc-x120">Pendiente</span>}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 0 10px 0', borderTop: '1px solid #30363d', flexWrap: 'wrap' }}>
-                <span style={{ color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', letterSpacing: '1px', marginRight: '4px' }}>SIGUIENTE PASO</span>
+              <div className="sc-x122">
+                <span className="sc-x119">SIGUIENTE PASO</span>
                 {botonesDisponibles.length > 0 ? (
                   <>
                     {botonesDisponibles.map((botonStr: string) => {
@@ -2563,9 +2543,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                             transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
                             opacity: guardandoStatusRapido && !esExitoso && guardandoStatusRapido !== botonStr ? 0.4 : 1, position: 'relative', overflow: 'hidden' }}
                           title={`Marcar como: ${botonStr}`}>
-                          <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span className="sc-x123">
                             {esExitoso ? (
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'pop 0.3s ease-out' }}>
+                              <svg className="sc-x124" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="20 6 9 17 4 12"></polyline>
                               </svg>
                             ) : (
@@ -2574,13 +2554,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                               </svg>
                             )}
                           </span>
-                          <span style={{ whiteSpace: 'nowrap' }}>{botonStr}</span>
+                          <span className="sc-x125">{botonStr}</span>
                         </button>
                       );
                     })}
-                    <button onClick={abrirRegistroHorario} className="status-circle-btn"
-                      style={{ width: 36, height: 36, borderRadius: '50%', background: '#21262d', border: '1px solid #30363d', color: '#8b949e',
-                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease', flexShrink: 0 }}
+                    <button onClick={abrirRegistroHorario} className="status-circle-btn sc-x126"
                       title="Registrar con fecha/hora distinta (retroactivo)">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -2592,15 +2570,12 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   </>
                 ) : (
                   <>
-                    <span style={{ color: '#8b949e', fontSize: '0.85rem', fontStyle: 'italic', marginRight: '8px' }}>
+                    <span className="sc-x127">
                       No hay transiciones automáticas configuradas.
                     </span>
-                    <button onClick={abrirRegistroHorario} className="status-pill"
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '10px', padding: '6px 18px 6px 6px', borderRadius: '999px', border: 'none',
-                        background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem',
-                        boxShadow: '0 4px 14px rgba(234, 88, 12, 0.35)', transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                    <button onClick={abrirRegistroHorario} className="status-pill sc-x128"
                       title="Registrar status manualmente">
-                      <span style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.22)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span className="sc-x129">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                           <line x1="12" y1="5" x2="12" y2="19"></line>
                           <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -2612,8 +2587,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 )}
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0', borderTop: '1px solid #30363d', marginTop: '4px', flexWrap: 'wrap' }}>
-                <span style={{ display: 'block', fontSize: '0.75rem', color: '#8b949e', fontWeight: 'bold', letterSpacing: '0.5px', marginRight: '8px' }}>GENERAR DOCUMENTOS:</span>
+              <div className="sc-x130">
+                <span className="sc-x131">GENERAR DOCUMENTOS:</span>
                 
                 {evalIsFletes && (
                   <>
@@ -2644,7 +2619,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
             </div>
             
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 32px', overflowX: 'auto', flexShrink: 0 }}>
+            <div className="sc-x132">
               {tabsDetalle.map(tab => (
                 <button
                   key={tab.id}
@@ -2667,58 +2642,58 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               ))}
             </div>
 
-            <div className="detail-content" style={{ padding: '24px 32px', overflowY: 'auto', flex: 1 }}>
+            <div className="detail-content sc-x133">
               
               {pestañaDetalleActiva === 'general' && (
-                <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                <div className="sc-x134">
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Operación</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span>
+                    <span className="sc-x135">Tipo de Operación</span>
+                    <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', operacionViendo.tipoOperacionNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Servicio / Status</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.fechaServicio)} <span style={{color: '#30363d', margin: '0 8px'}}>|</span> <span style={{color: '#10b981', fontWeight: 'bold'}}>{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span>
+                    <span className="sc-x135">Fecha de Servicio / Status</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.fechaServicio)} <span className="sc-x137">|</span> <span className="sc-x2">{mostrarDatoMapeado(operacionViendo.status, 'statusServicio', 'nombre', operacionViendo.statusNombre)}</span></span>
                   </div>
                   
                   {evalIsFletes ? (
                      <div>
-                       <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Cita</span>
-                       <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatearFechaHora(operacionViendo.fechaCita)}</span>
+                       <span className="sc-x135">Fecha de Cita</span>
+                       <span className="sc-x136">{formatearFechaHora(operacionViendo.fechaCita)}</span>
                      </div>
                   ) : (
                     <div></div> 
                   )}
 
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+                  <div className="sc-x138"><hr className="sc-x139" /></div>
 
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Paga)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span>
+                    <span className="sc-x140">Cliente (Paga)</span>
+                    <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.clientePaga || operacionViendo.clienteId, 'empresas', 'nombre', operacionViendo.clienteNombre || operacionViendo.nombreCliente)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio (Tarifa)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span> 
+                    <span className="sc-x140">Convenio (Tarifa)</span>
+                    <span className="sc-x136">{obtenerNombreConvenioCliente(operacionViendo.convenio, operacionViendo.convenioNombre)}</span> 
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Remolque</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre || operacionViendo.remolquePlaca)}</span>
+                    <span className="sc-x140"># de Remolque</span>
+                    <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.numeroRemolque, 'remolques', 'nombre', operacionViendo.remolqueNombre || operacionViendo.remolquePlaca)}</span>
                   </div>
                   
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Ref Cliente</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.refCliente)}</span>
+                    <span className="sc-x140">Ref Cliente</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.refCliente)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Origen</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span>
+                    <span className="sc-x141">Origen</span>
+                    <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Destino</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span>
+                    <span className="sc-x141">Destino</span>
+                    <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span>
                   </div>
-                  <div style={{ gridColumn: '1 / -1', marginTop: '8px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Observaciones Ejecutivo</span>
-                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
+                  <div className="sc-x142">
+                    <span className="sc-x140">Observaciones Ejecutivo</span>
+                    <div className="sc-x143">
                       {mostrarDato(operacionViendo.observacionesEjecutivo)}
                     </div>
                   </div>
@@ -2726,193 +2701,193 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               )}
 
               {pestañaDetalleActiva === 'pedimento' && (
-                <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-                  <div style={{ gridColumn: 'span 2' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cliente (Mercancía)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas', 'nombre', operacionViendo.clienteMercanciaNombre)}</span>
+                <div className="sc-x134">
+                  <div className="sc-x144">
+                    <span className="sc-x140">Cliente (Mercancía)</span>
+                    <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas', 'nombre', operacionViendo.clienteMercanciaNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Descripción de la Mercancía</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.descripcionMercancia)}</span>
+                    <span className="sc-x140">Descripción de la Mercancía</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.descripcionMercancia)}</span>
                   </div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+                  <div className="sc-x138"><hr className="sc-x139" /></div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad (Enteros)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantidad)}</span>
-                  </div>
-                  <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Embalaje</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.embalaje, 'embalajes', 'clave', operacionViendo.embalajeNombre)}</span>
+                    <span className="sc-x140">Cantidad (Enteros)</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.cantidad)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Peso (Kg) Decimales</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.pesoKg)}</span>
-                  </div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
-                  <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># DODA</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.numDoda)}</span>
+                    <span className="sc-x140">Embalaje</span>
+                    <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.embalaje, 'embalajes', 'clave', operacionViendo.embalajeNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Fecha de Emisión (DODA)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.fechaEmisionDoda)}</span>
+                    <span className="sc-x140">Peso (Kg) Decimales</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.pesoKg)}</span>
+                  </div>
+                  <div className="sc-x138"><hr className="sc-x139" /></div>
+                  <div>
+                    <span className="sc-x140"># DODA</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.numDoda)}</span>
+                  </div>
+                  <div>
+                    <span className="sc-x140">Fecha de Emisión (DODA)</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.fechaEmisionDoda)}</span>
                   </div>
                 </div>
               )}
 
               {pestañaDetalleActiva === 'manifiestos' && (
-                <div style={{ animation: 'fadeIn 0.2s ease', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+                <div className="sc-x134">
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># de Entry's</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.numeroEntrys)}</span>
+                    <span className="sc-x140"># de Entry's</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.numeroEntrys)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cantidad de Entry's</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.cantEntrys)}</span>
+                    <span className="sc-x140">Cantidad de Entry's</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.cantEntrys)}</span>
                   </div>
-                  <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '8px 0' }} /></div>
+                  <div className="sc-x138"><hr className="sc-x139" /></div>
                   
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}># Manifiesto</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.numManifiesto)}</span>
+                    <span className="sc-x140"># Manifiesto</span>
+                    <span className="sc-x136">{mostrarDato(operacionViendo.numManifiesto)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Servicios</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.provServicios, 'empresas', 'nombre', operacionViendo.provServiciosNombre)}</span>
+                    <span className="sc-x140">Proveedor de Servicios</span>
+                    <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.provServicios, 'empresas', 'nombre', operacionViendo.provServiciosNombre)}</span>
                   </div>
                   <div>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Costo Manifiesto ($)</span>
-                    <span style={{ color: '#c9d1d9', fontWeight: 'bold', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.montoManifiesto)}</span>
+                    <span className="sc-x140">Costo Manifiesto ($)</span>
+                    <span className="sc-x145">{formatoMoneda(operacionViendo.montoManifiesto)}</span>
                   </div>
                 </div>
               )}
 
               {pestañaDetalleActiva === 'unidad' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                    <div style={{ gridColumn: 'span 3' }}>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Proveedor de Transporte</span>
-                      <span style={{ color: '#58a6ff', fontWeight: 'bold', fontSize: '1.1rem' }}>{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span>
+                <div className="sc-x146">
+                  <div className="sc-x147">
+                    <div className="sc-x138">
+                      <span className="sc-x140">Proveedor de Transporte</span>
+                      <span className="sc-x148">{mostrarDatoMapeado(operacionViendo.proveedorUnidad, 'empresas', 'nombre', operacionViendo.proveedorUnidadNombre)}</span>
                     </div>
                   </div>
 
-                  <div style={{ backgroundColor: '#161b22', padding: '20px', borderRadius: '12px', border: '1px solid #30363d', marginBottom: '24px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '16px' }}>
+                  <div className="sc-x149">
+                    <div className="sc-x150">
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Facturado En:</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span>
+                        <span className="sc-x140">Facturado En:</span>
+                        <span className="sc-x136">{mostrarMoneda(operacionViendo.facturadoEnUnidad)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Proveedor</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span>
+                        <span className="sc-x140">Convenio Proveedor</span>
+                        <span className="sc-x136">{obtenerNombreConvenioProv(operacionViendo.convenioProveedor, operacionViendo.convenioProveedorNombre)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Moneda del Convenio (Base)</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span>
+                        <span className="sc-x140">Moneda del Convenio (Base)</span>
+                        <span className="sc-x136">{mostrarMoneda(operacionViendo.monedaConvenioProv)}</span>
                       </div>
                     </div>
                     
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d', marginBottom: '16px' }}>
+                    <div className="sc-x151">
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Monto a Pagar (Base)</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.totalAPagarProv)}</span>
+                        <span className="sc-x140">Monto a Pagar (Base)</span>
+                        <span className="sc-x136">{formatoMoneda(operacionViendo.totalAPagarProv)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Costos Adicionales</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.cargosAdicionalesProv)}</span>
+                        <span className="sc-x140">Costos Adicionales</span>
+                        <span className="sc-x136">{formatoMoneda(operacionViendo.cargosAdicionalesProv)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Subtotal (Convenio + Costos)</span>
-                        <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.subtotalProv)}</span>
+                        <span className="sc-x135">Subtotal (Convenio + Costos)</span>
+                        <span className="sc-x152">{formatoMoneda(operacionViendo.subtotalProv)}</span>
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingTop: '16px', borderTop: '1px solid #30363d' }}>
+                    <div className="sc-x153">
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Dólares</span>
-                        <span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.dolaresProv)}</span>
+                        <span className="sc-x140">Dólares</span>
+                        <span className="sc-x154">{formatoMoneda(operacionViendo.dolaresProv)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Pesos</span>
-                        <span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.pesosProv)}</span>
+                        <span className="sc-x140">Pesos</span>
+                        <span className="sc-x154">{formatoMoneda(operacionViendo.pesosProv)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#f85149', fontWeight: 'bold', marginBottom: '4px' }}>Conversión Final (Gasto)</span>
-                        <span style={{ color: '#f85149', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.conversionProv)}</span>
+                        <span className="sc-x155">Conversión Final (Gasto)</span>
+                        <span className="sc-x156">{formatoMoneda(operacionViendo.conversionProv)}</span>
                       </div>
                     </div>
                   </div>
 
                   {showDetailInternalFleet && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                      <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#f0f6fc', margin: '0 0 8px 0' }}>Flota Operativa (Roelca)</h4></div>
+                    <div className="sc-x147">
+                      <div className="sc-x138"><h4 className="sc-x157">Flota Operativa (Roelca)</h4></div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Asignada</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span>
+                        <span className="sc-x140">Unidad Asignada</span>
+                        <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.unidad, 'unidades', 'unidad', operacionViendo.unidadNombre)}</span>
                       </div>
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Operador Asignado</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span>
+                      <div className="sc-x144">
+                        <span className="sc-x140">Operador Asignado</span>
+                        <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.operador, 'empleados', 'nombre', operacionViendo.operadorNombre)}</span>
                       </div>
                       
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
+                      <div className="sc-x138"><hr className="sc-x158" /></div>
 
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo del Operador</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.sueldoOperador)}</span>
+                        <span className="sc-x140">Sueldo del Operador</span>
+                        <span className="sc-x136">{formatoMoneda(operacionViendo.sueldoOperador)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo Extra</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.sueldoExtra)}</span>
+                        <span className="sc-x140">Sueldo Extra</span>
+                        <span className="sc-x136">{formatoMoneda(operacionViendo.sueldoExtra)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Sueldo Total</span>
-                        <span style={{ color: '#f0f6fc', fontWeight: 'bold', backgroundColor: '#161b22', padding: '6px 10px', borderRadius: '4px', border: '1px solid #30363d', display: 'inline-block' }}>{formatoMoneda(operacionViendo.sueldoTotal)}</span>
+                        <span className="sc-x135">Sueldo Total</span>
+                        <span className="sc-x159">{formatoMoneda(operacionViendo.sueldoTotal)}</span>
                       </div>
 
-                      <div style={{ gridColumn: 'span 3' }}><hr style={{ borderColor: '#30363d', margin: '0' }} /></div>
+                      <div className="sc-x138"><hr className="sc-x158" /></div>
 
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Combustible</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.combustible)}</span>
+                        <span className="sc-x140">Combustible</span>
+                        <span className="sc-x136">{formatoMoneda(operacionViendo.combustible)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Combustible Extra</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.combustibleExtra)}</span>
+                        <span className="sc-x140">Combustible Extra</span>
+                        <span className="sc-x136">{formatoMoneda(operacionViendo.combustibleExtra)}</span>
                       </div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Total Combustible</span>
-                        <span style={{ color: '#f0f6fc', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.combustibleTotal)}</span>
+                        <span className="sc-x135">Total Combustible</span>
+                        <span className="sc-x152">{formatoMoneda(operacionViendo.combustibleTotal)}</span>
                       </div>
                     </div>
                   )}
 
                   {showDetailExternalFleet && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
-                      <div style={{ gridColumn: 'span 3' }}><h4 style={{ color: '#58a6ff', margin: '0 0 8px 0' }}>Flota Externa (Proveedor)</h4></div>
+                    <div className="sc-x147">
+                      <div className="sc-x138"><h4 className="sc-x160">Flota Externa (Proveedor)</h4></div>
                       <div>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Unidad Externa</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.unidadProveedor, 'unidades_proveedor', 'numeroUnidad', operacionViendo.unidadProveedorNombre)}</span>
+                        <span className="sc-x141">Unidad Externa</span>
+                        <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.unidadProveedor, 'unidades_proveedor', 'numeroUnidad', operacionViendo.unidadProveedorNombre)}</span>
                       </div>
-                      <div style={{ gridColumn: 'span 2' }}>
-                        <span style={{ display: 'block', fontSize: '0.8rem', color: '#58a6ff', fontWeight: 'bold', marginBottom: '4px' }}>Operador Externo</span>
-                        <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDatoMapeado(operacionViendo.operadorProveedor, 'proveedores_unidad', 'nombre', operacionViendo.operadorProveedorNombre)}</span>
+                      <div className="sc-x144">
+                        <span className="sc-x141">Operador Externo</span>
+                        <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.operadorProveedor, 'proveedores_unidad', 'nombre', operacionViendo.operadorProveedorNombre)}</span>
                       </div>
                     </div>
                   )}
 
                   {/* ✅ Observaciones ARRIBA del bloque de gastos (a petición) */}
-                  <div style={{ marginTop: '24px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '8px' }}>Observaciones (Unidad / Proveedor)</span>
-                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
+                  <div className="sc-x161">
+                    <span className="sc-x162">Observaciones (Unidad / Proveedor)</span>
+                    <div className="sc-x163">
                       {mostrarDato(operacionViendo.observacionesUnidad)}
                     </div>
                   </div>
 
-                  <div style={{ gridColumn: 'span 3', marginTop: '20px' }}>
-                    <div style={{ backgroundColor: '#0d1117', border: '1px solid #f85149', padding: '20px', borderRadius: '8px', textAlign: 'center' }}>
-                      <div style={{ color: '#8b949e', fontSize: '0.85rem', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Total Gastos [Sueldos + Manifiesto]</div>
-                      <div style={{ color: '#f85149', fontSize: '2rem', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.totalGastos)}</div>
+                  <div className="sc-x164">
+                    <div className="sc-x165">
+                      <div className="sc-x166">Total Gastos [Sueldos + Manifiesto]</div>
+                      <div className="sc-x167">{formatoMoneda(operacionViendo.totalGastos)}</div>
                     </div>
                   </div>
 
@@ -2920,57 +2895,57 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               )}
 
               {pestañaDetalleActiva === 'cobrar' && (
-                <div style={{ animation: 'fadeIn 0.2s ease' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '24px' }}>
+                <div className="sc-x146">
+                  <div className="sc-x147">
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Facturado En:</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.facturadoEnCobrar)}</span>
+                      <span className="sc-x140">Facturado En:</span>
+                      <span className="sc-x136">{mostrarMoneda(operacionViendo.facturadoEnCobrar)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Moneda Convenio (Cliente)</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarMoneda(operacionViendo.monedaConvenioCliente)}</span>
+                      <span className="sc-x140">Moneda Convenio (Cliente)</span>
+                      <span className="sc-x136">{mostrarMoneda(operacionViendo.monedaConvenioCliente)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Convenio Seleccionado (Base)</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.montoConvenioCliente)}</span>
+                      <span className="sc-x140">Convenio Seleccionado (Base)</span>
+                      <span className="sc-x136">{formatoMoneda(operacionViendo.montoConvenioCliente)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Cargos Adicionales</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{formatoMoneda(operacionViendo.cargosAdicionales)}</span>
+                      <span className="sc-x140">Cargos Adicionales</span>
+                      <span className="sc-x136">{formatoMoneda(operacionViendo.cargosAdicionales)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Subtotal (Convenio + Cargos)</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.subtotalCliente)}</span>
+                      <span className="sc-x135">Subtotal (Convenio + Cargos)</span>
+                      <span className="sc-x168">{formatoMoneda(operacionViendo.subtotalCliente)}</span>
                     </div>
                     <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Tipo de Cambio del Día</span>
-                      <span style={{ color: '#c9d1d9', fontWeight: '500', fontSize: '1.05rem' }}>{mostrarDato(operacionViendo.tipoCambioAprobado)}</span>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', paddingBottom: '24px', borderBottom: '1px solid #30363d' }}>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Dólares (Cliente)</span>
-                      <span style={{ color: '#10b981', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.dolaresCliente)}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '4px' }}>Pesos (Cliente)</span>
-                      <span style={{ color: '#3b82f6', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.pesosCliente)}</span>
-                    </div>
-                    <div>
-                      <span style={{ display: 'block', fontSize: '0.8rem', color: '#D84315', fontWeight: 'bold', marginBottom: '4px' }}>Conversión Final (Ingreso)</span>
-                      <span style={{ color: '#D84315', fontWeight: 'bold', fontSize: '1.1rem' }}>{formatoMoneda(operacionViendo.conversionCliente)}</span>
+                      <span className="sc-x140">Tipo de Cambio del Día</span>
+                      <span className="sc-x136">{mostrarDato(operacionViendo.tipoCambioAprobado)}</span>
                     </div>
                   </div>
 
-                  <div style={{ marginTop: '24px', padding: '24px', backgroundColor: '#0d1117', border: '1px solid #10b981', borderRadius: '12px', textAlign: 'center' }}>
-                    <span style={{ display: 'block', fontSize: '0.9rem', color: '#8b949e', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Utilidad Estimada de la Operación (Ingreso - Gasto)</span>
-                    <span style={{ fontSize: '2.5rem', color: '#10b981', fontWeight: 'bold' }}>{formatoMoneda(operacionViendo.utilidadEstimada)}</span>
+                  <div className="sc-x169">
+                    <div>
+                      <span className="sc-x140">Dólares (Cliente)</span>
+                      <span className="sc-x170">{formatoMoneda(operacionViendo.dolaresCliente)}</span>
+                    </div>
+                    <div>
+                      <span className="sc-x140">Pesos (Cliente)</span>
+                      <span className="sc-x154">{formatoMoneda(operacionViendo.pesosCliente)}</span>
+                    </div>
+                    <div>
+                      <span className="sc-x135">Conversión Final (Ingreso)</span>
+                      <span className="sc-x171">{formatoMoneda(operacionViendo.conversionCliente)}</span>
+                    </div>
                   </div>
 
-                  <div style={{ marginTop: '24px' }}>
-                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '8px' }}>Observaciones (Facturación / Cobro)</span>
-                    <div style={{ color: '#c9d1d9', fontWeight: '500', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', minHeight: '60px' }}>
+                  <div className="sc-x172">
+                    <span className="sc-x173">Utilidad Estimada de la Operación (Ingreso - Gasto)</span>
+                    <span className="sc-x174">{formatoMoneda(operacionViendo.utilidadEstimada)}</span>
+                  </div>
+
+                  <div className="sc-x161">
+                    <span className="sc-x162">Observaciones (Facturación / Cobro)</span>
+                    <div className="sc-x163">
                       {mostrarDato(operacionViendo.observacionesCobrar)}
                     </div>
                   </div>
@@ -2980,58 +2955,57 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
 
               {/* ✅ Auditoría de la referencia: botón que abre el detalle en un modal */}
-              <div style={{ margin: '24px 24px 12px', display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición"
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>
+              <div className="sc-x175">
+                <button className="sc-x176" onClick={() => { setMostrarAuditoria(true); cargarNombresAuditoria(); }} title="Ver quién creó la referencia, cuándo, y el detalle de cada edición">
                   🕓 Ver auditoría
-                  <span style={{ backgroundColor: '#f59e0b', color: '#0d1117', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem', fontWeight: 'bold' }}>{(operacionViendo.historialEdiciones || []).length}</span>
+                  <span className="sc-x177">{(operacionViendo.historialEdiciones || []).length}</span>
                 </button>
               </div>
 
               {/* ✅ Modal de auditoría (solo lectura) */}
               {mostrarAuditoria && (
-                <div onClick={() => setMostrarAuditoria(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.65)', zIndex: 1450, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(2px)' }}>
-                  <div onClick={(e) => e.stopPropagation()} style={{ width: '620px', maxWidth: '94%', maxHeight: '82vh', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #30363d' }}>
-                      <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>🕓 Auditoría de la referencia <span style={{ color: '#D84315', fontSize: '0.85rem', marginLeft: '8px' }}>{operacionViendo.ref || ''}</span></h3>
-                      <button onClick={() => setMostrarAuditoria(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+                <div className="sc-x178" onClick={() => setMostrarAuditoria(false)}>
+                  <div className="sc-x179" onClick={(e) => e.stopPropagation()}>
+                    <div className="sc-x180">
+                      <h3 className="sc-x181">🕓 Auditoría de la referencia <span className="sc-x182">{operacionViendo.ref || ''}</span></h3>
+                      <button className="sc-x97" onClick={() => setMostrarAuditoria(false)}>✕</button>
                     </div>
-                    <div style={{ padding: '18px 20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ color: '#8b949e', fontSize: '0.72rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Creación</span>
-                        <span style={{ color: '#c9d1d9', fontSize: '0.9rem' }}>
-                          Creada por <b style={{ color: '#58a6ff' }}>{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
-                          {operacionViendo.creadoEn ? <> el <b style={{ color: '#c9d1d9' }}>{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
+                    <div className="sc-x183">
+                      <div className="sc-x184">
+                        <span className="sc-x185">Creación</span>
+                        <span className="sc-x186">
+                          Creada por <b className="sc-x187">{nombreAuditor(operacionViendo.creadoPor, 'Sin registro')}</b>
+                          {operacionViendo.creadoEn ? <> el <b className="sc-x1">{fmtFechaAuditoria(operacionViendo.creadoEn)}</b></> : null}
                         </span>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ color: '#8b949e', fontSize: '0.82rem', fontWeight: 'bold' }}>EDICIONES REGISTRADAS:</span>
-                        <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>{(operacionViendo.historialEdiciones || []).length}</span>
+                      <div className="sc-x20">
+                        <span className="sc-x188">EDICIONES REGISTRADAS:</span>
+                        <span className="sc-x189">{(operacionViendo.historialEdiciones || []).length}</span>
                       </div>
                       {(operacionViendo.historialEdiciones || []).slice().reverse().map((h: any, i: number) => (
-                        <details key={i} open={i === 0} style={{ border: '1px solid #21262d', borderRadius: '8px', padding: '10px 14px', backgroundColor: '#010409' }}>
-                          <summary style={{ cursor: 'pointer', color: '#8b949e', fontSize: '0.85rem' }}>
-                            <b style={{ color: '#c9d1d9' }}>{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b style={{ color: '#f59e0b' }}>{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
+                        <details className="sc-x190" key={i} open={i === 0}>
+                          <summary className="sc-x191">
+                            <b className="sc-x1">{nombreAuditor(h.usuario)}</b> · {fmtFechaAuditoria(h.fecha)} · <b className="sc-x192">{(h.cambios || []).length}</b> {(h.cambios || []).length === 1 ? 'cambio' : 'cambios'}
                           </summary>
-                          <ul style={{ margin: '10px 0 2px 18px', padding: 0, color: '#8b949e', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <ul className="sc-x193">
                             {(h.cambios || []).map((c: any, j: number) => (<li key={j}>{String(c)}</li>))}
                           </ul>
                         </details>
                       ))}
                       {(operacionViendo.historialEdiciones || []).length === 0 && (
-                        <span style={{ color: '#6e7681', fontSize: '0.85rem' }}>Sin ediciones desde su creación.</span>
+                        <span className="sc-x194">Sin ediciones desde su creación.</span>
                       )}
                     </div>
-                    <div style={{ padding: '12px 20px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end' }}>
-                      <button onClick={() => setMostrarAuditoria(false)} style={{ padding: '9px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Cerrar</button>
+                    <div className="sc-x195">
+                      <button className="sc-x196" onClick={() => setMostrarAuditoria(false)}>Cerrar</button>
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="form-actions detail-actions" style={{ padding: '16px 32px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
-              <button onClick={() => setOperacionViendo(null)} className="btn btn-outline" style={{ padding: '10px 32px', borderRadius: '6px' }}>Cerrar Ficha</button>
+            <div className="form-actions detail-actions sc-x197">
+              <button onClick={() => setOperacionViendo(null)} className="btn btn-outline sc-x198">Cerrar Ficha</button>
             </div>
           </div>
         </div>
@@ -3039,27 +3013,27 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
       {/* ✅ Editor integrado DESHABILITADO: ahora "Editar" abre el FormularioOperacion completo */}
       {false && operacionEditando && (
-        <div className="modal-overlay" style={{ zIndex: 1600 }}>
-          <div className="form-card" style={{ maxWidth: '1000px', maxHeight: '90vh', backgroundColor: '#0d1117', border: '1px solid #58a6ff', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-overlay sc-x199">
+          <div className="form-card sc-x200">
 
-            <div className="form-header" style={{ padding: '20px 28px 12px 28px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div className="form-header sc-x201">
+              <div className="sc-x110">
                 <div>
-                  <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem', fontWeight: 600 }}>Editar Operación</h2>
-                  <div style={{ marginTop: '6px', color: '#58a6ff', fontWeight: 'bold', fontSize: '1.05rem' }}>
+                  <h2 className="sc-x202">Editar Operación</h2>
+                  <div className="sc-x203">
                     {operacionEditando.ref || operacionEditando.id?.substring(0,6)}
                   </div>
                 </div>
-                <button onClick={() => { setOperacionEditando(null); setFormEdicion({}); }} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', padding: '6px' }}>
+                <button className="sc-x204" onClick={() => { setOperacionEditando(null); setFormEdicion({}); }}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#fb923c' }}>
+              <div className="sc-x205">
                 Editor rápido: los campos relacionados a catálogos (Cliente, Convenio, Origen/Destino, Remolque, Proveedor, Monedas) y las conversiones por tipo de cambio se gestionan en "Operaciones Activas".
               </div>
             </div>
 
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', padding: '0 28px', overflowX: 'auto', flexShrink: 0 }}>
+            <div className="sc-x206">
               {tabsDetalle.map(tab => (
                 <button
                   key={tab.id}
@@ -3077,7 +3051,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               ))}
             </div>
 
-            <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1 }}>
+            <div className="sc-x207">
               {(() => {
                 const lblStyle: any = { display: 'block', fontSize: '0.75rem', color: '#8b949e', fontWeight: 'bold', marginBottom: '6px' };
                 const inputStyle: any = { width: '100%', padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' };
@@ -3103,7 +3077,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   </div>
                 );
                 const campoArea = (campo: string, label: string) => (
-                  <div style={{ gridColumn: 'span 3' }}>
+                  <div className="sc-x138">
                     <label style={lblStyle}>{label}</label>
                     <textarea value={formEdicion[campo] ?? ''} onChange={(e) => actualizarCampoEdicion(campo, e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
                   </div>
@@ -3178,8 +3152,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               })()}
             </div>
 
-            <div style={{ padding: '16px 28px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
-              <button onClick={() => { setOperacionEditando(null); setFormEdicion({}); }} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }} disabled={guardandoEdicion}>Cancelar</button>
+            <div className="sc-x208">
+              <button onClick={() => { setOperacionEditando(null); setFormEdicion({}); }} className="btn btn-outline sc-x209" disabled={guardandoEdicion}>Cancelar</button>
               <button
                 onClick={guardarEdicion}
                 disabled={guardandoEdicion}
@@ -3193,31 +3167,31 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       )}
 
       {modalHorarios === 'historial' && (
-        <div className="modal-overlay" style={{ zIndex: 2000 }}>
-          <div className="form-card" style={{ maxWidth: '650px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '20px 24px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f0f6fc' }}>Bitácora de Movimientos</h2>
+        <div className="modal-overlay sc-x210">
+          <div className="form-card sc-x211">
+            <div className="form-header sc-x212">
+              <h2 className="sc-x213">Bitácora de Movimientos</h2>
               <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
             </div>
-            <div style={{ padding: '24px', maxHeight: '60vh', overflowY: 'auto' }}>
+            <div className="sc-x214">
               {cargandoHorarios ? (
-                <div style={{ textAlign: 'center', color: '#8b949e', padding: '20px' }}>Descargando historial...</div>
+                <div className="sc-x215">Descargando historial...</div>
               ) : (
-                <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead style={{ backgroundColor: '#161b22', color: '#8b949e' }}>
+                <table className="data-table sc-x216">
+                  <thead className="sc-x217">
                     <tr>
-                      <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #30363d' }}>Fecha y Hora</th>
-                      <th style={{ padding: '12px', textAlign: 'left', borderBottom: '1px solid #30363d' }}>Estatus Marcado</th>
+                      <th className="sc-x218">Fecha y Hora</th>
+                      <th className="sc-x218">Estatus Marcado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {historialList.length === 0 ? (
-                      <tr><td colSpan={2} style={{ textAlign: 'center', padding: '20px', color: '#8b949e' }}>Sin movimientos registrados.</td></tr>
+                      <tr><td className="sc-x219" colSpan={2}>Sin movimientos registrados.</td></tr>
                     ) : (
                       historialList.map((h: any) => (
-                        <tr key={h.id} style={{ borderBottom: '1px solid #21262d' }}>
-                          <td style={{ padding: '16px 12px', color: '#c9d1d9' }}>{new Date(h.fechaHora).toLocaleString('es-MX')}</td>
-                          <td style={{ padding: '16px 12px', color: '#10b981', fontWeight: 'bold' }}>{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre')}</td>
+                        <tr className="sc-x220" key={h.id}>
+                          <td className="sc-x221">{new Date(h.fechaHora).toLocaleString('es-MX')}</td>
+                          <td className="sc-x222">{mostrarDatoMapeado(h.status, 'statusServicio', 'nombre')}</td>
                         </tr>
                       ))
                     )}
@@ -3225,30 +3199,30 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 </table>
               )}
             </div>
-            <div style={{ padding: '16px 24px', borderTop: '1px solid #30363d', textAlign: 'right', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar Historial</button>
+            <div className="sc-x223">
+              <button onClick={() => setModalHorarios('cerrado')} className="btn btn-outline sc-x209">Cerrar Historial</button>
             </div>
           </div>
         </div>
       )}
 
       {modalHorarios === 'registrar' && (
-        <div className="modal-overlay" style={{ zIndex: 2000 }}>
-          <div className="form-card" style={{ maxWidth: '450px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '20px 24px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#f0f6fc' }}>Registrar Movimiento (Fecha Personalizada)</h2>
+        <div className="modal-overlay sc-x210">
+          <div className="form-card sc-x224">
+            <div className="form-header sc-x212">
+              <h2 className="sc-x213">Registrar Movimiento (Fecha Personalizada)</h2>
               <button onClick={() => setModalHorarios('cerrado')} className="btn-window close">✕</button>
             </div>
-            <div style={{ padding: '24px' }}>
-              <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '16px' }}>
+            <div className="sc-x225">
+              <p className="sc-x98">
                 Usa este formulario solo si necesitas registrar un movimiento con una fecha y hora distinta a la actual.
               </p>
               <div className="form-group">
-                <label className="form-label" style={{ color: '#8b949e' }}>Fecha y Hora</label>
+                <label className="form-label sc-x3">Fecha y Hora</label>
                 <input type="datetime-local" className="form-control" value={nuevaFechaHora} onChange={e => setNuevaFechaHora(e.target.value)} />
               </div>
               <div className="form-group">
-                <label className="form-label" style={{ color: '#8b949e' }}>Estatus / Hito</label>
+                <label className="form-label sc-x3">Estatus / Hito</label>
                 <select className="form-control" value={nuevoStatus} onChange={e => setNuevoStatus(e.target.value)}>
                   <option value="">-- Selecciona un status --</option>
                   {botonesDisponibles.length > 0 ? (
@@ -3264,7 +3238,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   )}
                 </select>
               </div>
-              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary" style={{ width: '100%', marginTop: '24px', padding: '12px', borderRadius: '6px', fontWeight: 'bold' }}>
+              <button onClick={guardarHorario} disabled={cargandoHorarios} className="btn btn-primary sc-x226">
                 {cargandoHorarios ? 'Actualizando...' : 'Guardar y Actualizar Operación'}
               </button>
             </div>
@@ -3273,32 +3247,31 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       )}
 
       {mostrarDocumentos && operacionViendo && (
-        <div className="modal-overlay" style={{ zIndex: 2100 }}>
-          <div className="form-card" style={{ maxWidth: '760px', width: '95%', maxHeight: '88vh', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div className="form-header" style={{ borderBottom: '1px solid #30363d', padding: '18px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="modal-overlay sc-x227">
+          <div className="form-card sc-x228">
+            <div className="form-header sc-x229">
               <div>
-                <h2 style={{ margin: 0, fontSize: '1.15rem', color: '#f0f6fc' }}>Documentos de la Operación</h2>
-                <p style={{ margin: '4px 0 0 0', fontSize: '0.82rem', color: '#8b949e' }}>
-                  Referencia: <span style={{ color: '#fb923c', fontWeight: 600 }}>{refOperacionViendo}</span>
+                <h2 className="sc-x230">Documentos de la Operación</h2>
+                <p className="sc-x231">
+                  Referencia: <span className="sc-x232">{refOperacionViendo}</span>
                 </p>
               </div>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <button
+              <div className="sc-x233">
+                <button className="sc-x234"
                   type="button"
                   onClick={() => setMostrarSubirDocOp(true)}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem' }}
                 >
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                   Subir Documento
                 </button>
-                <button onClick={() => setMostrarDocumentos(false)} style={{ background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.3rem', lineHeight: 1 }} title="Cerrar">✕</button>
+                <button className="sc-x235" onClick={() => setMostrarDocumentos(false)} title="Cerrar">✕</button>
               </div>
             </div>
-            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+            <div className="sc-x236">
               <DocumentosLista coleccionOrigen="operaciones" registroId={operacionViendo.id} />
             </div>
-            <div style={{ padding: '14px 24px', borderTop: '1px solid #30363d', textAlign: 'right', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px' }}>
-              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline" style={{ padding: '10px 24px', borderRadius: '6px' }}>Cerrar</button>
+            <div className="sc-x237">
+              <button onClick={() => setMostrarDocumentos(false)} className="btn btn-outline sc-x209">Cerrar</button>
             </div>
           </div>
         </div>

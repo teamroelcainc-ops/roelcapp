@@ -5,6 +5,7 @@ import { collection, getDocs, query, where, limit } from 'firebase/firestore'; /
 import { db, actualizarRegistro } from '../../../config/firebase'; 
 import type { Moneda, CombustibleRecord } from '../../../types/combustible';
 import { getMonedasCatalogo, saveCombustible } from '../services/combustibleService';
+import './FormularioCombustible.css';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -30,7 +31,7 @@ const SearchableSelect: React.FC<{
   );
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div className="fc-x1">
       <input
         type="text"
         className="form-control"
@@ -53,20 +54,16 @@ const SearchableSelect: React.FC<{
       />
       
       {isOpen && (
-        <ul style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '200px', overflowY: 'auto',
-          backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px', padding: '0', margin: '4px 0 0 0', listStyle: 'none', zIndex: 1000, boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)'
-        }}>
+        <ul className="fc-x2">
           {filteredOptions.length > 0 ? (
             filteredOptions.map(opt => (
-              <li
+              <li className="fc-x3"
                 key={opt.id}
                 onClick={() => {
                   onChange(opt.id, opt.label);
                   setSearchTerm(opt.label);
                   setIsOpen(false);
                 }}
-                style={{ padding: '8px 12px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #21262d', fontSize: '0.85rem' }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
@@ -74,7 +71,7 @@ const SearchableSelect: React.FC<{
               </li>
             ))
           ) : (
-            <li style={{ padding: '8px 12px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+            <li className="fc-x4">
               No se encontraron coincidencias
             </li>
           )}
@@ -285,7 +282,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
 
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
-      <div className="form-card" style={{ maxWidth: '700px' }}>
+      <div className="form-card fc-x5">
         <div className="form-header">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? 'Editar Costo de Combustible' : 'Nuevo Costo de Combustible')}</h2>
           <div className="header-actions">
@@ -300,7 +297,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
 
         <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '10px 0' }}>
           <form onSubmit={handleSubmit}>
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div className="form-grid fc-x6">
               <div className="form-group">
                 <label className="form-label">Fecha *</label>
                 <input type="date" className="form-control" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
@@ -366,18 +363,18 @@ export const FormularioCombustible: React.FC<FormProps> = ({
                   </div>
                   <div className="form-group">
                     <label className="form-label orange">Total en Pesos MXN</label>
-                    <input type="number" className="form-control" value={totalPesos.toFixed(4)} disabled style={{ backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed' }} />
+                    <input type="number" className="form-control fc-x7" value={totalPesos.toFixed(4)} disabled />
                   </div>
                 </>
               )}
             </div>
 
-            <div className="form-actions" style={{ marginTop: '24px' }}>
+            <div className="form-actions fc-x8">
               <button type="button" onClick={onClose} className="btn btn-outline">Cancelar</button>
               <button type="submit" className="btn btn-primary" disabled={cargandoTC || (esDolar && tipoCambio === 0)}>Guardar</button>
             </div>
             {esDolar && tipoCambio === 0 && !cargandoTC && (
-              <p style={{ color: '#f85149', fontSize: '0.8rem', marginTop: '10px', textAlign: 'center' }}>
+              <p className="fc-x9">
                 ⚠️ Debes registrar primero el Tipo de Cambio para el día {fecha} en su respectivo módulo.
               </p>
             )}

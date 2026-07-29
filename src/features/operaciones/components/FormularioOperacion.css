@@ -1,0 +1,89 @@
+/* Estilos hermanos de FormularioOperacion.tsx — extraídos de estilos inline
+   estáticos (convención CLAUDE.md). Los style={{...}} que quedan en el .tsx
+   son dinámicos (runtime) y por regla permanecen inline. */
+
+.fo-x1 { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #8b949e; font-weight: 700; pointer-events: none; z-index: 2; font-size: 0.9rem; }
+.fo-x2 { display: block; flex-shrink: 0; }
+.fo-x3 { flex-shrink: 0; width: 38px; height: 38px; display: inline-flex; align-items: center; justify-content: center; background-color: rgba(251, 146, 60, 0.10); border: 1px solid rgba(251, 146, 60, 0.35); border-radius: 8px; color: #fb923c; cursor: pointer; transition: all 0.15s ease; }
+.fo-x4 { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #f85149; background-color: rgba(248,81,73,0.08); border: 1px solid rgba(248,81,73,0.35); border-radius: 6px; cursor: pointer; }
+.fo-x5 { display: none; }
+.fo-x6 { padding: 40px; text-align: center; color: #8b949e; }
+.fo-x7 { display: flex; gap: 8px; }
+.fo-x8 { font-size: 0.82rem; font-weight: 600; }
+.fo-x9 { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.fo-x10 { opacity: 0.6; cursor: not-allowed; }
+.fo-x11 { color: #58a6ff; }
+.fo-x12 { position: absolute; top: 100%; left: 0; right: 0; background-color: #161b22; border: 1px solid #30363d; z-index: 10; max-height: 200px; overflow-y: auto; }
+.fo-x13 { padding: 8px; color: #8b949e; }
+.fo-x14 { padding: 8px; cursor: pointer; border-bottom: 1px solid #21262d; }
+.fo-x15 { font-weight: bold; color: #c9d1d9; }
+.fo-x16 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fo-x17 { margin: 0; }
+.fo-x18 { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; font-size: 0.7rem; font-weight: 600; color: #58a6ff; background-color: rgba(88,166,255,0.10); border: 1px solid rgba(88,166,255,0.35); border-radius: 6px; cursor: pointer; }
+.fo-x19 { position: relative; }
+.fo-x20 { font-size: 0.72rem; color: #3fb950; font-family: monospace; margin-top: 1px; }
+.fo-x21 { color: #8b949e; }
+.fo-x22 { opacity: 0.75; cursor: not-allowed; }
+.fo-x23 { font-weight: bold; color: #c9d1d9; display: flex; align-items: center; gap: 8px; }
+.fo-x24 { grid-column: 1 / -1; }
+.fo-x25 { margin-top: 14px; }
+.fo-x26 { color: #fb923c; }
+.fo-x27 { flex: 1; min-width: 0; }
+.fo-x28 { opacity: 0.9; color: #58a6ff; }
+.fo-x29 { opacity: 0.9; color: #3fb950; }
+.fo-x30 { padding: 20px; }
+.fo-x31 { background: linear-gradient(135deg, rgba(88,166,255,0.08), rgba(88,166,255,0.02)); border: 1px solid rgba(88,166,255,0.3); }
+.fo-x32 { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.fo-x33 { background-color: rgba(88,166,255,0.1); color: #58a6ff; border-color: rgba(88,166,255,0.25); }
+.fo-x34 { color: #e6edf3; font-size: 1rem; font-weight: 700; }
+.fo-x35 { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(88,166,255,0.18); }
+.fo-x36 { font-size: 0.68rem; color: #7d8590; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 6px; }
+.fo-x37 { width: 14px; display: inline-flex; }
+.fo-x38 { color: #f0a3a0; font-size: 0.82rem; line-height: 1.4; }
+.fo-x39 { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(63,185,80,0.18); }
+.fo-x40 { align-items: flex-start; }
+.fo-x41 { color: #e6edf3; text-align: right; max-width: 62%; line-height: 1.3; }
+.fo-x42 { display: block; font-size: 0.66rem; color: #7d8590; font-family: monospace; font-weight: 400; margin-top: 2px; }
+.fo-x43 { border-top: 1px solid #1f2733; margin-top: 4px; padding-top: 8px; }
+.fo-x44 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.fo-x45 { position: fixed; bottom: 20px; right: 20px; background-color: #0d1117; border: 1px solid #fb923c; border-radius: 10px; padding: 12px 18px; cursor: pointer; pointer-events: auto; display: flex; align-items: center; gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.4); z-index: 1000; }
+.fo-x46 { color: #e6edf3; font-size: 0.85rem; font-weight: 600; }
+.fo-x47 { z-index: 1100; }
+.fo-x48 { width: min(820px, 94vw); max-height: 88vh; display: flex; flex-direction: column; background-color: #0d1117; border: 1px solid #1f2733; border-radius: 12px; overflow: hidden; }
+.fo-x49 { padding: 18px 22px; border-bottom: 1px solid #1f2733; display: flex; align-items: center; justify-content: space-between; }
+.fo-x50 { margin: 0; color: #f0f6fc; font-size: 1.1rem; font-weight: 700; }
+.fo-x51 { margin: 3px 0 0; color: #7d8590; font-size: 0.8rem; }
+.fo-x52 { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 0.82rem; font-weight: 600; color: #fff; background: linear-gradient(180deg, #ea580c, #c2410c); border: none; border-radius: 8px; cursor: pointer; }
+.fo-x53 { overflow-y: auto; padding: 8px 0; }
+.fo-x54 { padding: 30px; text-align: center; color: #8b949e; }
+.fo-x55 { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.fo-x56 { color: #7d8590; text-align: left; }
+.fo-x57 { padding: 8px 16px; font-weight: 600; }
+.fo-x58 { padding: 8px 16px; font-weight: 600; text-align: right; }
+.fo-x59 { border-top: 1px solid #1f2733; color: #c9d1d9; }
+.fo-x60 { padding: 10px 16px; font-weight: 600; }
+.fo-x61 { padding: 10px 16px; text-align: right; color: #3fb950; font-family: monospace; }
+.fo-x62 { padding: 10px 16px; text-align: right; white-space: nowrap; }
+.fo-x63 { background: transparent; border: 1px solid #2d333b; color: #58a6ff; border-radius: 6px; padding: 5px 8px; cursor: pointer; margin-right: 6px; }
+.fo-x64 { background: transparent; border: 1px solid rgba(248,81,73,0.35); color: #f85149; border-radius: 6px; padding: 5px 8px; cursor: pointer; }
+.fo-x65 { z-index: 1200; }
+.fo-x66 { width: min(520px, 94vw); background-color: #0d1117; border: 1px solid #1f2733; border-radius: 12px; overflow: hidden; }
+.fo-x67 { margin: 0; color: #f0f6fc; font-size: 1.05rem; font-weight: 700; }
+.fo-x68 { padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; }
+.fo-x69 { padding: 16px 22px; border-top: 1px solid #1f2733; display: flex; justify-content: flex-end; gap: 10px; }
+.fo-x70 { width: auto; padding: 10px 16px; }
+.fo-x71 { width: auto; padding: 10px 18px; }
+
+/* MOBILE-DENSITY-AUTO */
+/* Reglas de densidad móvil generadas automáticamente. */
+@media (max-width: 640px) {
+  .fo-x6 { padding: 14px 12px; }
+  .fo-x7 { flex-wrap: wrap; }
+  .fo-x16 { flex-wrap: wrap; }
+  .fo-x23 { flex-wrap: wrap; }
+  .fo-x32 { flex-wrap: wrap; }
+  .fo-x45 { flex-wrap: wrap; }
+  .fo-x49 { flex-wrap: wrap; }
+  .fo-x54 { padding: 14px 12px; }
+  .fo-x69 { flex-wrap: wrap; }
+}

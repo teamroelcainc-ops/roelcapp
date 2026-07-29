@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, secondaryAuth } from '../../config/firebase';
-import { registrarLog } from '../../utils/logger'; 
+import { registrarLog } from '../../utils/logger';
+import './UsuariosDashboard.css'; 
 
 // Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
 // para que la foto pese pocos KB y quepa sin problema en el documento de Firestore.
@@ -218,75 +219,75 @@ export const UsuariosDashboard = () => {
   const inicialesDe = (user: any) => (user?.nombre ? user.nombre.substring(0, 2).toUpperCase() : 'US');
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '1.25rem', color: '#8b949e', margin: 0, fontWeight: '400' }}>
-          Configuración {'>'} <span style={{ color: '#f0f6fc', fontWeight: '600' }}>Gestión de Usuarios ({usuarios.length})</span>
+    <div className="module-container ud-x1">
+      <div className="ud-x2">
+        <h2 className="ud-x3">
+          Configuración {'>'} <span className="ud-x4">Gestión de Usuarios ({usuarios.length})</span>
         </h2>
         <button className="btn-primary" onClick={() => handleAbrirModal()}>+ Nuevo Usuario</button>
       </div>
 
-      <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto' }}>
-        <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-          <thead style={{ backgroundColor: '#161b22', borderBottom: '1px solid #30363d' }}>
+      <div className="table-container ud-x5">
+        <table className="data-table ud-x6">
+          <thead className="ud-x7">
             <tr>
-              <th style={{ padding: '16px', width: '220px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600' }}>ACCIONES</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600' }}>ESTADO</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600' }}>USUARIO</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600' }}>CORREO</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600' }}>ROLES ASIGNADOS</th>
-              <th style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600' }}>ÚLTIMO ACCESO</th>
+              <th className="ud-x8">ACCIONES</th>
+              <th className="ud-x9">ESTADO</th>
+              <th className="ud-x9">USUARIO</th>
+              <th className="ud-x9">CORREO</th>
+              <th className="ud-x9">ROLES ASIGNADOS</th>
+              <th className="ud-x9">ÚLTIMO ACCESO</th>
             </tr>
           </thead>
           <tbody>
             {usuarios.length === 0 ? (
-              <tr><td colSpan={6} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>No hay usuarios registrados.</td></tr>
+              <tr><td className="ud-x10" colSpan={6}>No hay usuarios registrados.</td></tr>
             ) : (
               usuarios.map(user => (
-                <tr key={user.id} style={{ borderBottom: '1px solid #21262d' }}>
-                  <td style={{ padding: '16px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                      <button onClick={() => handleAbrirModal(user)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px 10px', fontSize: '0.8rem' }}>Editar</button>
+                <tr className="ud-x11" key={user.id}>
+                  <td className="ud-x12">
+                    <div className="ud-x13">
+                      <button className="ud-x14" onClick={() => handleAbrirModal(user)}>Editar</button>
                       {/* BOTÓN NUEVO PARA VER SESIONES */}
-                      <button onClick={() => handleAbrirHistorial(user)} style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: 'pointer', padding: '6px 10px', fontSize: '0.8rem' }}>Sesiones</button>
-                      <button onClick={() => handleEliminar(user)} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px 10px', fontSize: '0.8rem' }}>Eliminar</button>
+                      <button className="ud-x15" onClick={() => handleAbrirHistorial(user)}>Sesiones</button>
+                      <button className="ud-x16" onClick={() => handleEliminar(user)}>Eliminar</button>
                     </div>
                   </td>
                   
-                  <td style={{ padding: '16px', textAlign: 'center' }}>
+                  <td className="ud-x12">
                     {user.isOnline ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#10b981', fontSize: '0.85rem', fontWeight: '500', backgroundColor: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: '12px' }}>
-                        <span style={{ width: '8px', height: '8px', backgroundColor: '#10b981', borderRadius: '50%', display: 'inline-block', boxShadow: '0 0 8px #10b981' }}></span>
+                      <span className="ud-x17">
+                        <span className="ud-x18"></span>
                         En línea
                       </span>
                     ) : (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#8b949e', fontSize: '0.85rem', fontWeight: '500', backgroundColor: 'rgba(139, 148, 158, 0.1)', padding: '4px 8px', borderRadius: '12px' }}>
-                        <span style={{ width: '8px', height: '8px', backgroundColor: '#8b949e', borderRadius: '50%', display: 'inline-block' }}></span>
+                      <span className="ud-x19">
+                        <span className="ud-x20"></span>
                         Desconectado
                       </span>
                     )}
                   </td>
 
-                  <td style={{ padding: '16px', color: '#f0f6fc', fontWeight: '600' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#D84315', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold', overflow: 'hidden', flexShrink: 0 }}>
+                  <td className="ud-x21">
+                    <div className="ud-x22">
+                      <div className="ud-x23">
                         {user.fotoPerfil
-                          ? <img src={user.fotoPerfil} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ? <img className="ud-x24" src={user.fotoPerfil} alt="" />
                           : inicialesDe(user)}
                       </div>
                       {user.nombre}
                     </div>
                   </td>
-                  <td style={{ padding: '16px', color: '#8b949e' }}>{user.email}</td>
-                  <td style={{ padding: '16px', color: '#c9d1d9' }}>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  <td className="ud-x25">{user.email}</td>
+                  <td className="ud-x26">
+                    <div className="ud-x27">
                       {user.roles?.map((r: string) => (
-                        <span key={r} style={{ backgroundColor: '#21262d', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', border: '1px solid #30363d', color: '#58a6ff' }}>{r}</span>
+                        <span className="ud-x28" key={r}>{r}</span>
                       ))}
                     </div>
                   </td>
 
-                  <td style={{ padding: '16px', color: '#8b949e', fontSize: '0.9rem' }}>
+                  <td className="ud-x29">
                     {formatearFecha(user.ultimoAcceso)}
                   </td>
                 </tr>
@@ -298,48 +299,47 @@ export const UsuariosDashboard = () => {
 
       {/* --- MODAL PARA EDITAR/CREAR USUARIO --- */}
       {modalAbierto && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)' }}>
-          <div className="form-card" style={{ maxWidth: '600px', width: '100%', borderRadius: '12px', border: '1px solid #444', backgroundColor: '#0d1117' }}>
-            <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: '1.25rem', color: '#f0f6fc', margin: 0, fontWeight: '500' }}>{usuarioActual ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
-              <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+        <div className="modal-overlay ud-x30">
+          <div className="form-card ud-x31">
+            <div className="form-header ud-x32">
+              <h2 className="ud-x33">{usuarioActual ? 'Editar Usuario' : 'Nuevo Usuario'}</h2>
+              <button className="ud-x34" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
             
-            <form onSubmit={handleGuardar} style={{ padding: '24px' }}>
+            <form className="ud-x35" onSubmit={handleGuardar}>
               {/* ✅ NUEVO: Foto de perfil */}
-              <div className="form-group" style={{ marginBottom: '24px' }}>
-                <label style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block', marginBottom: '12px' }}>Foto de Perfil</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div style={{ width: '64px', height: '64px', borderRadius: '50%', backgroundColor: '#D84315', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold', overflow: 'hidden', flexShrink: 0, border: '2px solid #30363d' }}>
+              <div className="form-group ud-x36">
+                <label className="ud-x37">Foto de Perfil</label>
+                <div className="ud-x38">
+                  <div className="ud-x39">
                     {fotoPerfil
-                      ? <img src={fotoPerfil} alt="Perfil" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ? <img className="ud-x24" src={fotoPerfil} alt="Perfil" />
                       : (nombre ? nombre.substring(0, 2).toUpperCase() : 'US')}
                   </div>
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <input ref={fileRef} type="file" accept="image/*" onChange={onArchivoFoto} style={{ display: 'none' }} />
-                    <button type="button" onClick={elegirFoto} style={{ padding: '8px 14px', backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>Elegir imagen</button>
+                  <div className="ud-x40">
+                    <input className="ud-x41" ref={fileRef} type="file" accept="image/*" onChange={onArchivoFoto} />
+                    <button className="ud-x42" type="button" onClick={elegirFoto}>Elegir imagen</button>
                     {fotoPerfil && (
-                      <button type="button" onClick={() => setFotoPerfil('')} style={{ padding: '8px 14px', background: 'none', color: '#ef4444', border: '1px solid #ef4444', borderRadius: '6px', cursor: 'pointer', fontSize: '0.82rem' }}>Quitar</button>
+                      <button className="ud-x43" type="button" onClick={() => setFotoPerfil('')}>Quitar</button>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+              <div className="ud-x44">
                 <div className="form-group">
-                  <label style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block', marginBottom: '8px' }}>Nombre Completo *</label>
+                  <label className="ud-x45">Nombre Completo *</label>
                   <input 
                     type="text" 
                     value={nombre} 
                     onChange={(e) => setNombre(e.target.value)} 
                     required 
-                    className="form-control" 
-                    style={{ backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', width: '100%', padding: '10px', borderRadius: '6px' }}
+                    className="form-control ud-x46"
                   />
                 </div>
 
                 <div className="form-group">
-                  <label style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block', marginBottom: '8px' }}>Correo Electrónico *</label>
+                  <label className="ud-x45">Correo Electrónico *</label>
                   <input 
                     type="email" 
                     value={email} 
@@ -353,30 +353,28 @@ export const UsuariosDashboard = () => {
               </div>
 
               {!usuarioActual && (
-                <div className="form-group" style={{ marginBottom: '24px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block', marginBottom: '8px' }}>Contraseña Temporal (Mín. 6 caracteres) *</label>
+                <div className="form-group ud-x36">
+                  <label className="ud-x45">Contraseña Temporal (Mín. 6 caracteres) *</label>
                   <input 
                     type="password" 
                     value={password} 
                     onChange={(e) => setPassword(e.target.value)} 
                     required 
                     minLength={6}
-                    className="form-control" 
-                    style={{ backgroundColor: '#010409', border: '1px solid #30363d', color: '#c9d1d9', width: '100%', padding: '10px', borderRadius: '6px' }}
+                    className="form-control ud-x46"
                   />
                 </div>
               )}
 
               <div className="form-group">
-                <label style={{ color: '#8b949e', fontSize: '0.85rem', display: 'block', marginBottom: '12px' }}>Roles del Usuario:</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
+                <label className="ud-x37">Roles del Usuario:</label>
+                <div className="ud-x47">
                   {rolesDisponibles.map(rol => (
-                    <label key={rol.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#c9d1d9', cursor: 'pointer', fontSize: '0.9rem' }}>
-                      <input 
+                    <label className="ud-x48" key={rol.id}>
+                      <input className="ud-x49" 
                         type="checkbox" 
                         checked={rolesAsignados.includes(rol.nombre)} 
-                        onChange={() => handleToggleRol(rol.nombre)} 
-                        style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
+                        onChange={() => handleToggleRol(rol.nombre)}
                       />
                       {rol.nombre}
                     </label>
@@ -384,9 +382,9 @@ export const UsuariosDashboard = () => {
                 </div>
               </div>
 
-              <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '20px' }}>
-                <button type="button" onClick={() => setModalAbierto(false)} style={{ backgroundColor: '#21262d', color: '#c9d1d9', border: '1px solid #30363d', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" disabled={cargando} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '6px', cursor: 'pointer' }}>
+              <div className="ud-x50">
+                <button className="ud-x51" type="button" onClick={() => setModalAbierto(false)}>Cancelar</button>
+                <button className="ud-x52" type="submit" disabled={cargando}>
                   {cargando ? 'Guardando...' : (usuarioActual ? 'Actualizar Usuario' : 'Crear Usuario')}
                 </button>
               </div>
@@ -397,37 +395,37 @@ export const UsuariosDashboard = () => {
 
       {/* --- MODAL PARA VER EL HISTORIAL DE SESIONES --- */}
       {historialAbierto && (
-        <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 1000 }}>
-          <div className="form-card" style={{ maxWidth: '650px', width: '100%', borderRadius: '12px', border: '1px solid #444', backgroundColor: '#0d1117', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-            <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="modal-overlay ud-x53">
+          <div className="form-card ud-x54">
+            <div className="form-header ud-x32">
               <div>
-                <h2 style={{ fontSize: '1.25rem', color: '#f0f6fc', margin: 0, fontWeight: '500' }}>Registro de Sesiones</h2>
-                <span style={{ color: '#8b949e', fontSize: '0.85rem' }}>{usuarioHistorial?.nombre} ({usuarioHistorial?.email})</span>
+                <h2 className="ud-x33">Registro de Sesiones</h2>
+                <span className="ud-x55">{usuarioHistorial?.nombre} ({usuarioHistorial?.email})</span>
               </div>
-              <button onClick={() => setHistorialAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }}>✕</button>
+              <button className="ud-x34" onClick={() => setHistorialAbierto(false)}>✕</button>
             </div>
             
-            <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+            <div className="ud-x56">
               {cargandoHistorial ? (
-                <div style={{ textAlign: 'center', color: '#8b949e', padding: '40px' }}>Consultando registros encriptados...</div>
+                <div className="ud-x57">Consultando registros encriptados...</div>
               ) : logsSesion.length === 0 ? (
-                <div style={{ textAlign: 'center', color: '#8b949e', padding: '40px' }}>Este usuario aún no tiene registros de inicio o cierre de sesión.</div>
+                <div className="ud-x57">Este usuario aún no tiene registros de inicio o cierre de sesión.</div>
               ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <table className="ud-x6">
                   <thead>
-                    <tr style={{ borderBottom: '1px solid #30363d' }}>
-                      <th style={{ padding: '12px 8px', color: '#8b949e', fontSize: '0.75rem', fontWeight: '600' }}>FECHA Y HORA</th>
-                      <th style={{ padding: '12px 8px', color: '#8b949e', fontSize: '0.75rem', fontWeight: '600' }}>ACCIÓN</th>
-                      <th style={{ padding: '12px 8px', color: '#8b949e', fontSize: '0.75rem', fontWeight: '600' }}>DETALLE</th>
+                    <tr className="ud-x58">
+                      <th className="ud-x59">FECHA Y HORA</th>
+                      <th className="ud-x59">ACCIÓN</th>
+                      <th className="ud-x59">DETALLE</th>
                     </tr>
                   </thead>
                   <tbody>
                     {logsSesion.map(log => (
-                      <tr key={log.id} style={{ borderBottom: '1px solid #21262d' }}>
-                        <td style={{ padding: '12px 8px', color: '#c9d1d9', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                      <tr className="ud-x11" key={log.id}>
+                        <td className="ud-x60">
                           {formatearFecha(log.fecha)}
                         </td>
-                        <td style={{ padding: '12px 8px' }}>
+                        <td className="ud-x61">
                           <span style={{ 
                             backgroundColor: log.accion === 'Inicio de Sesión' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)', 
                             color: log.accion === 'Inicio de Sesión' ? '#10b981' : '#ef4444', 
@@ -436,7 +434,7 @@ export const UsuariosDashboard = () => {
                             {log.accion}
                           </span>
                         </td>
-                        <td style={{ padding: '12px 8px', color: '#8b949e', fontSize: '0.85rem' }}>
+                        <td className="ud-x62">
                           {log.detalle}
                         </td>
                       </tr>

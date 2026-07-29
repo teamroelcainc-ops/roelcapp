@@ -5,6 +5,7 @@ import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebas
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion'; 
 import { registrarLog } from '../../../utils/logger'; 
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import './FormularioEmpresa.css';
 
 // Tipos de documento que se manejan para EMPRESAS / CLIENTES (edítalos a tu gusto)
 export const TIPOS_DOCUMENTO_EMPRESA = [
@@ -66,7 +67,7 @@ const MultiSelectCheckbox: React.FC<{
     : placeholder;
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+    <div className="fe-x1" ref={containerRef}>
       <div 
         onClick={() => setIsOpen(!isOpen)}
         className="form-control"
@@ -78,33 +79,24 @@ const MultiSelectCheckbox: React.FC<{
         }}
       >
         {/* Agregado overflow hidden para que textos muy largos no rompan la caja */}
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90%' }}>
+        <span className="fe-x2">
           {displayText}
         </span>
-        <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>{isOpen ? '▲' : '▼'}</span>
+        <span className="fe-x3">{isOpen ? '▲' : '▼'}</span>
       </div>
       
       {isOpen && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '250px', overflowY: 'auto',
-          backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px',
-          padding: '8px 0', zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.5)', display: 'flex', flexDirection: 'column'
-        }}>
+        <div className="fe-x4">
           {options.map(opt => (
-            <label 
-              key={opt} 
-              style={{ 
-                padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '10px', 
-                cursor: 'pointer', color: '#c9d1d9', fontSize: '0.9rem' 
-              }}
+            <label className="fe-x5" 
+              key={opt}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
-              <input 
+              <input className="fe-x6" 
                 type="checkbox" 
                 checked={selectedValues.includes(opt)}
                 onChange={() => handleToggle(opt)}
-                style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
               />
               {opt}
             </label>
@@ -156,14 +148,14 @@ const MultiSearchableSelect: React.FC<{
   const quitar = (id: string) => emitir(selectedIds.filter(x => x !== id));
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+    <div className="fe-x1" ref={containerRef}>
       {/* Chips de seleccionados */}
       {seleccionados.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+        <div className="fe-x7">
           {seleccionados.map(s => (
-            <span key={s.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '4px 10px', backgroundColor: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.4)', borderRadius: '14px', color: '#c9d1d9', fontSize: '0.8rem' }}>
+            <span className="fe-x8" key={s.id}>
               {s.label}
-              <button type="button" onClick={() => quitar(s.id)} title="Quitar" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', padding: 0, lineHeight: 1, fontSize: '0.9rem' }}>✕</button>
+              <button className="fe-x9" type="button" onClick={() => quitar(s.id)} title="Quitar">✕</button>
             </span>
           ))}
         </div>
@@ -180,42 +172,35 @@ const MultiSearchableSelect: React.FC<{
         }}
       >
         <span>{selectedIds.length > 0 ? `${selectedIds.length} cliente(s) seleccionado(s)` : placeholder}</span>
-        <span style={{ fontSize: '0.8rem', marginLeft: '8px' }}>{isOpen ? '▲' : '▼'}</span>
+        <span className="fe-x3">{isOpen ? '▲' : '▼'}</span>
       </div>
 
       {isOpen && (
-        <div style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '260px', overflowY: 'auto',
-          backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px',
-          zIndex: 1000, boxShadow: '0 4px 12px rgba(0,0,0,0.5)'
-        }}>
-          <div style={{ padding: '8px', borderBottom: '1px solid #21262d', position: 'sticky', top: 0, backgroundColor: '#161b22' }}>
-            <input
+        <div className="fe-x10">
+          <div className="fe-x11">
+            <input className="fe-x12"
               type="text"
               autoFocus
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Buscar cliente..."
-              style={{ width: '100%', padding: '8px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}
             />
           </div>
           {filtrados.length > 0 ? filtrados.map(opt => (
-            <label
+            <label className="fe-x5"
               key={opt.id}
-              style={{ padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', color: '#c9d1d9', fontSize: '0.9rem' }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
             >
-              <input
+              <input className="fe-x6"
                 type="checkbox"
                 checked={selectedIds.includes(opt.id)}
                 onChange={() => toggle(opt.id)}
-                style={{ accentColor: '#D84315', width: '16px', height: '16px', cursor: 'pointer' }}
               />
               {opt.label}
             </label>
           )) : (
-            <div style={{ padding: '8px 16px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+            <div className="fe-x13">
               No se encontraron coincidencias
             </div>
           )}
@@ -249,7 +234,7 @@ const SearchableSelect: React.FC<{
   );
 
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div className="fe-x1">
       <input
         type="text"
         className="form-control"
@@ -280,21 +265,16 @@ const SearchableSelect: React.FC<{
       />
       
       {isOpen && (
-        <ul style={{
-          position: 'absolute', top: '100%', left: 0, right: 0, maxHeight: '200px', overflowY: 'auto',
-          backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '4px', marginTop: '4px',
-          padding: '0', margin: '4px 0 0 0', listStyle: 'none', zIndex: 1000, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.5)'
-        }}>
+        <ul className="fe-x14">
           {filteredOptions.length > 0 ? (
             filteredOptions.map(opt => (
-              <li
+              <li className="fe-x15"
                 key={opt.id}
                 onClick={() => {
                   onChange(opt.id, opt.label);
                   setSearchTerm(opt.label);
                   setIsOpen(false);
                 }}
-                style={{ padding: '8px 12px', cursor: 'pointer', color: '#c9d1d9', borderBottom: '1px solid #21262d', fontSize: '0.85rem' }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
@@ -302,7 +282,7 @@ const SearchableSelect: React.FC<{
               </li>
             ))
           ) : (
-            <li style={{ padding: '8px 12px', color: '#8b949e', fontSize: '0.85rem', textAlign: 'center' }}>
+            <li className="fe-x16">
               No se encontraron coincidencias
             </li>
           )}
@@ -337,13 +317,13 @@ const ModalNuevoRegimen: React.FC<{ isOpen: boolean; onClose: () => void }> = ({
   };
 
   return (
-    <div className="modal-overlay" style={{ backdropFilter: 'blur(4px)', zIndex: 2000 }}>
-      <div className="form-card" style={{ maxWidth: '400px', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
-        <div className="form-header" style={{ padding: '20px', borderBottom: '1px solid #30363d' }}>
-          <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.1rem' }}>Nuevo Régimen Fiscal</h3>
-          <button onClick={onClose} className="close-x" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer' }}>✕</button>
+    <div className="modal-overlay fe-x17">
+      <div className="form-card fe-x18">
+        <div className="form-header fe-x19">
+          <h3 className="fe-x20">Nuevo Régimen Fiscal</h3>
+          <button onClick={onClose} className="close-x fe-x21">✕</button>
         </div>
-        <form onSubmit={handleSubmit} style={{ padding: '20px' }}>
+        <form className="fe-x22" onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label">Clave (Ej. 601) *</label>
             <input type="text" className="form-control" value={clave} onChange={e => setClave(e.target.value)} required />
@@ -352,9 +332,9 @@ const ModalNuevoRegimen: React.FC<{ isOpen: boolean; onClose: () => void }> = ({
             <label className="form-label">Descripción *</label>
             <input type="text" className="form-control" value={descripcion} onChange={e => setDescripcion(e.target.value)} required />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
-            <button type="button" onClick={onClose} className="btn btn-outline" style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={guardando} style={{ padding: '8px 16px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>{guardando ? 'Guardando...' : 'Guardar'}</button>
+          <div className="fe-x23">
+            <button type="button" onClick={onClose} className="btn btn-outline fe-x24">Cancelar</button>
+            <button type="submit" className="btn btn-primary fe-x25" disabled={guardando}>{guardando ? 'Guardando...' : 'Guardar'}</button>
           </div>
         </form>
       </div>
@@ -684,13 +664,13 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   return (
     <>
       <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`} style={{ zIndex: 1050 }}>
-        <div className="form-card" style={{ maxWidth: '850px', backgroundColor: '#0d1117', border: '1px solid #444', borderRadius: '12px' }}>
+        <div className="form-card fe-x26">
           
-          <div className="form-header" style={{ padding: '24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: '500', margin: 0, color: '#f0f6fc' }}>
+          <div className="form-header fe-x27">
+            <h2 className="fe-x28">
               {estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Empresa` : 'Nueva Empresa')}
             </h2>
-            <div className="header-actions" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <div className="header-actions fe-x29">
               <button
                 type="button"
                 onClick={() => { if (!initialData) { alert('Guarda la empresa primero para poder subir documentos.'); return; } setMostrarSubirDoc(true); }}
@@ -701,45 +681,45 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                 Subir Documentos
               </button>
               {estado === 'abierto' ? (
-                <button type="button" onClick={onMinimize} className="btn-window" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>🗕</button>
+                <button type="button" onClick={onMinimize} className="btn-window fe-x30">🗕</button>
               ) : (
-                <button type="button" onClick={onRestore} className="btn-window restore" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>🗖</button>
+                <button type="button" onClick={onRestore} className="btn-window restore fe-x30">🗖</button>
               )}
-              <button type="button" onClick={onClose} className="btn-window close" style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button type="button" onClick={onClose} className="btn-window close fe-x30">✕</button>
             </div>
           </div>
 
           <div style={{ display: estado === 'minimizado' ? 'none' : 'block' }}>
             
-            <div style={{ display: 'flex', borderBottom: '1px solid #30363d', backgroundColor: '#161b22', padding: '0 24px' }}>
+            <div className="fe-x31">
               <button type="button" onClick={() => setActiveTab('general')} style={tabStyle(activeTab === 'general')}>Información General</button>
               <button type="button" onClick={() => setActiveTab('fiscal')} style={tabStyle(activeTab === 'fiscal')}>Comercial / Fiscal</button>
               <button type="button" onClick={() => setActiveTab('contacto')} style={tabStyle(activeTab === 'contacto')}>Contacto</button>
             </div>
 
-            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
-              <div style={{ padding: '24px', maxHeight: '65vh', overflowY: 'auto' }}>
+            <form className="fe-x32" onSubmit={handleSubmit}>
+              <div className="fe-x33">
                 
                 {/* --- PESTAÑA 1: INFORMACIÓN GENERAL --- */}
                 <div style={{ display: activeTab === 'general' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
-                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                      <label className="form-label orange" style={{ color: '#D84315', display: 'block', marginBottom: '8px' }}># de Empresa (Automático)</label>
-                      <input type="text" className="form-control" value={formData.numCliente} disabled style={{ backgroundColor: '#21262d', color: '#8b949e', cursor: 'not-allowed', width: '150px', textAlign: 'center', fontWeight: 'bold', padding: '10px', border: '1px solid #30363d', borderRadius: '4px' }} />
+                  <div className="form-grid fe-x34">
+                    <div className="form-group fe-x35">
+                      <label className="form-label orange fe-x36"># de Empresa (Automático)</label>
+                      <input type="text" className="form-control fe-x37" value={formData.numCliente} disabled />
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Razón Social <span style={{ color: '#ff4d4d' }}>*</span></label>
-                      <input type="text" name="nombre" className="form-control" value={formData.nombre} onChange={handleChange} required style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                      <label className="form-label fe-x38">Razón Social <span className="fe-x39">*</span></label>
+                      <input type="text" name="nombre" className="form-control fe-x40" value={formData.nombre} onChange={handleChange} required />
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Nombre Corto / Alias</label>
-                      <input type="text" name="nombreCorto" className="form-control" value={formData.nombreCorto} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                      <label className="form-label fe-x38">Nombre Corto / Alias</label>
+                      <input type="text" name="nombreCorto" className="form-control fe-x40" value={formData.nombreCorto} onChange={handleChange} />
                     </div>
 
-                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Tipo(s) de Empresa <span style={{ color: '#ff4d4d' }}>*</span></label>
+                    <div className="form-group fe-x35">
+                      <label className="form-label fe-x38">Tipo(s) de Empresa <span className="fe-x39">*</span></label>
                       <MultiSelectCheckbox 
                         options={catalogoTiposEmpresa} 
                         selectedValues={formData.tiposEmpresa} 
@@ -749,8 +729,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     </div>
 
                     {formData.tiposEmpresa.includes('Proveedor (Servicios)') && (
-                      <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: 'rgba(216, 67, 21, 0.05)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(216, 67, 21, 0.2)' }}>
-                        <label className="form-label" style={{ color: '#D84315', display: 'block', marginBottom: '8px' }}>Servicios que Ofrece (Solo para Proveedores de Servicios)</label>
+                      <div className="form-group fe-x41">
+                        <label className="form-label fe-x36">Servicios que Ofrece (Solo para Proveedores de Servicios)</label>
                         <MultiSelectCheckbox 
                           options={catalogoTiposServicio} 
                           selectedValues={formData.tiposServicio} 
@@ -761,8 +741,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     )}
 
                     {formData.tiposEmpresa.includes('Cliente (Mercancía)') && (
-                      <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: 'rgba(59, 130, 246, 0.1)', padding: '16px', borderRadius: '8px', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
-                        <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Cliente(s) que Paga (Relacionados) *</label>
+                      <div className="form-group fe-x42">
+                        <label className="form-label fe-x43">Cliente(s) que Paga (Relacionados) *</label>
                         <MultiSearchableSelect 
                           options={opcionesClientesPaga}
                           selectedIds={formData.clienteRelacionadoIds}
@@ -773,13 +753,13 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     )}
 
                     <div className="form-group">
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>RFC / Tax ID <span style={{ color: '#ff4d4d' }}>*</span></label>
-                      <input type="text" name="rfcTaxId" className="form-control font-mono" value={formData.rfcTaxId} onChange={handleChange} required style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                      <label className="form-label fe-x38">RFC / Tax ID <span className="fe-x39">*</span></label>
+                      <input type="text" name="rfcTaxId" className="form-control font-mono fe-x40" value={formData.rfcTaxId} onChange={handleChange} required />
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Status</label>
-                      <select name="status" className="form-control" value={formData.status} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}>
+                      <label className="form-label fe-x38">Status</label>
+                      <select name="status" className="form-control fe-x40" value={formData.status} onChange={handleChange}>
                         <option value="Activa">Activa</option>
                         <option value="Inactiva">Inactiva</option>
                         <option value="Baja">Baja</option>
@@ -787,14 +767,14 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     </div>
 
                     {formData.status === 'Baja' && (
-                      <div style={{ gridColumn: 'span 2', backgroundColor: 'rgba(239, 68, 68, 0.05)', padding: '16px', borderRadius: '8px', border: '1px dashed #ef4444', display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '16px' }}>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" style={{ color: '#ef4444', display: 'block', marginBottom: '8px' }}>Fecha de Baja *</label>
-                          <input type="date" name="fechaBaja" className="form-control" value={formData.fechaBaja} onChange={handleChange} required style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                      <div className="fe-x44">
+                        <div className="form-group fe-x45">
+                          <label className="form-label fe-x46">Fecha de Baja *</label>
+                          <input type="date" name="fechaBaja" className="form-control fe-x40" value={formData.fechaBaja} onChange={handleChange} required />
                         </div>
-                        <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" style={{ color: '#ef4444', display: 'block', marginBottom: '8px' }}>Observaciones de Baja *</label>
-                          <input type="text" name="observacionesBaja" className="form-control" value={formData.observacionesBaja} onChange={handleChange} placeholder="Motivo de la baja..." required style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                        <div className="form-group fe-x45">
+                          <label className="form-label fe-x46">Observaciones de Baja *</label>
+                          <input type="text" name="observacionesBaja" className="form-control fe-x40" value={formData.observacionesBaja} onChange={handleChange} placeholder="Motivo de la baja..." required />
                         </div>
                       </div>
                     )}
@@ -803,12 +783,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                 {/* --- PESTAÑA 2: INFORMACIÓN FISCAL Y COMERCIAL --- */}
                 <div style={{ display: activeTab === 'fiscal' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
-                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  <div className="form-grid fe-x34">
                     
-                    <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                      <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Régimen Fiscal (Buscar en Catálogo)</label>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <div style={{ flex: 1 }}>
+                    <div className="form-group fe-x47">
+                      <label className="form-label fe-x43">Régimen Fiscal (Buscar en Catálogo)</label>
+                      <div className="fe-x48">
+                        <div className="fe-x49">
                           <SearchableSelect 
                             options={regimenesFiscales}
                             value={formData.regimenFiscalId}
@@ -816,15 +796,15 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                             placeholder="Buscar Régimen Fiscal..."
                           />
                         </div>
-                        <button type="button" className="btn btn-outline" onClick={() => setModalRegimenAbierto(true)} style={{ height: '38px', whiteSpace: 'nowrap', padding: '0 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>
+                        <button type="button" className="btn btn-outline fe-x50" onClick={() => setModalRegimenAbierto(true)}>
                           + Nuevo
                         </button>
                       </div>
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Moneda</label>
-                      <select name="moneda" className="form-control" value={formData.moneda} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}>
+                      <label className="form-label fe-x38">Moneda</label>
+                      <select name="moneda" className="form-control fe-x40" value={formData.moneda} onChange={handleChange}>
                         <option value="">Seleccione Moneda...</option>
                         {monedas.map(mon => (
                           <option key={mon.id} value={mon.id}>{mon.moneda}</option>
@@ -833,7 +813,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Tipo de Factura</label>
+                      <label className="form-label fe-x38">Tipo de Factura</label>
                       <select 
                         name="tipoFactura" 
                         className="form-control" 
@@ -855,8 +835,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Crédito / Contado</label>
-                      <select name="condicionPago" className="form-control" value={formData.condicionPago} onChange={handleCondicionPagoChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }}>
+                      <label className="form-label fe-x43">Crédito / Contado</label>
+                      <select name="condicionPago" className="form-control fe-x40" value={formData.condicionPago} onChange={handleCondicionPagoChange}>
                         <option value="Crédito">Crédito</option>
                         <option value="Contado">Contado</option>
                       </select>
@@ -876,12 +856,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                 {/* --- PESTAÑA 3: CONTACTO Y DIRECCIÓN --- */}
                 <div style={{ display: activeTab === 'contacto' ? 'block' : 'none', animation: 'fadeIn 0.3s ease' }}>
-                  <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                  <div className="form-grid fe-x34">
                     
-                    <div className="form-group" style={{ gridColumn: 'span 2', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d' }}>
-                      <label className="form-label" style={{ color: '#58a6ff', display: 'block', marginBottom: '8px' }}>Dirección de la Empresa (Buscar en Base de Datos)</label>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <div style={{ flex: 1 }}>
+                    <div className="form-group fe-x47">
+                      <label className="form-label fe-x43">Dirección de la Empresa (Buscar en Base de Datos)</label>
+                      <div className="fe-x48">
+                        <div className="fe-x49">
                           <SearchableSelect 
                             options={direccionesDB}
                             value={formData.direccionId}
@@ -889,7 +869,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                             placeholder="Buscar dirección guardada..."
                           />
                         </div>
-                        <button type="button" className="btn btn-outline" onClick={() => setModalDireccionAbierto(true)} style={{ height: '38px', whiteSpace: 'nowrap', padding: '0 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>
+                        <button type="button" className="btn btn-outline fe-x50" onClick={() => setModalDireccionAbierto(true)}>
                           + Añadir Nueva
                         </button>
                       </div>
@@ -901,12 +881,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                         const v = (x: any) => String(x ?? '').trim() || '—';
                         const campoDir = (etiqueta: string, valor: any) => (
                           <div>
-                            <label style={{ display: 'block', color: '#8b949e', fontSize: '0.7rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>{etiqueta}</label>
-                            <input type="text" readOnly disabled value={v(valor)} className="form-control" style={{ backgroundColor: '#010409', color: '#c9d1d9', cursor: 'not-allowed', opacity: 0.9, width: '100%', boxSizing: 'border-box' }} />
+                            <label className="fe-x51">{etiqueta}</label>
+                            <input type="text" readOnly disabled value={v(valor)} className="form-control fe-x52" />
                           </div>
                         );
                         return (
-                          <div style={{ marginTop: '14px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+                          <div className="fe-x53">
                             {campoDir('País', dirSel.paisNombre)}
                             {campoDir('Estado', dirSel.estadoNombre)}
                             {campoDir('Municipio', dirSel.municipioNombre)}
@@ -920,12 +900,12 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
                       })()}
                     </div>
 
-                    <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Google Maps (URL)</label>
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <input type="url" name="maps" className="form-control" value={formData.maps} onChange={handleChange} placeholder="https://maps.app.goo.gl/..." style={{ flex: 1, padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                    <div className="form-group fe-x35">
+                      <label className="form-label fe-x38">Google Maps (URL)</label>
+                      <div className="fe-x48">
+                        <input type="url" name="maps" className="form-control fe-x54" value={formData.maps} onChange={handleChange} placeholder="https://maps.app.goo.gl/..." />
                         {formData.maps && (
-                          <a href={formData.maps} target="_blank" rel="noopener noreferrer" className="btn btn-outline" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none', padding: '0 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px' }}>
+                          <a href={formData.maps} target="_blank" rel="noopener noreferrer" className="btn btn-outline fe-x55">
                             Abrir Mapa
                           </a>
                         )}
@@ -934,13 +914,13 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
                     {/* ✅ LOS CAMPOS RESTANTES DE CONTACTO */}
                     <div className="form-group">
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Teléfono</label>
-                      <input type="text" name="telefono" className="form-control" value={formData.telefono} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                      <label className="form-label fe-x38">Teléfono</label>
+                      <input type="text" name="telefono" className="form-control fe-x40" value={formData.telefono} onChange={handleChange} />
                     </div>
 
                     <div className="form-group">
-                      <label className="form-label" style={{ display: 'block', color: '#8b949e', marginBottom: '8px' }}>Correo Electrónico</label>
-                      <input type="email" name="correo" className="form-control" value={formData.correo} onChange={handleChange} style={{ width: '100%', padding: '10px', backgroundColor: '#010409', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '4px', boxSizing: 'border-box' }} />
+                      <label className="form-label fe-x38">Correo Electrónico</label>
+                      <input type="email" name="correo" className="form-control fe-x40" value={formData.correo} onChange={handleChange} />
                     </div>
 
                   </div>
@@ -948,9 +928,9 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
               </div>
 
               {/* ✅ BOTONES DEL FORMULARIO */}
-              <div className="form-actions" style={{ padding: '16px 24px', borderTop: '1px solid #30363d', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#0d1117' }}>
-                <button type="button" onClick={onClose} className="btn btn-outline" style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #30363d', color: '#c9d1d9', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" className="btn btn-primary" disabled={cargando} style={{ padding: '8px 16px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>{cargando ? 'Guardando...' : 'Guardar Empresa'}</button>
+              <div className="form-actions fe-x56">
+                <button type="button" onClick={onClose} className="btn btn-outline fe-x24">Cancelar</button>
+                <button type="submit" className="btn btn-primary fe-x57" disabled={cargando}>{cargando ? 'Guardando...' : 'Guardar Empresa'}</button>
               </div>
             </form>
           </div>

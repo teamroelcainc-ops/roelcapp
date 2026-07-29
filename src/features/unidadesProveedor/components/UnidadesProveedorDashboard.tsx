@@ -5,6 +5,7 @@ import { db, eliminarRegistro } from '../../../config/firebase';
 import { FormularioUnidadProveedor } from './FormularioUnidadProveedor';
 import type { UnidadProveedorRecord } from '../../../types/unidadProveedor';
 import * as XLSX from 'xlsx';
+import './UnidadesProveedorDashboard.css';
 
 // ✅ COLUMNAS BASE DE LA TABLA UNIDADES DE PROVEEDOR
 const COLUMNAS_BASE = [
@@ -123,13 +124,13 @@ export const UnidadesProveedorDashboard: React.FC = () => {
   // ✅ RENDERIZADOR DINÁMICO DE CELDAS
   const renderCellContent = (reg: UnidadProveedorRecord, colId: string) => {
     switch (colId) {
-      case 'proveedor': return <span style={{ fontWeight: '500', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{reg.proveedorNombre || '-'}</span>;
-      case 'unidad': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.numeroUnidad || '-'}</span>;
-      case 'serie': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.numeroSerie || '-'}</span>;
-      case 'placas': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.placas || '-'}</span>;
-      case 'pais': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.pais || '-'}</span>;
-      case 'estado': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{reg.estadoUbicacion || '-'}</span>;
-      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+      case 'proveedor': return <span className="upd-x1">{reg.proveedorNombre || '-'}</span>;
+      case 'unidad': return <span className="font-mono upd-x2">{reg.numeroUnidad || '-'}</span>;
+      case 'serie': return <span className="font-mono upd-x2">{reg.numeroSerie || '-'}</span>;
+      case 'placas': return <span className="font-mono upd-x2">{reg.placas || '-'}</span>;
+      case 'pais': return <span className="upd-x2">{reg.pais || '-'}</span>;
+      case 'estado': return <span className="upd-x2">{reg.estadoUbicacion || '-'}</span>;
+      default: return <span className="upd-x3">-</span>;
     }
   };
 
@@ -163,7 +164,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
   };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container upd-x4">
       
       {estadoFormulario !== 'cerrado' && (
         <FormularioUnidadProveedor 
@@ -176,65 +177,62 @@ export const UnidadesProveedorDashboard: React.FC = () => {
       )}
 
       {/* ✅ CONTENEDOR MAESTRO */}
-      <div style={{ width: '100%', margin: '0 auto' }}>
+      <div className="upd-x5">
         
         {/* TÍTULO LIMPIO */}
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+        <h1 className="module-title upd-x6">
           Unidades del Proveedor
         </h1>
 
         {/* BARRA DE CONTROLES: Responsive y Alineada */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
+        <div className="upd-x7">
           
           {/* Izquierda: Filtro Estático */}
-          <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
-            <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '10px', borderRadius: '6px' }}>
+          <div className="upd-x8">
+            <select className="form-control upd-x9">
               <option>Filtro: Todo</option>
             </select>
           </div>
 
           {/* Centro: Buscador Inteligente */}
-          <div style={{ display: 'flex', gap: '10px', flex: '2 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="upd-x10">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busqueda ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busqueda && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+              {busqueda && <span className="upd-x11">1</span>}
             </button>
             {busqueda && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="upd-x12">
                 "{busqueda}"
-                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="upd-x13" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="upd-x14">
               {busquedaHecha ? `${registrosFiltrados.length} registros` : 'Presiona Filtros y Buscar para ver el catálogo.'}
             </span>
           </div>
 
           {/* Derecha: Botones Iconográficos */}
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '280px' }}>
+          <div className="upd-x15">
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline upd-x16" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', cursor: 'pointer' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline upd-x16" 
               title="Exportar a Excel"
-              onClick={exportarExcel} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', cursor: 'pointer' }}
+              onClick={exportarExcel}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button 
-              className="btn btn-primary" 
+              className="btn btn-primary upd-x17" 
               title="Agregar Nueva Unidad Externa"
-              onClick={handleNuevo} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+              onClick={handleNuevo}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
@@ -242,16 +240,16 @@ export const UnidadesProveedorDashboard: React.FC = () => {
         </div>
 
         {/* TABLA RESPONSIVE */}
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '900px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="content-body upd-x18">
+          <div className="table-container upd-x19">
+            <table className="data-table upd-x20">
+              <thead className="upd-x21">
                 <tr>
-                  <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                  <th className="upd-x22">
                     Acciones
                   </th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                    <th className="upd-x23" key={`th_${col.id}`}>
                       {col.label}
                     </th>
                   ))}
@@ -259,16 +257,16 @@ export const UnidadesProveedorDashboard: React.FC = () => {
               </thead>
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td colSpan={columnasTabla.length + 1} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="upd-x24" colSpan={columnasTabla.length + 1}>
+                    <div className="upd-x25">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las unidades de proveedor.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="upd-x26">Define tus filtros y presiona <b className="upd-x27">Buscar</b> para ver las unidades de proveedor.</span>
+                      <button className="upd-x28" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td className="upd-x29" colSpan={columnasTabla.length + 1}>
                       {busqueda ? 'No se encontraron registros que coincidan con tu búsqueda.' : 'Aún no hay registros. Haz clic en "+" para crear el primero.'}
                     </td>
                   </tr>
@@ -282,23 +280,21 @@ export const UnidadesProveedorDashboard: React.FC = () => {
                       onClick={() => editarRegistro(reg)}
                     >
                       {/* CELDA ACCIONES FIJA Y SÓLIDA CON ICONOS */}
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <td className="upd-x30" onClick={(e: any) => e.stopPropagation()}>
+                        <div className="actions-cell upd-x31">
                           <button 
-                            className="btn-small btn-edit" 
+                            className="btn-small btn-edit upd-x32" 
                             title="Editar Unidad"
                             onClick={(e) => { e.stopPropagation(); editarRegistro(reg); }}
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           <button 
-                            className="btn-small btn-danger" 
+                            className="btn-small btn-danger upd-x33" 
                             title="Eliminar Unidad"
                             onClick={(e) => handleEliminar(e, reg.id!)}
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
                             onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
                             onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
@@ -307,7 +303,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
                         </div>
                       </td>
                       {columnasTabla.filter(col => col.visible).map(col => (
-                        <td key={`cell_${reg.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                        <td className="upd-x34" key={`cell_${reg.id}_${col.id}`}>
                           {renderCellContent(reg, col.id)}
                         </td>
                       ))}
@@ -320,11 +316,11 @@ export const UnidadesProveedorDashboard: React.FC = () => {
 
           {/* CONTROLES DE PAGINACIÓN ICONOGRÁFICOS */}
           {busquedaHecha && registrosFiltrados.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="upd-x35">
+              <div className="upd-x36">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="upd-x37">
                 <button 
                   onClick={irPaginaAnterior} 
                   disabled={paginaActual === 1}
@@ -333,7 +329,7 @@ export const UnidadesProveedorDashboard: React.FC = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="upd-x38">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   onClick={irPaginaSiguiente} 
                   disabled={paginaActual === totalPaginas || totalPaginas === 0}
@@ -351,15 +347,15 @@ export const UnidadesProveedorDashboard: React.FC = () => {
 
       {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay upd-x39">
+          <div className="upd-x40">
+            <div className="upd-x41">
+              <h3 className="upd-x42">Configurar Columnas de la Tabla</h3>
+              <button className="upd-x43" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            <p className="upd-x44">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
             
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <ul className="upd-x45">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -371,13 +367,13 @@ export const UnidadesProveedorDashboard: React.FC = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <input className="upd-x46" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="upd-x47">
+              <button className="upd-x48" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -386,32 +382,31 @@ export const UnidadesProveedorDashboard: React.FC = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Unidades de Proveedor) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Unidades de Proveedor</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="upd-x49" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="upd-x50" onClick={(e) => e.stopPropagation()}>
+            <div className="upd-x51">
+              <h3 className="upd-x52">Filtros · Unidades de Proveedor</h3>
+              <button className="upd-x43" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Proveedor, unidad, placas, serie..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="upd-x53">
+              <label className="upd-x54">BÚSQUEDA</label>
+              <div className="upd-x55">
+                <svg className="upd-x56" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="upd-x57" type="text" placeholder="Proveedor, unidad, placas, serie..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="upd-x58" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todo el catálogo.
+            <div className="upd-x59">
+              Todos los campos son <b className="upd-x60">opcionales</b>. Presiona <b className="upd-x27">Buscar</b> para ver todo el catálogo.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="upd-x61">
+              <button className="upd-x62" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="upd-x63" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

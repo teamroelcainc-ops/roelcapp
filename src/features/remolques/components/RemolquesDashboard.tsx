@@ -1,10 +1,11 @@
 // src/features/remolques/components/RemolquesDashboard.tsx
-import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db, eliminarRegistro } from '../../../config/firebase'; 
+import { useState, useEffect, useMemo } from 'react';
+import type React from 'react';
 import { FormularioRemolque } from './FormularioRemolque';
+import { useRemolques } from '../hooks/useRemolques';
 import type { RemolqueRecord } from '../../../types/remolque'; 
 import * as XLSX from 'xlsx';
+import './RemolquesDashboard.css';
 
 // ✅ TODAS LAS COLUMNAS BASE DE LA TABLA REMOLQUES
 const COLUMNAS_BASE = [
@@ -18,12 +19,12 @@ const COLUMNAS_BASE = [
   { id: 'ubicacion', label: 'Ubicación (País/Est)', visible: true }
 ];
 
-export const RemolquesDashboard: React.FC = () => {
+export function RemolquesDashboard() {
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [registroEditando, setRegistroEditando] = useState<RemolqueRecord | null>(null);
   
-  // Lista de TODOS los registros bajados de la BD
-  const [registrosGlobales, setRegistrosGlobales] = useState<RemolqueRecord[]>([]);
+  // ✅ Datos de servidor vía TanStack Query (caché compartido + tiempo real).
+  const { remolques: registrosGlobales, eliminarRemolque } = useRemolques();
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -33,24 +34,10 @@ export const RemolquesDashboard: React.FC = () => {
   const [paginaActual, setPaginaActual] = useState(1);
   const registrosPorPagina = 50;
 
-  // Estado para el hover de las filas
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
-
   // ✅ ESTADOS PARA CONFIGURACIÓN DE COLUMNAS (DRAG & DROP)
   const [modalColumnas, setModalColumnas] = useState(false);
   const [columnasTabla, setColumnasTabla] = useState(COLUMNAS_BASE.map(c => ({ ...c })));
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
-
-  // Suscripción en tiempo real a Firebase
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'remolques'), (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as RemolqueRecord[];
-      // Ordenar alfabéticamente por nombre
-      data.sort((a, b) => a.nombre.localeCompare(b.nombre));
-      setRegistrosGlobales(data);
-    });
-    return () => unsubscribe();
-  }, []);
 
   // Si el usuario busca algo, reseteamos a la página 1
   useEffect(() => {
@@ -68,10 +55,10 @@ export const RemolquesDashboard: React.FC = () => {
   };
 
   const handleEliminar = async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente este remolque?')) {
       try {
-        await eliminarRegistro('remolques', id);
+        await eliminarRemolque(id);
       } catch (error) {
         console.error("Error al eliminar:", error);
         alert('Hubo un error al eliminar. Revisa tu conexión.');
@@ -129,15 +116,15 @@ export const RemolquesDashboard: React.FC = () => {
   // ✅ RENDERIZADOR DINÁMICO DE CELDAS
   const renderCellContent = (r: RemolqueRecord, colId: string) => {
     switch (colId) {
-      case 'nombre': return <span style={{ fontWeight: 'bold', color: '#f0f6fc', whiteSpace: 'nowrap' }}>{r.nombre}</span>;
-      case 'tipo': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{r.tipoNombre || '-'}</span>;
-      case 'propietario': return <span style={{ color: '#c9d1d9', fontWeight: '500', whiteSpace: 'nowrap' }}>{r.propietarioNombre || '-'}</span>;
-      case 'placas': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{r.placas || '-'}</span>;
-      case 'serie': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{r.serie || '-'}</span>;
-      case 'marca': return <span style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{r.marca || '-'}</span>;
-      case 'anio': return <span className="font-mono" style={{ color: '#c9d1d9', whiteSpace: 'nowrap' }}>{r.anio || '-'}</span>;
-      case 'ubicacion': return <span style={{ color: '#c9d1d9', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{r.paisNombre && r.estadoNombre ? `${r.paisNombre}, ${r.estadoNombre}` : '-'}</span>;
-      default: return <span style={{ color: '#c9d1d9' }}>-</span>;
+      case 'nombre': return <span className="rd-x1">{r.nombre}</span>;
+      case 'tipo': return <span className="rd-x2">{r.tipoNombre || '-'}</span>;
+      case 'propietario': return <span className="rd-x3">{r.propietarioNombre || '-'}</span>;
+      case 'placas': return <span className="font-mono rd-x2">{r.placas || '-'}</span>;
+      case 'serie': return <span className="font-mono rd-x2">{r.serie || '-'}</span>;
+      case 'marca': return <span className="rd-x2">{r.marca || '-'}</span>;
+      case 'anio': return <span className="font-mono rd-x2">{r.anio || '-'}</span>;
+      case 'ubicacion': return <span className="rd-x4">{r.paisNombre && r.estadoNombre ? `${r.paisNombre}, ${r.estadoNombre}` : '-'}</span>;
+      default: return <span className="rd-x5">-</span>;
     }
   };
 
@@ -148,9 +135,9 @@ export const RemolquesDashboard: React.FC = () => {
     const columnasVisibles = columnasTabla.filter(c => c.visible);
 
     const datosExcel = registrosFiltrados.map(r => {
-      const fila: any = {};
+      const fila: Record<string, string | number> = {};
       columnasVisibles.forEach(col => {
-        let val: any = '-';
+        let val: string | number = '-';
         switch (col.id) {
           case 'nombre': val = r.nombre || ''; break;
           case 'tipo': val = r.tipoNombre || ''; break;
@@ -173,7 +160,7 @@ export const RemolquesDashboard: React.FC = () => {
   };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease', width: '100%', boxSizing: 'border-box' }}>
+    <div className="module-container rd-x6">
       
       {estadoFormulario !== 'cerrado' && (
         <FormularioRemolque 
@@ -186,65 +173,62 @@ export const RemolquesDashboard: React.FC = () => {
       )}
 
       {/* ✅ CONTENEDOR MAESTRO */}
-     <div style={{ width: '100%', margin: '0 auto' }}>
+     <div className="rd-x7">
         
         {/* TÍTULO LIMPIO */}
-        <h1 className="module-title" style={{ fontSize: '1.5rem', color: '#f0f6fc', margin: '0 0 24px 0', fontWeight: 'bold' }}>
+        <h1 className="module-title rd-x8">
           Remolques
         </h1>
 
         {/* BARRA DE CONTROLES: Responsive y Alineada */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '20px', width: '100%' }}>
+        <div className="rd-x9">
           
           {/* Izquierda: Filtro Estático */}
-          <div style={{ flex: '1 1 auto', maxWidth: '200px', minWidth: '120px' }}>
-            <select className="form-control" style={{ width: '100%', backgroundColor: '#0d1117', border: '1px solid #30363d', color: '#c9d1d9', padding: '10px', borderRadius: '6px' }}>
+          <div className="rd-x10">
+            <select className="form-control rd-x11">
               <option>Filtro: Todo</option>
             </select>
           </div>
 
           {/* Centro: Buscador Inteligente */}
-          <div style={{ display: 'flex', gap: '10px', flex: '2 1 auto', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="rd-x12">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busqueda ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busqueda && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+              {busqueda && <span className="rd-x13">1</span>}
             </button>
             {busqueda && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="rd-x14">
                 "{busqueda}"
-                <button onClick={() => setBusqueda('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="rd-x15" onClick={() => setBusqueda('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="rd-x16">
               {busquedaHecha ? `${registrosFiltrados.length} remolques` : 'Presiona Filtros y Buscar para ver el catálogo.'}
             </span>
           </div>
 
           {/* Derecha: Botones Iconográficos */}
-          <div style={{ flex: '1 1 auto', display: 'flex', gap: '12px', justifyContent: 'flex-end', minWidth: '150px' }}>
+          <div className="rd-x17">
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline rd-x18" 
               title="Configurar Columnas"
               onClick={() => setModalColumnas(true)}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
             </button>
             <button 
-              className="btn btn-outline" 
+              className="btn btn-outline rd-x19" 
               title="Exportar a Excel"
-              onClick={exportarExcel} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', cursor: 'pointer' }}
+              onClick={exportarExcel}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
             <button 
-              className="btn btn-primary" 
+              className="btn btn-primary rd-x20" 
               title="Agregar Nuevo Remolque"
-              onClick={handleNuevo} 
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 12px', borderRadius: '6px', backgroundColor: '#D84315', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+              onClick={handleNuevo}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
@@ -252,16 +236,16 @@ export const RemolquesDashboard: React.FC = () => {
         </div>
 
         {/* TABLA RESPONSIVE */}
-        <div className="content-body" style={{ display: 'block', width: '100%' }}>
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 280px)', width: '100%' }}>
-            <table className="data-table" style={{ width: '100%', minWidth: '1000px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#161b22', position: 'sticky', top: 0, zIndex: 10 }}>
+        <div className="content-body rd-x21">
+          <div className="table-container rd-x22">
+            <table className="data-table rd-x23">
+              <thead className="rd-x24">
                 <tr>
-                  <th style={{ padding: '16px', width: '120px', textAlign: 'center', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', position: 'sticky', left: 0, backgroundColor: '#161b22', zIndex: 12, borderRight: '1px solid #30363d', borderBottom: '1px solid #30363d' }}>
+                  <th className="rd-x25">
                     Acciones
                   </th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th key={`th_${col.id}`} style={{ padding: '16px', color: '#8b949e', fontSize: '0.8rem', fontWeight: '600', textTransform: 'uppercase', whiteSpace: 'nowrap', borderBottom: '1px solid #30363d' }}>
+                    <th className="rd-x26" key={`th_${col.id}`}>
                       {col.label}
                     </th>
                   ))}
@@ -270,48 +254,40 @@ export const RemolquesDashboard: React.FC = () => {
               
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td colSpan={columnasTabla.length + 1} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="rd-x27" colSpan={columnasTabla.length + 1}>
+                    <div className="rd-x28">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver los remolques.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="rd-x29">Define tus filtros y presiona <b className="rd-x30">Buscar</b> para ver los remolques.</span>
+                      <button className="rd-x31" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td colSpan={columnasTabla.length + 1} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                    <td className="rd-x32" colSpan={columnasTabla.length + 1}>
                       {busqueda ? 'No se encontraron remolques para tu búsqueda.' : 'Aún no hay remolques registrados.'}
                     </td>
                   </tr>
                 ) : (
                   registrosEnPantalla.map(reg => (
-                    <tr 
-                      key={reg.id} 
-                      style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === reg.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }}
-                      onMouseEnter={() => setHoveredRowId(reg.id!)} 
-                      onMouseLeave={() => setHoveredRowId(null)}
+                    <tr
+                      key={reg.id}
+                      className="rd-fila"
                       onClick={() => editarRegistro(reg)}
                     >
                       {/* CELDA ACCIONES FIJA */}
-                      <td style={{ padding: '16px', textAlign: 'center', position: 'sticky', left: 0, backgroundColor: 'inherit', zIndex: 5, borderRight: '1px solid #30363d' }} onClick={(e: any) => e.stopPropagation()}>
-                        <div className="actions-cell" style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <td className="rd-x33" onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <div className="actions-cell rd-x34">
                           <button 
-                            className="btn-small btn-edit" 
+                            className="btn-small btn-edit rd-x35" 
                             title="Editar Remolque"
                             onClick={(e) => { e.stopPropagation(); editarRegistro(reg); }}
-                            style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)'}
-                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           <button 
-                            className="btn-small btn-danger" 
+                            className="btn-small btn-danger rd-x36" 
                             title="Eliminar Remolque"
                             onClick={(e) => handleEliminar(e, reg.id!)}
-                            style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}
-                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
-                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                           </button>
@@ -319,7 +295,7 @@ export const RemolquesDashboard: React.FC = () => {
                       </td>
 
                       {columnasTabla.filter(col => col.visible).map(col => (
-                        <td key={`cell_${reg.id}_${col.id}`} style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                        <td className="rd-x37" key={`cell_${reg.id}_${col.id}`}>
                           {renderCellContent(reg, col.id)}
                         </td>
                       ))}
@@ -332,11 +308,11 @@ export const RemolquesDashboard: React.FC = () => {
 
           {/* CONTROLES DE PAGINACIÓN ICONOGRÁFICOS */}
           {busquedaHecha && registrosFiltrados.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '16px', padding: '0 8px', flexWrap: 'wrap', gap: '10px' }}>
-              <div style={{ color: '#8b949e', fontSize: '0.9rem' }}>
+            <div className="rd-x38">
+              <div className="rd-x39">
                 Mostrando {indicePrimerRegistro + 1} - {Math.min(indiceUltimoRegistro, registrosFiltrados.length)} de {registrosFiltrados.length} registros
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="rd-x40">
                 <button 
                   onClick={irPaginaAnterior} 
                   disabled={paginaActual === 1}
@@ -345,7 +321,7 @@ export const RemolquesDashboard: React.FC = () => {
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
                 </button>
-                <span style={{ padding: '6px 12px', color: '#f0f6fc', fontWeight: 'bold' }}>{paginaActual} / {totalPaginas || 1}</span>
+                <span className="rd-x41">{paginaActual} / {totalPaginas || 1}</span>
                 <button 
                   onClick={irPaginaSiguiente} 
                   disabled={paginaActual === totalPaginas || totalPaginas === 0}
@@ -363,15 +339,15 @@ export const RemolquesDashboard: React.FC = () => {
 
       {/* ✅ MODAL CONFIGURACIÓN COLUMNAS INTERACTIVAS (DRAG & DROP) */}
       {modalColumnas && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '800px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas de la Tabla</h3>
-              <button onClick={() => setModalColumnas(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rd-x42">
+          <div className="rd-x43">
+            <div className="rd-x44">
+              <h3 className="rd-x45">Configurar Columnas de la Tabla</h3>
+              <button className="rd-x46" onClick={() => setModalColumnas(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '24px' }}>Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
+            <p className="rd-x47">Arrastra los elementos para reorganizar el orden de la tabla. Desmarca las casillas para ocultar columnas.</p>
             
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <ul className="rd-x48">
               {columnasTabla.map((col, idx) => (
                 <li 
                   key={col.id}
@@ -383,13 +359,13 @@ export const RemolquesDashboard: React.FC = () => {
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab', transition: 'background-color 0.2s' }}
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} style={{ cursor: 'pointer' }} />
+                  <input className="rd-x49" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisible(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnas(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="rd-x50">
+              <button className="rd-x51" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -398,32 +374,31 @@ export const RemolquesDashboard: React.FC = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Remolques) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · Remolques</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="rd-x52" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="rd-x53" onClick={(e) => e.stopPropagation()}>
+            <div className="rd-x54">
+              <h3 className="rd-x55">Filtros · Remolques</h3>
+              <button className="rd-x46" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-              <div style={{ position: 'relative' }}>
-                <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input type="text" placeholder="Nombre, placas, serie..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                  style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+            <div className="rd-x56">
+              <label className="rd-x57">BÚSQUEDA</label>
+              <div className="rd-x58">
+                <svg className="rd-x59" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input className="rd-x60" type="text" placeholder="Nombre, placas, serie..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
                 {busqueda && (
-                  <button onClick={() => setBusqueda('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                  <button className="rd-x61" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
                 )}
               </div>
             </div>
 
-            <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-              Todos los campos son <b style={{ color: '#8b949e' }}>opcionales</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver todo el catálogo.
+            <div className="rd-x62">
+              Todos los campos son <b className="rd-x63">opcionales</b>. Presiona <b className="rd-x30">Buscar</b> para ver todo el catálogo.
             </div>
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => { setBusqueda(''); setBusquedaHecha(false); }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+            <div className="rd-x64">
+              <button className="rd-x65" onClick={() => { setBusqueda(''); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="rd-x66" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>🔍 Buscar</button>
             </div>
           </div>
         </div>

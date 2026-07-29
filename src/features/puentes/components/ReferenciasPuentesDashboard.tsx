@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
+import './ReferenciasPuentesDashboard.css';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -386,14 +387,14 @@ export const ReferenciasPuentesDashboard = () => {
   const renderCeldaOps = (op: any, key: string) => {
     const tdBase: React.CSSProperties = { padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' };
     switch (key) {
-      case 'ref': return <td key={key} style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{op.ref || op.id.substring(0, 6)}</td>;
+      case 'ref': return <td className="rpd-x1" key={key}>{op.ref || op.id.substring(0, 6)}</td>;
       case 'fechaServicio': return <td key={key} style={tdBase}>{formatearFechaSpanish(op.fechaServicio || op.createdAt)}</td>;
-      case 'trafico': return <td key={key} style={{ padding: '16px', whiteSpace: 'nowrap' }}>{chipTrafico(getTrafico(op))}</td>;
+      case 'trafico': return <td className="rpd-x2" key={key}>{chipTrafico(getTrafico(op))}</td>;
       case 'operador': return <td key={key} style={tdBase}>{getNombreOperador(op.operadorNombre || op.operadorId || op.operador)}</td>;
       case 'cliente': return <td key={key} style={tdBase}>{getCliente(op)}</td>;
       case 'origen': return <td key={key} style={tdBase}>{op.origen || '-'}</td>;
       case 'destino': return <td key={key} style={tdBase}>{op.destino || '-'}</td>;
-      case 'puente': return <td key={key} style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(getPuente(op))}</td>;
+      case 'puente': return <td className="rpd-x3" key={key}>{formatoMoneda(getPuente(op))}</td>;
       default: return <td key={key} style={tdBase}>-</td>;
     }
   };
@@ -652,37 +653,37 @@ export const ReferenciasPuentesDashboard = () => {
   const inputFiltro: React.CSSProperties = { width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px' };
 
   return (
-    <div className="module-container" style={{ padding: '24px', animation: 'fadeIn 0.3s ease' }}>
-      <h1 style={{ color: '#f0f6fc', fontSize: '1.5rem', marginBottom: '24px' }}>Referencias de Puentes</h1>
+    <div className="module-container rpd-x4">
+      <h1 className="rpd-x5">Referencias de Puentes</h1>
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #30363d', marginBottom: '24px' }}>
+      <div className="rpd-x6">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Referencias</button>
       </div>
 
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
+          <div className="rpd-x7">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${(fechaInicio || fechaFin || filtroTrafico !== 'todos') ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {(fechaInicio || fechaFin || filtroTrafico !== 'todos') && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>{[fechaInicio || fechaFin, filtroTrafico !== 'todos' ? filtroTrafico : ''].filter(Boolean).length}</span>}
+              {(fechaInicio || fechaFin || filtroTrafico !== 'todos') && <span className="rpd-x8">{[fechaInicio || fechaFin, filtroTrafico !== 'todos' ? filtroTrafico : ''].filter(Boolean).length}</span>}
             </button>
             {(fechaInicio || fechaFin) && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(216,67,21,0.1)', border: '1px solid #D84315', borderRadius: '14px', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="rpd-x9">
                 {(fechaInicio || '…')} → {(fechaFin || '…')}
-                <button onClick={() => { setFechaInicio(''); setFechaFin(''); setSeleccionadas([]); setBusquedaOpsHecha(false); }} style={{ background: 'transparent', border: 'none', color: '#D84315', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="rpd-x10" onClick={() => { setFechaInicio(''); setFechaFin(''); setSeleccionadas([]); setBusquedaOpsHecha(false); }}>✕</button>
               </span>
             )}
             {filtroTrafico !== 'todos' && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="rpd-x11">
                 {capitalizar(filtroTrafico)}
-                <button onClick={() => { setFiltroTrafico('todos'); setSeleccionadas([]); }} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="rpd-x12" onClick={() => { setFiltroTrafico('todos'); setSeleccionadas([]); }}>✕</button>
               </span>
             )}
-            {!(fechaInicio || fechaFin) && <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>Presiona Filtros, define la fecha de servicio y pulsa Buscar.</span>}
-            <div style={{ marginLeft: 'auto' }}>
+            {!(fechaInicio || fechaFin) && <span className="rpd-x13">Presiona Filtros, define la fecha de servicio y pulsa Buscar.</span>}
+            <div className="rpd-x14">
               <button
                 disabled={seleccionadas.length === 0 || filtroEstadoOps === 'asignadas'}
                 onClick={abrirModalGenerar}
@@ -694,11 +695,11 @@ export const ReferenciasPuentesDashboard = () => {
 
           {busquedaOpsHecha ? (
           <>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '12px 16px' }}>
-            <span style={{ color: '#8b949e', fontSize: '0.8rem' }}>
+          <div className="rpd-x15">
+            <span className="rpd-x16">
               {operacionesMostradas.length} {operacionesMostradas.length === 1 ? 'operación' : 'operaciones'}{(fechaInicio || fechaFin) ? ` · ${fechaInicio ? formatearFechaSpanish(fechaInicio) : '...'} al ${fechaFin ? formatearFechaSpanish(fechaFin) : '...'}` : ''}{filtroTrafico !== 'todos' ? ` · ${capitalizar(filtroTrafico)}` : ''}
             </span>
-            <div style={{ display: 'flex', gap: '10px' }}>
+            <div className="rpd-x17">
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',
@@ -711,29 +712,29 @@ export const ReferenciasPuentesDashboard = () => {
           </div>
 
           {seleccionadas.length > 0 && filtroEstadoOps === 'pendientes' && (
-            <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '8px', padding: '20px', marginBottom: '20px', animation: 'fadeIn 0.3s ease' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones</span>
-                  <span style={{ color: '#58a6ff', fontSize: '1.8rem', fontWeight: 'bold' }}>{seleccionadas.length}</span>
+            <div className="rpd-x18">
+              <div className="rpd-x19">
+                <div className="rpd-x20">
+                  <span className="rpd-x21">Operaciones</span>
+                  <span className="rpd-x22">{seleccionadas.length}</span>
                 </div>
-                <div style={{ borderRight: '1px solid #30363d' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Tráfico</span>
-                  <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{chipTrafico(traficoPredominante)}</span>
+                <div className="rpd-x20">
+                  <span className="rpd-x21">Tráfico</span>
+                  <span className="rpd-x23">{chipTrafico(traficoPredominante)}</span>
                 </div>
                 <div>
-                  <span style={{ display: 'block', color: '#D84315', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Puentes</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.8rem', fontWeight: 'bold' }}>{formatoMoneda(resumenSeleccion.subtotal)}</span>
+                  <span className="rpd-x24">Subtotal Puentes</span>
+                  <span className="rpd-x25">{formatoMoneda(resumenSeleccion.subtotal)}</span>
                 </div>
               </div>
             </div>
           )}
 
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 380px)', backgroundColor: '#161b22' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div className="table-container rpd-x26">
+            <table className="rpd-x27">
+              <thead className="rpd-x28">
                 <tr>
-                  <th style={{ padding: '16px', width: '50px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}></th>
+                  <th className="rpd-x29"></th>
                   {columnasOps.filter(c => c.visible).map(col => (
                     <th key={col.id}
                       style={col.orden ? thOrdenStyle : { padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}
@@ -745,7 +746,7 @@ export const ReferenciasPuentesDashboard = () => {
               </thead>
               <tbody>
                 {operacionesMostradas.length === 0 ? (
-                  <tr><td colSpan={colsOpsVisibles} style={{ padding: '40px', textAlign: 'center', color: '#8b949e' }}>
+                  <tr><td className="rpd-x30" colSpan={colsOpsVisibles}>
                     {filtroEstadoOps === 'pendientes' ? 'No hay operaciones pendientes con estos filtros.' : 'No hay operaciones asignadas a referencias con estos filtros.'}
                   </td></tr>
                 ) : (
@@ -754,11 +755,11 @@ export const ReferenciasPuentesDashboard = () => {
                     return (
                       <tr key={op.id} onClick={() => seleccionable && toggleSeleccion(op.id)}
                         style={{ cursor: seleccionable ? 'pointer' : 'default', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : 'transparent' }}>
-                        <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        <td className="rpd-x31">
                           {seleccionable ? (
-                            <input type="checkbox" checked={seleccionadas.includes(op.id)} readOnly style={{ cursor: 'pointer', width: '16px', height: '16px' }} />
+                            <input className="rpd-x32" type="checkbox" checked={seleccionadas.includes(op.id)} readOnly />
                           ) : (
-                            <span title={op.referenciaPuentesConsecutivo || 'Asignada'} style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', backgroundColor: '#10b981' }} />
+                            <span className="rpd-x33" title={op.referenciaPuentesConsecutivo || 'Asignada'} />
                           )}
                         </td>
                         {columnasOps.filter(c => c.visible).map(col => renderCeldaOps(op, col.id))}
@@ -771,11 +772,11 @@ export const ReferenciasPuentesDashboard = () => {
           </div>
           </>
           ) : (
-            <div style={{ padding: '64px 24px', textAlign: 'center', border: '1px solid #30363d', borderRadius: '8px', backgroundColor: '#161b22' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+            <div className="rpd-x34">
+              <div className="rpd-x35">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define la <b style={{ color: '#58a6ff' }}>Fecha de Servicio</b> en los filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las operaciones.</span>
-                <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                <span className="rpd-x36">Define la <b className="rpd-x37">Fecha de Servicio</b> en los filtros y presiona <b className="rpd-x38">Buscar</b> para ver las operaciones.</span>
+                <button className="rpd-x39" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
               </div>
             </div>
           )}
@@ -783,78 +784,78 @@ export const ReferenciasPuentesDashboard = () => {
 
       ) : (
         <div className="animation-fade-in">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', backgroundColor: '#0d1117', padding: '12px 16px', borderRadius: '8px', border: '1px solid #30363d', flexWrap: 'wrap' }}>
+          <div className="rpd-x7">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
               style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '9px 16px', backgroundColor: '#161b22', border: `1px solid ${busquedaHistorial ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#c9d1d9', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.88rem' }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
               Filtros
-              {busquedaHistorial && <span style={{ backgroundColor: '#D84315', color: '#fff', borderRadius: '10px', padding: '1px 8px', fontSize: '0.72rem' }}>1</span>}
+              {busquedaHistorial && <span className="rpd-x8">1</span>}
             </button>
             {busquedaHistorial && (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'rgba(88,166,255,0.1)', border: '1px solid #58a6ff', borderRadius: '14px', color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>
+              <span className="rpd-x11">
                 "{busquedaHistorial}"
-                <button onClick={() => setBusquedaHistorial('')} style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', fontSize: '0.9rem', lineHeight: 1 }}>✕</button>
+                <button className="rpd-x12" onClick={() => setBusquedaHistorial('')}>✕</button>
               </span>
             )}
-            <span style={{ color: '#8b949e', fontSize: '0.82rem' }}>
+            <span className="rpd-x13">
               {busquedaHistHecha ? `${historialFiltrado.length} referencias` : 'Presiona Filtros y Buscar para ver el historial.'}
             </span>
-            <button title="Exportar a Excel" onClick={exportarHistorialExcel} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', border: '1px solid #8b949e', color: '#c9d1d9', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer' }}>
+            <button className="rpd-x40" title="Exportar a Excel" onClick={exportarHistorialExcel}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
           </div>
 
-          <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 320px)', backgroundColor: '#161b22' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead style={{ backgroundColor: '#1f2937', color: '#8b949e', fontSize: '0.8rem', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div className="table-container rpd-x41">
+            <table className="rpd-x27">
+              <thead className="rpd-x28">
                 <tr>
-                  <th style={{ padding: '16px', textAlign: 'center', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>ACCIONES</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>CONSECUTIVO</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>STATUS</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>TRÁFICO</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>FECHA PAGO</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>PERÍODO</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>OPS.</th>
-                  <th style={{ padding: '16px', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>SUBTOTAL PUENTES</th>
+                  <th className="rpd-x42">ACCIONES</th>
+                  <th className="rpd-x43">CONSECUTIVO</th>
+                  <th className="rpd-x43">STATUS</th>
+                  <th className="rpd-x43">TRÁFICO</th>
+                  <th className="rpd-x43">FECHA PAGO</th>
+                  <th className="rpd-x43">PERÍODO</th>
+                  <th className="rpd-x43">OPS.</th>
+                  <th className="rpd-x43">SUBTOTAL PUENTES</th>
                 </tr>
               </thead>
               <tbody>
                 {!busquedaHistHecha ? (
-                  <tr><td colSpan={8} style={{ padding: '64px 24px', textAlign: 'center' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+                  <tr><td className="rpd-x44" colSpan={8}>
+                    <div className="rpd-x35">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
-                      <span style={{ color: '#8b949e', fontSize: '0.95rem' }}>Define tus filtros y presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver las referencias.</span>
-                      <button onClick={() => setDrawerFiltrosAbierto(true)} style={{ padding: '10px 20px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.9rem' }}>Abrir filtros</button>
+                      <span className="rpd-x36">Define tus filtros y presiona <b className="rpd-x38">Buscar</b> para ver las referencias.</span>
+                      <button className="rpd-x39" onClick={() => setDrawerFiltrosAbierto(true)}>Abrir filtros</button>
                     </div>
                   </td></tr>
                 ) : registrosVisibles.length === 0 ? (
-                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: '40px', color: '#8b949e' }}>
+                  <tr><td className="rpd-x45" colSpan={8}>
                     {filtroEstadoHist === 'pendientes' ? 'No hay referencias pendientes de pago.' : 'No hay referencias pagadas.'}
                   </td></tr>
                 ) : (
                   registrosVisibles.map(r => (
-                    <tr key={r.id} style={{ borderBottom: '1px solid #21262d' }}>
-                      <td style={{ padding: '16px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                    <tr className="rpd-x46" key={r.id}>
+                      <td className="rpd-x31">
+                        <div className="rpd-x47">
                           {r.statusPagado ? (
-                            <button title="Regresar a Pendiente" onClick={(e) => handleTogglePago(e, r)} style={{ background: 'transparent', border: '1px solid #f59e0b', borderRadius: '4px', color: '#f59e0b', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                            <button className="rpd-x48" title="Regresar a Pendiente" onClick={(e) => handleTogglePago(e, r)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
                             </button>
                           ) : (
-                            <button title="Marcar como Pagada" onClick={(e) => handleTogglePago(e, r)} style={{ background: 'transparent', border: '1px solid #10b981', borderRadius: '4px', color: '#10b981', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                            <button className="rpd-x49" title="Marcar como Pagada" onClick={(e) => handleTogglePago(e, r)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
                             </button>
                           )}
-                          <button title="Ver Detalle" onClick={() => setReferenciaViendo(r)} style={{ background: 'transparent', border: '1px solid #3b82f6', borderRadius: '4px', color: '#3b82f6', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                          <button className="rpd-x50" title="Ver Detalle" onClick={() => setReferenciaViendo(r)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                           </button>
-                          <button title="Eliminar" onClick={(e) => handleEliminarReferencia(e, r)} style={{ background: 'transparent', border: '1px solid #ef4444', borderRadius: '4px', color: '#ef4444', cursor: 'pointer', padding: '6px', display: 'flex' }}>
+                          <button className="rpd-x51" title="Eliminar" onClick={(e) => handleEliminarReferencia(e, r)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                           </button>
                         </div>
                       </td>
-                      <td style={{ padding: '16px', color: '#D84315', fontWeight: 'bold', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{r.consecutivo}</td>
-                      <td style={{ padding: '16px', whiteSpace: 'nowrap' }}>
+                      <td className="rpd-x52">{r.consecutivo}</td>
+                      <td className="rpd-x2">
                         <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold',
                           backgroundColor: r.statusPagado ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                           color: r.statusPagado ? '#10b981' : '#f59e0b',
@@ -862,11 +863,11 @@ export const ReferenciasPuentesDashboard = () => {
                           {r.statusPagado ? 'PAGADA' : 'PENDIENTE'}
                         </span>
                       </td>
-                      <td style={{ padding: '16px', whiteSpace: 'nowrap' }}>{chipTrafico(r.traficoPredominante || '—')}</td>
-                      <td style={{ padding: '16px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaPago)}</td>
-                      <td style={{ padding: '16px', color: '#8b949e', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(r.fechaInicio)} <br/>al {formatearFechaSpanish(r.fechaFin)}</td>
-                      <td style={{ padding: '16px', color: '#58a6ff', fontWeight: 'bold', whiteSpace: 'nowrap', textAlign: 'center' }}>{Array.isArray(r.operacionesIds) ? r.operacionesIds.length : 0}</td>
-                      <td style={{ padding: '16px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(r.subtotalPuentes)}</td>
+                      <td className="rpd-x2">{chipTrafico(r.traficoPredominante || '—')}</td>
+                      <td className="rpd-x53">{formatearFechaSpanish(r.fechaPago)}</td>
+                      <td className="rpd-x54">{formatearFechaSpanish(r.fechaInicio)} <br/>al {formatearFechaSpanish(r.fechaFin)}</td>
+                      <td className="rpd-x55">{Array.isArray(r.operacionesIds) ? r.operacionesIds.length : 0}</td>
+                      <td className="rpd-x3">{formatoMoneda(r.subtotalPuentes)}</td>
                     </tr>
                   ))
                 )}
@@ -874,9 +875,9 @@ export const ReferenciasPuentesDashboard = () => {
             </table>
           </div>
           {busquedaHistHecha && totalPaginas > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '10px', marginTop: '20px' }}>
+            <div className="rpd-x56">
               <button onClick={irPaginaAnterior} disabled={paginaActual === 1} style={{ padding: '8px 16px', cursor: paginaActual === 1 ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Anterior</button>
-              <span style={{ color: '#fff', alignSelf: 'center' }}>{paginaActual} / {totalPaginas}</span>
+              <span className="rpd-x57">{paginaActual} / {totalPaginas}</span>
               <button onClick={irPaginaSiguiente} disabled={paginaActual === totalPaginas} style={{ padding: '8px 16px', cursor: (paginaActual === totalPaginas) ? 'not-allowed' : 'pointer', background: 'none', border: 'none', color: '#c9d1d9' }}>Siguiente</button>
             </div>
           )}
@@ -885,25 +886,25 @@ export const ReferenciasPuentesDashboard = () => {
 
       {/* MODAL CONFIGURAR COLUMNAS */}
       {modalColumnasOps && (
-        <div className="modal-overlay" style={{ zIndex: 2000, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', backdropFilter: 'blur(4px)', backgroundColor: 'rgba(0,0,0,0.7)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '720px', maxWidth: '95%', padding: '24px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc' }}>Configurar Columnas</h3>
-              <button onClick={() => setModalColumnasOps(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rpd-x58">
+          <div className="rpd-x59">
+            <div className="rpd-x60">
+              <h3 className="rpd-x61">Configurar Columnas</h3>
+              <button className="rpd-x62" onClick={() => setModalColumnasOps(false)}>✕</button>
             </div>
-            <p style={{ color: '#8b949e', fontSize: '0.85rem', marginBottom: '20px' }}>Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel.</p>
-            <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '60vh', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <p className="rpd-x63">Arrastra para reordenar. Desmarca las que quieras ocultar de la tabla y del Excel.</p>
+            <ul className="rpd-x64">
               {columnasOps.map((col, idx) => (
                 <li key={col.id} draggable onDragStart={(e) => handleDragStartOps(e, idx)} onDragEnter={() => handleDragEnterOps(idx)} onDragEnd={() => setDraggedColOpsIndex(null)} onDragOver={(e) => e.preventDefault()}
                   style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 16px', backgroundColor: draggedColOpsIndex === idx ? '#1f2937' : '#161b22', border: '1px solid #30363d', borderRadius: '6px', cursor: 'grab' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b949e" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
-                  <input type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisibleOps(idx)} style={{ cursor: 'pointer', transform: 'scale(1.2)' }} />
+                  <input className="rpd-x65" type="checkbox" checked={col.visible} onChange={() => toggleColumnaVisibleOps(idx)} />
                   <span style={{ color: col.visible ? '#c9d1d9' : '#484f58', fontSize: '0.85rem', fontWeight: col.visible ? 'bold' : 'normal' }}>{col.label}</span>
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px', borderTop: '1px solid #30363d', paddingTop: '16px' }}>
-              <button onClick={() => setModalColumnasOps(false)} style={{ backgroundColor: '#D84315', color: '#fff', border: 'none', padding: '10px 32px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Aplicar Cambios</button>
+            <div className="rpd-x66">
+              <button className="rpd-x67" onClick={() => setModalColumnasOps(false)}>Aplicar Cambios</button>
             </div>
           </div>
         </div>
@@ -911,26 +912,26 @@ export const ReferenciasPuentesDashboard = () => {
 
       {/* MODAL GENERAR REFERENCIA */}
       {modalAbierto && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px', backdropFilter: 'blur(8px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '100%', maxWidth: '720px', maxHeight: '90vh', overflowY: 'auto', padding: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #30363d', paddingBottom: '16px' }}>
-              <h2 style={{ color: '#f0f6fc', margin: 0 }}>Generar Referencia: <span style={{ color: '#D84315' }}>{consecutivoForm}</span></h2>
-              <button onClick={() => setModalAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rpd-x68">
+          <div className="rpd-x69">
+            <div className="rpd-x70">
+              <h2 className="rpd-x71">Generar Referencia: <span className="rpd-x38">{consecutivoForm}</span></h2>
+              <button className="rpd-x62" onClick={() => setModalAbierto(false)}>✕</button>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#010409', padding: '16px', borderRadius: '8px', border: '1px dashed #30363d', marginBottom: '20px' }}>
+            <div className="rpd-x72">
               <div>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Operaciones ({seleccionadas.length})</span>
-                <span style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{chipTrafico(traficoPredominante)}</span>
+                <span className="rpd-x73">Operaciones ({seleccionadas.length})</span>
+                <span className="rpd-x74">{chipTrafico(traficoPredominante)}</span>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <span style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Subtotal Puentes</span>
-                <span style={{ color: '#3fb950', fontSize: '1.3rem', fontWeight: 'bold' }}>{formatoMoneda(subtotalPuentesCalc)}</span>
+              <div className="rpd-x75">
+                <span className="rpd-x73">Subtotal Puentes</span>
+                <span className="rpd-x76">{formatoMoneda(subtotalPuentesCalc)}</span>
               </div>
             </div>
 
             <form onSubmit={handleGuardarReferencia}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
+              <div className="rpd-x77">
                 <div>
                   <label style={labelFiltro}>Consecutivo</label>
                   <input readOnly value={consecutivoForm} style={{ ...inputFiltro, color: '#D84315', fontFamily: 'monospace', fontWeight: 'bold' }} />
@@ -947,7 +948,7 @@ export const ReferenciasPuentesDashboard = () => {
                   </select>
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '16px', marginBottom: '20px' }}>
+              <div className="rpd-x78">
                 <div>
                   <label style={labelFiltro}>Puente ★</label>
                   <select value={puenteSeleccionadoId} onChange={e => setPuenteSeleccionadoId(e.target.value)} required style={{ ...inputFiltro, color: '#fff', cursor: 'pointer' }}>
@@ -957,26 +958,26 @@ export const ReferenciasPuentesDashboard = () => {
                     ))}
                   </select>
                   {puentesCatalogo.length === 0 && (
-                    <span style={{ display: 'block', color: '#f59e0b', fontSize: '0.72rem', marginTop: '6px' }}>No hay puentes en el catálogo (catalogo_tipos_gastos con categoria_gasto = Puente).</span>
+                    <span className="rpd-x79">No hay puentes en el catálogo (catalogo_tipos_gastos con categoria_gasto = Puente).</span>
                   )}
                 </div>
                 <div>
                   <label style={labelFiltro}>Costo del Puente (Importe)</label>
-                  <div style={{ color: '#3fb950', fontSize: '1rem', fontWeight: 'bold', padding: '10px 12px', backgroundColor: '#0d1117', borderRadius: '6px', border: '1px solid #30363d' }}>
+                  <div className="rpd-x80">
                     {formatoMoneda(costoPuenteUnitario)}
                   </div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem', marginTop: '6px' }}>x {seleccionadas.length} {seleccionadas.length === 1 ? 'operación' : 'operaciones'} = {formatoMoneda(subtotalPuentesCalc)}</span>
+                  <span className="rpd-x81">x {seleccionadas.length} {seleccionadas.length === 1 ? 'operación' : 'operaciones'} = {formatoMoneda(subtotalPuentesCalc)}</span>
                 </div>
               </div>
 
-              <div style={{ marginBottom: '8px' }}>
+              <div className="rpd-x82">
                 <label style={labelFiltro}>Observaciones</label>
                 <textarea value={observacionesForm} onChange={e => setObservacionesForm(e.target.value)} style={{ ...inputFiltro, color: '#fff', height: '60px' }} />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '20px', marginTop: '20px' }}>
-                <button type="button" onClick={() => setModalAbierto(false)} disabled={guardando} style={{ padding: '8px 24px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer' }}>Cancelar</button>
-                <button type="submit" disabled={guardando} style={{ padding: '8px 24px', backgroundColor: '#238636', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>{guardando ? 'Guardando...' : 'Confirmar Referencia'}</button>
+              <div className="rpd-x83">
+                <button className="rpd-x84" type="button" onClick={() => setModalAbierto(false)} disabled={guardando}>Cancelar</button>
+                <button className="rpd-x85" type="submit" disabled={guardando}>{guardando ? 'Guardando...' : 'Confirmar Referencia'}</button>
               </div>
             </form>
           </div>
@@ -985,21 +986,21 @@ export const ReferenciasPuentesDashboard = () => {
 
       {/* MODAL FICHA / DETALLE */}
       {referenciaViendo && (
-        <div className="modal-overlay" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1500, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '12px', width: '900px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.4rem' }}>Detalle de Referencia</h2>
-              <button onClick={() => setReferenciaViendo(null)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="modal-overlay rpd-x86">
+          <div className="rpd-x87">
+            <div className="rpd-x88">
+              <h2 className="rpd-x89">Detalle de Referencia</h2>
+              <button className="rpd-x62" onClick={() => setReferenciaViendo(null)}>✕</button>
             </div>
-            <div style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', backgroundColor: '#161b22', padding: '16px', borderRadius: '8px', border: '1px solid #30363d', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+            <div className="rpd-x90">
+              <div className="rpd-x91">
                 <div>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Consecutivo</span>
-                  <span style={{ color: '#D84315', fontSize: '1.2rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{referenciaViendo.consecutivo}</span>
+                  <span className="rpd-x92">Consecutivo</span>
+                  <span className="rpd-x93">{referenciaViendo.consecutivo}</span>
                 </div>
-                <div style={{ textAlign: 'center' }}>{chipTrafico(referenciaViendo.traficoPredominante || '—')}</div>
-                <div style={{ textAlign: 'center' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '4px' }}>Status</span>
+                <div className="rpd-x94">{chipTrafico(referenciaViendo.traficoPredominante || '—')}</div>
+                <div className="rpd-x94">
+                  <span className="rpd-x21">Status</span>
                   <span style={{ padding: '4px 12px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold',
                     backgroundColor: referenciaViendo.statusPagado ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
                     color: referenciaViendo.statusPagado ? '#10b981' : '#f59e0b',
@@ -1007,53 +1008,53 @@ export const ReferenciasPuentesDashboard = () => {
                     {referenciaViendo.statusPagado ? 'PAGADA' : 'PENDIENTE'}
                   </span>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase' }}>Subtotal Puentes</span>
-                  <span style={{ color: '#3fb950', fontSize: '1.2rem', fontWeight: 'bold' }}>{formatoMoneda(referenciaViendo.subtotalPuentes)}</span>
+                <div className="rpd-x75">
+                  <span className="rpd-x92">Subtotal Puentes</span>
+                  <span className="rpd-x95">{formatoMoneda(referenciaViendo.subtotalPuentes)}</span>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', marginBottom: '20px', color: '#c9d1d9', fontSize: '0.9rem' }}>
-                <div><span style={{ color: '#8b949e' }}>Fecha de pago: </span>{formatearFechaSpanish(referenciaViendo.fechaPago)}</div>
-                <div><span style={{ color: '#8b949e' }}>Período: </span>{formatearFechaSpanish(referenciaViendo.fechaInicio)} al {formatearFechaSpanish(referenciaViendo.fechaFin)}</div>
-                {referenciaViendo.observaciones && <div><span style={{ color: '#8b949e' }}>Obs.: </span>{referenciaViendo.observaciones}</div>}
+              <div className="rpd-x96">
+                <div><span className="rpd-x97">Fecha de pago: </span>{formatearFechaSpanish(referenciaViendo.fechaPago)}</div>
+                <div><span className="rpd-x97">Período: </span>{formatearFechaSpanish(referenciaViendo.fechaInicio)} al {formatearFechaSpanish(referenciaViendo.fechaFin)}</div>
+                {referenciaViendo.observaciones && <div><span className="rpd-x97">Obs.: </span>{referenciaViendo.observaciones}</div>}
               </div>
 
-              <span style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '12px' }}>
+              <span className="rpd-x98">
                 Operaciones incluidas ({referenciaViendo.operacionesGuardadas?.length || 0})
               </span>
-              <div className="table-container" style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-                  <thead style={{ backgroundColor: '#1f2937', color: '#8b949e' }}>
+              <div className="table-container rpd-x99">
+                <table className="rpd-x100">
+                  <thead className="rpd-x101">
                     <tr>
-                      <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>REFERENCIA</th>
-                      <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>FECHA</th>
-                      <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>TRÁFICO</th>
-                      <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>OPERADOR</th>
-                      <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>CLIENTE</th>
-                      <th style={{ padding: '12px', whiteSpace: 'nowrap' }}>PUENTE</th>
+                      <th className="rpd-x102">REFERENCIA</th>
+                      <th className="rpd-x102">FECHA</th>
+                      <th className="rpd-x102">TRÁFICO</th>
+                      <th className="rpd-x102">OPERADOR</th>
+                      <th className="rpd-x102">CLIENTE</th>
+                      <th className="rpd-x102">PUENTE</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(referenciaViendo.operacionesGuardadas || []).map((op: any) => (
-                      <tr key={op.id} style={{ borderBottom: '1px solid #21262d' }}>
-                        <td style={{ padding: '12px', color: '#58a6ff', fontFamily: 'monospace', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{op.ref}</td>
-                        <td style={{ padding: '12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{formatearFechaSpanish(op.fecha)}</td>
-                        <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>{chipTrafico(op.trafico || '—')}</td>
-                        <td style={{ padding: '12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.operador || '-'}</td>
-                        <td style={{ padding: '12px', color: '#c9d1d9', whiteSpace: 'nowrap' }}>{op.cliente || '-'}</td>
-                        <td style={{ padding: '12px', color: '#3fb950', fontWeight: 'bold', whiteSpace: 'nowrap' }}>{formatoMoneda(op.puente)}</td>
+                      <tr className="rpd-x46" key={op.id}>
+                        <td className="rpd-x103">{op.ref}</td>
+                        <td className="rpd-x104">{formatearFechaSpanish(op.fecha)}</td>
+                        <td className="rpd-x102">{chipTrafico(op.trafico || '—')}</td>
+                        <td className="rpd-x104">{op.operador || '-'}</td>
+                        <td className="rpd-x104">{op.cliente || '-'}</td>
+                        <td className="rpd-x105">{formatoMoneda(op.puente)}</td>
                       </tr>
                     ))}
                     {(!referenciaViendo.operacionesGuardadas || referenciaViendo.operacionesGuardadas.length === 0) && (
-                      <tr><td colSpan={6} style={{ padding: '20px', textAlign: 'center', color: '#8b949e' }}>Sin detalle de operaciones.</td></tr>
+                      <tr><td className="rpd-x106" colSpan={6}>Sin detalle de operaciones.</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
             </div>
-            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #30363d', backgroundColor: '#161b22' }}>
-              <button onClick={() => setReferenciaViendo(null)} style={{ padding: '8px 24px', borderRadius: '6px', color: '#c9d1d9', border: '1px solid #30363d', background: 'transparent', cursor: 'pointer' }}>Cerrar</button>
+            <div className="rpd-x107">
+              <button className="rpd-x108" onClick={() => setReferenciaViendo(null)}>Cerrar</button>
             </div>
           </div>
         </div>
@@ -1061,29 +1062,29 @@ export const ReferenciasPuentesDashboard = () => {
 
       {/* ✅ NUEVO: panel lateral DERECHO de filtros (Referencias de Puentes) */}
       {drawerFiltrosAbierto && (
-        <div onClick={() => setDrawerFiltrosAbierto(false)} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1400, backdropFilter: 'blur(2px)' }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: '360px', maxWidth: '92%', backgroundColor: '#0d1117', borderLeft: '1px solid #30363d', boxShadow: '-8px 0 28px rgba(0,0,0,0.5)', padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1401, animation: 'fadeIn 0.15s ease' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #30363d', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#f0f6fc', fontSize: '1.05rem' }}>Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
-              <button onClick={() => setDrawerFiltrosAbierto(false)} style={{ background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+        <div className="rpd-x109" onClick={() => setDrawerFiltrosAbierto(false)}>
+          <div className="rpd-x110" onClick={(e) => e.stopPropagation()}>
+            <div className="rpd-x111">
+              <h3 className="rpd-x112">Filtros · {activeTab === 'operaciones' ? 'Operaciones' : 'Historial'}</h3>
+              <button className="rpd-x62" onClick={() => setDrawerFiltrosAbierto(false)}>✕</button>
             </div>
 
             {activeTab === 'operaciones' ? (
               <>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA INICIO <span style={{ color: '#f85149' }}>*</span></label>
+                <div className="rpd-x113">
+                  <div className="rpd-x114">
+                    <label className="rpd-x115">FECHA INICIO <span className="rpd-x116">*</span></label>
                     <input type="date" value={fechaInicio} onChange={e => { setFechaInicio(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: `1px solid ${fechaInicio ? '#58a6ff' : '#30363d'}`, borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
                   </div>
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>FECHA FIN <span style={{ color: '#f85149' }}>*</span></label>
+                  <div className="rpd-x114">
+                    <label className="rpd-x115">FECHA FIN <span className="rpd-x116">*</span></label>
                     <input type="date" value={fechaFin} min={fechaInicio || undefined} onChange={e => { setFechaFin(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: `1px solid ${fechaFin ? '#58a6ff' : '#30363d'}`, borderRadius: '6px', colorScheme: 'dark', boxSizing: 'border-box' }} />
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>TRÁFICO</label>
-                  <select value={filtroTrafico} onChange={e => { setFiltroTrafico(e.target.value); setSeleccionadas([]); }} style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', color: '#c9d1d9', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', boxSizing: 'border-box' }}>
+                <div className="rpd-x117">
+                  <label className="rpd-x118">TRÁFICO</label>
+                  <select className="rpd-x119" value={filtroTrafico} onChange={e => { setFiltroTrafico(e.target.value); setSeleccionadas([]); }}>
                     <option value="todos">Todos</option>
                     <option value="importacion">Importación</option>
                     <option value="exportacion">Exportación</option>
@@ -1091,17 +1092,17 @@ export const ReferenciasPuentesDashboard = () => {
                   </select>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ESTADO</label>
-                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                <div className="rpd-x117">
+                  <label className="rpd-x118">ESTADO</label>
+                  <div className="rpd-x120">
                     <button onClick={() => setFiltroEstadoOps('pendientes')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoOps === 'pendientes' ? 'rgba(239,68,68,0.15)' : 'transparent', color: filtroEstadoOps === 'pendientes' ? '#ef4444' : '#8b949e' }}>● Pendientes ({conteoOps.pendientes})</button>
                     <button onClick={() => { setFiltroEstadoOps('asignadas'); setSeleccionadas([]); }} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoOps === 'asignadas' ? 'rgba(16,185,129,0.15)' : 'transparent', color: filtroEstadoOps === 'asignadas' ? '#10b981' : '#8b949e' }}>● Asignadas ({conteoOps.asignadas})</button>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ORDENAR POR</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="rpd-x117">
+                  <label className="rpd-x118">ORDENAR POR</label>
+                  <div className="rpd-x121">
                     <select value={ordenOps.campo} onChange={(e) => setOrdenOps(prev => ({ ...prev, campo: e.target.value }))} style={{ ...selectOrdenStyle, flex: 1 }}>
                       <option value="fechaServicio">Fecha Servicio</option>
                       <option value="ref">Referencia</option>
@@ -1116,44 +1117,43 @@ export const ReferenciasPuentesDashboard = () => {
                   </div>
                 </div>
 
-                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-                  Se requiere <b style={{ color: '#58a6ff' }}>al menos una fecha</b> de servicio; el tráfico y el estado son opcionales.
+                <div className="rpd-x122">
+                  Se requiere <b className="rpd-x37">al menos una fecha</b> de servicio; el tráfico y el estado son opcionales.
                 </div>
               </>
             ) : (
               <>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#58a6ff', fontSize: '0.8rem', fontWeight: 'bold' }}>BÚSQUEDA</label>
-                  <div style={{ position: 'relative' }}>
-                    <svg style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#58a6ff' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                    <input type="text" placeholder="Consecutivo, tráfico..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)}
-                      style={{ width: '100%', padding: '9px 10px 9px 32px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', fontSize: '0.9rem', boxSizing: 'border-box' }} />
+                <div className="rpd-x117">
+                  <label className="rpd-x115">BÚSQUEDA</label>
+                  <div className="rpd-x123">
+                    <svg className="rpd-x124" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input className="rpd-x125" type="text" placeholder="Consecutivo, tráfico..." value={busquedaHistorial} onChange={e => setBusquedaHistorial(e.target.value)} />
                     {busquedaHistorial && (
-                      <button onClick={() => setBusquedaHistorial('')} title="Limpiar" style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#8b949e', cursor: 'pointer', fontSize: '0.95rem' }}>✕</button>
+                      <button className="rpd-x126" onClick={() => setBusquedaHistorial('')} title="Limpiar">✕</button>
                     )}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <label style={{ color: '#8b949e', fontSize: '0.8rem', fontWeight: 'bold' }}>ESTADO</label>
-                  <div style={{ display: 'flex', border: '1px solid #30363d', borderRadius: '6px', overflow: 'hidden' }}>
+                <div className="rpd-x117">
+                  <label className="rpd-x118">ESTADO</label>
+                  <div className="rpd-x120">
                     <button onClick={() => setFiltroEstadoHist('pendientes')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoHist === 'pendientes' ? 'rgba(245,158,11,0.15)' : 'transparent', color: filtroEstadoHist === 'pendientes' ? '#f59e0b' : '#8b949e' }}>● Pendientes ({conteoHist.pendientes})</button>
                     <button onClick={() => setFiltroEstadoHist('pagadas')} style={{ flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem', backgroundColor: filtroEstadoHist === 'pagadas' ? 'rgba(16,185,129,0.15)' : 'transparent', color: filtroEstadoHist === 'pagadas' ? '#10b981' : '#8b949e' }}>● Pagadas ({conteoHist.pagadas})</button>
                   </div>
                 </div>
 
-                <div style={{ color: '#6e7681', fontSize: '0.75rem' }}>
-                  La búsqueda es <b style={{ color: '#8b949e' }}>opcional</b>. Presiona <b style={{ color: '#D84315' }}>Buscar</b> para ver el historial.
+                <div className="rpd-x122">
+                  La búsqueda es <b className="rpd-x97">opcional</b>. Presiona <b className="rpd-x38">Buscar</b> para ver el historial.
                 </div>
               </>
             )}
 
-            <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
-              <button onClick={() => {
+            <div className="rpd-x127">
+              <button className="rpd-x128" onClick={() => {
                 if (activeTab === 'operaciones') { setFechaInicio(''); setFechaFin(''); setFiltroTrafico('todos'); setSeleccionadas([]); setBusquedaOpsHecha(false); }
                 else { setBusquedaHistorial(''); setBusquedaHistHecha(false); }
-              }} style={{ flex: 1, padding: '10px', background: 'none', color: '#8b949e', border: '1px solid #30363d', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>Limpiar</button>
-              <button onClick={() => {
+              }}>Limpiar</button>
+              <button className="rpd-x129" onClick={() => {
                 if (activeTab === 'operaciones') {
                   if (!fechaInicio && !fechaFin) { alert('Selecciona al menos una Fecha de Servicio (inicio o fin) para buscar.'); return; }
                   setBusquedaOpsHecha(true);
@@ -1161,7 +1161,7 @@ export const ReferenciasPuentesDashboard = () => {
                   setBusquedaHistHecha(true);
                 }
                 setDrawerFiltrosAbierto(false);
-              }} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>🔍 Buscar</button>
+              }}>🔍 Buscar</button>
             </div>
           </div>
         </div>
