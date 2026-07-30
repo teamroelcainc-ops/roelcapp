@@ -3,9 +3,11 @@ import { initializeApp } from "firebase/app";
 import {
   initializeFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager,
+  persistentSingleTabManager,
+  memoryLocalCache,
   collection, addDoc, updateDoc, deleteDoc, doc,
 } from "firebase/firestore";
+import type { Firestore } from "firebase/firestore";
 import type { DocumentData, UpdateData } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
@@ -22,7 +24,35 @@ const firebaseConfig = {
 // Inicializar Firebase (Solo una vez)
 const app = initializeApp(firebaseConfig);
 
-// ✅ CACHÉ PERSISTENTE DE FIRESTORE (IndexedDB, multi-pestaña).
+// ✅ GUARDIÁN DE ESPACIO: los cachés regenerables de la app (catálogos
+//    cat_v1__/cat_v2__, etc.) pueden llenar los ~5MB de localStorage y eso
+//    tumbaba la inicialización de Firestore (QuotaExceededError → assertion
+//    b815 → app congelada en "Cargando..."). Antes de arrancar, si el
+//    almacenamiento viene saturado, se liberan SOLO las claves de caché
+//    regenerable (nunca las de sesión de Firebase ni preferencias).
+const PREFIJOS_CACHE_REGENERABLE = ['cat_v1__', 'cat_v2__', 'flujo_v1__'];
+const liberarEspacioSiEsNecesario = () => {
+  try {
+    let total = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || '';
+      total += k.length + (localStorage.getItem(k)?.length || 0);
+    }
+    // ~3.5MB de umbral (los navegadores dan ~5MB por origen).
+    if (total > 3_500_000) {
+      const aBorrar: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i) || '';
+        if (PREFIJOS_CACHE_REGENERABLE.some(p => k.startsWith(p))) aBorrar.push(k);
+      }
+      aBorrar.forEach(k => localStorage.removeItem(k));
+      console.warn(`[storage] Se liberaron ${aBorrar.length} cachés regenerables (almacenamiento saturado).`);
+    }
+  } catch { /* almacenamiento bloqueado: continuar */ }
+};
+liberarEspacioSiEsNecesario();
+
+// ✅ CACHÉ PERSISTENTE DE FIRESTORE (IndexedDB).
 //    · Los datos ya vistos quedan guardados EN EL DISPOSITIVO: al reabrir la
 //      app, las vistas pintan al instante desde el caché mientras el SDK
 //      sincroniza en segundo plano (sensación de app instalada).
@@ -30,10 +60,22 @@ const app = initializeApp(firebaseConfig);
 //      solo se facturan lecturas por los documentos que CAMBIARON.
 //    · La app funciona offline: consultas y escrituras se encolan y se
 //      sincronizan solas al volver la conexión.
-//    · persistentMultipleTabManager permite varias pestañas sin conflicto.
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-});
+//    · persistentSingleTabManager: coordina SIN usar localStorage (el manager
+//      multi-pestaña escribía en localStorage y crasheaba con la cuota llena).
+//      Si hay varias pestañas, la primera usa persistencia y las demás operan
+//      normal contra el servidor.
+//    · Si el navegador no permite IndexedDB (p. ej. modo privado estricto),
+//      se cae a caché EN MEMORIA y la app sigue funcionando.
+let dbInterno: Firestore;
+try {
+  dbInterno = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager(undefined) }),
+  });
+} catch (e) {
+  console.warn('[firestore] Persistencia no disponible; usando caché en memoria.', e);
+  dbInterno = initializeFirestore(app, { localCache: memoryLocalCache() });
+}
+export const db = dbInterno;
 
 export const auth = getAuth(app);
 // ✅ Storage ligado explícitamente a la app principal (mismo proyecto/bucket que db/auth)

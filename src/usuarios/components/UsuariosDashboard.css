@@ -86,3 +86,30 @@
   .ud-x56 { padding: 14px 12px; }
   .ud-x57 { padding: 14px 12px; }
 }
+
+/* ✅ Exención de IP del Reloj Checador */
+.ud-exento-ip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.ud-exento-ip strong {
+  display: block;
+  color: #c9d1d9;
+  font-size: 0.9rem;
+}
+
+.ud-exento-ip small {
+  display: block;
+  color: #8b949e;
+  font-size: 0.78rem;
+  margin-top: 2px;
+  line-height: 1.4;
+}

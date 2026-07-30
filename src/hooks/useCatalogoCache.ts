@@ -51,7 +51,20 @@ const lsGet = (key: string): { data: any[]; ts: number } | null => {
 
 const lsSet = (key: string, data: any[]) => {
   try {
-    localStorage.setItem(`cat_v1__${key}`, JSON.stringify({ data, ts: Date.now() }));
+    // ✅ Blindado contra QuotaExceededError: si el almacenamiento está lleno,
+    //   se purgan los cachés de catálogo viejos y se reintenta UNA vez; si aun
+    //   así no cabe, se omite (es solo caché regenerable, nunca debe tumbar).
+    const payload = JSON.stringify({ data, ts: Date.now() });
+    try {
+      localStorage.setItem(`cat_v1__${key}`, payload);
+    } catch {
+      try {
+        Object.keys(localStorage)
+          .filter(k => k.startsWith('cat_v1__') || k.startsWith('cat_v2__'))
+          .forEach(k => localStorage.removeItem(k));
+        localStorage.setItem(`cat_v1__${key}`, payload);
+      } catch { /* sin espacio: continuar sin caché local */ }
+    }
   } catch (e) {
     // Si localStorage está lleno o bloqueado, fallback silencioso a solo memoria
     console.warn(`[useCatalogoCache] No se pudo escribir en localStorage para "${key}":`, e);

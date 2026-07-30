@@ -47,6 +47,8 @@ export const UsuariosDashboard = () => {
   const [password, setPassword] = useState('');
   const [rolesAsignados, setRolesAsignados] = useState<string[]>([]);
   const [fotoPerfil, setFotoPerfil] = useState<string>(''); // ✅ NUEVO
+  // ✅ NUEVO: exención de la validación de IP en el Reloj Checador (por usuario).
+  const [exentoIpChecador, setExentoIpChecador] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);            // ✅ NUEVO
 
   // NUEVOS ESTADOS PARA EL HISTORIAL DE SESIONES
@@ -101,6 +103,7 @@ export const UsuariosDashboard = () => {
       setPassword(''); 
       setRolesAsignados(user.roles || []);
       setFotoPerfil(user.fotoPerfil || ''); // ✅ NUEVO
+      setExentoIpChecador(user.exentoIpChecador === true); // ✅ NUEVO
     } else {
       setUsuarioActual(null);
       setNombre('');
@@ -108,6 +111,7 @@ export const UsuariosDashboard = () => {
       setPassword('');
       setRolesAsignados([]);
       setFotoPerfil(''); // ✅ NUEVO
+      setExentoIpChecador(false); // ✅ NUEVO
     }
     setModalAbierto(true);
   };
@@ -152,6 +156,7 @@ export const UsuariosDashboard = () => {
           nombre: nombre.toUpperCase(),
           roles: rolesAsignados,
           fotoPerfil: fotoPerfil || '', // ✅ NUEVO
+          exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
           fechaActualizacion: new Date().toISOString()
         }, { merge: true });
         
@@ -172,6 +177,7 @@ export const UsuariosDashboard = () => {
           nombre: nombre.toUpperCase(),
           roles: rolesAsignados,
           fotoPerfil: fotoPerfil || '', // ✅ NUEVO
+          exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
           fechaCreacion: new Date().toISOString(),
           activo: true,
           isOnline: false,
@@ -380,6 +386,19 @@ export const UsuariosDashboard = () => {
                     </label>
                   ))}
                 </div>
+
+                {/* ✅ NUEVO: exención de IP en el Reloj Checador por usuario */}
+                <label className="ud-exento-ip">
+                  <input className="ud-x49"
+                    type="checkbox"
+                    checked={exentoIpChecador}
+                    onChange={(e) => setExentoIpChecador(e.target.checked)}
+                  />
+                  <span>
+                    <strong>Exento de IP en el Reloj Checador</strong>
+                    <small>Puede registrar su asistencia desde cualquier red (no solo el WiFi de la oficina). Los roles Admin, Gerencia y Sistemas ya están exentos.</small>
+                  </span>
+                </label>
               </div>
 
               <div className="ud-x50">

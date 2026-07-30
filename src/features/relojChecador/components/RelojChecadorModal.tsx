@@ -3,15 +3,29 @@ import React, { useState, useEffect } from 'react';
 import { collection, addDoc, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
+import { useEstadoConexion } from '../../../hooks/useEstadoConexion';
 import './RelojChecadorModal.css';
+
+// ⭐ Solo los campos del documento de `usuarios` que el checador usa.
+interface UsuarioChecador {
+  id: string;
+  nombre?: string;
+  correo?: string;
+  email?: string;
+  rol?: string;
+  roles?: string[];
+  exentoIpChecador?: boolean;
+}
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  usuario: any;
+  usuario: UsuarioChecador | null;
 }
 
-export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }) => {
+export const RelojChecadorModal = ({ isOpen, onClose, usuario }: Props) => {
+  // ✅ PWA: estado de conexión — sin internet el chequeo se ENCOLA localmente.
+  const { enLinea } = useEstadoConexion();
   const [tiempoActual, setTiempoActual] = useState(new Date());
   const [tipoRegistro, setTipoRegistro] = useState('');
   
@@ -42,9 +56,13 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
       setCargandoDatos(true);
       try {
         const rolesExentos = ['Admin', 'Gerencia', 'Sistemas'];
+        // ✅ NUEVO: exención por USUARIO (bandera exentoIpChecador en su doc,
+        //   editable desde Usuarios) además de la exención por rol.
+        const rolesDelUsuario = [usuario.rol, ...(usuario.roles || [])].filter(Boolean) as string[];
+        const usuarioExento = usuario.exentoIpChecador === true || rolesDelUsuario.some(r => rolesExentos.includes(r));
         let accesoPermitido = true;
 
-        if (!rolesExentos.includes(usuario.rol)) {
+        if (!usuarioExento && navigator.onLine) {
           const configRef = doc(db, 'configuracion', 'seguridad');
           const configSnap = await getDoc(configRef);
           const ipOficial = configSnap.exists() ? configSnap.data().ipOficial : null;
@@ -94,7 +112,13 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
 
       } catch (error) {
         console.error("Error al inicializar checador:", error);
-        alert("Hubo un problema de conexión al verificar la red.");
+        // Sin internet no se puede verificar la red: se permite continuar y el
+        // registro queda marcado como hecho OFFLINE (pendiente de sincronizar).
+        if (!navigator.onLine) {
+          setIpValida(true);
+        } else {
+          alert("Hubo un problema de conexión al verificar la red.");
+        }
       } finally {
         setCargandoDatos(false);
       }
@@ -154,6 +178,7 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!usuario) return;
     if (!ubicacionBD) {
       alert("La ubicación es obligatoria para poder checar. Por favor presiona el botón GPS o escríbela a mano.");
       return;
@@ -167,19 +192,34 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
     try {
       const fechaLocal = tiempoActual.toLocaleDateString('es-MX');
       const horaLocal = tiempoActual.toLocaleTimeString('es-MX');
-
-      await addDoc(collection(db, 'reloj_checador'), {
+      const datosChequeo = {
         userId: usuario.id,
-        userName: usuario.nombre || usuario.correo, 
+        userName: usuario.nombre || usuario.correo || usuario.email,
         fecha: fechaLocal,
         hora: horaLocal,
         tipoRegistro: tipoRegistro,
-        ubicacion: ubicacionBD, 
-        ipRegistro: ipActualUsuario || 'Exento',
-        timestamp: tiempoActual.getTime() 
-      });
+        ubicacion: ubicacionBD,
+        // ✅ Sin conexión se marca explícitamente para que Gerencia lo vea.
+        ipRegistro: enLinea ? (ipActualUsuario || 'Exento') : 'OFFLINE (pendiente de sincronizar)',
+        timestamp: tiempoActual.getTime(),
+      };
 
-      await registrarLog('Asistencia', 'Chequeo', `${usuario.nombre || usuario.correo} registró: ${tipoRegistro}`);
+      if (!enLinea) {
+        // ✅ SIN INTERNET: la escritura queda ENCOLADA en el dispositivo
+        //   (IndexedDB del caché persistente de Firestore) y se envía sola al
+        //   recuperar la conexión — incluso si cierran la app. No usamos
+        //   localStorage a mano: la cola del SDK es más segura (no se pierde
+        //   con recargas y sincroniza automáticamente sin código extra).
+        addDoc(collection(db, 'reloj_checador'), datosChequeo).catch((e) =>
+          console.error('Chequeo offline no sincronizado:', e)
+        );
+        alert('Sin conexión: tu chequeo quedó GUARDADO EN ESTE DISPOSITIVO y se enviará automáticamente cuando vuelva el internet. No lo registres de nuevo.');
+        onClose();
+        return;
+      }
+
+      await addDoc(collection(db, 'reloj_checador'), datosChequeo);
+      await registrarLog('Asistencia', 'Chequeo', `${usuario.nombre || usuario.correo || usuario.email} registró: ${tipoRegistro}`);
       alert("¡Registro guardado exitosamente!");
       onClose();
     } catch (error) {
@@ -219,7 +259,7 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
 
         {cargandoDatos ? (
           <div className="rcm-x6">
-            <div className="rcm-x7">⏳</div>
+            <div className="rcm-x7">Un momento…</div>
             Verificando credenciales de red y leyendo historial del día...
           </div>
         ) : ipValida === false ? (
@@ -236,6 +276,13 @@ export const RelojChecadorModal: React.FC<Props> = ({ isOpen, onClose, usuario }
           </div>
         ) : (
           <form className="rcm-x15" onSubmit={handleSubmit}>
+
+            {!enLinea && (
+              <div className="rcm-aviso-offline">
+                Sin conexión: puedes checar y tu registro se guardará en este
+                dispositivo; se enviará solo al recuperar internet.
+              </div>
+            )}
             
             <div className="rcm-x16">
               <div className="rcm-x17">
