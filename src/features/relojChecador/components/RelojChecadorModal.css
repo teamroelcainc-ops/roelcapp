@@ -59,3 +59,48 @@
   font-size: 0.85rem;
   line-height: 1.45;
 }
+
+/* ✅ Opciones de chequeo como botones explícitos */
+.rcm-opciones {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rcm-opcion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #c9d1d9;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.rcm-opcion small {
+  color: #8b949e;
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+.rcm-opcion.seleccionada {
+  border-color: #58a6ff;
+  background-color: rgba(88, 166, 255, 0.08);
+  color: #f0f6fc;
+}
+
+.rcm-opcion.salida-turno.seleccionada {
+  border-color: #D84315;
+  background-color: rgba(216, 67, 21, 0.08);
+}
+
+.rcm-opcion.salida-turno.seleccionada small {
+  color: #f0a06c;
+}

@@ -101,7 +101,10 @@ export const RelojChecadorModal = ({ isOpen, onClose, usuario }: Props) => {
         if (!tipos.includes('Llegada al Turno')) {
           setTipoRegistro('Llegada al Turno');
         } else if (tipos.includes('Llegada al Turno') && !tipos.includes('Salida a la Comida') && !tipos.includes('Salida del Turno')) {
-          setTipoRegistro('Salida del Turno');
+          // ✅ Default SEGURO: se sugiere la comida, no la salida del turno
+          //   (antes se preseleccionaba "Salida del Turno" y con un clic
+          //   distraído la jornada quedaba terminada a la hora de la comida).
+          setTipoRegistro('Salida a la Comida');
         } else if (tipos.includes('Salida a la Comida') && !tipos.includes('Llegada de la Comida')) {
           setTipoRegistro('Llegada de la Comida');
         } else if (tipos.includes('Llegada de la Comida') && !tipos.includes('Salida del Turno')) {
@@ -179,6 +182,11 @@ export const RelojChecadorModal = ({ isOpen, onClose, usuario }: Props) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!usuario) return;
+    // ✅ La salida del turno cierra el día: pedir confirmación explícita.
+    if (tipoRegistro === 'Salida del Turno') {
+      const ok = window.confirm('¿Confirmas tu SALIDA DEL TURNO?\n\nDespués de esto ya NO podrás checar hoy (ni la comida). Si vas a comer, cancela y elige "Salida a la Comida".');
+      if (!ok) return;
+    }
     if (!ubicacionBD) {
       alert("La ubicación es obligatoria para poder checar. Por favor presiona el botón GPS o escríbela a mano.");
       return;
@@ -307,16 +315,21 @@ export const RelojChecadorModal = ({ isOpen, onClose, usuario }: Props) => {
               <>
                 <div className="form-group">
                   <label className="form-label rcm-x19">Tipo de Registro *</label>
-                  <select 
-                    className="form-control rcm-x24" 
-                    value={tipoRegistro} 
-                    onChange={(e) => setTipoRegistro(e.target.value)} 
-                    required
-                  >
+                  {/* ✅ Botones explícitos en lugar de lista desplegable: el
+                      colaborador VE y ELIGE conscientemente qué va a checar. */}
+                  <div className="rcm-opciones">
                     {opcionesDisponibles.map(opcion => (
-                      <option key={opcion} value={opcion}>{opcion}</option>
+                      <button
+                        key={opcion}
+                        type="button"
+                        className={`rcm-opcion${tipoRegistro === opcion ? ' seleccionada' : ''}${opcion === 'Salida del Turno' ? ' salida-turno' : ''}`}
+                        onClick={() => setTipoRegistro(opcion)}
+                      >
+                        {opcion}
+                        {opcion === 'Salida del Turno' && <small>Cierra tu día: ya no podrás checar</small>}
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
 
                 <div className="form-group">
