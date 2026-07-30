@@ -113,3 +113,61 @@
   margin-top: 2px;
   line-height: 1.4;
 }
+
+/* ✅ Conectar con colaborador */
+.ud-colab { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
+
+.ud-colab-seleccionado {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background-color: rgba(46, 160, 67, 0.08);
+  border: 1px solid #2ea043;
+  border-radius: 8px;
+  color: #3fb950;
+  font-weight: 600;
+}
+
+.ud-colab-seleccionado button {
+  background: none;
+  border: none;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.ud-colab-buscador { position: relative; }
+
+.ud-colab-sugerencias {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 4px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.ud-colab-sugerencias li button {
+  width: 100%;
+  text-align: left;
+  padding: 9px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: #c9d1d9;
+  cursor: pointer;
+}
+
+.ud-colab-sugerencias li button:hover { background-color: #21262d; }
+
+.ud-colab-vacio { padding: 10px; color: #8b949e; font-size: 0.82rem; }
+
+.ud-colab-nota { color: #8b949e; font-size: 0.76rem; line-height: 1.4; }

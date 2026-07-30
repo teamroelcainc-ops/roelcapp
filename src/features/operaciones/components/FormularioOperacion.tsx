@@ -1568,9 +1568,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!initialData) return;
     if (!formData.convenio) return;
 
+    // ✅ Si el usuario CAMBIÓ el convenio respecto al que traía la operación,
+    //   tráfico / carga / tipo de servicio se RE-DERIVAN y sobrescriben (antes
+    //   solo se rellenaban cuando venían vacíos, y al cambiar el convenio se
+    //   quedaban los valores del convenio anterior). Si el convenio no cambió,
+    //   se conserva el comportamiento de solo completar faltantes.
+    const convenioCambiado = String(formData.convenio) !== String(initialData.convenio || '');
+
     const traficoOk = formData.trafico && formData.trafico !== 'N/A';
     const cargaOk = formData.carga && formData.carga !== 'N/A';
-    if (traficoOk && cargaOk) return;
+    if (!convenioCambiado && traficoOk && cargaOk) return;
 
     let cancelado = false;
     (async () => {
@@ -1592,12 +1599,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const nombreTrafico = await resolverNombreTrafico(tipoData.movimiento);
       if (cancelado) return;
 
-      setFormData(prev => ({
-        ...prev,
-        tipoServicio: prev.tipoServicio || tipoData.descripcion || 'N/A',
-        trafico: (prev.trafico && prev.trafico !== 'N/A') ? prev.trafico : nombreTrafico,
-        carga: (prev.carga && prev.carga !== 'N/A') ? prev.carga : (tarifaObj.estado_carga || 'N/A'),
-      }));
+      setFormData(prev => {
+        const nuevoTipo = convenioCambiado
+          ? (tipoData.descripcion || 'N/A')
+          : (prev.tipoServicio || tipoData.descripcion || 'N/A');
+        const nuevoTrafico = convenioCambiado
+          ? nombreTrafico
+          : ((prev.trafico && prev.trafico !== 'N/A') ? prev.trafico : nombreTrafico);
+        const nuevaCarga = convenioCambiado
+          ? (tarifaObj.estado_carga || 'N/A')
+          : ((prev.carga && prev.carga !== 'N/A') ? prev.carga : (tarifaObj.estado_carga || 'N/A'));
+        // Guard anti-bucle: si nada cambia, no se dispara otro render.
+        if (prev.tipoServicio === nuevoTipo && prev.trafico === nuevoTrafico && prev.carga === nuevaCarga) return prev;
+        return { ...prev, tipoServicio: nuevoTipo, trafico: nuevoTrafico, carga: nuevaCarga };
+      });
     })();
 
     return () => { cancelado = true; };

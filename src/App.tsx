@@ -26,6 +26,7 @@ import { EmpresaBrand } from './features/configuracion/EmpresaBrand';
 //   • export const X  → lazy(() => import('...').then(m => ({ default: m.X })))
 // ============================================================================
 const OperacionesDashboard = lazyWithRetry(() => import('./features/operaciones/components/OperacionesDashboard'), 'OperacionesDashboard');
+const MisOperacionesDashboard = lazyWithRetry(() => import('./features/misOperaciones/components/MisOperacionesDashboard'), 'MisOperacionesDashboard');
 const ServiciosCompletados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCompletados'), 'ServiciosCompletados');
 const ServiciosCancelados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCancelados'), 'ServiciosCancelados');
 const ReportesDashboard = lazyWithRetry(() => import('./features/reportes/components/ReportesDashboard'), 'ReportesDashboard');
@@ -69,6 +70,8 @@ import { almacenSesion } from './utils/cacheMemoria';
 // El orden define también la prioridad al elegir el primer módulo permitido.
 // ============================================================================
 const MODULOS_A_CLAVE: Record<string, string> = {
+  // ✅ NUEVO: vista del operador (solo sus operaciones asignadas).
+  'Mis Operaciones': 'misOperaciones',
   'Operaciones Activas': 'operaciones',
   'Servicios Completados': 'serviciosCompletados',
   'Servicios Cancelados': 'serviciosCancelados',
@@ -604,7 +607,7 @@ function App() {
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
-  const [moduloActivo, setModuloActivo] = useState<'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [miPerfilAbierto, setMiPerfilAbierto] = useState(false); // modal "Mi Perfil"
@@ -842,6 +845,7 @@ function App() {
       email: usuarioActualDB.email,
       rol: usuarioActualDB.rol,
       roles: usuarioActualDB.roles,
+      colaboradorId: usuarioActualDB.colaboradorId,
     } : null);
     useUsuarioStore.getState().setRolesEfectivos(rolesEfectivos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1009,6 +1013,12 @@ function App() {
           <button className="sidebar-cerrar-movil" title="Cerrar menú" onClick={() => setMenuAbierto(false)}>✕</button>
         </div>
 
+        {puede('misOperaciones') && (
+          <div className={`sidebar-item ${moduloActivo === 'misOperaciones' ? 'active' : ''}`} title="Mis Operaciones" onClick={() => navegarA('misOperaciones')}>
+            <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg></span>
+            <span className="sidebar-label">Mis Operaciones</span>
+          </div>
+        )}
         {puede('operaciones') && (
           <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} title="Operaciones Activas" onClick={() => navegarA('operaciones')}>
             <span className="sidebar-icon">{ICON.operaciones}</span>
@@ -1230,6 +1240,9 @@ function App() {
           </div>
         ) : (
           <Suspense fallback={<CargandoModulo />}>
+            {moduloActivo === 'misOperaciones' && puede('misOperaciones') && (
+              <MisOperacionesDashboard />
+            )}
             {moduloActivo === 'operaciones' && puede('operaciones') && (
               <>
                 <ResumenDelDia />

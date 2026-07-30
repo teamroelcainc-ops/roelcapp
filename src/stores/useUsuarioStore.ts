@@ -11,6 +11,8 @@ export interface UsuarioSesion {
   email?: string;
   rol?: string;
   roles?: string[];
+  /** Vínculo explícito con su registro de Colaboradores (empleados). */
+  colaboradorId?: string;
 }
 
 interface UsuarioStore {

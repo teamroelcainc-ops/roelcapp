@@ -4,6 +4,7 @@ import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where } from 'fi
 import { createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, secondaryAuth } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
+import { nombreDeEmpleado } from '../../utils/nombreEmpleado';
 import './UsuariosDashboard.css'; 
 
 // Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
@@ -49,6 +50,11 @@ export const UsuariosDashboard = () => {
   const [fotoPerfil, setFotoPerfil] = useState<string>(''); // ✅ NUEVO
   // ✅ NUEVO: exención de la validación de IP en el Reloj Checador (por usuario).
   const [exentoIpChecador, setExentoIpChecador] = useState(false);
+  // ✅ NUEVO: vínculo Usuario ↔ Colaborador (empleados). Un colaborador solo
+  //   puede estar conectado a UN usuario: los ya conectados no se ofrecen.
+  const [colaboradores, setColaboradores] = useState<{ id: string; nombre: string }[]>([]);
+  const [colaboradorId, setColaboradorId] = useState('');
+  const [busquedaColab, setBusquedaColab] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);            // ✅ NUEVO
 
   // NUEVOS ESTADOS PARA EL HISTORIAL DE SESIONES
@@ -62,6 +68,16 @@ export const UsuariosDashboard = () => {
       setUsuarios(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
+    const unsubColabs = onSnapshot(collection(db, 'empleados'), (snapshot) => {
+      // ✅ Los empleados NO tienen campo `nombre`: se compone con
+      //   firstName + apellidos (o alias) — ver utils/nombreEmpleado.
+      const lista = snapshot.docs
+        .map(d => ({ id: d.id, nombre: nombreDeEmpleado(d.data()) }))
+        .filter(c => c.nombre)
+        .sort((a, b) => a.nombre.localeCompare(b.nombre));
+      setColaboradores(lista);
+    });
+
     const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
       setRolesDisponibles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
@@ -69,6 +85,7 @@ export const UsuariosDashboard = () => {
     return () => {
       unsubUsuarios();
       unsubRoles();
+      unsubColabs();
     };
   }, []);
 
@@ -104,6 +121,8 @@ export const UsuariosDashboard = () => {
       setRolesAsignados(user.roles || []);
       setFotoPerfil(user.fotoPerfil || ''); // ✅ NUEVO
       setExentoIpChecador(user.exentoIpChecador === true); // ✅ NUEVO
+      setColaboradorId(user.colaboradorId || ''); // ✅ NUEVO
+      setBusquedaColab('');
     } else {
       setUsuarioActual(null);
       setNombre('');
@@ -112,6 +131,8 @@ export const UsuariosDashboard = () => {
       setRolesAsignados([]);
       setFotoPerfil(''); // ✅ NUEVO
       setExentoIpChecador(false); // ✅ NUEVO
+      setColaboradorId(''); // ✅ NUEVO
+      setBusquedaColab('');
     }
     setModalAbierto(true);
   };
@@ -157,6 +178,7 @@ export const UsuariosDashboard = () => {
           roles: rolesAsignados,
           fotoPerfil: fotoPerfil || '', // ✅ NUEVO
           exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
+          colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
           fechaActualizacion: new Date().toISOString()
         }, { merge: true });
         
@@ -178,6 +200,7 @@ export const UsuariosDashboard = () => {
           roles: rolesAsignados,
           fotoPerfil: fotoPerfil || '', // ✅ NUEVO
           exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
+          colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
           fechaCreacion: new Date().toISOString(),
           activo: true,
           isOnline: false,
@@ -385,6 +408,52 @@ export const UsuariosDashboard = () => {
                       {rol.nombre}
                     </label>
                   ))}
+                </div>
+
+                {/* ✅ NUEVO: vínculo Usuario ↔ Colaborador (exclusivo) */}
+                <div className="ud-colab">
+                  <label className="form-label">Conectar con colaborador</label>
+                  {(() => {
+                    // Colaboradores ya conectados a OTROS usuarios: no se ofrecen.
+                    const ocupados = new Set(
+                      usuarios
+                        .filter(u => u.colaboradorId && (!usuarioActual || u.id !== usuarioActual.id))
+                        .map(u => String(u.colaboradorId))
+                    );
+                    const disponibles = colaboradores.filter(c =>
+                      !ocupados.has(c.id) &&
+                      (!busquedaColab.trim() || c.nombre.toLowerCase().includes(busquedaColab.toLowerCase()))
+                    );
+                    const seleccionado = colaboradores.find(c => c.id === colaboradorId);
+                    return colaboradorId ? (
+                      <div className="ud-colab-seleccionado">
+                        <span>{seleccionado?.nombre || colaboradorId}</span>
+                        <button type="button" onClick={() => setColaboradorId('')} title="Quitar vínculo">✕</button>
+                      </div>
+                    ) : (
+                      <div className="ud-colab-buscador">
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="Buscar colaborador por nombre..."
+                          value={busquedaColab}
+                          onChange={(e) => setBusquedaColab(e.target.value)}
+                        />
+                        {busquedaColab.trim() && (
+                          <ul className="ud-colab-sugerencias">
+                            {disponibles.length === 0 ? (
+                              <li className="ud-colab-vacio">Sin colaboradores disponibles (los ya conectados no se muestran).</li>
+                            ) : disponibles.slice(0, 8).map(c => (
+                              <li key={c.id}>
+                                <button type="button" onClick={() => { setColaboradorId(c.id); setBusquedaColab(''); }}>{c.nombre}</button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  <small className="ud-colab-nota">Vincula este usuario con su registro de Colaboradores (para "Mis Operaciones"). Cada colaborador solo puede conectarse a un usuario.</small>
                 </div>
 
                 {/* ✅ NUEVO: exención de IP en el Reloj Checador por usuario */}

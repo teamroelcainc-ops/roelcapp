@@ -1135,12 +1135,55 @@ export const ReferenciasNominaDashboard = () => {
     ? Number(nominaEditando.nominaFiscal ?? nominaEditando.nomina ?? 0)
     : dNominaFiscal;
 
-  // ✅ (Fix 3) Bases para préstamo/ahorro: al editar se usa el "previo" que quedó
-  //   guardado en la nómina, de modo que volver a guardar NO duplique los saldos.
-  const prestamoBaseCalc = (modoEdicion && nominaEditando?.prestamoAcumuladoPrevio != null)
-    ? Number(nominaEditando.prestamoAcumuladoPrevio) : dPrestamoAcumulado;
-  const ahorroBaseCalc = (modoEdicion && nominaEditando?.ahorroAcumuladoPrevio != null)
-    ? Number(nominaEditando.ahorroAcumuladoPrevio) : dAhorroAcumulado;
+  // ✅ Movimientos del operador seleccionado (declaración temprana para que
+  //   las bases del formulario puedan derivarse del historial; el memo
+  //   `historialPrestamos` de las pestañas usa este mismo criterio).
+  const historialPrestamosRef = useMemo(() => {
+    if (!filtroOperador) return [] as any[];
+    const movs = nominasGlobales.filter(n =>
+      (operadorIdSeleccionado && n.operadorId === operadorIdSeleccionado) ||
+      (n.operadorNombre || '') === filtroOperador
+    );
+    return [...movs].sort((a, b) => (fechaOrdenNomina(a) - fechaOrdenNomina(b)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nominasGlobales, filtroOperador, operadorIdSeleccionado]);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ FIX SALDOS (préstamo y ahorro): la pestaña Préstamos/Ahorro calcula el
+  //   saldo desde el HISTORIAL real de nóminas (inicial + agregados − pagos),
+  //   pero el formulario y el recibo usaban el campo corrido de `deducciones`
+  //   (saldoPrestamo / ahorroAcumulado), que puede quedar DESFASADO si algún
+  //   movimiento (p. ej. un retiro migrado) no lo actualizó. Desde ahora la
+  //   BASE del formulario se deriva del historial (la misma verdad que las
+  //   pestañas); el campo de deducciones queda solo como respaldo cuando el
+  //   operador aún no tiene nóminas en el sistema. En EDICIÓN se excluye la
+  //   propia nómina del historial para no duplicar sus montos.
+  // ═══════════════════════════════════════════════════════════════════════
+  const historialBaseFormulario = (modoEdicion && nominaEditando?.id)
+    ? historialPrestamosRef.filter((n: any) => n.id !== nominaEditando.id)
+    : historialPrestamosRef;
+
+  const saldoPrestamoHistorial = historialBaseFormulario.reduce(
+    (s: number, n: any) => s + (Number(n.prestamoOtorgado) || 0) - (Number(n.pagoPrestamo) || 0),
+    dPrestamoInicial
+  );
+  const saldoAhorroHistorial = historialBaseFormulario.reduce(
+    (s: number, n: any) => s + (Number(n.ahorro) || 0) - (Number(n.pagoAhorro) || 0),
+    dAhorroInicial
+  );
+
+  // ✅ (Fix 3 + FIX SALDOS) Bases para préstamo/ahorro:
+  //   1º el saldo derivado del HISTORIAL (si el operador tiene nóminas);
+  //   2º el "previo" guardado en la nómina (edición, sin historial);
+  //   3º el campo corrido de `deducciones` (operador sin historial).
+  const prestamoBaseCalc = historialBaseFormulario.length > 0
+    ? saldoPrestamoHistorial
+    : ((modoEdicion && nominaEditando?.prestamoAcumuladoPrevio != null)
+      ? Number(nominaEditando.prestamoAcumuladoPrevio) : dPrestamoAcumulado);
+  const ahorroBaseCalc = historialBaseFormulario.length > 0
+    ? saldoAhorroHistorial
+    : ((modoEdicion && nominaEditando?.ahorroAcumuladoPrevio != null)
+      ? Number(nominaEditando.ahorroAcumuladoPrevio) : dAhorroAcumulado);
 
   const subtotalReferencias     = resumenSeleccion.subtotal;
   // ✅ NUEVA FÓRMULA:
@@ -1432,6 +1475,53 @@ export const ReferenciasNominaDashboard = () => {
     setNominaEditando(null);
   };
 
+  // ✅ FIX SALDOS: reconstruye del HISTORIAL los saldos informativos (préstamo
+  //   y ahorro) de UNA nómina, acumulando los movimientos del operador HASTA
+  //   esa nómina inclusive. Es la misma verdad que las pestañas Préstamos y
+  //   Ahorro. Devuelve null si no hay base para reconstruir (se usa entonces
+  //   el valor guardado en la nómina).
+  const deduccionDeOperadorNomina = (nom: any) => {
+    if (nom?.operadorId) {
+      const d = deduccionesList.find(x => String(x.empleadoId) === String(nom.operadorId));
+      if (d) return d;
+    }
+    if (nom?.operadorNombre) {
+      const emp = operadoresList.find(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() === String(nom.operadorNombre).trim());
+      if (emp) return deduccionesList.find(x => String(x.empleadoId) === String(emp.id)) || null;
+    }
+    return null;
+  };
+
+  const saldosRealesDeNomina = (nom: any): { saldoPrestamo: number; ahorroAcumulado: number } | null => {
+    if (!nom) return null;
+    const movs = nominasGlobales.filter(n =>
+      (nom.operadorId && n.operadorId === nom.operadorId) ||
+      (nom.operadorNombre && (n.operadorNombre || '') === nom.operadorNombre)
+    ).sort((a, b) => (fechaOrdenNomina(a) - fechaOrdenNomina(b)));
+
+    const ded = deduccionDeOperadorNomina(nom);
+    if (movs.length === 0 && !ded) return null;
+
+    const idx = movs.findIndex(n => n.id === nom.id);
+    const hasta = idx >= 0
+      ? movs.slice(0, idx + 1)
+      : movs.filter(n => fechaOrdenNomina(n) <= fechaOrdenNomina(nom));
+
+    let saldoPrestamo = Number(ded?.prestamoInicial ?? ded?.prestamo ?? ded?.prestamoAcumulado ?? 0)
+      - Number(ded?.abonoInicial ?? 0);
+    let ahorroAcumulado = Number(ded?.ahorroInicial || 0);
+    hasta.forEach(n => {
+      saldoPrestamo += (Number(n.prestamoOtorgado) || 0) - (Number(n.pagoPrestamo) || 0);
+      ahorroAcumulado += (Number(n.ahorro) || 0) - (Number(n.pagoAhorro) || 0);
+    });
+    // Nómina recién creada (aún no llega por onSnapshot): sumar sus movimientos.
+    if (idx < 0 && !hasta.some(n => n.id === nom.id)) {
+      saldoPrestamo += (Number(nom.prestamoOtorgado) || 0) - (Number(nom.pagoPrestamo) || 0);
+      ahorroAcumulado += (Number(nom.ahorro) || 0) - (Number(nom.pagoAhorro) || 0);
+    }
+    return { saldoPrestamo, ahorroAcumulado };
+  };
+
   const generarReciboNomina = async (nom: any) => {
     const m = (v: any) => '$' + (Number(v) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const esc = (s: any) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -1446,6 +1536,11 @@ export const ReferenciasNominaDashboard = () => {
     // ✅ Seguro adicional: el convenio del recibo NUNCA debe mostrar el monto.
     trips = trips.map((t: any) => ({ ...t, convenio: sinMontoConvenio(t.convenio), tipoServicio: sinMontoConvenio(t.tipoServicio) }));
     const tot = reconstruirTotales(nom, trips);
+    // ✅ FIX SALDOS: los "Saldos Informativos" del recibo se reconstruyen del
+    //   historial (no del campo guardado, que puede estar desfasado).
+    const saldosReales = saldosRealesDeNomina(nom);
+    const ahorroAcumRecibo = saldosReales ? saldosReales.ahorroAcumulado : Number(nom.ahorroAcumulado || 0);
+    const saldoPrestamoRecibo = saldosReales ? saldosReales.saldoPrestamo : Number(nom.saldoPrestamo || 0);
     const operadorNombreRec = getNombreOperador(nom.operadorNombre || nom.operadorId);
     const consecutivoRec = getConsecutivoNomina(nom);
 
@@ -1531,8 +1626,8 @@ export const ReferenciasNominaDashboard = () => {
       </div>
       <div class="card">
         <h3>Saldos Informativos</h3>
-        <div class="row"><span>Ahorro Acumulado</span><span>${m(nom.ahorroAcumulado)}</span></div>
-        <div class="row"><span>Saldo de Préstamo</span><span>${m(nom.saldoPrestamo)}</span></div>
+        <div class="row"><span>Ahorro Acumulado</span><span>${m(ahorroAcumRecibo)}</span></div>
+        <div class="row"><span>Saldo de Préstamo</span><span>${m(saldoPrestamoRecibo)}</span></div>
         <div class="row"><span>Banco</span><span>${esc(resolverBancoNomina(nom) || '-')}</span></div>
         <div class="row"><span>Forma de Pago</span><span>${esc(resolverFormaPagoNomina(nom) || '-')}</span></div>
         ${nom.ahorroPagado ? '<div class="row total-row"><span>Retiro de ahorro</span><span>SÍ</span></div>' : ''}
@@ -1720,14 +1815,9 @@ export const ReferenciasNominaDashboard = () => {
   };
 
   // Movimientos del operador (todas sus nóminas), en orden ascendente por fecha.
-  const historialPrestamos = useMemo(() => {
-    if (!filtroOperador) return [];
-    const movs = nominasGlobales.filter(n =>
-      (operadorIdSeleccionado && n.operadorId === operadorIdSeleccionado) ||
-      (n.operadorNombre || '') === filtroOperador
-    );
-    return [...movs].sort((a, b) => (fechaOrdenNomina(a) - fechaOrdenNomina(b)));
-  }, [nominasGlobales, filtroOperador, operadorIdSeleccionado]);
+  // ✅ Reutiliza la referencia temprana (mismo criterio) para que pestañas y
+  //   formulario trabajen SIEMPRE sobre el mismo historial.
+  const historialPrestamos = historialPrestamosRef;
 
   const resumenPrestamos = useMemo(() => {
     let otorgado = 0, pagado = 0;
@@ -2678,10 +2768,10 @@ export const ReferenciasNominaDashboard = () => {
                     {lbl: 'TOTAL DEDUCCIONES', val: fichaTotales.totalDed},
                     {lbl: 'PRÉSTAMO OTORGADO', val: nominaViendo.prestamoOtorgado},
                     {lbl: 'PAGO PRÉSTAMO', val: nominaViendo.pagoPrestamo},
-                    {lbl: 'SALDO PRÉSTAMO', val: nominaViendo.saldoPrestamo},
+                    {lbl: 'SALDO PRÉSTAMO', val: (saldosRealesDeNomina(nominaViendo)?.saldoPrestamo ?? nominaViendo.saldoPrestamo)},
                     {lbl: 'AHORRO', val: nominaViendo.ahorro},
                     {lbl: 'PAGO AHORRO', val: nominaViendo.pagoAhorro},
-                    {lbl: 'AHORRO ACUM.', val: nominaViendo.ahorroAcumulado},
+                    {lbl: 'AHORRO ACUM.', val: (saldosRealesDeNomina(nominaViendo)?.ahorroAcumulado ?? nominaViendo.ahorroAcumulado)},
                     {lbl: 'TOTAL', val: fichaTotales.neto},
                     {lbl: 'DEP. GASTOS', val: nominaViendo.depositoGastos},
                     {lbl: 'OTROS DEPÓSITOS', val: nominaViendo.otrosDepositos},

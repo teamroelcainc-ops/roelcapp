@@ -1,0 +1,186 @@
+/* Estilos hermanos de MisOperacionesDashboard.tsx — mobile-first, paleta app. */
+
+.mo-contenedor {
+  padding: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mo-titulo { margin: 0; color: #f0f6fc; font-size: 1.3rem; }
+.mo-subtitulo { margin: 0; color: #8b949e; font-size: 0.85rem; }
+.mo-estado { color: #8b949e; padding: 30px 0; text-align: center; }
+
+.mo-vacio {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 22px;
+  color: #8b949e;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.mo-lista { display: flex; flex-direction: column; gap: 10px; }
+
+.mo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.mo-card:active { background-color: #21262d; }
+
+.mo-card-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+
+.mo-ref { color: #D84315; font-weight: 700; font-family: monospace; font-size: 0.95rem; }
+.mo-cliente { color: #f0f6fc; font-weight: 600; font-size: 0.95rem; }
+
+.mo-ruta, .mo-equipo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #8b949e;
+  font-size: 0.85rem;
+}
+
+.mo-pill {
+  padding: 4px 10px;
+  border-radius: 12px;
+  background-color: rgba(88, 166, 255, 0.12);
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  color: #58a6ff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* ---------- Detalle ---------- */
+
+.mo-detalle { min-height: calc(100dvh - 140px); }
+
+.mo-volver {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: #58a6ff;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.mo-detalle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.mo-status-actual { color: #8b949e; font-size: 0.85rem; }
+.mo-status-actual strong { color: #58a6ff; }
+
+.mo-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mo-timeline li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2ea043;
+  font-size: 0.82rem;
+}
+
+.mo-timeline-status { color: #c9d1d9; flex: 1; }
+.mo-timeline-hora { display: inline-flex; align-items: center; gap: 4px; color: #8b949e; font-family: monospace; }
+
+/* ---------- EL BOTÓN GIGANTE (un tap) ---------- */
+
+.mo-boton-gigante {
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 16px;
+  background-color: #D84315;
+  color: #fff;
+  cursor: pointer;
+  padding: 24px;
+  box-shadow: 0 8px 30px rgba(216, 67, 21, 0.35);
+}
+
+.mo-boton-gigante:active { transform: scale(0.985); }
+.mo-boton-gigante:disabled { opacity: 0.6; cursor: wait; }
+
+.mo-boton-gigante.final {
+  background-color: #1f7a37;
+  box-shadow: 0 8px 30px rgba(46, 160, 67, 0.35);
+}
+
+.mo-boton-accion { font-size: 1rem; font-weight: 800; letter-spacing: 2px; opacity: 0.9; }
+.mo-boton-status { font-size: 1.5rem; font-weight: 800; text-align: center; line-height: 1.25; }
+.mo-boton-pista { font-size: 0.8rem; opacity: 0.85; }
+
+.mo-deshacer {
+  align-self: center;
+  background: none;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.mo-toast {
+  background-color: rgba(46, 160, 67, 0.12);
+  border: 1px solid rgba(46, 160, 67, 0.5);
+  color: #3fb950;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* ---------- Móvil: el botón cubre la pantalla ---------- */
+@media (max-width: 768px) {
+
+  .mo-contenedor { padding: 14px; }
+
+  .mo-detalle {
+    /* Descuenta topbar y barra de navegación inferior. */
+    min-height: calc(100dvh - 190px);
+  }
+
+  .mo-boton-gigante {
+    min-height: 46dvh;
+  }
+
+  .mo-boton-status { font-size: 1.7rem; }
+}

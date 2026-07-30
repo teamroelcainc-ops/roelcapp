@@ -5,7 +5,7 @@
 import type { LucideIcon } from 'lucide-react';
 import {
   Home, CheckCircle2, XCircle, BarChart3, Wrench, Fuel, Landmark, Wallet,
-  Receipt, FileText, Building2, Users, DollarSign, BookOpen, Truck, Container,
+  Receipt, FileText, Building2, Users, DollarSign, BookOpen, Truck, Container, Navigation,
 } from 'lucide-react';
 
 export interface ModuloNavDef {
@@ -15,6 +15,7 @@ export interface ModuloNavDef {
 }
 
 export const MODULOS_NAV: ModuloNavDef[] = [
+  { clave: 'misOperaciones', etiqueta: 'Mis Ops', Icono: Navigation },
   { clave: 'operaciones', etiqueta: 'Inicio', Icono: Home },
   { clave: 'serviciosCompletados', etiqueta: 'Completados', Icono: CheckCircle2 },
   { clave: 'serviciosCancelados', etiqueta: 'Cancelados', Icono: XCircle },
