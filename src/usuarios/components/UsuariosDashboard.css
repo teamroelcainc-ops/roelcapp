@@ -234,3 +234,36 @@
 @media (max-width: 640px) {
   .ud-horario-dia { width: 96px; }
 }
+
+/* ✅ Formulario de usuario ancho en 3 columnas */
+.ud-x31 {
+  max-width: 1180px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.ud-form-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.ud-form-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* Dentro de una columna, los sub-grids y márgenes verticales se compactan. */
+.ud-form-col .ud-x44 { grid-template-columns: 1fr; margin-bottom: 0; }
+.ud-form-col .form-group { margin-bottom: 0; }
+.ud-form-col .ud-x36 { margin-bottom: 0; }
+.ud-form-col .ud-colab,
+.ud-form-col .ud-exento-ip,
+.ud-form-col .ud-horario { margin-top: 0; }
+
+@media (max-width: 900px) {
+  .ud-form-cols { grid-template-columns: 1fr; }
+}

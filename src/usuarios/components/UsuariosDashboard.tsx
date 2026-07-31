@@ -344,6 +344,10 @@ export const UsuariosDashboard = () => {
             </div>
             
             <form className="ud-x35" onSubmit={handleGuardar}>
+              {/* ✅ Formulario ancho en 3 columnas (como el detalle de operación):
+                  1) Identidad · 2) Roles y vínculos · 3) Horario de trabajo. */}
+              <div className="ud-form-cols">
+              <div className="ud-form-col">
               {/* NUEVO: Foto de perfil */}
               <div className="form-group ud-x36">
                 <label className="ud-x37">Foto de Perfil</label>
@@ -403,6 +407,9 @@ export const UsuariosDashboard = () => {
                 </div>
               )}
 
+              </div>
+
+              <div className="ud-form-col">
               <div className="form-group">
                 <label className="ud-x37">Roles del Usuario:</label>
                 <div className="ud-x47">
@@ -477,6 +484,9 @@ export const UsuariosDashboard = () => {
                   </span>
                 </label>
 
+              </div>
+
+              <div className="ud-form-col">
                 {/* ✅ NUEVO: horario de trabajo semanal */}
                 <div className="ud-horario">
                   <label className="form-label">Horario de trabajo (Reloj Checador)</label>
@@ -529,6 +539,9 @@ export const UsuariosDashboard = () => {
                     }}
                   >Copiar Lunes a Mar–Vie</button>
                 </div>
+              </div>
+
+              </div>
               </div>
 
               <div className="ud-x50">
