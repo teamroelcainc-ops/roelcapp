@@ -919,6 +919,9 @@ function App() {
 
       {/* PWA: aviso global cuando el dispositivo pierde internet */}
       <AvisoSinConexion />
+      {/* ✅ Alerta del Reloj Checador: FLOTANTE (position fixed), no ocupa
+          espacio en el layout — imposible que desacomode la vista. */}
+      <AvisoChecador />
 
       {/* MÓVIL: barra de navegación inferior fija y personalizable */}
       <BarraNavMovil
@@ -1179,10 +1182,6 @@ function App() {
             <button className="menu-toggle-btn" onClick={() => setMenuAbierto(!menuAbierto)} title="Ocultar/Mostrar Menú">☰</button>
           </div>
 
-          {/* ✅ Alerta del Reloj Checador (aparece solo si falta una marca) */}
-          <div className="avchk-slot">
-            <AvisoChecador />
-          </div>
           
           <div className="topbar-right app-x46">
             {accesoTotalReal && !vistaComoAplicada && (
