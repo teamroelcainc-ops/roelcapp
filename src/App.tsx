@@ -5,6 +5,7 @@ import { doc, updateDoc, getDoc, collection, onSnapshot, query, where, getDocs, 
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger';
 import { AvisoSinConexion } from './components/AvisoSinConexion';
+import { AvisoChecador } from './components/AvisoChecador';
 import { BarraNavMovil } from './components/BarraNavMovil';
 import { EditorNavMovil } from './components/EditorNavMovil';
 import { useUsuarioStore } from './stores/useUsuarioStore'; 
@@ -846,6 +847,7 @@ function App() {
       rol: usuarioActualDB.rol,
       roles: usuarioActualDB.roles,
       colaboradorId: usuarioActualDB.colaboradorId,
+      horarioTrabajo: usuarioActualDB.horarioTrabajo,
     } : null);
     useUsuarioStore.getState().setRolesEfectivos(rolesEfectivos);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -917,6 +919,7 @@ function App() {
 
       {/* PWA: aviso global cuando el dispositivo pierde internet */}
       <AvisoSinConexion />
+      <AvisoChecador />
 
       {/* MÓVIL: barra de navegación inferior fija y personalizable */}
       <BarraNavMovil

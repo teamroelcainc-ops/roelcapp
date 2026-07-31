@@ -4,6 +4,7 @@ import { collection, addDoc, query, where, getDocs, doc, getDoc } from 'firebase
 import { db } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { useEstadoConexion } from '../../../hooks/useEstadoConexion';
+import { horarioDeHoy, evaluarMarcaje, type HorarioTrabajo } from '../../../utils/horarioTrabajo';
 import './RelojChecadorModal.css';
 
 // ⭐ Solo los campos del documento de `usuarios` que el checador usa.
@@ -15,6 +16,7 @@ interface UsuarioChecador {
   rol?: string;
   roles?: string[];
   exentoIpChecador?: boolean;
+  horarioTrabajo?: HorarioTrabajo;
 }
 
 interface Props {
@@ -200,6 +202,11 @@ export const RelojChecadorModal = ({ isOpen, onClose, usuario }: Props) => {
     try {
       const fechaLocal = tiempoActual.toLocaleDateString('es-MX');
       const horaLocal = tiempoActual.toLocaleTimeString('es-MX');
+      // ✅ HORARIO: si el usuario tiene horario configurado para hoy, la marca
+      //   se evalúa (antes / a tiempo / después) y se personaliza el mensaje.
+      const diaHoy = horarioDeHoy(usuario.horarioTrabajo, tiempoActual);
+      const evaluacion = diaHoy ? evaluarMarcaje(tipoRegistro, tiempoActual, diaHoy) : null;
+
       const datosChequeo = {
         userId: usuario.id,
         userName: usuario.nombre || usuario.correo || usuario.email,
@@ -210,7 +217,11 @@ export const RelojChecadorModal = ({ isOpen, onClose, usuario }: Props) => {
         // ✅ Sin conexión se marca explícitamente para que Gerencia lo vea.
         ipRegistro: enLinea ? (ipActualUsuario || 'Exento') : 'OFFLINE (pendiente de sincronizar)',
         timestamp: tiempoActual.getTime(),
+        // ✅ Huella de puntualidad (visible para Gerencia en el historial).
+        diferenciaMinutos: evaluacion ? evaluacion.diferenciaMinutos : null,
+        observacionHorario: evaluacion ? evaluacion.mensaje : '',
       };
+      const notaHorario = evaluacion ? `\n\n${evaluacion.mensaje}` : '';
 
       if (!enLinea) {
         // ✅ SIN INTERNET: la escritura queda ENCOLADA en el dispositivo
@@ -221,14 +232,14 @@ export const RelojChecadorModal = ({ isOpen, onClose, usuario }: Props) => {
         addDoc(collection(db, 'reloj_checador'), datosChequeo).catch((e) =>
           console.error('Chequeo offline no sincronizado:', e)
         );
-        alert('Sin conexión: tu chequeo quedó GUARDADO EN ESTE DISPOSITIVO y se enviará automáticamente cuando vuelva el internet. No lo registres de nuevo.');
+        alert('Sin conexión: tu chequeo quedó GUARDADO EN ESTE DISPOSITIVO y se enviará automáticamente cuando vuelva el internet. No lo registres de nuevo.' + notaHorario);
         onClose();
         return;
       }
 
       await addDoc(collection(db, 'reloj_checador'), datosChequeo);
       await registrarLog('Asistencia', 'Chequeo', `${usuario.nombre || usuario.correo || usuario.email} registró: ${tipoRegistro}`);
-      alert("¡Registro guardado exitosamente!");
+      alert("¡Registro guardado exitosamente!" + notaHorario);
       onClose();
     } catch (error) {
       console.error("Error al guardar chequeo:", error);
@@ -299,6 +310,12 @@ export const RelojChecadorModal = ({ isOpen, onClose, usuario }: Props) => {
               <div className="rcm-x18">
                 {tiempoActual.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
               </div>
+              {(() => {
+                const dia = horarioDeHoy(usuario.horarioTrabajo, tiempoActual);
+                return dia
+                  ? <div className="rcm-horario-hoy">Tu horario de hoy: <strong>{dia.entrada} – {dia.salida}</strong></div>
+                  : null;
+              })()}
             </div>
 
             <div className="form-group">

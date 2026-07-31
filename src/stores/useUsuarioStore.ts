@@ -13,6 +13,8 @@ export interface UsuarioSesion {
   roles?: string[];
   /** Vínculo explícito con su registro de Colaboradores (empleados). */
   colaboradorId?: string;
+  /** Horario de trabajo semanal (para el Reloj Checador y sus alertas). */
+  horarioTrabajo?: import('../utils/horarioTrabajo').HorarioTrabajo;
 }
 
 interface UsuarioStore {

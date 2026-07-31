@@ -171,3 +171,66 @@
 .ud-colab-vacio { padding: 10px; color: #8b949e; font-size: 0.82rem; }
 
 .ud-colab-nota { color: #8b949e; font-size: 0.76rem; line-height: 1.4; }
+
+/* ✅ Horario de trabajo semanal */
+.ud-horario { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.ud-horario-nota { color: #8b949e; font-size: 0.76rem; line-height: 1.4; }
+
+.ud-horario-tabla {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.ud-horario-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  opacity: 0.55;
+}
+
+.ud-horario-fila.activa { opacity: 1; }
+
+.ud-horario-dia {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 120px;
+  color: #c9d1d9;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.ud-horario-hora {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  background-color: #010409;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  color-scheme: dark;
+  font-size: 0.85rem;
+}
+
+.ud-horario-hora:disabled { cursor: not-allowed; }
+.ud-horario-sep { color: #8b949e; font-size: 0.8rem; }
+
+.ud-horario-copiar {
+  align-self: flex-start;
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #58a6ff;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 640px) {
+  .ud-horario-dia { width: 96px; }
+}

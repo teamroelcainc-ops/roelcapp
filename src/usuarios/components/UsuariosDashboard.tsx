@@ -5,6 +5,7 @@ import { createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 
 import { db, secondaryAuth } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
 import { nombreDeEmpleado } from '../../utils/nombreEmpleado';
+import { DIAS_SEMANA, HORARIO_VACIO, type HorarioTrabajo } from '../../utils/horarioTrabajo';
 import './UsuariosDashboard.css'; 
 
 // Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
@@ -55,6 +56,9 @@ export const UsuariosDashboard = () => {
   const [colaboradores, setColaboradores] = useState<{ id: string; nombre: string }[]>([]);
   const [colaboradorId, setColaboradorId] = useState('');
   const [busquedaColab, setBusquedaColab] = useState('');
+  // ✅ NUEVO: horario de trabajo semanal (lo usan el Reloj Checador y la
+  //   alerta global de "no has marcado").
+  const [horarioTrabajo, setHorarioTrabajo] = useState<HorarioTrabajo>({ ...HORARIO_VACIO });
   const fileRef = useRef<HTMLInputElement>(null);            // ✅ NUEVO
 
   // NUEVOS ESTADOS PARA EL HISTORIAL DE SESIONES
@@ -123,6 +127,7 @@ export const UsuariosDashboard = () => {
       setExentoIpChecador(user.exentoIpChecador === true); // ✅ NUEVO
       setColaboradorId(user.colaboradorId || ''); // ✅ NUEVO
       setBusquedaColab('');
+      setHorarioTrabajo({ ...HORARIO_VACIO, ...(user.horarioTrabajo || {}) }); // ✅ NUEVO
     } else {
       setUsuarioActual(null);
       setNombre('');
@@ -133,6 +138,7 @@ export const UsuariosDashboard = () => {
       setExentoIpChecador(false); // ✅ NUEVO
       setColaboradorId(''); // ✅ NUEVO
       setBusquedaColab('');
+      setHorarioTrabajo({ ...HORARIO_VACIO }); // ✅ NUEVO
     }
     setModalAbierto(true);
   };
@@ -179,6 +185,7 @@ export const UsuariosDashboard = () => {
           fotoPerfil: fotoPerfil || '', // ✅ NUEVO
           exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
           colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
+          horarioTrabajo, // ✅ NUEVO: horario semanal para el Reloj Checador
           fechaActualizacion: new Date().toISOString()
         }, { merge: true });
         
@@ -201,6 +208,7 @@ export const UsuariosDashboard = () => {
           fotoPerfil: fotoPerfil || '', // ✅ NUEVO
           exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
           colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
+          horarioTrabajo, // ✅ NUEVO: horario semanal para el Reloj Checador
           fechaCreacion: new Date().toISOString(),
           activo: true,
           isOnline: false,
@@ -468,6 +476,59 @@ export const UsuariosDashboard = () => {
                     <small>Puede registrar su asistencia desde cualquier red (no solo el WiFi de la oficina). Los roles Admin, Gerencia y Sistemas ya están exentos.</small>
                   </span>
                 </label>
+
+                {/* ✅ NUEVO: horario de trabajo semanal */}
+                <div className="ud-horario">
+                  <label className="form-label">Horario de trabajo (Reloj Checador)</label>
+                  <small className="ud-horario-nota">Marca los días laborables y su hora de entrada y salida. Con el horario configurado, el checador avisa si se marca antes o después, y la app alerta cuando no se ha marcado.</small>
+                  <div className="ud-horario-tabla">
+                    {DIAS_SEMANA.map(d => {
+                      const dia = horarioTrabajo[d.clave] || { activo: false, entrada: '', salida: '' };
+                      return (
+                        <div className={`ud-horario-fila${dia.activo ? ' activa' : ''}`} key={d.clave}>
+                          <label className="ud-horario-dia">
+                            <input className="ud-x49"
+                              type="checkbox"
+                              checked={dia.activo}
+                              onChange={(e) => setHorarioTrabajo(prev => ({ ...prev, [d.clave]: { ...dia, activo: e.target.checked } }))}
+                            />
+                            {d.etiqueta}
+                          </label>
+                          <input
+                            type="time"
+                            className="ud-horario-hora"
+                            value={dia.entrada}
+                            disabled={!dia.activo}
+                            onChange={(e) => setHorarioTrabajo(prev => ({ ...prev, [d.clave]: { ...dia, entrada: e.target.value } }))}
+                            title="Hora de entrada"
+                          />
+                          <span className="ud-horario-sep">a</span>
+                          <input
+                            type="time"
+                            className="ud-horario-hora"
+                            value={dia.salida}
+                            disabled={!dia.activo}
+                            onChange={(e) => setHorarioTrabajo(prev => ({ ...prev, [d.clave]: { ...dia, salida: e.target.value } }))}
+                            title="Hora de salida"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    className="ud-horario-copiar"
+                    onClick={() => {
+                      const lun = horarioTrabajo.lun;
+                      if (!lun?.activo || !lun.entrada || !lun.salida) { alert('Configura primero el Lunes para copiarlo al resto de la semana.'); return; }
+                      setHorarioTrabajo(prev => {
+                        const nuevo = { ...prev };
+                        ['mar', 'mie', 'jue', 'vie'].forEach(c => { nuevo[c] = { ...lun }; });
+                        return nuevo;
+                      });
+                    }}
+                  >Copiar Lunes a Mar–Vie</button>
+                </div>
               </div>
 
               <div className="ud-x50">
