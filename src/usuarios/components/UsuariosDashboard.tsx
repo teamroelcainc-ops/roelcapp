@@ -1,11 +1,11 @@
 // src/usuarios/components/UsuariosDashboard.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { db, secondaryAuth } from '../../config/firebase';
 import { registrarLog } from '../../utils/logger';
 import { nombreDeEmpleado } from '../../utils/nombreEmpleado';
-import { DIAS_SEMANA, HORARIO_VACIO, type HorarioTrabajo } from '../../utils/horarioTrabajo';
+import { DIAS_SEMANA, HORARIO_VACIO, horarioDeHoy, type HorarioTrabajo } from '../../utils/horarioTrabajo';
 import './UsuariosDashboard.css'; 
 
 // Comprime y redimensiona la imagen a un cuadrado pequeño (máx 256px) en base64,
@@ -59,6 +59,43 @@ export const UsuariosDashboard = () => {
   // ✅ NUEVO: horario de trabajo semanal (lo usan el Reloj Checador y la
   //   alerta global de "no has marcado").
   const [horarioTrabajo, setHorarioTrabajo] = useState<HorarioTrabajo>({ ...HORARIO_VACIO });
+  // ✅ NUEVO: ficha de usuario (clic en la fila) + modal dedicado de horarios.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- el doc de usuario no tiene tipo canónico en este módulo (igual que la lista `usuarios`).
+  const [usuarioFicha, setUsuarioFicha] = useState<any | null>(null);
+  const [modalHorario, setModalHorario] = useState<null | { origen: 'form' | 'ficha' }>(null);
+  const [horarioBorrador, setHorarioBorrador] = useState<HorarioTrabajo>({ ...HORARIO_VACIO });
+  const [guardandoHorario, setGuardandoHorario] = useState(false);
+
+  const abrirModalHorario = (origen: 'form' | 'ficha') => {
+    const base = origen === 'form' ? horarioTrabajo : { ...HORARIO_VACIO, ...(usuarioFicha?.horarioTrabajo || {}) };
+    setHorarioBorrador(JSON.parse(JSON.stringify({ ...HORARIO_VACIO, ...base })));
+    setModalHorario({ origen });
+  };
+
+  const guardarModalHorario = async () => {
+    if (!modalHorario) return;
+    if (modalHorario.origen === 'form') {
+      // Dentro del formulario: solo se refleja en el estado; se persiste al guardar el usuario.
+      setHorarioTrabajo(horarioBorrador);
+      setModalHorario(null);
+      return;
+    }
+    // Desde la ficha: se guarda DIRECTO en el documento del usuario.
+    if (!usuarioFicha?.id) return;
+    setGuardandoHorario(true);
+    try {
+      await updateDoc(doc(db, 'usuarios', usuarioFicha.id), { horarioTrabajo: horarioBorrador });
+      await registrarLog('Usuarios', 'Edición', `Actualizó el horario de trabajo de ${usuarioFicha.nombre || usuarioFicha.email}.`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mismo doc sin tipo canónico.
+      setUsuarioFicha((prev: any) => prev ? { ...prev, horarioTrabajo: horarioBorrador } : prev);
+      setModalHorario(null);
+    } catch (e) {
+      console.error('No se pudo guardar el horario:', e);
+      alert('No se pudo guardar el horario. Intenta de nuevo.');
+    } finally {
+      setGuardandoHorario(false);
+    }
+  };
   const fileRef = useRef<HTMLInputElement>(null);            // ✅ NUEVO
 
   // NUEVOS ESTADOS PARA EL HISTORIAL DE SESIONES
@@ -281,8 +318,8 @@ export const UsuariosDashboard = () => {
               <tr><td className="ud-x10" colSpan={6}>No hay usuarios registrados.</td></tr>
             ) : (
               usuarios.map(user => (
-                <tr className="ud-x11" key={user.id}>
-                  <td className="ud-x12">
+                <tr className="ud-x11 ud-fila-clicable" key={user.id} onClick={() => setUsuarioFicha(user)} title="Ver detalle del usuario">
+                  <td className="ud-x12" onClick={(e) => e.stopPropagation()}>
                     <div className="ud-x13">
                       <button className="ud-x14" onClick={() => handleAbrirModal(user)}>Editar</button>
                       {/* BOTÓN NUEVO PARA VER SESIONES */}
@@ -487,57 +524,24 @@ export const UsuariosDashboard = () => {
               </div>
 
               <div className="ud-form-col">
-                {/* ✅ NUEVO: horario de trabajo semanal */}
+                {/* ✅ Horario de trabajo: resumen + edición en su propio modal */}
                 <div className="ud-horario">
                   <label className="form-label">Horario de trabajo (Reloj Checador)</label>
-                  <small className="ud-horario-nota">Marca los días laborables y su hora de entrada y salida. Con el horario configurado, el checador avisa si se marca antes o después, y la app alerta cuando no se ha marcado.</small>
-                  <div className="ud-horario-tabla">
+                  <small className="ud-horario-nota">Con el horario configurado, el checador avisa si se marca antes o después, y la app alerta cuando no se ha marcado.</small>
+                  <div className="ud-horario-resumen">
                     {DIAS_SEMANA.map(d => {
-                      const dia = horarioTrabajo[d.clave] || { activo: false, entrada: '', salida: '' };
+                      const dia = horarioTrabajo[d.clave];
                       return (
-                        <div className={`ud-horario-fila${dia.activo ? ' activa' : ''}`} key={d.clave}>
-                          <label className="ud-horario-dia">
-                            <input className="ud-x49"
-                              type="checkbox"
-                              checked={dia.activo}
-                              onChange={(e) => setHorarioTrabajo(prev => ({ ...prev, [d.clave]: { ...dia, activo: e.target.checked } }))}
-                            />
-                            {d.etiqueta}
-                          </label>
-                          <input
-                            type="time"
-                            className="ud-horario-hora"
-                            value={dia.entrada}
-                            disabled={!dia.activo}
-                            onChange={(e) => setHorarioTrabajo(prev => ({ ...prev, [d.clave]: { ...dia, entrada: e.target.value } }))}
-                            title="Hora de entrada"
-                          />
-                          <span className="ud-horario-sep">a</span>
-                          <input
-                            type="time"
-                            className="ud-horario-hora"
-                            value={dia.salida}
-                            disabled={!dia.activo}
-                            onChange={(e) => setHorarioTrabajo(prev => ({ ...prev, [d.clave]: { ...dia, salida: e.target.value } }))}
-                            title="Hora de salida"
-                          />
+                        <div className={`ud-horario-resumen-fila${dia?.activo ? ' activa' : ''}`} key={d.clave}>
+                          <span>{d.etiqueta}</span>
+                          <span>{dia?.activo && dia.entrada && dia.salida ? `${dia.entrada} – ${dia.salida}` : 'No labora'}</span>
                         </div>
                       );
                     })}
                   </div>
-                  <button
-                    type="button"
-                    className="ud-horario-copiar"
-                    onClick={() => {
-                      const lun = horarioTrabajo.lun;
-                      if (!lun?.activo || !lun.entrada || !lun.salida) { alert('Configura primero el Lunes para copiarlo al resto de la semana.'); return; }
-                      setHorarioTrabajo(prev => {
-                        const nuevo = { ...prev };
-                        ['mar', 'mie', 'jue', 'vie'].forEach(c => { nuevo[c] = { ...lun }; });
-                        return nuevo;
-                      });
-                    }}
-                  >Copiar Lunes a Mar–Vie</button>
+                  <button type="button" className="ud-horario-configurar" onClick={() => abrirModalHorario('form')}>
+                    Configurar horario
+                  </button>
                 </div>
               </div>
 
@@ -604,6 +608,151 @@ export const UsuariosDashboard = () => {
                   </tbody>
                 </table>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ FICHA DE USUARIO (clic en la fila) */}
+      {usuarioFicha && (
+        <div className="modal-overlay ud-x30" onClick={() => setUsuarioFicha(null)}>
+          <div className="form-card ud-ficha" onClick={(e) => e.stopPropagation()}>
+            <div className="ud-x32">
+              <h2 className="ud-x33">Detalle del Usuario</h2>
+              <button className="ud-x34" onClick={() => setUsuarioFicha(null)}>✕</button>
+            </div>
+
+            <div className="ud-ficha-cuerpo">
+              <div className="ud-ficha-identidad">
+                <div className="ud-x39">
+                  {usuarioFicha.fotoPerfil
+                    ? <img className="ud-x24" src={usuarioFicha.fotoPerfil} alt="" />
+                    : inicialesDe(usuarioFicha)}
+                </div>
+                <div className="ud-ficha-datos">
+                  <span className="ud-ficha-nombre">{usuarioFicha.nombre}</span>
+                  <span className="ud-ficha-correo">{usuarioFicha.email}</span>
+                  <div className="ud-x27">
+                    {usuarioFicha.roles?.map((r: string) => (
+                      <span className="ud-x28" key={r}>{r}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="ud-ficha-seccion">
+                <span className="ud-ficha-etiqueta">Colaborador conectado</span>
+                <span className="ud-ficha-valor">
+                  {usuarioFicha.colaboradorId
+                    ? (colaboradores.find(c => c.id === usuarioFicha.colaboradorId)?.nombre || usuarioFicha.colaboradorId)
+                    : 'Sin vincular'}
+                </span>
+              </div>
+
+              <div className="ud-ficha-seccion">
+                <span className="ud-ficha-etiqueta">Reloj Checador</span>
+                <span className="ud-ficha-valor">
+                  {usuarioFicha.exentoIpChecador === true ? 'Exento de IP (puede checar desde cualquier red)' : 'Requiere la red de la oficina'}
+                </span>
+              </div>
+
+              <div className="ud-ficha-seccion">
+                <div className="ud-ficha-horario-encabezado">
+                  <span className="ud-ficha-etiqueta">Horario de trabajo</span>
+                  <button type="button" className="ud-horario-configurar" onClick={() => abrirModalHorario('ficha')}>
+                    Configurar horario
+                  </button>
+                </div>
+                <div className="ud-horario-resumen">
+                  {DIAS_SEMANA.map(d => {
+                    const dia = (usuarioFicha.horarioTrabajo || {})[d.clave];
+                    return (
+                      <div className={`ud-horario-resumen-fila${dia?.activo ? ' activa' : ''}`} key={d.clave}>
+                        <span>{d.etiqueta}</span>
+                        <span>{dia?.activo && dia.entrada && dia.salida ? `${dia.entrada} – ${dia.salida}` : 'No labora'}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {horarioDeHoy(usuarioFicha.horarioTrabajo) && (
+                  <small className="ud-ficha-hoy">Hoy: {horarioDeHoy(usuarioFicha.horarioTrabajo)?.entrada} – {horarioDeHoy(usuarioFicha.horarioTrabajo)?.salida}</small>
+                )}
+              </div>
+            </div>
+
+            <div className="ud-x50 ud-ficha-pie">
+              <button className="ud-x51" onClick={() => setUsuarioFicha(null)}>Cerrar</button>
+              <button className="ud-x52" onClick={() => { const u = usuarioFicha; setUsuarioFicha(null); handleAbrirModal(u); }}>Editar Usuario</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL DEDICADO: HORARIO DE TRABAJO */}
+      {modalHorario && (
+        <div className="modal-overlay ud-horario-overlay">
+          <div className="form-card ud-horario-modal">
+            <div className="ud-x32">
+              <h2 className="ud-x33">Horario de Trabajo</h2>
+              <button className="ud-x34" onClick={() => setModalHorario(null)}>✕</button>
+            </div>
+
+            <div className="ud-horario-modal-cuerpo">
+              <small className="ud-horario-nota">Marca los días laborables y captura su hora de entrada y salida (formato 24 h).</small>
+              <div className="ud-horario-tabla">
+                {DIAS_SEMANA.map(d => {
+                  const dia = horarioBorrador[d.clave] || { activo: false, entrada: '', salida: '' };
+                  return (
+                    <div className={`ud-horario-fila${dia.activo ? ' activa' : ''}`} key={d.clave}>
+                      <label className="ud-horario-dia">
+                        <input className="ud-x49"
+                          type="checkbox"
+                          checked={dia.activo}
+                          onChange={(e) => setHorarioBorrador(prev => ({ ...prev, [d.clave]: { ...dia, activo: e.target.checked } }))}
+                        />
+                        {d.etiqueta}
+                      </label>
+                      <input
+                        type="time"
+                        className="ud-horario-hora"
+                        value={dia.entrada}
+                        disabled={!dia.activo}
+                        onChange={(e) => setHorarioBorrador(prev => ({ ...prev, [d.clave]: { ...dia, entrada: e.target.value } }))}
+                        title="Hora de entrada"
+                      />
+                      <span className="ud-horario-sep">a</span>
+                      <input
+                        type="time"
+                        className="ud-horario-hora"
+                        value={dia.salida}
+                        disabled={!dia.activo}
+                        onChange={(e) => setHorarioBorrador(prev => ({ ...prev, [d.clave]: { ...dia, salida: e.target.value } }))}
+                        title="Hora de salida"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                className="ud-horario-copiar"
+                onClick={() => {
+                  const lun = horarioBorrador.lun;
+                  if (!lun?.activo || !lun.entrada || !lun.salida) { alert('Configura primero el Lunes para copiarlo al resto de la semana.'); return; }
+                  setHorarioBorrador(prev => {
+                    const nuevo = { ...prev };
+                    ['mar', 'mie', 'jue', 'vie'].forEach(c => { nuevo[c] = { ...lun }; });
+                    return nuevo;
+                  });
+                }}
+              >Copiar Lunes a Mar–Vie</button>
+            </div>
+
+            <div className="ud-x50">
+              <button className="ud-x51" type="button" onClick={() => setModalHorario(null)} disabled={guardandoHorario}>Cancelar</button>
+              <button className="ud-x52" type="button" onClick={guardarModalHorario} disabled={guardandoHorario}>
+                {guardandoHorario ? 'Guardando...' : 'Guardar Horario'}
+              </button>
             </div>
           </div>
         </div>

@@ -267,3 +267,101 @@
 @media (max-width: 900px) {
   .ud-form-cols { grid-template-columns: 1fr; }
 }
+
+/* ✅ Fila clicable, ficha de usuario y modal de horario */
+.ud-fila-clicable { cursor: pointer; }
+.ud-fila-clicable:hover { background-color: #161b22; }
+
+.ud-ficha {
+  max-width: 560px;
+  width: 100%;
+  background-color: #0d1117;
+  border: 1px solid #444;
+  border-radius: 12px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.ud-ficha-cuerpo {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.ud-ficha-identidad { display: flex; align-items: center; gap: 16px; }
+.ud-ficha-datos { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ud-ficha-nombre { color: #f0f6fc; font-weight: 700; font-size: 1.05rem; }
+.ud-ficha-correo { color: #8b949e; font-size: 0.85rem; }
+
+.ud-ficha-seccion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid #21262d;
+}
+
+.ud-ficha-etiqueta {
+  color: #8b949e;
+  font-size: 0.72rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ud-ficha-valor { color: #c9d1d9; font-size: 0.9rem; }
+.ud-ficha-hoy { color: #58a6ff; font-size: 0.8rem; }
+.ud-ficha-horario-encabezado { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.ud-ficha-pie { position: sticky; bottom: 0; background-color: #0d1117; }
+
+.ud-horario-resumen {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.ud-horario-resumen-fila {
+  display: flex;
+  justify-content: space-between;
+  color: #6e7681;
+  font-size: 0.82rem;
+}
+
+.ud-horario-resumen-fila.activa { color: #c9d1d9; }
+.ud-horario-resumen-fila.activa span:last-child { color: #58a6ff; font-family: monospace; }
+
+.ud-horario-configurar {
+  align-self: flex-start;
+  padding: 8px 14px;
+  background-color: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #58a6ff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ud-horario-overlay { backdrop-filter: blur(4px); z-index: 1200; }
+
+.ud-horario-modal {
+  max-width: 480px;
+  width: 100%;
+  background-color: #0d1117;
+  border: 1px solid #444;
+  border-radius: 12px;
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.ud-horario-modal-cuerpo {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

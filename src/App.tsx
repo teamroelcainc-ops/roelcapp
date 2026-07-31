@@ -919,7 +919,6 @@ function App() {
 
       {/* PWA: aviso global cuando el dispositivo pierde internet */}
       <AvisoSinConexion />
-      <AvisoChecador />
 
       {/* MÓVIL: barra de navegación inferior fija y personalizable */}
       <BarraNavMovil
@@ -1178,6 +1177,11 @@ function App() {
         <div className="topbar app-x44">
           <div className="app-x45">
             <button className="menu-toggle-btn" onClick={() => setMenuAbierto(!menuAbierto)} title="Ocultar/Mostrar Menú">☰</button>
+          </div>
+
+          {/* ✅ Alerta del Reloj Checador (aparece solo si falta una marca) */}
+          <div className="avchk-slot">
+            <AvisoChecador />
           </div>
           
           <div className="topbar-right app-x46">

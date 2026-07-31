@@ -66,7 +66,10 @@ export function AvisoChecador() {
   if (descartadoPara === claveDescarte) return null;
 
   return (
-    <div className="avchk-banner" role="alert">
+    <div className="avchk-banner" role="alert"
+      title={faltaLlegada
+        ? `No has marcado tu llegada en el Reloj Checador. Tu entrada era a las ${diaHoy.entrada}.`
+        : `No has marcado tu salida en el Reloj Checador. Tu salida era a las ${diaHoy.salida}.`}>
       <AlarmClock size={16} />
       <span className="avchk-texto">
         {faltaLlegada
