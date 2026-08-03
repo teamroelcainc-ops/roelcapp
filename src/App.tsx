@@ -28,6 +28,7 @@ import { EmpresaBrand } from './features/configuracion/EmpresaBrand';
 // ============================================================================
 const OperacionesDashboard = lazyWithRetry(() => import('./features/operaciones/components/OperacionesDashboard'), 'OperacionesDashboard');
 const MisOperacionesDashboard = lazyWithRetry(() => import('./features/misOperaciones/components/MisOperacionesDashboard'), 'MisOperacionesDashboard');
+const PagosDashboard = lazyWithRetry(() => import('./features/pagos/components/PagosDashboard'), 'PagosDashboard');
 const ServiciosCompletados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCompletados'), 'ServiciosCompletados');
 const ServiciosCancelados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCancelados'), 'ServiciosCancelados');
 const ReportesDashboard = lazyWithRetry(() => import('./features/reportes/components/ReportesDashboard'), 'ReportesDashboard');
@@ -75,6 +76,8 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Mis Operaciones': 'misOperaciones',
   // ✅ Permiso especial: ver TODOS los registros del Reloj Checador.
   'Ver todos los chequeos': 'verTodosChequeos',
+  // ✅ NUEVO: módulo de Pagos (cobranza de clientes y pagos a proveedores).
+  'Pagos': 'pagos',
   'Operaciones Activas': 'operaciones',
   'Servicios Completados': 'serviciosCompletados',
   'Servicios Cancelados': 'serviciosCancelados',
@@ -610,7 +613,7 @@ function App() {
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
-  const [moduloActivo, setModuloActivo] = useState<'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>('operaciones');
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [miPerfilAbierto, setMiPerfilAbierto] = useState(false); // modal "Mi Perfil"
@@ -1053,6 +1056,12 @@ function App() {
             <span className="sidebar-label">Reportes</span>
           </div>
         )}
+        {puede('pagos') && (
+          <div className={`sidebar-item ${moduloActivo === 'pagos' ? 'active' : ''}`} title="Pagos" onClick={() => navegarA('pagos')}>
+            <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
+            <span className="sidebar-label">Pagos</span>
+          </div>
+        )}
 
         {verGastos && (
           <>
@@ -1250,6 +1259,9 @@ function App() {
           <Suspense fallback={<CargandoModulo />}>
             {moduloActivo === 'misOperaciones' && puede('misOperaciones') && (
               <MisOperacionesDashboard />
+            )}
+            {moduloActivo === 'pagos' && puede('pagos') && (
+              <PagosDashboard />
             )}
             {moduloActivo === 'operaciones' && puede('operaciones') && (
               <>
