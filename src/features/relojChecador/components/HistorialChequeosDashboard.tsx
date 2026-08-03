@@ -34,16 +34,19 @@ interface UsuarioSesion {
 
 interface Props {
   usuarioActual: UsuarioSesion | null;
+  /** ✅ Permiso de rol "Ver todos los chequeos": true = ve el historial de
+   *  TODOS los colaboradores; false = solo sus propios registros. Lo resuelve
+   *  App.tsx (ADMIN siempre lo tiene; los demás según su rol). */
+  puedeVerTodos?: boolean;
 }
 
-const ROLES_FULL_ACCESS = ['Admin', 'Gerencia', 'Sistemas'];
-
-export function HistorialChequeosDashboard({ usuarioActual }: Props) {
+export function HistorialChequeosDashboard({ usuarioActual, puedeVerTodos }: Props) {
   const [registros, setRegistros] = useState<ChequeoRegistro[]>([]);
   const [busqueda, setBusqueda] = useState('');
 
-  // Identificar si el usuario tiene privilegios totales
-  const tieneFullAccess = !!usuarioActual && ROLES_FULL_ACCESS.includes(usuarioActual.rol || '');
+  // ✅ El acceso total ya NO depende de roles quemados en el código: lo decide
+  //   el permiso configurable en Roles y Permisos (grupo Permisos Especiales).
+  const tieneFullAccess = !!usuarioActual && puedeVerTodos === true;
 
   useEffect(() => {
     if (!usuarioActual) return;

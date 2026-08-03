@@ -73,6 +73,8 @@ import { almacenSesion } from './utils/cacheMemoria';
 const MODULOS_A_CLAVE: Record<string, string> = {
   // ✅ NUEVO: vista del operador (solo sus operaciones asignadas).
   'Mis Operaciones': 'misOperaciones',
+  // ✅ Permiso especial: ver TODOS los registros del Reloj Checador.
+  'Ver todos los chequeos': 'verTodosChequeos',
   'Operaciones Activas': 'operaciones',
   'Servicios Completados': 'serviciosCompletados',
   'Servicios Cancelados': 'serviciosCancelados',
@@ -1279,7 +1281,14 @@ function App() {
             {moduloActivo === 'conveniosProveedores' && puede('conveniosProveedores') && <ConveniosProveedoresDashboard />}
             {moduloActivo === 'catalogos' && puede('catalogos') && <CatalogosDashboard />}
             {moduloActivo === 'colaboradores' && puede('colaboradores') && <EmpleadosDashboard />}
-            {moduloActivo === 'historialAsistencia' && puede('historialAsistencia') && <HistorialChequeosDashboard usuarioActual={usuarioActualDB} />}
+            {moduloActivo === 'historialAsistencia' && puede('historialAsistencia') && (
+              <HistorialChequeosDashboard
+                usuarioActual={usuarioActualDB}
+                // ✅ ADMIN (acceso total) siempre ve todo; los demás roles solo
+                //   si tienen marcado el permiso "Ver todos los chequeos".
+                puedeVerTodos={accesoTotal || puede('verTodosChequeos')}
+              />
+            )}
             {moduloActivo === 'roles' && puede('roles') && <RolesDashboard />}
             {moduloActivo === 'usuarios' && puede('usuarios') && <UsuariosDashboard />}
             {moduloActivo === 'logs' && puede('logs') && <LogsDashboard />}

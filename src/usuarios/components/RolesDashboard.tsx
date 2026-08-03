@@ -21,7 +21,9 @@ const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
   // ✅ NUEVO: permisos especiales de acción (no son items de menú; habilitan
   // capacidades puntuales). "Editar Referencia" permite editar la referencia
   // (# Ref) de una operación al editarla, igual que un ADMIN.
-  { grupo: 'Permisos Especiales', modulos: ['Editar Referencia'] },
+  // "Ver todos los chequeos": ver el Historial del Reloj Checador de TODOS los
+  // colaboradores; sin este permiso, cada quien ve SOLO sus propios registros.
+  { grupo: 'Permisos Especiales', modulos: ['Editar Referencia', 'Ver todos los chequeos'] },
 ];
 
 // Lista plana con todos los módulos (útil para "Seleccionar todo").
