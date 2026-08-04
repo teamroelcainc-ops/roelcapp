@@ -95,6 +95,10 @@ export function PagosDashboard() {
   const [entidadSel, setEntidadSel] = useState('');       // nombre de la entidad
   const [busquedaEntidad, setBusquedaEntidad] = useState('');
   const [facturasSel, setFacturasSel] = useState<string[]>([]);
+  // ✅ NUEVO (flujo tipo QuickBooks): monto a aplicar POR FACTURA, editable.
+  //   Al seleccionar una factura se propone su saldo completo; el usuario
+  //   puede escribir un monto MENOR (nunca mayor: se acota al saldo).
+  const [pagosPorFactura, setPagosPorFactura] = useState<Record<string, string>>({});
   const [fechaPago, setFechaPago] = useState(hoyISO());
   const [metodoPago, setMetodoPago] = useState('Transferencia');
   const [referencia, setReferencia] = useState('');
@@ -135,6 +139,7 @@ export function PagosDashboard() {
     setEntidadSel('');
     setBusquedaEntidad('');
     setFacturasSel([]);
+    setPagosPorFactura({});
     setFechaPago(hoyISO());
     setMetodoPago('Transferencia');
     setReferencia('');
@@ -204,27 +209,30 @@ export function PagosDashboard() {
     facturasDeEntidad.filter((f) => facturasSel.includes(f.id)),
   [facturasDeEntidad, facturasSel]);
 
-  const sumaSaldosSel = useMemo(() =>
-    seleccionadasOrdenadas.reduce((s, f) => s + f.saldo, 0),
-  [seleccionadasOrdenadas]);
-
   const monedasSel = useMemo(() =>
     Array.from(new Set(seleccionadasOrdenadas.map((f) => f.moneda).filter(Boolean))),
   [seleccionadasOrdenadas]);
 
-  // Monto por defecto = suma de saldos (si el usuario no lo ha editado a mano).
+  // ✅ Total APLICADO = suma de los montos capturados por factura.
+  const totalAplicado = useMemo(() =>
+    seleccionadasOrdenadas.reduce((s, f) => s + aplicadoDeFactura(f), 0),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [seleccionadasOrdenadas, pagosPorFactura]);
+
+  // Si el usuario no ha capturado el monto recibido a mano, se propone el
+  // total aplicado (el flujo simple sigue siendo de un solo paso).
   useEffect(() => {
-    if (!montoEditado) setMontoTexto(sumaSaldosSel > 0 ? sumaSaldosSel.toFixed(2) : '');
-  }, [sumaSaldosSel, montoEditado]);
+    if (!montoEditado) setMontoTexto(totalAplicado > 0 ? totalAplicado.toFixed(2) : '');
+  }, [totalAplicado, montoEditado]);
 
   const monto = Number(montoTexto) || 0;
+  // ✅ Diferencia en vivo: recibido − aplicado.
+  //   > 0 → saldo A FAVOR del cliente/proveedor · = 0 → cuadrado · < 0 → EN CONTRA.
+  const diferencia = monto - totalAplicado;
 
-  // ✅ DISTRIBUCIÓN FIFO en vivo (más antigua → más reciente).
-  const aplicacion = useMemo<FacturaAplicada[]>(() => {
-    let restante = monto;
-    return seleccionadasOrdenadas.map((f) => {
-      const aplicado = Math.max(0, Math.min(f.saldo, restante));
-      restante = Math.max(0, restante - aplicado);
+  const aplicacion = useMemo<FacturaAplicada[]>(() =>
+    seleccionadasOrdenadas.map((f) => {
+      const aplicado = aplicadoDeFactura(f);
       return {
         facturaId: f.id,
         invoice: f.invoice,
@@ -234,25 +242,59 @@ export function PagosDashboard() {
         aplicado,
         saldoNuevo: Math.max(0, f.saldo - aplicado),
       };
-    });
-  }, [seleccionadasOrdenadas, monto]);
+    }),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [seleccionadasOrdenadas, pagosPorFactura]);
 
   const toggleFactura = (id: string) => {
-    setFacturasSel((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    const factura = facturasDeEntidad.find((f) => f.id === id);
+    setFacturasSel((prev) => {
+      const ya = prev.includes(id);
+      setPagosPorFactura((pp) => {
+        const nuevo = { ...pp };
+        if (ya) delete nuevo[id];
+        else nuevo[id] = (factura?.saldo || 0).toFixed(2); // por defecto: el total (su saldo)
+        return nuevo;
+      });
+      return ya ? prev.filter((x) => x !== id) : [...prev, id];
+    });
   };
 
   const toggleTodas = () => {
     const todas = facturasDeEntidad.every((f) => facturasSel.includes(f.id));
-    setFacturasSel(todas ? [] : facturasDeEntidad.map((f) => f.id));
+    if (todas) {
+      setFacturasSel([]);
+      setPagosPorFactura({});
+    } else {
+      setFacturasSel(facturasDeEntidad.map((f) => f.id));
+      setPagosPorFactura(Object.fromEntries(facturasDeEntidad.map((f) => [f.id, f.saldo.toFixed(2)])));
+    }
+  };
+
+  // ✅ Editar el monto de UNA factura: nunca mayor que su saldo (se acota).
+  const cambiarPagoFactura = (id: string, texto: string) => {
+    const factura = facturasDeEntidad.find((f) => f.id === id);
+    const tope = factura?.saldo || 0;
+    let valor = texto;
+    const num = Number(texto);
+    if (!isNaN(num) && num > tope) valor = tope.toFixed(2);
+    setPagosPorFactura((pp) => ({ ...pp, [id]: valor }));
+  };
+
+  const aplicadoDeFactura = (f: FacturaPagable): number => {
+    const num = Number(pagosPorFactura[f.id]);
+    if (isNaN(num) || num < 0) return 0;
+    return Math.min(num, f.saldo);
   };
 
   // ── Guardar el pago ──
   const guardarPago = async () => {
     if (!usuario) return;
     if (seleccionadasOrdenadas.length === 0) { alert('Selecciona al menos una factura.'); return; }
-    if (monto <= 0) { alert('Captura el monto del pago.'); return; }
-    if (monto > sumaSaldosSel + 0.009) {
-      alert(`El monto (${money(monto)}) es MAYOR que la suma de los saldos seleccionados (${money(sumaSaldosSel)}). Ajusta el monto o selecciona más facturas.`);
+    if (totalAplicado <= 0) { alert('Captura el monto a aplicar en al menos una factura.'); return; }
+    if (monto <= 0) { alert('Captura el monto recibido del pago.'); return; }
+    if (diferencia < -0.009) {
+      alert(`Estás aplicando ${money(totalAplicado)} pero el monto recibido es ${money(monto)} (EN CONTRA por ${money(-diferencia)}).\n\nNo se puede aplicar más dinero del recibido: baja el monto de alguna factura o sube el monto recibido.`);
       return;
     }
     if (monedasSel.length > 1) {
@@ -288,6 +330,8 @@ export function PagosDashboard() {
         entidadId: seleccionadasOrdenadas[0]?.entidadId || '',
         entidadNombre: entidadSel,
         monto,
+        montoAplicado: totalAplicado,
+        saldoAFavor: Math.max(0, diferencia),
         moneda: monedasSel[0] || '',
         observaciones: observaciones.trim(),
         pdfUrl,
@@ -552,7 +596,7 @@ export function PagosDashboard() {
                           <th className="pg-col-check">
                             <input type="checkbox" checked={facturasDeEntidad.length > 0 && facturasDeEntidad.every(f => facturasSel.includes(f.id))} onChange={toggleTodas} title="Seleccionar todas" />
                           </th>
-                          <th>FACTURA</th><th>FECHA</th><th>TOTAL</th><th>PAGADO</th><th>SALDO</th><th>MONEDA</th>
+                          <th>FACTURA</th><th>FECHA</th><th>TOTAL</th><th>PAGADO</th><th>SALDO</th><th>MONEDA</th><th>PAGO</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -567,6 +611,22 @@ export function PagosDashboard() {
                             <td>{f.montoPagado > 0 ? money(f.montoPagado) : '—'}</td>
                             <td className="pg-monto">{money(f.saldo)}</td>
                             <td>{f.moneda || '—'}</td>
+                            {/* ✅ Monto a aplicar en ESTA factura: por defecto su
+                                saldo completo; editable a un monto MENOR. */}
+                            <td className="pg-col-pago" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                max={f.saldo}
+                                className="pg-input-pago"
+                                disabled={!facturasSel.includes(f.id)}
+                                value={facturasSel.includes(f.id) ? (pagosPorFactura[f.id] ?? '') : ''}
+                                onChange={(e) => cambiarPagoFactura(f.id, e.target.value)}
+                                placeholder={facturasSel.includes(f.id) ? '0.00' : '—'}
+                                title={`Máximo: ${money(f.saldo)}`}
+                              />
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -594,7 +654,7 @@ export function PagosDashboard() {
                       <input type="text" placeholder="Cheque, folio, rastreo..." value={referencia} onChange={(e) => setReferencia(e.target.value)} />
                     </div>
                     <div className="pg-campo">
-                      <label>Monto del pago {monedasSel[0] ? `(${monedasSel[0]})` : ''}</label>
+                      <label>Monto recibido {monedasSel[0] ? `(${monedasSel[0]})` : ''}</label>
                       <input
                         type="number"
                         min="0"
@@ -602,11 +662,7 @@ export function PagosDashboard() {
                         value={montoTexto}
                         onChange={(e) => { setMontoTexto(e.target.value); setMontoEditado(true); }}
                       />
-                      {/* ✅ El pago puede ser PARCIAL: basta capturar un monto menor. */}
-                      <small className="pg-pista">Puede ser <b>parcial</b>: captura un monto menor y se aplicará de la factura más antigua a la más reciente.</small>
-                      {monto > 0 && monto < sumaSaldosSel - 0.009 && (
-                        <small className="pg-pista-parcial">Pago parcial: cubre {money(monto, monedasSel[0])} de {money(sumaSaldosSel, monedasSel[0])} — quedará pendiente {money(sumaSaldosSel - monto, monedasSel[0])}.</small>
-                      )}
+                      <small className="pg-pista">Lo que el {tab === 'cliente' ? 'cliente' : 'proveedor'} pagó (ej. $1,000). Al seleccionar facturas se va restando en vivo.</small>
                     </div>
                     <div className="pg-campo pg-campo-ancho">
                       <label>Comprobante (PDF o imagen, opcional)</label>
@@ -622,32 +678,31 @@ export function PagosDashboard() {
                     <div className="pg-alerta">Las facturas seleccionadas mezclan monedas ({monedasSel.join(', ')}). Un pago solo puede cubrir facturas de la misma moneda.</div>
                   )}
 
-                  {/* PASO 4: previsualización de la aplicación FIFO */}
+                  {/* ✅ PASO 4: TOTALES EN VIVO — recibido, aplicado y diferencia
+                      (a favor / cuadrado / en contra), estilo QuickBooks. */}
                   {seleccionadasOrdenadas.length > 0 && (
-                    <>
-                      <label className="pg-etq">4. Así se aplicará el pago ({money(monto, monedasSel[0])} de {money(sumaSaldosSel, monedasSel[0])} seleccionado)</label>
-                      <div className="pg-tabla-marco">
-                        <table className="pg-tabla pg-tabla-aplicacion">
-                          <thead>
-                            <tr><th>ORDEN</th><th>FACTURA</th><th>FECHA</th><th>SALDO</th><th>SE APLICA</th><th>QUEDA</th></tr>
-                          </thead>
-                          <tbody>
-                            {aplicacion.map((a, i) => (
-                              <tr key={a.facturaId}>
-                                <td>{i + 1}</td>
-                                <td className="pg-numero">{a.invoice}</td>
-                                <td>{a.fecha}</td>
-                                <td>{money(a.saldoAnterior)}</td>
-                                <td className="pg-monto">{a.aplicado > 0 ? money(a.aplicado) : '—'}</td>
-                                <td className={a.saldoNuevo > 0.009 ? 'pg-parcial' : 'pg-pagada'}>
-                                  {a.aplicado <= 0 ? 'Sin aplicar' : (a.saldoNuevo > 0.009 ? `${money(a.saldoNuevo)} (parcial)` : 'PAGADA')}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                    <div className="pg-totales">
+                      <div className="pg-total-fila">
+                        <span>Monto recibido</span>
+                        <span className="pg-monto">{money(monto, monedasSel[0])}</span>
                       </div>
-                    </>
+                      <div className="pg-total-fila">
+                        <span>Aplicado a {aplicacion.filter(a => a.aplicado > 0).length} factura(s)</span>
+                        <span className="pg-monto">{money(totalAplicado, monedasSel[0])}</span>
+                      </div>
+                      <div className={`pg-total-fila pg-total-diferencia${diferencia > 0.009 ? ' favor' : diferencia < -0.009 ? ' contra' : ' cuadrado'}`}>
+                        {diferencia > 0.009 && (
+                          <><span>Saldo A FAVOR del {tab === 'cliente' ? 'cliente' : 'proveedor'}</span><span>{money(diferencia, monedasSel[0])}</span></>
+                        )}
+                        {diferencia < -0.009 && (
+                          <><span>EN CONTRA (aplicaste más de lo recibido)</span><span>-{money(-diferencia, monedasSel[0])}</span></>
+                        )}
+                        {Math.abs(diferencia) <= 0.009 && (
+                          <><span>Diferencia</span><span>{money(0, monedasSel[0])} · cuadrado</span></>
+                        )}
+                      </div>
+                      <small className="pg-pista">Cada factura propone su total al seleccionarla; puedes escribir un monto menor en su columna PAGO (nunca mayor a su saldo). Las facturas con pago menor a su saldo quedan como PARCIAL.</small>
+                    </div>
                   )}
                   </div>
                   </div>

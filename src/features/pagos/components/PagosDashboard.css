@@ -176,3 +176,56 @@
   .pg-registro-col { overflow-y: visible; }
   .pg-tabla-facturas { max-height: 260px; }
 }
+
+/* ✅ Flujo tipo QuickBooks: columna PAGO editable y totales en vivo */
+.pg-col-pago { width: 130px; }
+
+.pg-input-pago {
+  width: 118px;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  background-color: #010409;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #3fb950;
+  font-weight: 700;
+  font-size: 0.86rem;
+  text-align: right;
+}
+
+.pg-input-pago:disabled {
+  color: #484f58;
+  background-color: #0d1117;
+  cursor: not-allowed;
+}
+
+.pg-totales {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.pg-total-fila {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: #c9d1d9;
+  font-size: 0.9rem;
+}
+
+.pg-total-diferencia {
+  border-top: 1px solid #21262d;
+  padding-top: 10px;
+  font-weight: 700;
+}
+
+.pg-total-diferencia.favor { color: #3fb950; }
+.pg-total-diferencia.favor span:last-child { font-size: 1.05rem; }
+.pg-total-diferencia.contra { color: #ef4444; }
+.pg-total-diferencia.contra span:last-child { font-size: 1.05rem; }
+.pg-total-diferencia.cuadrado { color: #8b949e; }
