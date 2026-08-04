@@ -224,6 +224,15 @@ export function PagosDashboard() {
     Array.from(new Set(seleccionadasOrdenadas.map((f) => f.moneda).filter(Boolean))),
   [seleccionadasOrdenadas]);
 
+  // ✅ Monto aplicado de UNA factura (acotado a su saldo). Declarada ANTES de
+  //   los memos que la usan: al ser const, invocarla desde un useMemo antes de
+  //   su inicialización (TDZ) tronaba el render al marcar la primera factura.
+  const aplicadoDeFactura = (f: FacturaPagable): number => {
+    const num = Number(pagosPorFactura[f.id]);
+    if (isNaN(num) || num < 0) return 0;
+    return Math.min(num, f.saldo);
+  };
+
   // ✅ Total APLICADO = suma de los montos capturados por factura.
   const totalAplicado = useMemo(() =>
     seleccionadasOrdenadas.reduce((s, f) => s + aplicadoDeFactura(f), 0),
@@ -309,11 +318,6 @@ export function PagosDashboard() {
     setMontoEditado(false);
   };
 
-  const aplicadoDeFactura = (f: FacturaPagable): number => {
-    const num = Number(pagosPorFactura[f.id]);
-    if (isNaN(num) || num < 0) return 0;
-    return Math.min(num, f.saldo);
-  };
 
   // ── Guardar el pago ──
   const guardarPago = async () => {
