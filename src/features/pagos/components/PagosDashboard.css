@@ -26,7 +26,17 @@
 
 .pg-tabla-marco { border: 1px solid #30363d; border-radius: 8px; overflow: hidden; overflow-x: auto; }
 .pg-tabla-scroll { max-height: 260px; overflow-y: auto; }
-.pg-tabla-facturas { max-height: none; flex: 1; }
+.pg-tabla-facturas {
+  max-height: 320px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* Scrollbar visible (WebKit) para que se note que el área desplaza */
+.pg-tabla-facturas::-webkit-scrollbar { width: 10px; }
+.pg-tabla-facturas::-webkit-scrollbar-track { background: #0d1117; }
+.pg-tabla-facturas::-webkit-scrollbar-thumb { background: #30363d; border-radius: 5px; }
+.pg-tabla-facturas::-webkit-scrollbar-thumb:hover { background: #484f58; }
 
 .pg-tabla { width: 100%; border-collapse: collapse; text-align: left; }
 .pg-tabla thead { background-color: #161b22; position: sticky; top: 0; z-index: 5; }
@@ -335,3 +345,19 @@
   .pg-qb-pie { grid-template-columns: 1fr; }
   .pg-qb-recibido { align-items: flex-start; text-align: left; }
 }
+
+/* ✅ Encabezado de Transacciones pendientes con buscador de facturas */
+.pg-trans-encabezado {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.pg-buscador-factura {
+  max-width: 280px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.pg-trans-conteo { color: #8b949e; font-size: 0.8rem; }

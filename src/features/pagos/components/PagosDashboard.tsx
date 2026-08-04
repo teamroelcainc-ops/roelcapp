@@ -99,6 +99,8 @@ export function PagosDashboard() {
   //   Al seleccionar una factura se propone su saldo completo; el usuario
   //   puede escribir un monto MENOR (nunca mayor: se acota al saldo).
   const [pagosPorFactura, setPagosPorFactura] = useState<Record<string, string>>({});
+  // ✅ NUEVO: búsqueda por # de factura dentro de Transacciones pendientes.
+  const [busquedaFactura, setBusquedaFactura] = useState('');
   const [fechaPago, setFechaPago] = useState(hoyISO());
   const [metodoPago, setMetodoPago] = useState('Transferencia');
   const [referencia, setReferencia] = useState('');
@@ -140,6 +142,7 @@ export function PagosDashboard() {
     setBusquedaEntidad('');
     setFacturasSel([]);
     setPagosPorFactura({});
+    setBusquedaFactura('');
     setFechaPago(hoyISO());
     setMetodoPago('Transferencia');
     setReferencia('');
@@ -205,6 +208,14 @@ export function PagosDashboard() {
       .sort((a, b) => claveFecha(a.fecha).localeCompare(claveFecha(b.fecha))),
   [facturasPendientes, entidadSel]);
 
+  // ✅ Solo afecta lo que se MUESTRA en la tabla; las facturas ya
+  //   seleccionadas siguen contando en los totales aunque el filtro las oculte.
+  const facturasVisibles = useMemo(() => {
+    if (!busquedaFactura.trim()) return facturasDeEntidad;
+    const b = busquedaFactura.toLowerCase();
+    return facturasDeEntidad.filter((f) => f.invoice.toLowerCase().includes(b));
+  }, [facturasDeEntidad, busquedaFactura]);
+
   const seleccionadasOrdenadas = useMemo(() =>
     facturasDeEntidad.filter((f) => facturasSel.includes(f.id)),
   [facturasDeEntidad, facturasSel]);
@@ -261,13 +272,23 @@ export function PagosDashboard() {
   };
 
   const toggleTodas = () => {
-    const todas = facturasDeEntidad.every((f) => facturasSel.includes(f.id));
+    // Opera sobre las VISIBLES (respeta el filtro de búsqueda), conservando
+    // las selecciones que el filtro tenga ocultas.
+    const idsVisibles = facturasVisibles.map((f) => f.id);
+    const todas = idsVisibles.length > 0 && idsVisibles.every((id) => facturasSel.includes(id));
     if (todas) {
-      setFacturasSel([]);
-      setPagosPorFactura({});
+      setFacturasSel(facturasSel.filter((id) => !idsVisibles.includes(id)));
+      setPagosPorFactura((pp) => {
+        const nuevo = { ...pp };
+        idsVisibles.forEach((id) => delete nuevo[id]);
+        return nuevo;
+      });
     } else {
-      setFacturasSel(facturasDeEntidad.map((f) => f.id));
-      setPagosPorFactura(Object.fromEntries(facturasDeEntidad.map((f) => [f.id, f.saldo.toFixed(2)])));
+      setFacturasSel(Array.from(new Set([...facturasSel, ...idsVisibles])));
+      setPagosPorFactura((pp) => ({
+        ...pp,
+        ...Object.fromEntries(facturasVisibles.map((f) => [f.id, pp[f.id] ?? f.saldo.toFixed(2)])),
+      }));
     }
   };
 
@@ -642,19 +663,38 @@ export function PagosDashboard() {
                   </div>
 
                   {/* ═══ Transacciones pendientes ═══ */}
-                  <label className="pg-etq">Transacciones pendientes</label>
+                  <div className="pg-trans-encabezado">
+                    <label className="pg-etq">Transacciones pendientes</label>
+                    <div className="pg-buscador pg-buscador-factura">
+                      <Search size={14} />
+                      <input
+                        type="text"
+                        placeholder="Buscar # de factura..."
+                        value={busquedaFactura}
+                        onChange={(e) => setBusquedaFactura(e.target.value)}
+                      />
+                      {busquedaFactura && (
+                        <button type="button" className="pg-btn-liga" onClick={() => setBusquedaFactura('')}>✕</button>
+                      )}
+                    </div>
+                    {busquedaFactura && (
+                      <span className="pg-trans-conteo">{facturasVisibles.length} de {facturasDeEntidad.length}</span>
+                    )}
+                  </div>
                   <div className="pg-tabla-marco pg-tabla-facturas">
                     <table className="pg-tabla">
                       <thead>
                         <tr>
                           <th className="pg-col-check">
-                            <input type="checkbox" checked={facturasDeEntidad.length > 0 && facturasDeEntidad.every(f => facturasSel.includes(f.id))} onChange={toggleTodas} title="Seleccionar todas" />
+                            <input type="checkbox" checked={facturasVisibles.length > 0 && facturasVisibles.every(f => facturasSel.includes(f.id))} onChange={toggleTodas} title="Seleccionar todas las visibles" />
                           </th>
                           <th>DESCRIPCIÓN</th><th>FECHA</th><th>MONTO ORIGINAL</th><th>SALDO ABIERTO</th><th>MONEDA</th><th className="pg-col-pago-th">PAGO</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {facturasDeEntidad.map((f) => (
+                        {facturasVisibles.length === 0 ? (
+                          <tr><td colSpan={7} className="pg-vacio">Sin facturas para "{busquedaFactura}".</td></tr>
+                        ) : facturasVisibles.map((f) => (
                           <tr key={f.id} className="pg-fila" onClick={() => toggleFactura(f.id)}>
                             <td className="pg-col-check" onClick={(e) => e.stopPropagation()}>
                               <input type="checkbox" checked={facturasSel.includes(f.id)} onChange={() => toggleFactura(f.id)} />
