@@ -373,7 +373,32 @@ const obtenerMontoOperacion = (op: any) => {
       conv: convGuardada,
     };
   }
-  return calcularConversionProveedor(op);
+  const calculado = calcularConversionProveedor(op);
+  if (calculado.subtotal > 0 || calculado.conv > 0) return calculado;
+
+  // ✅ FIX MONTOS EN CERO: si la operación no trae montos guardados
+  //   (totalAPagarProv/subtotalProv vacíos), se toma la CONFIRMACIÓN DE
+  //   TARIFA guardada (op.confirmacionTarifa) — la misma fuente por la que
+  //   el modal de Tarifa sí muestra los montos correctos.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- confirmación guardada sin tipo canónico (igual que el resto del archivo).
+  const ct: any = op.confirmacionTarifa;
+  if (ct && typeof ct === 'object') {
+    const subtotalCT = Number(ct.subtotalProv) || ((Number(ct.convenioProv) || 0) + (Number(ct.costosAdic) || 0));
+    if (subtotalCT > 0) {
+      const tc = Number(op.tipoCambioAprobado) || Number(ct.tipoCambio) || 0;
+      const monedaTxt = String(ct.facturadoEn || ct.monedaConvenio || '').toUpperCase();
+      const esDolarCT = monedaTxt.includes('USD') || monedaTxt.includes('DOLAR') || monedaTxt.includes('DÓLAR');
+      const esPesoCT = monedaTxt.includes('MXN') || monedaTxt.includes('PESO');
+      const convCT = Number(ct.totalAFacturar) || (esDolarCT && tc > 0 ? subtotalCT * tc : subtotalCT);
+      return {
+        subtotal: subtotalCT,
+        dol: esDolarCT ? subtotalCT : 0,
+        pes: esPesoCT ? subtotalCT : 0,
+        conv: convCT,
+      };
+    }
+  }
+  return calculado;
 };
 
 export const FacturacionProveedoresDashboard = () => {
@@ -1396,7 +1421,10 @@ export const FacturacionProveedoresDashboard = () => {
 
       const emp: any = empresasList.find(e => e.id === f.proveedorId) || {};
 
-      setRemisionPreview({
+      // ✅ NUEVO: si la factura ya tiene un encabezado de remisión GUARDADO,
+      //   ese manda (mismo patrón que la Confirmación de Tarifa).
+      const remGuardada = (f.encabezadoRemision && typeof f.encabezadoRemision === 'object') ? f.encabezadoRemision : null;
+      const baseRemision = {
         esUSD,
         emisorNombre: emisor.facturaNombre,
         emisorDireccion: emisor.direccion,
@@ -1416,12 +1444,40 @@ export const FacturacionProveedoresDashboard = () => {
         tipoCambio: '',
         total,
         filas,
-      });
+      };
+      setRemisionPreview(remGuardada
+        ? { ...baseRemision, ...remGuardada, facturaId: String(f.id || '') }
+        : { ...baseRemision, facturaId: String(f.id || '') });
     } catch (e) {
       console.error('Error preparando la remisión:', e);
       alert('No se pudo preparar la remisión.');
     } finally {
       setCargandoRemision(false);
+    }
+  };
+
+  // ✅ NUEVO: guarda el encabezado de la remisión EDITADO en la factura
+  //   (facturas_proveedores) para que los cambios no se pierdan y los demás
+  //   usuarios vean lo mismo al abrirla. Mismo patrón que la Confirmación.
+  const guardarRemision = async (avisar: boolean = true): Promise<boolean> => {
+    if (!remisionPreview) return false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- preview de remisión sin tipo canónico.
+    const { facturaId, ...campos } = remisionPreview as any;
+    if (!facturaId) {
+      if (avisar) alert('No se encontró la factura a la que pertenece esta remisión.');
+      return false;
+    }
+    try {
+      await updateDoc(doc(db, 'facturas_proveedores', String(facturaId)), { encabezadoRemision: campos });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- lista de facturas sin tipo canónico.
+      setFacturasGlobales(prev => prev.map((x: any) => (String(x.id) === String(facturaId) ? { ...x, encabezadoRemision: campos } : x)));
+      registrarLog('Facturación Proveedores', 'Edición', `Guardó el encabezado de la Remisión ${campos.numero || facturaId}.`).catch(() => {});
+      if (avisar) alert('Encabezado de la remisión guardado. Los demás usuarios verán estos datos al abrirla.');
+      return true;
+    } catch (e) {
+      console.error('Error guardando el encabezado de la remisión:', e);
+      alert('No se pudo guardar el encabezado de la remisión. Inténtalo de nuevo.');
+      return false;
     }
   };
 
@@ -4163,7 +4219,8 @@ export const FacturacionProveedoresDashboard = () => {
 
             <div className="fpd-x252">
               <button className="fpd-x150" onClick={() => setRemisionPreview(null)}>Cerrar</button>
-              <button className="fpd-x340" onClick={generarPDFDeRemision}>Generar PDF</button>
+              <button className="fpd-x350" onClick={() => guardarRemision(true)} title="Guardar los cambios para que no se pierdan y los demás usuarios los vean">Guardar</button>
+              <button className="fpd-x340" onClick={async () => { await guardarRemision(false); generarPDFDeRemision(); }} title="Guarda los cambios y descarga el PDF">Generar PDF</button>
             </div>
           </div>
         </div>
