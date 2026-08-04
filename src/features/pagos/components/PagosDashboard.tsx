@@ -248,15 +248,15 @@ export function PagosDashboard() {
 
   const toggleFactura = (id: string) => {
     const factura = facturasDeEntidad.find((f) => f.id === id);
-    setFacturasSel((prev) => {
-      const ya = prev.includes(id);
-      setPagosPorFactura((pp) => {
-        const nuevo = { ...pp };
-        if (ya) delete nuevo[id];
-        else nuevo[id] = (factura?.saldo || 0).toFixed(2); // por defecto: el total (su saldo)
-        return nuevo;
-      });
-      return ya ? prev.filter((x) => x !== id) : [...prev, id];
+    const ya = facturasSel.includes(id);
+    // ⚠️ Dos setState INDEPENDIENTES (nunca uno dentro del updater del otro:
+    //   React 19 lo considera efecto impuro y desmonta el árbol).
+    setFacturasSel(ya ? facturasSel.filter((x) => x !== id) : [...facturasSel, id]);
+    setPagosPorFactura((pp) => {
+      const nuevo = { ...pp };
+      if (ya) delete nuevo[id];
+      else nuevo[id] = (factura?.saldo || 0).toFixed(2); // por defecto: el total (su saldo)
+      return nuevo;
     });
   };
 
@@ -279,6 +279,13 @@ export function PagosDashboard() {
     const num = Number(texto);
     if (!isNaN(num) && num > tope) valor = tope.toFixed(2);
     setPagosPorFactura((pp) => ({ ...pp, [id]: valor }));
+  };
+
+  const limpiarPago = () => {
+    setFacturasSel([]);
+    setPagosPorFactura({});
+    setMontoTexto('');
+    setMontoEditado(false);
   };
 
   const aplicadoDeFactura = (f: FacturaPagable): number => {
@@ -578,25 +585,72 @@ export function PagosDashboard() {
                 </>
               ) : (
                 <>
-                  {/* PASO 2: seleccionar facturas (de la más antigua a la más reciente) */}
-                  <div className="pg-paso2-encabezado">
-                    <span className="pg-entidad">{entidadSel}</span>
-                    <button className="pg-btn-liga" onClick={() => { setEntidadSel(''); setFacturasSel([]); }}>Cambiar</button>
+                  {/* ═══ ENCABEZADO estilo QuickBooks: entidad + monto grande ═══ */}
+                  <div className="pg-qb-encabezado">
+                    <div className="pg-qb-entidad">
+                      <span className="pg-etq">{tab === 'cliente' ? 'Cliente' : 'Proveedor'}</span>
+                      <div className="pg-paso2-encabezado">
+                        <span className="pg-entidad">{entidadSel}</span>
+                        <button className="pg-btn-liga" onClick={() => { setEntidadSel(''); limpiarPago(); }}>Cambiar</button>
+                      </div>
+                    </div>
+                    <div className="pg-qb-recibido">
+                      <span className="pg-qb-recibido-etq">MONTO RECIBIDO</span>
+                      <span className="pg-qb-recibido-monto">{money(monto, monedasSel[0])}</span>
+                      <span className="pg-qb-saldo">
+                        Saldo del {tab === 'cliente' ? 'cliente' : 'proveedor'}: {money(facturasDeEntidad.reduce((s, f) => s + f.saldo, 0))}
+                      </span>
+                    </div>
                   </div>
 
-                  {/* ✅ Dos columnas en escritorio: facturas | datos + aplicación
-                      (evita el scroll vertical del modal). */}
-                  <div className="pg-registro-cols">
-                  <div className="pg-registro-col">
-                  <label className="pg-etq">2. Selecciona las facturas a pagar (el pago se aplica de la más antigua a la más reciente)</label>
-                  <div className="pg-tabla-marco pg-tabla-scroll pg-tabla-facturas">
+                  {/* ═══ Registrar pago + Monto (dos cajas, como QuickBooks) ═══ */}
+                  <div className="pg-qb-registro">
+                    <div className="pg-qb-caja">
+                      <span className="pg-etq">Registrar pago</span>
+                      <div className="pg-qb-campos">
+                        <div className="pg-campo">
+                          <label>Fecha del pago</label>
+                          <input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} />
+                        </div>
+                        <div className="pg-campo">
+                          <label>Método de pago</label>
+                          <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
+                            {METODOS_PAGO.map((m) => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div className="pg-campo">
+                          <label>Referencia / # de pago</label>
+                          <input type="text" placeholder="Cheque, folio, rastreo..." value={referencia} onChange={(e) => setReferencia(e.target.value)} />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="pg-qb-caja pg-qb-caja-monto">
+                      <span className="pg-etq">Monto</span>
+                      <div className="pg-campo">
+                        <label>Monto recibido {monedasSel[0] ? `(${monedasSel[0]})` : ''}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className="pg-input-recibido"
+                          value={montoTexto}
+                          onChange={(e) => { setMontoTexto(e.target.value); setMontoEditado(true); }}
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ═══ Transacciones pendientes ═══ */}
+                  <label className="pg-etq">Transacciones pendientes</label>
+                  <div className="pg-tabla-marco pg-tabla-facturas">
                     <table className="pg-tabla">
                       <thead>
                         <tr>
                           <th className="pg-col-check">
                             <input type="checkbox" checked={facturasDeEntidad.length > 0 && facturasDeEntidad.every(f => facturasSel.includes(f.id))} onChange={toggleTodas} title="Seleccionar todas" />
                           </th>
-                          <th>FACTURA</th><th>FECHA</th><th>TOTAL</th><th>PAGADO</th><th>SALDO</th><th>MONEDA</th><th>PAGO</th>
+                          <th>DESCRIPCIÓN</th><th>FECHA</th><th>MONTO ORIGINAL</th><th>SALDO ABIERTO</th><th>MONEDA</th><th className="pg-col-pago-th">PAGO</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -605,14 +659,11 @@ export function PagosDashboard() {
                             <td className="pg-col-check" onClick={(e) => e.stopPropagation()}>
                               <input type="checkbox" checked={facturasSel.includes(f.id)} onChange={() => toggleFactura(f.id)} />
                             </td>
-                            <td className="pg-numero">{f.invoice}</td>
+                            <td><span className="pg-numero">Factura # {f.invoice}</span> <span className="pg-desc-fecha">({f.fecha})</span></td>
                             <td>{f.fecha}</td>
                             <td>{money(f.total)}</td>
-                            <td>{f.montoPagado > 0 ? money(f.montoPagado) : '—'}</td>
                             <td className="pg-monto">{money(f.saldo)}</td>
                             <td>{f.moneda || '—'}</td>
-                            {/* ✅ Monto a aplicar en ESTA factura: por defecto su
-                                saldo completo; editable a un monto MENOR. */}
                             <td className="pg-col-pago" onClick={(e) => e.stopPropagation()}>
                               <input
                                 type="number"
@@ -633,78 +684,39 @@ export function PagosDashboard() {
                     </table>
                   </div>
 
-                  </div>
-
-                  <div className="pg-registro-col">
-                  {/* PASO 3: datos del pago */}
-                  <label className="pg-etq">3. Datos del pago</label>
-                  <div className="pg-datos-grid">
-                    <div className="pg-campo">
-                      <label>Fecha</label>
-                      <input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} />
-                    </div>
-                    <div className="pg-campo">
-                      <label>Método de pago</label>
-                      <select value={metodoPago} onChange={(e) => setMetodoPago(e.target.value)}>
-                        {METODOS_PAGO.map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                    </div>
-                    <div className="pg-campo">
-                      <label># de pago / referencia</label>
-                      <input type="text" placeholder="Cheque, folio, rastreo..." value={referencia} onChange={(e) => setReferencia(e.target.value)} />
-                    </div>
-                    <div className="pg-campo">
-                      <label>Monto recibido {monedasSel[0] ? `(${monedasSel[0]})` : ''}</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={montoTexto}
-                        onChange={(e) => { setMontoTexto(e.target.value); setMontoEditado(true); }}
-                      />
-                      <small className="pg-pista">Lo que el {tab === 'cliente' ? 'cliente' : 'proveedor'} pagó (ej. $1,000). Al seleccionar facturas se va restando en vivo.</small>
-                    </div>
-                    <div className="pg-campo pg-campo-ancho">
-                      <label>Comprobante (PDF o imagen, opcional)</label>
-                      <input type="file" accept="application/pdf,image/*" onChange={(e) => setArchivoPdf(e.target.files?.[0] || null)} />
-                    </div>
-                    <div className="pg-campo pg-campo-ancho">
-                      <label>Observaciones</label>
-                      <input type="text" value={observaciones} onChange={(e) => setObservaciones(e.target.value)} />
-                    </div>
-                  </div>
-
                   {monedasSel.length > 1 && (
                     <div className="pg-alerta">Las facturas seleccionadas mezclan monedas ({monedasSel.join(', ')}). Un pago solo puede cubrir facturas de la misma moneda.</div>
                   )}
 
-                  {/* ✅ PASO 4: TOTALES EN VIVO — recibido, aplicado y diferencia
-                      (a favor / cuadrado / en contra), estilo QuickBooks. */}
-                  {seleccionadasOrdenadas.length > 0 && (
-                    <div className="pg-totales">
-                      <div className="pg-total-fila">
-                        <span>Monto recibido</span>
-                        <span className="pg-monto">{money(monto, monedasSel[0])}</span>
+                  {/* ═══ Pie estilo QuickBooks: memo/adjunto ⟷ totales ═══ */}
+                  <div className="pg-qb-pie">
+                    <div className="pg-qb-pie-izq">
+                      <div className="pg-campo">
+                        <label>Memo / Observaciones</label>
+                        <textarea className="pg-memo" rows={3} value={observaciones} onChange={(e) => setObservaciones(e.target.value)} placeholder="Nota del pago..." />
                       </div>
+                      <div className="pg-campo">
+                        <label>Comprobante (PDF o imagen, opcional)</label>
+                        <input type="file" accept="application/pdf,image/*" onChange={(e) => setArchivoPdf(e.target.files?.[0] || null)} />
+                      </div>
+                    </div>
+                    <div className="pg-qb-pie-der">
                       <div className="pg-total-fila">
-                        <span>Aplicado a {aplicacion.filter(a => a.aplicado > 0).length} factura(s)</span>
+                        <span>Monto a aplicar</span>
                         <span className="pg-monto">{money(totalAplicado, monedasSel[0])}</span>
                       </div>
-                      <div className={`pg-total-fila pg-total-diferencia${diferencia > 0.009 ? ' favor' : diferencia < -0.009 ? ' contra' : ' cuadrado'}`}>
-                        {diferencia > 0.009 && (
-                          <><span>Saldo A FAVOR del {tab === 'cliente' ? 'cliente' : 'proveedor'}</span><span>{money(diferencia, monedasSel[0])}</span></>
-                        )}
-                        {diferencia < -0.009 && (
-                          <><span>EN CONTRA (aplicaste más de lo recibido)</span><span>-{money(-diferencia, monedasSel[0])}</span></>
-                        )}
-                        {Math.abs(diferencia) <= 0.009 && (
-                          <><span>Diferencia</span><span>{money(0, monedasSel[0])} · cuadrado</span></>
-                        )}
+                      <div className={`pg-total-fila${diferencia > 0.009 ? ' pg-total-favor' : ''}`}>
+                        <span>Monto a favor</span>
+                        <span>{money(Math.max(0, diferencia), monedasSel[0])}</span>
                       </div>
-                      <small className="pg-pista">Cada factura propone su total al seleccionarla; puedes escribir un monto menor en su columna PAGO (nunca mayor a su saldo). Las facturas con pago menor a su saldo quedan como PARCIAL.</small>
+                      {diferencia < -0.009 && (
+                        <div className="pg-total-fila pg-total-contra">
+                          <span>EN CONTRA (aplicaste más de lo recibido)</span>
+                          <span>-{money(-diferencia, monedasSel[0])}</span>
+                        </div>
+                      )}
+                      <button type="button" className="pg-btn-limpiar" onClick={limpiarPago}>Limpiar pago</button>
                     </div>
-                  )}
-                  </div>
                   </div>
                 </>
               )}
