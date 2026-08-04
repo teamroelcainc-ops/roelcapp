@@ -1456,6 +1456,30 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
 
+  // ✅ NUEVO: guarda el Rate de Proveedor EDITADO en la factura, para que los
+  //   cambios no se pierdan y todos los usuarios vean lo mismo al abrirlo.
+  const guardarRate = async (avisar: boolean = true): Promise<boolean> => {
+    if (!ratePreview) return false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- preview del Rate sin tipo canónico.
+    const { facturaId, ...campos } = ratePreview as any;
+    if (!facturaId) {
+      if (avisar) alert('No se encontró la factura a la que pertenece este Rate.');
+      return false;
+    }
+    try {
+      await updateDoc(doc(db, 'facturas_proveedores', String(facturaId)), { rateProveedor: campos });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- lista de facturas sin tipo canónico.
+      setFacturasGlobales(prev => prev.map((x: any) => (String(x.id) === String(facturaId) ? { ...x, rateProveedor: campos } : x)));
+      registrarLog('Facturación Proveedores', 'Edición', `Guardó el Rate de Proveedor de la factura ${campos.facturaProveedor || facturaId}.`).catch(() => {});
+      if (avisar) alert('Rate de Proveedor guardado. Los demás usuarios verán estos datos al abrirlo.');
+      return true;
+    } catch (e) {
+      console.error('Error guardando el Rate de Proveedor:', e);
+      alert('No se pudo guardar el Rate de Proveedor. Inténtalo de nuevo.');
+      return false;
+    }
+  };
+
   // ✅ NUEVO: guarda el encabezado de la remisión EDITADO en la factura
   //   (facturas_proveedores) para que los cambios no se pierdan y los demás
   //   usuarios vean lo mismo al abrirla. Mismo patrón que la Confirmación.
@@ -1823,7 +1847,10 @@ export const FacturacionProveedoresDashboard = () => {
         const factUProv = o.facturadoEnUnidad === ID_USD || nombreMonProv.includes('USD') || nombreMonProv.includes('DOLAR') || nombreMonProv.includes('DÓLAR');
         const factMProv = o.facturadoEnUnidad === ID_MXN || nombreMonProv.includes('MXN') || nombreMonProv.includes('PESO');
         const convenioProvUsdEfectivo = convUProv || (!convMProv && (factUProv || !o.monedaConvenioProv));
-        const subtotalProvOp = Number(o.subtotalProv) || ((Number(o.totalAPagarProv) || 0) + (Number(o.cargosAdicionalesProv) || 0));
+        // ✅ FIX MONTOS EN CERO: si la operación no trae montos guardados, se
+        //   usa m.subtotal (obtenerMontoOperacion ya cae a la Confirmación de
+        //   Tarifa guardada) — así el Rate muestra lo mismo que la tabla.
+        const subtotalProvOp = Number(o.subtotalProv) || ((Number(o.totalAPagarProv) || 0) + (Number(o.cargosAdicionalesProv) || 0)) || (Number(m.subtotal) || 0);
         const provQuedoSinConvertir = convenioProvUsdEfectivo && factMProv && tcOp > 0 && subtotalProvOp > 0 && Math.abs((m.conv || 0) - subtotalProvOp) < 0.01;
         const proveedorMonto = provQuedoSinConvertir
           ? subtotalProvOp * tcOp
@@ -1880,7 +1907,10 @@ export const FacturacionProveedoresDashboard = () => {
       const dias = String(emp.diasCredito ?? emp.credito ?? emp.diasDeCredito ?? '');
       const monRaw = monedaFacturaMostrar(f).toUpperCase();
 
-      setRatePreview({
+      // ✅ NUEVO: si la factura ya tiene un Rate GUARDADO, ese manda (mismo
+      //   patrón que la Confirmación de Tarifa y la Remisión).
+      const rateGuardado = (f.rateProveedor && typeof f.rateProveedor === 'object') ? f.rateProveedor : null;
+      const baseRate = {
         fecha: fechaDDMMYYYY(f.fecha) || fechaDDMMYYYY(new Date().toISOString()),
         facturaProveedor: f.invoice || String(f.id || ''),
         proveedorNombre: f.proveedorNombre || getNombreEmpresa(f.proveedorId) || '',
@@ -1893,7 +1923,10 @@ export const FacturacionProveedoresDashboard = () => {
         tipoCambio: tcSugerido > 0 ? String(tcSugerido) : '',
         observaciones: '',
         filas,
-      });
+      };
+      setRatePreview(rateGuardado
+        ? { ...baseRate, ...rateGuardado, facturaId: String(f.id || '') }
+        : { ...baseRate, facturaId: String(f.id || '') });
     } catch (e) {
       console.error('Error preparando el rate de proveedor:', e);
       alert('No se pudo preparar el Rate de Proveedor.');
@@ -3142,7 +3175,21 @@ export const FacturacionProveedoresDashboard = () => {
                 title="Agregar un costo adicional al proveedor en una operación seleccionada">
                 Costo adicional
               </button>
-              <button disabled={seleccionadas.length === 0 || seleccionMultiProveedor} onClick={() => { setStatusFacturaForm('Facturado'); setModalAbierto(true); }}
+              <button disabled={seleccionadas.length === 0 || seleccionMultiProveedor} onClick={() => {
+                // ✅ ALERTA MONTOS EN CERO: si alguna operación seleccionada no
+                //   tiene montos en NINGUNA fuente, se pide revisar Operaciones.
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- operaciones sin tipo canónico (mismo criterio del archivo).
+                const opsSel: any[] = seleccionadas
+                  .map((id) => operacionesGlobales.find((o) => String(o.id) === String(id)))
+                  .filter(Boolean);
+                const enCero = opsSel.filter(op => { const mm = obtenerMontoOperacion(op); return (mm.subtotal || 0) <= 0 && (mm.conv || 0) <= 0; });
+                if (enCero.length > 0) {
+                  const refs = enCero.map(op => refDeOp(op) || op.numReferencia || op.id).join(', ');
+                  const seguir = window.confirm(`ATENCIÓN: ${enCero.length} operación(es) tienen los montos EN CERO:\n\n${refs}\n\nRevisa su registro en el módulo de Operaciones (convenio del proveedor y montos) antes de facturar.\n\n¿Deseas continuar de todos modos?`);
+                  if (!seguir) return;
+                }
+                setStatusFacturaForm('Facturado'); setModalAbierto(true);
+              }}
                 style={{ padding: '8px 20px', backgroundColor: (seleccionadas.length > 0 && !seleccionMultiProveedor) ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && !seleccionMultiProveedor) ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
                 Generar Factura ({seleccionadas.length})
               </button>
@@ -4456,7 +4503,8 @@ export const FacturacionProveedoresDashboard = () => {
 
             <div className="fpd-x252">
               <button className="fpd-x150" onClick={() => setRatePreview(null)}>Cerrar</button>
-              <button className="fpd-x375" onClick={generarPDFDeRate}>Generar PDF</button>
+              <button className="fpd-x350" onClick={() => guardarRate(true)} title="Guardar los cambios para que no se pierdan y los demás usuarios los vean">Guardar</button>
+              <button className="fpd-x375" onClick={async () => { await guardarRate(false); generarPDFDeRate(); }} title="Guarda los cambios y descarga el PDF">Generar PDF</button>
             </div>
           </div>
         </div>
