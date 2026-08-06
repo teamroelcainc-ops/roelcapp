@@ -16,9 +16,11 @@ import {
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../../config/firebase';
+import * as XLSX from 'xlsx';
+import html2pdf from 'html2pdf.js';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { registrarLog } from '../../../utils/logger';
-import { Plus, FileText, Trash2, X, Search } from 'lucide-react';
+import { Plus, FileText, Trash2, X, Search, Download } from 'lucide-react';
 import './PagosDashboard.css';
 
 type TipoPago = 'cliente' | 'proveedor';
@@ -134,6 +136,191 @@ export function PagosDashboard() {
     );
   }, [pagos, busqueda]);
 
+  // ── Reportes (Excel / PDF) ──
+  const [menuReportes, setMenuReportes] = useState(false);
+  const [generandoReporte, setGenerandoReporte] = useState(false);
+
+  const etiquetaTab = tab === 'cliente' ? 'Clientes' : 'Proveedores';
+  const fechaHoyTexto = () => new Date().toLocaleDateString('es-MX');
+
+  const totalesPorMoneda = (filas: { moneda: string; monto: number }[]) => {
+    const acc: Record<string, number> = {};
+    filas.forEach((f) => { const k = f.moneda || 'S/M'; acc[k] = (acc[k] || 0) + f.monto; });
+    return Object.entries(acc);
+  };
+
+  // Reporte 1: PAGOS REALIZADOS (respeta pestaña y búsqueda actuales).
+  const exportarPagosExcel = () => {
+    if (pagosFiltrados.length === 0) { alert('No hay pagos que exportar.'); return; }
+    const hojaPagos = pagosFiltrados.map((p) => ({
+      'Fecha': p.fecha,
+      '# Pago': p.numeroPago,
+      [etiquetaTab === 'Clientes' ? 'Cliente' : 'Proveedor']: p.entidadNombre,
+      'Método': p.metodoPago,
+      'Referencia': p.referencia || '',
+      'Moneda': p.moneda || '',
+      'Monto Recibido': Number(p.monto) || 0,
+      'Monto Aplicado': Number((p as PagoDoc & { montoAplicado?: number }).montoAplicado ?? p.monto) || 0,
+      'Saldo a Favor': Number((p as PagoDoc & { saldoAFavor?: number }).saldoAFavor) || 0,
+      'Facturas': (p.facturas || []).filter(f => f.aplicado > 0).map(f => f.invoice).join(', '),
+      'Registró': p.creadoPor || '',
+    }));
+    const hojaDetalle = pagosFiltrados.flatMap((p) =>
+      (p.facturas || []).filter(f => f.aplicado > 0).map((f) => ({
+        'Fecha Pago': p.fecha,
+        '# Pago': p.numeroPago,
+        [etiquetaTab === 'Clientes' ? 'Cliente' : 'Proveedor']: p.entidadNombre,
+        'Factura': f.invoice,
+        'Fecha Factura': f.fecha,
+        'Total Factura': Number(f.total) || 0,
+        'Aplicado': Number(f.aplicado) || 0,
+        'Saldo Restante': Number(f.saldoNuevo) || 0,
+        'Moneda': p.moneda || '',
+      }))
+    );
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaPagos), 'Pagos');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hojaDetalle), 'Detalle por Factura');
+    XLSX.writeFile(wb, `Pagos_${etiquetaTab}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setMenuReportes(false);
+  };
+
+  const generarPDFDeTabla = async (titulo: string, encabezados: string[], filas: string[][], pieTotales: [string, number][], nombreArchivo: string) => {
+    const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = `
+      <div style="font-family: Arial, Helvetica, sans-serif; color: #111; padding: 8px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #D84315; padding-bottom:8px; margin-bottom:12px;">
+          <div>
+            <div style="font-size:18px; font-weight:bold; color:#D84315;">ROELCA INC.</div>
+            <div style="font-size:13px; font-weight:bold; margin-top:2px;">${esc(titulo)}</div>
+          </div>
+          <div style="font-size:11px; color:#555;">Generado: ${esc(fechaHoyTexto())}</div>
+        </div>
+        <table style="width:100%; border-collapse:collapse; font-size:10px;">
+          <thead>
+            <tr>${encabezados.map(h => `<th style="background:#f2f2f2; border:1px solid #ccc; padding:5px 6px; text-align:left;">${esc(h)}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${filas.map(fila => `<tr>${fila.map(c => `<td style="border:1px solid #ddd; padding:4px 6px;">${esc(c)}</td>`).join('')}</tr>`).join('')}
+          </tbody>
+        </table>
+        <div style="margin-top:12px; text-align:right; font-size:11px;">
+          ${pieTotales.map(([mon, tot]) => `<div><b>Total ${esc(mon)}:</b> ${money(tot)}</div>`).join('')}
+        </div>
+      </div>`;
+    const cont = document.createElement('div');
+    cont.innerHTML = html;
+    document.body.appendChild(cont);
+    try {
+      await html2pdf().set({
+        margin: 8,
+        filename: nombreArchivo,
+        image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'letter', orientation: 'landscape' },
+      }).from(cont).save();
+    } finally {
+      document.body.removeChild(cont);
+    }
+  };
+
+  const exportarPagosPDF = async () => {
+    if (pagosFiltrados.length === 0) { alert('No hay pagos que exportar.'); return; }
+    setGenerandoReporte(true);
+    try {
+      await generarPDFDeTabla(
+        `Reporte de Pagos — ${etiquetaTab}`,
+        ['Fecha', '# Pago', etiquetaTab === 'Clientes' ? 'Cliente' : 'Proveedor', 'Método', 'Referencia', 'Moneda', 'Monto', 'Facturas cubiertas'],
+        pagosFiltrados.map((p) => [
+          p.fecha, p.numeroPago, p.entidadNombre, p.metodoPago, p.referencia || '—', p.moneda || '—',
+          money(p.monto), (p.facturas || []).filter(f => f.aplicado > 0).map(f => f.invoice).join(', '),
+        ]),
+        totalesPorMoneda(pagosFiltrados.map(p => ({ moneda: p.moneda, monto: Number(p.monto) || 0 }))),
+        `Pagos_${etiquetaTab}_${new Date().toISOString().slice(0, 10)}.pdf`
+      );
+    } finally {
+      setGenerandoReporte(false);
+      setMenuReportes(false);
+    }
+  };
+
+  // Reporte 2: FACTURAS PENDIENTES (con saldo abierto) de la pestaña actual.
+  const exportarPendientesExcel = async () => {
+    setGenerandoReporte(true);
+    try {
+      const lista = (await cargarFacturasPendientes(tab))
+        .sort((a, b) => a.entidadNombre.localeCompare(b.entidadNombre) || claveFecha(a.fecha).localeCompare(claveFecha(b.fecha)));
+      if (lista.length === 0) { alert('No hay facturas pendientes.'); return; }
+      const hoja = lista.map((f) => ({
+        [etiquetaTab === 'Clientes' ? 'Cliente' : 'Proveedor']: f.entidadNombre,
+        'Factura': f.invoice,
+        'Fecha': f.fecha,
+        'Total': f.total,
+        'Pagado': f.montoPagado,
+        'Saldo Pendiente': f.saldo,
+        'Moneda': f.moneda || '',
+      }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(hoja), 'Facturas Pendientes');
+      XLSX.writeFile(wb, `Facturas_Pendientes_${etiquetaTab}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      console.error('No se pudo generar el reporte de pendientes:', e);
+      alert('No se pudo generar el reporte de facturas pendientes.');
+    } finally {
+      setGenerandoReporte(false);
+      setMenuReportes(false);
+    }
+  };
+
+  const exportarPendientesPDF = async () => {
+    setGenerandoReporte(true);
+    try {
+      const lista = (await cargarFacturasPendientes(tab))
+        .sort((a, b) => a.entidadNombre.localeCompare(b.entidadNombre) || claveFecha(a.fecha).localeCompare(claveFecha(b.fecha)));
+      if (lista.length === 0) { alert('No hay facturas pendientes.'); return; }
+      await generarPDFDeTabla(
+        `Facturas Pendientes de Pago — ${etiquetaTab}`,
+        [etiquetaTab === 'Clientes' ? 'Cliente' : 'Proveedor', 'Factura', 'Fecha', 'Total', 'Pagado', 'Saldo Pendiente', 'Moneda'],
+        lista.map((f) => [f.entidadNombre, f.invoice, f.fecha, money(f.total), f.montoPagado > 0 ? money(f.montoPagado) : '—', money(f.saldo), f.moneda || '—']),
+        totalesPorMoneda(lista.map(f => ({ moneda: f.moneda, monto: f.saldo }))),
+        `Facturas_Pendientes_${etiquetaTab}_${new Date().toISOString().slice(0, 10)}.pdf`
+      );
+    } catch (e) {
+      console.error('No se pudo generar el reporte de pendientes:', e);
+      alert('No se pudo generar el reporte de facturas pendientes.');
+    } finally {
+      setGenerandoReporte(false);
+      setMenuReportes(false);
+    }
+  };
+
+  // ── Cargador de facturas con saldo pendiente (modal Y reportes) ──
+  const cargarFacturasPendientes = async (tipo: TipoPago): Promise<FacturaPagable[]> => {
+    const coleccion = tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+    const snap = await getDocs(query(
+      collection(db, coleccion),
+      where('statusFactura', '==', 'Facturado'),
+      limit(1000)
+    ));
+    return snap.docs.map((d) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de factura sin tipo canónico (mismo criterio que los dashboards de facturación).
+      const raw = d.data() as any;
+      const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
+      const pagado = Number(raw.montoPagado) || 0;
+      return {
+        id: d.id,
+        invoice: String(raw.invoice || raw.folio || d.id),
+        fecha: String(raw.fecha || raw.fechaFactura || ''),
+        entidadId: String((tipo === 'cliente' ? raw.clienteId : raw.proveedorId) || ''),
+        entidadNombre: String((tipo === 'cliente' ? (raw.clienteNombre || raw.cliente) : (raw.proveedorNombre || raw.proveedor)) || 'Sin nombre'),
+        total,
+        montoPagado: pagado,
+        saldo: Math.max(0, total - pagado),
+        moneda: String(raw.monedaFacturacion || raw.moneda || ''),
+      };
+    }).filter((f) => f.total > 0 && f.saldo > 0.009);
+  };
+
   // ── Cargar facturas con saldo pendiente al abrir el modal ──
   const abrirModal = async () => {
     setModalAbierto(true);
@@ -151,29 +338,7 @@ export function PagosDashboard() {
     setObservaciones('');
     setArchivoPdf(null);
     try {
-      const coleccion = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
-      const snap = await getDocs(query(
-        collection(db, coleccion),
-        where('statusFactura', '==', 'Facturado'),
-        limit(1000)
-      ));
-      const lista: FacturaPagable[] = snap.docs.map((d) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de factura sin tipo canónico (mismo criterio que los dashboards de facturación).
-        const raw = d.data() as any;
-        const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
-        const pagado = Number(raw.montoPagado) || 0;
-        return {
-          id: d.id,
-          invoice: String(raw.invoice || raw.folio || d.id),
-          fecha: String(raw.fecha || raw.fechaFactura || ''),
-          entidadId: String((tab === 'cliente' ? raw.clienteId : raw.proveedorId) || ''),
-          entidadNombre: String((tab === 'cliente' ? (raw.clienteNombre || raw.cliente) : (raw.proveedorNombre || raw.proveedor)) || 'Sin nombre'),
-          total,
-          montoPagado: pagado,
-          saldo: Math.max(0, total - pagado),
-          moneda: String(raw.monedaFacturacion || raw.moneda || ''),
-        };
-      }).filter((f) => f.total > 0 && f.saldo > 0.009);
+      const lista = await cargarFacturasPendientes(tab);
       setFacturasPendientes(lista);
     } catch (e) {
       console.error('No se pudieron cargar las facturas pendientes:', e);
@@ -435,9 +600,29 @@ export function PagosDashboard() {
     <div className="pg-contenedor">
       <div className="pg-encabezado">
         <h1 className="pg-titulo">Pagos</h1>
-        <button className="pg-btn-nuevo" onClick={abrirModal}>
-          <Plus size={16} /> Registrar Pago
-        </button>
+        <div className="pg-encabezado-acciones">
+          <div className="pg-reportes">
+            <button className="pg-btn-reportes" onClick={() => setMenuReportes((v) => !v)} disabled={generandoReporte}>
+              <Download size={15} /> {generandoReporte ? 'Generando…' : 'Reportes'}
+            </button>
+            {menuReportes && (
+              <>
+                <div className="pg-reportes-fondo" onClick={() => setMenuReportes(false)} />
+                <div className="pg-reportes-menu">
+                  <span className="pg-reportes-titulo">Pagos realizados ({etiquetaTab.toLowerCase()})</span>
+                  <button onClick={exportarPagosExcel}>Excel (.xlsx)</button>
+                  <button onClick={exportarPagosPDF}>PDF</button>
+                  <span className="pg-reportes-titulo">Facturas pendientes</span>
+                  <button onClick={exportarPendientesExcel}>Excel (.xlsx)</button>
+                  <button onClick={exportarPendientesPDF}>PDF</button>
+                </div>
+              </>
+            )}
+          </div>
+          <button className="pg-btn-nuevo" onClick={abrirModal}>
+            <Plus size={16} /> Registrar Pago
+          </button>
+        </div>
       </div>
 
       <div className="pg-tabs">

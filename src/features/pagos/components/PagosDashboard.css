@@ -361,3 +361,66 @@
 }
 
 .pg-trans-conteo { color: #8b949e; font-size: 0.8rem; }
+
+/* ✅ Botón y menú de Reportes */
+.pg-encabezado-acciones { display: flex; align-items: center; gap: 10px; }
+
+.pg-reportes { position: relative; }
+
+.pg-btn-reportes {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  background: none;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #c9d1d9;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pg-btn-reportes:disabled { opacity: 0.6; cursor: wait; }
+
+.pg-reportes-fondo { position: fixed; inset: 0; z-index: 1180; }
+
+.pg-reportes-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1190;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}
+
+.pg-reportes-titulo {
+  color: #8b949e;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 8px 10px 4px;
+}
+
+.pg-reportes-menu button {
+  text-align: left;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: #c9d1d9;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.pg-reportes-menu button:hover { background-color: #21262d; }
+
+@media (max-width: 768px) {
+  .pg-encabezado-acciones { flex-wrap: wrap; }
+}
