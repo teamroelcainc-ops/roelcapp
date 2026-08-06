@@ -1,7 +1,7 @@
 // src/features/gastos/components/mtto/MttoDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { FormularioMtto } from './FormularioMtto';
-import { collection, query, getDocs, limit, orderBy, doc, deleteDoc, writeBatch } from 'firebase/firestore'; 
+import { collection, query, getDocs, limit, orderBy, where, doc, deleteDoc, writeBatch } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase'; 
 import MttoAgrupadosInvoice from './MttoAgrupadosInvoice';
 import * as XLSX from 'xlsx';
@@ -144,7 +144,7 @@ const MttoDashboard = () => {
       //    sean los MÁS RECIENTES. Antes, limit(300) sin orden traía los primeros
       //    300 por ID de documento (aleatorio), y los gastos nuevos podían quedar
       //    fuera de la ventana: se guardaban en Firestore pero no aparecían aquí.
-      const q = query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(300));
+      const q = query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(1000));
       const snap = await getDocs(q);
       
       let mttoData = snap.docs.map((d: any) => {
@@ -510,13 +510,72 @@ const MttoDashboard = () => {
     return partes.join(' ').toLowerCase();
   };
 
+  // ✅ FIX GASTO INVISIBLE: normaliza la fecha a ISO aceptando varios formatos
+  //   (ISO, dd/mm/aaaa, Timestamp). Si la fecha es ILEGIBLE, devuelve '' y el
+  //   filtro de rango NO excluye el registro (antes una fecha mal guardada se
+  //   comparaba como texto y el gasto desaparecía de la vista sin aviso).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc sin tipo canónico (criterio del archivo).
+  const fechaISOFiltro = (m: any): string => {
+    const candidatos = [m?.fecha, m?.createdAt];
+    for (const c of candidatos) {
+      if (!c) continue;
+      if (typeof c === 'object' && typeof c.toDate === 'function') {
+        try { return c.toDate().toISOString().slice(0, 10); } catch { /* sigue */ }
+      }
+      const s = String(c).trim();
+      const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+      const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+      if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    }
+    return '';
+  };
+
+  // ✅ RESCATE POR FOLIO: si la búsqueda es un folio exacto (MTTO-DDMMYY-NNN)
+  //   y no está entre los cargados, se trae DIRECTO de Firestore y se agrega.
+  //   Garantía: ningún gasto puede volver a "no verse en ningún lado".
+  useEffect(() => {
+    const b = busqueda.trim().toUpperCase();
+    if (!/^MTTO-\d{6}-\d{1,4}$/.test(b)) return;
+    const normal = `MTTO-${b.split('-')[1]}-${String(parseInt(b.split('-')[2], 10)).padStart(3, '0')}`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc sin tipo canónico.
+    const yaEsta = mttoGlobales.some((m: any) => String(m.numeroGasto || '').toUpperCase() === b || String(m.numeroGasto || '').toUpperCase() === normal);
+    if (yaEsta) return;
+    let activo = true;
+    (async () => {
+      try {
+        const variantes = Array.from(new Set([b, normal]));
+        const snap = await getDocs(query(collection(db, 'gastos_mtto'), where('numeroGasto', 'in', variantes)));
+        if (!activo || snap.empty) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc sin tipo canónico.
+        const nuevos = snap.docs.map((d: any) => {
+          const data = d.data();
+          const tieneInvoice = data.invoice && String(data.invoice).trim() !== '';
+          data.estatus = tieneInvoice ? 'Facturado' : 'No facturado';
+          return { id: d.id, ...data };
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc sin tipo canónico.
+        setMttoGlobales((prev: any[]) => {
+          const ids = new Set(prev.map((x) => x.id));
+          return [...nuevos.filter((n) => !ids.has(n.id)), ...prev];
+        });
+      } catch (e) {
+        console.error('No se pudo rescatar el folio buscado:', e);
+      }
+    })();
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busqueda, mttoGlobales]);
+
   const registrosFiltrados = useMemo(() => {
     const b = busqueda.trim().toLowerCase();
     return mttoGlobales.filter(m => {
-      // 1) Filtro por rango de fechas (campo `fecha`, respaldo `createdAt`)
-      const fechaISO = String(m.fecha || m.createdAt || '').slice(0, 10);
-      if (fechaDesde && (!fechaISO || fechaISO < fechaDesde)) return false;
-      if (fechaHasta && (!fechaISO || fechaISO > fechaHasta)) return false;
+      // 1) Filtro por rango de fechas (fecha normalizada; ilegible = NO se oculta)
+      const fechaISO = fechaISOFiltro(m);
+      if (fechaISO) {
+        if (fechaDesde && fechaISO < fechaDesde) return false;
+        if (fechaHasta && fechaISO > fechaHasta) return false;
+      }
       // 2) Búsqueda en cada campo de la colección
       if (!b) return true;
       return textoBuscableDe(m).includes(b);
