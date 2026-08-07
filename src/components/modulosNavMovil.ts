@@ -17,6 +17,7 @@ export interface ModuloNavDef {
 export const MODULOS_NAV: ModuloNavDef[] = [
   { clave: 'misOperaciones', etiqueta: 'Mis Ops', Icono: Navigation },
   { clave: 'pagos', etiqueta: 'Pagos', Icono: Wallet },
+  { clave: 'estadisticas', etiqueta: 'Stats', Icono: BarChart3 },
   { clave: 'operaciones', etiqueta: 'Inicio', Icono: Home },
   { clave: 'serviciosCompletados', etiqueta: 'Completados', Icono: CheckCircle2 },
   { clave: 'serviciosCancelados', etiqueta: 'Cancelados', Icono: XCircle },

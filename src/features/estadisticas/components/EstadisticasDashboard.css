@@ -1,0 +1,92 @@
+/* Estilos hermanos de EstadisticasDashboard.tsx — paleta y patrones de la app. */
+
+.est-contenedor { padding: 24px; display: flex; flex-direction: column; gap: 14px; animation: fadeIn 0.3s ease; }
+
+.est-encabezado { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.est-titulo { margin: 0; color: #f0f6fc; font-size: 1.25rem; }
+.est-subtitulo { margin: 0; color: #8b949e; font-size: 0.82rem; }
+
+.est-acciones { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.est-select {
+  padding: 8px 10px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #c9d1d9;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.est-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: none;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #c9d1d9;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.86rem;
+}
+
+.est-btn:disabled { opacity: 0.55; cursor: wait; }
+
+.est-btn-primario { background-color: #D84315; border-color: #D84315; color: #fff; }
+
+.est-tabs { display: flex; gap: 4px; border-bottom: 1px solid #21262d; overflow-x: auto; }
+
+.est-tab {
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #8b949e;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+
+.est-tab.activa { color: #f0f6fc; border-bottom-color: #D84315; }
+
+.est-lineas { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.est-linea {
+  padding: 7px 14px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 16px;
+  color: #8b949e;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.est-linea.activa { color: #fff; background-color: #D84315; border-color: #D84315; }
+
+.est-tabla-marco { border: 1px solid #30363d; border-radius: 8px; overflow: auto; max-height: 62vh; }
+
+.est-tabla { width: 100%; border-collapse: collapse; text-align: left; }
+.est-tabla thead { background-color: #161b22; position: sticky; top: 0; z-index: 5; }
+.est-tabla th { padding: 11px 14px; color: #8b949e; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.4px; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.est-tabla td { padding: 10px 14px; color: #c9d1d9; font-size: 0.88rem; border-bottom: 1px solid #21262d; }
+
+.est-cliente { color: #f0f6fc; font-weight: 600; }
+.est-monto { color: #3fb950; font-weight: 700; white-space: nowrap; }
+.est-dolares { color: #58a6ff; font-weight: 600; white-space: nowrap; }
+.est-negativo { color: #ef4444; font-weight: 700; white-space: nowrap; }
+
+.est-fila-general { background-color: rgba(216, 67, 21, 0.08); }
+.est-fila-general td { color: #f0f6fc; font-weight: 700; }
+.est-fila-cero td { color: #6e7681; }
+
+.est-vacio { text-align: center; padding: 30px; color: #8b949e; }
+.est-nota { margin: 0; color: #8b949e; font-size: 0.78rem; line-height: 1.5; }
+
+@media (max-width: 768px) {
+  .est-contenedor { padding: 14px 12px; }
+  .est-tabla-marco { max-height: none; }
+}
