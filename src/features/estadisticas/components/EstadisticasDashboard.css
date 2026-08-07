@@ -90,3 +90,34 @@
   .est-contenedor { padding: 14px 12px; }
   .est-tabla-marco { max-height: none; }
 }
+
+/* ✅ Filtro de fechas con búsqueda diferida */
+.est-fecha-campo { display: flex; flex-direction: column; gap: 3px; }
+
+.est-fecha-campo label {
+  color: #8b949e;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.est-fecha {
+  padding: 7px 9px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #c9d1d9;
+  color-scheme: dark;
+  font-size: 0.85rem;
+}
+
+.est-vacio-inicial {
+  border: 1px dashed #30363d;
+  border-radius: 10px;
+  padding: 46px 20px;
+  text-align: center;
+  color: #8b949e;
+  font-size: 0.92rem;
+}
+
+.est-vacio-inicial b { color: #D84315; }

@@ -15,7 +15,7 @@
 // respaldo en la Confirmación de Tarifa guardada).
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -113,35 +113,40 @@ const DIAS_SEMANA_TXT = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', '
 export function EstadisticasDashboard() {
   const { config } = useEmpresaConfig();
   const anioActual = new Date().getFullYear();
-  const [anio, setAnio] = useState(anioActual);
   const [pestana, setPestana] = useState<Pestana>('tendencia');
   const [lineaVista, setLineaVista] = useState<'Globales' | Linea>('Globales');
   const [ops, setOps] = useState<Op[]>([]);
   const [cargando, setCargando] = useState(false);
   const [exportando, setExportando] = useState(false);
 
-  // ── Carga de operaciones del año (excluye canceladas) ──
-  const cargar = async () => {
+  // ✅ RANGO DE FECHAS con búsqueda diferida (patrón estándar de la app):
+  //   los registros se consultan y muestran SOLO al presionar Buscar.
+  const [fechaDesde, setFechaDesde] = useState(`${anioActual}-01-01`);
+  const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0, 10));
+  const [busquedaHecha, setBusquedaHecha] = useState(false);
+
+  const buscar = async () => {
+    if (!fechaDesde || !fechaHasta) { alert('Captura la fecha Desde y Hasta.'); return; }
+    if (fechaHasta < fechaDesde) { alert('La fecha Hasta no puede ser menor que la fecha Desde.'); return; }
     setCargando(true);
     try {
       const snap = await getDocs(query(
         collection(db, 'operaciones'),
-        where('fechaServicio', '>=', `${anio}-01-01`),
-        where('fechaServicio', '<=', `${anio}-12-31`)
+        where('fechaServicio', '>=', fechaDesde),
+        where('fechaServicio', '<=', fechaHasta)
       ));
       const lista = snap.docs
         .map((d) => ({ id: d.id, ...d.data() } as Op))
         .filter((op) => String(op.status || '') !== STATUS_CANCELADO_ID);
       setOps(lista);
+      setBusquedaHecha(true);
     } catch (e) {
-      console.error('No se pudieron cargar las operaciones del año:', e);
-      alert('No se pudieron cargar las operaciones del año.');
+      console.error('No se pudieron cargar las operaciones del rango:', e);
+      alert('No se pudieron cargar las operaciones del rango.');
     } finally {
       setCargando(false);
     }
   };
-
-  useEffect(() => { cargar(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [anio]);
 
   // Filtro de línea para las pestañas que lo usan
   const opsDeLinea = useMemo(() =>
@@ -270,7 +275,8 @@ export function EstadisticasDashboard() {
   }, [utilidad]);
 
   // ══════════ EXPORTACIÓN ══════════
-  const nombreArchivo = (base: string, ext: string) => `${base}_${anio}.${ext}`;
+  const etiquetaRango = `${fechaDesde} a ${fechaHasta}`;
+  const nombreArchivo = (base: string, ext: string) => `${base}_${fechaDesde}_a_${fechaHasta}.${ext}`;
 
   const exportarExcel = () => {
     const wb = XLSX.utils.book_new();
@@ -335,32 +341,32 @@ export function EstadisticasDashboard() {
       let filas: (string | number)[][] = [];
 
       if (pestana === 'tendencia') {
-        titulo = `Tendencia por Cliente — ${anio}`;
+        titulo = `Tendencia por Cliente — ${etiquetaRango}`;
         encabezados = ['Cliente', 'Servicios', 'Transfer', 'Logística', 'Fletes', 'Monto (MXN)', 'Promedio'];
         filas = [
           ['GENERAL', tendencia.general.total, tendencia.general.transfer, tendencia.general.logistica, tendencia.general.fletes, money(tendencia.general.monto), money(tendencia.general.total > 0 ? tendencia.general.monto / tendencia.general.total : 0)],
           ...tendencia.filas.map((f) => [f.cliente, f.total, f.transfer, f.logistica, f.fletes, money(f.monto), money(f.total > 0 ? f.monto / f.total : 0)]),
         ];
       } else if (pestana === 'servicios') {
-        titulo = `Estadística de Servicios — ${anio}`;
+        titulo = `Estadística de Servicios — ${etiquetaRango}`;
         encabezados = ['Mes', 'Transfer', 'Logística', 'Fletes', 'Total'];
         filas = MESES.map((m, i) => [m, servicios.porMes[i].transfer, servicios.porMes[i].logistica, servicios.porMes[i].fletes, servicios.porMes[i].transfer + servicios.porMes[i].logistica + servicios.porMes[i].fletes]);
       } else if (pestana === 'ventas') {
-        titulo = `Estadística de Ventas (${lineaVista}) — ${anio}`;
+        titulo = `Estadística de Ventas (${lineaVista}) — ${etiquetaRango}`;
         encabezados = ['Mes', 'Fiscal Pesos', 'Dólares', 'TC Prom.', 'Conversión', 'Venta Pesos'];
         filas = MESES.map((m, i) => {
           const v = ventas.porMes[i];
           return [m, money(v.pes), money(v.dol), v.tcN > 0 ? (v.tcSuma / v.tcN).toFixed(4) : '—', money(v.conv), money(v.venta)];
         });
       } else if (pestana === 'utilidad') {
-        titulo = `Utilidad por Línea — ${anio}`;
+        titulo = `Utilidad por Línea — ${etiquetaRango}`;
         encabezados = ['Línea', 'Servicios', 'Venta (MXN)', 'Costo Proveedor', 'Utilidad', 'Margen %'];
         filas = (['Transfer', 'Logística', 'Fletes'] as Linea[]).map((linea) => {
           const tot = utilidad[linea].reduce((a, u) => ({ venta: a.venta + u.venta, costo: a.costo + u.costo, servicios: a.servicios + u.servicios }), { venta: 0, costo: 0, servicios: 0 });
           return [linea, tot.servicios, money(tot.venta), money(tot.costo), money(tot.venta - tot.costo), tot.venta > 0 ? `${(((tot.venta - tot.costo) / tot.venta) * 100).toFixed(1)}%` : '—'];
         });
       } else {
-        titulo = `Promedios por Servicio — ${anio}`;
+        titulo = `Promedios por Servicio — ${etiquetaRango}`;
         encabezados = ['Línea', 'Servicios', 'Venta (MXN)', 'Prom. Venta', 'Prom. Utilidad'];
         filas = promedios.map((p) => {
           const tot = p.meses.reduce((a, m) => ({ s: a.s + m.servicios, v: a.v + m.venta, u: a.u + m.promUtilidad * m.servicios }), { s: 0, v: 0, u: 0 });
@@ -409,29 +415,38 @@ export function EstadisticasDashboard() {
   };
 
   // ────────────────────────────── RENDER ──────────────────────────────
-  const aniosDisponibles = [anioActual + 1, anioActual, anioActual - 1, anioActual - 2];
-
   return (
     <div className="est-contenedor">
       <div className="est-encabezado">
         <h1 className="est-titulo">Estadísticas</h1>
         <div className="est-acciones">
-          <select className="est-select" value={anio} onChange={(e) => setAnio(Number(e.target.value))}>
-            {aniosDisponibles.map((a) => <option key={a} value={a}>{a}</option>)}
-          </select>
-          <button className="est-btn" onClick={cargar} disabled={cargando}>
-            <RefreshCw size={14} /> {cargando ? 'Cargando…' : 'Actualizar'}
+          <div className="est-fecha-campo">
+            <label>DESDE</label>
+            <input type="date" className="est-fecha" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} />
+          </div>
+          <div className="est-fecha-campo">
+            <label>HASTA</label>
+            <input type="date" className="est-fecha" value={fechaHasta} min={fechaDesde || undefined} onChange={(e) => setFechaHasta(e.target.value)} />
+          </div>
+          <button className="est-btn est-btn-primario" onClick={buscar} disabled={cargando}>
+            <RefreshCw size={14} /> {cargando ? 'Buscando…' : 'Buscar'}
           </button>
-          <button className="est-btn" onClick={exportarExcel} disabled={cargando}>
-            <Download size={14} /> Excel
-          </button>
-          <button className="est-btn est-btn-primario" onClick={exportarPDF} disabled={cargando || exportando}>
-            <Download size={14} /> {exportando ? 'Generando…' : 'PDF'}
-          </button>
+          {busquedaHecha && (
+            <>
+              <button className="est-btn" onClick={exportarExcel} disabled={cargando}>
+                <Download size={14} /> Excel
+              </button>
+              <button className="est-btn" onClick={exportarPDF} disabled={cargando || exportando}>
+                <Download size={14} /> {exportando ? 'Generando…' : 'PDF'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <p className="est-subtitulo">{ops.length} operaciones del {anio} (excluye canceladas) · montos con el mismo criterio de Facturación</p>
+      {busquedaHecha && (
+        <p className="est-subtitulo">{ops.length} operaciones del {etiquetaRango} (excluye canceladas) · montos con el mismo criterio de Facturación</p>
+      )}
 
       <div className="est-tabs">
         <button className={`est-tab${pestana === 'tendencia' ? ' activa' : ''}`} onClick={() => setPestana('tendencia')}>Tendencia por Cliente</button>
@@ -449,7 +464,11 @@ export function EstadisticasDashboard() {
         </div>
       )}
 
-      {cargando ? <p className="est-vacio">Cargando operaciones del {anio}…</p> : (
+      {!busquedaHecha && !cargando ? (
+        <div className="est-vacio-inicial">
+          Define tu rango de fechas y presiona <b>Buscar</b> para generar las estadísticas.
+        </div>
+      ) : cargando ? <p className="est-vacio">Buscando operaciones del {etiquetaRango}…</p> : (
         <div className="est-tabla-marco">
           {pestana === 'tendencia' && (
             <table className="est-tabla">
@@ -492,7 +511,7 @@ export function EstadisticasDashboard() {
                   );
                 })}
                 <tr className="est-fila-general">
-                  <td>TOTAL {anio}</td>
+                  <td>TOTAL DEL RANGO</td>
                   <td>{num(servicios.porMes.reduce((a, s) => a + s.transfer, 0))}</td>
                   <td>{num(servicios.porMes.reduce((a, s) => a + s.logistica, 0))}</td>
                   <td>{num(servicios.porMes.reduce((a, s) => a + s.fletes, 0))}</td>
