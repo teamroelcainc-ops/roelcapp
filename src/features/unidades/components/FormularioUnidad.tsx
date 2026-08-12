@@ -115,6 +115,7 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
     serie: '',
     marca: '',
     modelo: '',
+    kilometrajeInicial: 0, // ✅ NUEVO: kilometraje con el que entra la unidad
     clase: '',
     combustible: '',
     pesoVehicular: 0,
@@ -293,6 +294,12 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
               <div className="form-group">
                 <label className="form-label">Modelo (Año)</label>
                 <input type="text" name="modelo" className="form-control fu-x12" value={formData.modelo} onChange={handleTextChange}/>
+              </div>
+
+              {/* ✅ NUEVO: kilometraje con el que la unidad entra a la flota */}
+              <div className="form-group">
+                <label className="form-label">Kilometraje Inicial</label>
+                <input type="number" min="0" name="kilometrajeInicial" className="form-control fu-x12" value={formData.kilometrajeInicial} onChange={handleNumberChange}/>
               </div>
 
               <div className="form-group">

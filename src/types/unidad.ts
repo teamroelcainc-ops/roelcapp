@@ -11,6 +11,8 @@ export interface UnidadRecord {
   serie: string;
   marca: string;
   modelo: string;
+  /** ✅ Kilometraje con el que la unidad entra a la flota. */
+  kilometrajeInicial?: number;
   clase: string;
   combustible: 'Gasolina' | 'Diesel' | '';
   pesoVehicular: number;

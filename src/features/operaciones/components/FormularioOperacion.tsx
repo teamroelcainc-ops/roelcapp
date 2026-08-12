@@ -82,7 +82,7 @@ const TODAS_LAS_PESTANAS: TabType[] = ['general', 'pedimento', 'manifiesto', 'un
 const CAMPO_TAB_MAP: Record<string, TabType> = {
   tipoOperacionId: 'general', fechaServicio: 'general', fechaCita: 'general',
   clientePaga: 'general', convenio: 'general', numeroRemolque: 'general',
-  refCliente: 'general', origen: 'general', destino: 'general', observacionesEjecutivo: 'general',
+  refCliente: 'general', origen: 'general', destino: 'general', kilometrajeEstimado: 'general', observacionesEjecutivo: 'general',
 
   clienteMercancia: 'pedimento', descripcionMercancia: 'pedimento', cantidad: 'pedimento',
   embalaje: 'pedimento', pesoKg: 'pedimento', numDoda: 'pedimento', fechaEmisionDoda: 'pedimento',
@@ -770,7 +770,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     fechaServicio: new Date().toISOString().split('T')[0],
     fechaCita: '',
     clientePaga: '', convenio: '', convenioNombre: '', numeroRemolque: '', refCliente: '',
-    origen: '', destino: '', observacionesEjecutivo: '',
+    origen: '', destino: '', kilometrajeEstimado: '', observacionesEjecutivo: '',
     clienteMercancia: '', descripcionMercancia: '', cantidad: '', embalaje: '',
     pesoKg: '', numDoda: '', fechaEmisionDoda: '',
     pdfCartaPorte: null as File | null, pdfDoda: null as File | null,
@@ -2576,6 +2576,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>
+                      </div>
+                      {/* ✅ NUEVO: kilometraje estimado del viaje (junto a Destino) */}
+                      <div className="form-group">
+                        <label className="form-label">Kilometraje Estimado <span className="campo-badge">kilometrajeEstimado</span></label>
+                        <input type="number" min="0" step="1" name="kilometrajeEstimado" className={`form-control${claseSiFalta('kilometrajeEstimado')}`} value={formData.kilometrajeEstimado ?? ''} onChange={handleChange} placeholder="km" />
                       </div>
                       <div className="form-group fo-x24"><label className="form-label">Observaciones Ejecutivo <span className="campo-badge">observacionesEjecutivo</span></label><input type="text" name="observacionesEjecutivo" className={`form-control${claseSiFalta('observacionesEjecutivo')}`} value={formData.observacionesEjecutivo || ''} onChange={handleChange} /></div>
                     </div>
