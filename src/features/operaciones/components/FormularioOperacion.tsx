@@ -2848,6 +2848,19 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
                       <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span></label><ConSimboloMoneda><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda></div>
+                      {/* ✅ NUEVO: moneda del monto del proveedor, visible y corregible. */}
+                      <div className="form-group">
+                        <label className="form-label">Moneda del Monto <span className="campo-badge">monedaConvenioProv</span></label>
+                        <select
+                          className="form-control"
+                          value={esMonedaMXN(formData.monedaConvenioProv) ? ID_MXN : ID_USD}
+                          onChange={e => setFormData(prev => ({ ...prev, monedaConvenioProv: e.target.value }))}
+                          title="Moneda en la que está capturado el Monto a Pagar Proveedor. Se toma del convenio; corrígela si el convenio la trae mal."
+                        >
+                          <option value={ID_USD}>Dólares</option>
+                          <option value={ID_MXN}>Pesos</option>
+                        </select>
+                      </div>
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales (Prov) <span className="campo-badge">cargosAdicionalesProv</span></label>
                         <div className="roelca-lookup-row">
@@ -2899,6 +2912,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <input type="text" className="form-control" value={nombreMoneda(formData.facturadoEnCobrar) || ''} readOnly placeholder="Se asigna según el cliente" title="Se asigna automáticamente según el cliente (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 700 : undefined }} />
                       </div>
                       <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.montoConvenioCliente || 0} readOnly={campoBloqueadoAut('montoConvenioCliente')} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda></div>
+                      {/* ✅ NUEVO: la MONEDA DEL MONTO ahora es VISIBLE y corregible.
+                          El desglose Dólares/Pesos/Conversión parte de esta moneda
+                          (viene del convenio); si el convenio la trae mal capturada,
+                          aquí se corrige para ESTA operación sin tocar el catálogo. */}
+                      <div className="form-group">
+                        <label className="form-label">Moneda del Monto <span className="campo-badge">monedaConvenioCliente</span></label>
+                        <select
+                          className="form-control"
+                          value={esMonedaMXN(formData.monedaConvenioCliente) ? ID_MXN : ID_USD}
+                          onChange={e => setFormData(prev => ({ ...prev, monedaConvenioCliente: e.target.value }))}
+                          title="Moneda en la que está capturado el Monto Convenio Cliente. Se toma del convenio; corrígela si el convenio la trae mal."
+                        >
+                          <option value={ID_USD}>Dólares</option>
+                          <option value={ID_MXN}>Pesos</option>
+                        </select>
+                      </div>
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
                         <div className="roelca-lookup-row">
