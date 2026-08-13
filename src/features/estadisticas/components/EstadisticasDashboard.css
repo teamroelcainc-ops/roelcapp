@@ -148,8 +148,9 @@
 }
 
 .est-detalle {
-  width: 100%;
-  max-width: 1080px;
+  width: 96vw;
+  max-width: 1440px;
+  height: 92vh;
   max-height: 92vh;
   display: flex;
   flex-direction: column;
@@ -306,3 +307,73 @@ button.est-detalle-item {
 .est-refs-vista-titulo { color: #f0f6fc; font-weight: 700; font-size: 0.95rem; }
 
 .est-refs-pista { color: #8b949e; font-size: 0.76rem; margin-left: 6px; }
+
+/* ✅ Tabla de referencias con columnas configurables y filtros */
+.est-refs-tabla-marco { max-height: none; flex: 1; min-height: 0; }
+.est-refs-vista { flex: 1; min-height: 0; }
+
+.est-refs-conteo { color: #8b949e; font-size: 0.85rem; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.est-refs-conteo b { color: #f0f6fc; }
+
+.est-btn-liga { background: none; border: none; color: #58a6ff; cursor: pointer; font-size: 0.82rem; padding: 0; }
+
+.est-celda-ref {
+  font-family: monospace;
+  font-weight: 700;
+  white-space: nowrap;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  border-color: transparent !important;
+}
+
+.est-fila-filtros th { padding: 4px 8px 8px; background-color: #161b22; }
+
+.est-filtro-col {
+  width: 100%;
+  min-width: 70px;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  background-color: #010409;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 0.78rem;
+}
+
+.est-filtro-col:focus { border-color: #D84315; outline: none; }
+
+.est-cols { position: relative; margin-left: auto; }
+
+.est-cols-fondo { position: fixed; inset: 0; z-index: 2090; }
+
+.est-cols-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 2100;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.55);
+}
+
+.est-cols-opcion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: #c9d1d9;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.est-cols-opcion:hover { background-color: #21262d; }
+.est-cols-opcion input { accent-color: #D84315; }
