@@ -58,7 +58,43 @@ const EmpresasDashboard = () => {
   // ✅ Documentos COMPLETOS del catálogo de direcciones (país, estado, colonia,
   //   calle, C.P., números) para el desglose en el detalle de la empresa.
   const [direccionesDocs, setDireccionesDocs] = useState<Record<string, any>>({});
-  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'fiscal' | 'contacto' | 'uso' | 'documentos'>('general');
+  const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'fiscal' | 'contacto' | 'uso' | 'documentos' | 'referencias'>('general');
+  // ✅ NUEVO: referencias (operaciones) del cliente, cargadas al abrir su pestaña.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de operación sin tipo canónico (mismo criterio del resto del módulo).
+  const [refsCliente, setRefsCliente] = useState<any[] | null>(null);
+  const [cargandoRefs, setCargandoRefs] = useState(false);
+  const [busquedaRefs, setBusquedaRefs] = useState('');
+
+  // ✅ Cargar las operaciones del cliente al abrir su pestaña de Referencias.
+  useEffect(() => {
+    if (!empresaViendo?.id || activeTabDetalle !== 'referencias') return;
+    let activo = true;
+    setCargandoRefs(true);
+    (async () => {
+      try {
+        const snap = await getDocs(query(
+          collection(db, 'operaciones'),
+          where('clientePaga', '==', empresaViendo.id),
+          limit(1000)
+        ));
+        if (!activo) return;
+        const lista = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
+          .sort((a: any, b: any) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+        setRefsCliente(lista);
+      } catch (e) {
+        console.error('No se pudieron cargar las referencias del cliente:', e);
+        if (activo) setRefsCliente([]);
+      } finally {
+        if (activo) setCargandoRefs(false);
+      }
+    })();
+    return () => { activo = false; };
+  }, [empresaViendo?.id, activeTabDetalle]);
+
+  // Al cambiar de empresa, las referencias del anterior se descartan.
+  useEffect(() => { setRefsCliente(null); setBusquedaRefs(''); }, [empresaViendo?.id]);
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
@@ -873,6 +909,7 @@ const EmpresasDashboard = () => {
               <button type="button" onClick={() => setActiveTabDetalle('contacto')} style={tabStyle(activeTabDetalle === 'contacto')}>Contacto</button>
               <button type="button" onClick={() => setActiveTabDetalle('uso')} style={tabStyle(activeTabDetalle === 'uso')}>Historial de Uso</button>
               <button type="button" onClick={() => setActiveTabDetalle('documentos')} style={tabStyle(activeTabDetalle === 'documentos')}>Documentos</button>
+              <button type="button" onClick={() => setActiveTabDetalle('referencias')} style={tabStyle(activeTabDetalle === 'referencias')}>Referencias</button>
             </div>
 
             <div className="detail-content ed-x76">
@@ -1003,6 +1040,60 @@ const EmpresasDashboard = () => {
 
               {activeTabDetalle === 'documentos' && (
                 <DocumentosLista coleccionOrigen="empresas" registroId={empresaViendo.id ?? ''} />
+              )}
+
+              {/* ✅ NUEVO: todas las referencias (operaciones) de este cliente */}
+              {activeTabDetalle === 'referencias' && (
+                <div className="ed-refs">
+                  {cargandoRefs ? (
+                    <p className="ed-refs-vacio">Cargando referencias…</p>
+                  ) : !refsCliente || refsCliente.length === 0 ? (
+                    <p className="ed-refs-vacio">Este cliente no tiene operaciones registradas (como "Cliente que Paga").</p>
+                  ) : (() => {
+                    const b = busquedaRefs.trim().toLowerCase();
+                    const visibles = !b ? refsCliente : refsCliente.filter(op =>
+                      String(op.ref || '').toLowerCase().includes(b) ||
+                      String(op.statusNombre || '').toLowerCase().includes(b) ||
+                      String(op.tipoOperacionNombre || '').toLowerCase().includes(b) ||
+                      String(op.origen || '').toLowerCase().includes(b) ||
+                      String(op.destino || '').toLowerCase().includes(b)
+                    );
+                    return (
+                      <>
+                        <div className="ed-refs-encabezado">
+                          <span className="ed-refs-conteo"><b>{visibles.length}</b>{b ? ` de ${refsCliente.length}` : ''} referencia(s)</span>
+                          <input
+                            type="text"
+                            className="ed-refs-buscador"
+                            placeholder="Buscar por referencia, status, tipo, origen o destino..."
+                            value={busquedaRefs}
+                            onChange={(e) => setBusquedaRefs(e.target.value)}
+                          />
+                        </div>
+                        <div className="ed-refs-marco">
+                          <table className="ed-refs-tabla">
+                            <thead>
+                              <tr><th>REFERENCIA</th><th>FECHA SERVICIO</th><th>TIPO</th><th>STATUS</th><th>ORIGEN</th><th>DESTINO</th><th>REMOLQUE</th></tr>
+                            </thead>
+                            <tbody>
+                              {visibles.map(op => (
+                                <tr key={op.id}>
+                                  <td className="ed-refs-ref">{op.ref || op.id}</td>
+                                  <td>{op.fechaServicio || '—'}</td>
+                                  <td>{op.tipoOperacionNombre || '—'}</td>
+                                  <td>{op.statusNombre || '—'}</td>
+                                  <td>{op.origen || '—'}</td>
+                                  <td>{op.destino || '—'}</td>
+                                  <td>{op.numeroRemolque || '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               )}
 
             </div>

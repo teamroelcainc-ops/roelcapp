@@ -178,3 +178,42 @@
   .ed-x118 { flex-wrap: wrap; }
   .ed-x129 { flex-wrap: wrap; }
 }
+
+/* ✅ Pestaña Referencias del cliente */
+.ed-refs { display: flex; flex-direction: column; gap: 12px; }
+.ed-refs-vacio { color: #8b949e; text-align: center; padding: 26px 0; margin: 0; }
+
+.ed-refs-encabezado {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.ed-refs-conteo { color: #8b949e; font-size: 0.86rem; }
+.ed-refs-conteo b { color: #f0f6fc; }
+
+.ed-refs-buscador {
+  flex: 1;
+  min-width: 240px;
+  padding: 8px 12px;
+  background-color: #010409;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #c9d1d9;
+  font-size: 0.86rem;
+}
+
+.ed-refs-marco {
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: auto;
+  max-height: 46vh;
+}
+
+.ed-refs-tabla { width: 100%; border-collapse: collapse; text-align: left; }
+.ed-refs-tabla thead { background-color: #161b22; position: sticky; top: 0; z-index: 5; }
+.ed-refs-tabla th { padding: 10px 12px; color: #8b949e; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.4px; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.ed-refs-tabla td { padding: 9px 12px; color: #c9d1d9; font-size: 0.85rem; border-bottom: 1px solid #21262d; }
+
+.ed-refs-ref { color: #D84315; font-family: monospace; font-weight: 700; white-space: nowrap; }
