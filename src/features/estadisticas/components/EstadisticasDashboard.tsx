@@ -22,7 +22,7 @@ import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
-import { Download, RefreshCw } from 'lucide-react';
+import { Download, RefreshCw, X } from 'lucide-react';
 import './EstadisticasDashboard.css';
 
 const STATUS_CANCELADO_ID = '7607f692';
@@ -124,6 +124,9 @@ export function EstadisticasDashboard() {
   const [fechaDesde, setFechaDesde] = useState(`${anioActual}-01-01`);
   const [fechaHasta, setFechaHasta] = useState(new Date().toISOString().slice(0, 10));
   const [busquedaHecha, setBusquedaHecha] = useState(false);
+  // ✅ NUEVO: detalle de un MES en la pestaña Servicios (opcionalmente
+  //   acotado a una línea: clic en el número de Transfer/Logística/Fletes).
+  const [detalleMes, setDetalleMes] = useState<{ mes: number; linea?: Linea } | null>(null);
 
   const buscar = async () => {
     if (!fechaDesde || !fechaHasta) { alert('Captura la fecha Desde y Hasta.'); return; }
@@ -273,6 +276,57 @@ export function EstadisticasDashboard() {
       }),
     }));
   }, [utilidad]);
+
+  // ══════════ DETALLE DE UN MES (pestaña Servicios) ══════════
+  const norm = (s: string) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  // Texto clasificable de la operación (convenio + tipo + servicio).
+  const textoDeOp = (op: Op) => norm(`${op.convenioNombre || ''} ${op.tipoOperacionNombre || op.tipoOperacion || ''} ${op.tipoServicioNombre || op.tipoServicio || ''}`);
+
+  const movimientoDeOp = (op: Op): 'Importación' | 'Exportación' | 'Movimiento' | 'Sin clasificar' => {
+    const t = textoDeOp(op);
+    if (t.includes('impo')) return 'Importación';
+    if (t.includes('expo')) return 'Exportación';
+    if (t.includes('mov')) return 'Movimiento';
+    return 'Sin clasificar';
+  };
+
+  const esTrompo = (op: Op) => textoDeOp(op).includes('trompo');
+
+  const contarPor = (lista: Op[], etiquetaDe: (op: Op) => string) => {
+    const mapa = new Map<string, number>();
+    lista.forEach((op) => {
+      const k = (etiquetaDe(op) || '').trim() || '(Sin dato)';
+      mapa.set(k, (mapa.get(k) || 0) + 1);
+    });
+    return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  };
+
+  const detalle = useMemo(() => {
+    if (detalleMes === null) return null;
+    const delMes = ops.filter((op) => {
+      const f = fechaISODe(op);
+      if (parseInt(f.slice(5, 7), 10) - 1 !== detalleMes.mes) return false;
+      return detalleMes.linea ? lineaDeOp(op) === detalleMes.linea : true;
+    });
+    const porLinea = { Transfer: 0, 'Logística': 0, Fletes: 0, Otro: 0 } as Record<Linea, number>;
+    const porMovimiento = { 'Importación': 0, 'Exportación': 0, 'Movimiento': 0, 'Sin clasificar': 0 };
+    let trompos = 0;
+    delMes.forEach((op) => {
+      porLinea[lineaDeOp(op)] += 1;
+      porMovimiento[movimientoDeOp(op)] += 1;
+      if (esTrompo(op)) trompos += 1;
+    });
+    return {
+      ops: delMes,
+      porLinea,
+      porMovimiento,
+      trompos,
+      unidades: contarPor(delMes, (op) => String(op.unidadNombre || op.unidad || '')),
+      operadores: contarPor(delMes, (op) => String(op.operadorNombre || op.operador || '')),
+      clientes: contarPor(delMes, (op) => String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '')),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detalleMes, ops]);
 
   // ══════════ EXPORTACIÓN ══════════
   const etiquetaRango = `${fechaDesde} a ${fechaHasta}`;
@@ -504,8 +558,17 @@ export function EstadisticasDashboard() {
                   const s = servicios.porMes[i];
                   const total = s.transfer + s.logistica + s.fletes;
                   return (
-                    <tr key={m} className={total === 0 ? 'est-fila-cero' : ''}>
-                      <td>{m}</td><td>{num(s.transfer)}</td><td>{num(s.logistica)}</td><td>{num(s.fletes)}</td>
+                    <tr
+                      key={m}
+                      className={`${total === 0 ? 'est-fila-cero' : 'est-fila-clicable'}`}
+                      onClick={() => { if (total > 0) setDetalleMes({ mes: i }); }}
+                      title={total > 0 ? `Ver el detalle de ${m}` : undefined}
+                    >
+                      <td>{m}</td>
+                      {/* ✅ Clic en el número de una línea → detalle SOLO de ese rubro */}
+                      <td onClick={(e) => { if (s.transfer > 0) { e.stopPropagation(); setDetalleMes({ mes: i, linea: 'Transfer' }); } }} className={s.transfer > 0 ? 'est-num-clicable' : ''}>{num(s.transfer)}</td>
+                      <td onClick={(e) => { if (s.logistica > 0) { e.stopPropagation(); setDetalleMes({ mes: i, linea: 'Logística' }); } }} className={s.logistica > 0 ? 'est-num-clicable' : ''}>{num(s.logistica)}</td>
+                      <td onClick={(e) => { if (s.fletes > 0) { e.stopPropagation(); setDetalleMes({ mes: i, linea: 'Fletes' }); } }} className={s.fletes > 0 ? 'est-num-clicable' : ''}>{num(s.fletes)}</td>
                       <td className="est-monto">{num(total)}</td>
                     </tr>
                   );
@@ -592,6 +655,90 @@ export function EstadisticasDashboard() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* ✅ DETALLE DE UN MES (Servicios) */}
+      {detalleMes !== null && detalle && (
+        <div className="est-overlay" onClick={() => setDetalleMes(null)}>
+          <div className="est-detalle" onClick={(e) => e.stopPropagation()}>
+            <div className="est-detalle-encabezado">
+              <h3>
+                Servicios de {MESES[detalleMes.mes]}
+                {detalleMes.linea ? ` · ${detalleMes.linea}` : ''} — {detalle.ops.length} operación(es)
+              </h3>
+              <button className="est-detalle-cerrar" onClick={() => setDetalleMes(null)}><X size={16} /></button>
+            </div>
+
+            <div className="est-detalle-cuerpo">
+              <div className="est-detalle-grid">
+                {!detalleMes.linea && (
+                  <div className="est-detalle-seccion">
+                    <span className="est-detalle-titulo">Tipo de operación</span>
+                    <div className="est-detalle-lista">
+                      <span className="est-detalle-item"><span>Transfer</span><b>{num(detalle.porLinea.Transfer)}</b></span>
+                      <span className="est-detalle-item"><span>Logística</span><b>{num(detalle.porLinea['Logística'])}</b></span>
+                      <span className="est-detalle-item"><span>Fletes</span><b>{num(detalle.porLinea.Fletes)}</b></span>
+                      {detalle.porLinea.Otro > 0 && <span className="est-detalle-item"><span>Otro</span><b>{num(detalle.porLinea.Otro)}</b></span>}
+                    </div>
+                  </div>
+                )}
+
+                <div className="est-detalle-seccion">
+                  <span className="est-detalle-titulo">Movimiento</span>
+                  <div className="est-detalle-lista">
+                    <span className="est-detalle-item"><span>Importación</span><b>{num(detalle.porMovimiento['Importación'])}</b></span>
+                    <span className="est-detalle-item"><span>Exportación</span><b>{num(detalle.porMovimiento['Exportación'])}</b></span>
+                    <span className="est-detalle-item"><span>Movimiento</span><b>{num(detalle.porMovimiento['Movimiento'])}</b></span>
+                    {detalle.porMovimiento['Sin clasificar'] > 0 && <span className="est-detalle-item"><span>Sin clasificar</span><b>{num(detalle.porMovimiento['Sin clasificar'])}</b></span>}
+                  </div>
+                </div>
+
+                <div className="est-detalle-seccion">
+                  <span className="est-detalle-titulo">Trompo</span>
+                  <div className="est-detalle-lista">
+                    <span className="est-detalle-item"><span>Operaciones Trompo</span><b>{num(detalle.trompos)}</b></span>
+                  </div>
+                </div>
+
+                <div className="est-detalle-seccion">
+                  <span className="est-detalle-titulo">Unidades ({detalle.unidades.length})</span>
+                  <div className="est-detalle-lista">
+                    {detalle.unidades.map(([nombre, cuantas]) => (
+                      <span className="est-detalle-item" key={nombre}><span>{nombre}</span><b>{num(cuantas)}</b></span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="est-detalle-seccion">
+                  <span className="est-detalle-titulo">Operadores ({detalle.operadores.length})</span>
+                  <div className="est-detalle-lista">
+                    {detalle.operadores.map(([nombre, cuantas]) => (
+                      <span className="est-detalle-item" key={nombre}><span>{nombre}</span><b>{num(cuantas)}</b></span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="est-detalle-seccion">
+                  <span className="est-detalle-titulo">Clientes ({detalle.clientes.length})</span>
+                  <div className="est-detalle-lista">
+                    {detalle.clientes.map(([nombre, cuantas]) => (
+                      <span className="est-detalle-item" key={nombre}><span>{nombre}</span><b>{num(cuantas)}</b></span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="est-detalle-seccion">
+                <span className="est-detalle-titulo">Operaciones incluidas</span>
+                <div className="est-detalle-refs">
+                  {detalle.ops.map((op) => (
+                    <span className="est-detalle-ref" key={op.id}>{op.ref || String(op.id).slice(0, 6)}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
