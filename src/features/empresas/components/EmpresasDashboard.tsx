@@ -65,6 +65,99 @@ const EmpresasDashboard = () => {
   const [cargandoRefs, setCargandoRefs] = useState(false);
   const [busquedaRefs, setBusquedaRefs] = useState('');
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ EMPRESAS DUPLICADAS: grupos con el MISMO NOMBRE (normalizado) o el
+  //   MISMO RFC real, y análisis de USO por registro (en qué lugares de la
+  //   app aparece cada duplicado) para decidir cuál conservar al depurar.
+  // ═══════════════════════════════════════════════════════════════════════
+  const [modalDuplicadas, setModalDuplicadas] = useState(false);
+  const [cargandoDuplicadas, setCargandoDuplicadas] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de empresa sin tipo canónico (criterio del módulo).
+  const [gruposDuplicadas, setGruposDuplicadas] = useState<{ clave: string; criterio: 'nombre' | 'RFC'; miembros: any[] }[] | null>(null);
+  const [usoPorEmpresa, setUsoPorEmpresa] = useState<Record<string, { etiqueta: string; cuantos: number; refs?: string[] }[] | 'cargando'>>({});
+
+  const RFC_GENERICOS = ['XAXX010101000', 'XEXX010101000'];
+  const normalizarNombre = (s: string) =>
+    String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ').trim();
+
+  const analizarDuplicadas = async () => {
+    setModalDuplicadas(true);
+    if (gruposDuplicadas) return; // ya analizado en esta visita
+    setCargandoDuplicadas(true);
+    try {
+      const snap = await getDocs(collection(db, 'empresas'));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de empresa sin tipo canónico.
+      const todas = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+
+      const porNombre = new Map<string, typeof todas>();
+      const porRfc = new Map<string, typeof todas>();
+      todas.forEach(e => {
+        const n = normalizarNombre(e.nombre);
+        if (n) porNombre.set(n, [...(porNombre.get(n) || []), e]);
+        const rfc = String(e.rfcTaxId || '').trim().toUpperCase();
+        if (rfc && !RFC_GENERICOS.includes(rfc)) porRfc.set(rfc, [...(porRfc.get(rfc) || []), e]);
+      });
+
+      const grupos: { clave: string; criterio: 'nombre' | 'RFC'; miembros: typeof todas }[] = [];
+      porNombre.forEach((miembros, clave) => {
+        if (miembros.length > 1) grupos.push({ clave: miembros[0].nombre || clave, criterio: 'nombre', miembros });
+      });
+      const idsYaAgrupados = new Set(grupos.flatMap(g => g.miembros.map(m => m.id)));
+      porRfc.forEach((miembros, rfc) => {
+        // Solo RFC repetido entre empresas de NOMBRE distinto (lo demás ya salió arriba).
+        if (miembros.length > 1 && !miembros.every(m => idsYaAgrupados.has(m.id))) {
+          grupos.push({ clave: rfc, criterio: 'RFC', miembros });
+        }
+      });
+      grupos.sort((a, b) => b.miembros.length - a.miembros.length || a.clave.localeCompare(b.clave));
+      setGruposDuplicadas(grupos);
+    } catch (e) {
+      console.error('No se pudieron analizar las duplicadas:', e);
+      alert('No se pudo analizar las empresas duplicadas.');
+      setModalDuplicadas(false);
+    } finally {
+      setCargandoDuplicadas(false);
+    }
+  };
+
+  // ✅ ¿Dónde se usa una empresa dentro de la app? (conteos por lugar)
+  const analizarUsoEmpresa = async (empresaId: string) => {
+    if (usoPorEmpresa[empresaId]) return;
+    setUsoPorEmpresa(prev => ({ ...prev, [empresaId]: 'cargando' }));
+    try {
+      const consultas: { etiqueta: string; col: string; campo: string; conRefs?: boolean }[] = [
+        { etiqueta: 'Operaciones · Cliente que Paga', col: 'operaciones', campo: 'clientePaga', conRefs: true },
+        { etiqueta: 'Operaciones · Origen', col: 'operaciones', campo: 'origen', conRefs: true },
+        { etiqueta: 'Operaciones · Destino', col: 'operaciones', campo: 'destino', conRefs: true },
+        { etiqueta: 'Facturas de Clientes', col: 'facturas_clientes', campo: 'clienteId' },
+        { etiqueta: 'Facturas de Proveedores', col: 'facturas_proveedores', campo: 'proveedorId' },
+        { etiqueta: 'Pagos', col: 'pagos', campo: 'entidadId' },
+        { etiqueta: 'Convenios de Clientes', col: 'convenios_clientes', campo: 'clienteId' },
+        { etiqueta: 'Contactos', col: 'contactos', campo: 'empresaId' },
+      ];
+      const resultados = await Promise.all(consultas.map(async (c) => {
+        try {
+          const snap = await getDocs(query(collection(db, c.col), where(c.campo, '==', empresaId), limit(300)));
+          return {
+            etiqueta: c.etiqueta,
+            cuantos: snap.size,
+            refs: c.conRefs
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
+              ? snap.docs.slice(0, 30).map(d => String((d.data() as any).ref || d.id))
+              : undefined,
+          };
+        } catch {
+          return { etiqueta: c.etiqueta, cuantos: 0 };
+        }
+      }));
+      setUsoPorEmpresa(prev => ({ ...prev, [empresaId]: resultados }));
+    } catch (e) {
+      console.error('No se pudo analizar el uso de la empresa:', e);
+      setUsoPorEmpresa(prev => ({ ...prev, [empresaId]: [] }));
+    }
+  };
+
   // ✅ Cargar las operaciones del cliente al abrir su pestaña de Referencias.
   useEffect(() => {
     if (!empresaViendo?.id || activeTabDetalle !== 'referencias') return;
@@ -651,6 +744,11 @@ const EmpresasDashboard = () => {
               Filtros
               {(busqueda || filtroActivo !== 'Todo') && <span className="ed-x11">{[busqueda, filtroActivo !== 'Todo' ? filtroActivo : ''].filter(Boolean).length}</span>}
             </button>
+            {/* ✅ NUEVO: detector de empresas duplicadas (mismo nombre o RFC) */}
+            <button className="ed-btn-duplicadas" onClick={analizarDuplicadas} title="Detectar empresas con el mismo nombre o RFC para depurar">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Duplicadas
+            </button>
             {filtroActivo !== 'Todo' && (
               <span className="ed-x12">
                 {filtroActivo}
@@ -1192,6 +1290,76 @@ const EmpresasDashboard = () => {
             <div className="ed-x129">
               <button className="ed-x130" onClick={() => { setBusqueda(''); setFiltroActivo('Todo'); setBusquedaHecha(false); }}>Limpiar</button>
               <button className="ed-x131" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL: EMPRESAS DUPLICADAS + uso dentro de la app */}
+      {modalDuplicadas && (
+        <div className="modal-overlay ed-dup-overlay" onClick={() => setModalDuplicadas(false)}>
+          <div className="ed-dup-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ed-dup-encabezado">
+              <h2>Empresas Duplicadas</h2>
+              <button className="ed-x46" onClick={() => setModalDuplicadas(false)}>✕</button>
+            </div>
+
+            <div className="ed-dup-cuerpo">
+              {cargandoDuplicadas ? (
+                <p className="ed-refs-vacio">Analizando las empresas…</p>
+              ) : !gruposDuplicadas || gruposDuplicadas.length === 0 ? (
+                <p className="ed-refs-vacio">No se encontraron empresas duplicadas (mismo nombre o mismo RFC). 🎉</p>
+              ) : (
+                <>
+                  <p className="ed-dup-nota">
+                    {gruposDuplicadas.length} grupo(s) detectado(s). Presiona <b>Ver uso</b> en cada registro para saber
+                    dónde se utiliza dentro de la app; conserva el más usado y elimina el otro desde la tabla principal.
+                  </p>
+                  {gruposDuplicadas.map((g) => (
+                    <div className="ed-dup-grupo" key={`${g.criterio}-${g.clave}`}>
+                      <div className="ed-dup-grupo-titulo">
+                        <span className="ed-dup-nombre">{g.clave}</span>
+                        <span className={`ed-dup-criterio ${g.criterio === 'RFC' ? 'rfc' : ''}`}>{g.miembros.length} registros · mismo {g.criterio}</span>
+                      </div>
+                      {g.miembros.map((m) => (
+                        <div className="ed-dup-miembro" key={m.id}>
+                          <div className="ed-dup-miembro-fila">
+                            <span className="ed-x29">{m.numCliente || '—'}</span>
+                            <span className="ed-dup-miembro-nombre">{m.nombre}</span>
+                            <span className="ed-dup-miembro-dato">{m.rfcTaxId || 'Sin RFC'}</span>
+                            {m.status === 'Baja' && <span className="ed-x2">BAJA</span>}
+                            <button className="ed-dup-ver-uso" onClick={() => analizarUsoEmpresa(m.id)} disabled={usoPorEmpresa[m.id] === 'cargando'}>
+                              {usoPorEmpresa[m.id] === 'cargando' ? 'Analizando…' : usoPorEmpresa[m.id] ? 'Actualizar' : 'Ver uso'}
+                            </button>
+                          </div>
+                          {Array.isArray(usoPorEmpresa[m.id]) && (
+                            <div className="ed-dup-uso">
+                              {(usoPorEmpresa[m.id] as { etiqueta: string; cuantos: number; refs?: string[] }[]).every(u => u.cuantos === 0) ? (
+                                <span className="ed-dup-sin-uso">Sin uso detectado en la app — candidata segura a eliminarse.</span>
+                              ) : (
+                                (usoPorEmpresa[m.id] as { etiqueta: string; cuantos: number; refs?: string[] }[])
+                                  .filter(u => u.cuantos > 0)
+                                  .map(u => (
+                                    <div className="ed-dup-uso-fila" key={u.etiqueta}>
+                                      <span className="ed-dup-uso-etiqueta">{u.etiqueta}</span>
+                                      <span className="ed-dup-uso-conteo">{u.cuantos}{u.cuantos >= 300 ? '+' : ''}</span>
+                                      {u.refs && u.refs.length > 0 && (
+                                        <div className="ed-dup-uso-refs">
+                                          {u.refs.map(r => <span className="ed-refs-ref" key={r}>{r}</span>)}
+                                          {u.cuantos > u.refs.length && <span className="ed-dup-mas">+{u.cuantos - u.refs.length} más</span>}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </div>

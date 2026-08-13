@@ -217,3 +217,129 @@
 .ed-refs-tabla td { padding: 9px 12px; color: #c9d1d9; font-size: 0.85rem; border-bottom: 1px solid #21262d; }
 
 .ed-refs-ref { color: #D84315; font-family: monospace; font-weight: 700; white-space: nowrap; }
+
+/* ✅ Empresas duplicadas */
+.ed-btn-duplicadas {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #c9d1d9;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 0.88rem;
+}
+
+.ed-btn-duplicadas:hover { border-color: #D84315; }
+
+.ed-dup-overlay { z-index: 1500; }
+
+.ed-dup-modal {
+  width: 96vw;
+  max-width: 1100px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background-color: #0d1117;
+  border: 1px solid #444;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ed-dup-encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 22px;
+  border-bottom: 1px solid #30363d;
+}
+
+.ed-dup-encabezado h2 { margin: 0; color: #f0f6fc; font-size: 1.1rem; }
+
+.ed-dup-cuerpo { padding: 20px 22px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+
+.ed-dup-nota { margin: 0; color: #8b949e; font-size: 0.86rem; line-height: 1.5; }
+.ed-dup-nota b { color: #58a6ff; }
+
+.ed-dup-grupo {
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ed-dup-grupo-titulo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background-color: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+
+.ed-dup-nombre { color: #f0f6fc; font-weight: 700; }
+
+.ed-dup-criterio {
+  color: #f0a06c;
+  font-size: 0.76rem;
+  font-weight: 700;
+  background-color: rgba(216, 67, 21, 0.12);
+  border: 1px solid rgba(216, 67, 21, 0.5);
+  border-radius: 12px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.ed-dup-criterio.rfc {
+  color: #79c0ff;
+  background-color: rgba(88, 166, 255, 0.1);
+  border-color: rgba(88, 166, 255, 0.5);
+}
+
+.ed-dup-miembro { padding: 12px 16px; border-bottom: 1px solid #21262d; display: flex; flex-direction: column; gap: 10px; }
+.ed-dup-miembro:last-child { border-bottom: none; }
+
+.ed-dup-miembro-fila { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ed-dup-miembro-nombre { color: #c9d1d9; font-weight: 600; }
+.ed-dup-miembro-dato { color: #8b949e; font-size: 0.82rem; font-family: monospace; }
+
+.ed-dup-ver-uso {
+  margin-left: auto;
+  padding: 7px 14px;
+  background-color: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #58a6ff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.ed-dup-ver-uso:disabled { opacity: 0.6; cursor: wait; }
+
+.ed-dup-uso {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background-color: #010409;
+  border: 1px solid #21262d;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.ed-dup-sin-uso { color: #3fb950; font-size: 0.85rem; font-weight: 600; }
+
+.ed-dup-uso-fila { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ed-dup-uso-etiqueta { color: #8b949e; font-size: 0.8rem; min-width: 220px; }
+.ed-dup-uso-conteo { color: #f0f6fc; font-weight: 800; }
+.ed-dup-uso-refs { display: flex; flex-wrap: wrap; gap: 4px; }
+.ed-dup-mas { color: #8b949e; font-size: 0.76rem; align-self: center; }
+
+@media (max-width: 768px) {
+  .ed-dup-overlay { padding: 0; }
+  .ed-dup-modal { width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+  .ed-dup-uso-etiqueta { min-width: 100%; }
+}
