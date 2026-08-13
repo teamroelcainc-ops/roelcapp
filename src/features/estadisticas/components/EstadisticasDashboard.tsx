@@ -131,6 +131,9 @@ export function EstadisticasDashboard() {
   // ✅ NUEVO: ficha de UNA operación (clic en su referencia) + edición con el
   //   MISMO formulario del módulo de Operaciones.
   const [opFicha, setOpFicha] = useState<Op | null>(null);
+  // ✅ NUEVO: al hacer clic en cualquier elemento del detalle (cliente,
+  //   unidad, operador, movimiento, línea, trompo) se muestran SUS referencias.
+  const [refsFiltro, setRefsFiltro] = useState<{ etiqueta: string; ops: Op[] } | null>(null);
   const [editandoOp, setEditandoOp] = useState<Op | null>(null);
   const [catalogosForm, setCatalogosForm] = useState<Record<string, unknown[]> | null>(null);
   const [cargandoCatalogos, setCargandoCatalogos] = useState(false);
@@ -606,7 +609,7 @@ export function EstadisticasDashboard() {
                     <tr
                       key={m}
                       className={`${total === 0 ? 'est-fila-cero' : 'est-fila-clicable'}`}
-                      onClick={() => { if (total > 0) setDetalleMes({ mes: i }); }}
+                      onClick={() => { if (total > 0) { setDetalleMes({ mes: i }); setRefsFiltro(null); } }}
                       title={total > 0 ? `Ver el detalle de ${m}` : undefined}
                     >
                       <td>{m}</td>
@@ -705,26 +708,62 @@ export function EstadisticasDashboard() {
 
       {/* ✅ DETALLE DE UN MES (Servicios) */}
       {detalleMes !== null && detalle && (
-        <div className="est-overlay" onClick={() => setDetalleMes(null)}>
+        <div className="est-overlay" onClick={() => { setDetalleMes(null); setRefsFiltro(null); }}>
           <div className="est-detalle" onClick={(e) => e.stopPropagation()}>
             <div className="est-detalle-encabezado">
               <h3>
                 Servicios de {MESES[detalleMes.mes]}
                 {detalleMes.linea ? ` · ${detalleMes.linea}` : ''} — {detalle.ops.length} operación(es)
               </h3>
-              <button className="est-detalle-cerrar" onClick={() => setDetalleMes(null)}><X size={16} /></button>
+              <button className="est-detalle-cerrar" onClick={() => { setDetalleMes(null); setRefsFiltro(null); }}><X size={16} /></button>
             </div>
 
             <div className="est-detalle-cuerpo">
+              {refsFiltro ? (
+                /* ✅ Vista de REFERENCIAS del elemento seleccionado */
+                <div className="est-refs-vista">
+                  <div className="est-refs-vista-encabezado">
+                    <button className="est-btn" onClick={() => setRefsFiltro(null)}>← Volver</button>
+                    <span className="est-refs-vista-titulo">{refsFiltro.etiqueta} — {refsFiltro.ops.length} operación(es)</span>
+                  </div>
+                  <div className="est-detalle-refs">
+                    {refsFiltro.ops.map((op) => {
+                      const linea = lineaDeOp(op);
+                      const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
+                      return (
+                        <button
+                          type="button"
+                          className={`est-detalle-ref est-ref-${claseLinea}`}
+                          key={op.id}
+                          onClick={() => setOpFicha(op)}
+                          title={`Ver el detalle de ${op.ref || op.id} (${linea})`}
+                        >
+                          {op.ref || String(op.id).slice(0, 6)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <small className="est-refs-leyenda">
+                    <span className="est-ref-transfer est-leyenda-chip">Transfer</span>
+                    <span className="est-ref-logistica est-leyenda-chip">Logística</span>
+                    <span className="est-ref-fletes est-leyenda-chip">Fletes</span>
+                    <span className="est-refs-pista">Haz clic en una referencia para ver su detalle.</span>
+                  </small>
+                </div>
+              ) : (
               <div className="est-detalle-grid">
                 {!detalleMes.linea && (
                   <div className="est-detalle-seccion">
                     <span className="est-detalle-titulo">Tipo de operación</span>
                     <div className="est-detalle-lista">
-                      <span className="est-detalle-item"><span>Transfer</span><b>{num(detalle.porLinea.Transfer)}</b></span>
-                      <span className="est-detalle-item"><span>Logística</span><b>{num(detalle.porLinea['Logística'])}</b></span>
-                      <span className="est-detalle-item"><span>Fletes</span><b>{num(detalle.porLinea.Fletes)}</b></span>
-                      {detalle.porLinea.Otro > 0 && <span className="est-detalle-item"><span>Otro</span><b>{num(detalle.porLinea.Otro)}</b></span>}
+                      {(['Transfer', 'Logística', 'Fletes'] as Linea[]).map((l) => (
+                        detalle.porLinea[l] > 0
+                          ? <button type="button" className="est-detalle-item clicable" key={l} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${l}`, ops: detalle.ops.filter((op) => lineaDeOp(op) === l) })}><span>{l}</span><b>{num(detalle.porLinea[l])}</b></button>
+                          : <span className="est-detalle-item" key={l}><span>{l}</span><b>0</b></span>
+                      ))}
+                      {detalle.porLinea.Otro > 0 && (
+                        <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Otro`, ops: detalle.ops.filter((op) => lineaDeOp(op) === 'Otro') })}><span>Otro</span><b>{num(detalle.porLinea.Otro)}</b></button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -732,17 +771,22 @@ export function EstadisticasDashboard() {
                 <div className="est-detalle-seccion">
                   <span className="est-detalle-titulo">Movimiento</span>
                   <div className="est-detalle-lista">
-                    <span className="est-detalle-item"><span>Importación</span><b>{num(detalle.porMovimiento['Importación'])}</b></span>
-                    <span className="est-detalle-item"><span>Exportación</span><b>{num(detalle.porMovimiento['Exportación'])}</b></span>
-                    <span className="est-detalle-item"><span>Movimiento</span><b>{num(detalle.porMovimiento['Movimiento'])}</b></span>
-                    {detalle.porMovimiento['Sin clasificar'] > 0 && <span className="est-detalle-item"><span>Sin clasificar</span><b>{num(detalle.porMovimiento['Sin clasificar'])}</b></span>}
+                    {(['Importación', 'Exportación', 'Movimiento', 'Sin clasificar'] as const).map((mv) => (
+                      (mv !== 'Sin clasificar' || detalle.porMovimiento[mv] > 0) && (
+                        detalle.porMovimiento[mv] > 0
+                          ? <button type="button" className="est-detalle-item clicable" key={mv} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}><span>{mv}</span><b>{num(detalle.porMovimiento[mv])}</b></button>
+                          : <span className="est-detalle-item" key={mv}><span>{mv}</span><b>0</b></span>
+                      )
+                    ))}
                   </div>
                 </div>
 
                 <div className="est-detalle-seccion">
                   <span className="est-detalle-titulo">Trompo</span>
                   <div className="est-detalle-lista">
-                    <span className="est-detalle-item"><span>Operaciones Trompo</span><b>{num(detalle.trompos)}</b></span>
+                    {detalle.trompos > 0
+                      ? <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Trompo`, ops: detalle.ops.filter((op) => esTrompo(op)) })}><span>Operaciones Trompo</span><b>{num(detalle.trompos)}</b></button>
+                      : <span className="est-detalle-item"><span>Operaciones Trompo</span><b>0</b></span>}
                   </div>
                 </div>
 
@@ -750,7 +794,9 @@ export function EstadisticasDashboard() {
                   <span className="est-detalle-titulo">Unidades ({detalle.unidades.length})</span>
                   <div className="est-detalle-lista">
                     {detalle.unidades.map(([nombre, cuantas]) => (
-                      <span className="est-detalle-item" key={nombre}><span>{nombre}</span><b>{num(cuantas)}</b></span>
+                      <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Unidad ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.unidadNombre || op.unidad || '').trim()) || '(Sin dato)') === nombre) })}>
+                        <span>{nombre}</span><b>{num(cuantas)}</b>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -759,7 +805,9 @@ export function EstadisticasDashboard() {
                   <span className="est-detalle-titulo">Operadores ({detalle.operadores.length})</span>
                   <div className="est-detalle-lista">
                     {detalle.operadores.map(([nombre, cuantas]) => (
-                      <span className="est-detalle-item" key={nombre}><span>{nombre}</span><b>{num(cuantas)}</b></span>
+                      <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Operador ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.operadorNombre || op.operador || '').trim()) || '(Sin dato)') === nombre) })}>
+                        <span>{nombre}</span><b>{num(cuantas)}</b>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -768,37 +816,14 @@ export function EstadisticasDashboard() {
                   <span className="est-detalle-titulo">Clientes ({detalle.clientes.length})</span>
                   <div className="est-detalle-lista">
                     {detalle.clientes.map(([nombre, cuantas]) => (
-                      <span className="est-detalle-item" key={nombre}><span>{nombre}</span><b>{num(cuantas)}</b></span>
+                      <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '').trim()) || '(Sin dato)') === nombre) })}>
+                        <span>{nombre}</span><b>{num(cuantas)}</b>
+                      </button>
                     ))}
                   </div>
                 </div>
               </div>
-
-              <div className="est-detalle-seccion">
-                <span className="est-detalle-titulo">Operaciones incluidas</span>
-                <div className="est-detalle-refs">
-                  {detalle.ops.map((op) => {
-                    const linea = lineaDeOp(op);
-                    const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
-                    return (
-                      <button
-                        type="button"
-                        className={`est-detalle-ref est-ref-${claseLinea}`}
-                        key={op.id}
-                        onClick={() => setOpFicha(op)}
-                        title={`Ver el detalle de ${op.ref || op.id} (${linea})`}
-                      >
-                        {op.ref || String(op.id).slice(0, 6)}
-                      </button>
-                    );
-                  })}
-                </div>
-                <small className="est-refs-leyenda">
-                  <span className="est-ref-transfer est-leyenda-chip">Transfer</span>
-                  <span className="est-ref-logistica est-leyenda-chip">Logística</span>
-                  <span className="est-ref-fletes est-leyenda-chip">Fletes</span>
-                </small>
-              </div>
+              )}
             </div>
           </div>
         </div>

@@ -1566,31 +1566,42 @@ export const ReferenciasNominaDashboard = () => {
 
     const htmlTemplate = `
 <style>
-  #recibo-nomina-root { background:#fff; color:#333; font-family:'Segoe UI',Roboto,Arial,sans-serif; width:1040px; box-sizing:border-box; }
+  #recibo-nomina-root { background:#fff; color:#333; font-family:'Segoe UI',Roboto,Arial,sans-serif; width:816px; box-sizing:border-box; }
   #recibo-nomina-root * { box-sizing:border-box; }
-  #recibo-nomina-root .receipt-container { background:#fff; width:100%; padding:25px 35px; border-top:8px solid #f37021; }
-  #recibo-nomina-root header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px; }
+  #recibo-nomina-root .receipt-container { background:#fff; width:100%; padding:16px 22px; border-top:6px solid #f37021; }
+  #recibo-nomina-root header { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:7px; }
   #recibo-nomina-root .header-left { display:flex; align-items:center; gap:20px; }
-  #recibo-nomina-root .logo-img { max-height:70px; width:auto; }
-  #recibo-nomina-root .brand h1 { margin:0; color:#f37021; font-size:26px; letter-spacing:1px; line-height:1; }
+  #recibo-nomina-root .logo-img { max-height:52px; width:auto; }
+  #recibo-nomina-root .brand h1 { margin:0; color:#f37021; font-size:21px; letter-spacing:1px; line-height:1; }
   #recibo-nomina-root .brand p { margin:3px 0 0; color:#002d5a; font-weight:bold; font-size:13px; }
   #recibo-nomina-root .header-info { text-align:right; }
-  #recibo-nomina-root .header-info h2 { margin:0; color:#f37021; font-size:20px; }
-  #recibo-nomina-root .header-info p { margin:2px 0; font-size:0.85em; color:#666; }
-  #recibo-nomina-root .summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-bottom:15px; }
-  #recibo-nomina-root .card { background:#fffaf7; border:1px solid #ffd8c2; border-radius:8px; padding:12px 15px; }
+  #recibo-nomina-root .header-info h2 { margin:0; color:#f37021; font-size:16px; }
+  #recibo-nomina-root .header-info p { margin:1px 0; font-size:0.78em; color:#666; }
+  #recibo-nomina-root .summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:10px; }
+  #recibo-nomina-root .card { background:#fffaf7; border:1px solid #ffd8c2; border-radius:8px; padding:8px 11px; }
   #recibo-nomina-root .card h3 { margin:0 0 8px 0; font-size:1em; color:#d65a10; border-bottom:2px solid #f37021; display:inline-block; padding-bottom:2px; }
-  #recibo-nomina-root .row { display:flex; justify-content:space-between; margin:6px 0; font-size:0.85em; }
+  #recibo-nomina-root .row { display:flex; justify-content:space-between; margin:4px 0; font-size:0.76em; }
   #recibo-nomina-root .total-row { font-weight:bold; color:#000; border-top:1px dashed #f37021; padding-top:6px; margin-top:6px; }
   #recibo-nomina-root .table-section h3 { color:#002d5a; font-size:1.1em; margin-bottom:8px; }
-  #recibo-nomina-root table { width:100%; border-collapse:collapse; font-size:0.8em; }
-  #recibo-nomina-root th { background-color:#f37021; color:#fff; text-align:left; padding:8px; text-transform:uppercase; }
-  #recibo-nomina-root td { padding:6px 8px; border-bottom:1px solid #eee; }
+  #recibo-nomina-root table { width:100%; border-collapse:collapse; font-size:0.72em; }
+  #recibo-nomina-root th { background-color:#f37021; color:#fff; text-align:left; padding:5px 6px; text-transform:uppercase; }
+  #recibo-nomina-root td { padding:4px 6px; border-bottom:1px solid #eee; }
   #recibo-nomina-root tr:nth-child(even) { background-color:#fff9f5; }
-  #recibo-nomina-root .footer-total { margin-top:15px; display:flex; justify-content:flex-end; }
-  #recibo-nomina-root .total-box { background:#f37021; color:#fff; padding:12px 30px; border-radius:8px; text-align:right; }
+  #recibo-nomina-root .footer-total { margin-top:10px; display:flex; justify-content:flex-end; }
+  #recibo-nomina-root .total-box { background:#f37021; color:#fff; padding:9px 22px; border-radius:8px; text-align:right; }
   #recibo-nomina-root .total-box p { margin:0; font-size:0.8em; opacity:0.9; }
   #recibo-nomina-root .total-box h2 { margin:2px 0 0; font-size:1.7em; }
+  /* ✅ Compresión dinámica según el número de viajes (una sola hoja). */
+  ${trips.length > 14 ? `
+  #recibo-nomina-root table { font-size:0.64em; }
+  #recibo-nomina-root td { padding:2.5px 5px; }
+  #recibo-nomina-root th { padding:3.5px 5px; }
+  #recibo-nomina-root .row { margin:3px 0; font-size:0.72em; }
+  #recibo-nomina-root .card { padding:6px 9px; }` : ''}
+  ${trips.length > 26 ? `
+  #recibo-nomina-root table { font-size:0.56em; }
+  #recibo-nomina-root td { padding:1.8px 4px; }
+  #recibo-nomina-root .summary-grid { margin-bottom:6px; }` : ''}
 </style>
   <div class="receipt-container">
     <header>
@@ -1665,12 +1676,15 @@ export const ReferenciasNominaDashboard = () => {
 
     const filename = `Recibo_Nomina_${String(consecutivoRec || 'recibo').replace(/\W/g, '_')}.pdf`;
 
+    // ✅ Recibo VERTICAL en una sola hoja carta: ancho de 816px (carta a
+    //   96dpi), márgenes mínimos y cortes prohibidos dentro de filas/tarjetas.
     const opt = {
-      margin:       0.2,
+      margin:       0.15,
       filename:     filename,
       image:        { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, windowWidth: 1040 },
-      jsPDF:        { unit: 'in' as const, format: 'letter', orientation: 'landscape' as const }
+      html2canvas:  { scale: 2, useCORS: true, windowWidth: 816 },
+      jsPDF:        { unit: 'in' as const, format: 'letter', orientation: 'portrait' as const },
+      pagebreak:    { mode: ['css', 'legacy'], avoid: ['tr', '.card', '.footer-total', 'header'] }
     };
 
     (async () => {

@@ -282,3 +282,27 @@
 @media (max-width: 860px) {
   .est-ficha-grid { grid-template-columns: 1fr; }
 }
+
+/* ✅ Elementos del detalle clicables + vista de referencias */
+.est-detalle-item.clicable,
+button.est-detalle-item {
+  background: none;
+  border: none;
+  padding: 3px 4px;
+  margin: 0 -4px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  width: calc(100% + 8px);
+}
+
+.est-detalle-item.clicable:hover { background-color: #21262d; }
+.est-detalle-item.clicable:hover span:first-child { color: #f0f6fc; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+
+.est-refs-vista { display: flex; flex-direction: column; gap: 14px; }
+
+.est-refs-vista-encabezado { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.est-refs-vista-titulo { color: #f0f6fc; font-weight: 700; font-size: 0.95rem; }
+
+.est-refs-pista { color: #8b949e; font-size: 0.76rem; margin-left: 6px; }
