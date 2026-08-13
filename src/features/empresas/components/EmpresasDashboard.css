@@ -299,6 +299,12 @@
   border-color: rgba(88, 166, 255, 0.5);
 }
 
+.ed-dup-criterio.similar {
+  color: #d2a8ff;
+  background-color: rgba(163, 113, 247, 0.12);
+  border-color: rgba(163, 113, 247, 0.5);
+}
+
 .ed-dup-miembro { padding: 12px 16px; border-bottom: 1px solid #21262d; display: flex; flex-direction: column; gap: 10px; }
 .ed-dup-miembro:last-child { border-bottom: none; }
 

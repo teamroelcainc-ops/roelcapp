@@ -73,7 +73,7 @@ const EmpresasDashboard = () => {
   const [modalDuplicadas, setModalDuplicadas] = useState(false);
   const [cargandoDuplicadas, setCargandoDuplicadas] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de empresa sin tipo canónico (criterio del módulo).
-  const [gruposDuplicadas, setGruposDuplicadas] = useState<{ clave: string; criterio: 'nombre' | 'RFC'; miembros: any[] }[] | null>(null);
+  const [gruposDuplicadas, setGruposDuplicadas] = useState<{ clave: string; criterio: 'nombre' | 'RFC' | 'similar'; miembros: any[] }[] | null>(null);
   const [usoPorEmpresa, setUsoPorEmpresa] = useState<Record<string, { etiqueta: string; cuantos: number; refs?: string[] }[] | 'cargando'>>({});
 
   const RFC_GENERICOS = ['XAXX010101000', 'XEXX010101000'];
@@ -87,30 +87,57 @@ const EmpresasDashboard = () => {
     setCargandoDuplicadas(true);
     try {
       const snap = await getDocs(collection(db, 'empresas'));
+      // ⚠️ Orden del spread: el id del DOCUMENTO al final, para que un campo
+      //   interno llamado "id" (herencia de AppSheet) no lo pise — con ids
+      //   pisados las keys de React chocaban y los grupos se veían vacíos.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de empresa sin tipo canónico.
-      const todas = snap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+      const todas = snap.docs.map(d => ({ ...(d.data() as any), id: d.id }));
 
       const porNombre = new Map<string, typeof todas>();
       const porRfc = new Map<string, typeof todas>();
+      // ✅ SIMILARES: clave = primera + última palabra del nombre. Atrapa
+      //   variaciones con palabras intermedias distintas u omitidas:
+      //   "Jesús Molero" y "Jesus Levi Molero" → clave "jesus|molero".
+      const porSimilar = new Map<string, typeof todas>();
+
       todas.forEach(e => {
         const n = normalizarNombre(e.nombre);
-        if (n) porNombre.set(n, [...(porNombre.get(n) || []), e]);
+        if (n) {
+          porNombre.set(n, [...(porNombre.get(n) || []), e]);
+          const palabras = n.split(' ').filter(Boolean);
+          if (palabras.length >= 2) {
+            const claveSim = `${palabras[0]}|${palabras[palabras.length - 1]}`;
+            porSimilar.set(claveSim, [...(porSimilar.get(claveSim) || []), e]);
+          }
+        }
         const rfc = String(e.rfcTaxId || '').trim().toUpperCase();
         if (rfc && !RFC_GENERICOS.includes(rfc)) porRfc.set(rfc, [...(porRfc.get(rfc) || []), e]);
       });
 
-      const grupos: { clave: string; criterio: 'nombre' | 'RFC'; miembros: typeof todas }[] = [];
+      const grupos: { clave: string; criterio: 'nombre' | 'RFC' | 'similar'; miembros: typeof todas }[] = [];
       porNombre.forEach((miembros, clave) => {
-        if (miembros.length > 1) grupos.push({ clave: miembros[0].nombre || clave, criterio: 'nombre', miembros });
+        if (miembros.length > 1) grupos.push({ clave: String(miembros[0].nombre || clave), criterio: 'nombre', miembros });
       });
-      const idsYaAgrupados = new Set(grupos.flatMap(g => g.miembros.map(m => m.id)));
+      const enGrupoExacto = new Set(grupos.flatMap(g => g.miembros.map(m => m.id)));
+      porSimilar.forEach((miembros) => {
+        // Solo si hay nombres DISTINTOS entre sí (los idénticos ya salieron arriba).
+        const nombresUnicos = new Set(miembros.map(m => normalizarNombre(m.nombre)));
+        if (miembros.length > 1 && nombresUnicos.size > 1) {
+          grupos.push({
+            clave: miembros.map(m => String(m.nombre || '(sin nombre)')).slice(0, 2).join('  ≈  ') + (miembros.length > 2 ? '  …' : ''),
+            criterio: 'similar',
+            miembros,
+          });
+          miembros.forEach(m => enGrupoExacto.add(m.id));
+        }
+      });
       porRfc.forEach((miembros, rfc) => {
-        // Solo RFC repetido entre empresas de NOMBRE distinto (lo demás ya salió arriba).
-        if (miembros.length > 1 && !miembros.every(m => idsYaAgrupados.has(m.id))) {
+        if (miembros.length > 1 && !miembros.every(m => enGrupoExacto.has(m.id))) {
           grupos.push({ clave: rfc, criterio: 'RFC', miembros });
         }
       });
       grupos.sort((a, b) => b.miembros.length - a.miembros.length || a.clave.localeCompare(b.clave));
+      console.log('[Duplicadas] grupos:', grupos.length, 'ejemplo:', grupos[0]);
       setGruposDuplicadas(grupos);
     } catch (e) {
       console.error('No se pudieron analizar las duplicadas:', e);
@@ -1316,16 +1343,18 @@ const EmpresasDashboard = () => {
                     dónde se utiliza dentro de la app; conserva el más usado y elimina el otro desde la tabla principal.
                   </p>
                   {gruposDuplicadas.map((g) => (
-                    <div className="ed-dup-grupo" key={`${g.criterio}-${g.clave}`}>
+                    <div className="ed-dup-grupo" key={`${g.criterio}-${g.clave}-${g.miembros[0]?.id || ''}`}>
                       <div className="ed-dup-grupo-titulo">
-                        <span className="ed-dup-nombre">{g.clave}</span>
-                        <span className={`ed-dup-criterio ${g.criterio === 'RFC' ? 'rfc' : ''}`}>{g.miembros.length} registros · mismo {g.criterio}</span>
+                        <span className="ed-dup-nombre">{String(g.clave || g.miembros[0]?.nombre || '(sin nombre)')}</span>
+                        <span className={`ed-dup-criterio ${g.criterio === 'RFC' ? 'rfc' : ''} ${g.criterio === 'similar' ? 'similar' : ''}`}>
+                          {g.miembros.length} registros · {g.criterio === 'similar' ? 'nombres SIMILARES' : `mismo ${g.criterio}`}
+                        </span>
                       </div>
-                      {g.miembros.map((m) => (
-                        <div className="ed-dup-miembro" key={m.id}>
+                      {g.miembros.map((m, idx) => (
+                        <div className="ed-dup-miembro" key={`${m.id || 'sin-id'}-${idx}`}>
                           <div className="ed-dup-miembro-fila">
                             <span className="ed-x29">{m.numCliente || '—'}</span>
-                            <span className="ed-dup-miembro-nombre">{m.nombre}</span>
+                            <span className="ed-dup-miembro-nombre">{String(m.nombre || '(sin nombre)')}</span>
                             <span className="ed-dup-miembro-dato">{m.rfcTaxId || 'Sin RFC'}</span>
                             {m.status === 'Baja' && <span className="ed-x2">BAJA</span>}
                             <button className="ed-dup-ver-uso" onClick={() => analizarUsoEmpresa(m.id)} disabled={usoPorEmpresa[m.id] === 'cargando'}>
