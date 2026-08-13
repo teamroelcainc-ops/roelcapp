@@ -22,7 +22,7 @@ import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
-import { Download, RefreshCw, X, Pencil, Settings2 } from 'lucide-react';
+import { Download, RefreshCw, X, Settings2 } from 'lucide-react';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import './EstadisticasDashboard.css';
@@ -131,7 +131,6 @@ export function EstadisticasDashboard() {
   const [detalleMes, setDetalleMes] = useState<{ mes: number; linea?: Linea } | null>(null);
   // ✅ NUEVO: ficha de UNA operación (clic en su referencia) + edición con el
   //   MISMO formulario del módulo de Operaciones.
-  const [opFicha, setOpFicha] = useState<Op | null>(null);
   // ✅ NUEVO: al hacer clic en cualquier elemento del detalle (cliente,
   //   unidad, operador, movimiento, línea, trompo) se muestran SUS referencias.
   const [refsFiltro, setRefsFiltro] = useState<{ etiqueta: string; ops: Op[] } | null>(null);
@@ -164,6 +163,9 @@ export function EstadisticasDashboard() {
     if (campo === 'unidadNombre') return String(op.unidadNombre || op.unidad || '');
     if (campo === 'operadorNombre') return String(op.operadorNombre || op.operador || '');
     if (campo === 'clientePagaNombre') return String(op.clientePagaNombre || op.clienteNombre || '');
+    // ✅ Origen/Destino: el nombre denormalizado, nunca el ID.
+    if (campo === 'origen') return String(op.origenNombre || op.clienteOrigenNombre || '');
+    if (campo === 'destino') return String(op.destinoNombre || op.clienteDestinoNombre || '');
     const v = op[campo];
     return v === null || v === undefined ? '' : String(v);
   };
@@ -760,29 +762,9 @@ export function EstadisticasDashboard() {
                     <button className="est-btn" onClick={() => { setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}>← Volver</button>
                     <span className="est-refs-vista-titulo">{refsFiltro.etiqueta}</span>
                     <div className="est-cols">
-                      <button className="est-btn" onClick={() => setMenuColumnas(v => !v)}>
+                      <button className="est-btn" onClick={() => setMenuColumnas(true)}>
                         <Settings2 size={14} /> Columnas
                       </button>
-                      {menuColumnas && (
-                        <>
-                          <div className="est-cols-fondo" onClick={() => setMenuColumnas(false)} />
-                          <div className="est-cols-menu">
-                            <span className="est-detalle-titulo">Columnas visibles</span>
-                            {COLUMNAS_REFS.map((c) => (
-                              <label className="est-cols-opcion" key={c.campo}>
-                                <input
-                                  type="checkbox"
-                                  checked={columnasRefs.includes(c.campo)}
-                                  onChange={() => setColumnasRefs(prev => prev.includes(c.campo)
-                                    ? (prev.length > 1 ? prev.filter(x => x !== c.campo) : prev)
-                                    : [...prev, c.campo])}
-                                />
-                                {c.etiqueta}
-                              </label>
-                            ))}
-                          </div>
-                        </>
-                      )}
                     </div>
                   </div>
 
@@ -828,7 +810,7 @@ export function EstadisticasDashboard() {
                                 const linea = lineaDeOp(op);
                                 const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
                                 return (
-                                  <tr key={op.id} className="est-fila-clicable" onClick={() => setOpFicha(op)} title={`Ver el detalle de ${op.ref || op.id}`}>
+                                  <tr key={op.id} className="est-fila-clicable" onClick={() => abrirEdicionOperacion(op)} title={`Abrir ${op.ref || op.id} en el formulario de Operaciones`}>
                                     {columnas.map(c => (
                                       <td key={c.campo} className={c.campo === 'ref' ? `est-celda-ref est-ref-${claseLinea}` : ''}>
                                         {valorColumna(op, c.campo) || '—'}
@@ -923,45 +905,35 @@ export function EstadisticasDashboard() {
         </div>
       )}
 
-      {/* ✅ FICHA DE LA OPERACIÓN (clic en una referencia) */}
-      {opFicha && (
-        <div className="est-overlay" onClick={() => setOpFicha(null)}>
-          <div className="est-detalle est-ficha-op" onClick={(e) => e.stopPropagation()}>
+      {/* ✅ Aviso mientras cargan los catálogos del formulario */}
+      {cargandoCatalogos && (
+        <div className="est-overlay"><div className="est-cargando-form">Abriendo el formulario de Operaciones…</div></div>
+      )}
+
+      {/* ✅ MODAL: selección de columnas de la tabla de referencias */}
+      {menuColumnas && (
+        <div className="est-overlay" onClick={() => setMenuColumnas(false)}>
+          <div className="est-cols-modal" onClick={(e) => e.stopPropagation()}>
             <div className="est-detalle-encabezado">
-              <h3>Operación {opFicha.ref || opFicha.id}</h3>
-              <div className="est-ficha-acciones">
-                <button
-                  className="est-btn est-btn-primario"
-                  onClick={() => abrirEdicionOperacion(opFicha)}
-                  disabled={cargandoCatalogos}
-                >
-                  <Pencil size={14} /> {cargandoCatalogos ? 'Cargando…' : 'Editar'}
-                </button>
-                <button className="est-detalle-cerrar" onClick={() => setOpFicha(null)}><X size={16} /></button>
-              </div>
+              <h3>Columnas visibles</h3>
+              <button className="est-detalle-cerrar" onClick={() => setMenuColumnas(false)}><X size={16} /></button>
             </div>
-            <div className="est-detalle-cuerpo">
-              <div className="est-ficha-grid">
-                {[
-                  ['Fecha de servicio', fechaISODe(opFicha) || '—'],
-                  ['Status', opFicha.statusNombre || opFicha.status || '—'],
-                  ['Tipo de operación', opFicha.tipoOperacionNombre || opFicha.tipoOperacion || '—'],
-                  ['Línea', lineaDeOp(opFicha)],
-                  ['Cliente', opFicha.clientePagaNombre || opFicha.clienteNombre || '—'],
-                  ['Convenio', opFicha.convenioNombre || '—'],
-                  ['Unidad', opFicha.unidadNombre || opFicha.unidad || '—'],
-                  ['Operador', opFicha.operadorNombre || opFicha.operador || '—'],
-                  ['Remolque', opFicha.remolque || opFicha.remolqueNombre || '—'],
-                  ['Origen', opFicha.origen || opFicha.clienteOrigenNombre || '—'],
-                  ['Destino', opFicha.destino || opFicha.clienteDestinoNombre || '—'],
-                  ['Kilometraje estimado', opFicha.kilometrajeEstimado ? `${Number(opFicha.kilometrajeEstimado).toLocaleString('en-US')} km` : '—'],
-                ].map(([etq, val]) => (
-                  <div className="est-ficha-campo" key={String(etq)}>
-                    <span className="est-detalle-titulo">{etq}</span>
-                    <span className="est-ficha-valor">{String(val)}</span>
-                  </div>
-                ))}
-              </div>
+            <div className="est-cols-modal-cuerpo">
+              {COLUMNAS_REFS.map((c) => (
+                <label className="est-cols-opcion" key={c.campo}>
+                  <input
+                    type="checkbox"
+                    checked={columnasRefs.includes(c.campo)}
+                    onChange={() => setColumnasRefs(prev => prev.includes(c.campo)
+                      ? (prev.length > 1 ? prev.filter(x => x !== c.campo) : prev)
+                      : [...prev, c.campo])}
+                  />
+                  {c.etiqueta}
+                </label>
+              ))}
+            </div>
+            <div className="est-cols-modal-pie">
+              <button className="est-btn est-btn-primario" onClick={() => setMenuColumnas(false)}>Cerrar</button>
             </div>
           </div>
         </div>
@@ -979,7 +951,6 @@ export function EstadisticasDashboard() {
           onSave={(opNueva) => {
             // Refrescar la operación en los datos ya cargados (sin re-consultar).
             setOps((prev) => prev.map((o) => (o.id === (opNueva?.id || editandoOp.id) ? { ...o, ...opNueva } : o)));
-            setOpFicha((prev: Op | null) => prev && prev.id === (opNueva?.id || editandoOp.id) ? { ...prev, ...opNueva } : prev);
             setEditandoOp(null);
           }}
         />
