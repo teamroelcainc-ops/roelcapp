@@ -24,6 +24,7 @@ import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { Download, RefreshCw, X, Settings2 } from 'lucide-react';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
+import { useEtiquetas } from '../../../contexts/EtiquetasContext';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import './EstadisticasDashboard.css';
 
@@ -114,6 +115,7 @@ const DIAS_SEMANA_TXT = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', '
 
 export function EstadisticasDashboard() {
   const { config } = useEmpresaConfig();
+  const { etq } = useEtiquetas();
   const anioActual = new Date().getFullYear();
   const [pestana, setPestana] = useState<Pestana>('tendencia');
   const [lineaVista, setLineaVista] = useState<'Globales' | Linea>('Globales');
@@ -143,21 +145,22 @@ export function EstadisticasDashboard() {
   const [filtrosCols, setFiltrosCols] = useState<Record<string, string>>({});
   const [menuColumnas, setMenuColumnas] = useState(false);
 
+  // ✅ Etiquetas de columnas personalizables (Configuración → Personalizar Etiquetas).
   const COLUMNAS_REFS: { campo: string; etiqueta: string }[] = [
-    { campo: 'ref', etiqueta: 'Referencia' },
-    { campo: 'fechaServicio', etiqueta: 'Fecha Servicio' },
-    { campo: 'linea', etiqueta: 'Línea' },
-    { campo: 'tipoOperacionNombre', etiqueta: 'Tipo de Operación' },
-    { campo: 'statusNombre', etiqueta: 'Status' },
-    { campo: 'clientePagaNombre', etiqueta: 'Cliente' },
-    { campo: 'convenioNombre', etiqueta: 'Convenio' },
-    { campo: 'unidadNombre', etiqueta: 'Unidad' },
-    { campo: 'operadorNombre', etiqueta: 'Operador' },
-    { campo: 'numeroRemolque', etiqueta: 'Remolque' },
-    { campo: 'origen', etiqueta: 'Origen' },
-    { campo: 'destino', etiqueta: 'Destino' },
-    { campo: 'kilometrajeEstimado', etiqueta: 'Km Estimado' },
-    { campo: 'monedaCobroNombre', etiqueta: 'Moneda' },
+    { campo: 'ref', etiqueta: etq('col.est.referencia', 'Referencia') },
+    { campo: 'fechaServicio', etiqueta: etq('col.est.fecha_servicio', 'Fecha Servicio') },
+    { campo: 'linea', etiqueta: etq('col.est.linea', 'Línea') },
+    { campo: 'tipoOperacionNombre', etiqueta: etq('col.est.tipo_de_operacion', 'Tipo de Operación') },
+    { campo: 'statusNombre', etiqueta: etq('col.est.status', 'Status') },
+    { campo: 'clientePagaNombre', etiqueta: etq('col.est.cliente', 'Cliente') },
+    { campo: 'convenioNombre', etiqueta: etq('col.est.convenio', 'Convenio') },
+    { campo: 'unidadNombre', etiqueta: etq('col.est.unidad', 'Unidad') },
+    { campo: 'operadorNombre', etiqueta: etq('col.est.operador', 'Operador') },
+    { campo: 'numeroRemolque', etiqueta: etq('col.est.remolque', 'Remolque') },
+    { campo: 'origen', etiqueta: etq('col.est.origen', 'Origen') },
+    { campo: 'destino', etiqueta: etq('col.est.destino', 'Destino') },
+    { campo: 'kilometrajeEstimado', etiqueta: etq('col.est.km_estimado', 'Km Estimado') },
+    { campo: 'monedaCobroNombre', etiqueta: etq('col.est.moneda', 'Moneda') },
   ];
 
   const valorColumna = (op: Op, campo: string): string => {
@@ -699,7 +702,7 @@ export function EstadisticasDashboard() {
                   <td className="est-monto">{money(tendencia.general.total > 0 ? tendencia.general.monto / tendencia.general.total : 0)}</td>
                 </tr>
                 {tendencia.filas.map((f) => (
-                  <tr key={f.cliente}>
+                  <tr key={f.cliente} className="est-fila-clicable" title={`Ver las operaciones de ${f.cliente}`} onClick={() => setRefsFiltro({ etiqueta: `${f.cliente} · ${etiquetaRango}`, ops: ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || 'SIN CLIENTE').trim()) || 'SIN CLIENTE') === f.cliente) })}>
                     <td className="est-cliente">{f.cliente}</td><td>{num(f.total)}</td><td>{num(f.transfer)}</td>
                     <td>{num(f.logistica)}</td><td>{num(f.fletes)}</td>
                     <td className="est-monto">{money(f.monto)}</td>
@@ -755,7 +758,7 @@ export function EstadisticasDashboard() {
                 {MESES.map((m, i) => {
                   const v = ventas.porMes[i];
                   return (
-                    <tr key={m} className={v.venta === 0 ? 'est-fila-cero' : ''}>
+                    <tr key={m} className={v.venta === 0 ? 'est-fila-cero' : 'est-fila-clicable'} title={v.venta > 0 ? `Ver las operaciones de ${m}` : undefined} onClick={() => { if (v.venta > 0) setRefsFiltro({ etiqueta: `Ventas ${lineaVista} · ${m}`, ops: opsDeLinea.filter((op) => parseInt(fechaISODe(op).slice(5, 7), 10) - 1 === i) }); }}>
                       <td>{m}</td><td>{money(v.pes)}</td><td className="est-dolares">{money(v.dol)}</td>
                       <td>{v.tcN > 0 ? (v.tcSuma / v.tcN).toFixed(4) : '—'}</td>
                       <td>{money(v.conv)}</td><td className="est-monto">{money(v.venta)}</td>
@@ -784,7 +787,7 @@ export function EstadisticasDashboard() {
                   const tot = utilidad[linea].reduce((a, u) => ({ venta: a.venta + u.venta, costo: a.costo + u.costo, servicios: a.servicios + u.servicios }), { venta: 0, costo: 0, servicios: 0 });
                   const uti = tot.venta - tot.costo;
                   return (
-                    <tr key={linea}>
+                    <tr key={linea} className={tot.servicios > 0 ? 'est-fila-clicable' : ''} title={tot.servicios > 0 ? `Ver las operaciones de ${linea}` : undefined} onClick={() => { if (tot.servicios > 0) setRefsFiltro({ etiqueta: `Utilidad · ${linea} · ${etiquetaRango}`, ops: ops.filter((op) => lineaDeOp(op) === linea) }); }}>
                       <td>{linea}</td><td>{num(tot.servicios)}</td>
                       <td className="est-monto">{money(tot.venta)}</td>
                       <td>{money(tot.costo)}</td>
@@ -806,7 +809,7 @@ export function EstadisticasDashboard() {
                 {promedios.map((p) => {
                   const tot = p.meses.reduce((a, m) => ({ s: a.s + m.servicios, v: a.v + m.venta, u: a.u + m.promUtilidad * m.servicios }), { s: 0, v: 0, u: 0 });
                   return (
-                    <tr key={p.linea}>
+                    <tr key={p.linea} className={tot.s > 0 ? 'est-fila-clicable' : ''} title={tot.s > 0 ? `Ver las operaciones de ${p.linea}` : undefined} onClick={() => { if (tot.s > 0) setRefsFiltro({ etiqueta: `Promedios · ${p.linea} · ${etiquetaRango}`, ops: ops.filter((op) => lineaDeOp(op) === p.linea) }); }}>
                       <td>{p.linea}</td><td>{num(tot.s)}</td>
                       <td className="est-monto">{money(tot.v)}</td>
                       <td>{money(tot.s > 0 ? tot.v / tot.s : 0)}</td>
@@ -833,79 +836,7 @@ export function EstadisticasDashboard() {
             </div>
 
             <div className="est-detalle-cuerpo">
-              {refsFiltro ? (
-                /* ✅ Vista de REFERENCIAS: tabla con columnas configurables,
-                    filtros por columna y filas clicables (abren la ficha). */
-                <div className="est-refs-vista">
-                  <div className="est-refs-vista-encabezado">
-                    <button className="est-btn" onClick={() => { setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}>← Volver</button>
-                    <span className="est-refs-vista-titulo">{refsFiltro.etiqueta}</span>
-                    <div className="est-refs-acciones">
-                      <button className="est-btn" onClick={() => setMenuColumnas(true)}>
-                        <Settings2 size={14} /> Columnas
-                      </button>
-                      <button className="est-btn" onClick={exportarRefsExcel}>
-                        <Download size={14} /> Excel
-                      </button>
-                      <button className="est-btn est-btn-primario" onClick={exportarRefsPDF} disabled={exportando}>
-                        <Download size={14} /> {exportando ? 'Generando…' : 'PDF'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {(() => {
-                    const columnas = columnasActivas;
-                    const hayFiltros = Object.values(filtrosCols).some(v => v.trim());
-                    const visibles = refsVisibles;
-                    return (
-                      <>
-                        <span className="est-refs-conteo">
-                          <b>{visibles.length}</b>{hayFiltros ? ` de ${refsFiltro.ops.length}` : ''} operación(es) · haz clic en una fila para ver su detalle
-                          {hayFiltros && <button className="est-btn-liga" onClick={() => setFiltrosCols({})}>Limpiar filtros</button>}
-                        </span>
-                        <div className="est-tabla-marco est-refs-tabla-marco">
-                          <table className="est-tabla">
-                            <thead>
-                              <tr>{columnas.map(c => <th key={c.campo}>{c.etiqueta.toUpperCase()}</th>)}</tr>
-                              {/* ✅ Fila de FILTROS por columna */}
-                              <tr className="est-fila-filtros">
-                                {columnas.map(c => (
-                                  <th key={c.campo}>
-                                    <input
-                                      type="text"
-                                      className="est-filtro-col"
-                                      placeholder="Filtrar…"
-                                      value={filtrosCols[c.campo] || ''}
-                                      onChange={(e) => setFiltrosCols(prev => ({ ...prev, [c.campo]: e.target.value }))}
-                                    />
-                                  </th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {visibles.length === 0 ? (
-                                <tr><td colSpan={columnas.length} className="est-vacio">Sin operaciones con esos filtros.</td></tr>
-                              ) : visibles.map((op) => {
-                                const linea = lineaDeOp(op);
-                                const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
-                                return (
-                                  <tr key={op.id} className="est-fila-clicable" onClick={() => setOpFicha(op)} title={`Ver el detalle de ${op.ref || op.id}`}>
-                                    {columnas.map(c => (
-                                      <td key={c.campo} className={c.campo === 'ref' ? `est-celda-ref est-ref-${claseLinea}` : ''}>
-                                        {valorColumna(op, c.campo) || '—'}
-                                      </td>
-                                    ))}
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    );
-                  })()}
-                </div>
-              ) : (
+              {(
               <div className="est-detalle-grid">
                 {!detalleMes.linea && (
                   <div className="est-detalle-seccion">
@@ -1009,6 +940,94 @@ export function EstadisticasDashboard() {
                 </div>
               </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ MODAL INDEPENDIENTE: tabla de referencias del rubro seleccionado
+          (lo abren el detalle del mes Y las filas de todas las pestañas). */}
+      {refsFiltro && (
+        <div className="est-overlay" onClick={() => { setRefsFiltro(null); setFiltrosCols({}); }}>
+          <div className="est-detalle" onClick={(e) => e.stopPropagation()}>
+            <div className="est-detalle-encabezado">
+              <h3>Reporte de operaciones</h3>
+              <button className="est-detalle-cerrar" onClick={() => { setRefsFiltro(null); setFiltrosCols({}); }}><X size={16} /></button>
+            </div>
+            <div className="est-detalle-cuerpo">
+              {
+                /* ✅ Vista de REFERENCIAS: tabla con columnas configurables,
+                    filtros por columna y filas clicables (abren la ficha). */
+                <div className="est-refs-vista">
+                  <div className="est-refs-vista-encabezado">
+                    <button className="est-btn" onClick={() => { setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}>← Cerrar</button>
+                    <span className="est-refs-vista-titulo">{refsFiltro.etiqueta}</span>
+                    <div className="est-refs-acciones">
+                      <button className="est-btn" onClick={() => setMenuColumnas(true)}>
+                        <Settings2 size={14} /> Columnas
+                      </button>
+                      <button className="est-btn" onClick={exportarRefsExcel}>
+                        <Download size={14} /> Excel
+                      </button>
+                      <button className="est-btn est-btn-primario" onClick={exportarRefsPDF} disabled={exportando}>
+                        <Download size={14} /> {exportando ? 'Generando…' : 'PDF'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {(() => {
+                    const columnas = columnasActivas;
+                    const hayFiltros = Object.values(filtrosCols).some(v => v.trim());
+                    const visibles = refsVisibles;
+                    return (
+                      <>
+                        <span className="est-refs-conteo">
+                          <b>{visibles.length}</b>{hayFiltros ? ` de ${refsFiltro.ops.length}` : ''} operación(es) · haz clic en una fila para ver su detalle
+                          {hayFiltros && <button className="est-btn-liga" onClick={() => setFiltrosCols({})}>Limpiar filtros</button>}
+                        </span>
+                        <div className="est-tabla-marco est-refs-tabla-marco">
+                          <table className="est-tabla">
+                            <thead>
+                              <tr>{columnas.map(c => <th key={c.campo}>{c.etiqueta.toUpperCase()}</th>)}</tr>
+                              {/* ✅ Fila de FILTROS por columna */}
+                              <tr className="est-fila-filtros">
+                                {columnas.map(c => (
+                                  <th key={c.campo}>
+                                    <input
+                                      type="text"
+                                      className="est-filtro-col"
+                                      placeholder="Filtrar…"
+                                      value={filtrosCols[c.campo] || ''}
+                                      onChange={(e) => setFiltrosCols(prev => ({ ...prev, [c.campo]: e.target.value }))}
+                                    />
+                                  </th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visibles.length === 0 ? (
+                                <tr><td colSpan={columnas.length} className="est-vacio">Sin operaciones con esos filtros.</td></tr>
+                              ) : visibles.map((op) => {
+                                const linea = lineaDeOp(op);
+                                const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
+                                return (
+                                  <tr key={op.id} className="est-fila-clicable" onClick={() => setOpFicha(op)} title={`Ver el detalle de ${op.ref || op.id}`}>
+                                    {columnas.map(c => (
+                                      <td key={c.campo} className={c.campo === 'ref' ? `est-celda-ref est-ref-${claseLinea}` : ''}>
+                                        {valorColumna(op, c.campo) || '—'}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+}
             </div>
           </div>
         </div>

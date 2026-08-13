@@ -8,7 +8,8 @@ import { AvisoSinConexion } from './components/AvisoSinConexion';
 import { AvisoChecador } from './components/AvisoChecador';
 import { BarraNavMovil } from './components/BarraNavMovil';
 import { EditorNavMovil } from './components/EditorNavMovil';
-import { useUsuarioStore } from './stores/useUsuarioStore'; 
+import { useUsuarioStore } from './stores/useUsuarioStore';
+import { EtiquetasProvider, useEtiquetas } from './contexts/EtiquetasContext'; 
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
 // ── Estáticos: críticos o siempre presentes (login, marca y modales). ──
@@ -30,6 +31,7 @@ const OperacionesDashboard = lazyWithRetry(() => import('./features/operaciones/
 const MisOperacionesDashboard = lazyWithRetry(() => import('./features/misOperaciones/components/MisOperacionesDashboard'), 'MisOperacionesDashboard');
 const PagosDashboard = lazyWithRetry(() => import('./features/pagos/components/PagosDashboard'), 'PagosDashboard');
 const EstadisticasDashboard = lazyWithRetry(() => import('./features/estadisticas/components/EstadisticasDashboard'), 'EstadisticasDashboard');
+const EtiquetasDashboard = lazyWithRetry(() => import('./features/etiquetas/components/EtiquetasDashboard'), 'EtiquetasDashboard');
 const ServiciosCompletados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCompletados'), 'ServiciosCompletados');
 const ServiciosCancelados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCancelados'), 'ServiciosCancelados');
 const ReportesDashboard = lazyWithRetry(() => import('./features/reportes/components/ReportesDashboard'), 'ReportesDashboard');
@@ -81,6 +83,8 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Pagos': 'pagos',
   // ✅ NUEVO: estadísticas del proyecto (tendencia, servicios, ventas, utilidad).
   'Estadísticas': 'estadisticas',
+  // ✅ NUEVO: editor de nombres del menú y columnas (marcable por rol).
+  'Personalizar Etiquetas': 'etiquetas',
   'Operaciones Activas': 'operaciones',
   'Servicios Completados': 'serviciosCompletados',
   'Servicios Cancelados': 'serviciosCancelados',
@@ -610,13 +614,14 @@ function ResumenDelDia() {
 }
 
 
-function App() {
+function AppContenido() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true); 
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
-  const [moduloActivo, setModuloActivo] = useState<'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+  const { etq } = useEtiquetas();
+  const [moduloActivo, setModuloActivo] = useState<'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -1040,61 +1045,61 @@ function App() {
         {puede('misOperaciones') && (
           <div className={`sidebar-item ${moduloActivo === 'misOperaciones' ? 'active' : ''}`} title="Mis Operaciones" onClick={() => navegarA('misOperaciones')}>
             <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg></span>
-            <span className="sidebar-label">Mis Operaciones</span>
+            <span className="sidebar-label">{etq('menu.mis_operaciones', 'Mis Operaciones')}</span>
           </div>
         )}
         {puede('operaciones') && (
           <div className={`sidebar-item ${moduloActivo === 'operaciones' ? 'active' : ''}`} title="Operaciones Activas" onClick={() => navegarA('operaciones')}>
             <span className="sidebar-icon">{ICON.operaciones}</span>
-            <span className="sidebar-label">Operaciones Activas</span>
+            <span className="sidebar-label">{etq('menu.operaciones_activas', 'Operaciones Activas')}</span>
           </div>
         )}
 
         {puede('serviciosCompletados') && (
           <div className={`sidebar-item ${moduloActivo === 'serviciosCompletados' ? 'active' : ''}`} title="Servicios Completados" onClick={() => navegarA('serviciosCompletados')}>
             <span className="sidebar-icon">{ICON.serviciosCompletados}</span>
-            <span className="sidebar-label">Servicios Completados</span>
+            <span className="sidebar-label">{etq('menu.servicios_completados', 'Servicios Completados')}</span>
           </div>
         )}
 
         {puede('serviciosCancelados') && (
           <div className={`sidebar-item ${moduloActivo === 'serviciosCancelados' ? 'active' : ''}`} title="Servicios Cancelados" onClick={() => navegarA('serviciosCancelados')}>
             <span className="sidebar-icon">{ICON.serviciosCancelados}</span>
-            <span className="sidebar-label">Servicios Cancelados</span>
+            <span className="sidebar-label">{etq('menu.servicios_cancelados', 'Servicios Cancelados')}</span>
           </div>
         )}
 
         {puede('reportes') && (
           <div className={`sidebar-item ${moduloActivo === 'reportes' ? 'active' : ''}`} title="Reportes" onClick={() => navegarA('reportes')}>
             <span className="sidebar-icon">{ICON.reportes}</span>
-            <span className="sidebar-label">Reportes</span>
+            <span className="sidebar-label">{etq('menu.reportes', 'Reportes')}</span>
           </div>
         )}
         {puede('estadisticas') && (
           <div className={`sidebar-item ${moduloActivo === 'estadisticas' ? 'active' : ''}`} title="Estadísticas" onClick={() => navegarA('estadisticas')}>
             <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
-            <span className="sidebar-label">Estadísticas</span>
+            <span className="sidebar-label">{etq('menu.estad_sticas', 'Estadísticas')}</span>
           </div>
         )}
         {puede('pagos') && (
           <div className={`sidebar-item ${moduloActivo === 'pagos' ? 'active' : ''}`} title="Pagos" onClick={() => navegarA('pagos')}>
             <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></span>
-            <span className="sidebar-label">Pagos</span>
+            <span className="sidebar-label">{etq('menu.pagos', 'Pagos')}</span>
           </div>
         )}
 
         {verGastos && (
           <>
             <div className={`sidebar-item sidebar-item-with-icon ${esGastosActivo && !menuGastosAbierto ? 'active' : ''}`} title="Gastos" onClick={() => toggleGrupo(setMenuGastosAbierto)}>
-              <span className="sidebar-icon">{ICON.gastos}</span><span className="sidebar-label">Gastos</span>
+              <span className="sidebar-icon">{ICON.gastos}</span><span className="sidebar-label">{etq('menu.gastos', 'Gastos')}</span>
               <span className="sidebar-chevron app-x43">{menuGastosAbierto ? '▼' : '▶'}</span>
             </div>
             {menuGastosAbierto && (
               <div className="sidebar-submenu">
-                {puede('mtto') && <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => navegarA('mtto')}><span className="sidebar-icon">{ICON.mtto}</span><span className="sidebar-label">MTTO</span></div>}
-                {puede('referenciasDiesel') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => navegarA('referenciasDiesel')}><span className="sidebar-icon">{ICON.referenciasDiesel}</span><span className="sidebar-label">Referencias del Diesel</span></div>}
-                {puede('referenciasPuentes') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasPuentes' ? 'active' : ''}`} onClick={() => navegarA('referenciasPuentes')}><span className="sidebar-icon">{ICON.referenciasPuentes}</span><span className="sidebar-label">Referencias de Puentes</span></div>}
-                {puede('costosAdicionales') && <div className={`sidebar-subitem ${moduloActivo === 'costosAdicionales' ? 'active' : ''}`} onClick={() => navegarA('costosAdicionales')}><span className="sidebar-icon">{ICON.costosAdicionales}</span><span className="sidebar-label">Costos Adicionales</span></div>}
+                {puede('mtto') && <div className={`sidebar-subitem ${moduloActivo === 'mtto' ? 'active' : ''}`} onClick={() => navegarA('mtto')}><span className="sidebar-icon">{ICON.mtto}</span><span className="sidebar-label">{etq('menu.mtto', 'MTTO')}</span></div>}
+                {puede('referenciasDiesel') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasDiesel' ? 'active' : ''}`} onClick={() => navegarA('referenciasDiesel')}><span className="sidebar-icon">{ICON.referenciasDiesel}</span><span className="sidebar-label">{etq('menu.referencias_del_diesel', 'Referencias del Diesel')}</span></div>}
+                {puede('referenciasPuentes') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasPuentes' ? 'active' : ''}`} onClick={() => navegarA('referenciasPuentes')}><span className="sidebar-icon">{ICON.referenciasPuentes}</span><span className="sidebar-label">{etq('menu.referencias_de_puentes', 'Referencias de Puentes')}</span></div>}
+                {puede('costosAdicionales') && <div className={`sidebar-subitem ${moduloActivo === 'costosAdicionales' ? 'active' : ''}`} onClick={() => navegarA('costosAdicionales')}><span className="sidebar-icon">{ICON.costosAdicionales}</span><span className="sidebar-label">{etq('menu.costos_adicionales', 'Costos Adicionales')}</span></div>}
               </div>
             )}
           </>
@@ -1104,13 +1109,13 @@ function App() {
           <>
             <div className={`sidebar-item sidebar-item-with-icon ${esClientesActivo && !menuClientesAbierto ? 'active' : ''}`} title="Clientes" onClick={() => toggleGrupo(setMenuClientesAbierto)}>
               <span className="sidebar-icon">{ICON.clientes}</span>
-              <span className="sidebar-label">Clientes</span>
+              <span className="sidebar-label">{etq('menu.clientes', 'Clientes')}</span>
               <span className="sidebar-chevron app-x43">{menuClientesAbierto ? '▼' : '▶'}</span>
             </div>
             {menuClientesAbierto && (
               <div className="sidebar-submenu">
-                {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => navegarA('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">Convenio de Clientes</span></div>}
-                {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => navegarA('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">Facturación</span></div>}
+                {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => navegarA('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.convenio_de_clientes', 'Convenio de Clientes')}</span></div>}
+                {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => navegarA('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}
           </>
@@ -1120,13 +1125,13 @@ function App() {
           <>
             <div className={`sidebar-item sidebar-item-with-icon ${esProveedoresActivo && !menuProveedoresAbierto ? 'active' : ''}`} title="Proveedores" onClick={() => toggleGrupo(setMenuProveedoresAbierto)}>
               <span className="sidebar-icon">{ICON.proveedores}</span>
-              <span className="sidebar-label">Proveedores</span>
+              <span className="sidebar-label">{etq('menu.proveedores', 'Proveedores')}</span>
               <span className="sidebar-chevron app-x43">{menuProveedoresAbierto ? '▼' : '▶'}</span>
             </div>
             {menuProveedoresAbierto && (
               <div className="sidebar-submenu">
-                {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => navegarA('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">Convenio de Proveedores</span></div>}
-                {puede('facturacionProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => navegarA('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">Facturación</span></div>}
+                {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => navegarA('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">{etq('menu.convenio_de_proveedores', 'Convenio de Proveedores')}</span></div>}
+                {puede('facturacionProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => navegarA('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}
           </>
@@ -1136,15 +1141,15 @@ function App() {
           <>
             <div className={`sidebar-item sidebar-item-with-icon ${esEmpleadosActivo && !menuEmpleadosAbierto ? 'active' : ''}`} title="Empleados" onClick={() => toggleGrupo(setMenuEmpleadosAbierto)}>
               <span className="sidebar-icon">{ICON.empleados}</span>
-              <span className="sidebar-label">Empleados</span>
+              <span className="sidebar-label">{etq('menu.empleados', 'Empleados')}</span>
               <span className="sidebar-chevron app-x43">{menuEmpleadosAbierto ? '▼' : '▶'}</span>
             </div>
             {menuEmpleadosAbierto && (
               <div className="sidebar-submenu">
-                {puede('colaboradores') && <div className={`sidebar-subitem ${moduloActivo === 'colaboradores' ? 'active' : ''}`} onClick={() => navegarA('colaboradores')}><span className="sidebar-icon">{ICON.colaboradores}</span><span className="sidebar-label">Colaboradores</span></div>}
-                {puede('historialAsistencia') && <div className={`sidebar-subitem ${moduloActivo === 'historialAsistencia' ? 'active' : ''}`} onClick={() => navegarA('historialAsistencia')}><span className="sidebar-icon">{ICON.historialAsistencia}</span><span className="sidebar-label">Historial de Chequeo</span></div>}
-                {puede('referenciasNomina') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasNomina' ? 'active' : ''}`} onClick={() => navegarA('referenciasNomina')}><span className="sidebar-icon">{ICON.referenciasNomina}</span><span className="sidebar-label">Nómina</span></div>}
-                {puede('deducciones') && <div className={`sidebar-subitem ${moduloActivo === 'deducciones' ? 'active' : ''}`} onClick={() => navegarA('deducciones')}><span className="sidebar-icon">{ICON.deducciones}</span><span className="sidebar-label">Deducciones</span></div>}
+                {puede('colaboradores') && <div className={`sidebar-subitem ${moduloActivo === 'colaboradores' ? 'active' : ''}`} onClick={() => navegarA('colaboradores')}><span className="sidebar-icon">{ICON.colaboradores}</span><span className="sidebar-label">{etq('menu.colaboradores', 'Colaboradores')}</span></div>}
+                {puede('historialAsistencia') && <div className={`sidebar-subitem ${moduloActivo === 'historialAsistencia' ? 'active' : ''}`} onClick={() => navegarA('historialAsistencia')}><span className="sidebar-icon">{ICON.historialAsistencia}</span><span className="sidebar-label">{etq('menu.historial_de_chequeo', 'Historial de Chequeo')}</span></div>}
+                {puede('referenciasNomina') && <div className={`sidebar-subitem ${moduloActivo === 'referenciasNomina' ? 'active' : ''}`} onClick={() => navegarA('referenciasNomina')}><span className="sidebar-icon">{ICON.referenciasNomina}</span><span className="sidebar-label">{etq('menu.n_mina', 'Nómina')}</span></div>}
+                {puede('deducciones') && <div className={`sidebar-subitem ${moduloActivo === 'deducciones' ? 'active' : ''}`} onClick={() => navegarA('deducciones')}><span className="sidebar-icon">{ICON.deducciones}</span><span className="sidebar-label">{etq('menu.deducciones', 'Deducciones')}</span></div>}
               </div>
             )}
           </>
@@ -1154,20 +1159,20 @@ function App() {
           <>
             <div className={`sidebar-item sidebar-item-with-icon ${esBaseDeDatosActiva && !menuBasesDatosAbierto ? 'active' : ''}`} title="Bases de Datos" onClick={() => toggleGrupo(setMenuBasesDatosAbierto)}>
               <span className="sidebar-icon">{ICON.basesDatos}</span>
-              <span className="sidebar-label">Bases de Datos</span>
+              <span className="sidebar-label">{etq('menu.bases_de_datos', 'Bases de Datos')}</span>
               <span className="sidebar-chevron app-x43">{menuBasesDatosAbierto ? '▼' : '▶'}</span>
             </div>
             {menuBasesDatosAbierto && (
               <div className="sidebar-submenu">
-                {puede('empresas') && <div className={`sidebar-subitem ${moduloActivo === 'empresas' ? 'active' : ''}`} onClick={() => navegarA('empresas')}><span className="sidebar-icon">{ICON.empresas}</span><span className="sidebar-label">Empresas</span></div>}
-                {puede('contactos') && <div className={`sidebar-subitem ${moduloActivo === 'contactos' ? 'active' : ''}`} onClick={() => navegarA('contactos')}><span className="sidebar-icon">{ICON.contactos}</span><span className="sidebar-label">Contactos</span></div>}
-                {puede('direcciones') && <div className={`sidebar-subitem ${moduloActivo === 'direcciones' ? 'active' : ''}`} onClick={() => navegarA('direcciones')}><span className="sidebar-icon">{ICON.direcciones}</span><span className="sidebar-label">Direcciones</span></div>}
-                {puede('tipoCambio') && <div className={`sidebar-subitem ${moduloActivo === 'tipoCambio' ? 'active' : ''}`} onClick={() => navegarA('tipoCambio')}><span className="sidebar-icon">{ICON.tipoCambio}</span><span className="sidebar-label">Tipo de Cambio</span></div>}
-                {puede('combustible') && <div className={`sidebar-subitem ${moduloActivo === 'combustible' ? 'active' : ''}`} onClick={() => navegarA('combustible')}><span className="sidebar-icon">{ICON.combustible}</span><span className="sidebar-label">Combustible</span></div>}
-                {puede('unidades') && <div className={`sidebar-subitem ${moduloActivo === 'unidades' ? 'active' : ''}`} onClick={() => navegarA('unidades')}><span className="sidebar-icon">{ICON.unidades}</span><span className="sidebar-label">Unidades Propias</span></div>}
-                {puede('remolques') && <div className={`sidebar-subitem ${moduloActivo === 'remolques' ? 'active' : ''}`} onClick={() => navegarA('remolques')}><span className="sidebar-icon">{ICON.remolques}</span><span className="sidebar-label">Remolques</span></div>}
-                {puede('proveedoresUnidad') && <div className={`sidebar-subitem ${moduloActivo === 'proveedoresUnidad' ? 'active' : ''}`} onClick={() => navegarA('proveedoresUnidad')}><span className="sidebar-icon">{ICON.proveedoresUnidad}</span><span className="sidebar-label">Proveedores de Unidad</span></div>}
-                {puede('unidadesProveedor') && <div className={`sidebar-subitem ${moduloActivo === 'unidadesProveedor' ? 'active' : ''}`} onClick={() => navegarA('unidadesProveedor')}><span className="sidebar-icon">{ICON.unidadesProveedor}</span><span className="sidebar-label">Unidades del Proveedor</span></div>}
+                {puede('empresas') && <div className={`sidebar-subitem ${moduloActivo === 'empresas' ? 'active' : ''}`} onClick={() => navegarA('empresas')}><span className="sidebar-icon">{ICON.empresas}</span><span className="sidebar-label">{etq('menu.empresas', 'Empresas')}</span></div>}
+                {puede('contactos') && <div className={`sidebar-subitem ${moduloActivo === 'contactos' ? 'active' : ''}`} onClick={() => navegarA('contactos')}><span className="sidebar-icon">{ICON.contactos}</span><span className="sidebar-label">{etq('menu.contactos', 'Contactos')}</span></div>}
+                {puede('direcciones') && <div className={`sidebar-subitem ${moduloActivo === 'direcciones' ? 'active' : ''}`} onClick={() => navegarA('direcciones')}><span className="sidebar-icon">{ICON.direcciones}</span><span className="sidebar-label">{etq('menu.direcciones', 'Direcciones')}</span></div>}
+                {puede('tipoCambio') && <div className={`sidebar-subitem ${moduloActivo === 'tipoCambio' ? 'active' : ''}`} onClick={() => navegarA('tipoCambio')}><span className="sidebar-icon">{ICON.tipoCambio}</span><span className="sidebar-label">{etq('menu.tipo_de_cambio', 'Tipo de Cambio')}</span></div>}
+                {puede('combustible') && <div className={`sidebar-subitem ${moduloActivo === 'combustible' ? 'active' : ''}`} onClick={() => navegarA('combustible')}><span className="sidebar-icon">{ICON.combustible}</span><span className="sidebar-label">{etq('menu.combustible', 'Combustible')}</span></div>}
+                {puede('unidades') && <div className={`sidebar-subitem ${moduloActivo === 'unidades' ? 'active' : ''}`} onClick={() => navegarA('unidades')}><span className="sidebar-icon">{ICON.unidades}</span><span className="sidebar-label">{etq('menu.unidades_propias', 'Unidades Propias')}</span></div>}
+                {puede('remolques') && <div className={`sidebar-subitem ${moduloActivo === 'remolques' ? 'active' : ''}`} onClick={() => navegarA('remolques')}><span className="sidebar-icon">{ICON.remolques}</span><span className="sidebar-label">{etq('menu.remolques', 'Remolques')}</span></div>}
+                {puede('proveedoresUnidad') && <div className={`sidebar-subitem ${moduloActivo === 'proveedoresUnidad' ? 'active' : ''}`} onClick={() => navegarA('proveedoresUnidad')}><span className="sidebar-icon">{ICON.proveedoresUnidad}</span><span className="sidebar-label">{etq('menu.proveedores_de_unidad', 'Proveedores de Unidad')}</span></div>}
+                {puede('unidadesProveedor') && <div className={`sidebar-subitem ${moduloActivo === 'unidadesProveedor' ? 'active' : ''}`} onClick={() => navegarA('unidadesProveedor')}><span className="sidebar-icon">{ICON.unidadesProveedor}</span><span className="sidebar-label">{etq('menu.unidades_del_proveedor', 'Unidades del Proveedor')}</span></div>}
               </div>
             )}
           </>
@@ -1176,7 +1181,7 @@ function App() {
         {puede('catalogos') && (
           <div className={`sidebar-item ${moduloActivo === 'catalogos' ? 'active' : ''}`} title="Catálogos" onClick={() => navegarA('catalogos')}>
             <span className="sidebar-icon">{ICON.catalogos}</span>
-            <span className="sidebar-label">Catálogos</span>
+            <span className="sidebar-label">{etq('menu.cat_logos', 'Catálogos')}</span>
           </div>
         )}
 
@@ -1184,19 +1189,25 @@ function App() {
           <>
             <div className={`sidebar-item sidebar-item-with-icon ${esConfiguracionActivo && !menuConfiguracionAbierto ? 'active' : ''}`} title="Configuración" onClick={() => toggleGrupo(setMenuConfiguracionAbierto)}>
               <span className="sidebar-icon">{ICON.configuracion}</span>
-              <span className="sidebar-label">Configuración</span>
+              <span className="sidebar-label">{etq('menu.configuraci_n', 'Configuración')}</span>
               <span className="sidebar-chevron app-x43">{menuConfiguracionAbierto ? '▼' : '▶'}</span>
             </div>
             {menuConfiguracionAbierto && (
               <div className="sidebar-submenu">
-                {puede('usuarios') && <div className={`sidebar-subitem ${moduloActivo === 'usuarios' ? 'active' : ''}`} onClick={() => navegarA('usuarios')}><span className="sidebar-icon">{ICON.usuarios}</span><span className="sidebar-label">Usuarios</span></div>}
-                {puede('roles') && <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => navegarA('roles')}><span className="sidebar-icon">{ICON.roles}</span><span className="sidebar-label">Roles y Permisos</span></div>}
-                {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => navegarA('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">Historial de Actividad</span></div>}
-                {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => navegarA('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">Reglas de Estatus</span></div>}
-                {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => navegarA('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">Datos de la Empresa</span></div>}
+                {puede('usuarios') && <div className={`sidebar-subitem ${moduloActivo === 'usuarios' ? 'active' : ''}`} onClick={() => navegarA('usuarios')}><span className="sidebar-icon">{ICON.usuarios}</span><span className="sidebar-label">{etq('menu.usuarios', 'Usuarios')}</span></div>}
+                {puede('roles') && <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => navegarA('roles')}><span className="sidebar-icon">{ICON.roles}</span><span className="sidebar-label">{etq('menu.roles_y_permisos', 'Roles y Permisos')}</span></div>}
+                {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => navegarA('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">{etq('menu.historial_de_actividad', 'Historial de Actividad')}</span></div>}
+                {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => navegarA('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">{etq('menu.reglas_de_estatus', 'Reglas de Estatus')}</span></div>}
+                {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => navegarA('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">{etq('menu.datos_de_la_empresa', 'Datos de la Empresa')}</span></div>}
                 {/* AUTORIZACIONES: lo ve quien tenga el módulo asignado en su rol (Admin siempre). */}
-                {puede('autorizaciones') && <div className={`sidebar-subitem ${moduloActivo === 'autorizaciones' ? 'active' : ''}`} title="Autorizaciones" onClick={() => navegarA('autorizaciones')}><span className="sidebar-icon"><Ico><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></Ico></span><span className="sidebar-label">Autorizaciones</span></div>}
-                <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => navegarA('importacion')}><span className="sidebar-icon"><Ico><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Ico></span><span className="sidebar-label">Importar Datos</span></div>
+                {puede('autorizaciones') && <div className={`sidebar-subitem ${moduloActivo === 'autorizaciones' ? 'active' : ''}`} title="Autorizaciones" onClick={() => navegarA('autorizaciones')}><span className="sidebar-icon"><Ico><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></Ico></span><span className="sidebar-label">{etq('menu.autorizaciones', 'Autorizaciones')}</span></div>}
+                <div className={`sidebar-subitem ${moduloActivo === 'importacion' ? 'active' : ''}`} title="Importar datos desde CSV" onClick={() => navegarA('importacion')}><span className="sidebar-icon"><Ico><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></Ico></span><span className="sidebar-label">{etq('menu.importar_datos', 'Importar Datos')}</span></div>
+              </div>
+            )}
+            {puede('etiquetas') && (
+              <div className={`sidebar-item sidebar-subitem ${moduloActivo === 'etiquetas' ? 'active' : ''}`} title="Personalizar Etiquetas" onClick={() => navegarA('etiquetas')}>
+                <span className="sidebar-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg></span>
+                <span className="sidebar-label">{etq('menu.personalizar_etiquetas', 'Personalizar Etiquetas')}</span>
               </div>
             )}
           </>
@@ -1286,6 +1297,9 @@ function App() {
             {moduloActivo === 'estadisticas' && puede('estadisticas') && (
               <EstadisticasDashboard />
             )}
+            {moduloActivo === 'etiquetas' && puede('etiquetas') && (
+              <EtiquetasDashboard />
+            )}
             {moduloActivo === 'operaciones' && puede('operaciones') && (
               <>
                 <ResumenDelDia />
@@ -1336,6 +1350,16 @@ function App() {
         
       </div>
     </div>
+  );
+}
+
+// ✅ El provider de etiquetas envuelve toda la app: el menú y los módulos
+//   leen las personalizaciones en vivo.
+function App() {
+  return (
+    <EtiquetasProvider>
+      <AppContenido />
+    </EtiquetasProvider>
   );
 }
 

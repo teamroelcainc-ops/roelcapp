@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 'react';
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db, storage, auth } from '../../../config/firebase';
+import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { guardarOperacionSegura } from '../services/operacionesService';
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
 import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, obtenerUsuarioAut, MODULOS_AUTORIZABLES } from '../../autorizaciones/autorizaciones';
@@ -1923,8 +1924,34 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.trafico, formData.puenteId, mostrarPuente, opcionesPuente.length, initialData]);
 
+  const ID_STATUS_CANCELADO = '7607f692';
+  const usuarioActualCancel = useUsuarioStore((s) => s.usuario);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ✅ CANCELACIÓN CONTROLADA: si la operación pasa a Cancelado, se exige
+    //   una observación del motivo y se registra QUIÉN la canceló y cuándo.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- status vive fuera del tipo del formulario (mismo criterio del archivo).
+    const statusNuevo = String((formData as any).status || '');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- initialData sin tipo canónico (mismo criterio del archivo).
+    const statusPrevio = String((initialData as any)?.status || '');
+    let datosCancelacion: Record<string, string> | null = null;
+    if (statusNuevo === ID_STATUS_CANCELADO && statusPrevio !== ID_STATUS_CANCELADO) {
+      let motivo = '';
+      while (!motivo.trim()) {
+        const respuesta = window.prompt('Para CANCELAR esta referencia escribe el motivo de la cancelación (obligatorio):', '');
+        if (respuesta === null) { return; } // el usuario desistió: no se guarda nada
+        motivo = respuesta;
+      }
+      datosCancelacion = {
+        observacionCancelacion: motivo.trim(),
+        canceladoPor: String(usuarioActualCancel?.nombre || usuarioActualCancel?.email || usuarioActualCancel?.id || 'Desconocido'),
+        canceladoPorUid: String(usuarioActualCancel?.id || ''),
+        fechaCancelacion: new Date().toISOString(),
+      };
+    }
+
     setCargando(true);
     try {
       const configId = buildConfigId();
@@ -2090,6 +2117,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       let idGuardado = '';
       let refGuardado = '';
       if (initialData) {
+        if (datosCancelacion) Object.assign(operacionData, datosCancelacion);
         await updateDoc(doc(db, 'operaciones', String(initialData.id)), operacionData);
         idGuardado = String(initialData.id);
         refGuardado = referenciaDeOperacion(idGuardado, operacionData.ref || (initialData as any).ref);

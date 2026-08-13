@@ -70,6 +70,9 @@ const COLUMNAS_TABLA_CANCELADOS = [
   { id: 'unidad', label: 'Unidad' },
   { id: 'cliente', label: 'Cliente (Paga)' },
   { id: 'subtotal', label: 'Subtotal' },
+  // ✅ NUEVO: trazabilidad de la cancelación.
+  { id: 'motivoCancelacion', label: 'Motivo de Cancelación' },
+  { id: 'canceladoPor', label: 'Cancelado Por' },
 ];
 
 // ✅ NUEVO: la selección y el ORDEN de columnas del Excel se recuerdan POR USUARIO.
@@ -1006,6 +1009,8 @@ const ServiciosCancelados = () => {
     };
     switch (colId) {
       case 'ref': return limpiar(op.ref || op.id?.substring(0, 6));
+      case 'motivoCancelacion': return limpiar(op.observacionCancelacion);
+      case 'canceladoPor': return limpiar(op.canceladoPor);
       case 'fecha': return limpiar(normalizarFechaISO(op.fechaServicio));
       case 'tipoOperacion': return limpiar(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre));
       case 'status': return limpiar(mostrarDatoMapeado(op.status, 'statusServicio', 'nombre', op.statusNombre));

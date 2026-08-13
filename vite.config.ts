@@ -13,6 +13,10 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom'],
           firebase: ['firebase/app', 'firebase/firestore', 'firebase/auth', 'firebase/storage'],
+          // ✅ Fluidez: vendors pesados fuera del bundle principal (mejor
+          //   caché entre versiones y carga inicial más ligera).
+          pdf: ['html2pdf.js'],
+          iconos: ['lucide-react'],
         },
       },
     },
