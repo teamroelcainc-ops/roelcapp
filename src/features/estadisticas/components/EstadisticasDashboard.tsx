@@ -134,6 +134,8 @@ export function EstadisticasDashboard() {
   // ✅ NUEVO: al hacer clic en cualquier elemento del detalle (cliente,
   //   unidad, operador, movimiento, línea, trompo) se muestran SUS referencias.
   const [refsFiltro, setRefsFiltro] = useState<{ etiqueta: string; ops: Op[] } | null>(null);
+  // ✅ Ficha de la operación (primero el DETALLE; Editar abre el formulario).
+  const [opFicha, setOpFicha] = useState<Op | null>(null);
   // ✅ Tabla de referencias: columnas configurables (persisten entre sesiones)
   //   y filtros por columna.
   const [columnasRefs, setColumnasRefs] = useEstadoPersistente<string[]>('estadisticas_columnasRefs',
@@ -410,6 +412,83 @@ export function EstadisticasDashboard() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detalleMes, ops]);
+
+  // Columnas activas y filas visibles de la tabla de referencias (tabla + export).
+  const columnasActivas = useMemo(() => COLUMNAS_REFS.filter(c => columnasRefs.includes(c.campo)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [columnasRefs]);
+
+  const refsVisibles = useMemo(() => {
+    if (!refsFiltro) return [];
+    return refsFiltro.ops.filter(op =>
+      columnasActivas.every(c => {
+        const f = (filtrosCols[c.campo] || '').trim().toLowerCase();
+        if (!f) return true;
+        return valorColumna(op, c.campo).toLowerCase().includes(f);
+      })
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refsFiltro, columnasActivas, filtrosCols]);
+
+  // ✅ EXPORTACIÓN del rubro seleccionado (Excel y PDF con membrete).
+  const exportarRefsExcel = () => {
+    if (!refsFiltro) return;
+    const wb = XLSX.utils.book_new();
+    const filas = refsVisibles.map(op => {
+      const fila: Record<string, string> = {};
+      columnasActivas.forEach(c => { fila[c.etiqueta] = valorColumna(op, c.campo) || '—'; });
+      return fila;
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), 'Operaciones');
+    XLSX.writeFile(wb, `Reporte_${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
+  };
+
+  const exportarRefsPDF = async () => {
+    if (!refsFiltro) return;
+    setExportando(true);
+    try {
+      const logo = await cargarLogoDataUrl(config?.logoUrl).catch(() => null);
+      const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const html = `
+        <div style="font-family: Arial, Helvetica, sans-serif; color: #111; padding: 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #D84315; padding-bottom:8px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              ${logo ? `<img src="${logo}" style="height:52px;" />` : ''}
+              <div>
+                <div style="font-size:17px; font-weight:bold; color:#D84315;">ROELCA INC.</div>
+                <div style="font-size:13px; font-weight:bold; margin-top:2px;">Reporte de Servicios — ${esc(refsFiltro.etiqueta)}</div>
+                <div style="font-size:11px; color:#555; margin-top:2px;">Periodo: ${esc(fechaDesde)} al ${esc(fechaHasta)} · ${refsVisibles.length} operación(es)</div>
+              </div>
+            </div>
+            <div style="font-size:11px; color:#555;">Generado: ${esc(new Date().toLocaleDateString('es-MX'))}</div>
+          </div>
+          <table style="width:100%; border-collapse:collapse; font-size:9.5px;">
+            <thead>
+              <tr>${columnasActivas.map(c => `<th style="background:#f2f2f2; border:1px solid #ccc; padding:5px 6px; text-align:left;">${esc(c.etiqueta.toUpperCase())}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${refsVisibles.map(op => `<tr>${columnasActivas.map(c => `<td style="border:1px solid #ddd; padding:4px 6px;">${esc(valorColumna(op, c.campo) || '—')}</td>`).join('')}</tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      const cont = document.createElement('div');
+      cont.innerHTML = html;
+      document.body.appendChild(cont);
+      try {
+        await html2pdf().set({
+          margin: 8,
+          filename: `Reporte_${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.pdf`,
+          image: { type: 'jpeg', quality: 0.95 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'letter', orientation: 'landscape' },
+        }).from(cont).save();
+      } finally {
+        document.body.removeChild(cont);
+      }
+    } finally {
+      setExportando(false);
+    }
+  };
 
   // ══════════ EXPORTACIÓN ══════════
   const etiquetaRango = `${fechaDesde} a ${fechaHasta}`;
@@ -761,23 +840,23 @@ export function EstadisticasDashboard() {
                   <div className="est-refs-vista-encabezado">
                     <button className="est-btn" onClick={() => { setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}>← Volver</button>
                     <span className="est-refs-vista-titulo">{refsFiltro.etiqueta}</span>
-                    <div className="est-cols">
+                    <div className="est-refs-acciones">
                       <button className="est-btn" onClick={() => setMenuColumnas(true)}>
                         <Settings2 size={14} /> Columnas
+                      </button>
+                      <button className="est-btn" onClick={exportarRefsExcel}>
+                        <Download size={14} /> Excel
+                      </button>
+                      <button className="est-btn est-btn-primario" onClick={exportarRefsPDF} disabled={exportando}>
+                        <Download size={14} /> {exportando ? 'Generando…' : 'PDF'}
                       </button>
                     </div>
                   </div>
 
                   {(() => {
-                    const columnas = COLUMNAS_REFS.filter(c => columnasRefs.includes(c.campo));
+                    const columnas = columnasActivas;
                     const hayFiltros = Object.values(filtrosCols).some(v => v.trim());
-                    const visibles = refsFiltro.ops.filter(op =>
-                      columnas.every(c => {
-                        const f = (filtrosCols[c.campo] || '').trim().toLowerCase();
-                        if (!f) return true;
-                        return valorColumna(op, c.campo).toLowerCase().includes(f);
-                      })
-                    );
+                    const visibles = refsVisibles;
                     return (
                       <>
                         <span className="est-refs-conteo">
@@ -810,7 +889,7 @@ export function EstadisticasDashboard() {
                                 const linea = lineaDeOp(op);
                                 const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
                                 return (
-                                  <tr key={op.id} className="est-fila-clicable" onClick={() => abrirEdicionOperacion(op)} title={`Abrir ${op.ref || op.id} en el formulario de Operaciones`}>
+                                  <tr key={op.id} className="est-fila-clicable" onClick={() => setOpFicha(op)} title={`Ver el detalle de ${op.ref || op.id}`}>
                                     {columnas.map(c => (
                                       <td key={c.campo} className={c.campo === 'ref' ? `est-celda-ref est-ref-${claseLinea}` : ''}>
                                         {valorColumna(op, c.campo) || '—'}
@@ -832,11 +911,19 @@ export function EstadisticasDashboard() {
                   <div className="est-detalle-seccion">
                     <span className="est-detalle-titulo">Tipo de operación</span>
                     <div className="est-detalle-lista">
-                      {(['Transfer', 'Logística', 'Fletes'] as Linea[]).map((l) => (
-                        detalle.porLinea[l] > 0
-                          ? <button type="button" className="est-detalle-item clicable" key={l} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${l}`, ops: detalle.ops.filter((op) => lineaDeOp(op) === l) })}><span>{l}</span><b>{num(detalle.porLinea[l])}</b></button>
-                          : <span className="est-detalle-item" key={l}><span>{l}</span><b>0</b></span>
-                      ))}
+                      {(['Transfer', 'Logística', 'Fletes'] as Linea[]).map((l) => {
+                        const pct = detalle.ops.length > 0 ? (detalle.porLinea[l] / detalle.ops.length) * 100 : 0;
+                        const claseL = l === 'Transfer' ? 'transfer' : l === 'Logística' ? 'logistica' : 'fletes';
+                        return detalle.porLinea[l] > 0
+                          ? (
+                            <button type="button" className="est-detalle-item clicable" key={l} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${l}`, ops: detalle.ops.filter((op) => lineaDeOp(op) === l) })}>
+                              <span className="est-item-linea"><i className={`est-punto ${claseL}`} />{l}</span>
+                              <span className="est-item-cifras"><b>{num(detalle.porLinea[l])}</b><small>{pct.toFixed(0)}%</small></span>
+                              <span className="est-item-barra"><i className={claseL} style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
+                            </button>
+                          )
+                          : <span className="est-detalle-item apagado" key={l}><span className="est-item-linea"><i className={`est-punto ${claseL}`} />{l}</span><span className="est-item-cifras"><b>0</b></span></span>;
+                      })}
                       {detalle.porLinea.Otro > 0 && (
                         <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Otro`, ops: detalle.ops.filter((op) => lineaDeOp(op) === 'Otro') })}><span>Otro</span><b>{num(detalle.porLinea.Otro)}</b></button>
                       )}
@@ -847,13 +934,20 @@ export function EstadisticasDashboard() {
                 <div className="est-detalle-seccion">
                   <span className="est-detalle-titulo">Movimiento</span>
                   <div className="est-detalle-lista">
-                    {(['Importación', 'Exportación', 'Movimiento', 'Sin clasificar'] as const).map((mv) => (
-                      (mv !== 'Sin clasificar' || detalle.porMovimiento[mv] > 0) && (
+                    {(['Importación', 'Exportación', 'Movimiento', 'Sin clasificar'] as const).map((mv) => {
+                      const pct = detalle.ops.length > 0 ? (detalle.porMovimiento[mv] / detalle.ops.length) * 100 : 0;
+                      return (mv !== 'Sin clasificar' || detalle.porMovimiento[mv] > 0) && (
                         detalle.porMovimiento[mv] > 0
-                          ? <button type="button" className="est-detalle-item clicable" key={mv} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}><span>{mv}</span><b>{num(detalle.porMovimiento[mv])}</b></button>
-                          : <span className="est-detalle-item" key={mv}><span>{mv}</span><b>0</b></span>
-                      )
-                    ))}
+                          ? (
+                            <button type="button" className="est-detalle-item clicable" key={mv} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}>
+                              <span className="est-item-linea">{mv}</span>
+                              <span className="est-item-cifras"><b>{num(detalle.porMovimiento[mv])}</b><small>{pct.toFixed(0)}%</small></span>
+                              <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
+                            </button>
+                          )
+                          : <span className="est-detalle-item apagado" key={mv}><span className="est-item-linea">{mv}</span><span className="est-item-cifras"><b>0</b></span></span>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -869,33 +963,48 @@ export function EstadisticasDashboard() {
                 <div className="est-detalle-seccion">
                   <span className="est-detalle-titulo">Unidades ({detalle.unidades.length})</span>
                   <div className="est-detalle-lista">
-                    {detalle.unidades.map(([nombre, cuantas]) => (
-                      <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Unidad ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.unidadNombre || op.unidad || '').trim()) || '(Sin dato)') === nombre) })}>
-                        <span>{nombre}</span><b>{num(cuantas)}</b>
-                      </button>
-                    ))}
+                    {detalle.unidades.map(([nombre, cuantas]) => {
+                      const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
+                      return (
+                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Unidad ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.unidadNombre || op.unidad || '').trim()) || '(Sin dato)') === nombre) })}>
+                          <span className="est-item-linea">{nombre}</span>
+                          <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
+                          <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 <div className="est-detalle-seccion">
                   <span className="est-detalle-titulo">Operadores ({detalle.operadores.length})</span>
                   <div className="est-detalle-lista">
-                    {detalle.operadores.map(([nombre, cuantas]) => (
-                      <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Operador ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.operadorNombre || op.operador || '').trim()) || '(Sin dato)') === nombre) })}>
-                        <span>{nombre}</span><b>{num(cuantas)}</b>
-                      </button>
-                    ))}
+                    {detalle.operadores.map(([nombre, cuantas]) => {
+                      const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
+                      return (
+                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Operador ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.operadorNombre || op.operador || '').trim()) || '(Sin dato)') === nombre) })}>
+                          <span className="est-item-linea">{nombre}</span>
+                          <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
+                          <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
                 <div className="est-detalle-seccion">
                   <span className="est-detalle-titulo">Clientes ({detalle.clientes.length})</span>
                   <div className="est-detalle-lista">
-                    {detalle.clientes.map(([nombre, cuantas]) => (
-                      <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '').trim()) || '(Sin dato)') === nombre) })}>
-                        <span>{nombre}</span><b>{num(cuantas)}</b>
-                      </button>
-                    ))}
+                    {detalle.clientes.map(([nombre, cuantas]) => {
+                      const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
+                      return (
+                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '').trim()) || '(Sin dato)') === nombre) })}>
+                          <span className="est-item-linea">{nombre}</span>
+                          <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
+                          <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -904,6 +1013,68 @@ export function EstadisticasDashboard() {
           </div>
         </div>
       )}
+
+      {/* ✅ FICHA DE LA OPERACIÓN: primero el detalle, Editar abre el formulario */}
+      {opFicha && (() => {
+        const linea = lineaDeOp(opFicha);
+        const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
+        const secciones: { titulo: string; campos: [string, string][] }[] = [
+          { titulo: 'Servicio', campos: [
+            ['Fecha de servicio', valorColumna(opFicha, 'fechaServicio') || '—'],
+            ['Status', valorColumna(opFicha, 'statusNombre') || '—'],
+            ['Tipo de operación', valorColumna(opFicha, 'tipoOperacionNombre') || '—'],
+            ['Movimiento', movimientoDeOp(opFicha)],
+          ]},
+          { titulo: 'Cliente y Convenio', campos: [
+            ['Cliente', valorColumna(opFicha, 'clientePagaNombre') || '—'],
+            ['Convenio', valorColumna(opFicha, 'convenioNombre') || '—'],
+            ['Moneda', valorColumna(opFicha, 'monedaCobroNombre') || '—'],
+          ]},
+          { titulo: 'Ruta', campos: [
+            ['Origen', valorColumna(opFicha, 'origen') || '—'],
+            ['Destino', valorColumna(opFicha, 'destino') || '—'],
+            ['Kilometraje estimado', opFicha.kilometrajeEstimado ? `${Number(opFicha.kilometrajeEstimado).toLocaleString('en-US')} km` : '—'],
+          ]},
+          { titulo: 'Asignación', campos: [
+            ['Unidad', valorColumna(opFicha, 'unidadNombre') || '—'],
+            ['Operador', valorColumna(opFicha, 'operadorNombre') || '—'],
+            ['Remolque', valorColumna(opFicha, 'numeroRemolque') || '—'],
+          ]},
+        ];
+        return (
+          <div className="est-overlay" onClick={() => setOpFicha(null)}>
+            <div className="est-detalle est-ficha-op" onClick={(e) => e.stopPropagation()}>
+              <div className="est-detalle-encabezado">
+                <h3>
+                  <span className={`est-detalle-ref est-ref-${claseLinea} est-ficha-ref`}>{opFicha.ref || opFicha.id}</span>
+                  <span className="est-ficha-status">{valorColumna(opFicha, 'statusNombre') || 'Sin status'}</span>
+                </h3>
+                <div className="est-ficha-acciones">
+                  <button className="est-btn est-btn-primario" onClick={() => abrirEdicionOperacion(opFicha)} disabled={cargandoCatalogos}>
+                    {cargandoCatalogos ? 'Cargando…' : 'Editar'}
+                  </button>
+                  <button className="est-detalle-cerrar" onClick={() => setOpFicha(null)}><X size={16} /></button>
+                </div>
+              </div>
+              <div className="est-detalle-cuerpo">
+                {secciones.map(sec => (
+                  <div className="est-ficha-seccion" key={sec.titulo}>
+                    <span className="est-ficha-seccion-titulo">{sec.titulo}</span>
+                    <div className="est-ficha-grid">
+                      {sec.campos.map(([etq, val]) => (
+                        <div className="est-ficha-campo" key={etq}>
+                          <span className="est-detalle-titulo">{etq}</span>
+                          <span className="est-ficha-valor">{val}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ✅ Aviso mientras cargan los catálogos del formulario */}
       {cargandoCatalogos && (
@@ -951,6 +1122,7 @@ export function EstadisticasDashboard() {
           onSave={(opNueva) => {
             // Refrescar la operación en los datos ya cargados (sin re-consultar).
             setOps((prev) => prev.map((o) => (o.id === (opNueva?.id || editandoOp.id) ? { ...o, ...opNueva } : o)));
+            setOpFicha((prev: Op | null) => prev && prev.id === (opNueva?.id || editandoOp.id) ? { ...prev, ...opNueva } : prev);
             setEditandoOp(null);
           }}
         />

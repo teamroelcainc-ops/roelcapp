@@ -421,3 +421,63 @@ button.est-detalle-item {
 @media (max-width: 560px) {
   .est-cols-modal-cuerpo { grid-template-columns: 1fr; }
 }
+
+/* ✅ Detalle tipo reporte: barras de proporción, puntos de color, ficha */
+.est-detalle-item { flex-wrap: wrap; row-gap: 4px; }
+.est-detalle-item.apagado { opacity: 0.45; }
+
+.est-item-linea { display: inline-flex; align-items: center; gap: 7px; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; }
+
+.est-punto { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.est-punto.transfer { background-color: #D84315; }
+.est-punto.logistica { background-color: #58a6ff; }
+.est-punto.fletes { background-color: #3fb950; }
+
+.est-item-cifras { display: inline-flex; align-items: baseline; gap: 7px; }
+.est-item-cifras small { color: #8b949e; font-size: 0.72rem; }
+
+.est-item-barra {
+  flex-basis: 100%;
+  height: 4px;
+  border-radius: 3px;
+  background-color: #21262d;
+  overflow: hidden;
+}
+
+.est-item-barra i {
+  display: block;
+  height: 100%;
+  width: var(--w, 0%);
+  border-radius: 3px;
+}
+
+.est-item-barra i.transfer { background-color: #D84315; }
+.est-item-barra i.logistica { background-color: #58a6ff; }
+.est-item-barra i.fletes { background-color: #3fb950; }
+.est-item-barra i.neutra { background-color: #6e7681; }
+
+.est-refs-acciones { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+
+.est-ficha-ref { font-size: 0.95rem; padding: 4px 12px; }
+.est-ficha-status {
+  margin-left: 12px;
+  color: #8b949e;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 3px 12px;
+}
+
+.est-ficha-seccion { display: flex; flex-direction: column; gap: 8px; }
+
+.est-ficha-seccion-titulo {
+  color: #D84315;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid #21262d;
+  padding-bottom: 5px;
+}
