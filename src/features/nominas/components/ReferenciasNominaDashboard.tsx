@@ -1553,6 +1553,11 @@ export const ReferenciasNominaDashboard = () => {
           <td>${m(t.importe ?? t.sueldo ?? 0)}</td>
         </tr>`).join('');
 
+    // ✅ SUELDO TOTAL de los viajes: suma de la columna Importe, visible como
+    //   fila final de la tabla (lo que el operador ganó por sus viajes).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- viajes sin tipo canónico (mismo criterio del archivo).
+    const sueldoTotalViajes = trips.reduce((s: number, t: any) => s + (Number(t.importe ?? t.sueldo) || 0), 0);
+
     const sueldoBase = nom.nominaFiscal ?? nom.nomina ?? 0;
 
     const logoSrc = (empresaConfig?.logoBase64 && empresaConfig.logoBase64.startsWith('data:'))
@@ -1639,6 +1644,12 @@ export const ReferenciasNominaDashboard = () => {
       <table>
         <thead><tr><th>Referencia</th><th>Fecha</th><th>Cliente</th><th>Convenio</th><th>Importe</th></tr></thead>
         <tbody>${filas || '<tr><td colspan="5" style="text-align:center;color:#888;">Sin operaciones registradas.</td></tr>'}</tbody>
+        ${filas ? `<tfoot>
+          <tr>
+            <td colspan="4" style="text-align:right; font-weight:bold; background:#fdf3ec; border-top:2px solid #D84315;">SUELDO TOTAL (${trips.length} viaje${trips.length === 1 ? '' : 's'})</td>
+            <td style="font-weight:bold; background:#fdf3ec; border-top:2px solid #D84315; color:#D84315;">${m(sueldoTotalViajes)}</td>
+          </tr>
+        </tfoot>` : ''}
       </table>
     </div>
 
