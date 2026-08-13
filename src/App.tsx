@@ -616,7 +616,18 @@ function App() {
   const [usuarioActualDB, setUsuarioActualDB] = useState<any>(null); 
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
-  const [moduloActivo, setModuloActivo] = useState<'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>('operaciones');
+  const [moduloActivo, setModuloActivo] = useState<'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+    // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
+    //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
+    // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- evita el tipado circular de typeof en su propio inicializador.
+    try { return (localStorage.getItem('persist_moduloActivo') as any) || 'operaciones'; } catch { return 'operaciones'; }
+  });
+
+  // ✅ Guardar el módulo activo para restaurarlo al recargar.
+  useEffect(() => {
+    try { localStorage.setItem('persist_moduloActivo', moduloActivo); } catch { /* noop */ }
+  }, [moduloActivo]);
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [miPerfilAbierto, setMiPerfilAbierto] = useState(false); // modal "Mi Perfil"

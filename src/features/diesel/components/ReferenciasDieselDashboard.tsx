@@ -14,6 +14,7 @@ import {
   updateDoc
 } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
+import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import * as XLSX from 'xlsx';
 import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -179,7 +180,8 @@ export const ReferenciasDieselDashboard = () => {
   // Catálogo de lugares (orígenes/destinos) para resolver IDs a nombres.
   const [lugaresList, setLugaresList] = useState<any[]>([]);
 
-  const [filtroUnidad, setFiltroUnidad] = useState('');
+  // ✅ PERSISTENTE: el último filtro de unidad sobrevive recargas.
+  const [filtroUnidad, setFiltroUnidad] = useEstadoPersistente('diesel_filtroUnidad', '');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
   // Indicador de carga de operaciones de la unidad seleccionada.
   const [cargandoOps, setCargandoOps] = useState(false);
@@ -226,6 +228,9 @@ export const ReferenciasDieselDashboard = () => {
   const [consecutivoForm, setConsecutivoForm] = useState('');
   // Galones Extras: editable (antes "Galones Autorizados")
   const [galonesExtras, setGalonesExtras] = useState<number | ''>('');
+  // ✅ NUEVO: kilometraje REAL capturado al generar la referencia; se compara
+  //   contra el kilometraje ESTIMADO que viene de las operaciones.
+  const [kilometrajeReal, setKilometrajeReal] = useState<number | ''>('');
   const [galonesCargados, setGalonesCargados] = useState<number | ''>('');
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState('');
   const [costoDieselDiario, setCostoDieselDiario] = useState<number>(0);
@@ -923,15 +928,17 @@ export const ReferenciasDieselDashboard = () => {
 
   const resumenSeleccion = useMemo(() => {
     let dieselTotal = 0;
+    let kmEstimado = 0; // ✅ NUEVO: suma del kilometraje estimado (de operaciones)
     const refs: string[] = [];
     seleccionadas.forEach(id => {
       const op = operacionesGlobales.find(o => o.id === id);
       if (op) {
         dieselTotal += Number(op.combustibleTotal || 0);
+        kmEstimado += Number(op.kilometrajeEstimado || 0);
         refs.push(op.ref || op.id?.substring(0,6));
       }
     });
-    return { dieselTotal, refs };
+    return { dieselTotal, kmEstimado, refs };
   }, [seleccionadas, operacionesGlobales]);
 
   const operadoresSeleccionados = useMemo(() => {
@@ -1013,6 +1020,9 @@ export const ReferenciasDieselDashboard = () => {
         operadorNombre: operadorRef, 
         operacionesIds: seleccionadas,
         sumaDiesel: resumenSeleccion.dieselTotal,
+        // ✅ NUEVO: kilometraje estimado (de las operaciones) y real capturado.
+        kilometrajeEstimado: resumenSeleccion.kmEstimado,
+        kilometrajeReal: Number(kilometrajeReal) || 0,
         galonesCalculadosOperaciones: galonesCalculadosOp,
         galonesExtras: Number(galonesExtras) || 0,
         galonesAutorizados: galonesAutorizadosCalc,
@@ -1360,7 +1370,7 @@ export const ReferenciasDieselDashboard = () => {
             <div className="rdd-x21">
               <button 
                 disabled={seleccionadas.length === 0 || filtroEstadoOps === 'cargadas'} 
-                onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setFotosSeleccionadas([]); setModalAbierto(true); }}
+                onClick={() => { setConsecutivoForm(generarConsecutivo(fechaForm)); setFotosSeleccionadas([]); setKilometrajeReal(''); setModalAbierto(true); }}
                 style={{ padding: '10px 20px', backgroundColor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? '#D84315' : '#30363d', color: '#fff', border: 'none', borderRadius: '6px', cursor: (seleccionadas.length > 0 && filtroEstadoOps !== 'cargadas') ? 'pointer' : 'not-allowed', fontWeight: 'bold', whiteSpace: 'nowrap' }}
               >
                 Generar Referencia ({seleccionadas.length})
@@ -1421,6 +1431,11 @@ export const ReferenciasDieselDashboard = () => {
                 <div>
                   <span className="rdd-x33">Suma Combustible Total</span>
                   <span className="rdd-x34">{resumenSeleccion.dieselTotal.toFixed(2)}</span>
+                </div>
+                {/* ✅ NUEVO: kilometraje estimado de las operaciones seleccionadas */}
+                <div>
+                  <span className="rdd-x33">Kilometraje Estimado</span>
+                  <span className="rdd-km-estimado">{resumenSeleccion.kmEstimado.toLocaleString('en-US')} km</span>
                 </div>
               </div>
               <div className="rdd-x35">
@@ -1712,6 +1727,9 @@ export const ReferenciasDieselDashboard = () => {
             </div>
             
             <form onSubmit={handleGuardarReferencia}>
+              {/* ✅ 3 columnas: datos | costos+kilometraje+observaciones | fotos */}
+              <div className="rdd-modal-cols">
+              <div className="rdd-modal-col">
               <div className="rdd-x101">
                 <div>
                   <label className="rdd-x102">FECHA</label>
@@ -1746,17 +1764,47 @@ export const ReferenciasDieselDashboard = () => {
                 </div>
               </div>
 
+              </div>
+
+              <div className="rdd-modal-col">
               <div className="rdd-x106">
                  <div className="rdd-x107"><span className="rdd-x108">Costo Diesel ({fechaForm}):</span><span className="rdd-x109">{formatoMoneda(costoDieselDiario)}</span></div>
                  <div className="rdd-x107"><span className="rdd-x108">Total Autorizado:</span><span className="rdd-x110">{formatoMoneda(galonesAutorizadosCalc * costoDieselDiario)}</span></div>
                  <div className="rdd-x111"><span className="rdd-x108">Total Cargado:</span><span className="rdd-x112">{formatoMoneda((Number(galonesCargados) || 0) * costoDieselDiario)}</span></div>
               </div>
 
+              {/* ✅ NUEVO: kilometraje real vs estimado */}
+              <div className="rdd-km-bloque">
+                <div className="rdd-km-fila">
+                  <span className="rdd-x108">Kilometraje Estimado (operaciones):</span>
+                  <span className="rdd-km-estimado">{resumenSeleccion.kmEstimado.toLocaleString('en-US')} km</span>
+                </div>
+                <div>
+                  <label className="rdd-x102">KILOMETRAJE REAL</label>
+                  <input className="rdd-x103" type="number" min="0" step="1" value={kilometrajeReal} onChange={e => setKilometrajeReal(e.target.valueAsNumber || '')} placeholder="km recorridos" />
+                </div>
+                {kilometrajeReal !== '' && resumenSeleccion.kmEstimado > 0 && (() => {
+                  const dif = Number(kilometrajeReal) - resumenSeleccion.kmEstimado;
+                  const pct = (dif / resumenSeleccion.kmEstimado) * 100;
+                  return (
+                    <div className={`rdd-km-dif${dif > 0 ? ' excede' : ' ok'}`}>
+                      {dif === 0
+                        ? 'Coincide exacto con el estimado.'
+                        : dif > 0
+                          ? `Excede el estimado por ${dif.toLocaleString('en-US')} km (+${pct.toFixed(1)}%).`
+                          : `Por debajo del estimado por ${(-dif).toLocaleString('en-US')} km (${pct.toFixed(1)}%).`}
+                    </div>
+                  );
+                })()}
+              </div>
+
               <div className="rdd-x113">
                 <label className="rdd-x102">OBSERVACIONES</label>
                 <textarea className="rdd-x114" value={observacionesForm} onChange={e => setObservacionesForm(e.target.value)} />
               </div>
+              </div>
 
+              <div className="rdd-modal-col">
               {/* FOTOS DE LA REFERENCIA */}
               <div className="rdd-x113">
                 <label className="rdd-x115">
@@ -1813,6 +1861,9 @@ export const ReferenciasDieselDashboard = () => {
                     {fotosSeleccionadas.length} {fotosSeleccionadas.length === 1 ? 'foto seleccionada' : 'fotos seleccionadas'}
                   </span>
                 )}
+              </div>
+
+              </div>
               </div>
 
               <div className="rdd-x125">
