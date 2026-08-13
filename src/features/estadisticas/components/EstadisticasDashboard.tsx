@@ -22,7 +22,8 @@ import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
-import { Download, RefreshCw, X } from 'lucide-react';
+import { Download, RefreshCw, X, Pencil } from 'lucide-react';
+import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import './EstadisticasDashboard.css';
 
 const STATUS_CANCELADO_ID = '7607f692';
@@ -127,6 +128,50 @@ export function EstadisticasDashboard() {
   // ✅ NUEVO: detalle de un MES en la pestaña Servicios (opcionalmente
   //   acotado a una línea: clic en el número de Transfer/Logística/Fletes).
   const [detalleMes, setDetalleMes] = useState<{ mes: number; linea?: Linea } | null>(null);
+  // ✅ NUEVO: ficha de UNA operación (clic en su referencia) + edición con el
+  //   MISMO formulario del módulo de Operaciones.
+  const [opFicha, setOpFicha] = useState<Op | null>(null);
+  const [editandoOp, setEditandoOp] = useState<Op | null>(null);
+  const [catalogosForm, setCatalogosForm] = useState<Record<string, unknown[]> | null>(null);
+  const [cargandoCatalogos, setCargandoCatalogos] = useState(false);
+
+  // Mismas colecciones y MISMA caché local (cat_v2__) que usa Operaciones.
+  const COLECCIONES_FORM: Record<string, string> = {
+    statusServicio: 'catalogo_status_servicio', tiposOperacion: 'catalogo_tipo_operacion',
+    embalajes: 'catalogo_embalaje', catalogoMoneda: 'catalogo_moneda', tarifas: 'catalogo_tarifas_referencia',
+    empresas: 'empresas', remolques: 'remolques', unidades: 'unidades', empleados: 'empleados',
+    unidades_proveedor: 'unidades_proveedor', proveedores_unidad: 'proveedores_unidad',
+    conveniosProv: 'convenios_proveedores', catalogoConvProvDetalles: 'convenios_proveedores_detalles',
+    catalogoConvClientes: 'convenios_clientes', catalogoConvDetalles: 'convenios_clientes_detalles',
+    catalogoTC: 'tipo_cambio', direcciones: 'direcciones',
+  };
+
+  const abrirEdicionOperacion = async (op: Op) => {
+    if (catalogosForm) { setEditandoOp(op); return; }
+    setCargandoCatalogos(true);
+    try {
+      const resultado: Record<string, unknown[]> = {};
+      await Promise.all(Object.entries(COLECCIONES_FORM).map(async ([alias, col]) => {
+        // 1º la caché compartida con Operaciones; 2º Firestore.
+        try {
+          const raw = localStorage.getItem(`cat_v2__${alias}`);
+          if (raw) {
+            const obj = JSON.parse(raw);
+            if (obj && Array.isArray(obj.data) && obj.data.length > 0) { resultado[alias] = obj.data; return; }
+          }
+        } catch { /* caché ilegible: se baja de Firestore */ }
+        const snap = await getDocs(collection(db, col));
+        resultado[alias] = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      }));
+      setCatalogosForm(resultado);
+      setEditandoOp(op);
+    } catch (e) {
+      console.error('No se pudieron cargar los catálogos para editar:', e);
+      alert('No se pudieron cargar los catálogos para abrir el formulario.');
+    } finally {
+      setCargandoCatalogos(false);
+    }
+  };
 
   const buscar = async () => {
     if (!fechaDesde || !fechaHasta) { alert('Captura la fecha Desde y Hasta.'); return; }
@@ -732,14 +777,93 @@ export function EstadisticasDashboard() {
               <div className="est-detalle-seccion">
                 <span className="est-detalle-titulo">Operaciones incluidas</span>
                 <div className="est-detalle-refs">
-                  {detalle.ops.map((op) => (
-                    <span className="est-detalle-ref" key={op.id}>{op.ref || String(op.id).slice(0, 6)}</span>
-                  ))}
+                  {detalle.ops.map((op) => {
+                    const linea = lineaDeOp(op);
+                    const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
+                    return (
+                      <button
+                        type="button"
+                        className={`est-detalle-ref est-ref-${claseLinea}`}
+                        key={op.id}
+                        onClick={() => setOpFicha(op)}
+                        title={`Ver el detalle de ${op.ref || op.id} (${linea})`}
+                      >
+                        {op.ref || String(op.id).slice(0, 6)}
+                      </button>
+                    );
+                  })}
                 </div>
+                <small className="est-refs-leyenda">
+                  <span className="est-ref-transfer est-leyenda-chip">Transfer</span>
+                  <span className="est-ref-logistica est-leyenda-chip">Logística</span>
+                  <span className="est-ref-fletes est-leyenda-chip">Fletes</span>
+                </small>
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ✅ FICHA DE LA OPERACIÓN (clic en una referencia) */}
+      {opFicha && (
+        <div className="est-overlay" onClick={() => setOpFicha(null)}>
+          <div className="est-detalle est-ficha-op" onClick={(e) => e.stopPropagation()}>
+            <div className="est-detalle-encabezado">
+              <h3>Operación {opFicha.ref || opFicha.id}</h3>
+              <div className="est-ficha-acciones">
+                <button
+                  className="est-btn est-btn-primario"
+                  onClick={() => abrirEdicionOperacion(opFicha)}
+                  disabled={cargandoCatalogos}
+                >
+                  <Pencil size={14} /> {cargandoCatalogos ? 'Cargando…' : 'Editar'}
+                </button>
+                <button className="est-detalle-cerrar" onClick={() => setOpFicha(null)}><X size={16} /></button>
+              </div>
+            </div>
+            <div className="est-detalle-cuerpo">
+              <div className="est-ficha-grid">
+                {[
+                  ['Fecha de servicio', fechaISODe(opFicha) || '—'],
+                  ['Status', opFicha.statusNombre || opFicha.status || '—'],
+                  ['Tipo de operación', opFicha.tipoOperacionNombre || opFicha.tipoOperacion || '—'],
+                  ['Línea', lineaDeOp(opFicha)],
+                  ['Cliente', opFicha.clientePagaNombre || opFicha.clienteNombre || '—'],
+                  ['Convenio', opFicha.convenioNombre || '—'],
+                  ['Unidad', opFicha.unidadNombre || opFicha.unidad || '—'],
+                  ['Operador', opFicha.operadorNombre || opFicha.operador || '—'],
+                  ['Remolque', opFicha.remolque || opFicha.remolqueNombre || '—'],
+                  ['Origen', opFicha.origen || opFicha.clienteOrigenNombre || '—'],
+                  ['Destino', opFicha.destino || opFicha.clienteDestinoNombre || '—'],
+                  ['Kilometraje estimado', opFicha.kilometrajeEstimado ? `${Number(opFicha.kilometrajeEstimado).toLocaleString('en-US')} km` : '—'],
+                ].map(([etq, val]) => (
+                  <div className="est-ficha-campo" key={String(etq)}>
+                    <span className="est-detalle-titulo">{etq}</span>
+                    <span className="est-ficha-valor">{String(val)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ EL MISMO FORMULARIO DE OPERACIONES, para editar desde aquí */}
+      {editandoOp && catalogosForm && (
+        <FormularioOperacion
+          estado="abierto"
+          initialData={editandoOp}
+          onClose={() => setEditandoOp(null)}
+          onMinimize={() => { /* sin minimizado dentro de Estadísticas */ }}
+          onRestore={() => { /* sin minimizado dentro de Estadísticas */ }}
+          catalogosCacheados={catalogosForm}
+          onSave={(opNueva) => {
+            // Refrescar la operación en los datos ya cargados (sin re-consultar).
+            setOps((prev) => prev.map((o) => (o.id === (opNueva?.id || editandoOp.id) ? { ...o, ...opNueva } : o)));
+            setOpFicha((prev: Op | null) => prev && prev.id === (opNueva?.id || editandoOp.id) ? { ...prev, ...opNueva } : prev);
+            setEditandoOp(null);
+          }}
+        />
       )}
 
       {pestana === 'utilidad' && !cargando && (

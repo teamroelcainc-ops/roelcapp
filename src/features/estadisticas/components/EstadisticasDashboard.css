@@ -217,15 +217,68 @@
   background-color: #21262d;
   border: 1px solid #30363d;
   border-radius: 4px;
-  padding: 2px 8px;
+  padding: 3px 9px;
   font-size: 0.74rem;
-  color: #D84315;
   font-family: monospace;
   font-weight: 700;
+  cursor: pointer;
 }
+
+.est-detalle-ref:hover { filter: brightness(1.25); }
+
+/* ✅ Color por línea de negocio */
+.est-ref-transfer {
+  color: #ffb894;
+  background-color: rgba(216, 67, 21, 0.14);
+  border-color: rgba(216, 67, 21, 0.65);
+}
+
+.est-ref-logistica {
+  color: #79c0ff;
+  background-color: rgba(88, 166, 255, 0.12);
+  border-color: rgba(88, 166, 255, 0.55);
+}
+
+.est-ref-fletes {
+  color: #56d364;
+  background-color: rgba(63, 185, 80, 0.12);
+  border-color: rgba(63, 185, 80, 0.55);
+}
+
+.est-ref-otro { color: #c9d1d9; }
+
+.est-refs-leyenda { display: flex; gap: 6px; align-items: center; color: #8b949e; }
+.est-leyenda-chip { border-radius: 4px; padding: 1px 7px; font-size: 0.68rem; font-weight: 700; border: 1px solid; }
 
 @media (max-width: 860px) {
   .est-detalle-grid { grid-template-columns: 1fr; }
   .est-overlay { padding: 0; }
   .est-detalle { max-height: 100dvh; height: 100dvh; border-radius: 0; }
+}
+
+/* ✅ Ficha de operación desde Estadísticas */
+.est-ficha-op { max-width: 860px; }
+.est-ficha-acciones { display: flex; align-items: center; gap: 10px; }
+
+.est-ficha-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.est-ficha-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.est-ficha-valor { color: #f0f6fc; font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
+
+@media (max-width: 860px) {
+  .est-ficha-grid { grid-template-columns: 1fr; }
 }
