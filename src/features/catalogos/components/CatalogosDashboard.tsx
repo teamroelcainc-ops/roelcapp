@@ -1,6 +1,6 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, writeBatch, doc } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro, eliminarRegistro } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger'; // ✅ Importación del logger
 
@@ -264,6 +264,15 @@ const CatalogosDashboard = () => {
         await actualizarRegistro(col, registroActual.id, formData);
         await registrarLog('Catálogos', 'Edición', `Editó un registro en el catálogo de ${catalogoSeleccionado.titulo}`);
       } else {
+        // ✅ NUEVO: bloqueo de DUPLICADOS al crear. Si ya existe un registro
+        //    con exactamente los mismos valores en todos los campos, se avisa
+        //    y NO se crea otra copia.
+        const claveNueva = claveDuplicado(formData);
+        const yaExiste = claveNueva && registrosGlobales.some(reg => claveDuplicado(reg) === claveNueva);
+        if (yaExiste) {
+          alert('Ya existe un registro idéntico en este catálogo.\n\nNo se creó el duplicado. Si necesitas otro similar, cambia al menos un campo (por ejemplo el nombre).');
+          return;
+        }
         await agregarRegistro(col, formData);
         await registrarLog('Catálogos', 'Creación', `Agregó un nuevo registro al catálogo de ${catalogoSeleccionado.titulo}`);
       }
@@ -274,16 +283,100 @@ const CatalogosDashboard = () => {
   };
 
   // ✅ FUNCIÓN DE ELIMINACIÓN PRINCIPAL CON LOG
+  //    MEJORADO: si Firestore rechaza el borrado (permisos, cuota, etc.) ahora
+  //    se muestra la CAUSA real en lugar de un mensaje genérico.
   const eliminarRegistroPrincipal = async (id: string) => {
     if (!catalogoSeleccionado) return;
     if (window.confirm('¿Desea eliminar permanentemente este registro?')) {
       try {
         await eliminarRegistro(`catalogo_${catalogoSeleccionado.id}`, id);
         await registrarLog('Catálogos', 'Eliminación', `Eliminó un registro del catálogo de ${catalogoSeleccionado.titulo}`);
-      } catch (error) {
-        alert("Hubo un error al intentar eliminar el registro.");
+      } catch (error: any) {
+        console.error('Error al eliminar registro de catálogo:', error);
+        alert(
+          'Hubo un error al intentar eliminar el registro.\n\n' +
+          'Detalle técnico: ' + (error?.message || error?.code || 'desconocido') +
+          '\n\nSi dice "permission-denied", tu usuario no tiene permiso de borrar en Firestore.' +
+          '\nSi dice "resource-exhausted", se agotó la cuota diaria de Firebase.'
+        );
       }
     }
+  };
+
+  // ✅ NUEVO: clave normalizada de un registro para detectar DUPLICADOS.
+  //    Se construye con los valores de TODOS los campos del esquema del
+  //    catálogo (sin acentos, minúsculas, espacios simples). Dos registros con
+  //    la misma clave son idénticos a ojos del usuario.
+  const claveDuplicado = (reg: any): string => {
+    if (!catalogoSeleccionado) return '';
+    const norm = (v: any): string => {
+      if (Array.isArray(v)) return v.map(x => norm(x)).sort().join(',');
+      if (v && typeof v === 'object' && (v as any).id) v = (v as any).id;
+      return String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+    };
+    return catalogoSeleccionado.fields.map((f: CatalogField) => norm(reg[f.name])).join('|||');
+  };
+
+  // ✅ NUEVO: elimina registros duplicados del catálogo dejando UNO por clave.
+  //    Se conserva el registro con MÁS campos llenos (y en empate, el más
+  //    antiguo por createdAt). Borra en lotes de 400 para respetar el límite
+  //    de Firestore.
+  const [limpiandoDuplicados, setLimpiandoDuplicados] = useState(false);
+  const limpiarDuplicados = async () => {
+    if (!catalogoSeleccionado || limpiandoDuplicados) return;
+
+    const grupos = new Map<string, any[]>();
+    registrosGlobales.forEach(reg => {
+      const clave = claveDuplicado(reg);
+      if (!clave) return;
+      const arr = grupos.get(clave) || [];
+      arr.push(reg);
+      grupos.set(clave, arr);
+    });
+
+    const camposLlenos = (reg: any): number =>
+      Object.entries(reg).filter(([k, v]) => k !== 'id' && v !== undefined && v !== null && v !== '').length;
+
+    const idsABorrar: string[] = [];
+    grupos.forEach(arr => {
+      if (arr.length < 2) return;
+      // El "mejor" registro se queda: más datos; empate -> el más antiguo.
+      const ordenados = [...arr].sort((a, b) => {
+        const dif = camposLlenos(b) - camposLlenos(a);
+        if (dif !== 0) return dif;
+        return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
+      });
+      ordenados.slice(1).forEach(r => idsABorrar.push(r.id));
+    });
+
+    if (idsABorrar.length === 0) {
+      alert('No se encontraron registros duplicados en este catálogo. ✅');
+      return;
+    }
+
+    const confirmado = window.confirm(
+      `Se encontraron ${idsABorrar.length} registros DUPLICADOS en "${catalogoSeleccionado.titulo}" ` +
+      `(mismo contenido en todos los campos).\n\n` +
+      `Se conservará UNA copia de cada uno y se eliminarán los ${idsABorrar.length} repetidos.\n\n¿Deseas continuar?`
+    );
+    if (!confirmado) return;
+
+    setLimpiandoDuplicados(true);
+    try {
+      const col = `catalogo_${catalogoSeleccionado.id}`;
+      for (let i = 0; i < idsABorrar.length; i += 400) {
+        const lote = idsABorrar.slice(i, i + 400);
+        const batch = writeBatch(db);
+        lote.forEach(id => batch.delete(doc(db, col, id)));
+        await batch.commit();
+      }
+      await registrarLog('Catálogos', 'Eliminación', `Limpió ${idsABorrar.length} duplicados del catálogo de ${catalogoSeleccionado.titulo}`);
+      alert(`Listo: se eliminaron ${idsABorrar.length} registros duplicados. ✅`);
+    } catch (error: any) {
+      console.error('Error limpiando duplicados:', error);
+      alert('No se pudieron eliminar todos los duplicados.\n\nDetalle técnico: ' + (error?.message || error?.code || 'desconocido'));
+    }
+    setLimpiandoDuplicados(false);
   };
 
   const handleAgregarEditarSubdetalle = (coleccion: string, data?: any) => {
@@ -469,6 +562,20 @@ const CatalogosDashboard = () => {
             </div>
           </div>
           <div className="cd-x14">
+            {/* ✅ NUEVO: limpiador de registros duplicados del catálogo */}
+            <button
+              className="btn btn-outline cd-x15"
+              title="Eliminar registros duplicados (mismo contenido)"
+              onClick={limpiarDuplicados}
+              disabled={limpiandoDuplicados}
+              style={{ opacity: limpiandoDuplicados ? 0.6 : 1, cursor: limpiandoDuplicados ? 'wait' : 'pointer' }}
+            >
+              {limpiandoDuplicados ? (
+                <span style={{ fontSize: '0.75rem' }}>Limpiando…</span>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path><line x1="12" y1="12" x2="19" y2="19"></line><line x1="19" y1="12" x2="12" y2="19"></line></svg>
+              )}
+            </button>
             <button className="btn btn-outline cd-x15" title="Configurar Obligatorios" onClick={() => setModalEstado('config_obligatorios')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             </button>

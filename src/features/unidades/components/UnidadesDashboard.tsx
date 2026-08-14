@@ -49,6 +49,9 @@ export const UnidadesDashboard: React.FC = () => {
   // ✅ ESTADOS PARA DOCUMENTOS DE LA UNIDAD
   const [unidadDocumentos, setUnidadDocumentos] = useState<UnidadRecord | null>(null); // unidad cuyos documentos se ven
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false); // modal de subida dentro del visor
+  // ✅ NUEVO: unidad a la que se le sube un documento DIRECTO desde la fila
+  //   (sin abrir el visor de documentos).
+  const [unidadSubirDocs, setUnidadSubirDocs] = useState<UnidadRecord | null>(null);
 
   // Suscripción en tiempo real a Firebase
   useEffect(() => {
@@ -346,6 +349,18 @@ export const UnidadesDashboard: React.FC = () => {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                           </button>
 
+                          {/* ✅ NUEVO: subir documento directo desde la fila (sin abrir el visor) */}
+                          <button
+                            className="btn-small ud-x35"
+                            title="Subir documento"
+                            style={{ color: '#fb923c' }}
+                            onClick={(e) => { e.stopPropagation(); setUnidadSubirDocs(reg); setMostrarSubirDoc(true); }}
+                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
+                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                          </button>
+
                           <button 
                             className="btn-small btn-danger ud-x36" 
                             title="Eliminar Unidad"
@@ -459,13 +474,13 @@ export const UnidadesDashboard: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL SUBIR DOCUMENTO (dentro del visor) */}
+      {/* MODAL SUBIR DOCUMENTO (dentro del visor O directo desde la fila) */}
       <DocumentoUploadModal
-        isOpen={mostrarSubirDoc && !!unidadDocumentos}
-        onClose={() => setMostrarSubirDoc(false)}
+        isOpen={mostrarSubirDoc && !!(unidadSubirDocs || unidadDocumentos)}
+        onClose={() => { setMostrarSubirDoc(false); setUnidadSubirDocs(null); }}
         coleccionOrigen="unidades"
-        registroId={unidadDocumentos?.id ?? ''}
-        registroNombre={nombreUnidadDoc}
+        registroId={(unidadSubirDocs || unidadDocumentos)?.id ?? ''}
+        registroNombre={unidadSubirDocs ? (unidadSubirDocs.unidad || unidadSubirDocs.placas || unidadSubirDocs.serie || 'Unidad') : nombreUnidadDoc}
         tiposDocumento={TIPOS_DOCUMENTO_UNIDAD}
       />
 

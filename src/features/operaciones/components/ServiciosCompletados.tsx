@@ -313,6 +313,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ NUEVO: visor/subida de documentos de la operación
   const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
   const [mostrarSubirDocOp, setMostrarSubirDocOp] = useState(false);
+  // ✅ NUEVO: operación a la que se sube un documento DIRECTO desde la fila.
+  const [opSubirDocs, setOpSubirDocs] = useState<any | null>(null);
   
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
@@ -2354,6 +2356,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                               onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                             </button>
+                            {/* ✅ NUEVO: subir documento directo desde la fila (sin abrir la ficha) */}
+                            <button className="sc-x85" type="button" title="Subir documento"
+                              style={{ color: '#fb923c' }}
+                              onClick={(e) => { e.stopPropagation(); setOpSubirDocs(op); setMostrarSubirDocOp(true); }}
+                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
+                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            </button>
                             <button className="sc-x86" type="button" title="Eliminar"
                               onClick={(e) => handleEliminarOperacion(op, e)} 
                               onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(248, 81, 73, 0.1)'} 
@@ -3277,16 +3287,20 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
       )}
 
-      {operacionViendo && (
-        <DocumentoUploadModal
-          isOpen={mostrarSubirDocOp && !!operacionViendo}
-          onClose={() => setMostrarSubirDocOp(false)}
-          coleccionOrigen="operaciones"
-          registroId={operacionViendo.id}
-          registroNombre={refOperacionViendo}
-          tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
-        />
-      )}
+      {/* ✅ NUEVO: el modal funciona desde la ficha O directo desde la fila */}
+      {(opSubirDocs || operacionViendo) && (() => {
+        const objetivo = opSubirDocs || operacionViendo;
+        return (
+          <DocumentoUploadModal
+            isOpen={mostrarSubirDocOp}
+            onClose={() => { setMostrarSubirDocOp(false); setOpSubirDocs(null); }}
+            coleccionOrigen="operaciones"
+            registroId={objetivo.id}
+            registroNombre={opSubirDocs ? (opSubirDocs.ref || String(opSubirDocs.id || '').substring(0, 6)) : refOperacionViendo}
+            tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
+          />
+        );
+      })()}
 
       <style>{`
         @keyframes pop {

@@ -161,6 +161,8 @@ const ServiciosCancelados = () => {
   // ✅ NUEVO: control del visor de documentos y del modal de subida
   const [mostrarDocumentos, setMostrarDocumentos] = useState(false);
   const [mostrarSubirDocOp, setMostrarSubirDocOp] = useState(false);
+  // ✅ NUEVO: operación a la que se sube un documento DIRECTO desde la fila.
+  const [opSubirDocs, setOpSubirDocs] = useState<any | null>(null);
   // ✅ NUEVO: edición vía FormularioOperacion completo (igual que Activos/Completados)
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
@@ -1588,6 +1590,17 @@ const ServiciosCancelados = () => {
                               >
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
                               </button>
+                              {/* ✅ NUEVO: subir documento directo desde la fila */}
+                              <button className="sc-x70"
+                                type="button"
+                                title="Subir documento"
+                                style={{ color: '#fb923c' }}
+                                onClick={(e) => { e.stopPropagation(); setOpSubirDocs(op); setMostrarSubirDocOp(true); }}
+                                onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
+                                onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                              </button>
                             </div>
                           </td>
                           <td style={{ padding: '16px', color: colorTipoOperacion(mostrarDatoMapeado(op.tipoOperacionId, 'tiposOperacion', 'tipo_operacion', op.tipoOperacionNombre)), fontWeight: 'bold', fontFamily: 'monospace' }}>{op.ref || op.id?.substring(0, 6)}</td>
@@ -1944,16 +1957,20 @@ const ServiciosCancelados = () => {
       )}
 
       {/* Subida de documentos ligada a la operación */}
-      {operacionViendo && (
-        <DocumentoUploadModal
-          isOpen={mostrarSubirDocOp && !!operacionViendo}
-          onClose={() => setMostrarSubirDocOp(false)}
-          coleccionOrigen="operaciones"
-          registroId={operacionViendo.id}
-          registroNombre={refOperacionViendo}
-          tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
-        />
-      )}
+      {/* ✅ NUEVO: el modal funciona desde la ficha O directo desde la fila */}
+      {(opSubirDocs || operacionViendo) && (() => {
+        const objetivo = opSubirDocs || operacionViendo;
+        return (
+          <DocumentoUploadModal
+            isOpen={mostrarSubirDocOp}
+            onClose={() => { setMostrarSubirDocOp(false); setOpSubirDocs(null); }}
+            coleccionOrigen="operaciones"
+            registroId={objetivo.id}
+            registroNombre={opSubirDocs ? (opSubirDocs.ref || String(opSubirDocs.id || '').substring(0, 6)) : refOperacionViendo}
+            tiposDocumento={TIPOS_DOCUMENTO_OPERACION}
+          />
+        );
+      })()}
 
       {/* Registro retroactivo de movimiento (fecha/hora personalizada) */}
       {modalHorarios === 'registrar' && (

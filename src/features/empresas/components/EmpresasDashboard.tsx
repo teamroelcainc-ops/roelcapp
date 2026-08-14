@@ -219,6 +219,9 @@ const EmpresasDashboard = () => {
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
+  // ✅ NUEVO: empresa a la que se le subirá un documento DIRECTO desde la fila
+  //   (sin abrir la ficha). Si es null, el modal usa la empresa de la ficha.
+  const [empresaDocs, setEmpresaDocs] = useState<any | null>(null);
 
   const [empresas, setEmpresas] = useState<any[]>([]);
   const [lastUsedMap, setLastUsedMap] = useState<Record<string, string>>({}); 
@@ -881,6 +884,18 @@ const EmpresasDashboard = () => {
                             </button>
                           )}
 
+                          {/* ✅ NUEVO: subir documento directo desde la fila (sin abrir la ficha) */}
+                          <button
+                            className="btn-small ed-x34"
+                            title="Subir documento"
+                            style={{ color: '#fb923c' }}
+                            onClick={(e) => { e.stopPropagation(); setEmpresaDocs(emp); setMostrarSubirDoc(true); }}
+                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
+                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                          </button>
+
                           <button 
                             className="btn-small btn-danger ed-x36" 
                             title="Eliminar"
@@ -1270,16 +1285,20 @@ const EmpresasDashboard = () => {
       )}
 
       {/* MODAL SUBIR DOCUMENTOS (ligado a la empresa) */}
-      {empresaViendo && (
-        <DocumentoUploadModal
-          isOpen={mostrarSubirDoc}
-          onClose={() => setMostrarSubirDoc(false)}
-          coleccionOrigen="empresas"
-          registroId={empresaViendo.id ?? ''}
-          registroNombre={empresaViendo.nombre || ''}
-          tiposDocumento={TIPOS_DOCUMENTO_EMPRESA}
-        />
-      )}
+      {/* ✅ NUEVO: funciona desde la ficha O directo desde la fila de la tabla */}
+      {(empresaDocs || empresaViendo) && (() => {
+        const objetivo = empresaDocs || empresaViendo;
+        return (
+          <DocumentoUploadModal
+            isOpen={mostrarSubirDoc}
+            onClose={() => { setMostrarSubirDoc(false); setEmpresaDocs(null); }}
+            coleccionOrigen="empresas"
+            registroId={objetivo.id ?? ''}
+            registroNombre={objetivo.nombre || ''}
+            tiposDocumento={TIPOS_DOCUMENTO_EMPRESA}
+          />
+        );
+      })()}
 
       {/* NUEVO: panel lateral DERECHO de filtros (Empresas) */}
       {drawerFiltrosAbierto && (
