@@ -5,6 +5,7 @@ import { collection, getDocs, query, limit, orderBy, doc, updateDoc } from 'fire
 import { db } from '../../../../config/firebase';
 import { guardarMttoSeguro } from '../services/mttoService';
 import './FormularioMtto.css';
+import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
 
 // ✅ Helpers de folio (mismo formato que el dashboard: MTTO-DDMMYY-NNN).
 //    Se usan solo para MOSTRAR el folio normalizado al editar registros viejos;
@@ -90,7 +91,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     numeroGasto: 'Generando...', 
     invoice: '',
     estatus: 'No facturado',
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: hoyLocalISO(),
     tipoGasto: '',
     unidadId: '',
     operadorId: '',
@@ -176,7 +177,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
       }
       // ✅ FORMATO DDMMYY -> Ej: 2026-06-26 = "260626" (se parsea el string para evitar el
       // desfase de zona horaria que provoca new Date('YYYY-MM-DD') en husos negativos como MX)
-      const fechaStr = formData.fecha || new Date().toISOString().split('T')[0];
+      const fechaStr = formData.fecha || hoyLocalISO();
       const [yyyyStr = '', mmStr = '', ddStr = ''] = String(fechaStr).split('-');
       const yyyy = yyyyStr || String(new Date().getFullYear());
       const mm = (mmStr || '01').padStart(2, '0');

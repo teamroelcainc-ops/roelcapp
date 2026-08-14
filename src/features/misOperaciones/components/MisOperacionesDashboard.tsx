@@ -20,6 +20,7 @@ import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { useEstadoConexion } from '../../../hooks/useEstadoConexion';
 import { registrarLog } from '../../../utils/logger';
 import { nombreDeEmpleado } from '../../../utils/nombreEmpleado';
+import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 import { ChevronLeft, MapPin, Truck, CheckCircle2, Clock } from 'lucide-react';
 import './MisOperacionesDashboard.css';
 
@@ -72,12 +73,10 @@ const prefijoNumerico = (nombre: string): number => {
   return m ? Number(m[1]) : 999;
 };
 
-const horaLocalCorta = (): string => {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  // Mismo formato que el input datetime-local que usa tráfico en 'horarios'.
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
+// ✅ FIX: ahora usa la utilería central (respeta la zona horaria fija si se
+//    configura en src/utils/fechaHoraLocal.ts). Mismo formato que el input
+//    datetime-local que usa tráfico en 'horarios'.
+const horaLocalCorta = (): string => ahoraLocalISOCorto();
 
 export function MisOperacionesDashboard() {
   const usuario = useUsuarioStore((s) => s.usuario);

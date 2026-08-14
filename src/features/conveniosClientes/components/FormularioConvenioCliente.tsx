@@ -4,6 +4,7 @@ import { collection, getDocs, doc, writeBatch, query, where } from 'firebase/fir
 import { db } from '../../../config/firebase'; 
 import type { ConvenioClienteRecord, ConvenioDetalleRecord } from '../../../types/convenioCliente';
 import './FormularioConvenioCliente.css';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -133,7 +134,7 @@ interface FormProps {
 }
 
 export const FormularioConvenioCliente = ({ estado, initialData, registrosExistentes, onClose, onMinimize, onRestore }: FormProps) => {
-  const todayISO = new Date().toISOString().split('T')[0];
+  const todayISO = hoyLocalISO();
 
   const [formData, setFormData] = useState<ConvenioClienteRecord>({
     numeroConvenio: '',

@@ -30,6 +30,7 @@ import { generarRemisionPDF } from './generarRemisionPDF';
 import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 import './FacturacionClientesDashboard.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -438,7 +439,7 @@ export const FacturacionClientesDashboard = () => {
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
 
   const [invoiceForm, setInvoiceForm] = useState('');
-  const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaForm, setFechaForm] = useState(hoyLocalISO());
   const [facturaCcpForm, setFacturaCcpForm] = useState('');
   const [statusFacturaForm, setStatusFacturaForm] = useState<string>('Facturado');
 
@@ -1337,7 +1338,7 @@ export const FacturacionClientesDashboard = () => {
 
     try {
       await exportarExcelProfesional({
-        nombreArchivo: `Facturacion_Operaciones_${vistaTxt}_${cliFile}_${new Date().toISOString().split('T')[0]}.xlsx`,
+        nombreArchivo: `Facturacion_Operaciones_${vistaTxt}_${cliFile}_${hoyLocalISO()}.xlsx`,
         tituloReporte: 'Reporte de Facturación · Operaciones',
         subtitulo: `${vistaTxt}  ·  Cliente: ${cliTxt}  ·  ${rangoTxt}  ·  ${filas.length} operaciones`,
         nombreHoja: 'Operaciones',
@@ -2184,7 +2185,7 @@ export const FacturacionClientesDashboard = () => {
 
     try {
       await exportarExcelProfesional({
-        nombreArchivo: `Facturas_Clientes_${new Date().toISOString().split('T')[0]}.xlsx`,
+        nombreArchivo: `Facturas_Clientes_${hoyLocalISO()}.xlsx`,
         tituloReporte: 'Reporte de Facturación · Facturas',
         subtitulo: `${statusTxt}  ·  Cliente: ${cliTxt}  ·  ${rangoTxt}  ·  ${filas.length} facturas`,
         nombreHoja: 'Facturas',

@@ -22,6 +22,7 @@ import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import './ReferenciasNominaDashboard.css';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 const ID_CARGO_OPERADOR = 'edda3a2b';
 // ✅ IDs de status "completada" en el catálogo (los mismos que usa Facturación
@@ -151,7 +152,7 @@ export const ReferenciasNominaDashboard = () => {
   const [cargandoOpsFicha, setCargandoOpsFicha] = useState(false);
   const [pestanaModalNomina, setPestanaModalNomina] = useState<'general' | 'referencia' | 'deducciones' | 'totales'>('general');
 
-  const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaPago, setFechaPago] = useState(hoyLocalISO());
   const [formaPagoSeleccionada, setFormaPagoSeleccionada] = useState('');
   const [bancoSeleccionado, setBancoSeleccionado] = useState('');
   const [statusPagado, setStatusPagado] = useState<'Pendiente' | 'Pagada'>('Pendiente');
@@ -903,7 +904,7 @@ export const ReferenciasNominaDashboard = () => {
     const etiqueta = filtroEstadoOps === 'asignadas' ? 'Asignadas' : 'Pendientes';
     XLSX.utils.book_append_sheet(wb, ws, `Ops_${etiqueta}`);
     const ope = (filtroOperador || 'operador').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = hoyLocalISO();
     XLSX.writeFile(wb, `Operaciones_Nomina_${etiqueta}_${ope}_${hoy}.xlsx`);
   };
 
@@ -1261,7 +1262,7 @@ export const ReferenciasNominaDashboard = () => {
       setSeleccionadas(opsNorm.map((o: any) => o.id));
 
       setConsecutivoForm(getConsecutivoNomina(nom));
-      setFechaPago(nom.fechaPago ? (fechaISO(nom.fechaPago) || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0]);
+      setFechaPago(nom.fechaPago ? (fechaISO(nom.fechaPago) || hoyLocalISO()) : hoyLocalISO());
       setFechaInicio(nom.fechaInicio ? (fechaISO(nom.fechaInicio) || '') : '');
       setFechaFin(nom.fechaFin ? (fechaISO(nom.fechaFin) || '') : '');
       setExtras(nom.extras != null && nom.extras !== '' ? Number(nom.extras) : '');
@@ -1838,7 +1839,7 @@ export const ReferenciasNominaDashboard = () => {
     const worksheet = XLSX.utils.json_to_sheet(datosExcel);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Nominas');
-    XLSX.writeFile(workbook, `Historial_Nominas_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(workbook, `Historial_Nominas_${hoyLocalISO()}.xlsx`);
   };
 
   // Movimientos del operador (todas sus nóminas), en orden ascendente por fecha.
@@ -1915,7 +1916,7 @@ export const ReferenciasNominaDashboard = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Prestamos');
     const ope = (filtroOperador || 'operador').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
-    XLSX.writeFile(wb, `Prestamos_${ope}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `Prestamos_${ope}_${hoyLocalISO()}.xlsx`);
   };
 
   const exportarAhorroCSV = () => {
@@ -1934,7 +1935,7 @@ export const ReferenciasNominaDashboard = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Ahorro');
     const ope = (filtroOperador || 'operador').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
-    XLSX.writeFile(wb, `Ahorro_${ope}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `Ahorro_${ope}_${hoyLocalISO()}.xlsx`);
   };
 
   const tabStyle = (active: boolean) => ({

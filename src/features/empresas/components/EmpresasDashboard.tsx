@@ -9,6 +9,7 @@ import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
 import './EmpresasDashboard.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
+import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
 
 const opcionesFiltro = [
   'Todo', 'Proveedor (Servicios)', 'Empresa Inactiva', 'Baja', 'Cliente (Mercancía)', 
@@ -229,7 +230,7 @@ const EmpresasDashboard = () => {
 
   const [modalBajaAbierto, setModalBajaAbierto] = useState(false);
   const [empresaParaBaja, setEmpresaParaBaja] = useState<any | null>(null);
-  const [fechaBaja, setFechaBaja] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaBaja, setFechaBaja] = useState(hoyLocalISO());
   const [observacionesBaja, setObservacionesBaja] = useState('');
   const [guardandoBaja, setGuardandoBaja] = useState(false);
 
@@ -367,7 +368,7 @@ const EmpresasDashboard = () => {
         if (diffDays >= 91 && statusActual !== 'Baja') {
           batch.update(doc(db, 'empresas', emp.id), {
             status: 'Baja',
-            fechaBaja: hoy.toISOString().split('T')[0],
+            fechaBaja: fechaLocalISO(hoy),
             observacionesBaja: 'Sistema: Baja automática por inactividad mayor a 90 días (Semáforo Rojo).'
           });
           updates++;
@@ -459,7 +460,7 @@ const EmpresasDashboard = () => {
 
   const abrirModalBaja = (empresa: any) => {
     setEmpresaParaBaja(empresa);
-    setFechaBaja(new Date().toISOString().split('T')[0]);
+    setFechaBaja(hoyLocalISO());
     setObservacionesBaja('');
     setModalBajaAbierto(true);
   };
@@ -723,7 +724,7 @@ const EmpresasDashboard = () => {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Directorio_Empresas');
-    XLSX.writeFile(workbook, `Empresas_${excelFiltroTipo.replace(/ /g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(workbook, `Empresas_${excelFiltroTipo.replace(/ /g, '_')}_${hoyLocalISO()}.xlsx`);
     
     setModalExcelAbierto(false);
   };

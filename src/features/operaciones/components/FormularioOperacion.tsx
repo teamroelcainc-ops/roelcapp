@@ -18,6 +18,7 @@ import { EmployeeForm } from '../../empleados/components/EmployeeForm';
 import { CostosAdicionalesDashboard } from '../../costosAdicionales/CostosAdicionalesDashboard';
 import './FormularioOperacion.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // ✅ NUEVO: utilidades para el Historial de Actividad (historial_actividad).
 //   Nunca deben romper el guardado: los llamados a registrarLog van con .catch.
@@ -768,7 +769,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [formData, setFormData] = useState({
     tipoServicio: '', trafico: '', carga: '',
     tipoOperacionId: '',
-    fechaServicio: new Date().toISOString().split('T')[0],
+    fechaServicio: hoyLocalISO(),
     fechaCita: '',
     clientePaga: '', convenio: '', convenioNombre: '', numeroRemolque: '', refCliente: '',
     origen: '', destino: '', kilometrajeEstimado: '', observacionesEjecutivo: '',

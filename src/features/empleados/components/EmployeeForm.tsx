@@ -7,6 +7,7 @@ import { guardarEmpleadoConTransaccion } from '../../../services/employeeService
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion';
 import type { Employee } from '../../../types/empleado';
 import './EmployeeForm.css';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // Roles disponibles en la empresa
 const ROLES_DISPONIBLES = ['Administrador', 'Recursos Humanos', 'Operaciones', 'Contabilidad', 'Gerencia'];
@@ -163,7 +164,7 @@ interface Props {
 type TabKey = 'personales' | 'empresa' | 'operador' | 'herramientas';
 
 export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, onMinimize, onRestore }) => {
-  const todayISO = new Date().toISOString().split('T')[0];
+  const todayISO = hoyLocalISO();
   
   const estadoInicial: Employee & { fechaBaja?: string, observacionBaja?: string, observacionesEmpresa?: string } = {
     employeeId: 'Generando...', 

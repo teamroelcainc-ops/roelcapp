@@ -12,6 +12,7 @@ import {
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import './ReferenciasPuentesDashboard.css';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // ⚠ Si tu colección de convenios de clientes tiene otro nombre, cámbialo aquí.
 const COLECCION_CONVENIOS = 'convenios_clientes';
@@ -69,7 +70,7 @@ export const ReferenciasPuentesDashboard = () => {
   const [modalAbierto, setModalAbierto] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [consecutivoForm, setConsecutivoForm] = useState('');
-  const [fechaPago, setFechaPago] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaPago, setFechaPago] = useState(hoyLocalISO());
   const [statusPagado, setStatusPagado] = useState<'Pendiente' | 'Pagada'>('Pendiente');
   const [observacionesForm, setObservacionesForm] = useState('');
 
@@ -427,7 +428,7 @@ export const ReferenciasPuentesDashboard = () => {
     const wb = XLSX.utils.book_new();
     const etiqueta = filtroEstadoOps === 'asignadas' ? 'Asignadas' : 'Pendientes';
     XLSX.utils.book_append_sheet(wb, ws, `Puentes_${etiqueta}`);
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = hoyLocalISO();
     XLSX.writeFile(wb, `Operaciones_Puentes_${etiqueta}_${hoy}.xlsx`);
   };
 
@@ -637,7 +638,7 @@ export const ReferenciasPuentesDashboard = () => {
     const ws = XLSX.utils.json_to_sheet(datos);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Puentes');
-    XLSX.writeFile(wb, `Historial_Puentes_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(wb, `Historial_Puentes_${hoyLocalISO()}.xlsx`);
   };
 
   const tabStyle = (active: boolean) => ({

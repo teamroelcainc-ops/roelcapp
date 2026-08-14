@@ -17,6 +17,7 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import './ServiciosCancelados.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
+import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -604,9 +605,9 @@ const ServiciosCancelados = () => {
 
   // ✅ NUEVO: abrir el modal de registro retroactivo (fecha/hora personalizada)
   const abrirRegistroHorario = () => {
-    const now = new Date();
-    const tzOffset = now.getTimezoneOffset() * 60000;
-    const localISOTime = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+    // ✅ FIX: hora local real del dispositivo (o de la zona fija configurada),
+    //    sin el truco de tzOffset que dependía del UTC.
+    const localISOTime = ahoraLocalISOCorto();
     setNuevaFechaHora(localISOTime);
     setNuevoStatus(botonesDisponibles[0] || '');
     setModalHorarios('registrar');
@@ -693,9 +694,8 @@ const ServiciosCancelados = () => {
         .then(botones => setBotonesDisponibles(botones || []))
         .catch(() => { });
 
-      const now = new Date();
-      const tzOffset = now.getTimezoneOffset() * 60000;
-      const fechaHoraLocal = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+      // ✅ FIX: hora local consistente (ver src/utils/fechaHoraLocal.ts).
+      const fechaHoraLocal = ahoraLocalISOCorto();
       const registradoEn = new Date().toISOString();
 
       const batch = writeBatch(db);

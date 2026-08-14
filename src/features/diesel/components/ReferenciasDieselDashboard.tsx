@@ -19,6 +19,7 @@ import * as XLSX from 'xlsx';
 import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDiesel';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import './ReferenciasDieselDashboard.css';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
 // orden:true -> la cabecera es clicable para ordenar por ese campo.
@@ -224,8 +225,12 @@ export const ReferenciasDieselDashboard = () => {
   const [formEditRef, setFormEditRef] = useState<any>({ consecutivo: '', fecha: '', proveedorId: '', galonesExtras: '', galonesCargados: '', costoDiesel: '', observaciones: '' });
   const [guardandoEdicionRef, setGuardandoEdicionRef] = useState(false);
 
-  const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaForm, setFechaForm] = useState(hoyLocalISO());
   const [consecutivoForm, setConsecutivoForm] = useState('');
+  // ✅ NUEVO: OPERADOR de la referencia. Se precarga automáticamente con el
+  //   operador de las operaciones seleccionadas (uno solo -> su nombre;
+  //   varios -> "Varios"), pero el usuario lo puede cambiar en el formulario.
+  const [operadorForm, setOperadorForm] = useState('');
   // Galones Extras: editable (antes "Galones Autorizados")
   const [galonesExtras, setGalonesExtras] = useState<number | ''>('');
   // ✅ NUEVO: kilometraje REAL capturado al generar la referencia; se compara
@@ -907,7 +912,7 @@ export const ReferenciasDieselDashboard = () => {
     const etiqueta = filtroEstadoOps === 'cargadas' ? 'Cargadas' : 'Pendientes';
     XLSX.utils.book_append_sheet(wb, ws, `Ops_${etiqueta}`);
     const uni = (filtroUnidad || 'unidad').replace(/[^a-zA-Z0-9]+/g, '_').slice(0, 30);
-    const hoy = new Date().toISOString().split('T')[0];
+    const hoy = hoyLocalISO();
     XLSX.writeFile(wb, `Operaciones_Diesel_${etiqueta}_${uni}_${hoy}.xlsx`);
   };
 
@@ -952,6 +957,32 @@ export const ReferenciasDieselDashboard = () => {
     });
     return Array.from(set);
   }, [seleccionadas, operacionesGlobales, operadoresList]);
+
+  // ✅ NUEVO: valor sugerido del operador según las operaciones seleccionadas.
+  const operadorSugerido = useMemo(() => {
+    if (operadoresSeleccionados.length === 1) return operadoresSeleccionados[0];
+    if (operadoresSeleccionados.length > 1) return 'Varios';
+    return '';
+  }, [operadoresSeleccionados]);
+
+  // ✅ NUEVO: opciones del select de operador (empleados ordenados + "Varios").
+  const operadoresOptions = useMemo(() => {
+    const nombres = operadoresList
+      .map(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim())
+      .filter(Boolean);
+    // Se incluyen también los nombres detectados en las operaciones por si el
+    // registro del empleado ya no existe o el nombre no coincide exacto.
+    operadoresSeleccionados.forEach(n => nombres.push(n));
+    const unicos = Array.from(new Set(nombres)).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+    return unicos;
+  }, [operadoresList, operadoresSeleccionados]);
+
+  // ✅ NUEVO: al abrir el modal de Nueva Referencia se precarga el operador
+  //   sugerido (el usuario lo puede cambiar libremente después).
+  useEffect(() => {
+    if (modalAbierto) setOperadorForm(operadorSugerido);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalAbierto]);
 
   const galonesCalculadosOp = resumenSeleccion.dieselTotal;
 
@@ -1004,10 +1035,11 @@ export const ReferenciasDieselDashboard = () => {
         }
       }
 
-      const operadorRef = operadoresSeleccionados.length === 1
-        ? operadoresSeleccionados[0]
-        : (operadoresSeleccionados.length > 1 ? 'Varios' : '');
-      const foundOp = operadoresSeleccionados.length === 1
+      // ✅ NUEVO: se respeta el operador elegido en el formulario; si el campo
+      //   quedó vacío se usa el auto-detectado de las operaciones (comportamiento
+      //   anterior).
+      const operadorRef = (operadorForm || '').trim() || operadorSugerido;
+      const foundOp = operadorRef && operadorRef !== 'Varios'
         ? operadoresList.find(o => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim() === operadorRef.trim())
         : null;
 
@@ -1319,7 +1351,7 @@ export const ReferenciasDieselDashboard = () => {
     const worksheet = XLSX.utils.json_to_sheet(datosExcel);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Referencias Diesel');
-    XLSX.writeFile(workbook, `Referencias_Diesel_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(workbook, `Referencias_Diesel_${hoyLocalISO()}.xlsx`);
   };
 
   const tabStyle = (active: boolean) => ({
@@ -1743,6 +1775,20 @@ export const ReferenciasDieselDashboard = () => {
                     onChange={setProveedorSeleccionado}
                     resolverNombre={getNombreProveedor}
                   />
+                </div>
+                {/* ✅ NUEVO: OPERADOR (precargado con el de las operaciones seleccionadas, editable) */}
+                <div>
+                  <label className="rdd-x102">OPERADOR</label>
+                  <select className="rdd-x103" value={operadorForm} onChange={e => setOperadorForm(e.target.value)}>
+                    <option value="">— Sin operador —</option>
+                    {operadoresSeleccionados.length > 1 && <option value="Varios">Varios</option>}
+                    {operadoresOptions.map(nom => <option key={nom} value={nom}>{nom}</option>)}
+                  </select>
+                  {operadorSugerido && operadorForm !== operadorSugerido && (
+                    <span style={{ display: 'block', marginTop: '4px', fontSize: '0.75rem', color: '#f59e0b' }}>
+                      Sugerido por las operaciones: {operadorSugerido}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="rdd-x102">GALONES EXTRAS</label>

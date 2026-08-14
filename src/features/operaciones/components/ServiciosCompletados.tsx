@@ -14,6 +14,7 @@ import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOperacion';
 import './ServiciosCompletados.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
+import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -839,9 +840,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
 
   const abrirRegistroHorario = () => {
-    const now = new Date();
-    const tzOffset = now.getTimezoneOffset() * 60000;
-    const localISOTime = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+    // ✅ FIX: hora local real del dispositivo (o de la zona fija configurada),
+    //    sin el truco de tzOffset que dependía del UTC.
+    const localISOTime = ahoraLocalISOCorto();
     setNuevaFechaHora(localISOTime);
     setNuevoStatus(botonesDisponibles[0] || '');
     setModalHorarios('registrar');
@@ -931,9 +932,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         .then(botones => setBotonesDisponibles(botones || []))
         .catch(() => {});
 
-      const now = new Date();
-      const tzOffset = now.getTimezoneOffset() * 60000;
-      const fechaHoraLocal = (new Date(Date.now() - tzOffset)).toISOString().slice(0, 16);
+      // ✅ FIX: hora local consistente (ver src/utils/fechaHoraLocal.ts).
+      const fechaHoraLocal = ahoraLocalISOCorto();
       const registradoEn = new Date().toISOString();
 
       const batch = writeBatch(db);

@@ -6,6 +6,7 @@ import { db, actualizarRegistro } from '../../../config/firebase';
 import type { Moneda, CombustibleRecord } from '../../../types/combustible';
 import { getMonedasCatalogo, saveCombustible } from '../services/combustibleService';
 import './FormularioCombustible.css';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -103,7 +104,7 @@ export const FormularioCombustible: React.FC<FormProps> = ({
   onRestore = () => {}
 }) => {
   const [monedas, setMonedas] = useState<Moneda[]>([]);
-  const todayISO = new Date().toISOString().split('T')[0];
+  const todayISO = hoyLocalISO();
 
   const [fecha, setFecha] = useState<string>(todayISO);
   const [tipoCombustible, setTipoCombustible] = useState<'Gasolina' | 'Diesel'>('Diesel');

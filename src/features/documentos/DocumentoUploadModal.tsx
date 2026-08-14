@@ -8,17 +8,23 @@
 // • Registra la metadata en la colección UNIFICADA "documentos", LIGADA al
 //   registro de origen mediante { coleccionOrigen, registroId }.
 //
-// De esta forma el documento siempre queda conectado con el registro desde el
-// que se cargó (empleado, cliente, etc.). Para listar los documentos de un
-// registro basta con:
-//   where('coleccionOrigen','==','empleados') + where('registroId','==', <id>)
+// ✅ NUEVO — Integración con el catálogo `catalogo_tipo_archivo`:
+//   1. Al abrir el modal se carga el catálogo de Tipo de Archivo y el
+//      dropdown mezcla la lista fija del módulo con los tipos del catálogo
+//      cuyo Módulo corresponda (Empleado, Empresa, Unidad, Operación, etc.).
+//   2. El apartado "¿Vence?" YA NO es un toggle manual: se muestra únicamente
+//      si el tipo seleccionado tiene Vence = "Sí" en el catálogo. Si el
+//      catálogo dice "No" o no tiene nada marcado, el apartado NO aparece y
+//      el documento se guarda con vence=false.
+//   3. Botón "+" junto al select para dar de alta un tipo de archivo nuevo
+//      DIRECTO en `catalogo_tipo_archivo` sin salir del formulario.
 //
 // Ejemplos de uso:
 //   <DocumentoUploadModal coleccionOrigen="empleados" registroId={emp.id} registroNombre="Juan Pérez" ... />
-//   <DocumentoUploadModal coleccionOrigen="clientes"  registroId={cli.id} registroNombre="ACME SA de CV" ... />
+//   <DocumentoUploadModal coleccionOrigen="empresas"  registroId={cli.id} registroNombre="ACME SA de CV" ... />
 
-import React, { useState } from 'react';
-import { doc, setDoc } from 'firebase/firestore';
+import React, { useEffect, useMemo, useState } from 'react';
+import { addDoc, collection, doc, getDocs, setDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
 import './DocumentoUploadModal.css';
@@ -32,11 +38,67 @@ const TIPOS_DOCUMENTO_DEFAULT = [
   '5. Otro',
 ];
 
+// Opciones de Módulo — deben coincidir con las del catálogo `tipo_archivo`
+// definido en catalogSchemas.tsx.
+const MODULOS_TIPO_ARCHIVO = ['Empleado', 'Cliente', 'Proveedor', 'Bodega', 'Empresa', 'Operación', 'Unidad', 'Otro'];
+
+// Mapea la colección de origen a los Módulos del catálogo que le aplican.
+// (Las empresas engloban clientes y proveedores en esta app.)
+const MODULOS_POR_COLECCION: Record<string, string[]> = {
+  empleados: ['Empleado'],
+  empresas: ['Empresa', 'Cliente', 'Proveedor'],
+  clientes: ['Cliente'],
+  proveedores: ['Proveedor'],
+  operaciones: ['Operación'],
+  unidades: ['Unidad'],
+  bodegas: ['Bodega'],
+};
+
 // Quita caracteres no válidos para rutas de Storage
 const sanitizarRuta = (s: string) =>
   String(s || '').trim().replace(/[\/\\:*?"<>|#]+/g, '').replace(/\s+/g, ' ').trim();
 // Subcarpeta = nombre del documento sin el prefijo numérico ("16. " -> "Contrato Laboral")
 const nombreSubcarpetaDoc = (label: string) => sanitizarRuta(String(label).replace(/^\d+\.\s*/, ''));
+
+// Normaliza texto para comparar (sin acentos, minúsculas, espacios simples).
+const normTexto = (s: any): string =>
+  String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+// Interpreta el campo `vence` del catálogo: SOLO "Sí" (o equivalentes) activa
+// el apartado de vencimiento; "No", vacío o sin marcar => NO se muestra.
+const esVenceSi = (valor: any): boolean => {
+  if (valor === true || valor === 1) return true;
+  const v = normTexto(valor);
+  return v === 'si' || v === '1' || v === 'true';
+};
+
+// El campo `modulo` del catálogo puede venir como string, string con comas
+// ("Cliente , Proveedor , Empleado") o array. Devuelve la lista normalizada.
+const modulosDeRegistro = (valor: any): string[] => {
+  if (Array.isArray(valor)) return valor.map(normTexto).filter(Boolean);
+  return String(valor ?? '').split(',').map(normTexto).filter(Boolean);
+};
+
+// Orden natural por prefijo numérico ("1.", "1.1", "10.") y después alfabético.
+const ordenarTipos = (a: string, b: string): number => {
+  const pa = String(a).match(/^(\d+(?:\.\d+)?)/);
+  const pb = String(b).match(/^(\d+(?:\.\d+)?)/);
+  if (pa && pb) {
+    const na = parseFloat(pa[1]);
+    const nb = parseFloat(pb[1]);
+    if (na !== nb) return na - nb;
+  } else if (pa) return -1;
+  else if (pb) return 1;
+  return a.localeCompare(b, 'es', { numeric: true, sensitivity: 'base' });
+};
+
+interface TipoArchivoCatalogo {
+  id: string;
+  nombre: string;
+  modulos: string[];   // normalizados
+  vence: boolean;      // true SOLO si el catálogo dice "Sí"
+  obligatorio?: string;
+}
 
 interface DocumentoUploadModalProps {
   isOpen: boolean;
@@ -51,15 +113,101 @@ interface DocumentoUploadModalProps {
 export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
   isOpen, onClose, coleccionOrigen, registroId, registroNombre, tiposDocumento, onUploaded,
 }) => {
-  const tipos = (tiposDocumento && tiposDocumento.length > 0) ? tiposDocumento : TIPOS_DOCUMENTO_DEFAULT;
-  const [tipoDoc, setTipoDoc] = useState(tipos[0]);
+  const tiposBase = (tiposDocumento && tiposDocumento.length > 0) ? tiposDocumento : TIPOS_DOCUMENTO_DEFAULT;
+  const [tipoDoc, setTipoDoc] = useState(tiposBase[0]);
   const [archivo, setArchivo] = useState<File | null>(null);
   const [arrastrando, setArrastrando] = useState(false);
-  const [vence, setVence] = useState(false);
   const [fechaExpedicion, setFechaExpedicion] = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
   const [observaciones, setObservaciones] = useState('');
   const [subiendo, setSubiendo] = useState(false);
+
+  // ✅ NUEVO: catálogo de Tipo de Archivo cargado de Firestore.
+  const [catalogoTipos, setCatalogoTipos] = useState<TipoArchivoCatalogo[]>([]);
+  const [cargandoCatalogo, setCargandoCatalogo] = useState(false);
+
+  // ✅ NUEVO: mini-formulario para dar de alta un tipo de archivo desde aquí.
+  const modulosSugeridos = MODULOS_POR_COLECCION[normTexto(coleccionOrigen)] || ['Otro'];
+  const [mostrarNuevoTipo, setMostrarNuevoTipo] = useState(false);
+  const [nuevoTipoNombre, setNuevoTipoNombre] = useState('');
+  const [nuevoTipoModulo, setNuevoTipoModulo] = useState(modulosSugeridos[0]);
+  const [nuevoTipoObligatorio, setNuevoTipoObligatorio] = useState<'Sí' | 'No'>('No');
+  const [nuevoTipoVence, setNuevoTipoVence] = useState<'Sí' | 'No'>('No');
+  const [guardandoTipo, setGuardandoTipo] = useState(false);
+
+  // Carga (o recarga) el catálogo `catalogo_tipo_archivo`.
+  const cargarCatalogoTipos = async () => {
+    setCargandoCatalogo(true);
+    try {
+      const snap = await getDocs(collection(db, 'catalogo_tipo_archivo'));
+      const tipos: TipoArchivoCatalogo[] = snap.docs.map(d => {
+        const data = d.data() as any;
+        return {
+          id: d.id,
+          nombre: String(data.nombre || '').trim(),
+          modulos: modulosDeRegistro(data.modulo),
+          vence: esVenceSi(data.vence),
+          obligatorio: data.obligatorio,
+        };
+      }).filter(t => t.nombre);
+      setCatalogoTipos(tipos);
+    } catch (e) {
+      console.warn('No se pudo cargar catalogo_tipo_archivo (se usa la lista fija):', e);
+    }
+    setCargandoCatalogo(false);
+  };
+
+  useEffect(() => {
+    if (isOpen) cargarCatalogoTipos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // Tipos del catálogo que aplican al módulo actual.
+  const tiposCatalogoModulo = useMemo(() => {
+    const modsBuscados = modulosSugeridos.map(normTexto);
+    return catalogoTipos.filter(t =>
+      t.modulos.length === 0 || t.modulos.some(m => modsBuscados.includes(m))
+    );
+  }, [catalogoTipos, modulosSugeridos]);
+
+  // Dropdown final: lista fija del módulo + tipos del catálogo (sin duplicados,
+  // comparando sin acentos ni prefijo numérico).
+  const tipos = useMemo(() => {
+    const vistos = new Set<string>();
+    const resultado: string[] = [];
+    const agregar = (nombre: string) => {
+      const clave = normTexto(nombreSubcarpetaDoc(nombre));
+      if (!clave || vistos.has(clave)) return;
+      vistos.add(clave);
+      resultado.push(nombre);
+    };
+    tiposBase.forEach(agregar);
+    tiposCatalogoModulo.forEach(t => agregar(t.nombre));
+    return resultado.sort(ordenarTipos);
+  }, [tiposBase, tiposCatalogoModulo]);
+
+  // Si el tipo seleccionado desapareció de la lista (cambio de módulo), se
+  // regresa al primero disponible.
+  useEffect(() => {
+    if (tipos.length > 0 && !tipos.includes(tipoDoc)) setTipoDoc(tipos[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tipos]);
+
+  // Registro del catálogo que corresponde al tipo seleccionado (por nombre,
+  // tolerante a acentos y al prefijo numérico).
+  const registroCatalogoSeleccionado = useMemo(() => {
+    const claveSel = normTexto(nombreSubcarpetaDoc(tipoDoc));
+    return catalogoTipos.find(t => normTexto(nombreSubcarpetaDoc(t.nombre)) === claveSel) || null;
+  }, [catalogoTipos, tipoDoc]);
+
+  // ✅ REGLA NUEVA (puntos 2 y 3): el apartado de vencimiento SOLO se muestra
+  //   si el catálogo marca Vence = "Sí" para el tipo seleccionado.
+  const vence = registroCatalogoSeleccionado ? registroCatalogoSeleccionado.vence : false;
+
+  // Al cambiar a un tipo que NO vence se limpian las fechas capturadas.
+  useEffect(() => {
+    if (!vence) { setFechaExpedicion(''); setFechaVencimiento(''); }
+  }, [vence]);
 
   if (!isOpen) return null;
 
@@ -77,11 +225,44 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
     color: activo ? '#fff' : '#8b949e', transition: 'all 0.15s ease',
   });
 
+  // ✅ NUEVO (punto 4): alta de un Tipo de Archivo directo en el catálogo.
+  const handleGuardarNuevoTipo = async () => {
+    const nombre = nuevoTipoNombre.trim();
+    if (!nombre) { alert('Escribe el nombre del tipo de archivo.'); return; }
+    const claveNueva = normTexto(nombreSubcarpetaDoc(nombre));
+    const yaExiste = catalogoTipos.some(t => normTexto(nombreSubcarpetaDoc(t.nombre)) === claveNueva)
+      || tiposBase.some(t => normTexto(nombreSubcarpetaDoc(t)) === claveNueva);
+    if (yaExiste) { alert('Ya existe un tipo de archivo con ese nombre.'); return; }
+
+    setGuardandoTipo(true);
+    try {
+      await addDoc(collection(db, 'catalogo_tipo_archivo'), {
+        nombre,
+        modulo: nuevoTipoModulo,
+        obligatorio: nuevoTipoObligatorio,
+        vence: nuevoTipoVence,
+        createdAt: new Date().toISOString(),
+        creadoDesde: `formulario_documentos_${coleccionOrigen}`,
+      });
+      await cargarCatalogoTipos();
+      setTipoDoc(nombre);
+      setMostrarNuevoTipo(false);
+      setNuevoTipoNombre('');
+      setNuevoTipoObligatorio('No');
+      setNuevoTipoVence('No');
+      setNuevoTipoModulo(modulosSugeridos[0]);
+    } catch (e: any) {
+      console.error('Error creando tipo de archivo:', e);
+      alert('No se pudo crear el tipo de archivo.\n\nDetalle: ' + (e?.message || e));
+    }
+    setGuardandoTipo(false);
+  };
+
   const handleSubir = async () => {
     if (!archivo) { alert('Selecciona un archivo.'); return; }
     if (!registroId) { alert('No se puede ligar el documento: falta el identificador del registro de origen.'); return; }
     if (vence && (!fechaExpedicion || !fechaVencimiento)) {
-      alert('Como el documento vence, debes indicar la fecha de expedición y la de vencimiento.');
+      alert('Este tipo de documento vence (según el catálogo): debes indicar la fecha de expedición y la de vencimiento.');
       return;
     }
     setSubiendo(true);
@@ -120,7 +301,6 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
       alert('Documento subido correctamente.');
       setArchivo(null);
       setObservaciones('');
-      setVence(false);
       setFechaExpedicion('');
       setFechaVencimiento('');
       onUploaded?.();
@@ -148,10 +328,70 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
 
           <div style={filaStyle}>
             <label style={labelStyle}>Tipo de archivo</label>
-            <select value={tipoDoc} onChange={(e) => setTipoDoc(e.target.value)} style={inputStyle}>
-              {tipos.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <select value={tipoDoc} onChange={(e) => setTipoDoc(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+                {tipos.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              {/* ✅ NUEVO: alta de tipo de archivo directo desde el formulario */}
+              <button
+                type="button"
+                title="Agregar un tipo de archivo nuevo al catálogo"
+                onClick={() => setMostrarNuevoTipo(v => !v)}
+                style={{
+                  flexShrink: 0, width: '38px', height: '38px', borderRadius: '8px', cursor: 'pointer',
+                  border: mostrarNuevoTipo ? '1px solid #D84315' : '1px solid #30363d',
+                  backgroundColor: mostrarNuevoTipo ? 'rgba(216,67,21,0.15)' : '#161b22',
+                  color: mostrarNuevoTipo ? '#D84315' : '#c9d1d9', fontSize: '1.15rem', fontWeight: 700,
+                }}
+              >+</button>
+            </div>
           </div>
+
+          {cargandoCatalogo && (
+            <div className="dum-x9" style={{ fontSize: '0.75rem', marginTop: '-12px' }}>Cargando catálogo de tipos de archivo…</div>
+          )}
+
+          {/* ✅ NUEVO: mini-formulario de alta en catalogo_tipo_archivo */}
+          {mostrarNuevoTipo && (
+            <div style={{ border: '1px dashed #D84315', borderRadius: '10px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '12px', backgroundColor: 'rgba(216,67,21,0.05)' }}>
+              <div style={{ color: '#f0f6fc', fontWeight: 600, fontSize: '0.9rem' }}>Nuevo tipo de archivo (se guarda en el catálogo)</div>
+              <div style={filaStyle}>
+                <label style={labelStyle}>Nombre</label>
+                <input style={inputStyle} type="text" value={nuevoTipoNombre} onChange={(e) => setNuevoTipoNombre(e.target.value)} placeholder='Ej. "21. Carta Responsiva"' />
+              </div>
+              <div style={filaStyle}>
+                <label style={labelStyle}>Módulo</label>
+                <select style={inputStyle} value={nuevoTipoModulo} onChange={(e) => setNuevoTipoModulo(e.target.value)}>
+                  {MODULOS_TIPO_ARCHIVO.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div style={filaStyle}>
+                <label style={labelStyle}>Obligatorio</label>
+                <div className="dum-x13">
+                  <button type="button" onClick={() => setNuevoTipoObligatorio('No')} style={segBtn(nuevoTipoObligatorio === 'No', '#30363d')}>No</button>
+                  <button type="button" onClick={() => setNuevoTipoObligatorio('Sí')} style={segBtn(nuevoTipoObligatorio === 'Sí', '#D84315')}>Sí</button>
+                </div>
+              </div>
+              <div style={filaStyle}>
+                <label style={labelStyle}>¿Vence?</label>
+                <div className="dum-x13">
+                  <button type="button" onClick={() => setNuevoTipoVence('No')} style={segBtn(nuevoTipoVence === 'No', '#30363d')}>No</button>
+                  <button type="button" onClick={() => setNuevoTipoVence('Sí')} style={segBtn(nuevoTipoVence === 'Sí', '#D84315')}>Sí</button>
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" className="btn btn-outline dum-x15" disabled={guardandoTipo} onClick={() => setMostrarNuevoTipo(false)}>Cancelar</button>
+                <button
+                  type="button"
+                  onClick={handleGuardarNuevoTipo}
+                  disabled={guardandoTipo}
+                  style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', backgroundColor: guardandoTipo ? '#21262d' : '#D84315', color: guardandoTipo ? '#6e7681' : '#fff', fontWeight: 'bold', cursor: guardandoTipo ? 'not-allowed' : 'pointer' }}
+                >
+                  {guardandoTipo ? 'Guardando…' : 'Guardar Tipo'}
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={filaStyle}>
             <label style={labelStyle}>Archivo</label>
@@ -173,16 +413,16 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
             </label>
           </div>
 
-          <div style={filaStyle}>
-            <label style={labelStyle}>¿Vence?</label>
-            <div className="dum-x13">
-              <button type="button" onClick={() => setVence(false)} style={segBtn(!vence, '#30363d')}>No</button>
-              <button type="button" onClick={() => setVence(true)} style={segBtn(vence, '#D84315')}>Si</button>
-            </div>
-          </div>
-
+          {/* ✅ REGLA NUEVA: el apartado de vencimiento se muestra SOLO si el
+              catálogo marca Vence = "Sí" para el tipo seleccionado. */}
           {vence && (
             <>
+              <div style={{ ...filaStyle, alignItems: 'center' }}>
+                <label style={labelStyle}>Vencimiento</label>
+                <span style={{ color: '#D84315', fontSize: '0.8rem', fontWeight: 600 }}>
+                  Este tipo de documento vence (definido en el catálogo de Tipo de Archivo).
+                </span>
+              </div>
               <div style={filaStyle}>
                 <label style={labelStyle}>Fecha de expedición</label>
                 <input type="date" value={fechaExpedicion} onChange={(e) => setFechaExpedicion(e.target.value)} style={inputStyle} />

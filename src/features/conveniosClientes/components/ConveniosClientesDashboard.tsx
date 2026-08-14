@@ -6,6 +6,7 @@ import { registrarLog } from '../../../utils/logger';
 // ✅ NUEVO (Cambio 1): helper cacheado para resolver tipoConvenioId → descripcion
 import { obtenerTarifasReferencia } from '../services/tarifasReferenciaService';
 import './ConveniosClientesDashboard.css';
+import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
 
 // ============================================================
 // HELPERS DE CRUCE (NORMALIZACIÓN)
@@ -50,7 +51,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
 
   const [modalBajaAbierto, setModalBajaAbierto] = useState(false);
   const [convenioParaBaja, setConvenioParaBaja] = useState<any | null>(null);
-  const [fechaBaja, setFechaBaja] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaBaja, setFechaBaja] = useState(hoyLocalISO());
   const [observacionesBaja, setObservacionesBaja] = useState('');
   const [guardandoBaja, setGuardandoBaja] = useState(false);
 
@@ -240,7 +241,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
         if (diffDays > 90 && statusActual === 'Activo') {
           batch.update(doc(db, 'convenios_clientes', reg.id), {
             status: 'Baja',
-            fechaBaja: hoy.toISOString().split('T')[0],
+            fechaBaja: fechaLocalISO(hoy),
             observacionesBaja: 'Sistema: Baja automática por inactividad mayor a 90 días (Semáforo Rojo).'
           });
           updates++;
@@ -417,7 +418,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
 
   const abrirModalBaja = (convenio: any) => {
     setConvenioParaBaja(convenio);
-    setFechaBaja(new Date().toISOString().split('T')[0]);
+    setFechaBaja(hoyLocalISO());
     setObservacionesBaja('');
     setModalBajaAbierto(true);
   };
@@ -514,7 +515,7 @@ export const ConveniosClientesDashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Convenios_Clientes_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Convenios_Clientes_${hoyLocalISO()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

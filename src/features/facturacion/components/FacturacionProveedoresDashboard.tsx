@@ -43,6 +43,7 @@ import { getAuth } from 'firebase/auth';
 import { registrarLog } from '../../../utils/logger';
 import './FacturacionProveedoresDashboard.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // ──────────────────────────────────────────────────────────────────────
 // Constantes
@@ -462,7 +463,7 @@ export const FacturacionProveedoresDashboard = () => {
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
 
   const [invoiceForm, setInvoiceForm] = useState('');
-  const [fechaForm, setFechaForm] = useState(new Date().toISOString().split('T')[0]);
+  const [fechaForm, setFechaForm] = useState(hoyLocalISO());
   const [facturaCcpForm, setFacturaCcpForm] = useState('');
   const [statusFacturaForm, setStatusFacturaForm] = useState<string>('Facturado');
 
@@ -2045,7 +2046,7 @@ export const FacturacionProveedoresDashboard = () => {
 
     try {
       await exportarExcelProfesional({
-        nombreArchivo: `Facturacion_Proveedores_${vistaTxt}_${provFile}_${new Date().toISOString().split('T')[0]}.xlsx`,
+        nombreArchivo: `Facturacion_Proveedores_${vistaTxt}_${provFile}_${hoyLocalISO()}.xlsx`,
         tituloReporte: 'Reporte de Facturación · Operaciones (Proveedores)',
         subtitulo: `${vistaTxt}  ·  Proveedor: ${provTxt}  ·  ${rangoTxt}  ·  ${filas.length} operaciones`,
         nombreHoja: 'Operaciones',
@@ -2839,7 +2840,7 @@ export const FacturacionProveedoresDashboard = () => {
     const worksheet = XLSX.utils.json_to_sheet(datosExcel);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Facturas_Proveedores');
-    XLSX.writeFile(workbook, `Facturas_Proveedores_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.writeFile(workbook, `Facturas_Proveedores_${hoyLocalISO()}.xlsx`);
   };
 
   const handleDragStart = (_e: React.DragEvent, index: number) => setDraggedColIndex(index);
