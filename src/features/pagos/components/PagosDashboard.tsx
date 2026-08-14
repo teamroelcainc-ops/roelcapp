@@ -252,6 +252,7 @@ export function PagosDashboard() {
     setGenerandoReporte(true);
     try {
       const lista = (await cargarFacturasPendientes(tab))
+        .filter((f) => f.saldo > 0.009) // el reporte sigue siendo SOLO de pendientes
         .sort((a, b) => a.entidadNombre.localeCompare(b.entidadNombre) || claveFecha(a.fecha).localeCompare(claveFecha(b.fecha)));
       if (lista.length === 0) { alert('No hay facturas pendientes.'); return; }
       const hoja = lista.map((f) => ({
@@ -279,6 +280,7 @@ export function PagosDashboard() {
     setGenerandoReporte(true);
     try {
       const lista = (await cargarFacturasPendientes(tab))
+        .filter((f) => f.saldo > 0.009) // el reporte sigue siendo SOLO de pendientes
         .sort((a, b) => a.entidadNombre.localeCompare(b.entidadNombre) || claveFecha(a.fecha).localeCompare(claveFecha(b.fecha)));
       if (lista.length === 0) { alert('No hay facturas pendientes.'); return; }
       await generarPDFDeTabla(
@@ -361,7 +363,11 @@ export function PagosDashboard() {
           moneda: String(raw.monedaFacturacion || raw.monedaProveedor || raw.moneda || monedaPorId || ''),
         };
       })
-      .filter((f) => f.total > 0 && f.saldo > 0.009);
+      // ✅ CAMBIO: ya NO se excluyen las facturas pagadas — el usuario pidió ver
+      //   TODAS las facturas del cliente/proveedor (las pagadas se muestran
+      //   bloqueadas en el modal). Solo se descartan documentos sin monto
+      //   (docs secundarios de facturas agrupadas que traen subtotal 0).
+      .filter((f) => f.total > 0);
   };
 
   // ── Cargar facturas con saldo pendiente al abrir el modal ──
@@ -391,12 +397,15 @@ export function PagosDashboard() {
     }
   };
 
-  // Entidades (clientes/proveedores) con facturas pendientes.
+  // Entidades (clientes/proveedores) con facturas.
+  // ✅ CAMBIO: se listan TODAS las facturas de la entidad (pagadas incluidas);
+  //   `conSaldo` indica cuántas siguen abiertas.
   const entidades = useMemo(() => {
-    const mapa = new Map<string, { nombre: string; cuantas: number; saldo: number }>();
+    const mapa = new Map<string, { nombre: string; cuantas: number; conSaldo: number; saldo: number }>();
     facturasPendientes.forEach((f) => {
-      const prev = mapa.get(f.entidadNombre) || { nombre: f.entidadNombre, cuantas: 0, saldo: 0 };
+      const prev = mapa.get(f.entidadNombre) || { nombre: f.entidadNombre, cuantas: 0, conSaldo: 0, saldo: 0 };
       prev.cuantas += 1;
+      if (f.saldo > 0.009) prev.conSaldo += 1;
       prev.saldo += f.saldo;
       mapa.set(f.entidadNombre, prev);
     });
@@ -476,6 +485,8 @@ export function PagosDashboard() {
 
   const toggleFactura = (id: string) => {
     const factura = facturasDeEntidad.find((f) => f.id === id);
+    // ✅ Las facturas PAGADAS se muestran pero no se pueden seleccionar.
+    if (factura && factura.saldo <= 0.009) return;
     const ya = facturasSel.includes(id);
     // ⚠️ Dos setState INDEPENDIENTES (nunca uno dentro del updater del otro:
     //   React 19 lo considera efecto impuro y desmonta el árbol).
@@ -491,7 +502,8 @@ export function PagosDashboard() {
   const toggleTodas = () => {
     // Opera sobre las VISIBLES (respeta el filtro de búsqueda), conservando
     // las selecciones que el filtro tenga ocultas.
-    const idsVisibles = facturasVisibles.map((f) => f.id);
+    // ✅ Solo entran las que tienen saldo abierto (las pagadas se ignoran).
+    const idsVisibles = facturasVisibles.filter((f) => f.saldo > 0.009).map((f) => f.id);
     const todas = idsVisibles.length > 0 && idsVisibles.every((id) => facturasSel.includes(id));
     if (todas) {
       setFacturasSel(facturasSel.filter((id) => !idsVisibles.includes(id)));
@@ -504,7 +516,7 @@ export function PagosDashboard() {
       setFacturasSel(Array.from(new Set([...facturasSel, ...idsVisibles])));
       setPagosPorFactura((pp) => ({
         ...pp,
-        ...Object.fromEntries(facturasVisibles.map((f) => [f.id, pp[f.id] ?? f.saldo.toFixed(2)])),
+        ...Object.fromEntries(facturasVisibles.filter((f) => f.saldo > 0.009).map((f) => [f.id, pp[f.id] ?? f.saldo.toFixed(2)])),
       }));
     }
   };
@@ -806,11 +818,11 @@ export function PagosDashboard() {
 
             <div className="pg-modal-cuerpo">
               {cargandoFacturas ? (
-                <p className="pg-vacio">Cargando facturas pendientes…</p>
+                <p className="pg-vacio">Cargando facturas…</p>
               ) : !entidadSel ? (
                 <>
                   {/* PASO 1: elegir cliente/proveedor con facturas pendientes */}
-                  <label className="pg-etq">1. Elige {tab === 'cliente' ? 'el cliente' : 'el proveedor'} (solo aparecen los que tienen facturas con saldo)</label>
+                  <label className="pg-etq">1. Elige {tab === 'cliente' ? 'el cliente' : 'el proveedor'} (se muestran TODAS sus facturas; las pagadas aparecen bloqueadas)</label>
                   <div className="pg-buscador">
                     <Search size={15} />
                     <input
@@ -822,14 +834,14 @@ export function PagosDashboard() {
                     />
                   </div>
                   {entidadesFiltradas.length === 0 ? (
-                    <p className="pg-vacio">No hay facturas con saldo pendiente{busquedaEntidad ? ' para esa búsqueda' : ''}.</p>
+                    <p className="pg-vacio">No hay facturas{busquedaEntidad ? ' para esa búsqueda' : ''}.</p>
                   ) : (
                     <ul className="pg-lista-entidades">
                       {entidadesFiltradas.map((e) => (
                         <li key={e.nombre}>
                           <button onClick={() => { setEntidadSel(e.nombre); setFacturasSel([]); }}>
                             <span className="pg-entidad">{e.nombre}</span>
-                            <span className="pg-entidad-info">{e.cuantas} factura(s) · saldo {money(e.saldo)}</span>
+                            <span className="pg-entidad-info">{e.cuantas} factura(s) · {e.conSaldo} con saldo · {money(e.saldo)}</span>
                           </button>
                         </li>
                       ))}
@@ -918,7 +930,7 @@ export function PagosDashboard() {
                       <thead>
                         <tr>
                           <th className="pg-col-check">
-                            <input type="checkbox" checked={facturasVisibles.length > 0 && facturasVisibles.every(f => facturasSel.includes(f.id))} onChange={toggleTodas} title="Seleccionar todas las visibles" />
+                            <input type="checkbox" checked={facturasVisibles.some(f => f.saldo > 0.009) && facturasVisibles.filter(f => f.saldo > 0.009).every(f => facturasSel.includes(f.id))} onChange={toggleTodas} title="Seleccionar todas las visibles con saldo" />
                           </th>
                           <th>DESCRIPCIÓN</th><th>FECHA</th><th>MONTO ORIGINAL</th><th>SALDO ABIERTO</th><th>MONEDA</th><th className="pg-col-pago-th">PAGO</th>
                         </tr>
@@ -926,15 +938,17 @@ export function PagosDashboard() {
                       <tbody>
                         {facturasVisibles.length === 0 ? (
                           <tr><td colSpan={7} className="pg-vacio">Sin facturas para "{busquedaFactura}".</td></tr>
-                        ) : facturasVisibles.map((f) => (
-                          <tr key={f.id} className="pg-fila" onClick={() => toggleFactura(f.id)}>
+                        ) : facturasVisibles.map((f) => {
+                          const pagada = f.saldo <= 0.009; // ✅ visible pero bloqueada
+                          return (
+                          <tr key={f.id} className="pg-fila" onClick={() => toggleFactura(f.id)} style={pagada ? { opacity: 0.55, cursor: 'default' } : undefined}>
                             <td className="pg-col-check" onClick={(e) => e.stopPropagation()}>
-                              <input type="checkbox" checked={facturasSel.includes(f.id)} onChange={() => toggleFactura(f.id)} />
+                              <input type="checkbox" checked={facturasSel.includes(f.id)} disabled={pagada} onChange={() => toggleFactura(f.id)} title={pagada ? 'Factura pagada' : undefined} />
                             </td>
                             <td><span className="pg-numero">Factura # {f.invoice}</span> <span className="pg-desc-fecha">({f.fecha})</span></td>
                             <td>{f.fecha}</td>
                             <td>{money(f.total)}</td>
-                            <td className="pg-monto">{money(f.saldo)}</td>
+                            <td className={pagada ? 'pg-pagada' : 'pg-monto'}>{pagada ? 'PAGADA' : money(f.saldo)}</td>
                             <td>{f.moneda || '—'}</td>
                             <td className="pg-col-pago" onClick={(e) => e.stopPropagation()}>
                               <input
@@ -943,15 +957,16 @@ export function PagosDashboard() {
                                 step="0.01"
                                 max={f.saldo}
                                 className="pg-input-pago"
-                                disabled={!facturasSel.includes(f.id)}
+                                disabled={pagada || !facturasSel.includes(f.id)}
                                 value={facturasSel.includes(f.id) ? (pagosPorFactura[f.id] ?? '') : ''}
                                 onChange={(e) => cambiarPagoFactura(f.id, e.target.value)}
                                 placeholder={facturasSel.includes(f.id) ? '0.00' : '—'}
-                                title={`Máximo: ${money(f.saldo)}`}
+                                title={pagada ? 'Factura pagada' : `Máximo: ${money(f.saldo)}`}
                               />
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
