@@ -13,6 +13,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   collection, query, where, getDocs, onSnapshot, writeBatch, doc, arrayUnion, arrayRemove, limit,
+  orderBy, startAfter, documentId,
 } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../../config/firebase';
@@ -20,6 +21,7 @@ import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { registrarLog } from '../../../utils/logger';
+import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { Plus, FileText, Trash2, X, Search, Download } from 'lucide-react';
 import './PagosDashboard.css';
 
@@ -80,7 +82,8 @@ const claveFecha = (f: string): string => {
   return s;
 };
 
-const hoyISO = () => new Date().toISOString().slice(0, 10);
+// ✅ FIX: fecha local (antes usaba UTC y por la tarde/noche proponía la fecha de mañana).
+const hoyISO = () => hoyLocalISO();
 
 export function PagosDashboard() {
   const usuario = useUsuarioStore((s) => s.usuario);
@@ -295,30 +298,70 @@ export function PagosDashboard() {
   };
 
   // ── Cargador de facturas con saldo pendiente (modal Y reportes) ──
+  //
+  // ✅ FIX "no aparecen todas las facturas":
+  //   1. ANTES se consultaba where('statusFactura','==','Facturado'), pero las
+  //      facturas antiguas NO tienen ese campo (Facturación las trata como
+  //      'Facturado' por respaldo) y una igualdad de Firestore NO devuelve
+  //      documentos donde el campo no existe → esas facturas nunca aparecían
+  //      en Pagos. Ahora el status se filtra EN CLIENTE con la misma regla
+  //      tolerante que usan los dashboards de Facturación.
+  //   2. ANTES había un limit(1000) plano: si la colección supera 1000
+  //      documentos se cortaba en silencio. Ahora se pagina por cursor igual
+  //      que Facturación (lotes de 1000, tope 12,000).
+  const PAG_FACT_PAGOS = 1000;
+  const LIMITE_FACT_PAGOS = 12000; // mismo criterio que Facturación
+  const ID_USD = '7dca62b3';
+  const ID_MXN = 'f95d8894';
+
+  // Mismo criterio que Facturación: sin campo/vacío => 'Facturado'. Solo se
+  // excluyen las canceladas y las marcadas explícitamente como 'No Facturado'.
+  const esFacturaCobrable = (raw: any): boolean => {
+    const s = String(raw?.statusFactura || 'Facturado')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+    if (!s) return true;
+    if (s.includes('cancel')) return false;
+    if (s.startsWith('no ')) return false; // "No Facturado"
+    return true;
+  };
+
   const cargarFacturasPendientes = async (tipo: TipoPago): Promise<FacturaPagable[]> => {
     const coleccion = tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
-    const snap = await getDocs(query(
-      collection(db, coleccion),
-      where('statusFactura', '==', 'Facturado'),
-      limit(1000)
-    ));
-    return snap.docs.map((d) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de factura sin tipo canónico (mismo criterio que los dashboards de facturación).
-      const raw = d.data() as any;
-      const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
-      const pagado = Number(raw.montoPagado) || 0;
-      return {
-        id: d.id,
-        invoice: String(raw.invoice || raw.folio || d.id),
-        fecha: String(raw.fecha || raw.fechaFactura || ''),
-        entidadId: String((tipo === 'cliente' ? raw.clienteId : raw.proveedorId) || ''),
-        entidadNombre: String((tipo === 'cliente' ? (raw.clienteNombre || raw.cliente) : (raw.proveedorNombre || raw.proveedor)) || 'Sin nombre'),
-        total,
-        montoPagado: pagado,
-        saldo: Math.max(0, total - pagado),
-        moneda: String(raw.monedaFacturacion || raw.moneda || ''),
-      };
-    }).filter((f) => f.total > 0 && f.saldo > 0.009);
+
+    // Descarga paginada por cursor (misma técnica que Facturación).
+    const docs: { id: string; raw: any }[] = [];
+    let cursor: any = null;
+    for (let i = 0; i < Math.ceil(LIMITE_FACT_PAGOS / PAG_FACT_PAGOS); i++) {
+      const cons: any[] = [orderBy(documentId()), limit(PAG_FACT_PAGOS)];
+      if (cursor) cons.splice(1, 0, startAfter(cursor));
+      const snap = await getDocs(query(collection(db, coleccion), ...cons));
+      if (snap.empty) break;
+      snap.docs.forEach((d) => docs.push({ id: d.id, raw: d.data() }));
+      cursor = snap.docs[snap.docs.length - 1];
+      if (snap.docs.length < PAG_FACT_PAGOS) break;
+    }
+
+    return docs
+      .filter(({ raw }) => esFacturaCobrable(raw))
+      .map(({ id, raw }) => {
+        const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
+        const pagado = Number(raw.montoPagado) || 0;
+        // ✅ FIX moneda: proveedores guarda `monedaProveedor` (no
+        //   `monedaFacturacion`); además se deriva de monedaId como respaldo.
+        const monedaPorId = raw.monedaId === ID_USD ? 'USD' : raw.monedaId === ID_MXN ? 'MXN' : '';
+        return {
+          id,
+          invoice: String(raw.invoice || raw.folio || id),
+          fecha: String(raw.fecha || raw.fechaFactura || ''),
+          entidadId: String((tipo === 'cliente' ? raw.clienteId : raw.proveedorId) || ''),
+          entidadNombre: String((tipo === 'cliente' ? (raw.clienteNombre || raw.cliente) : (raw.proveedorNombre || raw.proveedor)) || 'Sin nombre'),
+          total,
+          montoPagado: pagado,
+          saldo: Math.max(0, total - pagado),
+          moneda: String(raw.monedaFacturacion || raw.monedaProveedor || raw.moneda || monedaPorId || ''),
+        };
+      })
+      .filter((f) => f.total > 0 && f.saldo > 0.009);
   };
 
   // ── Cargar facturas con saldo pendiente al abrir el modal ──
