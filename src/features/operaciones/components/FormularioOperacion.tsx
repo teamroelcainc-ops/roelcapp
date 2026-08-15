@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 'react';
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc, query, where, limit } from 'firebase/firestore';
 import { db, storage, auth } from '../../../config/firebase';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { guardarOperacionSegura } from '../services/operacionesService';
@@ -753,6 +753,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const [searchProvTransporte, setSearchProvTransporte] = useState('');
   const [showDropdownProvTransporte, setShowDropdownProvTransporte] = useState(false);
   const [searchUnidad, setSearchUnidad] = useState('');
+
   const [showDropdownUnidad, setShowDropdownUnidad] = useState(false);
   const [searchOperador, setSearchOperador] = useState('');
   const [showDropdownOperador, setShowDropdownOperador] = useState(false);
@@ -792,6 +793,57 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     dolaresCliente: 0, pesosCliente: 0, conversionCliente: 0,
     utilidadEstimada: 0, tipoCambioAprobado: 0
   });
+
+  // ✅ NUEVO — INFO DE LA UNIDAD SELECCIONADA: al elegir unidad se consulta su
+  //   ÚLTIMO SERVICIO (operación más reciente) y la ÚLTIMA REFERENCIA DE
+  //   DIESEL donde cargó, y se muestran debajo del campo.
+  const [infoUnidad, setInfoUnidad] = useState<{ ultimaOpRef?: string; ultimaOpFecha?: string; dieselConsecutivo?: string; dieselFecha?: string; dieselGalones?: number } | null>(null);
+  const [cargandoInfoUnidad, setCargandoInfoUnidad] = useState(false);
+
+  useEffect(() => {
+    const uid = String(formData.unidad || '').trim();
+    if (!uid) { setInfoUnidad(null); return; }
+    let cancelado = false;
+    (async () => {
+      setCargandoInfoUnidad(true);
+      try {
+        // Último servicio: operaciones de la unidad (campo `unidad` y respaldo
+        // `unidadId` en registros viejos), la más reciente por fechaServicio.
+        const [s1, s2, sd] = await Promise.all([
+          getDocs(query(collection(db, 'operaciones'), where('unidad', '==', uid), limit(300))),
+          getDocs(query(collection(db, 'operaciones'), where('unidadId', '==', uid), limit(300))),
+          getDocs(query(collection(db, 'referencias_diesel'), where('unidadId', '==', uid), limit(300))),
+        ]);
+        const opsMap = new Map<string, any>();
+        [...s1.docs, ...s2.docs].forEach((d) => opsMap.set(d.id, { id: d.id, ...(d.data() as any) }));
+        const ops = Array.from(opsMap.values())
+          .filter((o: any) => !initialData?.id || o.id !== initialData.id) // sin contar la que se edita
+          .sort((a: any, b: any) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+        const ultimaOp = ops[0] || null;
+
+        const refsDiesel = sd.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))
+          .sort((a: any, b: any) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+        const ultimaDiesel = refsDiesel[0] || null;
+
+        if (!cancelado) {
+          setInfoUnidad({
+            ultimaOpRef: ultimaOp?.ref || '',
+            ultimaOpFecha: ultimaOp?.fechaServicio || '',
+            dieselConsecutivo: ultimaDiesel?.consecutivo || '',
+            dieselFecha: ultimaDiesel?.fecha || '',
+            dieselGalones: Number(ultimaDiesel?.galonesCargados || ultimaDiesel?.galonesAutorizados || 0),
+          });
+        }
+      } catch (e) {
+        console.warn('No se pudo cargar el historial de la unidad:', e);
+        if (!cancelado) setInfoUnidad(null);
+      }
+      if (!cancelado) setCargandoInfoUnidad(false);
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.unidad]);
+
 
   const recargarColeccion = useCallback(async (coleccion: string) => {
     const snap = await getDocs(collection(db, coleccion));
@@ -2796,6 +2848,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             </div>
                             <BotonAgregar title="Agregar nueva Unidad" onClick={() => abrirCreacion({ tipo: 'unidad', coleccion: 'unidades' }, (id, reg) => { setFormData(prev => ({ ...prev, unidad: id })); setSearchUnidad(labelUnidad(reg)); })} />
                           </div>
+                          {/* ✅ NUEVO: último servicio y última carga de diesel de la unidad */}
+                          {formData.unidad && (
+                            <div style={{ marginTop: '6px', fontSize: '0.75rem', lineHeight: 1.6, color: '#8b949e' }}>
+                              {cargandoInfoUnidad ? (
+                                <span>Consultando historial de la unidad…</span>
+                              ) : infoUnidad ? (
+                                <>
+                                  <span style={{ display: 'block' }}>
+                                    Último servicio: {infoUnidad.ultimaOpRef
+                                      ? <><b style={{ color: '#58a6ff' }}>{infoUnidad.ultimaOpRef}</b> · {fmtFecha(infoUnidad.ultimaOpFecha || '')}</>
+                                      : <span>sin servicios previos</span>}
+                                  </span>
+                                  <span style={{ display: 'block' }}>
+                                    Última carga diesel: {infoUnidad.dieselConsecutivo
+                                      ? <><b style={{ color: '#D84315' }}>{infoUnidad.dieselConsecutivo}</b> · {fmtFecha(infoUnidad.dieselFecha || '')}{infoUnidad.dieselGalones ? ` · ${infoUnidad.dieselGalones.toFixed(2)} gal` : ''}</>
+                                      : <span>sin recargas registradas</span>}
+                                  </span>
+                                </>
+                              ) : null}
+                            </div>
+                          )}
                         </div>
                         <div className="form-group">
                           <label className="form-label">Operador <span className="campo-badge">operador</span></label>

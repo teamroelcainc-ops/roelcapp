@@ -170,13 +170,73 @@ const atributosCajaOp = (op: any): { carga: 'CARGADA' | 'VACIA' | ''; hazmat: bo
 };
 
 export const ReferenciasDieselDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'referencias'>('referencias');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'referencias' | 'dashboard'>('referencias');
+
   
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [referenciasGlobales, setReferenciasGlobales] = useState<any[]>([]);
   
   // Catálogos
   const [unidadesList, setUnidadesList] = useState<any[]>([]);
+
+  // ✅ NUEVO — DASHBOARD DIESEL POR UNIDAD (réplica del reporte de AppSheet):
+  //   última recarga, últimas 5 recargas y servicios realizados desde la
+  //   última recarga.
+  const [dashUnidadId, setDashUnidadId] = useState('');
+  const [dashOps, setDashOps] = useState<any[]>([]);
+  const [cargandoDashOps, setCargandoDashOps] = useState(false);
+
+  const dashUnidadObj = useMemo(() =>
+    unidadesList.find((u: any) => u.id === dashUnidadId) || null,
+  [unidadesList, dashUnidadId]);
+
+  const dashUnidadNombre = dashUnidadObj
+    ? String(dashUnidadObj.unidad || dashUnidadObj.nombre || dashUnidadId)
+    : '';
+
+  // Recargas (referencias) de la unidad seleccionada, más reciente primero.
+  const dashRecargas = useMemo(() => {
+    if (!dashUnidadId) return [] as any[];
+    return referenciasGlobales
+      .filter((r: any) =>
+        String(r.unidadId || '') === dashUnidadId ||
+        (dashUnidadNombre && String(r.unidadNombre || r.unidad || '').trim() === dashUnidadNombre))
+      .sort((a: any, b: any) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+  }, [referenciasGlobales, dashUnidadId, dashUnidadNombre]);
+
+  const dashUltimaRecarga = dashRecargas[0] || null;
+  const dashUltimas5 = dashRecargas.slice(0, 5);
+
+  // Servicios (operaciones) de la unidad desde la fecha de la última recarga.
+  useEffect(() => {
+    if (activeTab !== 'dashboard' || !dashUnidadId || !dashUltimaRecarga) { setDashOps([]); return; }
+    let cancelado = false;
+    (async () => {
+      setCargandoDashOps(true);
+      try {
+        // Las operaciones guardan la unidad en `unidad` (id) y algunas viejas
+        // en `unidadId`: se consultan ambas y se unen.
+        const [s1, s2] = await Promise.all([
+          getDocs(query(collection(db, 'operaciones'), where('unidad', '==', dashUnidadId), limit(500))),
+          getDocs(query(collection(db, 'operaciones'), where('unidadId', '==', dashUnidadId), limit(500))),
+        ]);
+        const mapa = new Map<string, any>();
+        [...s1.docs, ...s2.docs].forEach((d) => mapa.set(d.id, { id: d.id, ...(d.data() as any) }));
+        const desde = String(dashUltimaRecarga.fecha || '');
+        const lista = Array.from(mapa.values())
+          .filter((o: any) => String(o.fechaServicio || '') >= desde)
+          .sort((a: any, b: any) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+        if (!cancelado) setDashOps(lista);
+      } catch (e) {
+        console.warn('No se pudieron cargar los servicios de la unidad:', e);
+        if (!cancelado) setDashOps([]);
+      }
+      if (!cancelado) setCargandoDashOps(false);
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, dashUnidadId, dashUltimaRecarga?.id]);
+
   const [operadoresList, setOperadoresList] = useState<any[]>([]);
   const [proveedoresList, setProveedoresList] = useState<any[]>([]);
   // Catálogo de lugares (orígenes/destinos) para resolver IDs a nombres.
@@ -1375,7 +1435,142 @@ export const ReferenciasDieselDashboard = () => {
       <div className="rdd-x13">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('referencias')} style={tabStyle(activeTab === 'referencias')}>Historial de Referencias</button>
+        <button onClick={() => setActiveTab('dashboard')} style={tabStyle(activeTab === 'dashboard')}>Dashboard por Unidad</button>
       </div>
+
+      {/* ✅ NUEVO — DASHBOARD DIESEL POR UNIDAD */}
+      {activeTab === 'dashboard' && (() => {
+        const thD: React.CSSProperties = { padding: '9px 10px', textAlign: 'left', color: '#8b949e', whiteSpace: 'nowrap', fontSize: '0.78rem' };
+        const tdD: React.CSSProperties = { padding: '8px 10px', color: '#c9d1d9', fontSize: '0.85rem' };
+        const cardD: React.CSSProperties = { backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '10px', padding: '16px' };
+        const totalDieselOps = dashOps.reduce((s: number, o: any) => s + (Number(o.combustibleTotal) || 0), 0);
+        const fmtF = (v: any) => formatearFechaSpanish ? formatearFechaSpanish(v) : String(v || '-');
+        return (
+          <div className="animation-fade-in" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 320px) 1fr', gap: '16px', alignItems: 'start' }}>
+            {/* FILTRO DE UNIDAD */}
+            <div style={cardD}>
+              <h3 style={{ margin: '0 0 14px 0', color: '#f0f6fc', fontSize: '1rem' }}>Filtro de Unidad</h3>
+              <label style={{ display: 'block', color: '#8b949e', fontSize: '0.8rem', marginBottom: '6px' }}>Unidad</label>
+              <SelectBuscable
+                opciones={unidadesList.map((u: any) => ({ value: u.id, label: String(u.unidad || u.nombre || u.id) }))}
+                value={dashUnidadId}
+                onChange={setDashUnidadId}
+                placeholder="Buscar unidad..."
+              />
+              {dashUnidadId && (
+                <div style={{ marginTop: '18px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', textTransform: 'uppercase' }}>Fecha de última recarga</label>
+                    <span style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '1.05rem' }}>
+                      {dashUltimaRecarga ? fmtF(dashUltimaRecarga.fecha) : 'Sin recargas registradas'}
+                    </span>
+                  </div>
+                  {dashUltimaRecarga && (
+                    <>
+                      <div>
+                        <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', textTransform: 'uppercase' }}>Referencia</label>
+                        <span style={{ color: '#D84315', fontWeight: 700 }}>{dashUltimaRecarga.consecutivo}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '18px' }}>
+                        <div>
+                          <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', textTransform: 'uppercase' }}>Gal. autorizados</label>
+                          <span style={{ color: '#58a6ff', fontWeight: 700 }}>{Number(dashUltimaRecarga.galonesAutorizados || 0).toFixed(2)}</span>
+                        </div>
+                        <div>
+                          <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', textTransform: 'uppercase' }}>Gal. cargados</label>
+                          <span style={{ color: '#3fb950', fontWeight: 700 }}>{Number(dashUltimaRecarga.galonesCargados || 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', textTransform: 'uppercase' }}>Servicios desde la recarga</label>
+                        <span style={{ color: '#f0f6fc', fontWeight: 700 }}>{dashOps.length} · {totalDieselOps.toFixed(2)} gal estimados</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: 0 }}>
+              {/* ÚLTIMAS 5 RECARGAS */}
+              <div style={cardD}>
+                <h3 style={{ margin: '0 0 12px 0', color: '#f0f6fc', fontSize: '1rem' }}>Galones autorizados en las últimas 5 recargas</h3>
+                {!dashUnidadId ? (
+                  <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Selecciona una unidad para ver sus recargas.</p>
+                ) : dashUltimas5.length === 0 ? (
+                  <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Esta unidad no tiene recargas registradas.</p>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr style={{ backgroundColor: '#161b22' }}>
+                        <th style={thD}>REFERENCIA</th><th style={thD}>STATUS</th><th style={thD}>FECHA</th>
+                        <th style={thD}>OPERADOR</th><th style={thD}>GAL. AUTORIZADOS</th><th style={thD}>GAL. CARGADOS</th>
+                      </tr></thead>
+                      <tbody>
+                        {dashUltimas5.map((r: any) => (
+                          <tr key={r.id} style={{ borderTop: '1px solid #21262d', cursor: 'pointer' }}
+                            title="Ver detalle de la referencia"
+                            onClick={() => setReferenciaViendo(r)}>
+                            <td style={{ ...tdD, color: '#D84315', fontWeight: 600 }}>{r.consecutivo}</td>
+                            <td style={tdD}>{r.status || '-'}</td>
+                            <td style={tdD}>{fmtF(r.fecha)}</td>
+                            <td style={tdD}>{r.operadorNombre || '-'}</td>
+                            <td style={{ ...tdD, color: '#58a6ff', fontWeight: 700 }}>{Number(r.galonesAutorizados || 0).toFixed(2)}</td>
+                            <td style={{ ...tdD, color: '#3fb950', fontWeight: 700 }}>{Number(r.galonesCargados || 0).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* SERVICIOS DESDE LA ÚLTIMA RECARGA */}
+              <div style={cardD}>
+                <h3 style={{ margin: '0 0 12px 0', color: '#f0f6fc', fontSize: '1rem' }}>
+                  Servicios realizados desde la última recarga
+                  {dashUltimaRecarga ? ` (desde ${fmtF(dashUltimaRecarga.fecha)})` : ''}
+                </h3>
+                {!dashUnidadId ? (
+                  <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Selecciona una unidad.</p>
+                ) : !dashUltimaRecarga ? (
+                  <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Sin recargas: no hay punto de partida para listar servicios.</p>
+                ) : cargandoDashOps ? (
+                  <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Cargando servicios…</p>
+                ) : dashOps.length === 0 ? (
+                  <p style={{ color: '#8b949e', textAlign: 'center', padding: '18px 0' }}>Sin servicios desde la última recarga.</p>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr style={{ backgroundColor: '#161b22' }}>
+                        <th style={thD}>REFERENCIA</th><th style={thD}>FECHA SERVICIO</th><th style={thD}>OPERADOR</th>
+                        <th style={thD}>DIESEL (GAL)</th><th style={thD}>KM ESTIMADO</th><th style={thD}>REF. DIESEL</th>
+                      </tr></thead>
+                      <tbody>
+                        {dashOps.map((o: any) => (
+                          <tr key={o.id} style={{ borderTop: '1px solid #21262d' }}>
+                            <td style={{ ...tdD, color: '#58a6ff', fontWeight: 600 }}>{o.ref || o.id?.substring(0, 6)}</td>
+                            <td style={tdD}>{fmtF(o.fechaServicio)}</td>
+                            <td style={tdD}>{getNombreOperador(o.operadorNombre || o.operadorId || o.operador || '') || '-'}</td>
+                            <td style={{ ...tdD, fontWeight: 700 }}>{Number(o.combustibleTotal || 0).toFixed(2)}</td>
+                            <td style={tdD}>{Number(o.kilometrajeEstimado || 0) || '-'}</td>
+                            <td style={{ ...tdD, color: '#D84315' }}>{o.referenciaDieselConsecutivo || '—'}</td>
+                          </tr>
+                        ))}
+                        <tr style={{ borderTop: '2px solid #30363d', backgroundColor: '#161b22' }}>
+                          <td style={{ ...tdD, fontWeight: 700 }} colSpan={3}>TOTAL · {dashOps.length} servicio(s)</td>
+                          <td style={{ ...tdD, fontWeight: 700, color: '#58a6ff' }}>{totalDieselOps.toFixed(2)}</td>
+                          <td style={tdD} colSpan={2}></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {activeTab === 'operaciones' ? (
         <div className="animation-fade-in">
@@ -1545,7 +1740,7 @@ export const ReferenciasDieselDashboard = () => {
           </div>
         </div>
 
-      ) : (
+      ) : activeTab === 'referencias' ? (
         <div className="animation-fade-in">
           
           <div className="rdd-x14">
@@ -1701,7 +1896,7 @@ export const ReferenciasDieselDashboard = () => {
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* ═══════════ MODAL CONFIGURAR COLUMNAS (Asignar Operaciones) ═══════════ */}
       {modalColumnasOps && (
