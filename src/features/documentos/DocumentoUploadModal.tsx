@@ -27,6 +27,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, doc, getDocs, setDoc } from 'firebase/firestore';
 import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
+import { SelectBuscable } from '../catalogos/components/SelectBuscable';
 import './DocumentoUploadModal.css';
 
 // Catálogo por defecto (genérico). Cada módulo puede pasar su propia lista por props.
@@ -170,8 +171,11 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
     );
   }, [catalogoTipos, modulosSugeridos]);
 
-  // Dropdown final: lista fija del módulo + tipos del catálogo (sin duplicados,
-  // comparando sin acentos ni prefijo numérico).
+  // Dropdown final.
+  // ✅ FUENTE DE VERDAD: el catálogo `catalogo_tipo_archivo` (filtrado por el
+  //   Módulo que corresponde a la colección de origen). La lista fija que
+  //   pasa cada módulo por props SOLO se usa como respaldo cuando el catálogo
+  //   todavía no tiene tipos para ese módulo (o no se pudo cargar).
   const tipos = useMemo(() => {
     const vistos = new Set<string>();
     const resultado: string[] = [];
@@ -181,8 +185,11 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
       vistos.add(clave);
       resultado.push(nombre);
     };
-    tiposBase.forEach(agregar);
-    tiposCatalogoModulo.forEach(t => agregar(t.nombre));
+    if (tiposCatalogoModulo.length > 0) {
+      tiposCatalogoModulo.forEach(t => agregar(t.nombre));
+    } else {
+      tiposBase.forEach(agregar);
+    }
     return resultado.sort(ordenarTipos);
   }, [tiposBase, tiposCatalogoModulo]);
 
@@ -329,9 +336,14 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
           <div style={filaStyle}>
             <label style={labelStyle}>Tipo de archivo</label>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <select value={tipoDoc} onChange={(e) => setTipoDoc(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
-                {tipos.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
+              {/* ✅ Lista desplegable CON BÚSQUEDA (convención de toda la app) */}
+              <SelectBuscable
+                opciones={tipos.map((t) => ({ value: t, label: t }))}
+                value={tipoDoc}
+                onChange={setTipoDoc}
+                placeholder="Buscar tipo de archivo..."
+                estiloContenedor={{ flex: 1 }}
+              />
               {/* ✅ NUEVO: alta de tipo de archivo directo desde el formulario */}
               <button
                 type="button"
@@ -361,9 +373,12 @@ export const DocumentoUploadModal: React.FC<DocumentoUploadModalProps> = ({
               </div>
               <div style={filaStyle}>
                 <label style={labelStyle}>Módulo</label>
-                <select style={inputStyle} value={nuevoTipoModulo} onChange={(e) => setNuevoTipoModulo(e.target.value)}>
-                  {MODULOS_TIPO_ARCHIVO.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
+                <SelectBuscable
+                  opciones={MODULOS_TIPO_ARCHIVO.map((m) => ({ value: m, label: m }))}
+                  value={nuevoTipoModulo}
+                  onChange={setNuevoTipoModulo}
+                  placeholder="Buscar módulo..."
+                />
               </div>
               <div style={filaStyle}>
                 <label style={labelStyle}>Obligatorio</label>

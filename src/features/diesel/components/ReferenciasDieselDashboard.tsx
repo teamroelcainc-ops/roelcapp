@@ -20,6 +20,7 @@ import { generarInstruccionesDieselPDF } from '../../../utils/pdfInstruccionesDi
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import './ReferenciasDieselDashboard.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 
 // Columnas configurables de la tabla "Asignar Operaciones" (tabla + Excel).
 // orden:true -> la cabecera es clicable para ordenar por ese campo.
@@ -1779,11 +1780,17 @@ export const ReferenciasDieselDashboard = () => {
                 {/* ✅ NUEVO: OPERADOR (precargado con el de las operaciones seleccionadas, editable) */}
                 <div>
                   <label className="rdd-x102">OPERADOR</label>
-                  <select className="rdd-x103" value={operadorForm} onChange={e => setOperadorForm(e.target.value)}>
-                    <option value="">— Sin operador —</option>
-                    {operadoresSeleccionados.length > 1 && <option value="Varios">Varios</option>}
-                    {operadoresOptions.map(nom => <option key={nom} value={nom}>{nom}</option>)}
-                  </select>
+                  {/* ✅ Lista desplegable CON BÚSQUEDA (convención de toda la app) */}
+                  <SelectBuscable
+                    opciones={[
+                      { value: '', label: '— Sin operador —' },
+                      ...(operadoresSeleccionados.length > 1 ? [{ value: 'Varios', label: 'Varios' }] : []),
+                      ...operadoresOptions.map(nom => ({ value: nom, label: nom })),
+                    ]}
+                    value={operadorForm}
+                    onChange={setOperadorForm}
+                    placeholder="Buscar operador..."
+                  />
                   {operadorSugerido && operadorForm !== operadorSugerido && (
                     <span style={{ display: 'block', marginTop: '4px', fontSize: '0.75rem', color: '#f59e0b' }}>
                       Sugerido por las operaciones: {operadorSugerido}
