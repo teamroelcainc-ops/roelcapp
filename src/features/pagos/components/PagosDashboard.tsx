@@ -208,6 +208,91 @@ export function PagosDashboard() {
     }
   };
 
+  // ✅ NUEVO — DETALLE Y RECTIFICACIÓN DE UNA OPERACIÓN desde la factura.
+  //   Revisión completa en lectura + edición SEGURA de los campos que suelen
+  //   descuadrar una factura: fecha de servicio, # de remolque/placa y
+  //   observaciones. Status, convenios y montos se corrigen en el módulo de
+  //   Operaciones (dependen de flujos y catálogos que no viven aquí).
+  const [opViendo, setOpViendo] = useState<any | null>(null);
+  const [cargandoOpViendo, setCargandoOpViendo] = useState(false);
+  const [editandoOp, setEditandoOp] = useState(false);
+  const [opEditFechaServicio, setOpEditFechaServicio] = useState('');
+  const [opEditRemolqueNombre, setOpEditRemolqueNombre] = useState('');
+  const [opEditRemolquePlaca, setOpEditRemolquePlaca] = useState('');
+  const [opEditObs, setOpEditObs] = useState('');
+  const [guardandoOp, setGuardandoOp] = useState(false);
+
+  const abrirDetalleOperacion = async (opId: string, respaldo?: any) => {
+    setCargandoOpViendo(true);
+    setEditandoOp(false);
+    try {
+      const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), '==', String(opId)), limit(1)));
+      const data = snap.empty ? null : { id: snap.docs[0].id, ...(snap.docs[0].data() as any) };
+      const op = data || (respaldo ? { id: opId, ...respaldo, __soloResumen: true } : null);
+      if (!op) { alert('No se encontró la operación.'); return; }
+      setOpViendo(op);
+      setOpEditFechaServicio(String(op.fechaServicio || '').slice(0, 10));
+      setOpEditRemolqueNombre(String(op.remolqueNombre || op.remolque || ''));
+      setOpEditRemolquePlaca(String(op.remolquePlaca || ''));
+      setOpEditObs(String(op.observaciones || ''));
+    } catch (e) {
+      console.error('No se pudo abrir la operación:', e);
+      alert('No se pudo abrir la operación. Intenta de nuevo.');
+    } finally {
+      setCargandoOpViendo(false);
+    }
+  };
+
+  const guardarEdicionOperacion = async () => {
+    if (!opViendo || opViendo.__soloResumen) return;
+    setGuardandoOp(true);
+    try {
+      const cambios = {
+        fechaServicio: opEditFechaServicio,
+        remolqueNombre: opEditRemolqueNombre.trim(),
+        remolquePlaca: opEditRemolquePlaca.trim(),
+        observaciones: opEditObs.trim(),
+        editadoEn: new Date().toISOString(),
+        editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
+      };
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'operaciones', opViendo.id), cambios, { merge: true });
+      await batch.commit();
+      registrarLog('Pagos', 'Edición', `Rectificó la operación ${opViendo.ref || opViendo.id} desde Pagos.`).catch(() => {});
+      setOpViendo((prev: any) => prev ? { ...prev, ...cambios } : prev);
+      // Refresco del renglón en la tabla de operaciones de la factura abierta.
+      setOpsFactura((prev) => prev.map((o: any) => String(o.id) === String(opViendo.id)
+        ? { ...o, fechaServicio: cambios.fechaServicio, remolque: cambios.remolqueNombre || cambios.remolquePlaca || o.remolque }
+        : o));
+      setEditandoOp(false);
+    } catch (e) {
+      console.error('No se pudo guardar la operación:', e);
+      alert('No se pudo guardar la rectificación de la operación. Intenta de nuevo.');
+    } finally {
+      setGuardandoOp(false);
+    }
+  };
+
+  // ✅ NUEVO: abre el detalle de una factura DESDE UN CHIP de la lista de
+  //   pagos (se descarga el doc actual por id para tener datos frescos).
+  const [cargandoFacturaChip, setCargandoFacturaChip] = useState<string>('');
+  const abrirFacturaPorId = async (facturaId: string, tipo: TipoPago) => {
+    if (cargandoFacturaChip) return;
+    setCargandoFacturaChip(facturaId);
+    try {
+      const coleccion = tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+      const snap = await getDocs(query(collection(db, coleccion), where(documentId(), '==', facturaId), limit(1)));
+      if (snap.empty) { alert('No se encontró la factura (pudo haber sido eliminada).'); return; }
+      const fac = mapearFacturaPagable(snap.docs[0].id, snap.docs[0].data(), tipo);
+      await abrirDetalleFactura(fac);
+    } catch (e) {
+      console.error('No se pudo abrir la factura:', e);
+      alert('No se pudo abrir la factura. Intenta de nuevo.');
+    } finally {
+      setCargandoFacturaChip('');
+    }
+  };
+
   const abrirEdicionPago = (p: PagoDoc) => {
     setPagoEditando(p);
     setEditFecha(p.fecha || '');
@@ -493,6 +578,26 @@ export function PagosDashboard() {
     return true;
   };
 
+  // ✅ NUEVO: mapeo de un doc de factura a FacturaPagable (reutilizado por la
+  //   carga masiva y por la apertura individual desde los chips de pagos).
+  const mapearFacturaPagable = (id: string, raw: any, tipo: TipoPago): FacturaPagable => {
+    const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
+    const pagado = Number(raw.montoPagado) || 0;
+    const monedaPorId = raw.monedaId === ID_USD ? 'USD' : raw.monedaId === ID_MXN ? 'MXN' : '';
+    return {
+      id,
+      invoice: String(raw.invoice || raw.folio || id),
+      fecha: String(raw.fecha || raw.fechaFactura || ''),
+      entidadId: String((tipo === 'cliente' ? raw.clienteId : raw.proveedorId) || ''),
+      entidadNombre: String((tipo === 'cliente' ? (raw.clienteNombre || raw.cliente) : (raw.proveedorNombre || raw.proveedor)) || 'Sin nombre'),
+      total,
+      montoPagado: pagado,
+      saldo: Math.max(0, total - pagado),
+      moneda: String(raw.monedaFacturacion || raw.monedaProveedor || raw.moneda || monedaPorId || ''),
+      raw,
+    };
+  };
+
   const cargarFacturasPendientes = async (tipo: TipoPago): Promise<FacturaPagable[]> => {
     const coleccion = tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
 
@@ -511,25 +616,7 @@ export function PagosDashboard() {
 
     return docs
       .filter(({ raw }) => esFacturaCobrable(raw))
-      .map(({ id, raw }) => {
-        const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
-        const pagado = Number(raw.montoPagado) || 0;
-        // ✅ FIX moneda: proveedores guarda `monedaProveedor` (no
-        //   `monedaFacturacion`); además se deriva de monedaId como respaldo.
-        const monedaPorId = raw.monedaId === ID_USD ? 'USD' : raw.monedaId === ID_MXN ? 'MXN' : '';
-        return {
-          id,
-          invoice: String(raw.invoice || raw.folio || id),
-          fecha: String(raw.fecha || raw.fechaFactura || ''),
-          entidadId: String((tipo === 'cliente' ? raw.clienteId : raw.proveedorId) || ''),
-          entidadNombre: String((tipo === 'cliente' ? (raw.clienteNombre || raw.cliente) : (raw.proveedorNombre || raw.proveedor)) || 'Sin nombre'),
-          total,
-          montoPagado: pagado,
-          saldo: Math.max(0, total - pagado),
-          moneda: String(raw.monedaFacturacion || raw.monedaProveedor || raw.moneda || monedaPorId || ''),
-          raw, // ✅ NUEVO
-        };
-      })
+      .map(({ id, raw }) => mapearFacturaPagable(id, raw, tipo))
       // ✅ CAMBIO: ya NO se excluyen las facturas pagadas — el usuario pidió ver
       //   TODAS las facturas del cliente/proveedor (las pagadas se muestran
       //   bloqueadas en el modal). Solo se descartan documentos sin monto
@@ -910,12 +997,17 @@ export function PagosDashboard() {
                 <td className="pg-entidad">{p.entidadNombre}</td>
                 <td>{p.metodoPago}</td>
                 <td className="pg-monto">{money(p.monto, p.moneda)}</td>
-                <td>
+                <td onClick={(e) => e.stopPropagation()}>
                   <div className="pg-chips">
+                    {/* ✅ NUEVO: clic en el chip abre la factura para revisarla/editarla */}
                     {(p.facturas || []).filter(f => f.aplicado > 0).map((f) => (
-                      <span className="pg-chip" key={f.facturaId} title={`Aplicado ${money(f.aplicado)} · Saldo ${money(f.saldoNuevo)}`}>
-                        {f.invoice}{f.saldoNuevo > 0.009 ? ' (parcial)' : ''}
-                      </span>
+                      <button className="pg-chip" key={f.facturaId}
+                        type="button"
+                        title={`Aplicado ${money(f.aplicado)} · Saldo ${money(f.saldoNuevo)} — clic para revisar/editar la factura`}
+                        onClick={() => abrirFacturaPorId(f.facturaId, p.tipo)}
+                        style={{ cursor: 'pointer', border: '1px solid rgba(88,166,255,0.35)', background: 'transparent', opacity: cargandoFacturaChip === f.facturaId ? 0.5 : 1 }}>
+                        {cargandoFacturaChip === f.facturaId ? 'Abriendo…' : `${f.invoice}${f.saldoNuevo > 0.009 ? ' (parcial)' : ''}`}
+                      </button>
                     ))}
                   </div>
                 </td>
@@ -960,7 +1052,14 @@ export function PagosDashboard() {
                 <tbody>
                   {(pagoViendo.facturas || []).map((f) => (
                     <tr key={f.facturaId}>
-                      <td className="pg-numero">{f.invoice}</td>
+                      <td className="pg-numero">
+                        {/* ✅ NUEVO: abre la factura para revisarla/editarla */}
+                        <button type="button" onClick={() => abrirFacturaPorId(f.facturaId, pagoViendo.tipo)}
+                          title="Revisar / editar esta factura"
+                          style={{ background: 'transparent', border: 'none', color: '#58a6ff', cursor: 'pointer', padding: 0, font: 'inherit', textDecoration: 'underline' }}>
+                          {f.invoice}
+                        </button>
+                      </td>
                       <td>{f.fecha}</td>
                       <td>{money(f.total)}</td>
                       <td className="pg-monto">{money(f.aplicado)}</td>
@@ -982,6 +1081,87 @@ export function PagosDashboard() {
           </div>
         </div>
       )}
+
+      {/* ══════════ ✅ NUEVO — MODAL DETALLE/RECTIFICACIÓN DE OPERACIÓN ══════════ */}
+      {opViendo && (() => {
+        const ov = opViendo;
+        const et: React.CSSProperties = { display: 'block', color: '#8b949e', fontSize: '0.72rem', marginBottom: '3px', fontWeight: 600, textTransform: 'uppercase' };
+        const va: React.CSSProperties = { color: '#c9d1d9', fontWeight: 600 };
+        const inp: React.CSSProperties = { width: '100%', padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' };
+        // Pares label/valor de revisión: solo se muestran los que traen dato.
+        const pares = ([
+          ['Referencia', ov.ref],
+          ['Status', ov.statusNombre || ov.status],
+          ['Tipo de operación', ov.tipoOperacionNombre || ov.tipoOperacion],
+          ['Cliente', ov.clientePagaNombre || ov.clienteNombre || ov.cliente],
+          ['Proveedor', ov.provServiciosNombre || ov.proveedorNombre || ov.proveedor],
+          ['Operador', ov.operadorNombre || ov.operador],
+          ['Unidad', ov.unidadNombre || ov.unidad],
+          ['Origen', ov.origenNombre || ov.origen],
+          ['Destino', ov.destinoNombre || ov.destino],
+          ['Fecha de cita', ov.fechaCita],
+        ] as [string, any][]).filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '');
+        return (
+          <div className="pg-overlay" style={{ zIndex: 70 }} onClick={() => !guardandoOp && setOpViendo(null)}>
+            <div className="pg-modal" style={{ maxWidth: '680px' }} onClick={(e) => e.stopPropagation()}>
+              <div className="pg-modal-encabezado">
+                <h3>Operación {ov.ref || ov.id}</h3>
+                <button className="pg-cerrar" onClick={() => setOpViendo(null)} disabled={guardandoOp}><X size={16} /></button>
+              </div>
+              <div className="pg-modal-cuerpo" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {ov.__soloResumen && (
+                  <div style={{ fontSize: '0.8rem', color: '#d29922', border: '1px dashed #d29922', borderRadius: '8px', padding: '10px' }}>
+                    Esta operación ya no existe en la colección de operaciones: se muestra el resumen guardado en la factura (solo lectura).
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
+                  {pares.map(([l, v]) => (
+                    <div key={l}><label style={et}>{l}</label><span style={va}>{String(v)}</span></div>
+                  ))}
+                </div>
+
+                {!editandoOp ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '12px' }}>
+                    <div><label style={et}>Fecha de servicio</label><span style={va}>{ov.fechaServicio || '-'}</span></div>
+                    <div><label style={et}># Remolque</label><span style={va}>{ov.remolqueNombre || ov.remolque || '-'}</span></div>
+                    <div><label style={et}>Placa remolque</label><span style={va}>{ov.remolquePlaca || '-'}</span></div>
+                    <div style={{ gridColumn: '1 / -1' }}><label style={et}>Observaciones</label><span style={{ color: '#c9d1d9' }}>{ov.observaciones || '-'}</span></div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', borderTop: '1px solid #30363d', paddingTop: '12px' }}>
+                    <div><label style={et}>Fecha de servicio</label><input style={inp} type="date" value={opEditFechaServicio} onChange={(e) => setOpEditFechaServicio(e.target.value)} /></div>
+                    <div><label style={et}># Remolque</label><input style={inp} type="text" value={opEditRemolqueNombre} onChange={(e) => setOpEditRemolqueNombre(e.target.value)} /></div>
+                    <div><label style={et}>Placa remolque</label><input style={inp} type="text" value={opEditRemolquePlaca} onChange={(e) => setOpEditRemolquePlaca(e.target.value)} /></div>
+                    <div style={{ gridColumn: '1 / -1' }}><label style={et}>Observaciones</label><textarea className="pg-memo" rows={2} value={opEditObs} onChange={(e) => setOpEditObs(e.target.value)} /></div>
+                    <div style={{ gridColumn: '1 / -1', fontSize: '0.78rem', color: '#8b949e' }}>
+                      Status, convenios y montos se corrigen en el módulo de Operaciones (dependen de flujos y catálogos).
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="pg-modal-pie">
+                {!editandoOp ? (
+                  <>
+                    {!ov.__soloResumen && (
+                      <button className="pg-btn-secundario" style={{ marginRight: 'auto', color: '#58a6ff', borderColor: 'rgba(88,166,255,0.4)' }} onClick={() => setEditandoOp(true)}>
+                        <Pencil size={13} style={{ marginRight: '6px', verticalAlign: '-2px' }} />Rectificar
+                      </button>
+                    )}
+                    <button className="pg-btn-secundario" onClick={() => setOpViendo(null)}>Cerrar</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="pg-btn-secundario" onClick={() => setEditandoOp(false)} disabled={guardandoOp}>Cancelar</button>
+                    <button className="pg-btn-nuevo" onClick={guardarEdicionOperacion} disabled={guardandoOp}>
+                      {guardandoOp ? 'Guardando…' : 'Guardar Operación'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══════════ ✅ NUEVO — MODAL DETALLE/EDICIÓN DE FACTURA ══════════ */}
       {facturaViendo && (() => {
@@ -1051,7 +1231,15 @@ export function PagosDashboard() {
                         <tbody>
                           {opsFactura.map((o: any, idx: number) => (
                             <tr key={o.id || idx}>
-                              <td className="pg-numero">{o.ref || o.id || '-'}</td>
+                              <td className="pg-numero">
+                                {/* ✅ NUEVO: revisar/rectificar la operación */}
+                                <button type="button" title="Revisar / rectificar esta operación"
+                                  onClick={() => abrirDetalleOperacion(o.id, o)} disabled={cargandoOpViendo}
+                                  style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '6px', color: '#58a6ff', cursor: 'pointer', padding: '3px 7px', marginRight: '8px', verticalAlign: 'middle' }}>
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                                </button>
+                                {o.ref || o.id || '-'}
+                              </td>
                               <td>{o.fechaServicio || o.fecha || '-'}</td>
                               <td>{o.remolque || '-'}</td>
                               <td className="pg-monto">{o.importe !== '' && o.importe !== undefined && o.importe !== null ? money(Number(o.importe) || 0) : '—'}</td>
