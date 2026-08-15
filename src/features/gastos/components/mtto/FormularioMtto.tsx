@@ -6,6 +6,47 @@ import { db } from '../../../../config/firebase';
 import { guardarMttoSeguro } from '../services/mttoService';
 import './FormularioMtto.css';
 import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
+import { SelectBuscable } from '../../../catalogos/components/SelectBuscable';
+
+// ✅ NUEVO — REFACCIONES: cuando el Tipo de Gasto es "Gastos de Refacción y
+//   Mantenimiento" se habilita una lista de refacciones compradas, cada una
+//   con su detalle, fecha de compra, garantía (y días restantes), dónde se
+//   compró, a qué unidad propia se instaló y en qué parte del camión.
+export const TIPO_GASTO_REFACCION = 'Gastos de Refacción y Mantenimiento';
+
+export interface Refaccion {
+  id: string;
+  descripcion: string;      // ¿Qué compré? (ej. "Caucho 295/75 R22.5")
+  fechaCompra: string;      // ¿Cuándo lo compré? (ISO YYYY-MM-DD)
+  tieneGarantia: boolean;   // ¿Tiene fecha de garantía?
+  fechaGarantia: string;    // ¿Cuándo vence la garantía? (ISO)
+  dondeCompro: string;      // ¿Dónde lo compré? (tienda / sucursal)
+  unidadId: string;         // ¿A qué unidad propia lo instalé?
+  unidadNombre: string;
+  dondeInstalo: string;     // ¿En qué parte del camión? (ej. "llanta trasera izq.")
+}
+
+const nuevaRefaccionVacia = (fechaBase?: string): Refaccion => ({
+  id: `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+  descripcion: '',
+  fechaCompra: fechaBase || hoyLocalISO(),
+  tieneGarantia: false,
+  fechaGarantia: '',
+  dondeCompro: '',
+  unidadId: '',
+  unidadNombre: '',
+  dondeInstalo: '',
+});
+
+// Días entre dos fechas ISO (b - a); null si alguna falta o es inválida.
+const diasEntreISO = (a: string, b: string): number | null => {
+  const pa = String(a || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const pb = String(b || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!pa || !pb) return null;
+  const da = Date.UTC(Number(pa[1]), Number(pa[2]) - 1, Number(pa[3]));
+  const db_ = Date.UTC(Number(pb[1]), Number(pb[2]) - 1, Number(pb[3]));
+  return Math.round((db_ - da) / 86400000);
+};
 
 // ✅ Helpers de folio (mismo formato que el dashboard: MTTO-DDMMYY-NNN).
 //    Se usan solo para MOSTRAR el folio normalizado al editar registros viejos;
@@ -118,7 +159,8 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     fechaPago: '',
     formaPagoId: '',
     observaciones: '',
-    operacionAsignadaId: ''
+    operacionAsignadaId: '',
+    refacciones: [] as Refaccion[],   // ✅ NUEVO
   });
 
   const guardarConfiguracion = (nuevaConfig: any) => {
@@ -226,6 +268,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
         fechaFactura: initialData.fechaFactura || '',
         tipoServicioId: safeTipos,
         autorizadoPor: initialData.autorizadoPor || configuracion.autorizadorNombreFijo || '',
+        refacciones: Array.isArray(initialData.refacciones) ? initialData.refacciones : [], // ✅ NUEVO
       };
       setFormData(prev => ({ ...prev, ...safeInitialData }));
 
@@ -272,10 +315,18 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
       setSearchUnidad('Oficina');
       setSearchOperador(autorizadorNombre);
     } 
-    else if (formData.tipoGasto === 'Gastos de Operación' && prevGastoRef.current === 'Gastos de Oficina') {
+    else if (formData.tipoGasto !== 'Gastos de Oficina' && prevGastoRef.current === 'Gastos de Oficina') {
+      // ✅ Ajuste: aplica al salir de Oficina hacia CUALQUIER otro tipo
+      //   (Operación o Refacción), no solo hacia Operación.
       setFormData(prev => ({ ...prev, unidadId: '', operadorId: '', operadorNombre: '' }));
       setSearchUnidad('');
       setSearchOperador('');
+    }
+    // ✅ NUEVO: al elegir Refacción por primera vez se propone una tarjeta vacía.
+    if (formData.tipoGasto === TIPO_GASTO_REFACCION) {
+      setFormData(prev => (prev.refacciones.length === 0
+        ? { ...prev, refacciones: [nuevaRefaccionVacia(prev.fecha)] }
+        : prev));
     }
     prevGastoRef.current = formData.tipoGasto;
   }, [formData.tipoGasto, configuracion.autorizadorNombreFijo, configuracion.autorizadorFijo]);
@@ -320,13 +371,48 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
     });
   };
 
+  // ✅ NUEVO — manejo de la lista de refacciones.
+  const agregarRefaccion = () => {
+    setFormData(prev => ({ ...prev, refacciones: [...prev.refacciones, nuevaRefaccionVacia(prev.fecha)] }));
+  };
+  const eliminarRefaccion = (id: string) => {
+    setFormData(prev => ({ ...prev, refacciones: prev.refacciones.filter(r => r.id !== id) }));
+  };
+  const actualizarRefaccion = (id: string, cambios: Partial<Refaccion>) => {
+    setFormData(prev => ({
+      ...prev,
+      refacciones: prev.refacciones.map(r => r.id === id ? { ...r, ...cambios } : r),
+    }));
+  };
+
   // 🔴 LA MAGIA ESTÁ AQUÍ 🔴
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ✅ NUEVO — validación de refacciones cuando aplica el tipo de gasto.
+    if (formData.tipoGasto === TIPO_GASTO_REFACCION) {
+      const conContenido = formData.refacciones.filter(r => r.descripcion.trim());
+      if (conContenido.length === 0) {
+        alert('Este gasto es de Refacción y Mantenimiento: agrega al menos una refacción con su descripción.');
+        return;
+      }
+      const sinFechaGarantia = conContenido.find(r => r.tieneGarantia && !r.fechaGarantia);
+      if (sinFechaGarantia) {
+        alert(`La refacción "${sinFechaGarantia.descripcion}" está marcada con garantía: captura la fecha de vencimiento de la garantía.`);
+        return;
+      }
+    }
+
     setCargando(true);
     try {
       // Separamos el archivo (si lo hay) de los datos de texto
       const { archivoPdf, ...dataLista } = formData;
+
+      // ✅ NUEVO — se guardan solo refacciones con contenido; si el tipo de
+      //   gasto no es Refacción, la lista se vacía para no arrastrar datos.
+      dataLista.refacciones = dataLista.tipoGasto === TIPO_GASTO_REFACCION
+        ? dataLista.refacciones.filter(r => r.descripcion.trim())
+        : [];
       
       // ✅ SI ES UNA EDICIÓN, ACTUALIZAMOS DIRECTAMENTE LA FILA EXISTENTE
       if (initialData && initialData.id) {
@@ -463,6 +549,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
                   <option className="fm-x17" value="">-- Seleccionar --</option>
                   <option className="fm-x17" value="Gastos de Oficina">Gastos de Oficina</option>
                   <option className="fm-x17" value="Gastos de Operación">Gastos de Operación</option>
+                  <option className="fm-x17" value={TIPO_GASTO_REFACCION}>{TIPO_GASTO_REFACCION}</option>
                 </select>
               </div>
               
@@ -509,6 +596,123 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
                   placeholder="Escribe la descripción. Presiona Enter para agregar saltos de línea..."
                 />
               </div>
+
+              {/* ✅ NUEVO — APARTADO DE REFACCIONES (solo con el tipo de gasto de refacción) */}
+              {formData.tipoGasto === TIPO_GASTO_REFACCION && (
+                <div className="form-group fm-x23" style={{ gridColumn: '1 / -1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                    <label className="fm-x14" style={{ margin: 0, fontSize: '1rem', color: '#f0f6fc' }}>
+                      🔧 Refacciones compradas <RequeridoMark />
+                      <span style={{ marginLeft: '8px', fontSize: '0.75rem', color: '#8b949e', fontWeight: 'normal' }}>
+                        ({formData.refacciones.length})
+                      </span>
+                    </label>
+                    <button type="button" onClick={agregarRefaccion}
+                      style={{ padding: '8px 14px', borderRadius: '6px', border: '1px dashed #D84315', backgroundColor: 'rgba(216,67,21,0.08)', color: '#D84315', fontWeight: 600, cursor: 'pointer' }}>
+                      + Agregar refacción
+                    </button>
+                  </div>
+
+                  {formData.refacciones.length === 0 && (
+                    <div style={{ color: '#8b949e', fontSize: '0.85rem', padding: '10px', border: '1px dashed #30363d', borderRadius: '8px' }}>
+                      Sin refacciones. Presiona "+ Agregar refacción".
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {formData.refacciones.map((r, idx) => {
+                      const diasTotales = r.tieneGarantia ? diasEntreISO(r.fechaCompra, r.fechaGarantia) : null;
+                      const diasRestantes = r.tieneGarantia ? diasEntreISO(hoyLocalISO(), r.fechaGarantia) : null;
+                      const colorRestante = diasRestantes === null ? '#8b949e' : diasRestantes < 0 ? '#f85149' : diasRestantes <= 30 ? '#d29922' : '#3fb950';
+                      return (
+                        <div key={r.id} style={{ border: '1px solid #30363d', borderRadius: '10px', padding: '14px', backgroundColor: '#0d1117' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+                            <span style={{ color: '#D84315', fontWeight: 700, fontSize: '0.85rem' }}>Refacción #{idx + 1}</span>
+                            <button type="button" title="Quitar refacción" onClick={() => eliminarRefaccion(r.id)}
+                              style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '6px', color: '#f85149', cursor: 'pointer', padding: '4px 8px' }}>
+                              ✕
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                            <div className="form-group" style={{ gridColumn: '1 / -1', margin: 0 }}>
+                              <label className="fm-x14">¿Qué compré? (detalle) <RequeridoMark /></label>
+                              <input className="fm-x15" type="text" value={r.descripcion}
+                                onChange={(e) => actualizarRefaccion(r.id, { descripcion: e.target.value })}
+                                placeholder='Ej. "Caucho 295/75 R22.5 marca Michelin"' />
+                            </div>
+
+                            <div className="form-group" style={{ margin: 0 }}>
+                              <label className="fm-x14">¿Cuándo lo compré?</label>
+                              <input className="fm-x15" type="date" value={r.fechaCompra}
+                                onChange={(e) => actualizarRefaccion(r.id, { fechaCompra: e.target.value })} />
+                            </div>
+
+                            <div className="form-group" style={{ margin: 0 }}>
+                              <label className="fm-x14">¿Tiene garantía?</label>
+                              <div style={{ display: 'inline-flex', border: '1px solid #30363d', borderRadius: '8px', overflow: 'hidden' }}>
+                                <button type="button" onClick={() => actualizarRefaccion(r.id, { tieneGarantia: false, fechaGarantia: '' })}
+                                  style={{ padding: '9px 22px', border: 'none', cursor: 'pointer', fontWeight: 600, backgroundColor: !r.tieneGarantia ? '#30363d' : 'transparent', color: !r.tieneGarantia ? '#fff' : '#8b949e' }}>No</button>
+                                <button type="button" onClick={() => actualizarRefaccion(r.id, { tieneGarantia: true })}
+                                  style={{ padding: '9px 22px', border: 'none', cursor: 'pointer', fontWeight: 600, backgroundColor: r.tieneGarantia ? '#D84315' : 'transparent', color: r.tieneGarantia ? '#fff' : '#8b949e' }}>Sí</button>
+                              </div>
+                            </div>
+
+                            {r.tieneGarantia && (
+                              <div className="form-group" style={{ margin: 0 }}>
+                                <label className="fm-x14">Vence la garantía <RequeridoMark /></label>
+                                <input className="fm-x15" type="date" value={r.fechaGarantia}
+                                  onChange={(e) => actualizarRefaccion(r.id, { fechaGarantia: e.target.value })} />
+                                {r.fechaGarantia && (
+                                  <span style={{ display: 'block', marginTop: '5px', fontSize: '0.75rem', color: colorRestante, fontWeight: 600 }}>
+                                    {diasTotales !== null && diasTotales >= 0 && `Garantía de ${diasTotales} días · `}
+                                    {diasRestantes !== null && (diasRestantes < 0
+                                      ? `VENCIDA hace ${Math.abs(diasRestantes)} días`
+                                      : `quedan ${diasRestantes} días`)}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="form-group" style={{ margin: 0 }}>
+                              <label className="fm-x14">¿Dónde lo compré?</label>
+                              <input className="fm-x15" type="text" value={r.dondeCompro}
+                                onChange={(e) => actualizarRefaccion(r.id, { dondeCompro: e.target.value })}
+                                placeholder='Ej. "AutoZone Nuevo Laredo"' />
+                            </div>
+
+                            <div className="form-group" style={{ margin: 0 }}>
+                              <label className="fm-x14">Unidad donde se instaló</label>
+                              <SelectBuscable
+                                opciones={listaUnidadesLocal.map((u: any) => ({
+                                  value: u.id,
+                                  label: String(u.unidad || u.numeroEconomico || u.nombre || u.id),
+                                }))}
+                                value={r.unidadId}
+                                onChange={(v) => {
+                                  const uni = listaUnidadesLocal.find((u: any) => u.id === v);
+                                  actualizarRefaccion(r.id, {
+                                    unidadId: v,
+                                    unidadNombre: uni ? String(uni.unidad || uni.numeroEconomico || uni.nombre || v) : v,
+                                  });
+                                }}
+                                placeholder="Buscar unidad propia..."
+                              />
+                            </div>
+
+                            <div className="form-group" style={{ margin: 0 }}>
+                              <label className="fm-x14">¿Dónde lo instalé? (parte del camión)</label>
+                              <input className="fm-x15" type="text" value={r.dondeInstalo}
+                                onChange={(e) => actualizarRefaccion(r.id, { dondeInstalo: e.target.value })}
+                                placeholder='Ej. "Llanta trasera izquierda, eje 2"' />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
