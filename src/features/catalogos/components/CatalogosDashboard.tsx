@@ -45,6 +45,9 @@ const CatalogosDashboard = () => {
   const [subFormData, setSubFormData] = useState<any>({});
 
   const [paginaActual, setPaginaActual] = useState(1);
+  // ✅ NUEVO: selección múltiple para borrado en lote.
+  const [seleccionadosIds, setSeleccionadosIds] = useState<string[]>([]);
+  const [borrandoSeleccion, setBorrandoSeleccion] = useState(false);
   const registrosPorPagina = 50;
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
@@ -239,6 +242,9 @@ const CatalogosDashboard = () => {
 
 
   useEffect(() => { setPaginaActual(1); }, [busqueda, filtroFijo]);
+  // ✅ NUEVO: al cambiar de catálogo, búsqueda o filtro se limpia la selección
+  //   para no arrastrar ids de otro contexto.
+  useEffect(() => { setSeleccionadosIds([]); }, [catalogoSeleccionado, busqueda, filtroFijo]);
 
   // ✅ LOGICA DE GUARDADO PRINCIPAL CON LOG
   const guardarRegistro = async (e: React.FormEvent) => {
@@ -377,6 +383,37 @@ const CatalogosDashboard = () => {
       alert('No se pudieron eliminar todos los duplicados.\n\nDetalle técnico: ' + (error?.message || error?.code || 'desconocido'));
     }
     setLimpiandoDuplicados(false);
+  };
+
+  // ✅ NUEVO: helpers de selección múltiple.
+  const toggleSeleccion = (id: string) => {
+    setSeleccionadosIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+
+  // ✅ NUEVO: elimina en lote TODOS los registros seleccionados (lotes de 400).
+  const eliminarSeleccionados = async () => {
+    if (!catalogoSeleccionado || seleccionadosIds.length === 0 || borrandoSeleccion) return;
+    const confirmado = window.confirm(
+      `¿Eliminar PERMANENTEMENTE los ${seleccionadosIds.length} registro(s) seleccionados de "${catalogoSeleccionado.titulo}"?\n\nEsta acción no se puede deshacer.`
+    );
+    if (!confirmado) return;
+
+    setBorrandoSeleccion(true);
+    try {
+      const col = `catalogo_${catalogoSeleccionado.id}`;
+      for (let i = 0; i < seleccionadosIds.length; i += 400) {
+        const lote = seleccionadosIds.slice(i, i + 400);
+        const batch = writeBatch(db);
+        lote.forEach((id) => batch.delete(doc(db, col, id)));
+        await batch.commit();
+      }
+      await registrarLog('Catálogos', 'Eliminación', `Eliminó ${seleccionadosIds.length} registros seleccionados del catálogo de ${catalogoSeleccionado.titulo}`);
+      setSeleccionadosIds([]);
+    } catch (error: any) {
+      console.error('Error en borrado en lote:', error);
+      alert('No se pudieron eliminar todos los registros seleccionados.\n\nDetalle técnico: ' + (error?.message || error?.code || 'desconocido'));
+    }
+    setBorrandoSeleccion(false);
   };
 
   const handleAgregarEditarSubdetalle = (coleccion: string, data?: any) => {
@@ -562,6 +599,19 @@ const CatalogosDashboard = () => {
             </div>
           </div>
           <div className="cd-x14">
+            {/* ✅ NUEVO: borrado en lote de los registros seleccionados */}
+            {seleccionadosIds.length > 0 && (
+              <button
+                className="btn cd-x15"
+                title={`Eliminar los ${seleccionadosIds.length} registros seleccionados`}
+                onClick={eliminarSeleccionados}
+                disabled={borrandoSeleccion}
+                style={{ backgroundColor: borrandoSeleccion ? '#21262d' : '#da3633', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, cursor: borrandoSeleccion ? 'wait' : 'pointer' }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                {borrandoSeleccion ? 'Eliminando…' : `Eliminar (${seleccionadosIds.length})`}
+              </button>
+            )}
             {/* ✅ NUEVO: limpiador de registros duplicados del catálogo */}
             <button
               className="btn btn-outline cd-x15"
@@ -590,6 +640,22 @@ const CatalogosDashboard = () => {
             <table className="data-table cd-x19">
               <thead className="cd-x20">
                 <tr>
+                  {/* ✅ NUEVO: selección múltiple (marca todas las de la página) */}
+                  <th className="cd-x21" style={{ width: '36px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      title="Seleccionar todos los de esta página"
+                      checked={registrosEnPantalla.length > 0 && registrosEnPantalla.every((r: any) => seleccionadosIds.includes(r.id))}
+                      onChange={() => {
+                        const idsPagina = registrosEnPantalla.map((r: any) => r.id);
+                        const todas = idsPagina.length > 0 && idsPagina.every((id: string) => seleccionadosIds.includes(id));
+                        setSeleccionadosIds((prev) => todas
+                          ? prev.filter((id) => !idsPagina.includes(id))
+                          : Array.from(new Set([...prev, ...idsPagina])));
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </th>
                   <th className="cd-x21">Acciones</th>
                   
                   {catalogoSeleccionado.details && catalogoSeleccionado.details.length > 0 && (
@@ -605,10 +671,19 @@ const CatalogosDashboard = () => {
               </thead>
               <tbody>
                 {registrosEnPantalla.length === 0 ? (
-                  <tr><td className="cd-x24" colSpan={catalogoSeleccionado.fields.length + 2}>No hay registros.</td></tr>
+                  <tr><td className="cd-x24" colSpan={catalogoSeleccionado.fields.length + 3}>No hay registros.</td></tr>
                 ) : (
                   registrosEnPantalla.map((reg: any) => (
-                    <tr key={reg.id} onClick={() => { setRegistroActual(reg); setViendoDetalles(true); }} style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === reg.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(reg.id!)} onMouseLeave={() => setHoveredRowId(null)}>
+                    <tr key={reg.id} onClick={() => { setRegistroActual(reg); setViendoDetalles(true); }} style={{ borderBottom: '1px solid #21262d', backgroundColor: seleccionadosIds.includes(reg.id) ? 'rgba(239, 68, 68, 0.08)' : (hoveredRowId === reg.id ? '#21262d' : '#0d1117'), transition: 'background-color 0.2s', cursor: 'pointer' }} onMouseEnter={() => setHoveredRowId(reg.id!)} onMouseLeave={() => setHoveredRowId(null)}>
+                      {/* ✅ NUEVO: checkbox de selección múltiple */}
+                      <td className="cd-x25" style={{ textAlign: 'center' }} onClick={(e: any) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={seleccionadosIds.includes(reg.id)}
+                          onChange={() => toggleSeleccion(reg.id)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </td>
                       <td className="cd-x25" onClick={(e: any) => e.stopPropagation()}>
                         <div className="actions-cell cd-x26">
                           <button 
