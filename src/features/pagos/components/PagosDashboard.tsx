@@ -22,7 +22,8 @@ import html2pdf from 'html2pdf.js';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
-import { Plus, FileText, Trash2, X, Search, Download } from 'lucide-react';
+import { Plus, FileText, Trash2, X, Search, Download, Pencil } from 'lucide-react';
+import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import './PagosDashboard.css';
 
 type TipoPago = 'cliente' | 'proveedor';
@@ -92,6 +93,70 @@ export function PagosDashboard() {
   const [pagos, setPagos] = useState<PagoDoc[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [pagoViendo, setPagoViendo] = useState<PagoDoc | null>(null);
+
+  // ✅ NUEVO — EDICIÓN de un pago (solo metadata: fecha, número, referencia,
+  //   método, observaciones y comprobante). Los MONTOS y las FACTURAS
+  //   aplicadas no se editan aquí: cambiarlos rompería los saldos; para eso
+  //   se elimina el pago (revierte) y se registra de nuevo.
+  const [pagoEditando, setPagoEditando] = useState<PagoDoc | null>(null);
+  const [editFecha, setEditFecha] = useState('');
+  const [editNumero, setEditNumero] = useState('');
+  const [editReferencia, setEditReferencia] = useState('');
+  const [editMetodo, setEditMetodo] = useState('Transferencia');
+  const [editObs, setEditObs] = useState('');
+  const [editArchivoPdf, setEditArchivoPdf] = useState<File | null>(null);
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+
+  const abrirEdicionPago = (p: PagoDoc) => {
+    setPagoEditando(p);
+    setEditFecha(p.fecha || '');
+    setEditNumero(p.numeroPago || '');
+    setEditReferencia(p.referencia || '');
+    setEditMetodo(p.metodoPago || 'Transferencia');
+    setEditObs(p.observaciones || '');
+    setEditArchivoPdf(null);
+  };
+
+  const guardarEdicionPago = async () => {
+    if (!pagoEditando) return;
+    if (!editFecha) { alert('Captura la fecha del pago.'); return; }
+    if (!editNumero.trim()) { alert('Captura el número del pago.'); return; }
+    setGuardandoEdicion(true);
+    try {
+      // Comprobante nuevo (opcional): reemplaza al anterior en el registro.
+      let pdfUrl = pagoEditando.pdfUrl || '';
+      let pdfNombre = pagoEditando.pdfNombre || '';
+      if (editArchivoPdf) {
+        const destino = storageRef(storage, `pagos/${pagoEditando.id}/${editArchivoPdf.name}`);
+        await uploadBytes(destino, editArchivoPdf);
+        pdfUrl = await getDownloadURL(destino);
+        pdfNombre = editArchivoPdf.name;
+      }
+      const cambios = {
+        fecha: editFecha,
+        numeroPago: editNumero.trim(),
+        referencia: editReferencia.trim(),
+        metodoPago: editMetodo,
+        observaciones: editObs.trim(),
+        pdfUrl,
+        pdfNombre,
+        editadoEn: new Date().toISOString(),
+        editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
+      };
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'pagos', pagoEditando.id), cambios, { merge: true });
+      await batch.commit();
+      registrarLog('Pagos', 'Edición', `Editó el pago ${cambios.numeroPago} de ${pagoEditando.entidadNombre}.`).catch(() => {});
+      // El onSnapshot refresca la lista; si el detalle está abierto se actualiza al vuelo.
+      setPagoViendo((prev) => prev && prev.id === pagoEditando.id ? { ...prev, ...cambios } : prev);
+      setPagoEditando(null);
+    } catch (e) {
+      console.error('No se pudo guardar la edición del pago:', e);
+      alert('No se pudo guardar la edición del pago. Intenta de nuevo.');
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  };
 
   // ── Modal Registrar Pago ──
   const [modalAbierto, setModalAbierto] = useState(false);
@@ -729,6 +794,11 @@ export function PagosDashboard() {
             ) : pagosFiltrados.map((p) => (
               <tr key={p.id} className="pg-fila" onClick={() => setPagoViendo(p)} title="Ver detalle del pago">
                 <td onClick={(e) => e.stopPropagation()}>
+                  {/* ✅ NUEVO: editar pago (fecha, número, referencia, método, obs., comprobante) */}
+                  <button className="pg-btn-borrar" style={{ color: '#58a6ff', borderColor: 'rgba(88,166,255,0.4)', marginRight: '6px' }}
+                    onClick={() => abrirEdicionPago(p)} title="Editar pago">
+                    <Pencil size={14} />
+                  </button>
                   <button className="pg-btn-borrar" onClick={() => eliminarPago(p)} title="Eliminar pago (revierte su aplicación)">
                     <Trash2 size={14} />
                   </button>
@@ -801,7 +871,66 @@ export function PagosDashboard() {
               </table>
             </div>
             <div className="pg-modal-pie">
+              <button className="pg-btn-secundario" style={{ marginRight: 'auto', color: '#58a6ff', borderColor: 'rgba(88,166,255,0.4)' }}
+                onClick={() => abrirEdicionPago(pagoViendo)}>
+                <Pencil size={13} style={{ marginRight: '6px', verticalAlign: '-2px' }} />Editar
+              </button>
               <button className="pg-btn-secundario" onClick={() => setPagoViendo(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══════════ ✅ NUEVO — MODAL EDITAR PAGO ══════════ */}
+      {pagoEditando && (
+        <div className="pg-overlay" onClick={() => !guardandoEdicion && setPagoEditando(null)}>
+          <div className="pg-modal" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
+            <div className="pg-modal-encabezado">
+              <h3>Editar Pago · {pagoEditando.entidadNombre}</h3>
+              <button className="pg-cerrar" onClick={() => setPagoEditando(null)} disabled={guardandoEdicion}><X size={16} /></button>
+            </div>
+            <div className="pg-modal-cuerpo" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ fontSize: '0.8rem', color: '#8b949e', border: '1px dashed #30363d', borderRadius: '8px', padding: '10px' }}>
+                Monto: <b style={{ color: '#c9d1d9' }}>{money(pagoEditando.monto, pagoEditando.moneda)}</b> · {(pagoEditando.facturas || []).filter(f => f.aplicado > 0).length} factura(s) aplicadas.
+                Los montos y las facturas NO se editan aquí: si el pago se aplicó mal, elimínalo (revierte los saldos) y regístralo de nuevo.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="pg-campo">
+                  <label>Fecha del pago</label>
+                  <input type="date" value={editFecha} onChange={(e) => setEditFecha(e.target.value)} />
+                </div>
+                <div className="pg-campo">
+                  <label>Método de pago</label>
+                  <SelectBuscable
+                    opciones={METODOS_PAGO.map((m) => ({ value: m, label: m }))}
+                    value={editMetodo}
+                    onChange={setEditMetodo}
+                    placeholder="Buscar método..."
+                  />
+                </div>
+                <div className="pg-campo">
+                  <label># de pago</label>
+                  <input type="text" value={editNumero} onChange={(e) => setEditNumero(e.target.value)} placeholder="Número o folio del pago" />
+                </div>
+                <div className="pg-campo">
+                  <label>Referencia</label>
+                  <input type="text" value={editReferencia} onChange={(e) => setEditReferencia(e.target.value)} placeholder="Referencia bancaria (opcional)" />
+                </div>
+              </div>
+              <div className="pg-campo">
+                <label>Memo / Observaciones</label>
+                <textarea className="pg-memo" rows={3} value={editObs} onChange={(e) => setEditObs(e.target.value)} placeholder="Nota del pago..." />
+              </div>
+              <div className="pg-campo">
+                <label>Comprobante {pagoEditando.pdfNombre ? `(actual: ${pagoEditando.pdfNombre})` : '(sin comprobante)'} — subir uno lo reemplaza</label>
+                <input type="file" accept="application/pdf,image/*" onChange={(e) => setEditArchivoPdf(e.target.files?.[0] || null)} />
+              </div>
+            </div>
+            <div className="pg-modal-pie">
+              <button className="pg-btn-secundario" onClick={() => setPagoEditando(null)} disabled={guardandoEdicion}>Cancelar</button>
+              <button className="pg-btn-nuevo" onClick={guardarEdicionPago} disabled={guardandoEdicion}>
+                {guardandoEdicion ? 'Guardando…' : 'Guardar Cambios'}
+              </button>
             </div>
           </div>
         </div>
