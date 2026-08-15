@@ -1102,7 +1102,7 @@ export function PagosDashboard() {
           ['Fecha de cita', ov.fechaCita],
         ] as [string, any][]).filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '');
         return (
-          <div className="pg-overlay" style={{ zIndex: 70 }} onClick={() => !guardandoOp && setOpViendo(null)}>
+          <div className="pg-overlay" style={{ zIndex: 2200 }} onClick={() => !guardandoOp && setOpViendo(null)}>
             <div className="pg-modal" style={{ maxWidth: '680px' }} onClick={(e) => e.stopPropagation()}>
               <div className="pg-modal-encabezado">
                 <h3>Operación {ov.ref || ov.id}</h3>
@@ -1170,7 +1170,7 @@ export function PagosDashboard() {
         const inputF: React.CSSProperties = { width: '100%', padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' };
         const valorF: React.CSSProperties = { color: '#c9d1d9', fontWeight: 600 };
         return (
-          <div className="pg-overlay" style={{ zIndex: 60 }} onClick={() => !guardandoFactura && setFacturaViendo(null)}>
+          <div className="pg-overlay" style={{ zIndex: 2100 }} onClick={() => !guardandoFactura && setFacturaViendo(null)}>
             <div className="pg-modal" style={{ maxWidth: '760px' }} onClick={(e) => e.stopPropagation()}>
               <div className="pg-modal-encabezado">
                 <h3>Factura # {fv.invoice} · {fv.entidadNombre}</h3>
@@ -1276,7 +1276,7 @@ export function PagosDashboard() {
 
       {/* ══════════ ✅ NUEVO — MODAL EDITAR PAGO ══════════ */}
       {pagoEditando && (
-        <div className="pg-overlay" onClick={() => !guardandoEdicion && setPagoEditando(null)}>
+        <div className="pg-overlay" style={{ zIndex: 2100 }} onClick={() => !guardandoEdicion && setPagoEditando(null)}>
           <div className="pg-modal" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
             <div className="pg-modal-encabezado">
               <h3>Editar Pago · {pagoEditando.entidadNombre}</h3>
