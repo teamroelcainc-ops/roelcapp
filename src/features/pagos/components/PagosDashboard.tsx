@@ -40,6 +40,7 @@ interface FacturaPagable {
   montoPagado: number;
   saldo: number;
   moneda: string;
+  raw?: any;              // ✅ NUEVO: doc completo (status, CCP, operaciones…)
 }
 
 interface FacturaAplicada {
@@ -106,6 +107,106 @@ export function PagosDashboard() {
   const [editObs, setEditObs] = useState('');
   const [editArchivoPdf, setEditArchivoPdf] = useState<File | null>(null);
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+
+  // ✅ NUEVO — DETALLE Y EDICIÓN DE FACTURA desde el modal de pago.
+  //   Permite revisar la factura (con sus OPERACIONES relacionadas) y corregir
+  //   # de invoice, fecha, CCP, status y total sin salir del flujo de pago.
+  const [facturaViendo, setFacturaViendo] = useState<FacturaPagable | null>(null);
+  const [editandoFactura, setEditandoFactura] = useState(false);
+  const [fEditInvoice, setFEditInvoice] = useState('');
+  const [fEditFecha, setFEditFecha] = useState('');
+  const [fEditCcp, setFEditCcp] = useState('');
+  const [fEditStatus, setFEditStatus] = useState('Facturado');
+  const [fEditTotal, setFEditTotal] = useState('');
+  const [guardandoFactura, setGuardandoFactura] = useState(false);
+  const [opsFactura, setOpsFactura] = useState<any[]>([]);
+  const [cargandoOpsFactura, setCargandoOpsFactura] = useState(false);
+
+  const abrirDetalleFactura = async (fac: FacturaPagable) => {
+    setFacturaViendo(fac);
+    setEditandoFactura(false);
+    setFEditInvoice(fac.invoice);
+    setFEditFecha(String(fac.raw?.fecha || fac.fecha || '').slice(0, 10));
+    setFEditCcp(String(fac.raw?.facturaCcp || fac.raw?.ccp || ''));
+    setFEditStatus(String(fac.raw?.statusFactura || 'Facturado'));
+    setFEditTotal(String(fac.total || ''));
+
+    // OPERACIONES relacionadas: primero el resumen guardado en la factura;
+    // si no existe (facturas viejas), se buscan por operacionesIds.
+    const guardadas = Array.isArray(fac.raw?.operacionesGuardadas) ? fac.raw.operacionesGuardadas : [];
+    if (guardadas.length > 0) { setOpsFactura(guardadas); return; }
+    const ids: string[] = Array.isArray(fac.raw?.operacionesIds) ? fac.raw.operacionesIds.map(String) : [];
+    if (ids.length === 0) { setOpsFactura([]); return; }
+    setCargandoOpsFactura(true);
+    try {
+      const encontradas: any[] = [];
+      for (let i = 0; i < ids.length; i += 10) {
+        const lote = ids.slice(i, i + 10);
+        const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', lote)));
+        snap.docs.forEach((d) => {
+          const o = d.data() as any;
+          encontradas.push({ id: d.id, ref: o.ref, fechaServicio: o.fechaServicio, remolque: o.remolqueNombre || o.remolquePlaca || o.numeroRemolque || '', importe: o.tarifaCliente || o.tarifa || '' });
+        });
+      }
+      setOpsFactura(encontradas);
+    } catch (e) {
+      console.warn('No se pudieron cargar las operaciones de la factura:', e);
+      setOpsFactura([]);
+    }
+    setCargandoOpsFactura(false);
+  };
+
+  const guardarEdicionFactura = async () => {
+    if (!facturaViendo) return;
+    if (!fEditInvoice.trim()) { alert('Captura el # de invoice.'); return; }
+    const totalNuevo = Number(fEditTotal);
+    if (isNaN(totalNuevo) || totalNuevo <= 0) { alert('El total debe ser un número mayor a cero.'); return; }
+    if (totalNuevo < facturaViendo.montoPagado - 0.009) {
+      alert(`El total (${money(totalNuevo)}) no puede ser MENOR a lo ya pagado (${money(facturaViendo.montoPagado)}).\n\nPara bajarlo, primero elimina el/los pagos aplicados.`);
+      return;
+    }
+    setGuardandoFactura(true);
+    try {
+      const coleccion = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+      const saldoNuevo = Math.max(0, totalNuevo - facturaViendo.montoPagado);
+      const cambios: any = {
+        invoice: fEditInvoice.trim(),
+        fecha: fEditFecha,
+        facturaCcp: fEditCcp.trim(),
+        statusFactura: fEditStatus,
+        subtotalFactura: totalNuevo,
+        saldoPendiente: saldoNuevo,
+        editadoEn: new Date().toISOString(),
+        editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
+      };
+      if (facturaViendo.montoPagado > 0.009) {
+        cambios.statusPago = saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL';
+      }
+      const batch = writeBatch(db);
+      batch.set(doc(db, coleccion, facturaViendo.id), cambios, { merge: true });
+      await batch.commit();
+      registrarLog('Pagos', 'Edición', `Editó la factura ${cambios.invoice} de ${facturaViendo.entidadNombre} desde Pagos.`).catch(() => {});
+
+      // Refresco EN MEMORIA de la lista del modal (sin recargar todo).
+      setFacturasPendientes((prev) => prev.map((f) => f.id === facturaViendo.id
+        ? { ...f, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoNuevo, raw: { ...(f.raw || {}), ...cambios } }
+        : f));
+      // Si estaba seleccionada con un monto capturado mayor al nuevo saldo, se acota.
+      setPagosPorFactura((pp) => {
+        if (!(facturaViendo.id in pp)) return pp;
+        const cap = Number(pp[facturaViendo.id]);
+        if (isNaN(cap) || cap <= saldoNuevo) return pp;
+        return { ...pp, [facturaViendo.id]: saldoNuevo.toFixed(2) };
+      });
+      setFacturaViendo((prev) => prev ? { ...prev, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoNuevo, raw: { ...(prev.raw || {}), ...cambios } } : prev);
+      setEditandoFactura(false);
+    } catch (e) {
+      console.error('No se pudo guardar la edición de la factura:', e);
+      alert('No se pudo guardar la edición de la factura. Intenta de nuevo.');
+    } finally {
+      setGuardandoFactura(false);
+    }
+  };
 
   const abrirEdicionPago = (p: PagoDoc) => {
     setPagoEditando(p);
@@ -426,6 +527,7 @@ export function PagosDashboard() {
           montoPagado: pagado,
           saldo: Math.max(0, total - pagado),
           moneda: String(raw.monedaFacturacion || raw.monedaProveedor || raw.moneda || monedaPorId || ''),
+          raw, // ✅ NUEVO
         };
       })
       // ✅ CAMBIO: ya NO se excluyen las facturas pagadas — el usuario pidió ver
@@ -881,6 +983,109 @@ export function PagosDashboard() {
         </div>
       )}
 
+      {/* ══════════ ✅ NUEVO — MODAL DETALLE/EDICIÓN DE FACTURA ══════════ */}
+      {facturaViendo && (() => {
+        const fv = facturaViendo;
+        const etiquetaCampo: React.CSSProperties = { display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '4px', fontWeight: 600, textTransform: 'uppercase' };
+        const inputF: React.CSSProperties = { width: '100%', padding: '9px 10px', backgroundColor: '#0d1117', border: '1px solid #30363d', borderRadius: '6px', color: '#c9d1d9', boxSizing: 'border-box' };
+        const valorF: React.CSSProperties = { color: '#c9d1d9', fontWeight: 600 };
+        return (
+          <div className="pg-overlay" style={{ zIndex: 60 }} onClick={() => !guardandoFactura && setFacturaViendo(null)}>
+            <div className="pg-modal" style={{ maxWidth: '760px' }} onClick={(e) => e.stopPropagation()}>
+              <div className="pg-modal-encabezado">
+                <h3>Factura # {fv.invoice} · {fv.entidadNombre}</h3>
+                <button className="pg-cerrar" onClick={() => setFacturaViendo(null)} disabled={guardandoFactura}><X size={16} /></button>
+              </div>
+              <div className="pg-modal-cuerpo" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+                {!editandoFactura ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+                    <div><label style={etiquetaCampo}># Invoice</label><span style={valorF}>{fv.invoice}</span></div>
+                    <div><label style={etiquetaCampo}>Fecha</label><span style={valorF}>{fv.fecha || '-'}</span></div>
+                    <div><label style={etiquetaCampo}>Status</label><span style={{ ...valorF, color: String(fv.raw?.statusFactura || 'Facturado').toLowerCase().includes('cancel') ? '#f85149' : '#3fb950' }}>{fv.raw?.statusFactura || 'Facturado'}</span></div>
+                    <div><label style={etiquetaCampo}>Factura CCP</label><span style={valorF}>{fv.raw?.facturaCcp || fv.raw?.ccp || '-'}</span></div>
+                    <div><label style={etiquetaCampo}>Moneda</label><span style={valorF}>{fv.moneda || '-'}</span></div>
+                    <div><label style={etiquetaCampo}>Total</label><span style={valorF}>{money(fv.total)}</span></div>
+                    <div><label style={etiquetaCampo}>Pagado</label><span style={{ ...valorF, color: '#3fb950' }}>{money(fv.montoPagado)}</span></div>
+                    <div><label style={etiquetaCampo}>Saldo abierto</label><span style={{ ...valorF, color: fv.saldo > 0.009 ? '#d29922' : '#3fb950' }}>{fv.saldo > 0.009 ? money(fv.saldo) : 'PAGADA'}</span></div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                    <div><label style={etiquetaCampo}># Invoice</label><input style={inputF} type="text" value={fEditInvoice} onChange={(e) => setFEditInvoice(e.target.value)} /></div>
+                    <div><label style={etiquetaCampo}>Fecha</label><input style={inputF} type="date" value={fEditFecha} onChange={(e) => setFEditFecha(e.target.value)} /></div>
+                    <div>
+                      <label style={etiquetaCampo}>Status</label>
+                      <SelectBuscable
+                        opciones={['Facturado', 'Cancelado', 'No Facturado'].map((s) => ({ value: s, label: s }))}
+                        value={fEditStatus}
+                        onChange={setFEditStatus}
+                        placeholder="Buscar status..."
+                      />
+                    </div>
+                    <div><label style={etiquetaCampo}>Factura CCP</label><input style={inputF} type="text" value={fEditCcp} onChange={(e) => setFEditCcp(e.target.value)} /></div>
+                    <div>
+                      <label style={etiquetaCampo}>Total ({fv.moneda || 'sin moneda'})</label>
+                      <input style={inputF} type="number" min="0" step="0.01" value={fEditTotal} onChange={(e) => setFEditTotal(e.target.value)} />
+                      {fv.montoPagado > 0.009 && (
+                        <span style={{ display: 'block', marginTop: '4px', fontSize: '0.72rem', color: '#d29922' }}>
+                          Ya tiene {money(fv.montoPagado)} pagados: el total no puede ser menor a eso. El saldo se recalcula solo.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* OPERACIONES RELACIONADAS A LA FACTURA */}
+                <div>
+                  <label style={etiquetaCampo}>Operaciones de la factura ({opsFactura.length})</label>
+                  {cargandoOpsFactura ? (
+                    <p className="pg-vacio">Cargando operaciones…</p>
+                  ) : opsFactura.length === 0 ? (
+                    <p className="pg-vacio">Esta factura no tiene operaciones ligadas.</p>
+                  ) : (
+                    <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto' }}>
+                      <table className="pg-tabla">
+                        <thead>
+                          <tr><th>REFERENCIA</th><th>FECHA SERVICIO</th><th># REMOLQUE</th><th>IMPORTE</th></tr>
+                        </thead>
+                        <tbody>
+                          {opsFactura.map((o: any, idx: number) => (
+                            <tr key={o.id || idx}>
+                              <td className="pg-numero">{o.ref || o.id || '-'}</td>
+                              <td>{o.fechaServicio || o.fecha || '-'}</td>
+                              <td>{o.remolque || '-'}</td>
+                              <td className="pg-monto">{o.importe !== '' && o.importe !== undefined && o.importe !== null ? money(Number(o.importe) || 0) : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="pg-modal-pie">
+                {!editandoFactura ? (
+                  <>
+                    <button className="pg-btn-secundario" style={{ marginRight: 'auto', color: '#58a6ff', borderColor: 'rgba(88,166,255,0.4)' }} onClick={() => setEditandoFactura(true)}>
+                      <Pencil size={13} style={{ marginRight: '6px', verticalAlign: '-2px' }} />Editar factura
+                    </button>
+                    <button className="pg-btn-secundario" onClick={() => setFacturaViendo(null)}>Cerrar</button>
+                  </>
+                ) : (
+                  <>
+                    <button className="pg-btn-secundario" onClick={() => setEditandoFactura(false)} disabled={guardandoFactura}>Cancelar</button>
+                    <button className="pg-btn-nuevo" onClick={guardarEdicionFactura} disabled={guardandoFactura}>
+                      {guardandoFactura ? 'Guardando…' : 'Guardar Factura'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ══════════ ✅ NUEVO — MODAL EDITAR PAGO ══════════ */}
       {pagoEditando && (
         <div className="pg-overlay" onClick={() => !guardandoEdicion && setPagoEditando(null)}>
@@ -1074,7 +1279,15 @@ export function PagosDashboard() {
                             <td className="pg-col-check" onClick={(e) => e.stopPropagation()}>
                               <input type="checkbox" checked={facturasSel.includes(f.id)} disabled={pagada} onChange={() => toggleFactura(f.id)} title={pagada ? 'Factura pagada' : undefined} />
                             </td>
-                            <td><span className="pg-numero">Factura # {f.invoice}</span> <span className="pg-desc-fecha">({f.fecha})</span></td>
+                            <td>
+                              {/* ✅ NUEVO: revisar/editar la factura y sus operaciones */}
+                              <button type="button" title="Ver / editar factura y sus operaciones"
+                                onClick={(e) => { e.stopPropagation(); abrirDetalleFactura(f); }}
+                                style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '6px', color: '#58a6ff', cursor: 'pointer', padding: '3px 7px', marginRight: '8px', verticalAlign: 'middle' }}>
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                              </button>
+                              <span className="pg-numero">Factura # {f.invoice}</span> <span className="pg-desc-fecha">({f.fecha})</span>
+                            </td>
                             <td>{f.fecha}</td>
                             <td>{money(f.total)}</td>
                             <td className={pagada ? 'pg-pagada' : 'pg-monto'}>{pagada ? 'PAGADA' : money(f.saldo)}</td>
