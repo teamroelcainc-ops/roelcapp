@@ -1,5 +1,6 @@
 // src/features/gastos/components/mtto/MttoDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { hoyLocalISO } from '../../../../utils/fechaHoraLocal';
 import { FormularioMtto } from './FormularioMtto';
 import { collection, query, getDocs, limit, orderBy, where, doc, deleteDoc, writeBatch } from 'firebase/firestore'; 
 import { db } from '../../../../config/firebase'; 
@@ -10,7 +11,17 @@ import { getLogoPdf, LOGO_DEFAULT } from '../../../../utils/pdfGenerator';
 import './MttoDashboard.css';
 import { almacenSesion } from '../../../../utils/cacheMemoria';
 
-type VistaMaestra = 'tabla' | 'agrupado';
+type VistaMaestra = 'tabla' | 'agrupado' | 'refacciones';
+
+// ✅ NUEVO — helpers de refacciones/garantías.
+const diasEntreISO = (a: string, b: string): number | null => {
+  const pa = String(a || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const pb = String(b || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!pa || !pb) return null;
+  const da = Date.UTC(Number(pa[1]), Number(pa[2]) - 1, Number(pa[3]));
+  const db_ = Date.UTC(Number(pb[1]), Number(pb[2]) - 1, Number(pb[3]));
+  return Math.round((db_ - da) / 86400000);
+};
 
 // ✅ TODAS LAS COLUMNAS DE LA COLECCIÓN MTTO CON NOMBRES LEGIBLES
 const COLUMNAS_BASE = [
@@ -765,10 +776,96 @@ const MttoDashboard = () => {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
             Agrupados por Invoice
           </button>
+          {/* ✅ NUEVO — vista de refacciones y garantías */}
+          <button onClick={() => setVistaActiva('refacciones')} style={{ padding: '8px 16px', background: 'none', border: 'none', borderBottom: vistaActiva === 'refacciones' ? '2px solid #D84315' : '2px solid transparent', color: vistaActiva === 'refacciones' ? '#f0f6fc' : '#8b949e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: vistaActiva === 'refacciones' ? 'bold' : 'normal' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+            Refacciones y Garantías
+          </button>
         </div>
       </div>
 
-      {vistaActiva === 'agrupado' ? <MttoAgrupadosInvoice /> : (
+      {/* ✅ NUEVO — VISTA DE REFACCIONES Y GARANTÍAS */}
+      {vistaActiva === 'refacciones' && (() => {
+        // Se aplanan las refacciones de TODOS los gastos cargados.
+        const todas = mttoGlobales.flatMap((m: any) =>
+          (Array.isArray(m.refacciones) ? m.refacciones : []).map((r: any) => ({ ...r, __gasto: m }))
+        );
+        const hoy = hoyLocalISO();
+        const conGarantia = todas.filter((r: any) => r.tieneGarantia && r.fechaGarantia);
+        const vigentes = conGarantia
+          .filter((r: any) => (diasEntreISO(hoy, r.fechaGarantia) ?? -1) >= 0)
+          .sort((a: any, b: any) => String(a.fechaGarantia).localeCompare(String(b.fechaGarantia)));
+        const vencidas = conGarantia
+          .filter((r: any) => (diasEntreISO(hoy, r.fechaGarantia) ?? 0) < 0)
+          .sort((a: any, b: any) => String(b.fechaGarantia).localeCompare(String(a.fechaGarantia)));
+        const sinGarantia = todas.length - conGarantia.length;
+
+        const thR: React.CSSProperties = { padding: '9px 10px', textAlign: 'left', color: '#8b949e', whiteSpace: 'nowrap' };
+        const tdR: React.CSSProperties = { padding: '8px 10px', color: '#c9d1d9' };
+        const TablaRef = ({ filas, esVencidas }: { filas: any[]; esVencidas: boolean }) => (
+          <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ backgroundColor: '#161b22' }}>
+                  <th style={thR}>ACCIONES</th><th style={thR}># GASTO</th><th style={thR}>UNIDAD</th><th style={thR}>REFACCIÓN</th>
+                  <th style={thR}>COMPRA</th><th style={thR}>VENCE GARANTÍA</th><th style={thR}>{esVencidas ? 'VENCIDA HACE' : 'DÍAS RESTANTES'}</th>
+                  <th style={thR}>DÓNDE SE COMPRÓ</th><th style={thR}>DÓNDE SE INSTALÓ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filas.length === 0 ? (
+                  <tr><td colSpan={9} style={{ ...tdR, textAlign: 'center', color: '#8b949e', padding: '18px' }}>
+                    {esVencidas ? 'Sin garantías vencidas. ✅' : 'Sin garantías pendientes.'}
+                  </td></tr>
+                ) : filas.map((r: any) => {
+                  const dias = diasEntreISO(hoy, r.fechaGarantia) ?? 0;
+                  const color = esVencidas ? '#f85149' : dias <= 30 ? '#d29922' : '#3fb950';
+                  return (
+                    <tr key={`${r.__gasto.id}_${r.id}`} style={{ borderTop: '1px solid #21262d' }}>
+                      <td style={{ ...tdR, whiteSpace: 'nowrap' }}>
+                        <button type="button" title="Ver detalle del gasto"
+                          onClick={() => { setMttoViendo(r.__gasto); setPestañaDetalleActiva('general'); }}
+                          style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '6px', color: '#58a6ff', cursor: 'pointer', padding: '4px 8px' }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                        </button>
+                      </td>
+                      <td style={{ ...tdR, whiteSpace: 'nowrap', color: '#D84315', fontWeight: 600 }}>{formatearFolio(r.__gasto)}</td>
+                      <td style={tdR}>{mostrarNombreUnidad(r.__gasto.unidadId || r.__gasto.unidad)}</td>
+                      <td style={{ ...tdR, fontWeight: 600 }}>{r.descripcion}</td>
+                      <td style={{ ...tdR, whiteSpace: 'nowrap' }}>{r.fechaCompra || '-'}</td>
+                      <td style={{ ...tdR, whiteSpace: 'nowrap' }}>{r.fechaGarantia}</td>
+                      <td style={{ ...tdR, whiteSpace: 'nowrap', color, fontWeight: 700 }}>
+                        {esVencidas ? `${Math.abs(dias)} días` : `${dias} días`}
+                      </td>
+                      <td style={tdR}>{r.dondeCompro || '-'}</td>
+                      <td style={tdR}>{r.dondeInstalo || '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+
+        return (
+          <div className="md-x12" style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
+            <div style={{ color: '#8b949e', fontSize: '0.85rem' }}>
+              {todas.length} refacción(es) registradas · {vigentes.length} con garantía vigente · {vencidas.length} con garantía vencida · {sinGarantia} sin garantía
+            </div>
+            <div>
+              <h3 style={{ color: '#3fb950', margin: '0 0 10px 0', fontSize: '1rem' }}>🛡️ Garantías pendientes (vigentes) — {vigentes.length}</h3>
+              <TablaRef filas={vigentes} esVencidas={false} />
+            </div>
+            <div>
+              <h3 style={{ color: '#f85149', margin: '0 0 10px 0', fontSize: '1rem' }}>⛔ Garantías vencidas — {vencidas.length}</h3>
+              <TablaRef filas={vencidas} esVencidas={true} />
+            </div>
+          </div>
+        );
+      })()}
+
+      {vistaActiva === 'agrupado' && <MttoAgrupadosInvoice />}
+      {vistaActiva === 'tabla' && (
         <div className="md-x12">
 
           {/* PESTAÑAS POR ESTATUS: No facturados / Facturados (con conteo y monto) */}
@@ -1091,6 +1188,54 @@ const MttoDashboard = () => {
                    <div><label style={labelStyle}>UNIDAD</label><span style={valStyle}>{mostrarNombreUnidad(mttoViendo.unidadId || mttoViendo.unidad)}</span></div>
                    <div><label style={labelStyle}>OPERADOR</label><span style={valStyle}>{mttoViendo.operadorNombre || mttoViendo.operador || '-'}</span></div>
                    <div className="md-x88"><label style={labelStyle}>DESCRIPCIÓN GENERAL</label><div style={boxStyle}>{mttoViendo.descripcion || mttoViendo.descripcionGeneral || '-'}</div></div>
+
+                   {/* ✅ NUEVO — SUBTABLA DE REFACCIONES en el detalle */}
+                   {Array.isArray(mttoViendo.refacciones) && mttoViendo.refacciones.length > 0 && (
+                     <div className="md-x88">
+                       <label style={labelStyle}>🔧 REFACCIONES ({mttoViendo.refacciones.length})</label>
+                       <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto', marginTop: '4px' }}>
+                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                           <thead>
+                             <tr style={{ backgroundColor: '#161b22', color: '#8b949e', textAlign: 'left' }}>
+                               <th style={{ padding: '9px 10px' }}>#</th>
+                               <th style={{ padding: '9px 10px' }}>REFACCIÓN</th>
+                               <th style={{ padding: '9px 10px' }}>COMPRA</th>
+                               <th style={{ padding: '9px 10px' }}>GARANTÍA</th>
+                               <th style={{ padding: '9px 10px' }}>DÓNDE SE COMPRÓ</th>
+                               <th style={{ padding: '9px 10px' }}>DÓNDE SE INSTALÓ</th>
+                             </tr>
+                           </thead>
+                           <tbody>
+                             {mttoViendo.refacciones.map((r: any, idx: number) => {
+                               const diasRest = r.tieneGarantia && r.fechaGarantia ? diasEntreISO(hoyLocalISO(), r.fechaGarantia) : null;
+                               const colorRest = diasRest === null ? '#8b949e' : diasRest < 0 ? '#f85149' : diasRest <= 30 ? '#d29922' : '#3fb950';
+                               return (
+                                 <tr key={r.id || idx} style={{ borderTop: '1px solid #21262d', color: '#c9d1d9' }}>
+                                   <td style={{ padding: '8px 10px', color: '#8b949e' }}>{idx + 1}</td>
+                                   <td style={{ padding: '8px 10px', fontWeight: 600 }}>{r.descripcion || '-'}</td>
+                                   <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{r.fechaCompra || '-'}</td>
+                                   <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                                     {r.tieneGarantia ? (
+                                       <span>
+                                         {r.fechaGarantia || '-'}
+                                         {diasRest !== null && (
+                                           <span style={{ display: 'block', fontSize: '0.72rem', color: colorRest, fontWeight: 700 }}>
+                                             {diasRest < 0 ? `VENCIDA hace ${Math.abs(diasRest)} d` : `quedan ${diasRest} d`}
+                                           </span>
+                                         )}
+                                       </span>
+                                     ) : <span style={{ color: '#8b949e' }}>Sin garantía</span>}
+                                   </td>
+                                   <td style={{ padding: '8px 10px' }}>{r.dondeCompro || '-'}</td>
+                                   <td style={{ padding: '8px 10px' }}>{r.dondeInstalo || '-'}</td>
+                                 </tr>
+                               );
+                             })}
+                           </tbody>
+                         </table>
+                       </div>
+                     </div>
+                   )}
                 </div>
               )}
 
