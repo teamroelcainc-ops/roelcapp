@@ -118,6 +118,7 @@ export function PagosDashboard() {
   const [fEditCcp, setFEditCcp] = useState('');
   const [fEditStatus, setFEditStatus] = useState('Facturado');
   const [fEditTotal, setFEditTotal] = useState('');
+  const [fEditMoneda, setFEditMoneda] = useState('');
   const [guardandoFactura, setGuardandoFactura] = useState(false);
   const [opsFactura, setOpsFactura] = useState<any[]>([]);
   const [cargandoOpsFactura, setCargandoOpsFactura] = useState(false);
@@ -130,6 +131,7 @@ export function PagosDashboard() {
     setFEditCcp(String(fac.raw?.facturaCcp || fac.raw?.ccp || ''));
     setFEditStatus(String(fac.raw?.statusFactura || 'Facturado'));
     setFEditTotal(String(fac.total || ''));
+    setFEditMoneda(fac.moneda || '');
 
     // OPERACIONES relacionadas: primero el resumen guardado en la factura;
     // si no existe (facturas viejas), se buscan por operacionesIds.
@@ -176,6 +178,9 @@ export function PagosDashboard() {
         statusFactura: fEditStatus,
         subtotalFactura: totalNuevo,
         saldoPendiente: saldoNuevo,
+        // ✅ Moneda rectificada: se guarda en forma canónica ('USD'/'MXN') en
+        //   el campo que leen tanto Pagos como Facturación.
+        monedaFacturacion: fEditMoneda,
         editadoEn: new Date().toISOString(),
         editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
       };
@@ -189,7 +194,7 @@ export function PagosDashboard() {
 
       // Refresco EN MEMORIA de la lista del modal (sin recargar todo).
       setFacturasPendientes((prev) => prev.map((f) => f.id === facturaViendo.id
-        ? { ...f, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoNuevo, raw: { ...(f.raw || {}), ...cambios } }
+        ? { ...f, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoNuevo, moneda: fEditMoneda, raw: { ...(f.raw || {}), ...cambios } }
         : f));
       // Si estaba seleccionada con un monto capturado mayor al nuevo saldo, se acota.
       setPagosPorFactura((pp) => {
@@ -198,7 +203,7 @@ export function PagosDashboard() {
         if (isNaN(cap) || cap <= saldoNuevo) return pp;
         return { ...pp, [facturaViendo.id]: saldoNuevo.toFixed(2) };
       });
-      setFacturaViendo((prev) => prev ? { ...prev, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoNuevo, raw: { ...(prev.raw || {}), ...cambios } } : prev);
+      setFacturaViendo((prev) => prev ? { ...prev, invoice: cambios.invoice, fecha: fEditFecha, total: totalNuevo, saldo: saldoNuevo, moneda: fEditMoneda, raw: { ...(prev.raw || {}), ...cambios } } : prev);
       setEditandoFactura(false);
     } catch (e) {
       console.error('No se pudo guardar la edición de la factura:', e);
@@ -567,6 +572,37 @@ export function PagosDashboard() {
   const ID_USD = '7dca62b3';
   const ID_MXN = 'f95d8894';
 
+  // ✅ FIX MONEDA INCONSISTENTE: las facturas guardan la moneda de formas
+  //   distintas según la época/módulo — a veces el ID del catálogo, a veces
+  //   'USD'/'MXN', a veces el nombre 'Dólares'/'Dolares'/'Pesos'. Antes cada
+  //   representación se mostraba tal cual (la misma factura salía "USD" en
+  //   Facturación y "Dolares"/"Pesos" en Pagos) y hasta bloqueaba pagos por
+  //   "monedas distintas" cuando en realidad eran la misma. Este normalizador
+  //   convierte CUALQUIER representación a 'USD' o 'MXN'.
+  const monedaCanonica = (val: any): string => {
+    const s = String(val ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+    if (!s || s === 'n/a') return '';
+    if (s === ID_USD.toLowerCase() || s === 'usd' || s === 'us$' || s === 'dls' || s.startsWith('dolar')) return 'USD';
+    if (s === ID_MXN.toLowerCase() || s === 'mxn' || s === 'mn' || s.startsWith('peso')) return 'MXN';
+    return '';
+  };
+
+  // Resuelve la moneda canónica de un doc de factura probando TODOS los
+  // campos donde puede vivir; si ninguno se reconoce, devuelve el primer
+  // texto no vacío tal cual (para no ocultar monedas raras).
+  const monedaDeFactura = (raw: any): string => {
+    const candidatos = [raw?.monedaFacturacion, raw?.monedaProveedor, raw?.moneda, raw?.monedaId];
+    for (const c of candidatos) {
+      const canon = monedaCanonica(c);
+      if (canon) return canon;
+    }
+    for (const c of candidatos) {
+      const s = String(c ?? '').trim();
+      if (s) return s;
+    }
+    return '';
+  };
+
   // Mismo criterio que Facturación: sin campo/vacío => 'Facturado'. Solo se
   // excluyen las canceladas y las marcadas explícitamente como 'No Facturado'.
   const esFacturaCobrable = (raw: any): boolean => {
@@ -583,7 +619,6 @@ export function PagosDashboard() {
   const mapearFacturaPagable = (id: string, raw: any, tipo: TipoPago): FacturaPagable => {
     const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
     const pagado = Number(raw.montoPagado) || 0;
-    const monedaPorId = raw.monedaId === ID_USD ? 'USD' : raw.monedaId === ID_MXN ? 'MXN' : '';
     return {
       id,
       invoice: String(raw.invoice || raw.folio || id),
@@ -593,7 +628,7 @@ export function PagosDashboard() {
       total,
       montoPagado: pagado,
       saldo: Math.max(0, total - pagado),
-      moneda: String(raw.monedaFacturacion || raw.monedaProveedor || raw.moneda || monedaPorId || ''),
+      moneda: monedaDeFactura(raw), // ✅ canónica: 'USD' / 'MXN'
       raw,
     };
   };
@@ -1204,7 +1239,16 @@ export function PagosDashboard() {
                     </div>
                     <div><label style={etiquetaCampo}>Factura CCP</label><input style={inputF} type="text" value={fEditCcp} onChange={(e) => setFEditCcp(e.target.value)} /></div>
                     <div>
-                      <label style={etiquetaCampo}>Total ({fv.moneda || 'sin moneda'})</label>
+                      <label style={etiquetaCampo}>Moneda</label>
+                      <SelectBuscable
+                        opciones={[{ value: 'USD', label: 'USD (Dólares)' }, { value: 'MXN', label: 'MXN (Pesos)' }]}
+                        value={fEditMoneda}
+                        onChange={setFEditMoneda}
+                        placeholder="Buscar moneda..."
+                      />
+                    </div>
+                    <div>
+                      <label style={etiquetaCampo}>Total ({fEditMoneda || fv.moneda || 'sin moneda'})</label>
                       <input style={inputF} type="number" min="0" step="0.01" value={fEditTotal} onChange={(e) => setFEditTotal(e.target.value)} />
                       {fv.montoPagado > 0.009 && (
                         <span style={{ display: 'block', marginTop: '4px', fontSize: '0.72rem', color: '#d29922' }}>

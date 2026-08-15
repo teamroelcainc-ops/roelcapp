@@ -1932,7 +1932,12 @@ export const FacturacionClientesDashboard = () => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
     historialOrdenado.forEach(f => {
       const monto = Number(f.subtotalFactura) || 0;
-      const mon = monedaFacturaMostrar(f).toUpperCase();
+      // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
+      //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
+      //   lo que TOTAL FACTURADO marcaba $0.00. Se normaliza antes de sumar.
+      const monTxt = monedaFacturaMostrar(f).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+      const mon = (monTxt === 'USD' || monTxt.startsWith('DOLAR') || monTxt === 'DLS' || monTxt === 'US$') ? 'USD'
+        : (monTxt === 'MXN' || monTxt.startsWith('PESO') || monTxt === 'MN') ? 'MXN' : monTxt;
       if (mon === 'USD') totalUSD += monto;
       else if (mon === 'MXN') totalMXN += monto;
       else totalSinMoneda += monto;
