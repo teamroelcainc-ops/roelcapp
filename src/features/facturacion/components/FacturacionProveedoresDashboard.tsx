@@ -364,6 +364,22 @@ const calcularConversionProveedor = (op: any) => {
   return { subtotal, dol, pes, conv };
 };
 
+
+// ✅ FIX MONEDA — TOTAL NATIVO DE LA FACTURA: el total a cobrar/pagar en la
+//   MONEDA de la factura (USD -> dólares, MXN -> pesos), NO la conversión.
+//   1) subtotalMonedaFactura (facturas nuevas lo guardan directo);
+//   2) suma de subtotalBase de operacionesGuardadas (monto en la moneda de
+//      facturación de cada operación — cubre las facturas existentes);
+//   3) respaldo: subtotalFactura (conversión) para facturas sin detalle.
+const totalNativoFactura = (fac: any): number => {
+  const directo = Number(fac?.subtotalMonedaFactura);
+  if (!isNaN(directo) && directo > 0) return directo;
+  const ops = Array.isArray(fac?.operacionesGuardadas) ? fac.operacionesGuardadas : [];
+  const base = ops.reduce((s: number, o: any) => s + (Number(o?.subtotalBase) || 0), 0);
+  if (base > 0) return base;
+  return Number(fac?.subtotalFactura) || Number(fac?.total) || Number(fac?.montoFactura) || 0;
+};
+
 const obtenerMontoOperacion = (op: any) => {
   const convGuardada = Number(op.conversionProv);
   if (!isNaN(convGuardada) && convGuardada > 0) {
@@ -2137,9 +2153,13 @@ export const FacturacionProveedoresDashboard = () => {
           ref: op?.numReferencia || op?.referencia || op?.ref || id.substring(0, 6),
           monto: montos.conv,
           subtotalBase: montos.subtotal,
+          dol: montos.dol,   // ✅ FIX MONEDA
+          pes: montos.pes,   // ✅ FIX MONEDA
           remolque: op ? txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque) : '',
         };
       });
+      // ✅ FIX MONEDA: total en la moneda de la factura (no la conversión).
+      const subtotalMonedaFactura = operacionesResumenEstable.reduce((s: number, o: any) => s + (Number(o.subtotalBase) || 0), 0);
       const remolquesFactura = Array.from(new Set(
         operacionesResumenEstable.map((o: any) => String(o.remolque || '')).filter(r => r && r !== '-')
       ));
@@ -2159,6 +2179,7 @@ export const FacturacionProveedoresDashboard = () => {
         operacionesGuardadas: operacionesResumenEstable,
         remolques: remolquesFactura,
         subtotalFactura: resumenSeleccion.subtotal,
+        subtotalMonedaFactura, // ✅ FIX MONEDA
         createdAt: new Date().toISOString(),
       };
       const invKey = invoiceForm.trim().toLowerCase();
@@ -2551,7 +2572,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'proveedor': return String(f.proveedorNombre || '').toLowerCase();
       case 'moneda': return String(f.monedaProveedor || '').toLowerCase();
       case 'cantOps': return Number(f.operacionesIds?.length || 0);
-      case 'total': return Number(f.subtotalFactura || 0);
+      case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
       case 'createdAt': return String(f.createdAt || '');
       default: return '';
     }
@@ -2636,7 +2657,7 @@ export const FacturacionProveedoresDashboard = () => {
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
     historialOrdenado.forEach(f => {
-      const monto = Number(f.subtotalFactura) || 0;
+      const monto = totalNativoFactura(f); // ✅ FIX MONEDA
       // ✅ FIX: la moneda puede venir como nombre de catálogo ("Dólares",
       //   "Pesos") y las tarjetas comparaban contra 'USD'/'MXN' exactos, por
       //   lo que TOTAL FACTURADO marcaba $0.00. Se normaliza antes de sumar.
@@ -2796,7 +2817,7 @@ export const FacturacionProveedoresDashboard = () => {
         return Array.isArray(f.operacionesGuardadas)
           ? f.operacionesGuardadas.map((op: any) => refDeOp(op)).filter(Boolean).join(', ')
           : '-';
-      case 'total': return Number(f.subtotalFactura) || 0;
+      case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
       case 'createdAt': return f.createdAt ? formatearFechaHora(f.createdAt) : '-';
       default: return '-';
     }
@@ -2827,7 +2848,7 @@ export const FacturacionProveedoresDashboard = () => {
           </div>
         );
       }
-      case 'total': return <span className="fpd-x13">{formatoMoneda(f.subtotalFactura)}</span>;
+      case 'total': return <span className="fpd-x13">{formatoMoneda(totalNativoFactura(f))}</span>;
       case 'createdAt': return <span className="fpd-x10">{f.createdAt ? formatearFechaHora(f.createdAt) : '-'}</span>;
       default: return '-';
     }

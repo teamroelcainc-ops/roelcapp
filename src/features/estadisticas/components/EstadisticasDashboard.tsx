@@ -153,7 +153,7 @@ export function EstadisticasDashboard() {
   //   MISMO formulario del módulo de Operaciones.
   // ✅ NUEVO: al hacer clic en cualquier elemento del detalle (cliente,
   //   unidad, operador, movimiento, línea, trompo) se muestran SUS referencias.
-  const [refsFiltro, setRefsFiltro] = useState<{ etiqueta: string; ops: Op[] } | null>(null);
+  const [refsFiltro, setRefsFiltro] = useState<{ etiqueta: string; ops: Op[]; formato?: 'transfer' } | null>(null);
   // ✅ Ficha de la operación (primero el DETALLE; Editar abre el formulario).
   const [opFicha, setOpFicha] = useState<Op | null>(null);
   // ✅ Tabla de referencias: columnas configurables (persisten entre sesiones)
@@ -475,6 +475,14 @@ export function EstadisticasDashboard() {
     return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   };
 
+  // Conteo por línea para las pestañas del desglose.
+  const conteoLineasDet = useMemo(() => {
+    const c: Record<string, number> = { Todas: detalleSel?.ops.length || 0, Transfer: 0, 'Logística': 0, Fletes: 0, Otro: 0 };
+    (detalleSel?.ops || []).forEach((op: Op) => { c[lineaDeOp(op)] += 1; });
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detalleSel]);
+
   // Ops de un mes (0-11), opcionalmente filtradas por línea.
   const opsDeMes = (mes: number, linea?: Linea) => ops.filter((op) => {
     const f = fechaISODe(op);
@@ -500,9 +508,29 @@ export function EstadisticasDashboard() {
     setRefsFiltro(null);
   };
 
+  // ═══════════ ✅ NUEVO — PESTAÑAS POR TIPO DE OPERACIÓN EN EL REPORTE ═══════════
+  //   El reporte de operaciones se separa en pestañas por línea (como las
+  //   hojas del Excel). La pestaña TRANSFER usa el formato de columnas del
+  //   Excel "Reporte de Transfer" (facturación + cobranza por operación).
+  // ✅ CAMBIO: la pestaña por línea vive en el MODAL DE DESGLOSE (no en la
+  //   tabla). La tabla hereda el formato Transfer vía refsFiltro.formato.
+  const [tabLineaDet, setTabLineaDet] = useState<'Todas' | Linea>('Todas');
+  useEffect(() => { setTabLineaDet('Todas'); }, [detalleSel?.titulo]);
+  useEffect(() => { setFiltrosCols({}); }, [refsFiltro]);
+
+  // Al hacer drill-down desde el desglose, si la pestaña activa es Transfer
+  // la tabla se abre con el formato del Excel de Transfer.
+  const abrirRefsDesdeDetalle = (cfg: { etiqueta: string; ops: Op[] }) => {
+    setRefsFiltro({ ...cfg, formato: tabLineaDet === 'Transfer' ? 'transfer' : undefined });
+  };
+
   const detalle = useMemo(() => {
     if (detalleSel === null) return null;
-    const delSel = detalleSel.ops;
+    // ✅ Pestaña por línea del DESGLOSE: todos los paneles se recalculan
+    //   sobre la línea seleccionada.
+    const delSel = (tabLineaDet === 'Todas' || detalleSel.esLinea)
+      ? detalleSel.ops
+      : detalleSel.ops.filter((op: Op) => lineaDeOp(op) === tabLineaDet);
     const porLinea = { Transfer: 0, 'Logística': 0, Fletes: 0, Otro: 0 } as Record<Linea, number>;
     const porMovimiento = { 'Importación': 0, 'Exportación': 0, 'Movimiento': 0, 'Sin clasificar': 0 };
     let trompos = 0;
@@ -536,14 +564,8 @@ export function EstadisticasDashboard() {
       clientes: contarPor(delSel, (op) => String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '')),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detalleSel]);
+  }, [detalleSel, tabLineaDet]);
 
-  // ═══════════ ✅ NUEVO — PESTAÑAS POR TIPO DE OPERACIÓN EN EL REPORTE ═══════════
-  //   El reporte de operaciones se separa en pestañas por línea (como las
-  //   hojas del Excel). La pestaña TRANSFER usa el formato de columnas del
-  //   Excel "Reporte de Transfer" (facturación + cobranza por operación).
-  const [tabLineaRefs, setTabLineaRefs] = useState<'Todas' | Linea>('Todas');
-  useEffect(() => { setTabLineaRefs('Todas'); setFiltrosCols({}); }, [refsFiltro]);
 
   const COLUMNAS_TRANSFER: { campo: string; etiqueta: string; num?: boolean }[] = [
     { campo: 'refRoelca', etiqueta: '# REF ROELCA' },
@@ -581,7 +603,7 @@ export function EstadisticasDashboard() {
   const [cargandoJoin, setCargandoJoin] = useState(false);
 
   useEffect(() => {
-    if (tabLineaRefs !== 'Transfer' || !refsFiltro) return;
+    if (refsFiltro?.formato !== 'transfer') return;
     let cancelado = false;
     (async () => {
       setCargandoJoin(true);
@@ -616,7 +638,7 @@ export function EstadisticasDashboard() {
     })();
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tabLineaRefs, refsFiltro]);
+  }, [refsFiltro]);
 
   const nummx = (n: number) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -670,14 +692,11 @@ export function EstadisticasDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [columnasRefs]);
 
-  const esModoTransfer = tabLineaRefs === 'Transfer';
+  const esModoTransfer = refsFiltro?.formato === 'transfer';
 
   const refsVisibles = useMemo(() => {
     if (!refsFiltro) return [];
-    // ✅ Pestaña activa: filtra por línea (Todas = sin filtro).
-    const porLinea = tabLineaRefs === 'Todas'
-      ? refsFiltro.ops
-      : refsFiltro.ops.filter((op: Op) => lineaDeOp(op) === tabLineaRefs);
+    const porLinea = refsFiltro.ops;
     const cols = esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas;
     const valor = esModoTransfer ? valorTransfer : valorColumna;
     return porLinea.filter(op =>
@@ -688,15 +707,7 @@ export function EstadisticasDashboard() {
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refsFiltro, columnasActivas, filtrosCols, tabLineaRefs, joinFacturas, joinPagos, mapasNombres]);
-
-  // Conteo por línea para las pestañas del reporte.
-  const conteoLineasRefs = useMemo(() => {
-    const c: Record<string, number> = { Todas: refsFiltro?.ops.length || 0, Transfer: 0, 'Logística': 0, Fletes: 0, Otro: 0 };
-    (refsFiltro?.ops || []).forEach((op: Op) => { c[lineaDeOp(op)] += 1; });
-    return c;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refsFiltro]);
+  }, [refsFiltro, columnasActivas, filtrosCols, esModoTransfer, joinFacturas, joinPagos, mapasNombres]);
 
   // Totales de la pestaña Transfer (fila TOTAL en pantalla y exportes).
   const totalesTransfer = useMemo(() => {
@@ -740,9 +751,9 @@ export function EstadisticasDashboard() {
       filaTot['SALDO COBRANZA'] = nummx(totalesTransfer.saldoCobranza);
       filas.push(filaTot);
     }
-    const nombreHoja = tabLineaRefs === 'Todas' ? 'Operaciones' : tabLineaRefs.toUpperCase().replace('Í', 'I');
+    const nombreHoja = esModoTransfer ? 'TRANSFER' : 'Operaciones';
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), nombreHoja);
-    XLSX.writeFile(wb, `Reporte_${tabLineaRefs === 'Todas' ? '' : tabLineaRefs + '_'}${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
+    XLSX.writeFile(wb, `Reporte_${esModoTransfer ? 'Transfer_' : ''}${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
   };
 
   const exportarRefsPDF = async () => {
@@ -758,7 +769,7 @@ export function EstadisticasDashboard() {
               ${logo ? `<img src="${logo}" style="height:52px;" />` : ''}
               <div>
                 <div style="font-size:17px; font-weight:bold; color:#D84315;">ROELCA INC.</div>
-                <div style="font-size:13px; font-weight:bold; margin-top:2px;">Reporte de ${esc(tabLineaRefs === 'Todas' ? 'Servicios' : tabLineaRefs)} — ${esc(refsFiltro.etiqueta)}</div>
+                <div style="font-size:13px; font-weight:bold; margin-top:2px;">Reporte de ${esc(esModoTransfer ? 'Transfer' : 'Servicios')} — ${esc(refsFiltro.etiqueta)}</div>
                 <div style="font-size:11px; color:#555; margin-top:2px;">Periodo: ${esc(fechaDesde)} al ${esc(fechaHasta)} · ${refsVisibles.length} operación(es)</div>
               </div>
             </div>
@@ -1135,7 +1146,7 @@ export function EstadisticasDashboard() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {/* ✅ NUEVO: tabla completa de las operaciones del desglose */}
                 <button type="button" className="est-detalle-cerrar" style={{ width: 'auto', padding: '4px 10px', fontSize: '0.78rem' }}
-                  onClick={() => setRefsFiltro({ etiqueta: detalleSel.titulo, ops: detalle.ops })}>
+                  onClick={() => abrirRefsDesdeDetalle({ etiqueta: tabLineaDet === 'Todas' ? detalleSel.titulo : `${detalleSel.titulo} · ${tabLineaDet}`, ops: detalle.ops })}>
                   Ver operaciones
                 </button>
                 <button className="est-detalle-cerrar" onClick={() => { setDetalleSel(null); setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}><X size={16} /></button>
@@ -1147,23 +1158,6 @@ export function EstadisticasDashboard() {
                 const totalOps = detalle.ops.length || 1;
                 const pctUSD = (detalle.monedas.USD.n / totalOps) * 100;
                 const pctMXN = (detalle.monedas.MXN.n / totalOps) * 100;
-                // ── Donut de Tipo de operación (SVG puro) ──
-                const lineas: { l: Linea; color: string }[] = [
-                  { l: 'Transfer', color: '#D84315' },
-                  { l: 'Logística', color: '#58a6ff' },
-                  { l: 'Fletes', color: '#3fb950' },
-                  { l: 'Otro', color: '#8b949e' },
-                ];
-                const R = 42, C = 2 * Math.PI * R;
-                let acumulado = 0;
-                const segmentos = lineas
-                  .filter(({ l }) => detalle.porLinea[l] > 0)
-                  .map(({ l, color }) => {
-                    const frac = detalle.porLinea[l] / totalOps;
-                    const seg = { l, color, frac, offset: acumulado };
-                    acumulado += frac;
-                    return seg;
-                  });
                 // ── Barras de Movimiento ──
                 const movs = (['Importación', 'Exportación', 'Movimiento'] as const)
                   .map((mv) => ({ mv, n: detalle.porMovimiento[mv] }));
@@ -1183,7 +1177,7 @@ export function EstadisticasDashboard() {
                         const pct = (cuantas / totalOps) * 100;
                         return (
                           <button type="button" className="est-rep-rank-item" key={nombre}
-                            onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${titulo}: ${nombre}`, ops: detalle.ops.filter((op) => filtrar(op, nombre)) })}>
+                            onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · ${titulo}: ${nombre}`, ops: detalle.ops.filter((op) => filtrar(op, nombre)) })}>
                             <span className={`est-rep-rank-num${idx < 3 ? ' top' : ''}`}>{idx + 1}</span>
                             <span className="est-rep-rank-info">
                               <span className="est-rep-rank-nombre">{nombre}</span>
@@ -1198,6 +1192,27 @@ export function EstadisticasDashboard() {
                 );
                 return (
                   <div className="est-rep">
+                    {/* ✅ NUEVO — PESTAÑAS POR TIPO DE OPERACIÓN (sustituyen a la dona) */}
+                    {!detalleSel.esLinea && (
+                      <div className="est-refs-tabs" style={{ margin: 0 }}>
+                        {(['Todas', 'Transfer', 'Logística', 'Fletes'] as const).map((t) => (
+                          (t === 'Todas' || conteoLineasDet[t] > 0) && (
+                            <button key={t} type="button"
+                              className={`est-refs-tab${tabLineaDet === t ? ' activa' : ''}`}
+                              onClick={() => setTabLineaDet(t)}>
+                              {t} <small>({conteoLineasDet[t]})</small>
+                            </button>
+                          )
+                        ))}
+                        {conteoLineasDet.Otro > 0 && (
+                          <button type="button" className={`est-refs-tab${tabLineaDet === 'Otro' ? ' activa' : ''}`}
+                            onClick={() => setTabLineaDet('Otro')}>
+                            Otro <small>({conteoLineasDet.Otro})</small>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
                     {/* ── FILA 1: KPIs ── */}
                     <div className="est-rep-kpis">
                       <div className="est-rep-card est-rep-kpi">
@@ -1208,13 +1223,13 @@ export function EstadisticasDashboard() {
                         <span className="est-rep-titulo">Facturación por moneda</span>
                         <div className="est-rep-monedas">
                           <button type="button" className="est-rep-moneda" disabled={detalle.monedas.USD.n === 0}
-                            onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Dólares (USD)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'USD') })}>
+                            onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Dólares (USD)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'USD') })}>
                             <span className="est-rep-moneda-etq">Dólares (USD)</span>
                             <span className="est-rep-moneda-valor usd">{num(detalle.monedas.USD.n)} <small>({pctUSD.toFixed(0)}%)</small></span>
                             <span className="est-rep-moneda-monto">{money(detalle.monedas.USD.dol)} USD{detalle.monedas.USD.conv > 0 ? ` ≈ ${money(detalle.monedas.USD.conv)} MXN` : ''}</span>
                           </button>
                           <button type="button" className="est-rep-moneda" disabled={detalle.monedas.MXN.n === 0}
-                            onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Pesos (MXN)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'MXN') })}>
+                            onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Pesos (MXN)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'MXN') })}>
                             <span className="est-rep-moneda-etq">Pesos (MXN)</span>
                             <span className="est-rep-moneda-valor mxn">{num(detalle.monedas.MXN.n)} <small>({pctMXN.toFixed(0)}%)</small></span>
                             <span className="est-rep-moneda-monto">{money(detalle.monedas.MXN.pes)} MXN</span>
@@ -1223,12 +1238,12 @@ export function EstadisticasDashboard() {
                         {(detalle.monedas.Mixta.n > 0 || detalle.monedas['Sin dato'].n > 0) && (
                           <div className="est-rep-moneda-extra">
                             {detalle.monedas.Mixta.n > 0 && (
-                              <button type="button" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Moneda mixta`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Mixta') })}>
+                              <button type="button" onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Moneda mixta`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Mixta') })}>
                                 Mixta: {num(detalle.monedas.Mixta.n)}
                               </button>
                             )}
                             {detalle.monedas['Sin dato'].n > 0 && (
-                              <button type="button" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Sin moneda`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Sin dato') })}>
+                              <button type="button" onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Sin moneda`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Sin dato') })}>
                                 Sin dato: {num(detalle.monedas['Sin dato'].n)}
                               </button>
                             )}
@@ -1238,40 +1253,13 @@ export function EstadisticasDashboard() {
                       <div className="est-rep-card est-rep-kpi">
                         <span className="est-rep-titulo">Operaciones Trompo</span>
                         {detalle.trompos > 0
-                          ? <button type="button" className="est-rep-kpi-numero clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Trompo`, ops: detalle.ops.filter((op) => esTrompo(op)) })}>{num(detalle.trompos)}</button>
+                          ? <button type="button" className="est-rep-kpi-numero clicable" onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Trompo`, ops: detalle.ops.filter((op) => esTrompo(op)) })}>{num(detalle.trompos)}</button>
                           : <span className="est-rep-kpi-numero apagado">0</span>}
                       </div>
                     </div>
 
                     {/* ── FILA 2: GRÁFICAS ── */}
                     <div className="est-rep-graficas">
-                      {!detalleSel.esLinea && (
-                        <div className="est-rep-card">
-                          <span className="est-rep-titulo">Tipo de operación</span>
-                          <div className="est-rep-dona-marco">
-                            <svg viewBox="0 0 120 120" className="est-rep-dona">
-                              <circle cx="60" cy="60" r={R} fill="none" stroke="#21262d" strokeWidth="14" />
-                              {segmentos.map((s) => (
-                                <circle key={s.l} cx="60" cy="60" r={R} fill="none" stroke={s.color} strokeWidth="14"
-                                  strokeDasharray={`${s.frac * C} ${C}`} strokeDashoffset={-s.offset * C}
-                                  transform="rotate(-90 60 60)" strokeLinecap="butt" />
-                              ))}
-                              <text x="60" y="57" textAnchor="middle" className="est-rep-dona-num">{num(detalle.ops.length)}</text>
-                              <text x="60" y="72" textAnchor="middle" className="est-rep-dona-sub">ops</text>
-                            </svg>
-                            <div className="est-rep-leyenda">
-                              {lineas.map(({ l, color }) => detalle.porLinea[l] > 0 && (
-                                <button type="button" key={l} className="est-rep-leyenda-item"
-                                  onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${l}`, ops: detalle.ops.filter((op) => lineaDeOp(op) === l) })}>
-                                  <i style={{ backgroundColor: color }} />
-                                  <span>{l}</span>
-                                  <b>{num(detalle.porLinea[l])} <small>({((detalle.porLinea[l] / totalOps) * 100).toFixed(0)}%)</small></b>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      )}
                       <div className="est-rep-card">
                         <span className="est-rep-titulo">Movimiento</span>
                         <div className="est-rep-barras">
@@ -1280,7 +1268,7 @@ export function EstadisticasDashboard() {
                             const alto = (n / maxMov) * 100;
                             return (
                               <button type="button" key={mv} className="est-rep-barra-col" disabled={n === 0}
-                                onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}>
+                                onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}>
                                 <span className="est-rep-barra-cifra">{n > 0 ? `${num(n)} (${pct.toFixed(0)}%)` : ''}</span>
                                 <span className="est-rep-barra-tubo"><i style={{ height: `${alto}%`, backgroundColor: colorMov[mv] }} /></span>
                                 <span className="est-rep-barra-etq">{mv}</span>
@@ -1290,7 +1278,7 @@ export function EstadisticasDashboard() {
                         </div>
                         {detalle.porMovimiento['Sin clasificar'] > 0 && (
                           <button type="button" className="est-rep-sinclas"
-                            onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Sin clasificar`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === 'Sin clasificar') })}>
+                            onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Sin clasificar`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === 'Sin clasificar') })}>
                             Sin clasificar: {num(detalle.porMovimiento['Sin clasificar'])}
                           </button>
                         )}
@@ -1347,27 +1335,11 @@ export function EstadisticasDashboard() {
                       </button>
                     </div>
                   </div>
-
-                  {/* ✅ NUEVO — PESTAÑAS POR TIPO DE OPERACIÓN (como las hojas del Excel) */}
-                  <div className="est-refs-tabs">
-                    {(['Todas', 'Transfer', 'Logística', 'Fletes'] as const).map((t) => (
-                      (t === 'Todas' || conteoLineasRefs[t] > 0) && (
-                        <button key={t} type="button"
-                          className={`est-refs-tab${tabLineaRefs === t ? ' activa' : ''}`}
-                          onClick={() => { setTabLineaRefs(t); setFiltrosCols({}); }}>
-                          {t} <small>({conteoLineasRefs[t]})</small>
-                        </button>
-                      )
-                    ))}
-                    {conteoLineasRefs.Otro > 0 && (
-                      <button type="button" className={`est-refs-tab${tabLineaRefs === 'Otro' ? ' activa' : ''}`}
-                        onClick={() => { setTabLineaRefs('Otro'); setFiltrosCols({}); }}>
-                        Otro <small>({conteoLineasRefs.Otro})</small>
-                      </button>
-                    )}
-                    {esModoTransfer && cargandoJoin && <span className="est-refs-join-msg">Cargando facturación y pagos…</span>}
-                    {esModoTransfer && !cargandoJoin && <span className="est-refs-join-msg ok">Formato Reporte de Transfer (facturación + cobranza)</span>}
-                  </div>
+                  {esModoTransfer && (
+                    <span className={`est-refs-join-msg${cargandoJoin ? '' : ' ok'}`} style={{ margin: '6px 0 0 0', display: 'block' }}>
+                      {cargandoJoin ? 'Cargando facturación y pagos…' : 'Formato Reporte de Transfer (facturación + cobranza)'}
+                    </span>
+                  )}
 
                   {(() => {
                     const columnas = esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas;

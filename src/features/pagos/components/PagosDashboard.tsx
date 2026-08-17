@@ -177,6 +177,7 @@ export function PagosDashboard() {
         facturaCcp: fEditCcp.trim(),
         statusFactura: fEditStatus,
         subtotalFactura: totalNuevo,
+        subtotalMonedaFactura: totalNuevo, // ✅ FIX MONEDA: la edición define el total en la moneda de la factura
         saldoPendiente: saldoNuevo,
         // ✅ Moneda rectificada: se guarda en forma canónica ('USD'/'MXN') en
         //   el campo que leen tanto Pagos como Facturación.
@@ -614,10 +615,27 @@ export function PagosDashboard() {
     return true;
   };
 
+
+  // ✅ FIX MONEDA — TOTAL NATIVO DE LA FACTURA: el total a cobrar/pagar en la
+  //   MONEDA de la factura (USD -> dólares, MXN -> pesos), NO la conversión.
+  //   1) subtotalMonedaFactura (facturas nuevas lo guardan directo);
+  //   2) suma de subtotalBase de operacionesGuardadas (monto en la moneda de
+  //      facturación de cada operación — cubre las facturas existentes);
+  //   3) respaldo: subtotalFactura (conversión) para facturas sin detalle.
+  const totalNativoFactura = (fac: any): number => {
+  const directo = Number(fac?.subtotalMonedaFactura);
+  if (!isNaN(directo) && directo > 0) return directo;
+  const ops = Array.isArray(fac?.operacionesGuardadas) ? fac.operacionesGuardadas : [];
+  const base = ops.reduce((s: number, o: any) => s + (Number(o?.subtotalBase) || 0), 0);
+  if (base > 0) return base;
+  return Number(fac?.subtotalFactura) || Number(fac?.total) || Number(fac?.montoFactura) || 0;
+  };
+
   // ✅ NUEVO: mapeo de un doc de factura a FacturaPagable (reutilizado por la
   //   carga masiva y por la apertura individual desde los chips de pagos).
   const mapearFacturaPagable = (id: string, raw: any, tipo: TipoPago): FacturaPagable => {
-    const total = Number(raw.subtotalFactura) || Number(raw.total) || Number(raw.montoFactura) || 0;
+    // ✅ FIX MONEDA: total a pagar en la MONEDA de la factura (no la conversión).
+    const total = totalNativoFactura(raw);
     const pagado = Number(raw.montoPagado) || 0;
     return {
       id,
