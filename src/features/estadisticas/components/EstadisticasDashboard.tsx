@@ -603,14 +603,19 @@ export function EstadisticasDashboard() {
   const [cargandoJoin, setCargandoJoin] = useState(false);
 
   useEffect(() => {
-    if (refsFiltro?.formato !== 'transfer') return;
+    // ✅ El join corre cuando la tabla está en formato Transfer O cuando la
+    //   pestaña Transfer está activa en el desglose (para exportar desde ahí).
+    const enTablaTransfer = refsFiltro?.formato === 'transfer';
+    const enDetalleTransfer = detalleSel !== null && tabLineaDet === 'Transfer';
+    if (!enTablaTransfer && !enDetalleTransfer) return;
+    const opsBase: Op[] = enTablaTransfer ? refsFiltro!.ops : (detalleSel?.ops || []);
     let cancelado = false;
     (async () => {
       setCargandoJoin(true);
       try {
         // 1) Facturas de las operaciones visibles que aún no estén en caché.
         const idsFact = Array.from(new Set(
-          refsFiltro.ops.map((op: Op) => String(op.facturaClienteId || '')).filter((id) => id && !(id in joinFacturas))
+          opsBase.map((op: Op) => String(op.facturaClienteId || '')).filter((id) => id && !(id in joinFacturas))
         ));
         const nuevas: Record<string, any> = {};
         for (let i = 0; i < idsFact.length; i += 10) {
@@ -638,7 +643,7 @@ export function EstadisticasDashboard() {
     })();
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refsFiltro]);
+  }, [refsFiltro, detalleSel, tabLineaDet]);
 
   const nummx = (n: number) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -754,6 +759,128 @@ export function EstadisticasDashboard() {
     const nombreHoja = esModoTransfer ? 'TRANSFER' : 'Operaciones';
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), nombreHoja);
     XLSX.writeFile(wb, `Reporte_${esModoTransfer ? 'Transfer_' : ''}${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
+  };
+
+  // ✅ NUEVO — EXPORTACIÓN DIRECTA DESDE EL DESGLOSE (pestaña activa).
+  //   Excel: hoja RESUMEN (monedas, movimiento, trompo y rankings) + hoja de
+  //   operaciones (formato Transfer si la pestaña es Transfer). PDF: tabla de
+  //   operaciones con el encabezado institucional.
+  const esTransferDet = tabLineaDet === 'Transfer';
+  const tituloDetalleTab = () => !detalleSel ? '' : (tabLineaDet === 'Todas' ? detalleSel.titulo : `${detalleSel.titulo} · ${tabLineaDet}`);
+
+  const exportarDetalleExcel = () => {
+    if (!detalleSel || !detalle) return;
+    const wb = XLSX.utils.book_new();
+
+    // Hoja RESUMEN
+    const aoa: any[][] = [
+      [tituloDetalleTab()],
+      [`Periodo: ${fechaDesde} a ${fechaHasta}`],
+      [],
+      ['TOTAL DE OPERACIONES', detalle.ops.length],
+      ['Operaciones Trompo', detalle.trompos],
+      [],
+      ['FACTURACIÓN POR MONEDA', 'Operaciones', 'Monto', 'Conversión MXN'],
+      ['Dólares (USD)', detalle.monedas.USD.n, detalle.monedas.USD.dol, detalle.monedas.USD.conv],
+      ['Pesos (MXN)', detalle.monedas.MXN.n, detalle.monedas.MXN.pes, detalle.monedas.MXN.pes],
+    ];
+    if (detalle.monedas.Mixta.n > 0) aoa.push(['Mixta (USD + MXN)', detalle.monedas.Mixta.n, `${detalle.monedas.Mixta.dol} USD + ${detalle.monedas.Mixta.pes} MXN`, detalle.monedas.Mixta.conv + detalle.monedas.Mixta.pes]);
+    if (detalle.monedas['Sin dato'].n > 0) aoa.push(['Sin dato de moneda', detalle.monedas['Sin dato'].n]);
+    aoa.push([], ['MOVIMIENTO', 'Operaciones']);
+    (['Importación', 'Exportación', 'Movimiento', 'Sin clasificar'] as const).forEach((mv) => {
+      if (detalle.porMovimiento[mv] > 0) aoa.push([mv, detalle.porMovimiento[mv]]);
+    });
+    const volcarRank = (titulo: string, datos: [string, number][]) => {
+      aoa.push([], [titulo.toUpperCase(), 'Operaciones', '%']);
+      datos.forEach(([nombre, cuantas]) => aoa.push([nombre, cuantas, `${((cuantas / (detalle.ops.length || 1)) * 100).toFixed(0)}%`]));
+    };
+    if (!detalleSel.ocultarClientes) volcarRank('Clientes', detalle.clientes);
+    volcarRank('Operadores', detalle.operadores);
+    volcarRank('Unidades', detalle.unidades);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'RESUMEN');
+
+    // Hoja de operaciones (formato según pestaña)
+    const cols = esTransferDet ? COLUMNAS_TRANSFER : columnasActivas;
+    const valor = esTransferDet ? valorTransfer : valorColumna;
+    const filas: Record<string, string>[] = detalle.ops.map((op) => {
+      const fila: Record<string, string> = {};
+      cols.forEach((c) => { fila[c.etiqueta] = valor(op, c.campo) || (esTransferDet ? '' : '—'); });
+      return fila;
+    });
+    if (esTransferDet) {
+      const t = { dlls: 0, subtotal: 0, valorFactura: 0, pago: 0, saldo: 0 };
+      detalle.ops.forEach((op) => {
+        const m = montoClienteDe(op);
+        t.dlls += m.dol; t.subtotal += m.pes; t.valorFactura += m.conv;
+        const fac = op.facturaClienteId ? joinFacturas[String(op.facturaClienteId)] : null;
+        if (fac) {
+          const total = Number(fac.subtotalFactura) || Number(fac.total) || 0;
+          const pagado = Number(fac.montoPagado) || 0;
+          t.pago += pagado; t.saldo += Math.max(0, total - pagado);
+        }
+      });
+      const filaTot: Record<string, string> = {};
+      COLUMNAS_TRANSFER.forEach((c) => { filaTot[c.etiqueta] = ''; });
+      filaTot['# REF ROELCA'] = `TOTAL (${detalle.ops.length})`;
+      filaTot['DLLS'] = nummx(t.dlls);
+      filaTot['SUBTOTAL'] = nummx(t.subtotal);
+      filaTot['VALOR FACTURA'] = nummx(t.valorFactura);
+      filaTot['VALOR FACTURA EN PESOS SIN IVA'] = nummx(t.valorFactura);
+      filaTot['PAGO'] = nummx(t.pago);
+      filaTot['SALDO COBRANZA'] = nummx(t.saldo);
+      filas.push(filaTot);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), esTransferDet ? 'TRANSFER' : 'Operaciones');
+    XLSX.writeFile(wb, `Desglose_${tituloDetalleTab().replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
+  };
+
+  const exportarDetallePDF = async () => {
+    if (!detalleSel || !detalle) return;
+    setExportando(true);
+    try {
+      const logo = await cargarLogoDataUrl(config?.logoUrl).catch(() => null);
+      const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cols = esTransferDet ? COLUMNAS_TRANSFER : columnasActivas;
+      const valor = esTransferDet ? valorTransfer : valorColumna;
+      const html = `
+        <div style="font-family: Arial, Helvetica, sans-serif; color: #111; padding: 8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #D84315; padding-bottom:8px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              ${logo ? `<img src="${logo}" style="height:52px;" />` : ''}
+              <div>
+                <div style="font-size:17px; font-weight:bold; color:#D84315;">ROELCA INC.</div>
+                <div style="font-size:13px; font-weight:bold; margin-top:2px;">Desglose — ${esc(tituloDetalleTab())}</div>
+                <div style="font-size:11px; color:#555; margin-top:2px;">Periodo: ${esc(fechaDesde)} al ${esc(fechaHasta)} · ${detalle.ops.length} operación(es) · USD: ${detalle.monedas.USD.n} (${esc(nummx(detalle.monedas.USD.dol))} USD) · MXN: ${detalle.monedas.MXN.n} (${esc(nummx(detalle.monedas.MXN.pes))} MXN) · Trompo: ${detalle.trompos}</div>
+              </div>
+            </div>
+          </div>
+          <table style="border-collapse:collapse; width:100%; font-size:8px;">
+            <thead>
+              <tr>${cols.map(c => `<th style="background:#f2f2f2; border:1px solid #ccc; padding:4px 5px; text-align:left;">${esc(c.etiqueta.toUpperCase())}</th>`).join('')}</tr>
+            </thead>
+            <tbody>
+              ${detalle.ops.map(op => `<tr>${cols.map(c => `<td style="border:1px solid #ddd; padding:3px 5px;">${esc(valor(op, c.campo) || (esTransferDet ? '' : '—'))}</td>`).join('')}</tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      const cont = document.createElement('div');
+      cont.innerHTML = html;
+      document.body.appendChild(cont);
+      try {
+        const html2pdf = (await import('html2pdf.js')).default;
+        await html2pdf().set({
+          margin: 8,
+          filename: `Desglose_${tituloDetalleTab().replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.pdf`,
+          image: { type: 'jpeg', quality: 0.95 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: 'mm', format: 'letter', orientation: 'landscape' },
+        }).from(cont).save();
+      } finally {
+        document.body.removeChild(cont);
+      }
+    } finally {
+      setExportando(false);
+    }
   };
 
   const exportarRefsPDF = async () => {
@@ -1143,11 +1270,29 @@ export function EstadisticasDashboard() {
           <div className="est-detalle" onClick={(e) => e.stopPropagation()}>
             <div className="est-detalle-encabezado">
               <h3>{detalleSel.titulo} — {detalle.ops.length} operación(es)</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {/* ✅ NUEVO: tabla completa de las operaciones del desglose */}
-                <button type="button" className="est-detalle-cerrar" style={{ width: 'auto', padding: '4px 10px', fontSize: '0.78rem' }}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                {/* ✅ NUEVO: tabla con TODO el desglose, sin filtrar por pestaña */}
+                {!detalleSel.esLinea && (
+                  <button type="button" className="est-btn"
+                    title="Ver todas las operaciones del desglose (sin filtrar por pestaña)"
+                    onClick={() => setRefsFiltro({ etiqueta: detalleSel.titulo, ops: detalleSel.ops })}>
+                    Ver todo ({detalleSel.ops.length})
+                  </button>
+                )}
+                {/* Tabla de la pestaña activa (hereda el formato Transfer) */}
+                <button type="button" className="est-btn"
                   onClick={() => abrirRefsDesdeDetalle({ etiqueta: tabLineaDet === 'Todas' ? detalleSel.titulo : `${detalleSel.titulo} · ${tabLineaDet}`, ops: detalle.ops })}>
-                  Ver operaciones
+                  Ver operaciones{tabLineaDet !== 'Todas' ? ` (${detalle.ops.length})` : ''}
+                </button>
+                {/* ✅ NUEVO: descarga directa desde el desglose (pestaña activa) */}
+                <button type="button" className="est-btn" onClick={exportarDetalleExcel}
+                  disabled={esTransferDet && cargandoJoin}
+                  title={esTransferDet && cargandoJoin ? 'Cargando facturación y pagos…' : 'Descargar Excel (resumen + operaciones)'}>
+                  <Download size={14} /> Excel
+                </button>
+                <button type="button" className="est-btn est-btn-primario" onClick={exportarDetallePDF}
+                  disabled={exportando || (esTransferDet && cargandoJoin)}>
+                  <Download size={14} /> {exportando ? 'Generando…' : 'PDF'}
                 </button>
                 <button className="est-detalle-cerrar" onClick={() => { setDetalleSel(null); setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}><X size={16} /></button>
               </div>
