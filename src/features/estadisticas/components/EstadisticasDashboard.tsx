@@ -202,7 +202,8 @@ export function EstadisticasDashboard() {
       for (const fte of fuentes) {
         let registros: any[] = [];
         try {
-          const raw = localStorage.getItem(`cat_v2__${fte.alias}`);
+          // Misma caché que Operaciones/Facturación (cat_v2__ con respaldo cat_v1__).
+          const raw = localStorage.getItem(`cat_v2__${fte.alias}`) || localStorage.getItem(`cat_v1__${fte.alias}`);
           if (raw) {
             const parsed = JSON.parse(raw);
             registros = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.data) ? parsed.data : []);
