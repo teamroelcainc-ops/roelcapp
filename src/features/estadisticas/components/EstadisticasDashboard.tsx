@@ -962,148 +962,174 @@ export function EstadisticasDashboard() {
             </div>
 
             <div className="est-detalle-cuerpo">
-              {(
-              <div className="est-detalle-grid">
-                {!detalleSel.esLinea && (
-                  <div className="est-detalle-seccion">
-                    <span className="est-detalle-titulo">Tipo de operación</span>
-                    <div className="est-detalle-lista">
-                      {(['Transfer', 'Logística', 'Fletes'] as Linea[]).map((l) => {
-                        const pct = detalle.ops.length > 0 ? (detalle.porLinea[l] / detalle.ops.length) * 100 : 0;
-                        const claseL = l === 'Transfer' ? 'transfer' : l === 'Logística' ? 'logistica' : 'fletes';
-                        return detalle.porLinea[l] > 0
-                          ? (
-                            <button type="button" className="est-detalle-item clicable" key={l} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${l}`, ops: detalle.ops.filter((op) => lineaDeOp(op) === l) })}>
-                              <span className="est-item-linea"><i className={`est-punto ${claseL}`} />{l}</span>
-                              <span className="est-item-cifras"><b>{num(detalle.porLinea[l])}</b><small>{pct.toFixed(0)}%</small></span>
-                              <span className="est-item-barra"><i className={claseL} style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
-                            </button>
-                          )
-                          : <span className="est-detalle-item apagado" key={l}><span className="est-item-linea"><i className={`est-punto ${claseL}`} />{l}</span><span className="est-item-cifras"><b>0</b></span></span>;
+              {(() => {
+                const totalOps = detalle.ops.length || 1;
+                const pctUSD = (detalle.monedas.USD.n / totalOps) * 100;
+                const pctMXN = (detalle.monedas.MXN.n / totalOps) * 100;
+                // ── Donut de Tipo de operación (SVG puro) ──
+                const lineas: { l: Linea; color: string }[] = [
+                  { l: 'Transfer', color: '#D84315' },
+                  { l: 'Logística', color: '#58a6ff' },
+                  { l: 'Fletes', color: '#3fb950' },
+                  { l: 'Otro', color: '#8b949e' },
+                ];
+                const R = 42, C = 2 * Math.PI * R;
+                let acumulado = 0;
+                const segmentos = lineas
+                  .filter(({ l }) => detalle.porLinea[l] > 0)
+                  .map(({ l, color }) => {
+                    const frac = detalle.porLinea[l] / totalOps;
+                    const seg = { l, color, frac, offset: acumulado };
+                    acumulado += frac;
+                    return seg;
+                  });
+                // ── Barras de Movimiento ──
+                const movs = (['Importación', 'Exportación', 'Movimiento'] as const)
+                  .map((mv) => ({ mv, n: detalle.porMovimiento[mv] }));
+                const maxMov = Math.max(1, ...movs.map((m) => m.n));
+                const colorMov: Record<string, string> = { 'Importación': '#58a6ff', 'Exportación': '#3fb950', 'Movimiento': '#d29922' };
+                // ── Listas rankeadas ──
+                const RankLista = ({ titulo, datos, filtrar, colorBarra }: {
+                  titulo: string;
+                  datos: [string, number][];
+                  filtrar: (op: Op, nombre: string) => boolean;
+                  colorBarra: string;
+                }) => (
+                  <div className="est-rep-card">
+                    <span className="est-rep-titulo">{titulo} ({datos.length})</span>
+                    <div className="est-rep-rank-lista">
+                      {datos.map(([nombre, cuantas], idx) => {
+                        const pct = (cuantas / totalOps) * 100;
+                        return (
+                          <button type="button" className="est-rep-rank-item" key={nombre}
+                            onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${titulo}: ${nombre}`, ops: detalle.ops.filter((op) => filtrar(op, nombre)) })}>
+                            <span className={`est-rep-rank-num${idx < 3 ? ' top' : ''}`}>{idx + 1}</span>
+                            <span className="est-rep-rank-info">
+                              <span className="est-rep-rank-nombre">{nombre}</span>
+                              <span className="est-rep-rank-barra"><i style={{ width: `${pct}%`, backgroundColor: colorBarra }} /></span>
+                            </span>
+                            <span className="est-rep-rank-cifra">{num(cuantas)} <small>({pct.toFixed(0)}%)</small></span>
+                          </button>
+                        );
                       })}
-                      {detalle.porLinea.Otro > 0 && (
-                        <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Otro`, ops: detalle.ops.filter((op) => lineaDeOp(op) === 'Otro') })}><span>Otro</span><b>{num(detalle.porLinea.Otro)}</b></button>
-                      )}
                     </div>
                   </div>
-                )}
+                );
+                return (
+                  <div className="est-rep">
+                    {/* ── FILA 1: KPIs ── */}
+                    <div className="est-rep-kpis">
+                      <div className="est-rep-card est-rep-kpi">
+                        <span className="est-rep-titulo">Total de operaciones</span>
+                        <span className="est-rep-kpi-numero">{num(detalle.ops.length)}</span>
+                      </div>
+                      <div className="est-rep-card est-rep-kpi">
+                        <span className="est-rep-titulo">Facturación por moneda</span>
+                        <div className="est-rep-monedas">
+                          <button type="button" className="est-rep-moneda" disabled={detalle.monedas.USD.n === 0}
+                            onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Dólares (USD)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'USD') })}>
+                            <span className="est-rep-moneda-etq">Dólares (USD)</span>
+                            <span className="est-rep-moneda-valor usd">{num(detalle.monedas.USD.n)} <small>({pctUSD.toFixed(0)}%)</small></span>
+                            <span className="est-rep-moneda-monto">{money(detalle.monedas.USD.dol)} USD{detalle.monedas.USD.conv > 0 ? ` ≈ ${money(detalle.monedas.USD.conv)} MXN` : ''}</span>
+                          </button>
+                          <button type="button" className="est-rep-moneda" disabled={detalle.monedas.MXN.n === 0}
+                            onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Pesos (MXN)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'MXN') })}>
+                            <span className="est-rep-moneda-etq">Pesos (MXN)</span>
+                            <span className="est-rep-moneda-valor mxn">{num(detalle.monedas.MXN.n)} <small>({pctMXN.toFixed(0)}%)</small></span>
+                            <span className="est-rep-moneda-monto">{money(detalle.monedas.MXN.pes)} MXN</span>
+                          </button>
+                        </div>
+                        {(detalle.monedas.Mixta.n > 0 || detalle.monedas['Sin dato'].n > 0) && (
+                          <div className="est-rep-moneda-extra">
+                            {detalle.monedas.Mixta.n > 0 && (
+                              <button type="button" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Moneda mixta`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Mixta') })}>
+                                Mixta: {num(detalle.monedas.Mixta.n)}
+                              </button>
+                            )}
+                            {detalle.monedas['Sin dato'].n > 0 && (
+                              <button type="button" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Sin moneda`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Sin dato') })}>
+                                Sin dato: {num(detalle.monedas['Sin dato'].n)}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div className="est-rep-card est-rep-kpi">
+                        <span className="est-rep-titulo">Operaciones Trompo</span>
+                        {detalle.trompos > 0
+                          ? <button type="button" className="est-rep-kpi-numero clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Trompo`, ops: detalle.ops.filter((op) => esTrompo(op)) })}>{num(detalle.trompos)}</button>
+                          : <span className="est-rep-kpi-numero apagado">0</span>}
+                      </div>
+                    </div>
 
-                <div className="est-detalle-seccion">
-                  <span className="est-detalle-titulo">Movimiento</span>
-                  <div className="est-detalle-lista">
-                    {(['Importación', 'Exportación', 'Movimiento', 'Sin clasificar'] as const).map((mv) => {
-                      const pct = detalle.ops.length > 0 ? (detalle.porMovimiento[mv] / detalle.ops.length) * 100 : 0;
-                      return (mv !== 'Sin clasificar' || detalle.porMovimiento[mv] > 0) && (
-                        detalle.porMovimiento[mv] > 0
-                          ? (
-                            <button type="button" className="est-detalle-item clicable" key={mv} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}>
-                              <span className="est-item-linea">{mv}</span>
-                              <span className="est-item-cifras"><b>{num(detalle.porMovimiento[mv])}</b><small>{pct.toFixed(0)}%</small></span>
-                              <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
-                            </button>
-                          )
-                          : <span className="est-detalle-item apagado" key={mv}><span className="est-item-linea">{mv}</span><span className="est-item-cifras"><b>0</b></span></span>
-                      );
-                    })}
-                  </div>
-                </div>
+                    {/* ── FILA 2: GRÁFICAS ── */}
+                    <div className="est-rep-graficas">
+                      {!detalleSel.esLinea && (
+                        <div className="est-rep-card">
+                          <span className="est-rep-titulo">Tipo de operación</span>
+                          <div className="est-rep-dona-marco">
+                            <svg viewBox="0 0 120 120" className="est-rep-dona">
+                              <circle cx="60" cy="60" r={R} fill="none" stroke="#21262d" strokeWidth="14" />
+                              {segmentos.map((s) => (
+                                <circle key={s.l} cx="60" cy="60" r={R} fill="none" stroke={s.color} strokeWidth="14"
+                                  strokeDasharray={`${s.frac * C} ${C}`} strokeDashoffset={-s.offset * C}
+                                  transform="rotate(-90 60 60)" strokeLinecap="butt" />
+                              ))}
+                              <text x="60" y="57" textAnchor="middle" className="est-rep-dona-num">{num(detalle.ops.length)}</text>
+                              <text x="60" y="72" textAnchor="middle" className="est-rep-dona-sub">ops</text>
+                            </svg>
+                            <div className="est-rep-leyenda">
+                              {lineas.map(({ l, color }) => detalle.porLinea[l] > 0 && (
+                                <button type="button" key={l} className="est-rep-leyenda-item"
+                                  onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${l}`, ops: detalle.ops.filter((op) => lineaDeOp(op) === l) })}>
+                                  <i style={{ backgroundColor: color }} />
+                                  <span>{l}</span>
+                                  <b>{num(detalle.porLinea[l])} <small>({((detalle.porLinea[l] / totalOps) * 100).toFixed(0)}%)</small></b>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div className="est-rep-card">
+                        <span className="est-rep-titulo">Movimiento</span>
+                        <div className="est-rep-barras">
+                          {movs.map(({ mv, n }) => {
+                            const pct = (n / totalOps) * 100;
+                            const alto = (n / maxMov) * 100;
+                            return (
+                              <button type="button" key={mv} className="est-rep-barra-col" disabled={n === 0}
+                                onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}>
+                                <span className="est-rep-barra-cifra">{n > 0 ? `${num(n)} (${pct.toFixed(0)}%)` : ''}</span>
+                                <span className="est-rep-barra-tubo"><i style={{ height: `${alto}%`, backgroundColor: colorMov[mv] }} /></span>
+                                <span className="est-rep-barra-etq">{mv}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {detalle.porMovimiento['Sin clasificar'] > 0 && (
+                          <button type="button" className="est-rep-sinclas"
+                            onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Sin clasificar`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === 'Sin clasificar') })}>
+                            Sin clasificar: {num(detalle.porMovimiento['Sin clasificar'])}
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
-                <div className="est-detalle-seccion">
-                  <span className="est-detalle-titulo">Trompo</span>
-                  <div className="est-detalle-lista">
-                    {detalle.trompos > 0
-                      ? <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Trompo`, ops: detalle.ops.filter((op) => esTrompo(op)) })}><span>Operaciones Trompo</span><b>{num(detalle.trompos)}</b></button>
-                      : <span className="est-detalle-item"><span>Operaciones Trompo</span><b>0</b></span>}
+                    {/* ── FILA 3: RANKINGS ── */}
+                    <div className="est-rep-listas">
+                      {!detalleSel.ocultarClientes && (
+                        <RankLista titulo="Clientes" datos={detalle.clientes} colorBarra="#D84315"
+                          filtrar={(op, nombre) => (((String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '').trim()) || '(Sin dato)') === nombre)} />
+                      )}
+                      <RankLista titulo="Operadores" datos={detalle.operadores} colorBarra="#58a6ff"
+                        filtrar={(op, nombre) => (((String(op.operadorNombre || op.operador || '').trim()) || '(Sin dato)') === nombre)} />
+                      <RankLista titulo="Unidades" datos={detalle.unidades} colorBarra="#3fb950"
+                        filtrar={(op, nombre) => (((String(op.unidadNombre || op.unidad || '').trim()) || '(Sin dato)') === nombre)} />
+                    </div>
                   </div>
-                </div>
-
-                {/* ✅ NUEVO — MONEDA DE FACTURACIÓN (CLIENTE): qué se factura
-                    en Dólares y qué en Pesos, con conteo y montos. */}
-                <div className="est-detalle-seccion">
-                  <span className="est-detalle-titulo">Moneda de facturación</span>
-                  <div className="est-detalle-lista">
-                    {detalle.monedas.USD.n > 0 ? (
-                      <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Dólares (USD)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'USD') })}>
-                        <span className="est-item-linea"><i className="est-punto transfer" />Dólares (USD)</span>
-                        <span className="est-item-cifras"><b>{num(detalle.monedas.USD.n)}</b><small>{((detalle.monedas.USD.n / detalle.ops.length) * 100).toFixed(0)}%</small></span>
-                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#8b949e' }}>{money(detalle.monedas.USD.dol)} USD{detalle.monedas.USD.conv > 0 ? ` ≈ ${money(detalle.monedas.USD.conv)} MXN` : ''}</span>
-                        <span className="est-item-barra"><i className="transfer" style={{ '--w': `${(detalle.monedas.USD.n / detalle.ops.length) * 100}%` } as React.CSSProperties} /></span>
-                      </button>
-                    ) : <span className="est-detalle-item apagado"><span className="est-item-linea"><i className="est-punto transfer" />Dólares (USD)</span><span className="est-item-cifras"><b>0</b></span></span>}
-                    {detalle.monedas.MXN.n > 0 ? (
-                      <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Pesos (MXN)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'MXN') })}>
-                        <span className="est-item-linea"><i className="est-punto logistica" />Pesos (MXN)</span>
-                        <span className="est-item-cifras"><b>{num(detalle.monedas.MXN.n)}</b><small>{((detalle.monedas.MXN.n / detalle.ops.length) * 100).toFixed(0)}%</small></span>
-                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#8b949e' }}>{money(detalle.monedas.MXN.pes)} MXN</span>
-                        <span className="est-item-barra"><i className="logistica" style={{ '--w': `${(detalle.monedas.MXN.n / detalle.ops.length) * 100}%` } as React.CSSProperties} /></span>
-                      </button>
-                    ) : <span className="est-detalle-item apagado"><span className="est-item-linea"><i className="est-punto logistica" />Pesos (MXN)</span><span className="est-item-cifras"><b>0</b></span></span>}
-                    {detalle.monedas.Mixta.n > 0 && (
-                      <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Moneda mixta`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Mixta') })}>
-                        <span className="est-item-linea"><i className="est-punto fletes" />Mixta (USD + MXN)</span>
-                        <span className="est-item-cifras"><b>{num(detalle.monedas.Mixta.n)}</b></span>
-                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#8b949e' }}>{money(detalle.monedas.Mixta.dol)} USD + {money(detalle.monedas.Mixta.pes)} MXN</span>
-                      </button>
-                    )}
-                    {detalle.monedas['Sin dato'].n > 0 && (
-                      <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Sin moneda`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Sin dato') })}>
-                        <span>Sin dato de moneda</span><b>{num(detalle.monedas['Sin dato'].n)}</b>
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="est-detalle-seccion">
-                  <span className="est-detalle-titulo">Unidades ({detalle.unidades.length})</span>
-                  <div className="est-detalle-lista">
-                    {detalle.unidades.map(([nombre, cuantas]) => {
-                      const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
-                      return (
-                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Unidad ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.unidadNombre || op.unidad || '').trim()) || '(Sin dato)') === nombre) })}>
-                          <span className="est-item-linea">{nombre}</span>
-                          <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
-                          <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="est-detalle-seccion">
-                  <span className="est-detalle-titulo">Operadores ({detalle.operadores.length})</span>
-                  <div className="est-detalle-lista">
-                    {detalle.operadores.map(([nombre, cuantas]) => {
-                      const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
-                      return (
-                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Operador ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.operadorNombre || op.operador || '').trim()) || '(Sin dato)') === nombre) })}>
-                          <span className="est-item-linea">{nombre}</span>
-                          <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
-                          <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {!detalleSel.ocultarClientes && (
-                <div className="est-detalle-seccion">
-                  <span className="est-detalle-titulo">Clientes ({detalle.clientes.length})</span>
-                  <div className="est-detalle-lista">
-                    {detalle.clientes.map(([nombre, cuantas]) => {
-                      const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
-                      return (
-                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '').trim()) || '(Sin dato)') === nombre) })}>
-                          <span className="est-item-linea">{nombre}</span>
-                          <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
-                          <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                )}
-              </div>
-              )}
+                );
+              })()}
             </div>
           </div>
         </div>
