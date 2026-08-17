@@ -75,6 +75,19 @@ const montoClienteDe = (op: Op) => {
   return { dol: 0, pes: 0, conv: subtotal, tc };
 };
 
+// ✅ NUEVO — Moneda en la que se FACTURA al cliente esa operación, derivada
+//   de los mismos montos que usa Facturación (dólares/pesos del cliente).
+const monedaClienteDe = (op: Op): 'USD' | 'MXN' | 'Mixta' | 'Sin dato' => {
+  const m = montoClienteDe(op);
+  if (m.dol > 0 && m.pes > 0) return 'Mixta';
+  if (m.dol > 0) return 'USD';
+  if (m.pes > 0) return 'MXN';
+  const nombre = String(op.monedaCobroNombre || '').toUpperCase();
+  if (nombre.includes('USD') || nombre.includes('DOLAR') || nombre.includes('DÓLAR')) return 'USD';
+  if (nombre.includes('MXN') || nombre.includes('PESO')) return 'MXN';
+  return 'Sin dato';
+};
+
 // ── Costo del PROVEEDOR (mismo criterio que Facturación de Proveedores,
 //    con respaldo en la Confirmación de Tarifa guardada) ──
 const costoProveedorDe = (op: Op): number => {
@@ -130,7 +143,12 @@ export function EstadisticasDashboard() {
   const [busquedaHecha, setBusquedaHecha] = useState(false);
   // ✅ NUEVO: detalle de un MES en la pestaña Servicios (opcionalmente
   //   acotado a una línea: clic en el número de Transfer/Logística/Fletes).
-  const [detalleMes, setDetalleMes] = useState<{ mes: number; linea?: Linea } | null>(null);
+  // ✅ GENERALIZADO: el modal de desglose ahora acepta CUALQUIER selección
+  //   (mes de Servicios, cliente de Tendencia, mes de Ventas, línea de
+  //   Utilidad/Promedios). `esLinea` oculta el panel de tipo de operación
+  //   cuando ya se filtró por línea; `ocultarClientes` lo oculta cuando el
+  //   desglose es de UN cliente.
+  const [detalleSel, setDetalleSel] = useState<{ titulo: string; ops: Op[]; esLinea?: boolean; ocultarClientes?: boolean } | null>(null);
   // ✅ NUEVO: ficha de UNA operación (clic en su referencia) + edición con el
   //   MISMO formulario del módulo de Operaciones.
   // ✅ NUEVO: al hacer clic en cualquier elemento del detalle (cliente,
@@ -141,7 +159,7 @@ export function EstadisticasDashboard() {
   // ✅ Tabla de referencias: columnas configurables (persisten entre sesiones)
   //   y filtros por columna.
   const [columnasRefs, setColumnasRefs] = useEstadoPersistente<string[]>('estadisticas_columnasRefs',
-    ['ref', 'fechaServicio', 'linea', 'statusNombre', 'clientePagaNombre', 'unidadNombre', 'operadorNombre', 'origen', 'destino']);
+    ['ref', 'fechaServicio', 'linea', 'statusNombre', 'clientePagaNombre', 'unidadNombre', 'operadorNombre', 'origen', 'destino', 'monedaCobroNombre', 'importeCliente']);
   const [filtrosCols, setFiltrosCols] = useState<Record<string, string>>({});
   const [menuColumnas, setMenuColumnas] = useState(false);
 
@@ -161,10 +179,21 @@ export function EstadisticasDashboard() {
     { campo: 'destino', etiqueta: etq('col.est.destino', 'Destino') },
     { campo: 'kilometrajeEstimado', etiqueta: etq('col.est.km_estimado', 'Km Estimado') },
     { campo: 'monedaCobroNombre', etiqueta: etq('col.est.moneda', 'Moneda') },
+    { campo: 'importeCliente', etiqueta: etq('col.est.importe_cliente', 'Importe (Cliente)') },
   ];
 
   const valorColumna = (op: Op, campo: string): string => {
     if (campo === 'linea') return lineaDeOp(op);
+    // ✅ Moneda derivada de los MONTOS reales (no del nombre crudo, que en
+    //   registros viejos viene vacío o con otro formato).
+    if (campo === 'monedaCobroNombre') return monedaClienteDe(op);
+    if (campo === 'importeCliente') {
+      const m = montoClienteDe(op);
+      const partes: string[] = [];
+      if (m.dol > 0) partes.push(`${money(m.dol)} USD`);
+      if (m.pes > 0) partes.push(`${money(m.pes)} MXN`);
+      return partes.join(' + ') || '—';
+    }
     if (campo === 'unidadNombre') return String(op.unidadNombre || op.unidad || '');
     if (campo === 'operadorNombre') return String(op.operadorNombre || op.operador || '');
     if (campo === 'clientePagaNombre') return String(op.clientePagaNombre || op.clienteNombre || '');
@@ -389,32 +418,68 @@ export function EstadisticasDashboard() {
     return Array.from(mapa.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   };
 
-  const detalle = useMemo(() => {
-    if (detalleMes === null) return null;
-    const delMes = ops.filter((op) => {
-      const f = fechaISODe(op);
-      if (parseInt(f.slice(5, 7), 10) - 1 !== detalleMes.mes) return false;
-      return detalleMes.linea ? lineaDeOp(op) === detalleMes.linea : true;
+  // Ops de un mes (0-11), opcionalmente filtradas por línea.
+  const opsDeMes = (mes: number, linea?: Linea) => ops.filter((op) => {
+    const f = fechaISODe(op);
+    if (parseInt(f.slice(5, 7), 10) - 1 !== mes) return false;
+    return linea ? lineaDeOp(op) === linea : true;
+  });
+  const abrirDetalleMes = (mes: number, linea?: Linea) => {
+    setDetalleSel({
+      titulo: `Servicios de ${MESES[mes]}${linea ? ` · ${linea}` : ''}`,
+      ops: opsDeMes(mes, linea),
+      esLinea: !!linea,
     });
+    setRefsFiltro(null);
+  };
+  // ✅ NUEVO — desglose por CLIENTE (desde Tendencia). '__ALL__' = General.
+  const abrirDetalleCliente = (cliente: string) => {
+    const esTodos = cliente === '__ALL__';
+    setDetalleSel({
+      titulo: esTodos ? `General · ${etiquetaRango}` : cliente,
+      ops: esTodos ? ops : ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || 'SIN CLIENTE').trim()) || 'SIN CLIENTE') === cliente),
+      ocultarClientes: !esTodos,
+    });
+    setRefsFiltro(null);
+  };
+
+  const detalle = useMemo(() => {
+    if (detalleSel === null) return null;
+    const delSel = detalleSel.ops;
     const porLinea = { Transfer: 0, 'Logística': 0, Fletes: 0, Otro: 0 } as Record<Linea, number>;
     const porMovimiento = { 'Importación': 0, 'Exportación': 0, 'Movimiento': 0, 'Sin clasificar': 0 };
     let trompos = 0;
-    delMes.forEach((op) => {
+    // ✅ NUEVO — separación por MONEDA de facturación (cliente): cuántas
+    //   operaciones se facturan en dólares y cuántas en pesos, con montos.
+    const monedas = {
+      USD: { n: 0, dol: 0, conv: 0 },
+      MXN: { n: 0, pes: 0 },
+      Mixta: { n: 0, dol: 0, pes: 0, conv: 0 },
+      'Sin dato': { n: 0 },
+    };
+    delSel.forEach((op) => {
       porLinea[lineaDeOp(op)] += 1;
       porMovimiento[movimientoDeOp(op)] += 1;
       if (esTrompo(op)) trompos += 1;
+      const mon = monedaClienteDe(op);
+      const m = montoClienteDe(op);
+      monedas[mon].n += 1;
+      if (mon === 'USD') { monedas.USD.dol += m.dol; monedas.USD.conv += m.conv; }
+      else if (mon === 'MXN') { monedas.MXN.pes += m.pes; }
+      else if (mon === 'Mixta') { monedas.Mixta.dol += m.dol; monedas.Mixta.pes += m.pes; monedas.Mixta.conv += m.conv; }
     });
     return {
-      ops: delMes,
+      ops: delSel,
       porLinea,
       porMovimiento,
       trompos,
-      unidades: contarPor(delMes, (op) => String(op.unidadNombre || op.unidad || '')),
-      operadores: contarPor(delMes, (op) => String(op.operadorNombre || op.operador || '')),
-      clientes: contarPor(delMes, (op) => String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '')),
+      monedas,
+      unidades: contarPor(delSel, (op) => String(op.unidadNombre || op.unidad || '')),
+      operadores: contarPor(delSel, (op) => String(op.operadorNombre || op.operador || '')),
+      clientes: contarPor(delSel, (op) => String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '')),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detalleMes, ops]);
+  }, [detalleSel]);
 
   // Columnas activas y filas visibles de la tabla de referencias (tabla + export).
   const columnasActivas = useMemo(() => COLUMNAS_REFS.filter(c => columnasRefs.includes(c.campo)),
@@ -695,14 +760,14 @@ export function EstadisticasDashboard() {
                 <tr><th>CLIENTE</th><th>SERVICIOS</th><th>TRANSFER</th><th>LOGÍSTICA</th><th>FLETES</th><th>MONTO (MXN)</th><th>PROMEDIO</th></tr>
               </thead>
               <tbody>
-                <tr className="est-fila-general">
+                <tr className="est-fila-general est-fila-clicable" title="Ver el desglose general" onClick={() => abrirDetalleCliente('__ALL__')}>
                   <td>GENERAL</td><td>{num(tendencia.general.total)}</td><td>{num(tendencia.general.transfer)}</td>
                   <td>{num(tendencia.general.logistica)}</td><td>{num(tendencia.general.fletes)}</td>
                   <td className="est-monto">{money(tendencia.general.monto)}</td>
                   <td className="est-monto">{money(tendencia.general.total > 0 ? tendencia.general.monto / tendencia.general.total : 0)}</td>
                 </tr>
                 {tendencia.filas.map((f) => (
-                  <tr key={f.cliente} className="est-fila-clicable" title={`Ver las operaciones de ${f.cliente}`} onClick={() => setRefsFiltro({ etiqueta: `${f.cliente} · ${etiquetaRango}`, ops: ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || 'SIN CLIENTE').trim()) || 'SIN CLIENTE') === f.cliente) })}>
+                  <tr key={f.cliente} className="est-fila-clicable" title={`Ver el desglose de ${f.cliente}`} onClick={() => abrirDetalleCliente(f.cliente)}>
                     <td className="est-cliente">{f.cliente}</td><td>{num(f.total)}</td><td>{num(f.transfer)}</td>
                     <td>{num(f.logistica)}</td><td>{num(f.fletes)}</td>
                     <td className="est-monto">{money(f.monto)}</td>
@@ -726,14 +791,14 @@ export function EstadisticasDashboard() {
                     <tr
                       key={m}
                       className={`${total === 0 ? 'est-fila-cero' : 'est-fila-clicable'}`}
-                      onClick={() => { if (total > 0) { setDetalleMes({ mes: i }); setRefsFiltro(null); } }}
+                      onClick={() => { if (total > 0) abrirDetalleMes(i); }}
                       title={total > 0 ? `Ver el detalle de ${m}` : undefined}
                     >
                       <td>{m}</td>
                       {/* ✅ Clic en el número de una línea → detalle SOLO de ese rubro */}
-                      <td onClick={(e) => { if (s.transfer > 0) { e.stopPropagation(); setDetalleMes({ mes: i, linea: 'Transfer' }); } }} className={s.transfer > 0 ? 'est-num-clicable' : ''}>{num(s.transfer)}</td>
-                      <td onClick={(e) => { if (s.logistica > 0) { e.stopPropagation(); setDetalleMes({ mes: i, linea: 'Logística' }); } }} className={s.logistica > 0 ? 'est-num-clicable' : ''}>{num(s.logistica)}</td>
-                      <td onClick={(e) => { if (s.fletes > 0) { e.stopPropagation(); setDetalleMes({ mes: i, linea: 'Fletes' }); } }} className={s.fletes > 0 ? 'est-num-clicable' : ''}>{num(s.fletes)}</td>
+                      <td onClick={(e) => { if (s.transfer > 0) { e.stopPropagation(); abrirDetalleMes(i, 'Transfer'); } }} className={s.transfer > 0 ? 'est-num-clicable' : ''}>{num(s.transfer)}</td>
+                      <td onClick={(e) => { if (s.logistica > 0) { e.stopPropagation(); abrirDetalleMes(i, 'Logística'); } }} className={s.logistica > 0 ? 'est-num-clicable' : ''}>{num(s.logistica)}</td>
+                      <td onClick={(e) => { if (s.fletes > 0) { e.stopPropagation(); abrirDetalleMes(i, 'Fletes'); } }} className={s.fletes > 0 ? 'est-num-clicable' : ''}>{num(s.fletes)}</td>
                       <td className="est-monto">{num(total)}</td>
                     </tr>
                   );
@@ -758,7 +823,7 @@ export function EstadisticasDashboard() {
                 {MESES.map((m, i) => {
                   const v = ventas.porMes[i];
                   return (
-                    <tr key={m} className={v.venta === 0 ? 'est-fila-cero' : 'est-fila-clicable'} title={v.venta > 0 ? `Ver las operaciones de ${m}` : undefined} onClick={() => { if (v.venta > 0) setRefsFiltro({ etiqueta: `Ventas ${lineaVista} · ${m}`, ops: opsDeLinea.filter((op) => parseInt(fechaISODe(op).slice(5, 7), 10) - 1 === i) }); }}>
+                    <tr key={m} className={v.venta === 0 ? 'est-fila-cero' : 'est-fila-clicable'} title={v.venta > 0 ? `Ver el desglose de ${m}` : undefined} onClick={() => { if (v.venta > 0) setDetalleSel({ titulo: `Ventas ${lineaVista} · ${m}`, ops: opsDeLinea.filter((op) => parseInt(fechaISODe(op).slice(5, 7), 10) - 1 === i) }); }}>
                       <td>{m}</td><td>{money(v.pes)}</td><td className="est-dolares">{money(v.dol)}</td>
                       <td>{v.tcN > 0 ? (v.tcSuma / v.tcN).toFixed(4) : '—'}</td>
                       <td>{money(v.conv)}</td><td className="est-monto">{money(v.venta)}</td>
@@ -787,7 +852,7 @@ export function EstadisticasDashboard() {
                   const tot = utilidad[linea].reduce((a, u) => ({ venta: a.venta + u.venta, costo: a.costo + u.costo, servicios: a.servicios + u.servicios }), { venta: 0, costo: 0, servicios: 0 });
                   const uti = tot.venta - tot.costo;
                   return (
-                    <tr key={linea} className={tot.servicios > 0 ? 'est-fila-clicable' : ''} title={tot.servicios > 0 ? `Ver las operaciones de ${linea}` : undefined} onClick={() => { if (tot.servicios > 0) setRefsFiltro({ etiqueta: `Utilidad · ${linea} · ${etiquetaRango}`, ops: ops.filter((op) => lineaDeOp(op) === linea) }); }}>
+                    <tr key={linea} className={tot.servicios > 0 ? 'est-fila-clicable' : ''} title={tot.servicios > 0 ? `Ver las operaciones de ${linea}` : undefined} onClick={() => { if (tot.servicios > 0) setDetalleSel({ titulo: `Utilidad · ${linea} · ${etiquetaRango}`, ops: ops.filter((op) => lineaDeOp(op) === linea), esLinea: true }); }}>
                       <td>{linea}</td><td>{num(tot.servicios)}</td>
                       <td className="est-monto">{money(tot.venta)}</td>
                       <td>{money(tot.costo)}</td>
@@ -809,7 +874,7 @@ export function EstadisticasDashboard() {
                 {promedios.map((p) => {
                   const tot = p.meses.reduce((a, m) => ({ s: a.s + m.servicios, v: a.v + m.venta, u: a.u + m.promUtilidad * m.servicios }), { s: 0, v: 0, u: 0 });
                   return (
-                    <tr key={p.linea} className={tot.s > 0 ? 'est-fila-clicable' : ''} title={tot.s > 0 ? `Ver las operaciones de ${p.linea}` : undefined} onClick={() => { if (tot.s > 0) setRefsFiltro({ etiqueta: `Promedios · ${p.linea} · ${etiquetaRango}`, ops: ops.filter((op) => lineaDeOp(op) === p.linea) }); }}>
+                    <tr key={p.linea} className={tot.s > 0 ? 'est-fila-clicable' : ''} title={tot.s > 0 ? `Ver las operaciones de ${p.linea}` : undefined} onClick={() => { if (tot.s > 0) setDetalleSel({ titulo: `Promedios · ${p.linea} · ${etiquetaRango}`, ops: ops.filter((op) => lineaDeOp(op) === p.linea), esLinea: true }); }}>
                       <td>{p.linea}</td><td>{num(tot.s)}</td>
                       <td className="est-monto">{money(tot.v)}</td>
                       <td>{money(tot.s > 0 ? tot.v / tot.s : 0)}</td>
@@ -824,21 +889,25 @@ export function EstadisticasDashboard() {
       )}
 
       {/* ✅ DETALLE DE UN MES (Servicios) */}
-      {detalleMes !== null && detalle && (
-        <div className="est-overlay" onClick={() => { setDetalleMes(null); setRefsFiltro(null); }}>
+      {detalleSel !== null && detalle && (
+        <div className="est-overlay" onClick={() => { setDetalleSel(null); setRefsFiltro(null); }}>
           <div className="est-detalle" onClick={(e) => e.stopPropagation()}>
             <div className="est-detalle-encabezado">
-              <h3>
-                Servicios de {MESES[detalleMes.mes]}
-                {detalleMes.linea ? ` · ${detalleMes.linea}` : ''} — {detalle.ops.length} operación(es)
-              </h3>
-              <button className="est-detalle-cerrar" onClick={() => { setDetalleMes(null); setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}><X size={16} /></button>
+              <h3>{detalleSel.titulo} — {detalle.ops.length} operación(es)</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {/* ✅ NUEVO: tabla completa de las operaciones del desglose */}
+                <button type="button" className="est-detalle-cerrar" style={{ width: 'auto', padding: '4px 10px', fontSize: '0.78rem' }}
+                  onClick={() => setRefsFiltro({ etiqueta: detalleSel.titulo, ops: detalle.ops })}>
+                  Ver operaciones
+                </button>
+                <button className="est-detalle-cerrar" onClick={() => { setDetalleSel(null); setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}><X size={16} /></button>
+              </div>
             </div>
 
             <div className="est-detalle-cuerpo">
               {(
               <div className="est-detalle-grid">
-                {!detalleMes.linea && (
+                {!detalleSel.esLinea && (
                   <div className="est-detalle-seccion">
                     <span className="est-detalle-titulo">Tipo de operación</span>
                     <div className="est-detalle-lista">
@@ -847,7 +916,7 @@ export function EstadisticasDashboard() {
                         const claseL = l === 'Transfer' ? 'transfer' : l === 'Logística' ? 'logistica' : 'fletes';
                         return detalle.porLinea[l] > 0
                           ? (
-                            <button type="button" className="est-detalle-item clicable" key={l} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${l}`, ops: detalle.ops.filter((op) => lineaDeOp(op) === l) })}>
+                            <button type="button" className="est-detalle-item clicable" key={l} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${l}`, ops: detalle.ops.filter((op) => lineaDeOp(op) === l) })}>
                               <span className="est-item-linea"><i className={`est-punto ${claseL}`} />{l}</span>
                               <span className="est-item-cifras"><b>{num(detalle.porLinea[l])}</b><small>{pct.toFixed(0)}%</small></span>
                               <span className="est-item-barra"><i className={claseL} style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
@@ -856,7 +925,7 @@ export function EstadisticasDashboard() {
                           : <span className="est-detalle-item apagado" key={l}><span className="est-item-linea"><i className={`est-punto ${claseL}`} />{l}</span><span className="est-item-cifras"><b>0</b></span></span>;
                       })}
                       {detalle.porLinea.Otro > 0 && (
-                        <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Otro`, ops: detalle.ops.filter((op) => lineaDeOp(op) === 'Otro') })}><span>Otro</span><b>{num(detalle.porLinea.Otro)}</b></button>
+                        <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Otro`, ops: detalle.ops.filter((op) => lineaDeOp(op) === 'Otro') })}><span>Otro</span><b>{num(detalle.porLinea.Otro)}</b></button>
                       )}
                     </div>
                   </div>
@@ -870,7 +939,7 @@ export function EstadisticasDashboard() {
                       return (mv !== 'Sin clasificar' || detalle.porMovimiento[mv] > 0) && (
                         detalle.porMovimiento[mv] > 0
                           ? (
-                            <button type="button" className="est-detalle-item clicable" key={mv} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}>
+                            <button type="button" className="est-detalle-item clicable" key={mv} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}>
                               <span className="est-item-linea">{mv}</span>
                               <span className="est-item-cifras"><b>{num(detalle.porMovimiento[mv])}</b><small>{pct.toFixed(0)}%</small></span>
                               <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
@@ -886,8 +955,44 @@ export function EstadisticasDashboard() {
                   <span className="est-detalle-titulo">Trompo</span>
                   <div className="est-detalle-lista">
                     {detalle.trompos > 0
-                      ? <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Trompo`, ops: detalle.ops.filter((op) => esTrompo(op)) })}><span>Operaciones Trompo</span><b>{num(detalle.trompos)}</b></button>
+                      ? <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Trompo`, ops: detalle.ops.filter((op) => esTrompo(op)) })}><span>Operaciones Trompo</span><b>{num(detalle.trompos)}</b></button>
                       : <span className="est-detalle-item"><span>Operaciones Trompo</span><b>0</b></span>}
+                  </div>
+                </div>
+
+                {/* ✅ NUEVO — MONEDA DE FACTURACIÓN (CLIENTE): qué se factura
+                    en Dólares y qué en Pesos, con conteo y montos. */}
+                <div className="est-detalle-seccion">
+                  <span className="est-detalle-titulo">Moneda de facturación</span>
+                  <div className="est-detalle-lista">
+                    {detalle.monedas.USD.n > 0 ? (
+                      <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Dólares (USD)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'USD') })}>
+                        <span className="est-item-linea"><i className="est-punto transfer" />Dólares (USD)</span>
+                        <span className="est-item-cifras"><b>{num(detalle.monedas.USD.n)}</b><small>{((detalle.monedas.USD.n / detalle.ops.length) * 100).toFixed(0)}%</small></span>
+                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#8b949e' }}>{money(detalle.monedas.USD.dol)} USD{detalle.monedas.USD.conv > 0 ? ` ≈ ${money(detalle.monedas.USD.conv)} MXN` : ''}</span>
+                        <span className="est-item-barra"><i className="transfer" style={{ '--w': `${(detalle.monedas.USD.n / detalle.ops.length) * 100}%` } as React.CSSProperties} /></span>
+                      </button>
+                    ) : <span className="est-detalle-item apagado"><span className="est-item-linea"><i className="est-punto transfer" />Dólares (USD)</span><span className="est-item-cifras"><b>0</b></span></span>}
+                    {detalle.monedas.MXN.n > 0 ? (
+                      <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Pesos (MXN)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'MXN') })}>
+                        <span className="est-item-linea"><i className="est-punto logistica" />Pesos (MXN)</span>
+                        <span className="est-item-cifras"><b>{num(detalle.monedas.MXN.n)}</b><small>{((detalle.monedas.MXN.n / detalle.ops.length) * 100).toFixed(0)}%</small></span>
+                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#8b949e' }}>{money(detalle.monedas.MXN.pes)} MXN</span>
+                        <span className="est-item-barra"><i className="logistica" style={{ '--w': `${(detalle.monedas.MXN.n / detalle.ops.length) * 100}%` } as React.CSSProperties} /></span>
+                      </button>
+                    ) : <span className="est-detalle-item apagado"><span className="est-item-linea"><i className="est-punto logistica" />Pesos (MXN)</span><span className="est-item-cifras"><b>0</b></span></span>}
+                    {detalle.monedas.Mixta.n > 0 && (
+                      <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Moneda mixta`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Mixta') })}>
+                        <span className="est-item-linea"><i className="est-punto fletes" />Mixta (USD + MXN)</span>
+                        <span className="est-item-cifras"><b>{num(detalle.monedas.Mixta.n)}</b></span>
+                        <span style={{ display: 'block', fontSize: '0.72rem', color: '#8b949e' }}>{money(detalle.monedas.Mixta.dol)} USD + {money(detalle.monedas.Mixta.pes)} MXN</span>
+                      </button>
+                    )}
+                    {detalle.monedas['Sin dato'].n > 0 && (
+                      <button type="button" className="est-detalle-item clicable" onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Sin moneda`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Sin dato') })}>
+                        <span>Sin dato de moneda</span><b>{num(detalle.monedas['Sin dato'].n)}</b>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -897,7 +1002,7 @@ export function EstadisticasDashboard() {
                     {detalle.unidades.map(([nombre, cuantas]) => {
                       const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
                       return (
-                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Unidad ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.unidadNombre || op.unidad || '').trim()) || '(Sin dato)') === nombre) })}>
+                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Unidad ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.unidadNombre || op.unidad || '').trim()) || '(Sin dato)') === nombre) })}>
                           <span className="est-item-linea">{nombre}</span>
                           <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
                           <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
@@ -913,7 +1018,7 @@ export function EstadisticasDashboard() {
                     {detalle.operadores.map(([nombre, cuantas]) => {
                       const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
                       return (
-                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · Operador ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.operadorNombre || op.operador || '').trim()) || '(Sin dato)') === nombre) })}>
+                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · Operador ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.operadorNombre || op.operador || '').trim()) || '(Sin dato)') === nombre) })}>
                           <span className="est-item-linea">{nombre}</span>
                           <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
                           <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
@@ -923,13 +1028,14 @@ export function EstadisticasDashboard() {
                   </div>
                 </div>
 
+                {!detalleSel.ocultarClientes && (
                 <div className="est-detalle-seccion">
                   <span className="est-detalle-titulo">Clientes ({detalle.clientes.length})</span>
                   <div className="est-detalle-lista">
                     {detalle.clientes.map(([nombre, cuantas]) => {
                       const pct = detalle.ops.length > 0 ? (cuantas / detalle.ops.length) * 100 : 0;
                       return (
-                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${MESES[detalleMes.mes]} · ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '').trim()) || '(Sin dato)') === nombre) })}>
+                        <button type="button" className="est-detalle-item clicable" key={nombre} onClick={() => setRefsFiltro({ etiqueta: `${detalleSel.titulo} · ${nombre}`, ops: detalle.ops.filter((op) => ((String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '').trim()) || '(Sin dato)') === nombre) })}>
                           <span className="est-item-linea">{nombre}</span>
                           <span className="est-item-cifras"><b>{num(cuantas)}</b><small>{pct.toFixed(0)}%</small></span>
                           <span className="est-item-barra"><i className="neutra" style={{ '--w': `${pct}%` } as React.CSSProperties} /></span>
@@ -938,6 +1044,7 @@ export function EstadisticasDashboard() {
                     })}
                   </div>
                 </div>
+                )}
               </div>
               )}
             </div>
