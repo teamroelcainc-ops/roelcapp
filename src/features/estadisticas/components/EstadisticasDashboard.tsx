@@ -15,7 +15,7 @@
 // respaldo en la Confirmación de Tarifa guardada).
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -182,6 +182,60 @@ export function EstadisticasDashboard() {
     { campo: 'importeCliente', etiqueta: etq('col.est.importe_cliente', 'Importe (Cliente)') },
   ];
 
+  // ✅ NUEVO — RESOLUCIÓN DE IDs A NOMBRES en la ficha y la tabla.
+  //   Algunos registros guardan el ID del catálogo (remolque, unidad,
+  //   operador, origen/destino) sin el nombre denormalizado; se resuelven
+  //   contra la MISMA caché local de catálogos que usa Operaciones
+  //   (cat_v2__) y, si falta alguna colección, contra Firestore una sola vez.
+  const [mapasNombres, setMapasNombres] = useState<Record<string, Record<string, string>> | null>(null);
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const fuentes: { alias: string; col: string; nombreDe: (r: any) => string }[] = [
+        { alias: 'remolques', col: 'remolques', nombreDe: (r) => String(r.numeroRemolque || r.placa || r.nombre || '') },
+        { alias: 'unidades', col: 'unidades', nombreDe: (r) => String(r.unidad || r.nombre || '') },
+        { alias: 'empleados', col: 'empleados', nombreDe: (r) => `${r.firstName || ''} ${r.lastNamePaternal || ''}`.trim() },
+        { alias: 'direcciones', col: 'direcciones', nombreDe: (r) => String(r.nombre || r.alias || r.direccion || '') },
+        { alias: 'empresas', col: 'empresas', nombreDe: (r) => String(r.nombre || '') },
+      ];
+      const resultado: Record<string, Record<string, string>> = {};
+      for (const fte of fuentes) {
+        let registros: any[] = [];
+        try {
+          const raw = localStorage.getItem(`cat_v2__${fte.alias}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            registros = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.data) ? parsed.data : []);
+          }
+        } catch { /* caché ilegible */ }
+        if (registros.length === 0) {
+          try {
+            const snap = await getDocs(collection(db, fte.col));
+            registros = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+          } catch { registros = []; }
+        }
+        const mapa: Record<string, string> = {};
+        registros.forEach((r: any) => { const n = fte.nombreDe(r); if (r.id && n) mapa[String(r.id)] = n; });
+        resultado[fte.alias] = mapa;
+      }
+      if (!cancelado) setMapasNombres(resultado);
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Devuelve el nombre si el valor es un ID conocido en alguno de los
+  //   catálogos indicados (en orden); si no, el valor tal cual.
+  const resolverNombre = (aliases: string | string[], valor: any): string => {
+    const s = String(valor ?? '').trim();
+    if (!s) return '';
+    for (const alias of (Array.isArray(aliases) ? aliases : [aliases])) {
+      const n = mapasNombres?.[alias]?.[s];
+      if (n) return n;
+    }
+    return s;
+  };
+
   const valorColumna = (op: Op, campo: string): string => {
     if (campo === 'linea') return lineaDeOp(op);
     // ✅ Moneda derivada de los MONTOS reales (no del nombre crudo, que en
@@ -194,12 +248,14 @@ export function EstadisticasDashboard() {
       if (m.pes > 0) partes.push(`${money(m.pes)} MXN`);
       return partes.join(' + ') || '—';
     }
-    if (campo === 'unidadNombre') return String(op.unidadNombre || op.unidad || '');
-    if (campo === 'operadorNombre') return String(op.operadorNombre || op.operador || '');
-    if (campo === 'clientePagaNombre') return String(op.clientePagaNombre || op.clienteNombre || '');
-    // ✅ Origen/Destino: el nombre denormalizado, nunca el ID.
-    if (campo === 'origen') return String(op.origenNombre || op.clienteOrigenNombre || '');
-    if (campo === 'destino') return String(op.destinoNombre || op.clienteDestinoNombre || '');
+    if (campo === 'unidadNombre') return String(op.unidadNombre || resolverNombre('unidades', op.unidad) || '');
+    if (campo === 'operadorNombre') return String(op.operadorNombre || resolverNombre('empleados', op.operador) || '');
+    if (campo === 'clientePagaNombre') return String(op.clientePagaNombre || op.clienteNombre || resolverNombre('empresas', op.clientePaga) || '');
+    // ✅ Origen/Destino/Remolque: nombre denormalizado y, si el registro solo
+    //   trae el ID, se resuelve contra el catálogo.
+    if (campo === 'origen') return String(op.origenNombre || op.clienteOrigenNombre || resolverNombre(['direcciones', 'empresas'], op.origen) || '');
+    if (campo === 'destino') return String(op.destinoNombre || op.clienteDestinoNombre || resolverNombre(['direcciones', 'empresas'], op.destino) || '');
+    if (campo === 'numeroRemolque') return String(op.remolqueNombre || resolverNombre('remolques', op.numeroRemolque) || op.remolquePlaca || '');
     const v = op[campo];
     return v === null || v === undefined ? '' : String(v);
   };
@@ -1149,7 +1205,8 @@ export function EstadisticasDashboard() {
             ['Fecha de servicio', valorColumna(opFicha, 'fechaServicio') || '—'],
             ['Status', valorColumna(opFicha, 'statusNombre') || '—'],
             ['Tipo de operación', valorColumna(opFicha, 'tipoOperacionNombre') || '—'],
-            ['Movimiento', movimientoDeOp(opFicha)],
+            // ✅ Si no se puede clasificar, se muestra '—' en vez de "Sin clasificar".
+            ['Movimiento', movimientoDeOp(opFicha) === 'Sin clasificar' ? '—' : movimientoDeOp(opFicha)],
           ]},
           { titulo: 'Cliente y Convenio', campos: [
             ['Cliente', valorColumna(opFicha, 'clientePagaNombre') || '—'],
@@ -1204,7 +1261,7 @@ export function EstadisticasDashboard() {
 
       {/* ✅ Aviso mientras cargan los catálogos del formulario */}
       {cargandoCatalogos && (
-        <div className="est-overlay"><div className="est-cargando-form">Abriendo el formulario de Operaciones…</div></div>
+        <div className="est-overlay" style={{ zIndex: 2900 }}><div className="est-cargando-form">Abriendo el formulario de Operaciones…</div></div>
       )}
 
       {/* ✅ MODAL: selección de columnas de la tabla de referencias */}
@@ -1238,6 +1295,10 @@ export function EstadisticasDashboard() {
 
       {/* ✅ EL MISMO FORMULARIO DE OPERACIONES, para editar desde aquí */}
       {editandoOp && catalogosForm && (
+        // ✅ FIX: el FormularioOperacion trae z-index 1000 y la ficha de
+        //   Estadísticas 2000 — el wrapper crea un stacking context por encima
+        //   para que el formulario de edición se abra DELANTE, no detrás.
+        <div style={{ position: 'relative', zIndex: 3000 }}>
         <FormularioOperacion
           estado="abierto"
           initialData={editandoOp}
@@ -1252,6 +1313,7 @@ export function EstadisticasDashboard() {
             setEditandoOp(null);
           }}
         />
+        </div>
       )}
 
       {pestana === 'utilidad' && !cargando && (
