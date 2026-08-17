@@ -16,7 +16,7 @@
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
 import { useState, useMemo, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, documentId } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
@@ -538,34 +538,211 @@ export function EstadisticasDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detalleSel]);
 
+  // ═══════════ ✅ NUEVO — PESTAÑAS POR TIPO DE OPERACIÓN EN EL REPORTE ═══════════
+  //   El reporte de operaciones se separa en pestañas por línea (como las
+  //   hojas del Excel). La pestaña TRANSFER usa el formato de columnas del
+  //   Excel "Reporte de Transfer" (facturación + cobranza por operación).
+  const [tabLineaRefs, setTabLineaRefs] = useState<'Todas' | Linea>('Todas');
+  useEffect(() => { setTabLineaRefs('Todas'); setFiltrosCols({}); }, [refsFiltro]);
+
+  const COLUMNAS_TRANSFER: { campo: string; etiqueta: string; num?: boolean }[] = [
+    { campo: 'refRoelca', etiqueta: '# REF ROELCA' },
+    { campo: 'fecha', etiqueta: 'FECHA' },
+    { campo: 'unidad', etiqueta: 'UNIDAD' },
+    { campo: 'operador', etiqueta: 'OPERADOR' },
+    { campo: 'clientePaga', etiqueta: 'CLIENTE PAGA' },
+    { campo: 'tipoOper', etiqueta: 'TIPO DE OPER.' },
+    { campo: 'expoImpo', etiqueta: 'EXPORTACION / IMPORTACION' },
+    { campo: 'cv', etiqueta: 'C / V' },
+    { campo: 'observaciones', etiqueta: 'OBSERVACIONES' },
+    { campo: 'facturarEn', etiqueta: 'FACTURAR EN: PESOS / DOLARES' },
+    { campo: 'tipoFactura', etiqueta: 'TIPO DE FACTURA' },
+    { campo: 'factura', etiqueta: 'FACTURA' },
+    { campo: 'fechaFactura', etiqueta: 'FECHA FACTURA' },
+    { campo: 'dlls', etiqueta: 'DLLS', num: true },
+    { campo: 'tipoCambio', etiqueta: 'TIPO DE CAMBIO', num: true },
+    { campo: 'subtotal', etiqueta: 'SUBTOTAL', num: true },
+    { campo: 'valorFactura', etiqueta: 'VALOR FACTURA', num: true },
+    { campo: 'valorPesosSinIva', etiqueta: 'VALOR FACTURA EN PESOS SIN IVA', num: true },
+    { campo: 'pago', etiqueta: 'PAGO', num: true },
+    { campo: 'fechaPago', etiqueta: 'FECHA DE PAGO' },
+    { campo: 'formaPago', etiqueta: 'FORMA DE PAGO' },
+    { campo: 'saldoCobranza', etiqueta: 'SALDO COBRANZA', num: true },
+    { campo: 'statusFactura', etiqueta: 'STATUS FACTURA' },
+    { campo: 'obsRefPago', etiqueta: 'OBSERVACIONES DE LA REFERENCIA Y EL PAGO' },
+    { campo: 'numCliente', etiqueta: '# CLIENTE' },
+    { campo: 'mes', etiqueta: 'MES' },
+  ];
+
+  // Join perezoso con FACTURACIÓN y PAGOS (solo al abrir la pestaña Transfer):
+  //   op.facturaClienteId -> doc de facturas_clientes; facturaId -> último pago.
+  const [joinFacturas, setJoinFacturas] = useState<Record<string, any>>({});
+  const [joinPagos, setJoinPagos] = useState<Record<string, { fecha: string; metodo: string; obs: string }> | null>(null);
+  const [cargandoJoin, setCargandoJoin] = useState(false);
+
+  useEffect(() => {
+    if (tabLineaRefs !== 'Transfer' || !refsFiltro) return;
+    let cancelado = false;
+    (async () => {
+      setCargandoJoin(true);
+      try {
+        // 1) Facturas de las operaciones visibles que aún no estén en caché.
+        const idsFact = Array.from(new Set(
+          refsFiltro.ops.map((op: Op) => String(op.facturaClienteId || '')).filter((id) => id && !(id in joinFacturas))
+        ));
+        const nuevas: Record<string, any> = {};
+        for (let i = 0; i < idsFact.length; i += 10) {
+          const lote = idsFact.slice(i, i + 10);
+          const snap = await getDocs(query(collection(db, 'facturas_clientes'), where(documentId(), 'in', lote)));
+          snap.docs.forEach((d) => { nuevas[d.id] = { id: d.id, ...(d.data() as any) }; });
+        }
+        if (Object.keys(nuevas).length > 0 && !cancelado) setJoinFacturas((prev) => ({ ...prev, ...nuevas }));
+        // 2) Pagos de clientes (una sola vez): mapa facturaId -> último pago.
+        if (joinPagos === null) {
+          const snapP = await getDocs(query(collection(db, 'pagos'), where('tipo', '==', 'cliente')));
+          const mapa: Record<string, { fecha: string; metodo: string; obs: string }> = {};
+          snapP.docs
+            .map((d) => d.data() as any)
+            .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))
+            .forEach((p) => {
+              (Array.isArray(p.facturas) ? p.facturas : []).forEach((fa: any) => {
+                if (Number(fa.aplicado) > 0) mapa[String(fa.facturaId)] = { fecha: String(p.fecha || ''), metodo: String(p.metodoPago || ''), obs: String(p.observaciones || '') };
+              });
+            });
+          if (!cancelado) setJoinPagos(mapa);
+        }
+      } catch (e) { console.warn('No se pudo cargar el join de facturación/pagos:', e); }
+      if (!cancelado) setCargandoJoin(false);
+    })();
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tabLineaRefs, refsFiltro]);
+
+  const nummx = (n: number) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Valor de una celda del formato TRANSFER para una operación.
+  const valorTransfer = (op: Op, campo: string): string => {
+    const fac = op.facturaClienteId ? joinFacturas[String(op.facturaClienteId)] : null;
+    const pago = fac && joinPagos ? joinPagos[String(fac.id)] : null;
+    const m = montoClienteDe(op);
+    const monEtq = monedaClienteDe(op);
+    const facturarEn = monEtq === 'USD' ? 'DOLARES' : monEtq === 'MXN' ? 'PESOS' : monEtq === 'Mixta' ? 'MIXTA' : '—';
+    const total = fac ? (Number(fac.subtotalFactura) || Number(fac.total) || 0) : 0;
+    const pagado = fac ? (Number(fac.montoPagado) || 0) : 0;
+    switch (campo) {
+      case 'refRoelca': return String(op.ref || '');
+      case 'fecha': return fechaISODe(op);
+      case 'unidad': return valorColumna(op, 'unidadNombre');
+      case 'operador': return valorColumna(op, 'operadorNombre');
+      case 'clientePaga': return valorColumna(op, 'clientePagaNombre');
+      case 'tipoOper': return String(op.tipoOperacionNombre || op.tipoOperacion || '');
+      case 'expoImpo': { const mv = movimientoDeOp(op); return mv === 'Sin clasificar' ? '—' : mv.toUpperCase(); }
+      case 'cv': {
+        const t = `${op.cargadoVacio || ''} ${op.convenioNombre || ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        if (t.includes('vaci')) return 'V';
+        if (t.includes('carg')) return 'C';
+        return String(op.cargadoVacio || '—');
+      }
+      case 'observaciones': return String(op.observaciones || '');
+      case 'facturarEn': return facturarEn;
+      case 'tipoFactura': return String(fac?.tipoFacturaNombre || fac?.tipoFactura || op.tipoFacturaNombre || '—');
+      case 'factura': return String(op.facturaClienteInvoice || fac?.invoice || '');
+      case 'fechaFactura': return String(fac?.fecha || '');
+      case 'dlls': return m.dol > 0 ? nummx(m.dol) : '';
+      case 'tipoCambio': { const tc = Number(op.tipoCambioAprobado) || Number(fac?.tipoCambio) || 0; return tc > 0 ? tc.toFixed(4) : ''; }
+      case 'subtotal': return m.pes > 0 ? nummx(m.pes) : '';
+      case 'valorFactura': return m.conv > 0 ? nummx(m.conv) : '';
+      case 'valorPesosSinIva': return m.conv > 0 ? nummx(m.conv) : '';
+      case 'pago': return fac && pagado > 0 ? nummx(pagado) : '';
+      case 'fechaPago': return pago?.fecha || '';
+      case 'formaPago': return pago?.metodo || '';
+      case 'saldoCobranza': return fac ? nummx(Math.max(0, total - pagado)) : '';
+      case 'statusFactura': return String(fac?.statusFactura || (op.facturaClienteId || op.facturado ? 'Facturado' : 'No Facturado'));
+      case 'obsRefPago': return [fac?.observaciones, pago?.obs].filter(Boolean).join(' · ');
+      case 'numCliente': return String(op.numeroCliente || op.clientePaga || '').substring(0, 12);
+      case 'mes': { const f = fechaISODe(op); const mn = parseInt(f.slice(5, 7), 10); return mn >= 1 && mn <= 12 ? MESES[mn - 1] : ''; }
+      default: return '';
+    }
+  };
+
   // Columnas activas y filas visibles de la tabla de referencias (tabla + export).
   const columnasActivas = useMemo(() => COLUMNAS_REFS.filter(c => columnasRefs.includes(c.campo)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [columnasRefs]);
 
+  const esModoTransfer = tabLineaRefs === 'Transfer';
+
   const refsVisibles = useMemo(() => {
     if (!refsFiltro) return [];
-    return refsFiltro.ops.filter(op =>
-      columnasActivas.every(c => {
+    // ✅ Pestaña activa: filtra por línea (Todas = sin filtro).
+    const porLinea = tabLineaRefs === 'Todas'
+      ? refsFiltro.ops
+      : refsFiltro.ops.filter((op: Op) => lineaDeOp(op) === tabLineaRefs);
+    const cols = esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas;
+    const valor = esModoTransfer ? valorTransfer : valorColumna;
+    return porLinea.filter(op =>
+      cols.every(c => {
         const f = (filtrosCols[c.campo] || '').trim().toLowerCase();
         if (!f) return true;
-        return valorColumna(op, c.campo).toLowerCase().includes(f);
+        return valor(op, c.campo).toLowerCase().includes(f);
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refsFiltro, columnasActivas, filtrosCols]);
+  }, [refsFiltro, columnasActivas, filtrosCols, tabLineaRefs, joinFacturas, joinPagos, mapasNombres]);
+
+  // Conteo por línea para las pestañas del reporte.
+  const conteoLineasRefs = useMemo(() => {
+    const c: Record<string, number> = { Todas: refsFiltro?.ops.length || 0, Transfer: 0, 'Logística': 0, Fletes: 0, Otro: 0 };
+    (refsFiltro?.ops || []).forEach((op: Op) => { c[lineaDeOp(op)] += 1; });
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refsFiltro]);
+
+  // Totales de la pestaña Transfer (fila TOTAL en pantalla y exportes).
+  const totalesTransfer = useMemo(() => {
+    if (!esModoTransfer) return null;
+    const t = { dlls: 0, subtotal: 0, valorFactura: 0, pago: 0, saldoCobranza: 0 };
+    refsVisibles.forEach((op: Op) => {
+      const m = montoClienteDe(op);
+      t.dlls += m.dol; t.subtotal += m.pes; t.valorFactura += m.conv;
+      const fac = op.facturaClienteId ? joinFacturas[String(op.facturaClienteId)] : null;
+      if (fac) {
+        const total = Number(fac.subtotalFactura) || Number(fac.total) || 0;
+        const pagado = Number(fac.montoPagado) || 0;
+        t.pago += pagado; t.saldoCobranza += Math.max(0, total - pagado);
+      }
+    });
+    return t;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esModoTransfer, refsVisibles, joinFacturas]);
 
   // ✅ EXPORTACIÓN del rubro seleccionado (Excel y PDF con membrete).
   const exportarRefsExcel = () => {
     if (!refsFiltro) return;
     const wb = XLSX.utils.book_new();
-    const filas = refsVisibles.map(op => {
+    const cols = esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas;
+    const valor = esModoTransfer ? valorTransfer : valorColumna;
+    const filas: Record<string, string>[] = refsVisibles.map(op => {
       const fila: Record<string, string> = {};
-      columnasActivas.forEach(c => { fila[c.etiqueta] = valorColumna(op, c.campo) || '—'; });
+      cols.forEach(c => { fila[c.etiqueta] = valor(op, c.campo) || (esModoTransfer ? '' : '—'); });
       return fila;
     });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), 'Operaciones');
-    XLSX.writeFile(wb, `Reporte_${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
+    // ✅ Fila de TOTALES en el formato Transfer (como los SUBTOTAL del Excel).
+    if (esModoTransfer && totalesTransfer) {
+      const filaTot: Record<string, string> = {};
+      COLUMNAS_TRANSFER.forEach(c => { filaTot[c.etiqueta] = ''; });
+      filaTot['# REF ROELCA'] = `TOTAL (${refsVisibles.length})`;
+      filaTot['DLLS'] = nummx(totalesTransfer.dlls);
+      filaTot['SUBTOTAL'] = nummx(totalesTransfer.subtotal);
+      filaTot['VALOR FACTURA'] = nummx(totalesTransfer.valorFactura);
+      filaTot['VALOR FACTURA EN PESOS SIN IVA'] = nummx(totalesTransfer.valorFactura);
+      filaTot['PAGO'] = nummx(totalesTransfer.pago);
+      filaTot['SALDO COBRANZA'] = nummx(totalesTransfer.saldoCobranza);
+      filas.push(filaTot);
+    }
+    const nombreHoja = tabLineaRefs === 'Todas' ? 'Operaciones' : tabLineaRefs.toUpperCase().replace('Í', 'I');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), nombreHoja);
+    XLSX.writeFile(wb, `Reporte_${tabLineaRefs === 'Todas' ? '' : tabLineaRefs + '_'}${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
   };
 
   const exportarRefsPDF = async () => {
@@ -581,7 +758,7 @@ export function EstadisticasDashboard() {
               ${logo ? `<img src="${logo}" style="height:52px;" />` : ''}
               <div>
                 <div style="font-size:17px; font-weight:bold; color:#D84315;">ROELCA INC.</div>
-                <div style="font-size:13px; font-weight:bold; margin-top:2px;">Reporte de Servicios — ${esc(refsFiltro.etiqueta)}</div>
+                <div style="font-size:13px; font-weight:bold; margin-top:2px;">Reporte de ${esc(tabLineaRefs === 'Todas' ? 'Servicios' : tabLineaRefs)} — ${esc(refsFiltro.etiqueta)}</div>
                 <div style="font-size:11px; color:#555; margin-top:2px;">Periodo: ${esc(fechaDesde)} al ${esc(fechaHasta)} · ${refsVisibles.length} operación(es)</div>
               </div>
             </div>
@@ -589,10 +766,14 @@ export function EstadisticasDashboard() {
           </div>
           <table style="width:100%; border-collapse:collapse; font-size:9.5px;">
             <thead>
-              <tr>${columnasActivas.map(c => `<th style="background:#f2f2f2; border:1px solid #ccc; padding:5px 6px; text-align:left;">${esc(c.etiqueta.toUpperCase())}</th>`).join('')}</tr>
+              <tr>${(esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas).map(c => `<th style="background:#f2f2f2; border:1px solid #ccc; padding:5px 6px; text-align:left;">${esc(c.etiqueta.toUpperCase())}</th>`).join('')}</tr>
             </thead>
             <tbody>
-              ${refsVisibles.map(op => `<tr>${columnasActivas.map(c => `<td style="border:1px solid #ddd; padding:4px 6px;">${esc(valorColumna(op, c.campo) || '—')}</td>`).join('')}</tr>`).join('')}
+              ${refsVisibles.map(op => `<tr>${(esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas).map(c => `<td style="border:1px solid #ddd; padding:4px 6px;">${esc((esModoTransfer ? valorTransfer : valorColumna)(op, c.campo) || (esModoTransfer ? '' : '—'))}</td>`).join('')}</tr>`).join('')}
+              ${esModoTransfer && totalesTransfer ? `<tr>${COLUMNAS_TRANSFER.map(c => {
+                const tot: Record<string, string> = { refRoelca: `TOTAL (${refsVisibles.length})`, dlls: nummx(totalesTransfer.dlls), subtotal: nummx(totalesTransfer.subtotal), valorFactura: nummx(totalesTransfer.valorFactura), valorPesosSinIva: nummx(totalesTransfer.valorFactura), pago: nummx(totalesTransfer.pago), saldoCobranza: nummx(totalesTransfer.saldoCobranza) };
+                return `<td style="border:1px solid #ccc; padding:4px 6px; background:#f2f2f2; font-weight:bold;">${esc(tot[c.campo] || '')}</td>`;
+              }).join('')}</tr>` : ''}
             </tbody>
           </table>
         </div>`;
@@ -1153,9 +1334,11 @@ export function EstadisticasDashboard() {
                     <button className="est-btn" onClick={() => { setRefsFiltro(null); setFiltrosCols({}); setMenuColumnas(false); }}>← Cerrar</button>
                     <span className="est-refs-vista-titulo">{refsFiltro.etiqueta}</span>
                     <div className="est-refs-acciones">
-                      <button className="est-btn" onClick={() => setMenuColumnas(true)}>
-                        <Settings2 size={14} /> Columnas
-                      </button>
+                      {!esModoTransfer && (
+                        <button className="est-btn" onClick={() => setMenuColumnas(true)}>
+                          <Settings2 size={14} /> Columnas
+                        </button>
+                      )}
                       <button className="est-btn" onClick={exportarRefsExcel}>
                         <Download size={14} /> Excel
                       </button>
@@ -1165,8 +1348,29 @@ export function EstadisticasDashboard() {
                     </div>
                   </div>
 
+                  {/* ✅ NUEVO — PESTAÑAS POR TIPO DE OPERACIÓN (como las hojas del Excel) */}
+                  <div className="est-refs-tabs">
+                    {(['Todas', 'Transfer', 'Logística', 'Fletes'] as const).map((t) => (
+                      (t === 'Todas' || conteoLineasRefs[t] > 0) && (
+                        <button key={t} type="button"
+                          className={`est-refs-tab${tabLineaRefs === t ? ' activa' : ''}`}
+                          onClick={() => { setTabLineaRefs(t); setFiltrosCols({}); }}>
+                          {t} <small>({conteoLineasRefs[t]})</small>
+                        </button>
+                      )
+                    ))}
+                    {conteoLineasRefs.Otro > 0 && (
+                      <button type="button" className={`est-refs-tab${tabLineaRefs === 'Otro' ? ' activa' : ''}`}
+                        onClick={() => { setTabLineaRefs('Otro'); setFiltrosCols({}); }}>
+                        Otro <small>({conteoLineasRefs.Otro})</small>
+                      </button>
+                    )}
+                    {esModoTransfer && cargandoJoin && <span className="est-refs-join-msg">Cargando facturación y pagos…</span>}
+                    {esModoTransfer && !cargandoJoin && <span className="est-refs-join-msg ok">Formato Reporte de Transfer (facturación + cobranza)</span>}
+                  </div>
+
                   {(() => {
-                    const columnas = columnasActivas;
+                    const columnas = esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas;
                     const hayFiltros = Object.values(filtrosCols).some(v => v.trim());
                     const visibles = refsVisibles;
                     return (
@@ -1200,16 +1404,35 @@ export function EstadisticasDashboard() {
                               ) : visibles.map((op) => {
                                 const linea = lineaDeOp(op);
                                 const claseLinea = linea === 'Transfer' ? 'transfer' : linea === 'Logística' ? 'logistica' : linea === 'Fletes' ? 'fletes' : 'otro';
+                                const valor = esModoTransfer ? valorTransfer : valorColumna;
                                 return (
                                   <tr key={op.id} className="est-fila-clicable" onClick={() => setOpFicha(op)} title={`Ver el detalle de ${op.ref || op.id}`}>
-                                    {columnas.map(c => (
-                                      <td key={c.campo} className={c.campo === 'ref' ? `est-celda-ref est-ref-${claseLinea}` : ''}>
-                                        {valorColumna(op, c.campo) || '—'}
+                                    {columnas.map((c: any) => (
+                                      <td key={c.campo}
+                                        className={(c.campo === 'ref' || c.campo === 'refRoelca') ? `est-celda-ref est-ref-${claseLinea}` : (c.num ? 'est-celda-num' : '')}>
+                                        {valor(op, c.campo) || (esModoTransfer ? '' : '—')}
                                       </td>
                                     ))}
                                   </tr>
                                 );
                               })}
+                              {/* ✅ Fila TOTAL del formato Transfer (como los SUBTOTAL del Excel) */}
+                              {esModoTransfer && totalesTransfer && visibles.length > 0 && (
+                                <tr className="est-fila-general">
+                                  {COLUMNAS_TRANSFER.map((c) => {
+                                    const tot: Record<string, string> = {
+                                      refRoelca: `TOTAL (${visibles.length})`,
+                                      dlls: nummx(totalesTransfer.dlls),
+                                      subtotal: nummx(totalesTransfer.subtotal),
+                                      valorFactura: nummx(totalesTransfer.valorFactura),
+                                      valorPesosSinIva: nummx(totalesTransfer.valorFactura),
+                                      pago: nummx(totalesTransfer.pago),
+                                      saldoCobranza: nummx(totalesTransfer.saldoCobranza),
+                                    };
+                                    return <td key={c.campo} className={c.num ? 'est-celda-num' : ''}>{tot[c.campo] || ''}</td>;
+                                  })}
+                                </tr>
+                              )}
                             </tbody>
                           </table>
                         </div>

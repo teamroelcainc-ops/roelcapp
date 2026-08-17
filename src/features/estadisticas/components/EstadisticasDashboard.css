@@ -546,3 +546,14 @@ button.est-detalle-item {
   .est-rep-kpis { grid-template-columns: 1fr; }
   .est-rep-monedas { grid-template-columns: 1fr; }
 }
+
+/* ✅ NUEVO — pestañas por línea en el Reporte de operaciones */
+.est-refs-tabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px 0; border-bottom: 1px solid #21262d; padding-bottom: 8px; }
+.est-refs-tab { background: none; border: 1px solid #21262d; border-radius: 8px; color: #8b949e; padding: 6px 14px; cursor: pointer; font-family: inherit; font-size: 0.82rem; font-weight: 600; }
+.est-refs-tab small { color: #6e7681; font-weight: 500; }
+.est-refs-tab:hover { border-color: #58a6ff; color: #c9d1d9; }
+.est-refs-tab.activa { background-color: rgba(216, 67, 21, 0.14); border-color: #D84315; color: #f0f6fc; }
+.est-refs-tab.activa small { color: #D84315; }
+.est-refs-join-msg { margin-left: auto; color: #d29922; font-size: 0.72rem; }
+.est-refs-join-msg.ok { color: #3fb950; }
+.est-celda-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
