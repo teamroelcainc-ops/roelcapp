@@ -372,11 +372,36 @@ const calcularConversionProveedor = (op: any) => {
 //      facturación de cada operación — cubre las facturas existentes);
 //   3) respaldo: subtotalFactura (conversión) para facturas sin detalle.
 const totalNativoFactura = (fac: any): number => {
+  const norm = (v: any): string => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const monTxt = norm(fac?.monedaFacturacion || fac?.monedaProveedor || fac?.moneda || fac?.monedaId);
+  const esUSD = monTxt === '7dca62b3' || monTxt === 'usd' || monTxt === 'us$' || monTxt === 'dls' || monTxt.startsWith('dolar');
+  const esMXN = monTxt === 'f95d8894' || monTxt === 'mxn' || monTxt === 'mn' || monTxt.startsWith('peso');
   const directo = Number(fac?.subtotalMonedaFactura);
   if (!isNaN(directo) && directo > 0) return directo;
   const ops = Array.isArray(fac?.operacionesGuardadas) ? fac.operacionesGuardadas : [];
-  const base = ops.reduce((s: number, o: any) => s + (Number(o?.subtotalBase) || 0), 0);
-  if (base > 0) return base;
+  const suma = (campo: string) => ops.reduce((s: number, o: any) => s + (Number(o?.[campo]) || 0), 0);
+  if (ops.length > 0) {
+    if (esUSD) {
+      // Factura en DÓLARES: el monto por operación en dólares; si la factura
+      // es vieja y no lo trae, subtotalBase (subtotal en la escala USD).
+      const dol = suma('dol');
+      if (dol > 0) return dol;
+      const base = suma('subtotalBase');
+      if (base > 0) return base;
+    } else if (esMXN) {
+      // Factura en PESOS: la CONVERSIÓN es el total en pesos (cubre convenios
+      // en dólares: dólares × TC, y convenios en pesos: pesos directos).
+      const conv = suma('monto');
+      if (conv > 0) return conv;
+      const pes = suma('pes');
+      if (pes > 0) return pes;
+      const base = suma('subtotalBase');
+      if (base > 0) return base;
+    } else {
+      const base = suma('subtotalBase');
+      if (base > 0) return base;
+    }
+  }
   return Number(fac?.subtotalFactura) || Number(fac?.total) || Number(fac?.montoFactura) || 0;
 };
 
@@ -2159,7 +2184,13 @@ export const FacturacionProveedoresDashboard = () => {
         };
       });
       // ✅ FIX MONEDA: total en la moneda de la factura (no la conversión).
-      const subtotalMonedaFactura = operacionesResumenEstable.reduce((s: number, o: any) => s + (Number(o.subtotalBase) || 0), 0);
+      // ✅ FIX: el total en la moneda de la factura depende de EN QUÉ se
+      //   factura, no de la moneda del convenio: USD -> suma de dólares;
+      //   MXN -> suma de la conversión (dólares × TC + pesos directos).
+      const subtotalMonedaFactura = totalNativoFactura({
+        monedaProveedor,
+        operacionesGuardadas: operacionesResumenEstable,
+      });
       const remolquesFactura = Array.from(new Set(
         operacionesResumenEstable.map((o: any) => String(o.remolque || '')).filter(r => r && r !== '-')
       ));

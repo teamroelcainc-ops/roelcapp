@@ -728,12 +728,37 @@ export function PagosDashboard() {
   //      facturación de cada operación — cubre las facturas existentes);
   //   3) respaldo: subtotalFactura (conversión) para facturas sin detalle.
   const totalNativoFactura = (fac: any): number => {
-  const directo = Number(fac?.subtotalMonedaFactura);
-  if (!isNaN(directo) && directo > 0) return directo;
-  const ops = Array.isArray(fac?.operacionesGuardadas) ? fac.operacionesGuardadas : [];
-  const base = ops.reduce((s: number, o: any) => s + (Number(o?.subtotalBase) || 0), 0);
-  if (base > 0) return base;
-  return Number(fac?.subtotalFactura) || Number(fac?.total) || Number(fac?.montoFactura) || 0;
+    const norm = (v: any): string => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+    const monTxt = norm(fac?.monedaFacturacion || fac?.monedaProveedor || fac?.moneda || fac?.monedaId);
+    const esUSD = monTxt === '7dca62b3' || monTxt === 'usd' || monTxt === 'us$' || monTxt === 'dls' || monTxt.startsWith('dolar');
+    const esMXN = monTxt === 'f95d8894' || monTxt === 'mxn' || monTxt === 'mn' || monTxt.startsWith('peso');
+    const directo = Number(fac?.subtotalMonedaFactura);
+    if (!isNaN(directo) && directo > 0) return directo;
+    const ops = Array.isArray(fac?.operacionesGuardadas) ? fac.operacionesGuardadas : [];
+    const suma = (campo: string) => ops.reduce((s: number, o: any) => s + (Number(o?.[campo]) || 0), 0);
+    if (ops.length > 0) {
+      if (esUSD) {
+        // Factura en DÓLARES: el monto por operación en dólares; si la factura
+        // es vieja y no lo trae, subtotalBase (subtotal en la escala USD).
+        const dol = suma('dol');
+        if (dol > 0) return dol;
+        const base = suma('subtotalBase');
+        if (base > 0) return base;
+      } else if (esMXN) {
+        // Factura en PESOS: la CONVERSIÓN es el total en pesos (cubre convenios
+        // en dólares: dólares × TC, y convenios en pesos: pesos directos).
+        const conv = suma('monto');
+        if (conv > 0) return conv;
+        const pes = suma('pes');
+        if (pes > 0) return pes;
+        const base = suma('subtotalBase');
+        if (base > 0) return base;
+      } else {
+        const base = suma('subtotalBase');
+        if (base > 0) return base;
+      }
+    }
+    return Number(fac?.subtotalFactura) || Number(fac?.total) || Number(fac?.montoFactura) || 0;
   };
 
   // ✅ NUEVO: mapeo de un doc de factura a FacturaPagable (reutilizado por la
