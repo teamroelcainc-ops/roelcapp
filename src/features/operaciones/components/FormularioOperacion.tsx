@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 'react';
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc, query, where, limit } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc, query, where, limit, orderBy } from 'firebase/firestore';
+import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { guardarOperacionSegura } from '../services/operacionesService';
@@ -2171,6 +2172,39 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       let refGuardado = '';
       if (initialData) {
         if (datosCancelacion) Object.assign(operacionData, datosCancelacion);
+
+        // ✅ NUEVO — CAMBIO DE LÍNEA = NUEVA REFERENCIA: si al editar se cambió
+        //   el TIPO DE OPERACIÓN (ej. Transfer -> Logística), la referencia se
+        //   regenera con el prefijo de la NUEVA línea y el SIGUIENTE
+        //   consecutivo de esa línea para el día (si no hay registros, 001).
+        try {
+          const refActual = String((initialData as any).ref || '');
+          const matchRef = refActual.match(/^([A-Z]{2})-(\d{6})-(\d+)$/);
+          const tipoNuevoNombre = tiposOperacion?.find((t: any) => t.id === formData.tipoOperacionId)?.tipo_operacion || '';
+          const prefijoNuevo = prefijoTipoOperacion(tipoNuevoNombre);
+          if (matchRef && tipoNuevoNombre && prefijoNuevo !== matchRef[1]) {
+            const ddmmyy = matchRef[2]; // se conserva la fecha de la referencia
+            const inicio = `${prefijoNuevo}-${ddmmyy}-`;
+            const snapUlt = await getDocs(query(
+              collection(db, 'operaciones'),
+              where('ref', '>=', inicio),
+              where('ref', '<=', `${inicio}\uf8ff`),
+              orderBy('ref', 'desc'),
+              limit(1)
+            ));
+            let siguiente = 1;
+            if (!snapUlt.empty) {
+              const ultRef = String((snapUlt.docs[0].data() as any).ref || '');
+              const mUlt = ultRef.match(/-(\d+)$/);
+              if (mUlt) siguiente = parseInt(mUlt[1], 10) + 1;
+            }
+            (operacionData as any).ref = `${inicio}${String(siguiente).padStart(3, '0')}`;
+            console.log(`Referencia regenerada por cambio de línea: ${refActual} -> ${(operacionData as any).ref}`);
+          }
+        } catch (eRef) {
+          console.warn('No se pudo regenerar la referencia por cambio de línea:', eRef);
+        }
+
         await updateDoc(doc(db, 'operaciones', String(initialData.id)), operacionData);
         idGuardado = String(initialData.id);
         refGuardado = referenciaDeOperacion(idGuardado, operacionData.ref || (initialData as any).ref);

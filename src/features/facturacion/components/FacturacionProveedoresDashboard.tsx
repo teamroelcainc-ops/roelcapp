@@ -32,6 +32,7 @@ import {
   startAfter,
   arrayUnion,
 } from 'firebase/firestore';
+import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import { exportarExcelProfesional } from './exportarExcelProfesional';
@@ -539,6 +540,7 @@ export const FacturacionProveedoresDashboard = () => {
   const [editStatus, setEditStatus] = useState('Facturado');
   const [editMoneda, setEditMoneda] = useState('');
   const [editTotal, setEditTotal] = useState('');
+  const [editProveedorId, setEditProveedorId] = useState(''); // ✅ NUEVO: reasignar proveedor
 
   const [gestionOp, setGestionOp] = useState<any | null>(null);
   const [gestionInvoice, setGestionInvoice] = useState('');
@@ -2324,6 +2326,7 @@ export const FacturacionProveedoresDashboard = () => {
     setEditStatus(String(f.statusFactura || 'Facturado'));
     setEditMoneda(resolverMoneda(f.monedaProveedor) || '');
     setEditTotal(String(Number(f.subtotalFactura) || 0));
+    setEditProveedorId(String(f.proveedorId || '')); // ✅ NUEVO
   };
 
   const handleGuardarEdicionFactura = async () => {
@@ -2341,6 +2344,11 @@ export const FacturacionProveedoresDashboard = () => {
         monedaProveedor: editMoneda || 'N/A',
         updatedAt: new Date().toISOString(),
       };
+      // ✅ NUEVO — REASIGNAR PROVEEDOR (se refleja también en Pagos).
+      if (editProveedorId) {
+        const prov: any = empresasList.find((e: any) => e.id === editProveedorId);
+        if (prov) { baseUpdate.proveedorId = editProveedorId; baseUpdate.proveedorNombre = String(prov.nombre || ''); }
+      }
       const batch = writeBatch(db);
       ids.forEach((id, idx) => {
         batch.set(doc(db, 'facturas_proveedores', id), { ...baseUpdate, subtotalFactura: idx === 0 ? totalNum : 0 }, { merge: true });
@@ -3957,7 +3965,16 @@ export const FacturacionProveedoresDashboard = () => {
             </div>
 
             <div className="fpd-x247">
-              Proveedor: <b className="fpd-x8">{facturaEditando.proveedorNombre || getNombreEmpresa(facturaEditando.proveedorId) || '-'}</b>
+              <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '4px', fontWeight: 600, textTransform: 'uppercase' }}>Proveedor de la factura</label>
+              <SelectBuscable
+                opciones={empresasList
+                  .slice()
+                  .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
+                  .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
+                value={editProveedorId}
+                onChange={setEditProveedorId}
+                placeholder="Buscar proveedor..."
+              />
               {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
                 <span> · <b className="fpd-x248">{facturaEditando.__groupIds.length} documentos agrupados</b> (el total se asigna al primero)</span>
               )}

@@ -24,6 +24,7 @@ import {
   documentId,
   startAfter,
 } from 'firebase/firestore';
+import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { db } from '../../../config/firebase';
 import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
@@ -515,6 +516,7 @@ export const FacturacionClientesDashboard = () => {
   const [editStatus, setEditStatus] = useState('Facturado');
   const [editMoneda, setEditMoneda] = useState('');
   const [editTotal, setEditTotal] = useState('');
+  const [editClienteId, setEditClienteId] = useState(''); // ✅ NUEVO: reasignar cliente
 
   const [gestionOp, setGestionOp] = useState<any | null>(null);
   const [gestionInvoice, setGestionInvoice] = useState('');
@@ -1618,6 +1620,7 @@ export const FacturacionClientesDashboard = () => {
     setEditStatus(String(f.statusFactura || 'Facturado'));
     setEditMoneda(resolverMoneda(f.monedaFacturacion) || '');
     setEditTotal(String(Number(f.subtotalFactura) || 0));
+    setEditClienteId(String(f.clienteId || '')); // ✅ NUEVO
   };
 
   const handleGuardarEdicionFactura = async () => {
@@ -1635,6 +1638,13 @@ export const FacturacionClientesDashboard = () => {
         monedaFacturacion: editMoneda || 'N/A',
         updatedAt: new Date().toISOString(),
       };
+      // ✅ NUEVO — REASIGNAR CLIENTE: corrige facturas que quedaron a nombre
+      //   de otro cliente (el nombre corregido se refleja también en Pagos,
+      //   que lee clienteId/clienteNombre de la factura).
+      if (editClienteId) {
+        const cli: any = empresasList.find((e: any) => e.id === editClienteId);
+        if (cli) { baseUpdate.clienteId = editClienteId; baseUpdate.clienteNombre = String(cli.nombre || ''); }
+      }
       const batch = writeBatch(db);
       ids.forEach((id, idx) => {
         batch.set(doc(db, 'facturas_clientes', id), { ...baseUpdate, subtotalFactura: idx === 0 ? totalNum : 0 }, { merge: true });
@@ -3462,8 +3472,19 @@ export const FacturacionClientesDashboard = () => {
               <button className="fcd-x45" onClick={() => setFacturaEditando(null)}>✕</button>
             </div>
 
-            <div className="fcd-x241">
-              Cliente: <b className="fcd-x11">{facturaEditando.clienteNombre || getNombreCliente(facturaEditando.clienteId) || '-'}</b>
+            {/* ✅ NUEVO — el cliente de la factura ahora es EDITABLE (corrige
+                facturas a nombre del cliente equivocado; Pagos lo hereda). */}
+            <div className="fcd-x241" style={{ display: 'block' }}>
+              <label style={{ display: 'block', color: '#8b949e', fontSize: '0.75rem', marginBottom: '4px', fontWeight: 600, textTransform: 'uppercase' }}>Cliente de la factura</label>
+              <SelectBuscable
+                opciones={empresasList
+                  .slice()
+                  .sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }))
+                  .map((e: any) => ({ value: e.id, label: String(e.nombre || e.id) }))}
+                value={editClienteId}
+                onChange={setEditClienteId}
+                placeholder="Buscar cliente..."
+              />
               {Array.isArray(facturaEditando.__groupIds) && facturaEditando.__groupIds.length > 1 && (
                 <span> · <b className="fcd-x242">{facturaEditando.__groupIds.length} documentos agrupados</b> (el total se asigna al primero)</span>
               )}

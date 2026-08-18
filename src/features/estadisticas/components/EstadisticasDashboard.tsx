@@ -99,6 +99,31 @@ const monedaClienteDe = (op: Op): 'USD' | 'MXN' | 'Mixta' | 'Sin dato' => {
 
 // ── Costo del PROVEEDOR (mismo criterio que Facturación de Proveedores,
 //    con respaldo en la Confirmación de Tarifa guardada) ──
+// ✅ NUEVO — desglose del PROVEEDOR (dol/pes/conv) con la regla de monedas.
+const montoProveedorDe = (op: Op): { dol: number; pes: number; conv: number } => {
+  const dolG = Number(op.dolaresProv) || 0;
+  const pesG = Number(op.pesosProv) || 0;
+  const convG = Number(op.conversionProv) || 0;
+  if (convG > 0) return { dol: dolG, pes: pesG, conv: convG };
+  const tc = Number(op.tipoCambioAprobado) || 0;
+  const subtotal = Number(op.subtotalProv) || ((Number(op.totalAPagarProv) || 0) + (Number(op.cargosAdicionalesProv) || 0));
+  if (subtotal <= 0) return { dol: 0, pes: 0, conv: 0 };
+  const fact = String(op.facturadoEnUnidad || '');
+  const nombreFact = String(op.monedaUnidadNombre || op.monedaPagoProvNombre || '').toUpperCase();
+  const factUSD = fact === '7dca62b3' || nombreFact.includes('USD') || nombreFact.includes('DOLAR') || nombreFact.includes('DÓLAR');
+  const factMXN = fact === 'f95d8894' || nombreFact.includes('MXN') || nombreFact.includes('PESO');
+  const monConv = String(op.monedaConvenioProv || '');
+  const convUSD = monConv === '7dca62b3' || (!!monConv && monConv.toUpperCase().includes('USD'));
+  const convMXN = monConv === 'f95d8894' || (!!monConv && monConv.toUpperCase().includes('MXN'));
+  const cUSD = convUSD || (!convMXN && factUSD);
+  const cMXN = convMXN || (!convUSD && factMXN);
+  if (cUSD && factMXN) return { dol: 0, pes: subtotal * tc, conv: subtotal * tc };
+  if (cUSD) return { dol: subtotal, pes: 0, conv: subtotal * tc };
+  if (cMXN && factUSD) return { dol: tc > 0 ? subtotal / tc : 0, pes: 0, conv: subtotal };
+  if (cMXN) return { dol: 0, pes: subtotal, conv: subtotal };
+  return { dol: 0, pes: 0, conv: subtotal };
+};
+
 const costoProveedorDe = (op: Op): number => {
   const convGuardada = Number(op.conversionProv);
   if (!isNaN(convGuardada) && convGuardada > 0) return convGuardada;
@@ -162,7 +187,7 @@ export function EstadisticasDashboard() {
   //   MISMO formulario del módulo de Operaciones.
   // ✅ NUEVO: al hacer clic en cualquier elemento del detalle (cliente,
   //   unidad, operador, movimiento, línea, trompo) se muestran SUS referencias.
-  const [refsFiltro, setRefsFiltro] = useState<{ etiqueta: string; ops: Op[]; formato?: 'transfer' } | null>(null);
+  const [refsFiltro, setRefsFiltro] = useState<{ etiqueta: string; ops: Op[]; formato?: 'transfer' | 'cruces' | 'fletes' } | null>(null);
   // ✅ Ficha de la operación (primero el DETALLE; Editar abre el formulario).
   const [opFicha, setOpFicha] = useState<Op | null>(null);
   // ✅ Tabla de referencias: columnas configurables (persisten entre sesiones)
@@ -530,7 +555,9 @@ export function EstadisticasDashboard() {
   // Al hacer drill-down desde el desglose, si la pestaña activa es Transfer
   // la tabla se abre con el formato del Excel de Transfer.
   const abrirRefsDesdeDetalle = (cfg: { etiqueta: string; ops: Op[] }) => {
-    setRefsFiltro({ ...cfg, formato: tabLineaDet === 'Transfer' ? 'transfer' : undefined });
+    // ✅ La tabla hereda el formato Excel de la pestaña activa:
+    //   Transfer -> TRANSFER · Logística -> CRUCES · Fletes -> FLETES.
+    setRefsFiltro({ ...cfg, formato: formatoDeLinea(tabLineaDet) });
   };
 
   const detalle = useMemo(() => {
@@ -605,19 +632,103 @@ export function EstadisticasDashboard() {
     { campo: 'mes', etiqueta: 'MES' },
   ];
 
+  // ✅ NUEVO — Formato CRUCES (Logística) y FLETES: mismas columnas del Excel
+  //   del usuario. Reutilizan los campos de Transfer + bloque del PROVEEDOR.
+  const COLS_PROV: { campo: string; etiqueta: string; num?: boolean }[] = [
+    { campo: 'facturarEnProv', etiqueta: 'FACTURADO EN: PESOS / DOLARES' },
+    { campo: 'tipoFacturaProv', etiqueta: 'TIPO FACTURA PROVEEDOR' },
+    { campo: 'facturaProv', etiqueta: 'FACTURA PROVEEDOR' },
+    { campo: 'fechaFacturaProv', etiqueta: 'FECHA FACTURA PROVEEDOR' },
+    { campo: 'valorProvPesos', etiqueta: 'VALOR FACTURA PROVEEDOR PESOS', num: true },
+    { campo: 'valorProvDolares', etiqueta: 'VALOR FACTURA PROVEEDOR DOLARES', num: true },
+    { campo: 'conversionProv', etiqueta: 'CONVERSION A PESOS PROVEEDOR', num: true },
+    { campo: 'utilidad', etiqueta: 'UTILIDAD', num: true },
+    { campo: 'pagoProv', etiqueta: 'PAGO A PROVEEDOR', num: true },
+    { campo: 'fechaPagoProv', etiqueta: 'FECHA DE PAGO PROVEEDOR' },
+    { campo: 'formaPagoProv', etiqueta: 'FORMA DE PAGO PROVEEDOR' },
+    { campo: 'saldoProvSinIva', etiqueta: 'SALDO PROVEEDOR SIN IVA', num: true },
+  ];
+  const COLUMNAS_CRUCES: { campo: string; etiqueta: string; num?: boolean }[] = [
+    { campo: 'refRoelca', etiqueta: '# REF ROELCA' },
+    { campo: 'fecha', etiqueta: 'FECHA' },
+    { campo: 'proveedor', etiqueta: 'PROVEEDOR' },
+    { campo: 'clientePaga', etiqueta: 'CLIENTE PAGA' },
+    { campo: 'tipoOper', etiqueta: 'TIPO DE OPER.' },
+    { campo: 'expoImpo', etiqueta: 'IMPORTACION / EXPORTACION' },
+    { campo: 'cv', etiqueta: 'C / V' },
+    { campo: 'observaciones', etiqueta: 'OBSERVACIONES' },
+    { campo: 'facturarEn', etiqueta: 'FACTURAR EN: PESOS / DOLARES' },
+    { campo: 'tipoFactura', etiqueta: 'TIPO DE FACTURA' },
+    { campo: 'factura', etiqueta: 'FACTURA' },
+    { campo: 'fechaFactura', etiqueta: 'FECHA2' },
+    { campo: 'dlls', etiqueta: 'DLLS', num: true },
+    { campo: 'tipoCambio', etiqueta: 'TIPO DE CAMBIO', num: true },
+    { campo: 'subtotal', etiqueta: 'SUBTOTAL', num: true },
+    { campo: 'valorFactura', etiqueta: 'VALOR FACTURA', num: true },
+    { campo: 'valorPesosSinIva', etiqueta: 'VALOR FACTURA EN PESOS', num: true },
+    { campo: 'pago', etiqueta: 'PAGO', num: true },
+    { campo: 'fechaPago', etiqueta: 'FECHA DE PAGO' },
+    { campo: 'formaPago', etiqueta: 'FORMA DE PAGO' },
+    { campo: 'saldoCobranza', etiqueta: 'SALDO COBRANZA', num: true },
+    { campo: 'statusFactura', etiqueta: 'STATUS FACTURA' },
+    { campo: 'saldoCobranzaSinIva', etiqueta: 'SALDO COBRANZA SIN IVA', num: true },
+    ...COLS_PROV,
+    { campo: 'numCliente', etiqueta: '# CLIENTE' },
+    { campo: 'numProv', etiqueta: '# PROV' },
+    { campo: 'mes', etiqueta: 'MES' },
+  ];
+  const COLUMNAS_FLETES: { campo: string; etiqueta: string; num?: boolean }[] = [
+    { campo: 'refRoelca', etiqueta: '# REF ROELCA' },
+    { campo: 'fecha', etiqueta: 'FECHA' },
+    { campo: 'proveedor', etiqueta: 'PROVEEDOR' },
+    { campo: 'clientePaga', etiqueta: 'CLIENTE PAGA' },
+    { campo: 'tipoOper', etiqueta: 'TIPO DE OPER.' },
+    { campo: 'expoImpo', etiqueta: 'IMPORTACION / EXPORTACION' },
+    { campo: 'cv', etiqueta: 'C / V' },
+    { campo: 'observaciones', etiqueta: 'OBSERVACIONES' },
+    { campo: 'facturarEn', etiqueta: 'FACTURAR EN: PESOS / DOLARES' },
+    { campo: 'tipoFactura', etiqueta: 'TIPO DE FACTURA' },
+    { campo: 'factura', etiqueta: 'FACTURA DEL CLIENTE' },
+    { campo: 'fechaFactura', etiqueta: 'FECHA DE FACTURA DEL CLIENTE' },
+    { campo: 'dlls', etiqueta: 'DLLS', num: true },
+    { campo: 'tipoCambio', etiqueta: 'TIPO DE CAMBIO', num: true },
+    { campo: 'subtotal', etiqueta: 'SUBTOTAL', num: true },
+    { campo: 'valorFactura', etiqueta: 'VALOR FACTURA DEL CLIENTE', num: true },
+    { campo: 'valorPesosSinIva', etiqueta: 'VALOR TOTAL EN PESOS SIN IVA', num: true },
+    { campo: 'pago', etiqueta: 'PAGO DEL CLIENTE', num: true },
+    { campo: 'fechaPago', etiqueta: 'FECHA DE PAGO DEL CLIENTE' },
+    { campo: 'formaPago', etiqueta: 'FORMA DE PAGO DEL CLIENTE' },
+    { campo: 'saldoCobranza', etiqueta: 'SALDO COBRANZA CLIENTE', num: true },
+    { campo: 'statusFactura', etiqueta: 'STATUS FACTURA CLIENTE' },
+    { campo: 'saldoCobranzaSinIva', etiqueta: 'SALDO COBRANZA SIN IVA', num: true },
+    ...COLS_PROV,
+    { campo: 'mes', etiqueta: 'MES' },
+  ];
+  type FormatoExcel = 'transfer' | 'cruces' | 'fletes';
+  const COLUMNAS_POR_FORMATO: Record<FormatoExcel, { campo: string; etiqueta: string; num?: boolean }[]> = {
+    transfer: COLUMNAS_TRANSFER, cruces: COLUMNAS_CRUCES, fletes: COLUMNAS_FLETES,
+  };
+  const NOMBRE_HOJA: Record<FormatoExcel, string> = { transfer: 'TRANSFER', cruces: 'CRUCES', fletes: 'FLETES' };
+  const formatoDeLinea = (l: 'Todas' | Linea): FormatoExcel | undefined =>
+    l === 'Transfer' ? 'transfer' : l === 'Logística' ? 'cruces' : l === 'Fletes' ? 'fletes' : undefined;
+
   // Join perezoso con FACTURACIÓN y PAGOS (solo al abrir la pestaña Transfer):
   //   op.facturaClienteId -> doc de facturas_clientes; facturaId -> último pago.
   const [joinFacturas, setJoinFacturas] = useState<Record<string, any>>({});
   const [joinPagos, setJoinPagos] = useState<Record<string, { fecha: string; metodo: string; obs: string }> | null>(null);
+  const [joinFacturasProv, setJoinFacturasProv] = useState<Record<string, any>>({});
+  const [joinPagosProv, setJoinPagosProv] = useState<Record<string, { fecha: string; metodo: string; obs: string }> | null>(null);
   const [cargandoJoin, setCargandoJoin] = useState(false);
 
   useEffect(() => {
     // ✅ El join corre cuando la tabla está en formato Transfer O cuando la
     //   pestaña Transfer está activa en el desglose (para exportar desde ahí).
-    const enTablaTransfer = refsFiltro?.formato === 'transfer';
-    const enDetalleTransfer = detalleSel !== null && tabLineaDet === 'Transfer';
-    if (!enTablaTransfer && !enDetalleTransfer) return;
-    const opsBase: Op[] = enTablaTransfer ? refsFiltro!.ops : (detalleSel?.ops || []);
+    const fmtTabla = refsFiltro?.formato as FormatoExcel | undefined;
+    const fmtDetalle = detalleSel !== null ? formatoDeLinea(tabLineaDet) : undefined;
+    const fmt = fmtTabla || fmtDetalle;
+    if (!fmt) return;
+    const opsBase: Op[] = fmtTabla ? refsFiltro!.ops : (detalleSel?.ops || []);
+    const necesitaProv = fmt === 'cruces' || fmt === 'fletes';
     let cancelado = false;
     (async () => {
       setCargandoJoin(true);
@@ -633,6 +744,19 @@ export function EstadisticasDashboard() {
           snap.docs.forEach((d) => { nuevas[d.id] = { id: d.id, ...(d.data() as any) }; });
         }
         if (Object.keys(nuevas).length > 0 && !cancelado) setJoinFacturas((prev) => ({ ...prev, ...nuevas }));
+        // 1b) ✅ Facturas de PROVEEDOR (Cruces/Fletes).
+        if (necesitaProv) {
+          const idsProv = Array.from(new Set(
+            opsBase.map((op: Op) => String(op.facturaProveedorId || '')).filter((id) => id && !(id in joinFacturasProv))
+          ));
+          const nuevasProv: Record<string, any> = {};
+          for (let i = 0; i < idsProv.length; i += 10) {
+            const lote = idsProv.slice(i, i + 10);
+            const snap = await getDocs(query(collection(db, 'facturas_proveedores'), where(documentId(), 'in', lote)));
+            snap.docs.forEach((d) => { nuevasProv[d.id] = { id: d.id, ...(d.data() as any) }; });
+          }
+          if (Object.keys(nuevasProv).length > 0 && !cancelado) setJoinFacturasProv((prev) => ({ ...prev, ...nuevasProv }));
+        }
         // 2) Pagos de clientes (una sola vez): mapa facturaId -> último pago.
         if (joinPagos === null) {
           const snapP = await getDocs(query(collection(db, 'pagos'), where('tipo', '==', 'cliente')));
@@ -646,6 +770,20 @@ export function EstadisticasDashboard() {
               });
             });
           if (!cancelado) setJoinPagos(mapa);
+        }
+        // 2b) ✅ Pagos a PROVEEDORES (Cruces/Fletes), una sola vez.
+        if (necesitaProv && joinPagosProv === null) {
+          const snapPP = await getDocs(query(collection(db, 'pagos'), where('tipo', '==', 'proveedor')));
+          const mapaP: Record<string, { fecha: string; metodo: string; obs: string }> = {};
+          snapPP.docs
+            .map((d) => d.data() as any)
+            .sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')))
+            .forEach((p) => {
+              (Array.isArray(p.facturas) ? p.facturas : []).forEach((fa: any) => {
+                if (Number(fa.aplicado) > 0) mapaP[String(fa.facturaId)] = { fecha: String(p.fecha || ''), metodo: String(p.metodoPago || ''), obs: String(p.observaciones || '') };
+              });
+            });
+          if (!cancelado) setJoinPagosProv(mapaP);
         }
       } catch (e) { console.warn('No se pudo cargar el join de facturación/pagos:', e); }
       if (!cancelado) setCargandoJoin(false);
@@ -697,7 +835,59 @@ export function EstadisticasDashboard() {
       case 'obsRefPago': return [fac?.observaciones, pago?.obs].filter(Boolean).join(' · ');
       case 'numCliente': return String(op.numeroCliente || op.clientePaga || '').substring(0, 12);
       case 'mes': { const f = fechaISODe(op); const mn = parseInt(f.slice(5, 7), 10); return mn >= 1 && mn <= 12 ? MESES[mn - 1] : ''; }
+      // ── ✅ BLOQUE PROVEEDOR (formatos Cruces y Fletes) ──
+      case 'proveedor': return String(op.provServiciosNombre || resolverNombre('empresas', op.provServicios) || '');
+      case 'saldoCobranzaSinIva': return fac ? nummx(Math.max(0, total - pagado)) : '';
+      case 'facturarEnProv': {
+        const mp = montoProveedorDe(op);
+        return mp.dol > 0 && mp.pes <= 0 ? 'DOLARES' : mp.pes > 0 && mp.dol <= 0 ? 'PESOS' : (mp.conv > 0 ? 'PESOS' : '—');
+      }
+      case 'tipoFacturaProv': { const fp = op.facturaProveedorId ? joinFacturasProv[String(op.facturaProveedorId)] : null; return String(fp?.tipoFacturaNombre || fp?.tipoFactura || '—'); }
+      case 'facturaProv': { const fp = op.facturaProveedorId ? joinFacturasProv[String(op.facturaProveedorId)] : null; return String(op.facturaProveedorFolio || fp?.invoice || ''); }
+      case 'fechaFacturaProv': { const fp = op.facturaProveedorId ? joinFacturasProv[String(op.facturaProveedorId)] : null; return String(fp?.fecha || ''); }
+      case 'valorProvPesos': { const mp = montoProveedorDe(op); return mp.pes > 0 ? nummx(mp.pes) : ''; }
+      case 'valorProvDolares': { const mp = montoProveedorDe(op); return mp.dol > 0 ? nummx(mp.dol) : ''; }
+      case 'conversionProv': { const mp = montoProveedorDe(op); return mp.conv > 0 ? nummx(mp.conv) : ''; }
+      case 'utilidad': { const mp = montoProveedorDe(op); return nummx(m.conv - mp.conv); }
+      case 'pagoProv': { const fp = op.facturaProveedorId ? joinFacturasProv[String(op.facturaProveedorId)] : null; const pg = Number(fp?.montoPagado) || 0; return fp && pg > 0 ? nummx(pg) : ''; }
+      case 'fechaPagoProv': { const fp = op.facturaProveedorId ? joinFacturasProv[String(op.facturaProveedorId)] : null; return (fp && joinPagosProv?.[String(fp.id)]?.fecha) || ''; }
+      case 'formaPagoProv': { const fp = op.facturaProveedorId ? joinFacturasProv[String(op.facturaProveedorId)] : null; return (fp && joinPagosProv?.[String(fp.id)]?.metodo) || ''; }
+      case 'saldoProvSinIva': {
+        const fp = op.facturaProveedorId ? joinFacturasProv[String(op.facturaProveedorId)] : null;
+        if (!fp) return '';
+        const totP = Number(fp.subtotalMonedaFactura) || Number(fp.subtotalFactura) || Number(fp.total) || 0;
+        return nummx(Math.max(0, totP - (Number(fp.montoPagado) || 0)));
+      }
+      case 'numProv': return String(op.provServicios || '').substring(0, 12);
       default: return '';
+    }
+  };
+
+  // ✅ Valor NUMÉRICO por campo (para las filas TOTAL de los formatos).
+  const numeroFormatoDe = (op: Op, campo: string): number => {
+    const m = montoClienteDe(op);
+    const mp = montoProveedorDe(op);
+    const fac = op.facturaClienteId ? joinFacturas[String(op.facturaClienteId)] : null;
+    const fp = op.facturaProveedorId ? joinFacturasProv[String(op.facturaProveedorId)] : null;
+    const totalC = fac ? (Number(fac.subtotalFactura) || Number(fac.total) || 0) : 0;
+    const pagadoC = fac ? (Number(fac.montoPagado) || 0) : 0;
+    switch (campo) {
+      case 'dlls': return m.dol;
+      case 'subtotal': return m.pes;
+      case 'valorFactura': case 'valorPesosSinIva': return m.conv;
+      case 'pago': return pagadoC;
+      case 'saldoCobranza': case 'saldoCobranzaSinIva': return fac ? Math.max(0, totalC - pagadoC) : 0;
+      case 'valorProvPesos': return mp.pes;
+      case 'valorProvDolares': return mp.dol;
+      case 'conversionProv': return mp.conv;
+      case 'utilidad': return m.conv - mp.conv;
+      case 'pagoProv': return Number(fp?.montoPagado) || 0;
+      case 'saldoProvSinIva': {
+        if (!fp) return 0;
+        const totP = Number(fp.subtotalMonedaFactura) || Number(fp.subtotalFactura) || Number(fp.total) || 0;
+        return Math.max(0, totP - (Number(fp.montoPagado) || 0));
+      }
+      default: return 0;
     }
   };
 
@@ -706,12 +896,14 @@ export function EstadisticasDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [columnasRefs]);
 
-  const esModoTransfer = refsFiltro?.formato === 'transfer';
+  const formatoTabla = refsFiltro?.formato as FormatoExcel | undefined;
+  const esModoTransfer = !!formatoTabla; // (nombre histórico: ahora cubre transfer/cruces/fletes)
+  const columnasFormatoTabla = formatoTabla ? COLUMNAS_POR_FORMATO[formatoTabla] : null;
 
   const refsVisibles = useMemo(() => {
     if (!refsFiltro) return [];
     const porLinea = refsFiltro.ops;
-    const cols = esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas;
+    const cols = columnasFormatoTabla || columnasActivas;
     const valor = esModoTransfer ? valorTransfer : valorColumna;
     return porLinea.filter(op =>
       cols.every(c => {
@@ -721,60 +913,52 @@ export function EstadisticasDashboard() {
       })
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refsFiltro, columnasActivas, filtrosCols, esModoTransfer, joinFacturas, joinPagos, mapasNombres]);
+  }, [refsFiltro, columnasActivas, filtrosCols, esModoTransfer, joinFacturas, joinPagos, joinFacturasProv, joinPagosProv, mapasNombres]);
 
   // Totales de la pestaña Transfer (fila TOTAL en pantalla y exportes).
+  // ✅ Totales GENÉRICOS del formato activo: suma cada columna numérica
+  //   (excepto TIPO DE CAMBIO) con numeroFormatoDe.
   const totalesTransfer = useMemo(() => {
-    if (!esModoTransfer) return null;
-    const t = { dlls: 0, subtotal: 0, valorFactura: 0, pago: 0, saldoCobranza: 0 };
+    if (!columnasFormatoTabla) return null;
+    const t: Record<string, number> = {};
+    columnasFormatoTabla.forEach((c) => { if (c.num && c.campo !== 'tipoCambio') t[c.campo] = 0; });
     refsVisibles.forEach((op: Op) => {
-      const m = montoClienteDe(op);
-      t.dlls += m.dol; t.subtotal += m.pes; t.valorFactura += m.conv;
-      const fac = op.facturaClienteId ? joinFacturas[String(op.facturaClienteId)] : null;
-      if (fac) {
-        const total = Number(fac.subtotalFactura) || Number(fac.total) || 0;
-        const pagado = Number(fac.montoPagado) || 0;
-        t.pago += pagado; t.saldoCobranza += Math.max(0, total - pagado);
-      }
+      Object.keys(t).forEach((campo) => { t[campo] += numeroFormatoDe(op, campo); });
     });
     return t;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [esModoTransfer, refsVisibles, joinFacturas]);
+  }, [columnasFormatoTabla, refsVisibles, joinFacturas, joinFacturasProv]);
 
   // ✅ EXPORTACIÓN del rubro seleccionado (Excel y PDF con membrete).
   const exportarRefsExcel = () => {
     if (!refsFiltro) return;
     const wb = XLSX.utils.book_new();
-    const cols = esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas;
+    const cols = columnasFormatoTabla || columnasActivas;
     const valor = esModoTransfer ? valorTransfer : valorColumna;
     const filas: Record<string, string>[] = refsVisibles.map(op => {
       const fila: Record<string, string> = {};
       cols.forEach(c => { fila[c.etiqueta] = valor(op, c.campo) || (esModoTransfer ? '' : '—'); });
       return fila;
     });
-    // ✅ Fila de TOTALES en el formato Transfer (como los SUBTOTAL del Excel).
-    if (esModoTransfer && totalesTransfer) {
+    // ✅ Fila de TOTALES genérica del formato (como los SUBTOTAL del Excel).
+    if (columnasFormatoTabla && totalesTransfer) {
       const filaTot: Record<string, string> = {};
-      COLUMNAS_TRANSFER.forEach(c => { filaTot[c.etiqueta] = ''; });
-      filaTot['# REF ROELCA'] = `TOTAL (${refsVisibles.length})`;
-      filaTot['DLLS'] = nummx(totalesTransfer.dlls);
-      filaTot['SUBTOTAL'] = nummx(totalesTransfer.subtotal);
-      filaTot['VALOR FACTURA'] = nummx(totalesTransfer.valorFactura);
-      filaTot['VALOR FACTURA EN PESOS SIN IVA'] = nummx(totalesTransfer.valorFactura);
-      filaTot['PAGO'] = nummx(totalesTransfer.pago);
-      filaTot['SALDO COBRANZA'] = nummx(totalesTransfer.saldoCobranza);
+      columnasFormatoTabla.forEach(c => { filaTot[c.etiqueta] = totalesTransfer[c.campo] !== undefined ? nummx(totalesTransfer[c.campo]) : ''; });
+      filaTot[columnasFormatoTabla[0].etiqueta] = `TOTAL (${refsVisibles.length})`;
       filas.push(filaTot);
     }
-    const nombreHoja = esModoTransfer ? 'TRANSFER' : 'Operaciones';
+    const nombreHoja = formatoTabla ? NOMBRE_HOJA[formatoTabla] : 'Operaciones';
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), nombreHoja);
-    XLSX.writeFile(wb, `Reporte_${esModoTransfer ? 'Transfer_' : ''}${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
+    XLSX.writeFile(wb, `Reporte_${formatoTabla ? NOMBRE_HOJA[formatoTabla] + '_' : ''}${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
   };
 
   // ✅ NUEVO — EXPORTACIÓN DIRECTA DESDE EL DESGLOSE (pestaña activa).
   //   Excel: hoja RESUMEN (monedas, movimiento, trompo y rankings) + hoja de
   //   operaciones (formato Transfer si la pestaña es Transfer). PDF: tabla de
   //   operaciones con el encabezado institucional.
-  const esTransferDet = tabLineaDet === 'Transfer';
+  const formatoDet = formatoDeLinea(tabLineaDet);
+  const esTransferDet = !!formatoDet; // (histórico: ahora cubre los 3 formatos)
+  const columnasFormatoDet = formatoDet ? COLUMNAS_POR_FORMATO[formatoDet] : null;
   const tituloDetalleTab = () => !detalleSel ? '' : (tabLineaDet === 'Todas' ? detalleSel.titulo : `${detalleSel.titulo} · ${tabLineaDet}`);
 
   const exportarDetalleExcel = () => {
@@ -809,37 +993,23 @@ export function EstadisticasDashboard() {
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'RESUMEN');
 
     // Hoja de operaciones (formato según pestaña)
-    const cols = esTransferDet ? COLUMNAS_TRANSFER : columnasActivas;
+    const cols = columnasFormatoDet || columnasActivas;
     const valor = esTransferDet ? valorTransfer : valorColumna;
     const filas: Record<string, string>[] = detalle.ops.map((op) => {
       const fila: Record<string, string> = {};
       cols.forEach((c) => { fila[c.etiqueta] = valor(op, c.campo) || (esTransferDet ? '' : '—'); });
       return fila;
     });
-    if (esTransferDet) {
-      const t = { dlls: 0, subtotal: 0, valorFactura: 0, pago: 0, saldo: 0 };
-      detalle.ops.forEach((op) => {
-        const m = montoClienteDe(op);
-        t.dlls += m.dol; t.subtotal += m.pes; t.valorFactura += m.conv;
-        const fac = op.facturaClienteId ? joinFacturas[String(op.facturaClienteId)] : null;
-        if (fac) {
-          const total = Number(fac.subtotalFactura) || Number(fac.total) || 0;
-          const pagado = Number(fac.montoPagado) || 0;
-          t.pago += pagado; t.saldo += Math.max(0, total - pagado);
-        }
-      });
+    if (columnasFormatoDet) {
+      const t: Record<string, number> = {};
+      columnasFormatoDet.forEach((c) => { if (c.num && c.campo !== 'tipoCambio') t[c.campo] = 0; });
+      detalle.ops.forEach((op) => { Object.keys(t).forEach((campo) => { t[campo] += numeroFormatoDe(op, campo); }); });
       const filaTot: Record<string, string> = {};
-      COLUMNAS_TRANSFER.forEach((c) => { filaTot[c.etiqueta] = ''; });
-      filaTot['# REF ROELCA'] = `TOTAL (${detalle.ops.length})`;
-      filaTot['DLLS'] = nummx(t.dlls);
-      filaTot['SUBTOTAL'] = nummx(t.subtotal);
-      filaTot['VALOR FACTURA'] = nummx(t.valorFactura);
-      filaTot['VALOR FACTURA EN PESOS SIN IVA'] = nummx(t.valorFactura);
-      filaTot['PAGO'] = nummx(t.pago);
-      filaTot['SALDO COBRANZA'] = nummx(t.saldo);
+      columnasFormatoDet.forEach((c) => { filaTot[c.etiqueta] = t[c.campo] !== undefined ? nummx(t[c.campo]) : ''; });
+      filaTot[columnasFormatoDet[0].etiqueta] = `TOTAL (${detalle.ops.length})`;
       filas.push(filaTot);
     }
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), esTransferDet ? 'TRANSFER' : 'Operaciones');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(filas), formatoDet ? NOMBRE_HOJA[formatoDet] : 'Operaciones');
     XLSX.writeFile(wb, `Desglose_${tituloDetalleTab().replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.xlsx`);
   };
 
@@ -849,7 +1019,7 @@ export function EstadisticasDashboard() {
     try {
       const logo = await cargarLogoDataUrl(config?.logoUrl).catch(() => null);
       const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const cols = esTransferDet ? COLUMNAS_TRANSFER : columnasActivas;
+      const cols = columnasFormatoDet || columnasActivas;
       const valor = esTransferDet ? valorTransfer : valorColumna;
       const html = `
         <div style="font-family: Arial, Helvetica, sans-serif; color: #111; padding: 8px;">
@@ -905,7 +1075,7 @@ export function EstadisticasDashboard() {
               ${logo ? `<img src="${logo}" style="height:52px;" />` : ''}
               <div>
                 <div style="font-size:17px; font-weight:bold; color:#D84315;">ROELCA INC.</div>
-                <div style="font-size:13px; font-weight:bold; margin-top:2px;">Reporte de ${esc(esModoTransfer ? 'Transfer' : 'Servicios')} — ${esc(refsFiltro.etiqueta)}</div>
+                <div style="font-size:13px; font-weight:bold; margin-top:2px;">Reporte de ${esc(formatoTabla ? NOMBRE_HOJA[formatoTabla] : 'Servicios')} — ${esc(refsFiltro.etiqueta)}</div>
                 <div style="font-size:11px; color:#555; margin-top:2px;">Periodo: ${esc(fechaDesde)} al ${esc(fechaHasta)} · ${refsVisibles.length} operación(es)</div>
               </div>
             </div>
@@ -913,13 +1083,13 @@ export function EstadisticasDashboard() {
           </div>
           <table style="width:100%; border-collapse:collapse; font-size:9.5px;">
             <thead>
-              <tr>${(esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas).map(c => `<th style="background:#f2f2f2; border:1px solid #ccc; padding:5px 6px; text-align:left;">${esc(c.etiqueta.toUpperCase())}</th>`).join('')}</tr>
+              <tr>${(columnasFormatoTabla || columnasActivas).map(c => `<th style="background:#f2f2f2; border:1px solid #ccc; padding:4px 5px; text-align:left;">${esc(c.etiqueta.toUpperCase())}</th>`).join('')}</tr>
             </thead>
             <tbody>
-              ${refsVisibles.map(op => `<tr>${(esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas).map(c => `<td style="border:1px solid #ddd; padding:4px 6px;">${esc((esModoTransfer ? valorTransfer : valorColumna)(op, c.campo) || (esModoTransfer ? '' : '—'))}</td>`).join('')}</tr>`).join('')}
-              ${esModoTransfer && totalesTransfer ? `<tr>${COLUMNAS_TRANSFER.map(c => {
-                const tot: Record<string, string> = { refRoelca: `TOTAL (${refsVisibles.length})`, dlls: nummx(totalesTransfer.dlls), subtotal: nummx(totalesTransfer.subtotal), valorFactura: nummx(totalesTransfer.valorFactura), valorPesosSinIva: nummx(totalesTransfer.valorFactura), pago: nummx(totalesTransfer.pago), saldoCobranza: nummx(totalesTransfer.saldoCobranza) };
-                return `<td style="border:1px solid #ccc; padding:4px 6px; background:#f2f2f2; font-weight:bold;">${esc(tot[c.campo] || '')}</td>`;
+              ${refsVisibles.map(op => `<tr>${(columnasFormatoTabla || columnasActivas).map(c => `<td style="border:1px solid #ddd; padding:3px 5px;">${esc((esModoTransfer ? valorTransfer : valorColumna)(op, c.campo) || (esModoTransfer ? '' : '—'))}</td>`).join('')}</tr>`).join('')}
+              ${columnasFormatoTabla && totalesTransfer ? `<tr>${columnasFormatoTabla.map((c, ci) => {
+                const v = ci === 0 ? `TOTAL (${refsVisibles.length})` : (totalesTransfer[c.campo] !== undefined ? nummx(totalesTransfer[c.campo]) : '');
+                return `<td style="border:1px solid #ccc; padding:3px 5px; background:#f2f2f2; font-weight:bold;">${esc(v)}</td>`;
               }).join('')}</tr>` : ''}
             </tbody>
           </table>
@@ -1496,7 +1666,7 @@ export function EstadisticasDashboard() {
                   )}
 
                   {(() => {
-                    const columnas = esModoTransfer ? COLUMNAS_TRANSFER : columnasActivas;
+                    const columnas = columnasFormatoTabla || columnasActivas;
                     const hayFiltros = Object.values(filtrosCols).some(v => v.trim());
                     const visibles = refsVisibles;
                     return (
@@ -1543,20 +1713,13 @@ export function EstadisticasDashboard() {
                                 );
                               })}
                               {/* ✅ Fila TOTAL del formato Transfer (como los SUBTOTAL del Excel) */}
-                              {esModoTransfer && totalesTransfer && visibles.length > 0 && (
+                              {columnasFormatoTabla && totalesTransfer && visibles.length > 0 && (
                                 <tr className="est-fila-general">
-                                  {COLUMNAS_TRANSFER.map((c) => {
-                                    const tot: Record<string, string> = {
-                                      refRoelca: `TOTAL (${visibles.length})`,
-                                      dlls: nummx(totalesTransfer.dlls),
-                                      subtotal: nummx(totalesTransfer.subtotal),
-                                      valorFactura: nummx(totalesTransfer.valorFactura),
-                                      valorPesosSinIva: nummx(totalesTransfer.valorFactura),
-                                      pago: nummx(totalesTransfer.pago),
-                                      saldoCobranza: nummx(totalesTransfer.saldoCobranza),
-                                    };
-                                    return <td key={c.campo} className={c.num ? 'est-celda-num' : ''}>{tot[c.campo] || ''}</td>;
-                                  })}
+                                  {columnasFormatoTabla.map((c, ci) => (
+                                    <td key={c.campo} className={c.num ? 'est-celda-num' : ''}>
+                                      {ci === 0 ? `TOTAL (${visibles.length})` : (totalesTransfer[c.campo] !== undefined ? nummx(totalesTransfer[c.campo]) : '')}
+                                    </td>
+                                  ))}
                                 </tr>
                               )}
                             </tbody>
