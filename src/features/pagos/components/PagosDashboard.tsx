@@ -306,6 +306,7 @@ export function PagosDashboard() {
   const [cargandoEditFacturas, setCargandoEditFacturas] = useState(false);
   const [editFacturasSel, setEditFacturasSel] = useState<string[]>([]);
   const [editPagoPorFactura, setEditPagoPorFactura] = useState<Record<string, string>>({});
+  const [editBusquedaFactura, setEditBusquedaFactura] = useState('');
 
   const abrirEdicionPago = (p: PagoDoc) => {
     setPagoEditando(p);
@@ -318,6 +319,7 @@ export function PagosDashboard() {
     setEditFacturasSel([]);
     setEditPagoPorFactura({});
     setEditFacturasDisp([]);
+    setEditBusquedaFactura('');
     // Carga perezosa de las facturas pendientes de la entidad (según el TIPO
     // del pago — cliente o proveedor — no la pestaña actual).
     setCargandoEditFacturas(true);
@@ -1419,7 +1421,7 @@ export function PagosDashboard() {
       {/* ══════════ ✅ NUEVO — MODAL EDITAR PAGO ══════════ */}
       {pagoEditando && (
         <div className="pg-overlay" style={{ zIndex: 2100 }} onClick={() => !guardandoEdicion && setPagoEditando(null)}>
-          <div className="pg-modal" style={{ maxWidth: '560px' }} onClick={(e) => e.stopPropagation()}>
+          <div className="pg-modal" style={{ maxWidth: '900px', width: 'min(900px, 96vw)' }} onClick={(e) => e.stopPropagation()}>
             <div className="pg-modal-encabezado">
               <h3>Editar Pago · {pagoEditando.entidadNombre}</h3>
               <button className="pg-cerrar" onClick={() => setPagoEditando(null)} disabled={guardandoEdicion}><X size={16} /></button>
@@ -1468,14 +1470,45 @@ export function PagosDashboard() {
                   <p className="pg-vacio">Buscando facturas con saldo…</p>
                 ) : editFacturasDisp.length === 0 ? (
                   <p className="pg-vacio">No hay más facturas con saldo abierto de esta entidad.</p>
-                ) : (
-                  <div style={{ border: '1px solid #30363d', borderRadius: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                ) : (() => {
+                  // ✅ NUEVO: buscador de facturas pendientes dentro de la edición.
+                  const q = editBusquedaFactura.trim().toLowerCase();
+                  const visiblesEdit = q
+                    ? editFacturasDisp.filter((fx) =>
+                        fx.invoice.toLowerCase().includes(q) ||
+                        String(fx.fecha || '').toLowerCase().includes(q) ||
+                        editFacturasSel.includes(fx.id))
+                    : editFacturasDisp;
+                  return (
+                  <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                    <div style={{ position: 'relative', flex: 1, maxWidth: '320px' }}>
+                      <Search size={13} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8b949e' }} />
+                      <input
+                        type="text"
+                        value={editBusquedaFactura}
+                        onChange={(e) => setEditBusquedaFactura(e.target.value)}
+                        placeholder="Buscar # de factura o fecha..."
+                        style={{ width: '100%', padding: '8px 10px 8px 30px', backgroundColor: '#010409', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', fontSize: '0.85rem', boxSizing: 'border-box' }}
+                      />
+                      {editBusquedaFactura && (
+                        <button type="button" onClick={() => setEditBusquedaFactura('')}
+                          style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#8b949e', cursor: 'pointer', padding: 0 }}>
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+                    <span style={{ color: '#8b949e', fontSize: '0.78rem' }}>{visiblesEdit.length} de {editFacturasDisp.length}</span>
+                  </div>
+                  <div style={{ border: '1px solid #30363d', borderRadius: '8px', maxHeight: '260px', overflowY: 'auto' }}>
                     <table className="pg-tabla">
                       <thead>
                         <tr><th style={{ width: '34px' }}></th><th>FACTURA</th><th>SALDO</th><th>MONEDA</th><th>APLICAR</th></tr>
                       </thead>
                       <tbody>
-                        {editFacturasDisp.map((fx) => (
+                        {visiblesEdit.length === 0 ? (
+                          <tr><td colSpan={5} style={{ textAlign: 'center', color: '#8b949e', padding: '14px' }}>Sin resultados para esa búsqueda.</td></tr>
+                        ) : visiblesEdit.map((fx) => (
                           <tr key={fx.id} className="pg-fila" onClick={() => toggleEditFactura(fx.id)}>
                             <td onClick={(e) => e.stopPropagation()}>
                               <input type="checkbox" checked={editFacturasSel.includes(fx.id)} onChange={() => toggleEditFactura(fx.id)} />
@@ -1499,7 +1532,9 @@ export function PagosDashboard() {
                       </tbody>
                     </table>
                   </div>
-                )}
+                  </>
+                  );
+                })()}
                 {sumaAgregadaEdicion > 0 && (
                   <span style={{ display: 'block', marginTop: '6px', fontSize: '0.8rem', color: '#3fb950', fontWeight: 600 }}>
                     Se agregarán {money(sumaAgregadaEdicion)} al pago (nuevo total: {money((Number(pagoEditando.monto) || 0) + sumaAgregadaEdicion, pagoEditando.moneda)}).
