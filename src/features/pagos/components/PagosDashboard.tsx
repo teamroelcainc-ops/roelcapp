@@ -157,11 +157,17 @@ export function PagosDashboard() {
         snap.docs.forEach((d) => {
           const o = { id: d.id, ...(d.data() as any) };
           const m = desgloseDeOp(o, tab);
+          const esCli = tab === 'cliente';
+          const convenioBase = esCli
+            ? (Number(o.montoConvenioCliente) || 0)
+            : (Number(o.totalAPagarProv) || 0);
           encontradas.push({
             id: d.id,
             ref: o.ref,
             fechaServicio: o.fechaServicio,
             remolque: o.remolqueNombre || o.remolquePlaca || o.numeroRemolque || '',
+            // ✅ NUEVO: el CONVENIO de la operación, revisable desde Pagos.
+            convenio: `${String((esCli ? (o.convenioNombre || o.convenioClienteNombre) : (o.convenioProvNombre || o.convenioProveedorNombre)) || '—')}${convenioBase > 0 ? ` · ${money(convenioBase)}` : ''}`,
             monedaConvenio: m.monedaConvenio,
             importe: m.conv > 0 ? m.conv : '',
             importeDetalle: m.dol > 0 && m.pes <= 0 ? `${money(m.dol)} USD → ${money(m.conv)} MXN` : (m.conv > 0 ? `${money(m.conv)} MXN` : '—'),
@@ -1559,7 +1565,7 @@ export function PagosDashboard() {
                     <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto' }}>
                       <table className="pg-tabla">
                         <thead>
-                          <tr><th>REFERENCIA</th><th>FECHA SERVICIO</th><th># REMOLQUE</th><th>MONEDA CONVENIO</th><th>IMPORTE (CONVERSIÓN)</th></tr>
+                          <tr><th>REFERENCIA</th><th>FECHA SERVICIO</th><th># REMOLQUE</th><th>CONVENIO</th><th>MONEDA CONVENIO</th><th>IMPORTE (CONVERSIÓN)</th></tr>
                         </thead>
                         <tbody>
                           {opsFactura.map((o: any, idx: number) => (
@@ -1575,6 +1581,7 @@ export function PagosDashboard() {
                               </td>
                               <td>{o.fechaServicio || o.fecha || '-'}</td>
                               <td>{o.remolque || '-'}</td>
+                              <td>{o.convenio || '—'}</td>
                               <td>{o.monedaConvenio || '—'}</td>
                               <td className="pg-monto">{o.importeDetalle || (o.importe !== '' && o.importe !== undefined && o.importe !== null ? money(Number(o.importe) || 0) : '—')}</td>
                             </tr>

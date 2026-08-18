@@ -2196,6 +2196,7 @@ export const FacturacionProveedoresDashboard = () => {
           subtotalBase: montos.subtotal,
           dol: montos.dol,   // ✅ FIX MONEDA
           pes: montos.pes,   // ✅ FIX MONEDA
+          convenioNombre: String((op?.convenioProvNombre || op?.convenioProveedorNombre || op?.convenioNombre) || ''), // ✅ NUEVO: convenio revisable
           remolque: op ? txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque) : '',
         };
       });
@@ -3767,7 +3768,8 @@ export const FacturacionProveedoresDashboard = () => {
                         onMouseEnter={(e: any) => { e.currentTarget.style.backgroundColor = '#1f2d44'; e.currentTarget.style.borderColor = '#79b8ff'; }}
                         onMouseLeave={(e: any) => { e.currentTarget.style.backgroundColor = '#21262d'; e.currentTarget.style.borderColor = '#58a6ff'; }}>
                         <span className="fpd-x201">{refDeOp(op)}</span>
-                        <span className="fpd-x202">{formatoMoneda(op.monto)}</span>
+                        {op.convenioNombre && (<span style={{ color: '#8b949e', fontSize: '0.72rem' }}>Convenio: {op.convenioNombre}</span>)}
+                          <span className="fpd-x202">{formatoMoneda(op.monto)}</span>
                       </button>
                     )) || <span className="fpd-x10">Sin detalle de operaciones.</span>}
                   </div>

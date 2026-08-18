@@ -1488,6 +1488,7 @@ export const FacturacionClientesDashboard = () => {
           subtotalBase: montos.subtotal,
           dol: montos.dol,   // ✅ FIX MONEDA
           pes: montos.pes,   // ✅ FIX MONEDA
+          convenioNombre: String((op?.convenioNombre || op?.convenioClienteNombre) || ''), // ✅ NUEVO: convenio revisable
           remolque: op ? txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque) : '',
         };
       });
@@ -3277,6 +3278,9 @@ export const FacturacionClientesDashboard = () => {
                             <span className="fcd-x194">
                               <span className="fcd-x1">Caja:</span> {numeroCaja}
                             </span>
+                          )}
+                          {op.convenioNombre && (
+                            <span className="fcd-x194"><span className="fcd-x1">Convenio:</span> {op.convenioNombre}</span>
                           )}
                           <span className="fcd-x195">{formatoMoneda(op.monto)}</span>
                         </button>
