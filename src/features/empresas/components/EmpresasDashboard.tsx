@@ -1,6 +1,6 @@
 // src/features/empresas/components/EmpresasDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc } from 'firebase/firestore';
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -449,6 +449,99 @@ const EmpresasDashboard = () => {
     }).catch(() => setCargandoUso(false));
   };
   
+  // ═══════════ ✅ NUEVO — UNIR EMPRESAS DUPLICADAS ═══════════
+  //   Se seleccionan 2+ registros duplicados y "Unir" conserva UNO,
+  //   REAPUNTANDO todas las referencias en los demás módulos (operaciones,
+  //   facturación de clientes y proveedores, convenios, unidades de
+  //   proveedor, referencias de diesel y documentos) hacia el registro
+  //   conservado, y elimina los duplicados. Así la unión aplica en toda la app.
+  const [seleccionUnir, setSeleccionUnir] = useState<string[]>([]);
+  const [modalUnir, setModalUnir] = useState(false);
+  const [conservarId, setConservarId] = useState('');
+  const [uniendo, setUniendo] = useState(false);
+
+  const toggleSeleccionUnir = (id: string) => {
+    setSeleccionUnir((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+  };
+
+  const abrirModalUnir = () => {
+    if (seleccionUnir.length < 2) return;
+    // Por defecto se conserva el registro con MÁS campos llenos (empate: el más antiguo).
+    const regs = seleccionUnir.map((id) => empresas.find((e: any) => e.id === id)).filter(Boolean);
+    const llenos = (r: any) => Object.values(r || {}).filter((v) => v !== undefined && v !== null && v !== '').length;
+    const mejor = [...regs].sort((a: any, b: any) => llenos(b) - llenos(a) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')))[0];
+    setConservarId(mejor?.id || seleccionUnir[0]);
+    setModalUnir(true);
+  };
+
+  // Referencias a reapuntar: [colección, campo id, campo nombre (opcional)].
+  const REFERENCIAS_EMPRESA: [string, string, string?][] = [
+    ['operaciones', 'clientePaga', 'clientePagaNombre'],
+    ['operaciones', 'clienteMercancia', 'clienteMercanciaNombre'],
+    ['operaciones', 'provServicios', 'provServiciosNombre'],
+    ['facturas_clientes', 'clienteId', 'clienteNombre'],
+    ['facturas_proveedores', 'proveedorId', 'proveedorNombre'],
+    ['convenios_clientes', 'clienteId', 'clienteNombre'],
+    ['convenios_proveedores', 'proveedorId', 'proveedorNombre'],
+    ['unidades_proveedor', 'proveedorId', 'proveedorNombre'],
+    ['referencias_diesel', 'proveedorId', 'proveedorNombre'],
+  ];
+
+  const ejecutarUnion = async () => {
+    if (uniendo || !conservarId || seleccionUnir.length < 2) return;
+    const kept: any = empresas.find((e: any) => e.id === conservarId);
+    const duplicados = seleccionUnir.filter((id) => id !== conservarId);
+    if (!kept || duplicados.length === 0) return;
+
+    setUniendo(true);
+    try {
+      let totalReapuntados = 0;
+      const nombreKept = String(kept.nombre || '');
+
+      for (const dupId of duplicados) {
+        // 1) Reapuntar referencias por colección/campo.
+        for (const [col, campo, campoNombre] of REFERENCIAS_EMPRESA) {
+          const snap = await getDocs(query(collection(db, col), where(campo, '==', dupId)));
+          for (let i = 0; i < snap.docs.length; i += 400) {
+            const lote = snap.docs.slice(i, i + 400);
+            const batch = writeBatch(db);
+            lote.forEach((d) => {
+              const cambios: any = { [campo]: conservarId };
+              if (campoNombre && nombreKept) cambios[campoNombre] = nombreKept;
+              batch.update(d.ref, cambios);
+            });
+            await batch.commit();
+            totalReapuntados += lote.length;
+          }
+        }
+        // 2) Documentos ligados a la empresa duplicada.
+        const snapDocs = await getDocs(query(
+          collection(db, 'documentos'),
+          where('coleccionOrigen', '==', 'empresas'),
+          where('registroId', '==', dupId)
+        ));
+        for (let i = 0; i < snapDocs.docs.length; i += 400) {
+          const lote = snapDocs.docs.slice(i, i + 400);
+          const batch = writeBatch(db);
+          lote.forEach((d) => batch.update(d.ref, { registroId: conservarId, registroNombre: nombreKept }));
+          await batch.commit();
+          totalReapuntados += lote.length;
+        }
+        // 3) Eliminar el duplicado.
+        await deleteDoc(doc(db, 'empresas', dupId));
+      }
+
+      await registrarLog('Empresas', 'Edición', `Unió ${duplicados.length + 1} registros duplicados en "${nombreKept}" (${totalReapuntados} referencias reapuntadas).`);
+      alert(`Unión completada. ✅\n\nSe conservó "${nombreKept}", se eliminaron ${duplicados.length} duplicado(s) y se reapuntaron ${totalReapuntados} referencia(s) en los demás módulos.\n\nNota: si otros módulos están abiertos en otra pestaña del navegador, recárgalos para ver el cambio.`);
+      setSeleccionUnir([]);
+      setModalUnir(false);
+    } catch (e: any) {
+      console.error('Error al unir empresas:', e);
+      alert('La unión no se completó del todo.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido') + '\n\nVuelve a intentar: los registros ya reapuntados no se duplican.');
+    }
+    setUniendo(false);
+  };
+
   const eliminarEmpresa = async (id: string) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente esta empresa?')) {
       try {
@@ -812,6 +905,18 @@ const EmpresasDashboard = () => {
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
             </button>
+            {/* ✅ NUEVO: unir empresas duplicadas (aparece con 2+ seleccionadas) */}
+            {seleccionUnir.length >= 2 && (
+              <button
+                className="btn ed-x19"
+                title={`Unir los ${seleccionUnir.length} registros seleccionados en uno solo`}
+                onClick={abrirModalUnir}
+                style={{ backgroundColor: '#8957e5', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6l2 2 2-4"></path></svg>
+                Unir ({seleccionUnir.length})
+              </button>
+            )}
             <button 
               className="btn btn-primary ed-x19" 
               title="Agregar Empresa"
@@ -827,6 +932,8 @@ const EmpresasDashboard = () => {
             <table className="data-table ed-x22">
               <thead className="ed-x23">
                 <tr>
+                  {/* ✅ NUEVO: selección para UNIR duplicados */}
+                  <th className="ed-x24" style={{ width: '36px', textAlign: 'center' }} title="Seleccionar para unir duplicados"></th>
                   <th className="ed-x24">Acciones</th>
                   {columnasTabla.filter(c => c.visible).map(col => (
                     <th className="ed-x25" key={`th_${col.id}`}>
@@ -837,7 +944,7 @@ const EmpresasDashboard = () => {
               </thead>
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td className="ed-x26" colSpan={columnasTabla.length + 1}>
+                  <tr><td className="ed-x26" colSpan={columnasTabla.length + 2}>
                     <div className="ed-x27">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                       <span className="ed-x28">Define tus filtros y presiona <b className="ed-x29">Buscar</b> para ver las empresas.</span>
@@ -846,7 +953,7 @@ const EmpresasDashboard = () => {
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td className="ed-x31" colSpan={columnasTabla.length + 1}>
+                    <td className="ed-x31" colSpan={columnasTabla.length + 2}>
                       {busqueda || filtroActivo !== 'Todo' ? 'No se encontraron empresas con estos filtros.' : 'Aún no hay empresas registradas.'}
                     </td>
                   </tr>
@@ -859,6 +966,16 @@ const EmpresasDashboard = () => {
                       onMouseLeave={() => setHoveredRowId(null)}
                       onClick={() => verDetailDirecto(emp)}
                     >
+                      {/* ✅ NUEVO: checkbox para unir duplicados */}
+                      <td className="ed-x32" style={{ textAlign: 'center' }} onClick={(e: any) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={seleccionUnir.includes(emp.id)}
+                          onChange={() => toggleSeleccionUnir(emp.id)}
+                          style={{ cursor: 'pointer' }}
+                          title="Seleccionar para unir duplicados"
+                        />
+                      </td>
                       <td className="ed-x32" onClick={(e: any) => e.stopPropagation()}>
                         <div className="actions-cell ed-x33">
                           
@@ -1280,6 +1397,49 @@ const EmpresasDashboard = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO — MODAL UNIR EMPRESAS DUPLICADAS */}
+      {modalUnir && (
+        <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => !uniendo && setModalUnir(false)}>
+          <div style={{ width: 'min(560px, 94vw)', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '20px', maxHeight: '88vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 6px 0', color: '#f0f6fc', fontSize: '1.05rem' }}>Unir registros duplicados</h3>
+            <p style={{ margin: '0 0 14px 0', color: '#8b949e', fontSize: '0.85rem', lineHeight: 1.5 }}>
+              Elige cuál registro se <b style={{ color: '#3fb950' }}>CONSERVA</b>. Los demás se eliminarán y TODAS sus
+              referencias (operaciones, facturación, convenios, unidades de proveedor, diesel y documentos)
+              se reapuntarán al conservado — la unión aplica en toda la app.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {seleccionUnir.map((id) => {
+                const emp: any = empresas.find((e: any) => e.id === id);
+                if (!emp) return null;
+                const esConservado = conservarId === id;
+                return (
+                  <label key={id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', borderRadius: '8px', cursor: 'pointer', border: esConservado ? '1px solid #3fb950' : '1px solid #30363d', backgroundColor: esConservado ? 'rgba(63,185,80,0.08)' : '#0d1117' }}>
+                    <input type="radio" name="conservar" checked={esConservado} onChange={() => setConservarId(id)} />
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: 'block', color: '#f0f6fc', fontWeight: 600 }}>{emp.nombre || '(sin nombre)'}</span>
+                      <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem' }}>
+                        {emp.tipo || ''}{emp.rfc ? ` · RFC ${emp.rfc}` : ''}{emp.createdAt ? ` · creado ${String(emp.createdAt).slice(0, 10)}` : ''} · id {String(id).slice(0, 8)}
+                      </span>
+                    </span>
+                    <span style={{ color: esConservado ? '#3fb950' : '#f85149', fontSize: '0.72rem', fontWeight: 700, flexShrink: 0 }}>
+                      {esConservado ? 'SE CONSERVA' : 'SE ELIMINA'}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '18px', borderTop: '1px solid #30363d', paddingTop: '14px' }}>
+              <button type="button" className="btn btn-outline" onClick={() => setModalUnir(false)} disabled={uniendo}
+                style={{ padding: '10px 18px' }}>Cancelar</button>
+              <button type="button" onClick={ejecutarUnion} disabled={uniendo}
+                style={{ padding: '10px 22px', borderRadius: '6px', border: 'none', backgroundColor: uniendo ? '#21262d' : '#8957e5', color: uniendo ? '#6e7681' : '#fff', fontWeight: 'bold', cursor: uniendo ? 'wait' : 'pointer' }}>
+                {uniendo ? 'Uniendo… (no cierres la ventana)' : `Unir ${seleccionUnir.length} registros`}
+              </button>
+            </div>
           </div>
         </div>
       )}

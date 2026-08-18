@@ -424,3 +424,7 @@
 @media (max-width: 768px) {
   .pg-encabezado-acciones { flex-wrap: wrap; }
 }
+
+/* ✅ NUEVO — icono girando del botón Recargar */
+.pg-girando { animation: pg-girar 0.9s linear infinite; }
+@keyframes pg-girar { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

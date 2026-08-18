@@ -22,7 +22,7 @@ import html2pdf from 'html2pdf.js';
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
-import { Plus, FileText, Trash2, X, Search, Download, Pencil } from 'lucide-react';
+import { Plus, FileText, Trash2, X, Search, Download, Pencil, RefreshCw } from 'lucide-react';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import './PagosDashboard.css';
 
@@ -425,6 +425,25 @@ export function PagosDashboard() {
       alert('No se pudo guardar la edición del pago. Intenta de nuevo.');
     } finally {
       setGuardandoEdicion(false);
+    }
+  };
+
+  // ✅ NUEVO — RECARGAR: fuerza la relectura de las facturas (clientes o
+  //   proveedores según la pestaña) para que aparezcan las recién creadas
+  //   sin esperar a reabrir el modal. La lista de pagos ya es en vivo
+  //   (onSnapshot), así que este botón cubre el lado de facturas/saldos.
+  const [recargando, setRecargando] = useState(false);
+  const recargarFacturas = async () => {
+    if (recargando) return;
+    setRecargando(true);
+    try {
+      const lista = await cargarFacturasPendientes(tab);
+      setFacturasPendientes(lista);
+    } catch (e) {
+      console.error('No se pudieron recargar las facturas:', e);
+      alert('No se pudieron recargar las facturas. Intenta de nuevo.');
+    } finally {
+      setRecargando(false);
     }
   };
 
@@ -1063,6 +1082,9 @@ export function PagosDashboard() {
               </>
             )}
           </div>
+          <button className="pg-btn-secundario" onClick={recargarFacturas} disabled={recargando} title="Actualizar facturas y saldos">
+            <RefreshCw size={14} className={recargando ? 'pg-girando' : undefined} /> {recargando ? 'Actualizando…' : 'Recargar'}
+          </button>
           <button className="pg-btn-nuevo" onClick={abrirModal}>
             <Plus size={16} /> Registrar Pago
           </button>
