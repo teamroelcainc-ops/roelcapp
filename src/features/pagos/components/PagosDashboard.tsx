@@ -316,6 +316,119 @@ export function PagosDashboard() {
   const [editPagoPorFactura, setEditPagoPorFactura] = useState<Record<string, string>>({});
   const [editBusquedaFactura, setEditBusquedaFactura] = useState('');
 
+  // ✅ NUEVO — RECALCULAR MONTOS DE UNA FACTURA con la REGLA DE MONEDAS:
+  //   lee las operaciones reales de la factura y rehace el desglose desde la
+  //   moneda del CONVENIO + la moneda de FACTURACIÓN (convenio USD facturado
+  //   en pesos -> conversión con TC). Corrige el snapshot guardado
+  //   (operacionesGuardadas, subtotalMonedaFactura, subtotalFactura y saldo).
+  const [recalculandoFactura, setRecalculandoFactura] = useState(false);
+
+  const desgloseDeOp = (op: any, tipo: TipoPago) => {
+    const esCli = tipo === 'cliente';
+    const tc = Number(op.tipoCambioAprobado) || 0;
+    const subtotal = esCli
+      ? Number(op.montoConvenioCliente || 0) + Number(op.cargosAdicionales || 0)
+      : Number(op.totalAPagarProv || 0) + Number(op.cargosAdicionalesProv || 0);
+    const fact = esCli ? op.facturadoEnCobrar : op.facturadoEnUnidad;
+    const monConv = String((esCli ? op.monedaConvenioCliente : op.monedaConvenioProv) || '');
+    const nombreFact = String((esCli ? op.monedaCobroNombre : op.monedaUnidadNombre) || '').toUpperCase();
+    const factUSD = fact === ID_USD || nombreFact.includes('USD');
+    const factMXN = fact === ID_MXN || nombreFact.includes('MXN');
+    const convUSD = monConv === ID_USD || (!!monConv && monConv.toUpperCase().includes('USD'));
+    const convMXN = monConv === ID_MXN || (!!monConv && monConv.toUpperCase().includes('MXN'));
+    const cUSD = convUSD || (!convMXN && factUSD);
+    const cMXN = convMXN || (!convUSD && factMXN);
+    let dol = 0, pes = 0, conv = 0;
+    if (subtotal > 0) {
+      if (cUSD && factMXN) { pes = subtotal * tc; conv = subtotal * tc; }
+      else if (cUSD) { dol = subtotal; conv = subtotal * tc; }
+      else if (cMXN && factUSD) { dol = tc > 0 ? subtotal / tc : 0; conv = subtotal; }
+      else if (cMXN) { pes = subtotal; conv = subtotal; }
+      else { conv = subtotal; }
+    } else {
+      // Respaldo: el desglose ya guardado en la operación.
+      dol = Number(esCli ? op.dolaresCliente : op.dolaresProv) || 0;
+      pes = Number(esCli ? op.pesosCliente : op.pesosProv) || 0;
+      conv = Number(esCli ? op.conversionCliente : op.conversionProv) || 0;
+    }
+    return { subtotal, dol, pes, conv };
+  };
+
+  const recalcularFactura = async () => {
+    if (!facturaViendo || recalculandoFactura) return;
+    const fv = facturaViendo;
+    const ids: string[] = Array.isArray(fv.raw?.operacionesIds) ? fv.raw.operacionesIds.map(String) : [];
+    if (ids.length === 0) { alert('Esta factura no tiene operaciones ligadas: corrige el total con "Editar factura".'); return; }
+    if (!window.confirm(`Se recalcularán los montos de la factura ${fv.invoice} desde sus ${ids.length} operación(es), aplicando la regla de monedas (convenio + moneda de facturación). ¿Continuar?`)) return;
+    setRecalculandoFactura(true);
+    try {
+      // Operaciones reales de la factura.
+      const ops: any[] = [];
+      for (let i = 0; i < ids.length; i += 10) {
+        const lote = ids.slice(i, i + 10);
+        const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', lote)));
+        snap.docs.forEach((d) => ops.push({ id: d.id, ...(d.data() as any) }));
+      }
+      if (ops.length === 0) { alert('No se encontraron las operaciones de la factura.'); setRecalculandoFactura(false); return; }
+
+      const porId: Record<string, any> = {};
+      ops.forEach((op) => { porId[String(op.id)] = desgloseDeOp(op, tab); });
+
+      // operacionesGuardadas corregidas (conserva ref/remolque del snapshot).
+      const guardadasPrev: any[] = Array.isArray(fv.raw?.operacionesGuardadas) ? fv.raw.operacionesGuardadas : [];
+      const guardadasNuevas = (guardadasPrev.length > 0 ? guardadasPrev : ids.map((id) => ({ id }))).map((g: any) => {
+        const m = porId[String(g.id)];
+        return m ? { ...g, monto: m.conv, subtotalBase: m.subtotal, dol: m.dol, pes: m.pes } : g;
+      });
+
+      const sumDol = guardadasNuevas.reduce((s: number, o: any) => s + (Number(o.dol) || 0), 0);
+      const sumConv = guardadasNuevas.reduce((s: number, o: any) => s + (Number(o.monto) || 0), 0);
+      const monedaCanon = monedaDeFactura(fv.raw || {});
+      const totalNativoNuevo = monedaCanon === 'USD' ? sumDol : sumConv;
+      if (totalNativoNuevo <= 0) { alert('El recálculo dio $0.00 — revisa las operaciones (montos de convenio y tipo de cambio).'); setRecalculandoFactura(false); return; }
+      if (totalNativoNuevo < fv.montoPagado - 0.009) {
+        alert(`El total recalculado (${money(totalNativoNuevo)}) es MENOR a lo ya pagado (${money(fv.montoPagado)}).\n\nElimina primero el/los pagos aplicados y vuelve a intentar.`);
+        setRecalculandoFactura(false);
+        return;
+      }
+
+      const saldoNuevo = Math.max(0, totalNativoNuevo - fv.montoPagado);
+      const cambios: any = {
+        operacionesGuardadas: guardadasNuevas,
+        subtotalFactura: sumConv,
+        subtotalMonedaFactura: totalNativoNuevo,
+        saldoPendiente: saldoNuevo,
+        editadoEn: new Date().toISOString(),
+        editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
+      };
+      if (fv.montoPagado > 0.009) cambios.statusPago = saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL';
+
+      const coleccion = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+      const batch = writeBatch(db);
+      batch.set(doc(db, coleccion, fv.id), cambios, { merge: true });
+      await batch.commit();
+      registrarLog('Pagos', 'Edición', `Recalculó los montos de la factura ${fv.invoice} (regla de monedas): total ${money(totalNativoNuevo)} ${monedaCanon}.`).catch(() => {});
+
+      // Refresco en memoria.
+      setFacturasPendientes((prev) => prev.map((f) => f.id === fv.id
+        ? { ...f, total: totalNativoNuevo, saldo: saldoNuevo, raw: { ...(f.raw || {}), ...cambios } }
+        : f));
+      setPagosPorFactura((pp) => {
+        if (!(fv.id in pp)) return pp;
+        const cap = Number(pp[fv.id]);
+        if (isNaN(cap) || cap <= saldoNuevo) return pp;
+        return { ...pp, [fv.id]: saldoNuevo.toFixed(2) };
+      });
+      setFacturaViendo((prev) => prev ? { ...prev, total: totalNativoNuevo, saldo: saldoNuevo, raw: { ...(prev.raw || {}), ...cambios } } : prev);
+      alert(`Factura ${fv.invoice} recalculada: total ${money(totalNativoNuevo)} ${monedaCanon}. ✅`);
+    } catch (e) {
+      console.error('No se pudo recalcular la factura:', e);
+      alert('No se pudo recalcular la factura. Intenta de nuevo.');
+    } finally {
+      setRecalculandoFactura(false);
+    }
+  };
+
   const abrirEdicionPago = (p: PagoDoc) => {
     setPagoEditando(p);
     setEditFecha(p.fecha || '');
@@ -1459,6 +1572,12 @@ export function PagosDashboard() {
                   <>
                     <button className="pg-btn-secundario" style={{ marginRight: 'auto', color: '#58a6ff', borderColor: 'rgba(88,166,255,0.4)' }} onClick={() => setEditandoFactura(true)}>
                       <Pencil size={13} style={{ marginRight: '6px', verticalAlign: '-2px' }} />Editar factura
+                    </button>
+                    {/* ✅ NUEVO: rehace los montos desde las operaciones con la regla de monedas */}
+                    <button className="pg-btn-secundario" style={{ color: '#d29922', borderColor: 'rgba(210,153,34,0.4)' }}
+                      onClick={recalcularFactura} disabled={recalculandoFactura}
+                      title="Rehace los montos desde las operaciones (convenio USD facturado en pesos -> conversión con TC)">
+                      {recalculandoFactura ? 'Recalculando…' : 'Recalcular montos'}
                     </button>
                     <button className="pg-btn-secundario" onClick={() => setFacturaViendo(null)}>Cerrar</button>
                   </>
