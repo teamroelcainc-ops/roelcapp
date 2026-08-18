@@ -74,6 +74,14 @@ interface PagoDoc {
 const money = (n: number, moneda = '') =>
   `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${moneda ? ` ${moneda}` : ''}`;
 
+// ✅ FIX DUPLICADOS FANTASMA: las facturas guardan el nombre de la entidad
+//   como texto y algunas traen diferencias invisibles (espacio al final,
+//   doble espacio, acentos o mayúsculas distintas). Para agrupar, comparar y
+//   filtrar se usa SIEMPRE esta clave normalizada — así "HC FLEET SERVICES"
+//   y "HC FLEET SERVICES " son la misma entidad.
+const claveEntidad = (s: any): string =>
+  String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
+
 // Normaliza fechas dd/mm/aaaa o ISO a una clave ordenable AAAA-MM-DD.
 const claveFecha = (f: string): string => {
   const s = String(f || '').trim();
@@ -327,7 +335,7 @@ export function PagosDashboard() {
       .then((lista) => {
         const yaEnPago = new Set((p.facturas || []).map((fa) => String(fa.facturaId)));
         setEditFacturasDisp(lista.filter((fx) =>
-          fx.entidadNombre === p.entidadNombre && fx.saldo > 0.009 && !yaEnPago.has(String(fx.id))
+          claveEntidad(fx.entidadNombre) === claveEntidad(p.entidadNombre) && fx.saldo > 0.009 && !yaEnPago.has(String(fx.id))
         ).sort((a, b) => claveFecha(a.fecha).localeCompare(claveFecha(b.fecha))));
       })
       .catch(() => setEditFacturasDisp([]))
@@ -809,11 +817,14 @@ export function PagosDashboard() {
     facturasPendientes.forEach((f) => {
       // ✅ CAMBIO: solo cuentan (y aparecen) las facturas con saldo abierto.
       if (f.saldo <= 0.009) return;
-      const prev = mapa.get(f.entidadNombre) || { nombre: f.entidadNombre, cuantas: 0, conSaldo: 0, saldo: 0 };
+      // ✅ FIX: se agrupa por la clave NORMALIZADA del nombre (evita el
+      //   proveedor "duplicado" por un espacio o mayúscula distinta).
+      const clave = claveEntidad(f.entidadNombre);
+      const prev = mapa.get(clave) || { nombre: String(f.entidadNombre || '').trim().replace(/\s+/g, ' '), cuantas: 0, conSaldo: 0, saldo: 0 };
       prev.cuantas += 1;
       prev.conSaldo += 1;
       prev.saldo += f.saldo;
-      mapa.set(f.entidadNombre, prev);
+      mapa.set(clave, prev);
     });
     return Array.from(mapa.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [facturasPendientes]);
@@ -829,7 +840,7 @@ export function PagosDashboard() {
     facturasPendientes
       // ✅ CAMBIO: en el registro de pago SOLO se muestran facturas con saldo
       //   abierto (las pagadas ya no aparecen en la lista).
-      .filter((f) => f.entidadNombre === entidadSel && f.saldo > 0.009)
+      .filter((f) => claveEntidad(f.entidadNombre) === claveEntidad(entidadSel) && f.saldo > 0.009)
       .sort((a, b) => claveFecha(a.fecha).localeCompare(claveFecha(b.fecha))),
   [facturasPendientes, entidadSel]);
 
