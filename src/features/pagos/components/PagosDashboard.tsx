@@ -141,12 +141,13 @@ export function PagosDashboard() {
     setFEditTotal(String(fac.total || ''));
     setFEditMoneda(fac.moneda || '');
 
-    // OPERACIONES relacionadas: primero el resumen guardado en la factura;
-    // si no existe (facturas viejas), se buscan por operacionesIds.
+    // ✅ OPERACIONES relacionadas: se leen SIEMPRE en vivo para mostrar la
+    //   MONEDA DEL CONVENIO y el importe con la regla de monedas (convenio
+    //   USD facturado en pesos -> conversión). Si la operación ya no existe,
+    //   se cae al resumen guardado en la factura.
     const guardadas = Array.isArray(fac.raw?.operacionesGuardadas) ? fac.raw.operacionesGuardadas : [];
-    if (guardadas.length > 0) { setOpsFactura(guardadas); return; }
     const ids: string[] = Array.isArray(fac.raw?.operacionesIds) ? fac.raw.operacionesIds.map(String) : [];
-    if (ids.length === 0) { setOpsFactura([]); return; }
+    if (ids.length === 0 && guardadas.length === 0) { setOpsFactura([]); return; }
     setCargandoOpsFactura(true);
     try {
       const encontradas: any[] = [];
@@ -154,14 +155,24 @@ export function PagosDashboard() {
         const lote = ids.slice(i, i + 10);
         const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', lote)));
         snap.docs.forEach((d) => {
-          const o = d.data() as any;
-          encontradas.push({ id: d.id, ref: o.ref, fechaServicio: o.fechaServicio, remolque: o.remolqueNombre || o.remolquePlaca || o.numeroRemolque || '', importe: o.tarifaCliente || o.tarifa || '' });
+          const o = { id: d.id, ...(d.data() as any) };
+          const m = desgloseDeOp(o, tab);
+          encontradas.push({
+            id: d.id,
+            ref: o.ref,
+            fechaServicio: o.fechaServicio,
+            remolque: o.remolqueNombre || o.remolquePlaca || o.numeroRemolque || '',
+            monedaConvenio: m.monedaConvenio,
+            importe: m.conv > 0 ? m.conv : '',
+            importeDetalle: m.dol > 0 && m.pes <= 0 ? `${money(m.dol)} USD → ${money(m.conv)} MXN` : (m.conv > 0 ? `${money(m.conv)} MXN` : '—'),
+          });
         });
       }
-      setOpsFactura(encontradas);
+      if (encontradas.length > 0) setOpsFactura(encontradas);
+      else setOpsFactura(guardadas.map((g: any) => ({ ...g, importe: g.monto, importeDetalle: g.monto ? `${money(Number(g.monto) || 0)} MXN` : '—', monedaConvenio: '—' })));
     } catch (e) {
       console.warn('No se pudieron cargar las operaciones de la factura:', e);
-      setOpsFactura([]);
+      setOpsFactura(guardadas);
     }
     setCargandoOpsFactura(false);
   };
@@ -336,8 +347,11 @@ export function PagosDashboard() {
     const factMXN = fact === ID_MXN || nombreFact.includes('MXN');
     const convUSD = monConv === ID_USD || (!!monConv && monConv.toUpperCase().includes('USD'));
     const convMXN = monConv === ID_MXN || (!!monConv && monConv.toUpperCase().includes('MXN'));
-    const cUSD = convUSD || (!convMXN && factUSD);
-    const cMXN = convMXN || (!convUSD && factMXN);
+    // ✅ IGUAL QUE EL FORMULARIO DE OPERACIONES: si la operación no trae la
+    //   moneda del convenio (registros viejos), se asume USD — el estándar de
+    //   los convenios (es el mismo default que aplica FormularioOperacion).
+    const cUSD = convUSD || !convMXN;
+    const cMXN = convMXN;
     let dol = 0, pes = 0, conv = 0;
     if (subtotal > 0) {
       if (cUSD && factMXN) { pes = subtotal * tc; conv = subtotal * tc; }
@@ -345,13 +359,17 @@ export function PagosDashboard() {
       else if (cMXN && factUSD) { dol = tc > 0 ? subtotal / tc : 0; conv = subtotal; }
       else if (cMXN) { pes = subtotal; conv = subtotal; }
       else { conv = subtotal; }
-    } else {
-      // Respaldo: el desglose ya guardado en la operación.
-      dol = Number(esCli ? op.dolaresCliente : op.dolaresProv) || 0;
-      pes = Number(esCli ? op.pesosCliente : op.pesosProv) || 0;
-      conv = Number(esCli ? op.conversionCliente : op.conversionProv) || 0;
     }
-    return { subtotal, dol, pes, conv };
+    // Respaldo: si no se pudo calcular (sin subtotal, o convenio USD sin tipo
+    // de cambio guardado), se usa el desglose ya guardado en la operación.
+    if (conv <= 0) {
+      const dolG = Number(esCli ? op.dolaresCliente : op.dolaresProv) || 0;
+      const pesG = Number(esCli ? op.pesosCliente : op.pesosProv) || 0;
+      const convG = Number(esCli ? op.conversionCliente : op.conversionProv) || 0;
+      if (convG > 0) { dol = dolG; pes = pesG; conv = convG; }
+    }
+    const monedaConvenio: string = convMXN ? 'MXN' : (convUSD ? 'USD' : (monConv ? monConv : 'USD (asumida)'));
+    return { subtotal, dol, pes, conv, monedaConvenio, tc };
   };
 
   const recalcularFactura = async () => {
@@ -1541,7 +1559,7 @@ export function PagosDashboard() {
                     <div style={{ border: '1px solid #30363d', borderRadius: '8px', overflowX: 'auto' }}>
                       <table className="pg-tabla">
                         <thead>
-                          <tr><th>REFERENCIA</th><th>FECHA SERVICIO</th><th># REMOLQUE</th><th>IMPORTE</th></tr>
+                          <tr><th>REFERENCIA</th><th>FECHA SERVICIO</th><th># REMOLQUE</th><th>MONEDA CONVENIO</th><th>IMPORTE (CONVERSIÓN)</th></tr>
                         </thead>
                         <tbody>
                           {opsFactura.map((o: any, idx: number) => (
@@ -1557,7 +1575,8 @@ export function PagosDashboard() {
                               </td>
                               <td>{o.fechaServicio || o.fecha || '-'}</td>
                               <td>{o.remolque || '-'}</td>
-                              <td className="pg-monto">{o.importe !== '' && o.importe !== undefined && o.importe !== null ? money(Number(o.importe) || 0) : '—'}</td>
+                              <td>{o.monedaConvenio || '—'}</td>
+                              <td className="pg-monto">{o.importeDetalle || (o.importe !== '' && o.importe !== undefined && o.importe !== null ? money(Number(o.importe) || 0) : '—')}</td>
                             </tr>
                           ))}
                         </tbody>
