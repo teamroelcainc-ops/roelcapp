@@ -299,6 +299,14 @@ export function PagosDashboard() {
     }
   };
 
+  // ✅ NUEVO — AGREGAR FACTURAS A UN PAGO EXISTENTE (clientes y proveedores):
+  //   al editar un pago se listan las facturas CON SALDO de la misma entidad
+  //   que aún no están en el pago, para aplicarles monto sin re-capturarlo.
+  const [editFacturasDisp, setEditFacturasDisp] = useState<FacturaPagable[]>([]);
+  const [cargandoEditFacturas, setCargandoEditFacturas] = useState(false);
+  const [editFacturasSel, setEditFacturasSel] = useState<string[]>([]);
+  const [editPagoPorFactura, setEditPagoPorFactura] = useState<Record<string, string>>({});
+
   const abrirEdicionPago = (p: PagoDoc) => {
     setPagoEditando(p);
     setEditFecha(p.fecha || '');
@@ -307,7 +315,38 @@ export function PagosDashboard() {
     setEditMetodo(p.metodoPago || 'Transferencia');
     setEditObs(p.observaciones || '');
     setEditArchivoPdf(null);
+    setEditFacturasSel([]);
+    setEditPagoPorFactura({});
+    setEditFacturasDisp([]);
+    // Carga perezosa de las facturas pendientes de la entidad (según el TIPO
+    // del pago — cliente o proveedor — no la pestaña actual).
+    setCargandoEditFacturas(true);
+    cargarFacturasPendientes(p.tipo)
+      .then((lista) => {
+        const yaEnPago = new Set((p.facturas || []).map((fa) => String(fa.facturaId)));
+        setEditFacturasDisp(lista.filter((fx) =>
+          fx.entidadNombre === p.entidadNombre && fx.saldo > 0.009 && !yaEnPago.has(String(fx.id))
+        ).sort((a, b) => claveFecha(a.fecha).localeCompare(claveFecha(b.fecha))));
+      })
+      .catch(() => setEditFacturasDisp([]))
+      .finally(() => setCargandoEditFacturas(false));
   };
+
+  const toggleEditFactura = (id: string) => {
+    const fac = editFacturasDisp.find((fx) => fx.id === id);
+    if (!fac) return;
+    setEditFacturasSel((prev) => {
+      const ya = prev.includes(id);
+      if (ya) {
+        setEditPagoPorFactura((pp) => { const c = { ...pp }; delete c[id]; return c; });
+        return prev.filter((x) => x !== id);
+      }
+      setEditPagoPorFactura((pp) => ({ ...pp, [id]: fac.saldo.toFixed(2) }));
+      return [...prev, id];
+    });
+  };
+
+  const sumaAgregadaEdicion = editFacturasSel.reduce((s, id) => s + (Number(editPagoPorFactura[id]) || 0), 0);
 
   const guardarEdicionPago = async () => {
     if (!pagoEditando) return;
@@ -324,7 +363,18 @@ export function PagosDashboard() {
         pdfUrl = await getDownloadURL(destino);
         pdfNombre = editArchivoPdf.name;
       }
-      const cambios = {
+      // ✅ NUEVO — facturas agregadas en la edición: se validan y aplican.
+      const agregadas = editFacturasSel
+        .map((id) => ({ fac: editFacturasDisp.find((fx) => fx.id === id)!, monto: Number(editPagoPorFactura[id]) || 0 }))
+        .filter((x) => x.fac && x.monto > 0);
+      const invalida = agregadas.find((x) => x.monto > x.fac.saldo + 0.009);
+      if (invalida) {
+        alert(`El monto capturado para la factura ${invalida.fac.invoice} (${money(invalida.monto)}) supera su saldo (${money(invalida.fac.saldo)}).`);
+        setGuardandoEdicion(false);
+        return;
+      }
+
+      const cambios: any = {
         fecha: editFecha,
         numeroPago: editNumero.trim(),
         referencia: editReferencia.trim(),
@@ -335,9 +385,35 @@ export function PagosDashboard() {
         editadoEn: new Date().toISOString(),
         editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
       };
+
       const batch = writeBatch(db);
+      const coleccionFact = pagoEditando.tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+      if (agregadas.length > 0) {
+        const nuevasAplicaciones: FacturaAplicada[] = [];
+        agregadas.forEach(({ fac, monto }) => {
+          const pagadoNuevo = fac.montoPagado + monto;
+          const saldoNuevo = Math.max(0, fac.total - pagadoNuevo);
+          batch.set(doc(db, coleccionFact, fac.id), {
+            montoPagado: pagadoNuevo,
+            saldoPendiente: saldoNuevo,
+            statusPago: saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL',
+          }, { merge: true });
+          nuevasAplicaciones.push({ facturaId: fac.id, invoice: fac.invoice, fecha: fac.fecha, total: fac.total, saldoAnterior: fac.saldo, aplicado: monto, saldoNuevo });
+        });
+        cambios.facturas = [...(pagoEditando.facturas || []), ...nuevasAplicaciones];
+        cambios.monto = (Number(pagoEditando.monto) || 0) + agregadas.reduce((s, x) => s + x.monto, 0);
+      }
       batch.set(doc(db, 'pagos', pagoEditando.id), cambios, { merge: true });
       await batch.commit();
+      // Refleja los saldos en la lista del modal de registro sin recargar.
+      if (agregadas.length > 0) {
+        setFacturasPendientes((prev) => prev.map((fx) => {
+          const ag = agregadas.find((x) => x.fac.id === fx.id);
+          if (!ag) return fx;
+          const pagadoNuevo = fx.montoPagado + ag.monto;
+          return { ...fx, montoPagado: pagadoNuevo, saldo: Math.max(0, fx.total - pagadoNuevo) };
+        }));
+      }
       registrarLog('Pagos', 'Edición', `Editó el pago ${cambios.numeroPago} de ${pagoEditando.entidadNombre}.`).catch(() => {});
       // El onSnapshot refresca la lista; si el detalle está abierto se actualiza al vuelo.
       setPagoViendo((prev) => prev && prev.id === pagoEditando.id ? { ...prev, ...cambios } : prev);
@@ -710,9 +786,11 @@ export function PagosDashboard() {
   const entidades = useMemo(() => {
     const mapa = new Map<string, { nombre: string; cuantas: number; conSaldo: number; saldo: number }>();
     facturasPendientes.forEach((f) => {
+      // ✅ CAMBIO: solo cuentan (y aparecen) las facturas con saldo abierto.
+      if (f.saldo <= 0.009) return;
       const prev = mapa.get(f.entidadNombre) || { nombre: f.entidadNombre, cuantas: 0, conSaldo: 0, saldo: 0 };
       prev.cuantas += 1;
-      if (f.saldo > 0.009) prev.conSaldo += 1;
+      prev.conSaldo += 1;
       prev.saldo += f.saldo;
       mapa.set(f.entidadNombre, prev);
     });
@@ -728,7 +806,9 @@ export function PagosDashboard() {
   // Facturas de la entidad elegida, de la MÁS ANTIGUA a la más reciente.
   const facturasDeEntidad = useMemo(() =>
     facturasPendientes
-      .filter((f) => f.entidadNombre === entidadSel)
+      // ✅ CAMBIO: en el registro de pago SOLO se muestran facturas con saldo
+      //   abierto (las pagadas ya no aparecen en la lista).
+      .filter((f) => f.entidadNombre === entidadSel && f.saldo > 0.009)
       .sort((a, b) => claveFecha(a.fecha).localeCompare(claveFecha(b.fecha))),
   [facturasPendientes, entidadSel]);
 
@@ -1380,6 +1460,52 @@ export function PagosDashboard() {
                 <label>Comprobante {pagoEditando.pdfNombre ? `(actual: ${pagoEditando.pdfNombre})` : '(sin comprobante)'} — subir uno lo reemplaza</label>
                 <input type="file" accept="application/pdf,image/*" onChange={(e) => setEditArchivoPdf(e.target.files?.[0] || null)} />
               </div>
+
+              {/* ✅ NUEVO — AGREGAR FACTURAS A ESTE PAGO */}
+              <div className="pg-campo">
+                <label>Agregar facturas a este pago (con saldo abierto de {pagoEditando.entidadNombre})</label>
+                {cargandoEditFacturas ? (
+                  <p className="pg-vacio">Buscando facturas con saldo…</p>
+                ) : editFacturasDisp.length === 0 ? (
+                  <p className="pg-vacio">No hay más facturas con saldo abierto de esta entidad.</p>
+                ) : (
+                  <div style={{ border: '1px solid #30363d', borderRadius: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                    <table className="pg-tabla">
+                      <thead>
+                        <tr><th style={{ width: '34px' }}></th><th>FACTURA</th><th>SALDO</th><th>MONEDA</th><th>APLICAR</th></tr>
+                      </thead>
+                      <tbody>
+                        {editFacturasDisp.map((fx) => (
+                          <tr key={fx.id} className="pg-fila" onClick={() => toggleEditFactura(fx.id)}>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <input type="checkbox" checked={editFacturasSel.includes(fx.id)} onChange={() => toggleEditFactura(fx.id)} />
+                            </td>
+                            <td><span className="pg-numero">{fx.invoice}</span>{fx.fecha ? <span className="pg-desc-fecha"> ({fx.fecha})</span> : null}</td>
+                            <td className="pg-monto">{money(fx.saldo)}</td>
+                            <td>{fx.moneda || '—'}</td>
+                            <td onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="number" min="0" step="0.01" max={fx.saldo}
+                                className="pg-input-pago"
+                                disabled={!editFacturasSel.includes(fx.id)}
+                                value={editFacturasSel.includes(fx.id) ? (editPagoPorFactura[fx.id] ?? '') : ''}
+                                onChange={(e) => setEditPagoPorFactura((pp) => ({ ...pp, [fx.id]: e.target.value }))}
+                                placeholder={editFacturasSel.includes(fx.id) ? '0.00' : '—'}
+                                title={`Máximo: ${money(fx.saldo)}`}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {sumaAgregadaEdicion > 0 && (
+                  <span style={{ display: 'block', marginTop: '6px', fontSize: '0.8rem', color: '#3fb950', fontWeight: 600 }}>
+                    Se agregarán {money(sumaAgregadaEdicion)} al pago (nuevo total: {money((Number(pagoEditando.monto) || 0) + sumaAgregadaEdicion, pagoEditando.moneda)}).
+                  </span>
+                )}
+              </div>
             </div>
             <div className="pg-modal-pie">
               <button className="pg-btn-secundario" onClick={() => setPagoEditando(null)} disabled={guardandoEdicion}>Cancelar</button>
@@ -1406,7 +1532,7 @@ export function PagosDashboard() {
               ) : !entidadSel ? (
                 <>
                   {/* PASO 1: elegir cliente/proveedor con facturas pendientes */}
-                  <label className="pg-etq">1. Elige {tab === 'cliente' ? 'el cliente' : 'el proveedor'} (se muestran TODAS sus facturas; las pagadas aparecen bloqueadas)</label>
+                  <label className="pg-etq">1. Elige {tab === 'cliente' ? 'el cliente' : 'el proveedor'} (solo aparecen los que tienen facturas con saldo)</label>
                   <div className="pg-buscador">
                     <Search size={15} />
                     <input
@@ -1425,7 +1551,7 @@ export function PagosDashboard() {
                         <li key={e.nombre}>
                           <button onClick={() => { setEntidadSel(e.nombre); setFacturasSel([]); }}>
                             <span className="pg-entidad">{e.nombre}</span>
-                            <span className="pg-entidad-info">{e.cuantas} factura(s) · {e.conSaldo} con saldo · {money(e.saldo)}</span>
+                            <span className="pg-entidad-info">{e.cuantas} factura(s) con saldo · {money(e.saldo)}</span>
                           </button>
                         </li>
                       ))}
@@ -1536,7 +1662,7 @@ export function PagosDashboard() {
                                 style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '6px', color: '#58a6ff', cursor: 'pointer', padding: '3px 7px', marginRight: '8px', verticalAlign: 'middle' }}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                               </button>
-                              <span className="pg-numero">Factura # {f.invoice}</span> <span className="pg-desc-fecha">({f.fecha})</span>
+                              <span className="pg-numero">Factura # {f.invoice}</span>{f.fecha ? <span className="pg-desc-fecha"> ({f.fecha})</span> : null}
                             </td>
                             <td>{f.fecha}</td>
                             <td>{money(f.total)}</td>
