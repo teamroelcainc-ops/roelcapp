@@ -68,10 +68,19 @@ const montoClienteDe = (op: Op) => {
   const tc = Number(op.tipoCambioAprobado) || 0;
   const subtotal = Number(op.montoConvenioCliente || 0) + Number(op.cargosAdicionales || 0);
   const nombreMoneda = String(op.monedaCobroNombre || '').toUpperCase();
-  const esDolar = nombreMoneda.includes('USD') || nombreMoneda.includes('DOLAR') || nombreMoneda.includes('DÓLAR');
-  const esPeso = nombreMoneda.includes('MXN') || nombreMoneda.includes('PESO');
-  if (esDolar) return { dol: subtotal, pes: 0, conv: subtotal * tc, tc };
-  if (esPeso) return { dol: 0, pes: subtotal, conv: subtotal, tc };
+  const factUSD = op.facturadoEnCobrar === '7dca62b3' || nombreMoneda.includes('USD') || nombreMoneda.includes('DOLAR') || nombreMoneda.includes('DÓLAR');
+  const factMXN = op.facturadoEnCobrar === 'f95d8894' || nombreMoneda.includes('MXN') || nombreMoneda.includes('PESO');
+  // ✅ REGLA DE MONEDAS: si el convenio es USD y se factura en MXN, el monto
+  //   en pesos es la CONVERSIÓN (subtotal × TC), igual que en Operaciones.
+  const monConv = String(op.monedaConvenioCliente || '');
+  const convUSD = monConv === '7dca62b3' || (!!monConv && monConv.toUpperCase().includes('USD'));
+  const convMXN = monConv === 'f95d8894' || (!!monConv && monConv.toUpperCase().includes('MXN'));
+  const cUSD = convUSD || (!convMXN && factUSD);
+  const cMXN = convMXN || (!convUSD && factMXN);
+  if (cUSD && factMXN) return { dol: 0, pes: subtotal * tc, conv: subtotal * tc, tc };
+  if (cUSD) return { dol: subtotal, pes: 0, conv: subtotal * tc, tc };
+  if (cMXN && factUSD) return { dol: tc > 0 ? subtotal / tc : 0, pes: 0, conv: subtotal, tc };
+  if (cMXN) return { dol: 0, pes: subtotal, conv: subtotal, tc };
   return { dol: 0, pes: 0, conv: subtotal, tc };
 };
 

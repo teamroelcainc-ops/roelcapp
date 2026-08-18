@@ -358,10 +358,24 @@ const calcularConversionCliente = (op: any) => {
   const subtotal = Number(op.montoConvenioCliente || 0) + Number(op.cargosAdicionales || 0);
   let dol = 0, pes = 0, conv = 0;
   const nombreMoneda = String(op.monedaCobroNombre || '').toUpperCase();
-  const esDolar = fact === ID_USD || nombreMoneda.includes('USD');
-  const esPeso = fact === ID_MXN || nombreMoneda.includes('MXN');
-  if (esDolar) { dol = subtotal; pes = 0; conv = subtotal * tc; }
-  else if (esPeso) { dol = 0; pes = subtotal; conv = subtotal; }
+  const factUSD = fact === ID_USD || nombreMoneda.includes('USD');
+  const factMXN = fact === ID_MXN || nombreMoneda.includes('MXN');
+  // ✅ REGLA DE MONEDAS (igual que el formulario de Operaciones):
+  //   - Convenio USD + Factura MXN -> se muestra la CONVERSIÓN (subtotal × TC).
+  //   - Convenio USD + Factura USD -> dólares tal cual.
+  //   - Convenio MXN + Factura MXN -> pesos tal cual.
+  //   - Convenio MXN + Factura USD -> dólares = subtotal ÷ TC.
+  //   Si la operación no trae la moneda del convenio (registros viejos), se
+  //   asume la de la factura (comportamiento anterior).
+  const monConv = String(op.monedaConvenioCliente || '');
+  const convUSD = monConv === ID_USD || (!!monConv && monConv.toUpperCase().includes('USD'));
+  const convMXN = monConv === ID_MXN || (!!monConv && monConv.toUpperCase().includes('MXN'));
+  const cUSD = convUSD || (!convMXN && factUSD);
+  const cMXN = convMXN || (!convUSD && factMXN);
+  if (cUSD && factMXN) { dol = 0; pes = subtotal * tc; conv = subtotal * tc; }
+  else if (cUSD) { dol = subtotal; pes = 0; conv = subtotal * tc; }
+  else if (cMXN && factUSD) { dol = tc > 0 ? subtotal / tc : 0; pes = 0; conv = subtotal; }
+  else if (cMXN) { dol = 0; pes = subtotal; conv = subtotal; }
   else { conv = subtotal; }
   return { subtotal, dol, pes, conv };
 };
