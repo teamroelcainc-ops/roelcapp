@@ -10,7 +10,7 @@
 //     statusPago (PAGADA / PARCIAL), sin tocar su statusFactura.
 //   · Eliminar un pago REVIERTE la aplicación en sus facturas.
 // ---------------------------------------------------------------------------
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   collection, query, where, getDocs, onSnapshot, writeBatch, doc, arrayUnion, arrayRemove, limit,
   orderBy, startAfter, documentId,
@@ -610,6 +610,63 @@ export function PagosDashboard() {
   const [referencia, setReferencia] = useState('');
   const [montoTexto, setMontoTexto] = useState('');
   const [montoEditado, setMontoEditado] = useState(false);
+
+  // ✅ NUEVO — RECARGA DENTRO DEL MODAL DE REGISTRO (sin salir):
+  //   vuelve a leer las facturas y CONSERVA la selección y los montos
+  //   capturados (acotándolos al saldo nuevo; las que quedaron pagadas se
+  //   quitan solas). Se dispara con el botón ↻ y AUTOMÁTICAMENTE al volver
+  //   a la pestaña del navegador (p. ej. después de recalcular una factura
+  //   o editarla en Facturación).
+  const [recargandoModal, setRecargandoModal] = useState(false);
+  const ultimaRecargaModal = useRef<number>(0);
+
+  const recargarFacturasModal = async (silencioso = false) => {
+    if (recargandoModal) return;
+    setRecargandoModal(true);
+    try {
+      const lista = await cargarFacturasPendientes(tab);
+      setFacturasPendientes(lista);
+      ultimaRecargaModal.current = Date.now();
+      // Conserva la selección: solo facturas que siguen con saldo.
+      const porId: Record<string, FacturaPagable> = {};
+      lista.forEach((fx) => { porId[fx.id] = fx; });
+      setFacturasSel((prev) => prev.filter((id) => porId[id] && porId[id].saldo > 0.009));
+      setPagosPorFactura((prev) => {
+        const nuevo: Record<string, string> = {};
+        Object.entries(prev).forEach(([id, txtMonto]) => {
+          const fx = porId[id];
+          if (!fx || fx.saldo <= 0.009) return; // pagada o eliminada: fuera
+          const cap = Number(txtMonto);
+          nuevo[id] = isNaN(cap) ? txtMonto : Math.min(cap, fx.saldo).toFixed(2);
+        });
+        return nuevo;
+      });
+    } catch (e) {
+      console.error('No se pudieron recargar las facturas del modal:', e);
+      if (!silencioso) alert('No se pudieron recargar las facturas. Intenta de nuevo.');
+    } finally {
+      setRecargandoModal(false);
+    }
+  };
+
+  // Recarga automática al volver el foco a la pestaña (máx. 1 vez cada 10 s).
+  useEffect(() => {
+    if (!modalAbierto || !entidadSel) return;
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - ultimaRecargaModal.current < 10000) return;
+      recargarFacturasModal(true);
+    };
+    window.addEventListener('focus', alVolver);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.removeEventListener('focus', alVolver);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalAbierto, entidadSel, tab]);
+
+
   const [observaciones, setObservaciones] = useState('');
   const [archivoPdf, setArchivoPdf] = useState<File | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -1857,6 +1914,12 @@ export function PagosDashboard() {
                   {/* ═══ Transacciones pendientes ═══ */}
                   <div className="pg-trans-encabezado">
                     <label className="pg-etq">Transacciones pendientes</label>
+                    {/* ✅ NUEVO: recarga sin salir (conserva selección y montos) */}
+                    <button type="button" className="pg-btn-secundario" style={{ padding: '6px 12px' }}
+                      onClick={() => recargarFacturasModal(false)} disabled={recargandoModal}
+                      title="Actualizar facturas y saldos sin perder lo seleccionado">
+                      <RefreshCw size={13} className={recargandoModal ? 'pg-girando' : undefined} /> {recargandoModal ? 'Actualizando…' : 'Recargar'}
+                    </button>
                     <div className="pg-buscador pg-buscador-factura">
                       <Search size={14} />
                       <input
