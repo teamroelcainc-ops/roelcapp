@@ -611,6 +611,48 @@ export function PagosDashboard() {
   const [montoTexto, setMontoTexto] = useState('');
   const [montoEditado, setMontoEditado] = useState(false);
 
+  // ✅ NUEVO — UNIR ENTIDADES DUPLICADAS DESDE PAGOS (por NOMBRE):
+  //   para duplicados que ya no existen en Empresas (facturas importadas o
+  //   nombres con variantes). Reescribe el nombre en las facturas y pagos
+  //   usando los documentos YA cargados en memoria (cero lecturas extra).
+  const [unirModo, setUnirModo] = useState(false);
+  const [unirOrigen, setUnirOrigen] = useState<string | null>(null);
+  const [uniendoEnt, setUniendoEnt] = useState(false);
+
+  const clickEntidadUnir = async (nombre: string) => {
+    if (!unirOrigen) { setUnirOrigen(nombre); return; }
+    if (claveEntidad(unirOrigen) === claveEntidad(nombre)) { setUnirOrigen(null); return; }
+    const origen = unirOrigen, destino = nombre;
+    if (!window.confirm(`UNIR ENTIDADES\n\n"${origen}"  →  se ELIMINA\n"${destino}"  →  se CONSERVA\n\nTodas las facturas y pagos de "${origen}" pasarán a nombre de "${destino}". ¿Continuar?`)) { setUnirModo(false); setUnirOrigen(null); return; }
+    setUniendoEnt(true);
+    try {
+      const colFact = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
+      const campoN = tab === 'cliente' ? 'clienteNombre' : 'proveedorNombre';
+      const kOri = claveEntidad(origen);
+      const factIds = facturasPendientes.filter((fx) => claveEntidad(fx.entidadNombre) === kOri).map((fx) => fx.id);
+      const pagosIdsUnir = pagos.filter((p) => p.tipo === tab && claveEntidad(p.entidadNombre) === kOri).map((p) => p.id);
+      let n = 0;
+      for (let i = 0; i < factIds.length; i += 400) {
+        const batch = writeBatch(db);
+        factIds.slice(i, i + 400).forEach((id) => batch.set(doc(db, colFact, id), { [campoN]: destino }, { merge: true }));
+        await batch.commit(); n += Math.min(400, factIds.length - i);
+      }
+      for (let i = 0; i < pagosIdsUnir.length; i += 400) {
+        const batch = writeBatch(db);
+        pagosIdsUnir.slice(i, i + 400).forEach((id) => batch.set(doc(db, 'pagos', id), { entidadNombre: destino }, { merge: true }));
+        await batch.commit(); n += Math.min(400, pagosIdsUnir.length - i);
+      }
+      setFacturasPendientes((prev) => prev.map((fx) => claveEntidad(fx.entidadNombre) === kOri ? { ...fx, entidadNombre: destino } : fx));
+      if (entidadSel && claveEntidad(entidadSel) === kOri) setEntidadSel(destino);
+      alert(`Unión completada. ✅\n\n${n} registro(s) pasaron de "${origen}" a "${destino}".`);
+    } catch (e) {
+      console.error('No se pudo unir:', e);
+      alert('No se pudo completar la unión. Intenta de nuevo.');
+    } finally {
+      setUniendoEnt(false); setUnirModo(false); setUnirOrigen(null);
+    }
+  };
+
   // ✅ NUEVO — RECARGA DENTRO DEL MODAL DE REGISTRO (sin salir):
   //   vuelve a leer las facturas y CONSERVA la selección y los montos
   //   capturados (acotándolos al saldo nuevo; las que quedaron pagadas se
@@ -1827,7 +1869,13 @@ export function PagosDashboard() {
               ) : !entidadSel ? (
                 <>
                   {/* PASO 1: elegir cliente/proveedor con facturas pendientes */}
-                  <label className="pg-etq">1. Elige {tab === 'cliente' ? 'el cliente' : 'el proveedor'} (solo aparecen los que tienen facturas con saldo)</label>
+                  <label className="pg-etq">1. Elige {tab === 'cliente' ? 'el cliente' : 'el proveedor'} (solo aparecen los que tienen facturas con saldo)
+                    <button type="button" className="pg-btn-secundario" style={{ marginLeft: '10px', padding: '4px 10px', color: unirModo ? '#d29922' : undefined, borderColor: unirModo ? 'rgba(210,153,34,0.5)' : undefined }}
+                      disabled={uniendoEnt}
+                      onClick={() => { setUnirModo((v) => !v); setUnirOrigen(null); }}>
+                      {uniendoEnt ? 'Uniendo…' : unirModo ? (unirOrigen ? `Se elimina: "${unirOrigen}" — elige el que SE CONSERVA` : 'Elige el duplicado que SE ELIMINA (o cancela)') : 'Unir duplicados'}
+                    </button>
+                  </label>
                   <div className="pg-buscador">
                     <Search size={15} />
                     <input
@@ -1844,7 +1892,8 @@ export function PagosDashboard() {
                     <ul className="pg-lista-entidades">
                       {entidadesFiltradas.map((e) => (
                         <li key={e.nombre}>
-                          <button onClick={() => { setEntidadSel(e.nombre); setFacturasSel([]); }}>
+                          <button onClick={() => { if (unirModo) { clickEntidadUnir(e.nombre); return; } setEntidadSel(e.nombre); setFacturasSel([]); }}
+                          style={unirModo && unirOrigen && claveEntidad(unirOrigen) === claveEntidad(e.nombre) ? { borderColor: '#f85149' } : undefined}>
                             <span className="pg-entidad">{e.nombre}</span>
                             <span className="pg-entidad-info">{e.cuantas} factura(s) con saldo · {money(e.saldo)}</span>
                           </button>
