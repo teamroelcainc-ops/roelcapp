@@ -514,6 +514,35 @@ const EmpresasDashboard = () => {
             totalReapuntados += lote.length;
           }
         }
+        // 1b) ✅ FIX FANTASMAS — REAPUNTE POR NOMBRE: las facturas importadas
+        //   (AppSheet) y los PAGOS guardan el nombre como texto y su id no
+        //   corresponde a la empresa, por lo que el reapunte por id no los
+        //   alcanzaba y el duplicado "borrado" seguía apareciendo en Pagos.
+        //   Aquí se corrigen por el NOMBRE exacto del duplicado.
+        const dupReg: any = empresas.find((e: any) => e.id === dupId);
+        const nombresDup = Array.from(new Set([
+          String(dupReg?.nombre || ''),
+          String(dupReg?.nombre || '').trim(),
+          String(dupReg?.nombreCorto || ''),
+        ].filter((n) => n && n !== nombreKept)));
+        const REFS_POR_NOMBRE: [string, string, Record<string, string>][] = [
+          ['facturas_clientes', 'clienteNombre', { clienteId: conservarId, clienteNombre: nombreKept }],
+          ['facturas_proveedores', 'proveedorNombre', { proveedorId: conservarId, proveedorNombre: nombreKept }],
+          ['pagos', 'entidadNombre', { entidadNombre: nombreKept }],
+        ];
+        for (const nombreDup of nombresDup) {
+          for (const [col, campoN, cambiosN] of REFS_POR_NOMBRE) {
+            const snapN = await getDocs(query(collection(db, col), where(campoN, '==', nombreDup)));
+            for (let i = 0; i < snapN.docs.length; i += 400) {
+              const lote = snapN.docs.slice(i, i + 400);
+              const batch = writeBatch(db);
+              lote.forEach((d) => batch.update(d.ref, cambiosN));
+              await batch.commit();
+              totalReapuntados += lote.length;
+            }
+          }
+        }
+
         // 2) Documentos ligados a la empresa duplicada.
         const snapDocs = await getDocs(query(
           collection(db, 'documentos'),
