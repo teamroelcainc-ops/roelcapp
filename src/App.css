@@ -1193,7 +1193,8 @@ body {
   .app-x53 { font-size: 1.3rem; }
 }
 
-/* ✅ Versión de la app al pie del menú lateral */
-.app-version-footer { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 6px 10px 6px; user-select: none; }
+/* ✅ Versión de la app al pie del menú lateral (SIEMPRE debajo de Cerrar Sesión) */
+.sidebar-footer { display: flex; flex-direction: column; align-items: stretch; }
+.app-version-footer { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 6px 10px 6px; user-select: none; order: 99; width: 100%; }
 .app-version-num { color: #8b949e; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.5px; }
 .app-version-autor { color: #6e7681; font-size: 0.64rem; }

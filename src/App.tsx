@@ -1280,6 +1280,11 @@ function AppContenido() {
                     <button className="btn-profile" onClick={() => { setPerfilAbierto(false); salirVistaComo(); }}>Salir de la vista previa</button>
                   )}
                   <button className="btn-profile logout" onClick={() => handleCerrarSesion('manual')}>Cerrar Sesión</button>
+                  {/* ✅ Versión también debajo del Cerrar Sesión del perfil */}
+                  <div className="app-version-footer">
+                    <span className="app-version-num">{APP_VERSION}</span>
+                    <span className="app-version-autor">Hecho por {APP_AUTOR}</span>
+                  </div>
                 </div>
               </div>
             )}
