@@ -185,6 +185,7 @@ const COLUMNAS_FACTURA_BASE = [
   { id: 'fecha',       label: 'Fecha',        visible: true },
   { id: 'remolque',    label: '# Remolque',   visible: true },
   { id: 'cliente',     label: 'Cliente',      visible: true },
+  { id: 'refCliente',  label: 'Ref Cliente',  visible: true }, // ✅ NUEVO: viene de las operaciones
   { id: 'moneda',      label: 'Moneda',       visible: true },
   { id: 'facturaCcp',  label: 'Factura CCP',  visible: true },
   { id: 'cantOps',     label: 'Cant. Ops',    visible: true },
@@ -654,6 +655,18 @@ export const FacturacionClientesDashboard = () => {
       let cols = aplicarConfigColumnasGuardada(COLUMNAS_FACTURA_BASE, guardadas);
       const teniaStatus = Array.isArray(guardadas) && guardadas.some((g: any) => g?.id === 'statusFactura');
       if (!teniaStatus) cols = moverStatusAlInicio(cols);
+      // ✅ Ref Cliente: si la configuración guardada no la conocía, se inserta
+      //   JUNTO a Cliente (no al final) y visible.
+      const teniaRefCli = Array.isArray(guardadas) && guardadas.some((g: any) => g?.id === 'refCliente');
+      if (!teniaRefCli) {
+        const idxRef = cols.findIndex((c: any) => c.id === 'refCliente');
+        if (idxRef >= 0) {
+          const [colRef] = cols.splice(idxRef, 1);
+          colRef.visible = true;
+          const idxCli = cols.findIndex((c: any) => c.id === 'cliente');
+          cols.splice(idxCli >= 0 ? idxCli + 1 : cols.length, 0, colRef);
+        }
+      }
       return cols;
     };
     try {
@@ -1489,6 +1502,7 @@ export const FacturacionClientesDashboard = () => {
           dol: montos.dol,   // ✅ FIX MONEDA
           pes: montos.pes,   // ✅ FIX MONEDA
           convenioNombre: String((op?.convenioNombre || op?.convenioClienteNombre) || ''), // ✅ NUEVO: convenio revisable
+          refCliente: String(op?.refCliente || ''), // ✅ NUEVO: Ref Cliente en el historial
           remolque: op ? txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque) : '',
         };
       });
@@ -1676,6 +1690,7 @@ export const FacturacionClientesDashboard = () => {
       ref: op.numReferencia || op.referencia || op.ref || String(op.id).substring(0, 6),
       monto: m.conv,
       subtotalBase: m.subtotal,
+      refCliente: String(op.refCliente || ''), // ✅ NUEVO
       remolque: txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque),
     };
   };
@@ -1921,6 +1936,7 @@ export const FacturacionClientesDashboard = () => {
       case 'fecha': return String(f.fecha || '');
       case 'remolque': return remolquesFacturaTokens(f).join(' ').toLowerCase();
       case 'cliente': return String(f.clienteNombre || '').toLowerCase();
+      case 'refCliente': return refClienteDeFactura(f).toLowerCase();
       case 'moneda': return String(f.monedaFacturacion || '').toLowerCase();
       case 'cantOps': return Number(f.operacionesIds?.length || 0);
       case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
@@ -2151,6 +2167,7 @@ export const FacturacionClientesDashboard = () => {
               remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
               moneda: o.monedaCobroNombre || mostrarMoneda(o.facturadoEnCobrar),
               clienteId: o.clientePaga || o.clienteId || '',
+              refCliente: String(o.refCliente || ''), // ✅ NUEVO
             };
           });
         } catch (e) { console.warn('No se pudo resolver lote de operaciones del historial:', e); }
@@ -2191,6 +2208,18 @@ export const FacturacionClientesDashboard = () => {
     return '-';
   };
 
+  // ✅ REF CLIENTE de una factura: junta las referencias de cliente de sus
+  //   operaciones (del snapshot o resueltas en vivo con opInfoMap), sin repetir.
+  const refClienteDeFactura = (f: any): string => {
+    const refs: string[] = [];
+    const vistos = new Set<string>();
+    (Array.isArray(f?.operacionesGuardadas) ? f.operacionesGuardadas : []).forEach((op: any) => {
+      const v = String(op?.refCliente || opInfoMap[String(op?.id || '')]?.refCliente || '').trim();
+      if (v && !vistos.has(v.toLowerCase())) { vistos.add(v.toLowerCase()); refs.push(v); }
+    });
+    return refs.join(', ');
+  };
+
   const renderCeldaFactura = (f: any, colId: string) => {
     switch (colId) {
       case 'statusFactura': return chipStatusFactura(f.statusFactura);
@@ -2198,6 +2227,7 @@ export const FacturacionClientesDashboard = () => {
       case 'fecha': return <span className="fcd-x11">{formatearFechaSpanish(f.fecha)}</span>;
       case 'remolque': return renderRemolqueTokens(remolquesFacturaTokens(f));
       case 'cliente': return <span className="fcd-x12">{nombreClienteFactura_(f)}</span>;
+      case 'refCliente': { const rc = refClienteDeFactura(f); return rc ? <span className="fcd-x11">{rc}</span> : <span className="fcd-x1">-</span>; }
       case 'moneda': { const mon = monedaFacturaMostrar(f); return <span style={{ color: mon === 'N/A' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{mon}</span>; }
       case 'facturaCcp': return <span className="fcd-x11">{f.facturaCcp || '-'}</span>;
       case 'cantOps': return <span className="fcd-x1">{f.operacionesIds?.length || 0}</span>;
@@ -2245,6 +2275,7 @@ export const FacturacionClientesDashboard = () => {
         case 'fecha': return f.fecha || '';
         case 'remolque': return remolqueTokensTexto(remolquesFacturaTokens(f));
         case 'cliente': return nombreClienteFactura_(f);
+        case 'refCliente': return refClienteDeFactura(f);
         case 'moneda': return monedaFacturaMostrar(f);
         case 'facturaCcp': return f.facturaCcp || '';
         case 'cantOps': return Number(f.operacionesIds?.length || 0);
