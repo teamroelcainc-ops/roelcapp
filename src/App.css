@@ -1192,3 +1192,8 @@ body {
   .app-x52 { padding: 14px 12px; }
   .app-x53 { font-size: 1.3rem; }
 }
+
+/* ✅ Versión de la app al pie del menú lateral */
+.app-version-footer { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 6px 10px 6px; user-select: none; }
+.app-version-num { color: #8b949e; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.5px; }
+.app-version-autor { color: #6e7681; font-size: 0.64rem; }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
+import { APP_VERSION, APP_AUTOR } from './config/version';
 import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
@@ -1215,6 +1216,11 @@ function AppContenido() {
 
         <div className="sidebar-footer">
           <button className="btn-logout-sidebar" onClick={() => handleCerrarSesion('manual')}>Cerrar Sesión</button>
+          {/* ✅ VERSIÓN DE LA APP (se actualiza en cada entrega) */}
+          <div className="app-version-footer" title={`Versión ${APP_VERSION} · Desarrollada por ${APP_AUTOR}`}>
+            <span className="app-version-num">{APP_VERSION}</span>
+            <span className="app-version-autor">Hecho por {APP_AUTOR}</span>
+          </div>
         </div>
       </div>
 
