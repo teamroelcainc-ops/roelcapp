@@ -26,7 +26,7 @@ import { Plus, FileText, Trash2, X, Search, Download, Pencil, RefreshCw } from '
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import './PagosDashboard.css';
 
-type TipoPago = 'cliente' | 'proveedor';
+type TipoPago = 'cliente' | 'proveedor' | 'mtto';
 
 const METODOS_PAGO = ['Transferencia', 'ACH', 'Efectivo', 'Cheque', 'Depósito', 'Tarjeta', 'Otro'];
 
@@ -132,6 +132,25 @@ export function PagosDashboard() {
   const [cargandoOpsFactura, setCargandoOpsFactura] = useState(false);
 
   const abrirDetalleFactura = async (fac: FacturaPagable) => {
+    // ✅ MTTO: el detalle son los GASTOS que componen el invoice.
+    if (String(fac.id).startsWith('MTTO__')) {
+      setFacturaViendo(fac);
+      setEditandoFactura(false);
+      const gastos: any[] = Array.isArray((fac as any).raw?.gastos) ? (fac as any).raw.gastos : [];
+      setOpsFactura(gastos.map((g: any) => ({
+        id: g.id,
+        ref: String(g.numeroGasto || g.folio || g.descripcion || g.concepto || g.id).substring(0, 24),
+        fechaServicio: String(g.fecha || g.fechaGasto || '').slice(0, 10),
+        remolque: String(g.unidadNombre || g.unidad || ''),
+        convenio: String(g.descripcion || g.concepto || '—'),
+        monedaConvenio: 'MXN',
+        importe: (Number(g.importe) || 0) + (Number(g.ivaMonto) || 0),
+        importeDetalle: `${money((Number(g.importe) || 0) + (Number(g.ivaMonto) || 0))} MXN`,
+      })));
+      setCargandoOpsFactura(false);
+      return;
+    }
+
     setFacturaViendo(fac);
     setEditandoFactura(false);
     setFEditInvoice(fac.invoice);
@@ -540,6 +559,7 @@ export function PagosDashboard() {
         agregadas.forEach(({ fac, monto }) => {
           const pagadoNuevo = fac.montoPagado + monto;
           const saldoNuevo = Math.max(0, fac.total - pagadoNuevo);
+          if (pagoEditando.tipo !== 'mtto') // ✅ MTTO: saldo derivado, sin doc de factura
           batch.set(doc(db, coleccionFact, fac.id), {
             montoPagado: pagadoNuevo,
             saldoPendiente: saldoNuevo,
@@ -741,7 +761,7 @@ export function PagosDashboard() {
   const [menuReportes, setMenuReportes] = useState(false);
   const [generandoReporte, setGenerandoReporte] = useState(false);
 
-  const etiquetaTab = tab === 'cliente' ? 'Clientes' : 'Proveedores';
+  const etiquetaTab = tab === 'cliente' ? 'Clientes' : tab === 'proveedor' ? 'Proveedores' : 'MTTO';
   const fechaHoyTexto = () => new Date().toLocaleDateString('es-MX');
 
   const totalesPorMoneda = (filas: { moneda: string; monto: number }[]) => {
@@ -1018,6 +1038,49 @@ export function PagosDashboard() {
   };
 
   const cargarFacturasPendientes = async (tipo: TipoPago): Promise<FacturaPagable[]> => {
+    // ✅ MTTO: los "pendientes" son los GRUPOS POR INVOICE de gastos_mtto,
+    //   agrupados por PROVEEDOR. El saldo se DERIVA de los pagos tipo mtto
+    //   (no se tocan los documentos de gastos).
+    if (tipo === 'mtto') {
+      const snapG = await getDocs(query(collection(db, 'gastos_mtto'), orderBy('createdAt', 'desc'), limit(3000)));
+      const grupos = new Map<string, any>();
+      snapG.docs.forEach((d) => {
+        const g: any = { id: d.id, ...(d.data() as any) };
+        const inv = String(g.invoice || '').trim();
+        if (!inv) return; // sin invoice no es pagable por grupo
+        const clave = inv.toLowerCase();
+        const prev = grupos.get(clave) || { invoice: inv, total: 0, fecha: '', entidad: '', gastos: [] as any[] };
+        prev.total += (Number(g.importe) || 0) + (Number(g.ivaMonto) || 0);
+        const fg = String(g.fecha || g.fechaGasto || '').slice(0, 10);
+        if (fg > prev.fecha) prev.fecha = fg;
+        if (!prev.entidad) prev.entidad = String(g.proveedorNombre || g.proveedor || '').trim() || 'VARIOS';
+        prev.gastos.push(g);
+        grupos.set(clave, prev);
+      });
+      // Pagado por invoice: derivado de los pagos tipo mtto ya registrados.
+      const pagadoPor: Record<string, number> = {};
+      pagos.filter((p) => p.tipo === 'mtto').forEach((p) => {
+        (Array.isArray(p.facturas) ? p.facturas : []).forEach((fa: any) => {
+          pagadoPor[String(fa.facturaId)] = (pagadoPor[String(fa.facturaId)] || 0) + (Number(fa.aplicado) || 0);
+        });
+      });
+      return Array.from(grupos.entries()).map(([clave, gr]) => {
+        const id = `MTTO__${clave}`;
+        const pagado = pagadoPor[id] || 0;
+        return {
+          id,
+          invoice: gr.invoice,
+          fecha: gr.fecha,
+          total: gr.total,
+          montoPagado: pagado,
+          saldo: Math.max(0, gr.total - pagado),
+          moneda: 'MXN',
+          entidadNombre: gr.entidad,
+          raw: { gastos: gr.gastos, operacionesIds: [] },
+        } as FacturaPagable;
+      });
+    }
+
     const coleccion = tipo === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
 
     // Descarga paginada por cursor (misma técnica que Facturación).
@@ -1276,6 +1339,7 @@ export function PagosDashboard() {
       const coleccion = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
       aplicacion.forEach((a) => {
         if (a.aplicado <= 0) return;
+        if (tab === 'mtto') return; // ✅ MTTO: el saldo es derivado; no hay doc de factura
         const fact = seleccionadasOrdenadas.find((f) => f.id === a.facturaId);
         const pagadoNuevo = (fact?.montoPagado || 0) + a.aplicado;
         batch.set(doc(db, coleccion, a.facturaId), {
@@ -1366,6 +1430,7 @@ export function PagosDashboard() {
       <div className="pg-tabs">
         <button className={`pg-tab${tab === 'cliente' ? ' activa' : ''}`} onClick={() => setTab('cliente')}>Pagos de Clientes</button>
         <button className={`pg-tab${tab === 'proveedor' ? ' activa' : ''}`} onClick={() => setTab('proveedor')}>Pagos a Proveedores</button>
+        <button className={`pg-tab${tab === 'mtto' ? ' activa' : ''}`} onClick={() => setTab('mtto')}>Pagos de Mantenimiento y Refacción</button>
       </div>
 
       <div className="pg-buscador">
@@ -1695,6 +1760,7 @@ export function PagosDashboard() {
               <div className="pg-modal-pie">
                 {!editandoFactura ? (
                   <>
+                    {tab !== 'mtto' && (<>
                     <button className="pg-btn-secundario" style={{ marginRight: 'auto', color: '#58a6ff', borderColor: 'rgba(88,166,255,0.4)' }} onClick={() => setEditandoFactura(true)}>
                       <Pencil size={13} style={{ marginRight: '6px', verticalAlign: '-2px' }} />Editar factura
                     </button>
@@ -1704,6 +1770,7 @@ export function PagosDashboard() {
                       title="Rehace los montos desde las operaciones (convenio USD facturado en pesos -> conversión con TC)">
                       {recalculandoFactura ? 'Recalculando…' : 'Recalcular montos'}
                     </button>
+                    </>)}
                     <button className="pg-btn-secundario" onClick={() => setFacturaViendo(null)}>Cerrar</button>
                   </>
                 ) : (
@@ -1859,7 +1926,7 @@ export function PagosDashboard() {
         <div className="pg-overlay">
           <div className="pg-modal pg-modal-registro">
             <div className="pg-modal-encabezado">
-              <h3>Registrar Pago · {tab === 'cliente' ? 'Cliente' : 'Proveedor'}</h3>
+              <h3>Registrar Pago · {tab === 'cliente' ? 'Cliente' : tab === 'proveedor' ? 'Proveedor' : 'Invoice MTTO'}</h3>
               <button className="pg-cerrar" onClick={() => setModalAbierto(false)}><X size={16} /></button>
             </div>
 
@@ -1869,7 +1936,7 @@ export function PagosDashboard() {
               ) : !entidadSel ? (
                 <>
                   {/* PASO 1: elegir cliente/proveedor con facturas pendientes */}
-                  <label className="pg-etq">1. Elige {tab === 'cliente' ? 'el cliente' : 'el proveedor'} (solo aparecen los que tienen facturas con saldo)
+                  <label className="pg-etq">1. Elige {tab === 'cliente' ? 'el cliente' : tab === 'proveedor' ? 'el proveedor' : 'el proveedor del gasto MTTO'} (solo aparecen los que tienen facturas con saldo)
                     <button type="button" className="pg-btn-secundario" style={{ marginLeft: '10px', padding: '4px 10px', color: unirModo ? '#d29922' : undefined, borderColor: unirModo ? 'rgba(210,153,34,0.5)' : undefined }}
                       disabled={uniendoEnt}
                       onClick={() => { setUnirModo((v) => !v); setUnirOrigen(null); }}>
@@ -1907,7 +1974,7 @@ export function PagosDashboard() {
                   {/* ═══ ENCABEZADO estilo QuickBooks: entidad + monto grande ═══ */}
                   <div className="pg-qb-encabezado">
                     <div className="pg-qb-entidad">
-                      <span className="pg-etq">{tab === 'cliente' ? 'Cliente' : 'Proveedor'}</span>
+                      <span className="pg-etq">{tab === 'cliente' ? 'Cliente' : tab === 'proveedor' ? 'Proveedor' : 'Invoice MTTO'}</span>
                       <div className="pg-paso2-encabezado">
                         <span className="pg-entidad">{entidadSel}</span>
                         <button className="pg-btn-liga" onClick={() => { setEntidadSel(''); limpiarPago(); }}>Cambiar</button>
