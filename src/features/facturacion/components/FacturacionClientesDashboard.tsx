@@ -1660,17 +1660,32 @@ export const FacturacionClientesDashboard = () => {
         const cli: any = empresasList.find((e: any) => e.id === editClienteId);
         if (cli) { baseUpdate.clienteId = editClienteId; baseUpdate.clienteNombre = String(cli.nombre || ''); }
       }
+      // ✅ FIX IMPORTE EDITADO: el total capturado se escribe TAMBIÉN en
+      //   subtotalMonedaFactura (el campo que la tabla, las tarjetas y Pagos
+      //   leen primero) — antes solo se escribía subtotalFactura y por eso
+      //   "seguía arrojando el que tenía". Además se recalcula el saldo
+      //   pendiente respetando lo ya pagado.
+      const pagadoActual = Number(facturaEditando.montoPagado) || 0;
+      const saldoNuevo = Math.max(0, totalNum - pagadoActual);
+      const extraPago: any = { saldoPendiente: saldoNuevo };
+      if (pagadoActual > 0.009) extraPago.statusPago = saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL';
+
       const batch = writeBatch(db);
       ids.forEach((id, idx) => {
-        batch.set(doc(db, 'facturas_clientes', id), { ...baseUpdate, subtotalFactura: idx === 0 ? totalNum : 0 }, { merge: true });
+        batch.set(doc(db, 'facturas_clientes', id), {
+          ...baseUpdate,
+          subtotalFactura: idx === 0 ? totalNum : 0,
+          subtotalMonedaFactura: idx === 0 ? totalNum : 0, // ✅ FIX: el campo que se muestra
+          ...(idx === 0 ? extraPago : {}),
+        }, { merge: true });
       });
       await batch.commit();
       setFacturasGlobales(prev => prev.map(f => {
         if (!ids.includes(f.id)) return f;
         const esPrimero = f.id === ids[0];
-        return normalizarFactura({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0 });
+        return normalizarFactura({ ...f, ...baseUpdate, subtotalFactura: esPrimero ? totalNum : 0, subtotalMonedaFactura: esPrimero ? totalNum : 0, ...(esPrimero ? extraPago : {}) });
       }));
-      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? { ...prev, ...baseUpdate, subtotalFactura: totalNum } : prev);
+      setFacturaViendo((prev: any) => (prev && ids.includes(prev.id)) ? { ...prev, ...baseUpdate, subtotalFactura: totalNum, subtotalMonedaFactura: totalNum, ...extraPago } : prev);
       setFacturaEditando(null);
     } catch (e) {
       console.error('Error guardando edición de factura:', e);
