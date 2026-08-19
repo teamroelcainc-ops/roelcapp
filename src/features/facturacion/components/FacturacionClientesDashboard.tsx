@@ -2235,6 +2235,81 @@ export const FacturacionClientesDashboard = () => {
     return refs.join(', ');
   };
 
+  // ✅ NUEVO — QUITAR UNA REFERENCIA (operación) DE LA FACTURA:
+  //   la operación vuelve a "Por facturar", la factura recalcula totales y
+  //   saldo con las operaciones restantes, y si la factura está aplicada en
+  //   PAGOS, el snapshot del pago se actualiza con el nuevo total/saldo.
+  const [quitandoRef, setQuitandoRef] = useState('');
+  const quitarRefDeFactura = async (fv: any, opSnap: any) => {
+    if (quitandoRef) return;
+    const guardadas: any[] = Array.isArray(fv.operacionesGuardadas) ? fv.operacionesGuardadas : [];
+    if (guardadas.length <= 1) {
+      alert('No puedes dejar la factura sin operaciones.\n\nSi quieres deshacerla por completo, usa el botón de eliminar factura (las operaciones vuelven a Por facturar).');
+      return;
+    }
+    const restantes = guardadas.filter((g) => String(g.id) !== String(opSnap.id));
+    const sumConv = restantes.reduce((s, o) => s + (Number(o.monto) || 0), 0);
+    const nativoNuevo = totalNativoFactura({ monedaFacturacion: fv.monedaFacturacion, operacionesGuardadas: restantes });
+    const pagado = Number(fv.montoPagado) || 0;
+    if (nativoNuevo < pagado - 0.009) {
+      alert(`No se puede quitar: el nuevo total (${formatoMoneda(nativoNuevo)}) quedaría por debajo de lo ya pagado (${formatoMoneda(pagado)}).\n\nElimina primero el pago aplicado en el módulo de Pagos y vuelve a intentar.`);
+      return;
+    }
+    if (!window.confirm(`¿Quitar la referencia ${refDeOp(opSnap)} de la factura ${fv.invoice}?\n\n· La operación vuelve a "Por facturar".\n· La factura queda con ${restantes.length} operación(es) y total ${formatoMoneda(nativoNuevo)}.${pagado > 0 ? '\n· El pago aplicado se actualizará con el nuevo total/saldo.' : ''}`)) return;
+    setQuitandoRef(String(opSnap.id));
+    try {
+      const saldoNuevo = Math.max(0, nativoNuevo - pagado);
+      const batch = writeBatch(db);
+      const cambiosFactura: any = {
+        operacionesGuardadas: restantes,
+        operacionesIds: (Array.isArray(fv.operacionesIds) ? fv.operacionesIds : []).filter((id: any) => String(id) !== String(opSnap.id)),
+        operaciones: restantes.map((g) => refDeOp(g)).filter(Boolean),
+        subtotalFactura: sumConv,
+        subtotalMonedaFactura: nativoNuevo,
+        saldoPendiente: saldoNuevo,
+        updatedAt: new Date().toISOString(),
+      };
+      if (pagado > 0.009) cambiosFactura.statusPago = saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL';
+      batch.set(doc(db, 'facturas_clientes', fv.id), cambiosFactura, { merge: true });
+      // La operación vuelve a "Por facturar".
+      batch.set(doc(db, 'operaciones', String(opSnap.id)), {
+        facturaClienteId: '', facturaClienteInvoice: '', facturado: false,
+      }, { merge: true });
+      await batch.commit();
+
+      // ✅ Propagación a PAGOS: actualiza el snapshot de esta factura en los
+      //   pagos donde esté aplicada (total y saldo nuevos).
+      try {
+        const idsPagos: string[] = Array.isArray(fv.pagosIds) ? fv.pagosIds.map(String) : [];
+        for (const pagoId of idsPagos) {
+          const snapPago = await getDoc(doc(db, 'pagos', pagoId));
+          if (!snapPago.exists()) continue;
+          const pData: any = snapPago.data();
+          const facturasPago: any[] = Array.isArray(pData.facturas) ? pData.facturas : [];
+          let cambio = false;
+          const nuevas = facturasPago.map((fa: any) => {
+            if (String(fa.facturaId) !== String(fv.id)) return fa;
+            cambio = true;
+            return { ...fa, total: nativoNuevo, saldoNuevo: Math.max(0, nativoNuevo - pagado) };
+          });
+          if (cambio) await setDoc(doc(db, 'pagos', pagoId), { facturas: nuevas }, { merge: true });
+        }
+      } catch (eP) { console.warn('No se pudo actualizar el snapshot del pago:', eP); }
+
+      console.log(`Quitó la referencia ${refDeOp(opSnap)} de la factura ${fv.invoice} (nuevo total ${formatoMoneda(nativoNuevo)}).`);
+      // Refresco local (tabla + modal).
+      const facturaLocal = { ...fv, ...cambiosFactura };
+      setFacturasGlobales((prev: any[]) => prev.map((x: any) => x.id === fv.id ? normalizarFactura(facturaLocal) : x));
+      setFacturaViendo(normalizarFactura(facturaLocal));
+      setOperacionesGlobales((prev: any[]) => prev.map((o: any) => String(o.id) === String(opSnap.id) ? { ...o, facturaClienteId: '', facturaClienteInvoice: '', facturado: false } : o));
+    } catch (e) {
+      console.error('No se pudo quitar la referencia:', e);
+      alert('No se pudo quitar la referencia. Intenta de nuevo.');
+    } finally {
+      setQuitandoRef('');
+    }
+  };
+
   const renderCeldaFactura = (f: any, colId: string) => {
     switch (colId) {
       case 'statusFactura': return chipStatusFactura(f.statusFactura);
@@ -3329,6 +3404,15 @@ export const FacturacionClientesDashboard = () => {
                             <span className="fcd-x194"><span className="fcd-x1">Convenio:</span> {op.convenioNombre}</span>
                           )}
                           <span className="fcd-x195">{formatoMoneda(op.monto)}</span>
+                          {/* ✅ NUEVO: quitar esta referencia de la factura */}
+                          <span
+                            role="button"
+                            title="Quitar esta referencia de la factura (la operación vuelve a Por facturar)"
+                            onClick={(e: any) => { e.stopPropagation(); quitarRefDeFactura(facturaViendo, op); }}
+                            style={{ marginLeft: '8px', color: quitandoRef === String(op.id) ? '#6e7681' : '#f85149', fontWeight: 700, cursor: 'pointer', padding: '0 4px' }}
+                          >
+                            {quitandoRef === String(op.id) ? '…' : '✕'}
+                          </span>
                         </button>
                       );
                     }) || <span className="fcd-x1">Sin detalle de operaciones.</span>}
