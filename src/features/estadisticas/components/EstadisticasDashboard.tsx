@@ -549,6 +549,13 @@ export function EstadisticasDashboard() {
   // ✅ CAMBIO: la pestaña por línea vive en el MODAL DE DESGLOSE (no en la
   //   tabla). La tabla hereda el formato Transfer vía refsFiltro.formato.
   const [tabLineaDet, setTabLineaDet] = useState<'Todas' | Linea>('Todas');
+  // ✅ NUEVO — FILTROS EN CASCADA DEL DESGLOSE: cada clic dentro del reporte
+  //   agrega un filtro y TODO el desglose se recalcula alrededor de él.
+  const [filtrosDet, setFiltrosDet] = useState<{ etiqueta: string; fn: (op: Op) => boolean }[]>([]);
+  const agregarFiltroDet = (etiqueta: string, fn: (op: Op) => boolean) => {
+    setFiltrosDet((prev) => prev.some((x) => x.etiqueta === etiqueta) ? prev : [...prev, { etiqueta, fn }]);
+  };
+  useEffect(() => { setFiltrosDet([]); }, [detalleSel?.titulo]);
   useEffect(() => { setTabLineaDet('Todas'); }, [detalleSel?.titulo]);
   useEffect(() => { setFiltrosCols({}); }, [refsFiltro]);
 
@@ -564,9 +571,11 @@ export function EstadisticasDashboard() {
     if (detalleSel === null) return null;
     // ✅ Pestaña por línea del DESGLOSE: todos los paneles se recalculan
     //   sobre la línea seleccionada.
-    const delSel = (tabLineaDet === 'Todas' || detalleSel.esLinea)
+    let delSel = (tabLineaDet === 'Todas' || detalleSel.esLinea)
       ? detalleSel.ops
       : detalleSel.ops.filter((op: Op) => lineaDeOp(op) === tabLineaDet);
+    // ✅ Filtros en cascada: todo el reporte gira alrededor de la selección.
+    filtrosDet.forEach((fx) => { delSel = delSel.filter(fx.fn); });
     const porLinea = { Transfer: 0, 'Logística': 0, Fletes: 0, Otro: 0 } as Record<Linea, number>;
     const porMovimiento = { 'Importación': 0, 'Exportación': 0, 'Movimiento': 0, 'Sin clasificar': 0 };
     let trompos = 0;
@@ -612,7 +621,7 @@ export function EstadisticasDashboard() {
       clientes: contarPor(delSel, (op) => String(op.clientePagaNombre || op.clienteNombre || op.clientePaga || '')),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detalleSel, tabLineaDet]);
+  }, [detalleSel, tabLineaDet, filtrosDet]);
 
 
   const COLUMNAS_TRANSFER: { campo: string; etiqueta: string; num?: boolean }[] = [
@@ -1473,7 +1482,7 @@ export function EstadisticasDashboard() {
                 )}
                 {/* Tabla de la pestaña activa (hereda el formato Transfer) */}
                 <button type="button" className="est-btn"
-                  onClick={() => abrirRefsDesdeDetalle({ etiqueta: tabLineaDet === 'Todas' ? detalleSel.titulo : `${detalleSel.titulo} · ${tabLineaDet}`, ops: detalle.ops })}>
+                  onClick={() => abrirRefsDesdeDetalle({ etiqueta: [tabLineaDet === 'Todas' ? detalleSel.titulo : `${detalleSel.titulo} · ${tabLineaDet}`, ...filtrosDet.map((fx) => fx.etiqueta)].join(' · '), ops: detalle.ops })}>
                   Ver operaciones{tabLineaDet !== 'Todas' ? ` (${detalle.ops.length})` : ''}
                 </button>
                 {/* ✅ NUEVO: descarga directa desde el desglose (pestaña activa) */}
@@ -1514,7 +1523,7 @@ export function EstadisticasDashboard() {
                         const pct = (cuantas / totalOps) * 100;
                         return (
                           <button type="button" className="est-rep-rank-item" key={nombre}
-                            onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · ${titulo}: ${nombre}`, ops: detalle.ops.filter((op) => filtrar(op, nombre)) })}>
+                            onClick={() => agregarFiltroDet(`${titulo}: ${nombre}`, (op) => filtrar(op, nombre))}>
                             <span className={`est-rep-rank-num${idx < 3 ? ' top' : ''}`}>{idx + 1}</span>
                             <span className="est-rep-rank-info">
                               <span className="est-rep-rank-nombre">{nombre}</span>
@@ -1550,6 +1559,19 @@ export function EstadisticasDashboard() {
                       </div>
                     )}
 
+                    {/* ✅ Filtros activos (clic en ✕ para quitar) */}
+                    {filtrosDet.length > 0 && (
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center', margin: '8px 0 0 0' }}>
+                        {filtrosDet.map((fx) => (
+                          <span key={fx.etiqueta} style={{ background: 'rgba(216,67,21,0.14)', border: '1px solid #D84315', borderRadius: '999px', color: '#f0f6fc', fontSize: '0.74rem', padding: '3px 10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            {fx.etiqueta}
+                            <span role="button" style={{ cursor: 'pointer', color: '#D84315', fontWeight: 700 }} onClick={() => setFiltrosDet((prev) => prev.filter((y) => y.etiqueta !== fx.etiqueta))}>✕</span>
+                          </span>
+                        ))}
+                        <button type="button" className="est-btn" style={{ padding: '3px 10px', fontSize: '0.72rem' }} onClick={() => setFiltrosDet([])}>Limpiar filtros</button>
+                      </div>
+                    )}
+
                     {/* ── FILA 1: KPIs ── */}
                     <div className="est-rep-kpis">
                       <div className="est-rep-card est-rep-kpi">
@@ -1560,13 +1582,13 @@ export function EstadisticasDashboard() {
                         <span className="est-rep-titulo">Facturación por moneda</span>
                         <div className="est-rep-monedas">
                           <button type="button" className="est-rep-moneda" disabled={detalle.monedas.USD.n === 0}
-                            onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Dólares (USD)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'USD') })}>
+                            onClick={() => agregarFiltroDet('Moneda: USD', (op) => monedaClienteDe(op) === 'USD')}>
                             <span className="est-rep-moneda-etq">Dólares (USD)</span>
                             <span className="est-rep-moneda-valor usd">{num(detalle.monedas.USD.n)} <small>({pctUSD.toFixed(0)}%)</small></span>
                             <span className="est-rep-moneda-monto">{money(detalle.monedas.USD.dol)} USD{detalle.monedas.USD.conv > 0 ? ` ≈ ${money(detalle.monedas.USD.conv)} MXN` : ''}</span>
                           </button>
                           <button type="button" className="est-rep-moneda" disabled={detalle.monedas.MXN.n === 0}
-                            onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Pesos (MXN)`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'MXN') })}>
+                            onClick={() => agregarFiltroDet('Moneda: MXN', (op) => monedaClienteDe(op) === 'MXN')}>
                             <span className="est-rep-moneda-etq">Pesos (MXN)</span>
                             <span className="est-rep-moneda-valor mxn">{num(detalle.monedas.MXN.n)} <small>({pctMXN.toFixed(0)}%)</small></span>
                             <span className="est-rep-moneda-monto">{money(detalle.monedas.MXN.pes)} MXN</span>
@@ -1575,12 +1597,12 @@ export function EstadisticasDashboard() {
                         {(detalle.monedas.Mixta.n > 0 || detalle.monedas['Sin dato'].n > 0) && (
                           <div className="est-rep-moneda-extra">
                             {detalle.monedas.Mixta.n > 0 && (
-                              <button type="button" onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Moneda mixta`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Mixta') })}>
+                              <button type="button" onClick={() => agregarFiltroDet('Moneda: Mixta', (op) => monedaClienteDe(op) === 'Mixta')}>
                                 Mixta: {num(detalle.monedas.Mixta.n)}
                               </button>
                             )}
                             {detalle.monedas['Sin dato'].n > 0 && (
-                              <button type="button" onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Sin moneda`, ops: detalle.ops.filter((op) => monedaClienteDe(op) === 'Sin dato') })}>
+                              <button type="button" onClick={() => agregarFiltroDet('Moneda: Sin dato', (op) => monedaClienteDe(op) === 'Sin dato')}>
                                 Sin dato: {num(detalle.monedas['Sin dato'].n)}
                               </button>
                             )}
@@ -1590,7 +1612,7 @@ export function EstadisticasDashboard() {
                       <div className="est-rep-card est-rep-kpi">
                         <span className="est-rep-titulo">Operaciones Trompo</span>
                         {detalle.trompos > 0
-                          ? <button type="button" className="est-rep-kpi-numero clicable" onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Trompo`, ops: detalle.ops.filter((op) => esTrompo(op)) })}>{num(detalle.trompos)}</button>
+                          ? <button type="button" className="est-rep-kpi-numero clicable" onClick={() => agregarFiltroDet('Trompo', (op) => esTrompo(op))}>{num(detalle.trompos)}</button>
                           : <span className="est-rep-kpi-numero apagado">0</span>}
                       </div>
                     </div>
@@ -1605,7 +1627,7 @@ export function EstadisticasDashboard() {
                             const alto = (n / maxMov) * 100;
                             return (
                               <button type="button" key={mv} className="est-rep-barra-col" disabled={n === 0}
-                                onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · ${mv}`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === mv) })}>
+                                onClick={() => agregarFiltroDet(`Movimiento: ${mv}`, (op) => movimientoDeOp(op) === mv)}>
                                 <span className="est-rep-barra-cifra">{n > 0 ? `${num(n)} (${pct.toFixed(0)}%)` : ''}</span>
                                 <span className="est-rep-barra-tubo"><i style={{ height: `${alto}%`, backgroundColor: colorMov[mv] }} /></span>
                                 <span className="est-rep-barra-etq">{mv}</span>
@@ -1623,11 +1645,43 @@ export function EstadisticasDashboard() {
                     </div>
 
                     {/* ── FILA 3: RANKINGS ── */}
+                    {/* ✅ NUEVO — tabla por día calendario: operaciones y dinero */}
+                    <div className="est-rep-card" style={{ marginBottom: '12px' }}>
+                      <span className="est-rep-titulo">Por día del periodo (operaciones y dinero)</span>
+                      <div style={{ maxHeight: '240px', overflowY: 'auto', marginTop: '8px' }}>
+                        <table className="est-tabla" style={{ width: '100%' }}>
+                          <thead><tr><th>FECHA</th><th style={{ textAlign: 'right' }}>OPS</th><th style={{ textAlign: 'right' }}>USD</th><th style={{ textAlign: 'right' }}>MXN</th><th style={{ textAlign: 'right' }}>TOTAL (CONV MXN)</th></tr></thead>
+                          <tbody>
+                            {(() => {
+                              const porFecha = new Map<string, { n: number; dol: number; pes: number; conv: number }>();
+                              detalle.ops.forEach((op) => {
+                                const fch = fechaISODe(op);
+                                if (!fch) return;
+                                const p = porFecha.get(fch) || { n: 0, dol: 0, pes: 0, conv: 0 };
+                                const m = montoClienteDe(op);
+                                p.n += 1; p.dol += m.dol; p.pes += m.pes; p.conv += m.conv;
+                                porFecha.set(fch, p);
+                              });
+                              return Array.from(porFecha.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([fch, p]) => (
+                                <tr key={fch} className="est-fila-clicable" onClick={() => agregarFiltroDet(`Fecha: ${fch}`, (op) => fechaISODe(op) === fch)} title="Filtrar el desglose por este día">
+                                  <td>{fch}</td>
+                                  <td style={{ textAlign: 'right' }}>{num(p.n)}</td>
+                                  <td style={{ textAlign: 'right' }}>{p.dol > 0 ? `$${nummx(p.dol)}` : '—'}</td>
+                                  <td style={{ textAlign: 'right' }}>{p.pes > 0 ? `$${nummx(p.pes)}` : '—'}</td>
+                                  <td style={{ textAlign: 'right', fontWeight: 700 }}>{`$${nummx(p.conv)}`}</td>
+                                </tr>
+                              ));
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
                     <div className="est-rep-card" style={{ marginBottom: '12px' }}>
                       <span className="est-rep-titulo">Operaciones por día de la semana</span>
                       <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '8px' }}>
                         {(['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] as const).map((dnom) => (
-                          <div key={dnom} style={{ flex: '1 1 90px', textAlign: 'center', background: '#0d1117', border: '1px solid #21262d', borderRadius: '8px', padding: '8px 6px' }}>
+                          <div key={dnom} role="button" onClick={() => agregarFiltroDet(`Día: ${dnom}`, (op) => { const fch = fechaISODe(op); if (!fch) return false; const d = new Date(`${fch}T12:00:00`); const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']; return !isNaN(d.getTime()) && DIAS[d.getDay()] === dnom; })} style={{ flex: '1 1 90px', textAlign: 'center', background: '#0d1117', border: '1px solid #21262d', borderRadius: '8px', padding: '8px 6px', cursor: 'pointer' }}>
                             <div style={{ color: '#8b949e', fontSize: '0.68rem', textTransform: 'uppercase' }}>{dnom}</div>
                             <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '1.05rem' }}>{detalle.porDia[dnom] || 0}</div>
                             <div style={{ color: '#6e7681', fontSize: '0.66rem' }}>{detalle.ops.length > 0 ? `${(((detalle.porDia[dnom] || 0) / detalle.ops.length) * 100).toFixed(0)}%` : '0%'}</div>

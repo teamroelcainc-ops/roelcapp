@@ -557,3 +557,6 @@ button.est-detalle-item {
 .est-refs-join-msg { margin-left: auto; color: #d29922; font-size: 0.72rem; }
 .est-refs-join-msg.ok { color: #3fb950; }
 .est-celda-num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* ✅ V00091 — desglose a pantalla completa */
+.est-detalle { width: 100vw !important; max-width: 100vw !important; height: 100vh !important; max-height: 100vh !important; border-radius: 0 !important; }
