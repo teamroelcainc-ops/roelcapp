@@ -594,6 +594,18 @@ export function EstadisticasDashboard() {
       porLinea,
       porMovimiento,
       trompos,
+      // ✅ NUEVO — operaciones por DÍA DE LA SEMANA.
+      porDia: (() => {
+        const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const c: Record<string, number> = { Lunes: 0, Martes: 0, 'Miércoles': 0, Jueves: 0, Viernes: 0, 'Sábado': 0, Domingo: 0 };
+        delSel.forEach((op: Op) => {
+          const fch = fechaISODe(op);
+          if (!fch) return;
+          const d = new Date(`${fch}T12:00:00`);
+          if (!isNaN(d.getTime())) c[DIAS[d.getDay()]] += 1;
+        });
+        return c;
+      })(),
       monedas,
       unidades: contarPor(delSel, (op) => String(op.unidadNombre || op.unidad || '')),
       operadores: contarPor(delSel, (op) => String(op.operadorNombre || op.operador || '')),
@@ -1359,11 +1371,12 @@ export function EstadisticasDashboard() {
                   );
                 })}
                 <tr className="est-fila-general">
-                  <td>TOTAL DEL RANGO</td>
-                  <td>{num(servicios.porMes.reduce((a, s) => a + s.transfer, 0))}</td>
-                  <td>{num(servicios.porMes.reduce((a, s) => a + s.logistica, 0))}</td>
-                  <td>{num(servicios.porMes.reduce((a, s) => a + s.fletes, 0))}</td>
-                  <td className="est-monto">{num(servicios.porMes.reduce((a, s) => a + s.transfer + s.logistica + s.fletes, 0))}</td>
+                  {/* ✅ NUEVO: el total del rango abre el desglose con TODO */}
+                  <td className="est-celda-link" style={{ cursor: 'pointer' }} onClick={() => { setDetalleSel({ titulo: 'Total del rango', ops }); setRefsFiltro(null); }} title="Ver el desglose de todo el rango">TOTAL DEL RANGO</td>
+                  <td className="est-celda-link" style={{ cursor: 'pointer' }} onClick={() => { setDetalleSel({ titulo: 'Total del rango · Transfer', ops: ops.filter((o) => lineaDeOp(o) === 'Transfer'), esLinea: true }); setRefsFiltro(null); }}>{num(servicios.porMes.reduce((a, s) => a + s.transfer, 0))}</td>
+                  <td className="est-celda-link" style={{ cursor: 'pointer' }} onClick={() => { setDetalleSel({ titulo: 'Total del rango · Logística', ops: ops.filter((o) => lineaDeOp(o) === 'Logística'), esLinea: true }); setRefsFiltro(null); }}>{num(servicios.porMes.reduce((a, s) => a + s.logistica, 0))}</td>
+                  <td className="est-celda-link" style={{ cursor: 'pointer' }} onClick={() => { setDetalleSel({ titulo: 'Total del rango · Fletes', ops: ops.filter((o) => lineaDeOp(o) === 'Fletes'), esLinea: true }); setRefsFiltro(null); }}>{num(servicios.porMes.reduce((a, s) => a + s.fletes, 0))}</td>
+                  <td className="est-monto est-celda-link" style={{ cursor: 'pointer' }} onClick={() => { setDetalleSel({ titulo: 'Total del rango', ops }); setRefsFiltro(null); }}>{num(servicios.porMes.reduce((a, s) => a + s.transfer + s.logistica + s.fletes, 0))}</td>
                 </tr>
               </tbody>
             </table>
@@ -1610,6 +1623,18 @@ export function EstadisticasDashboard() {
                     </div>
 
                     {/* ── FILA 3: RANKINGS ── */}
+                    <div className="est-rep-card" style={{ marginBottom: '12px' }}>
+                      <span className="est-rep-titulo">Operaciones por día de la semana</span>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '8px' }}>
+                        {(['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'] as const).map((dnom) => (
+                          <div key={dnom} style={{ flex: '1 1 90px', textAlign: 'center', background: '#0d1117', border: '1px solid #21262d', borderRadius: '8px', padding: '8px 6px' }}>
+                            <div style={{ color: '#8b949e', fontSize: '0.68rem', textTransform: 'uppercase' }}>{dnom}</div>
+                            <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '1.05rem' }}>{detalle.porDia[dnom] || 0}</div>
+                            <div style={{ color: '#6e7681', fontSize: '0.66rem' }}>{detalle.ops.length > 0 ? `${(((detalle.porDia[dnom] || 0) / detalle.ops.length) * 100).toFixed(0)}%` : '0%'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                     <div className="est-rep-listas">
                       {!detalleSel.ocultarClientes && (
                         <RankLista titulo="Clientes" datos={detalle.clientes} colorBarra="#D84315"
