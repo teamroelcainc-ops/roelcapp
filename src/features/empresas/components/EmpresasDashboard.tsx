@@ -725,10 +725,31 @@ const EmpresasDashboard = () => {
     });
   }, [registrosListos, filtroActivo, busqueda]);
 
-  const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
+  // ✅ NUEVO — ORDEN POR COLUMNA (clic en el encabezado: asc/desc), mismo
+  //   patrón que Operaciones Activas.
+  const [ordenEmp, setOrdenEmp] = useState<{ col: string; dir: 1 | -1 } | null>(null);
+  const clickOrdenEmp = (col: string) => setOrdenEmp((prev) => prev && prev.col === col ? { col, dir: prev.dir === 1 ? -1 : 1 } : { col, dir: 1 });
+  const registrosOrdenados = useMemo(() => {
+    if (!ordenEmp) return registrosFiltrados;
+    const { col, dir } = ordenEmp;
+    const valor = (e: any): string | number => {
+      const v = e?.[col];
+      if (v === undefined || v === null) return '';
+      const n = Number(String(v).replace(/[$,\s]/g, ''));
+      if (String(v).trim() !== '' && !isNaN(n) && /^[\d.,$\s-]+$/.test(String(v))) return n;
+      return String(v).toLowerCase();
+    };
+    return [...registrosFiltrados].sort((a, b) => {
+      const va = valor(a), vb = valor(b);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), 'es') * dir;
+    });
+  }, [registrosFiltrados, ordenEmp]);
+
+  const totalPaginas = Math.ceil(registrosOrdenados.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const registrosEnPantalla = registrosFiltrados.slice(indicePrimerRegistro, indiceUltimoRegistro);
+  const registrosEnPantalla = registrosOrdenados.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -965,8 +986,9 @@ const EmpresasDashboard = () => {
                   <th className="ed-x24" style={{ width: '36px', textAlign: 'center' }} title="Seleccionar para unir duplicados"></th>
                   <th className="ed-x24">Acciones</th>
                   {columnasTabla.filter(c => c.visible).map(col => (
-                    <th className="ed-x25" key={`th_${col.id}`}>
-                      {col.label}
+                    <th className="ed-x25" key={`th_${col.id}`} style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      title="Clic para ordenar" onClick={() => clickOrdenEmp(col.id)}>
+                      {col.label}{ordenEmp?.col === col.id ? (ordenEmp.dir === 1 ? ' ▲' : ' ▼') : ''}
                     </th>
                   ))}
                 </tr>

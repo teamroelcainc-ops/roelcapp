@@ -2854,8 +2854,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnUnidad</span></label>
-                        {/* NO editable: se asigna automáticamente según el proveedor. */}
-                        <input type="text" className="form-control" value={nombreMoneda(formData.facturadoEnUnidad) || ''} readOnly placeholder="Se asigna según el proveedor" title="Se asigna automáticamente según el proveedor (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaProv, fontWeight: colorMonedaProv ? 700 : undefined }} />
+                        {/* ✅ CAMBIO: ahora EDITABLE — se precarga del proveedor,
+                            pero puedes corregir en qué moneda se factura. */}
+                        <select className="form-control" value={formData.facturadoEnUnidad || ''}
+                          onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnUnidad: e.target.value }))}
+                          title="Se precarga según el proveedor; puedes corregirla"
+                          style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 700 : undefined }}>
+                          <option value="">— Sin definir —</option>
+                          <option value={ID_USD}>Dólares</option>
+                          <option value={ID_MXN}>Pesos</option>
+                        </select>
                       </div>
                       )}
                     </div>
@@ -3044,8 +3052,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnCobrar</span></label>
-                        {/* NO editable: se asigna automáticamente según el cliente. */}
-                        <input type="text" className="form-control" value={nombreMoneda(formData.facturadoEnCobrar) || ''} readOnly placeholder="Se asigna según el cliente" title="Se asigna automáticamente según el cliente (no editable)" style={{ opacity: 0.9, cursor: 'not-allowed', color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 700 : undefined }} />
+                        {/* ✅ CAMBIO: ahora EDITABLE — se precarga del cliente,
+                            pero puedes corregir en qué moneda se factura. */}
+                        <select className="form-control" value={formData.facturadoEnCobrar || ''}
+                          onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnCobrar: e.target.value }))}
+                          title="Se precarga según el cliente; puedes corregirla"
+                          style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 700 : undefined }}>
+                          <option value="">— Sin definir —</option>
+                          <option value={ID_USD}>Dólares</option>
+                          <option value={ID_MXN}>Pesos</option>
+                        </select>
                       </div>
                       <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.montoConvenioCliente || 0} readOnly={campoBloqueadoAut('montoConvenioCliente')} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda></div>
                       {/* ✅ NUEVO: la MONEDA DEL MONTO ahora es VISIBLE y corregible.
