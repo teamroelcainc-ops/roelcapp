@@ -491,6 +491,9 @@ export function EstadisticasDashboard() {
   const textoDeOp = (op: Op) => norm(`${op.convenioNombre || ''} ${op.tipoOperacionNombre || op.tipoOperacion || ''} ${op.tipoServicioNombre || op.tipoServicio || ''}`);
 
   const movimientoDeOp = (op: Op): 'Importación' | 'Exportación' | 'Movimiento' | 'Sin clasificar' => {
+    // ✅ NUEVO: la clasificación MANUAL (modal "Sin clasificar") manda.
+    const manual = String((op as any).movimientoManual || '');
+    if (manual === 'Importación' || manual === 'Exportación' || manual === 'Movimiento') return manual as any;
     const t = textoDeOp(op);
     if (t.includes('impo')) return 'Importación';
     if (t.includes('expo')) return 'Exportación';
@@ -552,6 +555,20 @@ export function EstadisticasDashboard() {
   // ✅ NUEVO — FILTROS EN CASCADA DEL DESGLOSE: cada clic dentro del reporte
   //   agrega un filtro y TODO el desglose se recalcula alrededor de él.
   const [filtrosDet, setFiltrosDet] = useState<{ etiqueta: string; fn: (op: Op) => boolean }[]>([]);
+  // ✅ NUEVO — CLASIFICAR MANUALMENTE las operaciones "Sin clasificar".
+  const [clasifAbierto, setClasifAbierto] = useState(false);
+  const [clasifGuardando, setClasifGuardando] = useState('');
+  const clasificarOp = async (op: Op, mov: 'Importación' | 'Exportación' | 'Movimiento') => {
+    setClasifGuardando(String(op.id));
+    try {
+      const { updateDoc: upd, doc: docRef } = await import('firebase/firestore');
+      await upd(docRef(db, 'operaciones', String(op.id)), { movimientoManual: mov });
+      setOps((prev) => prev.map((o) => o.id === op.id ? { ...o, movimientoManual: mov } as any : o));
+      if (detalleSel) setDetalleSel((prev) => prev ? { ...prev, ops: prev.ops.map((o: any) => o.id === op.id ? { ...o, movimientoManual: mov } : o) } : prev);
+    } catch (e) { console.error(e); alert('No se pudo clasificar. Intenta de nuevo.'); }
+    setClasifGuardando('');
+  };
+
   const agregarFiltroDet = (etiqueta: string, fn: (op: Op) => boolean) => {
     setFiltrosDet((prev) => prev.some((x) => x.etiqueta === etiqueta) ? prev : [...prev, { etiqueta, fn }]);
   };
@@ -1407,7 +1424,8 @@ export function EstadisticasDashboard() {
                     </tr>
                   );
                 })}
-                <tr className="est-fila-general">
+                <tr className="est-fila-general" style={{ cursor: 'pointer' }} title="Ver el desglose de todo lo listado"
+                  onClick={() => { const base = lineaVista === 'Globales' ? ops : ops.filter((o) => lineaDeOp(o) === lineaVista); setDetalleSel({ titulo: `Ventas · Total${lineaVista === 'Globales' ? '' : ` · ${lineaVista}`}`, ops: base, esLinea: lineaVista !== 'Globales' }); setRefsFiltro(null); }}>
                   <td>TOTAL</td>
                   <td>{money(ventas.porMes.reduce((a, v) => a + v.pes, 0))}</td>
                   <td className="est-dolares">{money(ventas.porMes.reduce((a, v) => a + v.dol, 0))}</td>
@@ -1505,10 +1523,10 @@ export function EstadisticasDashboard() {
                 const pctUSD = (detalle.monedas.USD.n / totalOps) * 100;
                 const pctMXN = (detalle.monedas.MXN.n / totalOps) * 100;
                 // ── Barras de Movimiento ──
-                const movs = (['Importación', 'Exportación', 'Movimiento'] as const)
-                  .map((mv) => ({ mv, n: detalle.porMovimiento[mv] }));
+                const movs = (['Importación', 'Exportación', 'Movimiento', 'Trompos'] as const)
+                  .map((mv) => ({ mv, n: mv === 'Trompos' ? detalle.trompos : detalle.porMovimiento[mv] }));
                 const maxMov = Math.max(1, ...movs.map((m) => m.n));
-                const colorMov: Record<string, string> = { 'Importación': '#58a6ff', 'Exportación': '#3fb950', 'Movimiento': '#d29922' };
+                const colorMov: Record<string, string> = { 'Importación': '#58a6ff', 'Exportación': '#3fb950', 'Movimiento': '#d29922', 'Trompos': '#bc8cff' };
                 // ── Listas rankeadas ──
                 const RankLista = ({ titulo, datos, filtrar, colorBarra }: {
                   titulo: string;
@@ -1572,6 +1590,33 @@ export function EstadisticasDashboard() {
                       </div>
                     )}
 
+                    {/* ✅ MODAL — clasificar operaciones sin movimiento */}
+                    {clasifAbierto && (
+                      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2500, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setClasifAbierto(false)}>
+                        <div style={{ width: 'min(680px, 94vw)', maxHeight: '80vh', overflowY: 'auto', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '18px' }} onClick={(e) => e.stopPropagation()}>
+                          <h3 style={{ margin: '0 0 10px 0', color: '#f0f6fc', fontSize: '1rem' }}>Clasificar operaciones sin movimiento</h3>
+                          {detalle.ops.filter((op) => movimientoDeOp(op) === 'Sin clasificar').length === 0 ? (
+                            <p style={{ color: '#3fb950' }}>¡Todo clasificado! ✅</p>
+                          ) : detalle.ops.filter((op) => movimientoDeOp(op) === 'Sin clasificar').map((op) => (
+                            <div key={op.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', borderBottom: '1px solid #21262d', flexWrap: 'wrap' }}>
+                              <span style={{ color: '#D84315', fontFamily: 'monospace', fontWeight: 700 }}>{op.ref || String(op.id).slice(0, 8)}</span>
+                              <span style={{ color: '#8b949e', fontSize: '0.78rem', flex: 1, minWidth: '160px' }}>{fechaISODe(op)} · {String(op.clientePagaNombre || op.clienteNombre || '')} · {String(op.convenioNombre || '—')}</span>
+                              {(['Importación', 'Exportación', 'Movimiento'] as const).map((mv) => (
+                                <button key={mv} type="button" className="est-btn" disabled={clasifGuardando === String(op.id)}
+                                  style={{ padding: '4px 10px', fontSize: '0.72rem' }}
+                                  onClick={() => clasificarOp(op, mv)}>
+                                  {clasifGuardando === String(op.id) ? '…' : mv}
+                                </button>
+                              ))}
+                            </div>
+                          ))}
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                            <button type="button" className="est-btn" onClick={() => setClasifAbierto(false)}>Cerrar</button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
                     {/* ── FILA 1: KPIs ── */}
                     <div className="est-rep-kpis">
                       <div className="est-rep-card est-rep-kpi">
@@ -1627,7 +1672,7 @@ export function EstadisticasDashboard() {
                             const alto = (n / maxMov) * 100;
                             return (
                               <button type="button" key={mv} className="est-rep-barra-col" disabled={n === 0}
-                                onClick={() => agregarFiltroDet(`Movimiento: ${mv}`, (op) => movimientoDeOp(op) === mv)}>
+                                onClick={() => mv === 'Trompos' ? agregarFiltroDet('Trompo', (op) => esTrompo(op)) : agregarFiltroDet(`Movimiento: ${mv}`, (op) => movimientoDeOp(op) === mv)}>
                                 <span className="est-rep-barra-cifra">{n > 0 ? `${num(n)} (${pct.toFixed(0)}%)` : ''}</span>
                                 <span className="est-rep-barra-tubo"><i style={{ height: `${alto}%`, backgroundColor: colorMov[mv] }} /></span>
                                 <span className="est-rep-barra-etq">{mv}</span>
@@ -1638,7 +1683,7 @@ export function EstadisticasDashboard() {
                         {detalle.porMovimiento['Sin clasificar'] > 0 && (
                           <button type="button" className="est-rep-sinclas"
                             onClick={() => abrirRefsDesdeDetalle({ etiqueta: `${detalleSel.titulo} · Sin clasificar`, ops: detalle.ops.filter((op) => movimientoDeOp(op) === 'Sin clasificar') })}>
-                            Sin clasificar: {num(detalle.porMovimiento['Sin clasificar'])}
+                            <span role="button" style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setClasifAbierto(true)} title="Clasificar manualmente">Sin clasificar: {num(detalle.porMovimiento['Sin clasificar'])} · clic para clasificar</span>
                           </button>
                         )}
                       </div>
@@ -1664,7 +1709,7 @@ export function EstadisticasDashboard() {
                               });
                               return Array.from(porFecha.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([fch, p]) => (
                                 <tr key={fch} className="est-fila-clicable" onClick={() => agregarFiltroDet(`Fecha: ${fch}`, (op) => fechaISODe(op) === fch)} title="Filtrar el desglose por este día">
-                                  <td>{fch}</td>
+                                  <td>{fch} <span style={{ color: '#8b949e', fontSize: '0.72rem' }}>({['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][new Date(`${fch}T12:00:00`).getDay()]})</span></td>
                                   <td style={{ textAlign: 'right' }}>{num(p.n)}</td>
                                   <td style={{ textAlign: 'right' }}>{p.dol > 0 ? `$${nummx(p.dol)}` : '—'}</td>
                                   <td style={{ textAlign: 'right' }}>{p.pes > 0 ? `$${nummx(p.pes)}` : '—'}</td>
