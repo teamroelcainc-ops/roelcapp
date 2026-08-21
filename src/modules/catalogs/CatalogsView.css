@@ -1,0 +1,53 @@
+.catalogs {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.catalogs__menu {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 9px;
+  position: sticky;
+  top: calc(var(--topbar-h) + 16px);
+}
+.catalogs__menu-item {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  font-family: var(--f-body);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 0.13s ease;
+}
+.catalogs__menu-item:hover { background: var(--green-50); }
+.catalogs__menu-item--active { background: var(--green-600); color: #fff; font-weight: 600; }
+
+.catalogs__panel { min-width: 0; }
+
+@media (max-width: 900px) {
+  .catalogs { grid-template-columns: 1fr; }
+  .catalogs__menu {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
+
+/* Aviso de catalogos limitados a un solo registro (ej. Payment Terms). */
+.catalogs__limit {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+  align-self: center;
+}

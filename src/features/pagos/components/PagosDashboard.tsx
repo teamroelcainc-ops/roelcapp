@@ -745,17 +745,45 @@ export function PagosDashboard() {
     return () => unsubscribe();
   }, [tab]);
 
+  // ✅ NUEVO — ORDEN POR COLUMNA (mismo patrón que Operaciones Activas):
+  //   clic en el encabezado ordena asc, segundo clic desc.
+  const [ordenPagos, setOrdenPagos] = useState<{ col: string; dir: 1 | -1 }>({ col: 'fecha', dir: -1 });
+  const clickOrdenPagos = (col: string) => setOrdenPagos((prev) => prev.col === col ? { col, dir: prev.dir === 1 ? -1 : 1 } : { col, dir: 1 });
+  const flechaOrden = (col: string) => ordenPagos.col === col ? (ordenPagos.dir === 1 ? ' ▲' : ' ▼') : '';
+  const valorOrdenPago = (p: PagoDoc, col: string): string | number => {
+    switch (col) {
+      case 'fecha': return claveFecha(p.fecha || '');
+      case 'numero': return String(p.numeroPago || '').toLowerCase();
+      case 'entidad': return String(p.entidadNombre || '').toLowerCase();
+      case 'metodo': return String(p.metodoPago || '').toLowerCase();
+      case 'monto': return Number(p.monto) || 0;
+      case 'facturas': return (p.facturas || []).length;
+      case 'comprobante': return p.pdfUrl ? 1 : 0;
+      default: return '';
+    }
+  };
+
   const pagosFiltrados = useMemo(() => {
-    if (!busqueda.trim()) return pagos;
-    const b = busqueda.toLowerCase();
-    return pagos.filter((p) =>
-      p.entidadNombre?.toLowerCase().includes(b) ||
-      p.numeroPago?.toLowerCase().includes(b) ||
-      p.referencia?.toLowerCase().includes(b) ||
-      p.metodoPago?.toLowerCase().includes(b) ||
-      p.facturas?.some((f) => f.invoice?.toLowerCase().includes(b))
-    );
-  }, [pagos, busqueda]);
+    let lista = pagos;
+    if (busqueda.trim()) {
+      const b = busqueda.toLowerCase();
+      lista = pagos.filter((p) =>
+        p.entidadNombre?.toLowerCase().includes(b) ||
+        p.numeroPago?.toLowerCase().includes(b) ||
+        p.referencia?.toLowerCase().includes(b) ||
+        p.metodoPago?.toLowerCase().includes(b) ||
+        p.facturas?.some((f) => f.invoice?.toLowerCase().includes(b))
+      );
+    }
+    // ✅ Orden por la columna activa.
+    const { col, dir } = ordenPagos;
+    return [...lista].sort((a, b2) => {
+      const va = valorOrdenPago(a, col), vb = valorOrdenPago(b2, col);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), 'es') * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagos, busqueda, ordenPagos]);
 
   // ── Reportes (Excel / PDF) ──
   const [menuReportes, setMenuReportes] = useState(false);
@@ -1462,13 +1490,13 @@ export function PagosDashboard() {
           <thead>
             <tr>
               <th>ACCIONES</th>
-              <th>FECHA</th>
-              <th># PAGO</th>
-              <th>{tab === 'cliente' ? 'CLIENTE' : 'PROVEEDOR'}</th>
-              <th>MÉTODO</th>
-              <th>MONTO</th>
-              <th>FACTURAS</th>
-              <th>COMPROBANTE</th>
+              <th style={{ cursor: 'pointer' }} onClick={() => clickOrdenPagos('fecha')}>FECHA{flechaOrden('fecha')}</th>
+              <th style={{ cursor: 'pointer' }} onClick={() => clickOrdenPagos('numero')}># PAGO{flechaOrden('numero')}</th>
+              <th style={{ cursor: 'pointer' }} onClick={() => clickOrdenPagos('entidad')}>{tab === 'cliente' ? 'CLIENTE' : tab === 'proveedor' ? 'PROVEEDOR' : 'PROVEEDOR MTTO'}{flechaOrden('entidad')}</th>
+              <th style={{ cursor: 'pointer' }} onClick={() => clickOrdenPagos('metodo')}>MÉTODO{flechaOrden('metodo')}</th>
+              <th style={{ cursor: 'pointer' }} onClick={() => clickOrdenPagos('monto')}>MONTO{flechaOrden('monto')}</th>
+              <th style={{ cursor: 'pointer' }} onClick={() => clickOrdenPagos('facturas')}>FACTURAS{flechaOrden('facturas')}</th>
+              <th style={{ cursor: 'pointer' }} onClick={() => clickOrdenPagos('comprobante')}>COMPROBANTE{flechaOrden('comprobante')}</th>
             </tr>
           </thead>
           <tbody>
