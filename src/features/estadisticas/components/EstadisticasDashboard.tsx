@@ -557,6 +557,7 @@ export function EstadisticasDashboard() {
   const [filtrosDet, setFiltrosDet] = useState<{ etiqueta: string; fn: (op: Op) => boolean }[]>([]);
   // ✅ NUEVO — CLASIFICAR MANUALMENTE las operaciones "Sin clasificar".
   const [clasifAbierto, setClasifAbierto] = useState(false);
+  const [ordenDia, setOrdenDia] = useState<{ col: string; dir: 1 | -1 } | null>(null);
   const [clasifGuardando, setClasifGuardando] = useState('');
   const clasificarOp = async (op: Op, mov: 'Importación' | 'Exportación' | 'Movimiento') => {
     setClasifGuardando(String(op.id));
@@ -574,7 +575,16 @@ export function EstadisticasDashboard() {
   };
   useEffect(() => { setFiltrosDet([]); }, [detalleSel?.titulo]);
   useEffect(() => { setTabLineaDet('Todas'); }, [detalleSel?.titulo]);
-  useEffect(() => { setFiltrosCols({}); }, [refsFiltro]);
+  useEffect(() => { setFiltrosCols({}); setOrdenRefs(null); }, [refsFiltro]);
+  // ✅ NUEVO — ORDEN POR COLUMNA en la tabla de operaciones (mismo patrón
+  //   que Operaciones Activas): clic asc, segundo clic desc.
+  const [ordenRefs, setOrdenRefs] = useState<{ col: string; dir: 1 | -1 } | null>(null);
+  const clickOrdenRefs = (col: string) => setOrdenRefs((prev) => prev && prev.col === col ? { col, dir: prev.dir === 1 ? -1 : 1 } : { col, dir: 1 });
+  const numeroDeTexto = (s: string): number | null => {
+    const limpio = String(s).replace(/[$,\s]/g, '');
+    if (limpio === '' || isNaN(Number(limpio))) return null;
+    return Number(limpio);
+  };
 
   // Al hacer drill-down desde el desglose, si la pestaña activa es Transfer
   // la tabla se abre con el formato del Excel de Transfer.
@@ -943,15 +953,24 @@ export function EstadisticasDashboard() {
     const porLinea = refsFiltro.ops;
     const cols = columnasFormatoTabla || columnasActivas;
     const valor = esModoTransfer ? valorTransfer : valorColumna;
-    return porLinea.filter(op =>
+    const filtradas = porLinea.filter(op =>
       cols.every(c => {
         const f = (filtrosCols[c.campo] || '').trim().toLowerCase();
         if (!f) return true;
         return valor(op, c.campo).toLowerCase().includes(f);
       })
     );
+    // ✅ Orden por la columna activa (numérico si la celda es numérica).
+    if (!ordenRefs) return filtradas;
+    const { col, dir } = ordenRefs;
+    return [...filtradas].sort((a, b) => {
+      const va = valor(a, col) || '', vb = valor(b, col) || '';
+      const na = numeroDeTexto(va), nb = numeroDeTexto(vb);
+      if (na !== null && nb !== null) return (na - nb) * dir;
+      return va.localeCompare(vb, 'es') * dir;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refsFiltro, columnasActivas, filtrosCols, esModoTransfer, joinFacturas, joinPagos, joinFacturasProv, joinPagosProv, mapasNombres]);
+  }, [refsFiltro, columnasActivas, filtrosCols, esModoTransfer, joinFacturas, joinPagos, joinFacturasProv, joinPagosProv, mapasNombres, ordenRefs]);
 
   // Totales de la pestaña Transfer (fila TOTAL en pantalla y exportes).
   // ✅ Totales GENÉRICOS del formato activo: suma cada columna numérica
@@ -1695,7 +1714,14 @@ export function EstadisticasDashboard() {
                       <span className="est-rep-titulo">Por día del periodo (operaciones y dinero)</span>
                       <div style={{ maxHeight: '240px', overflowY: 'auto', marginTop: '8px' }}>
                         <table className="est-tabla" style={{ width: '100%' }}>
-                          <thead><tr><th>FECHA</th><th style={{ textAlign: 'right' }}>OPS</th><th style={{ textAlign: 'right' }}>USD</th><th style={{ textAlign: 'right' }}>MXN</th><th style={{ textAlign: 'right' }}>TOTAL (CONV MXN)</th></tr></thead>
+                          <thead><tr>
+                            {([['fecha', 'FECHA', 'left'], ['n', 'OPS', 'right'], ['dol', 'USD', 'right'], ['pes', 'MXN', 'right'], ['conv', 'TOTAL (CONV MXN)', 'right']] as const).map(([col, etq, al]) => (
+                              <th key={col} style={{ textAlign: al as any, cursor: 'pointer' }} title="Clic para ordenar"
+                                onClick={() => setOrdenDia((prev) => prev && prev.col === col ? { col, dir: prev.dir === 1 ? -1 : 1 } : { col, dir: 1 })}>
+                                {etq}{ordenDia?.col === col ? (ordenDia.dir === 1 ? ' ▲' : ' ▼') : ''}
+                              </th>
+                            ))}
+                          </tr></thead>
                           <tbody>
                             {(() => {
                               const porFecha = new Map<string, { n: number; dol: number; pes: number; conv: number }>();
@@ -1707,7 +1733,11 @@ export function EstadisticasDashboard() {
                                 p.n += 1; p.dol += m.dol; p.pes += m.pes; p.conv += m.conv;
                                 porFecha.set(fch, p);
                               });
-                              return Array.from(porFecha.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([fch, p]) => (
+                              return Array.from(porFecha.entries()).sort((a, b) => {
+                                if (!ordenDia || ordenDia.col === 'fecha') return a[0].localeCompare(b[0]) * (ordenDia?.dir || 1);
+                                const va = (a[1] as any)[ordenDia.col] || 0, vb = (b[1] as any)[ordenDia.col] || 0;
+                                return (va - vb) * ordenDia.dir;
+                              }).map(([fch, p]) => (
                                 <tr key={fch} className="est-fila-clicable" onClick={() => agregarFiltroDet(`Fecha: ${fch}`, (op) => fechaISODe(op) === fch)} title="Filtrar el desglose por este día">
                                   <td>{fch} <span style={{ color: '#8b949e', fontSize: '0.72rem' }}>({['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'][new Date(`${fch}T12:00:00`).getDay()]})</span></td>
                                   <td style={{ textAlign: 'right' }}>{num(p.n)}</td>
@@ -1802,7 +1832,11 @@ export function EstadisticasDashboard() {
                         <div className="est-tabla-marco est-refs-tabla-marco">
                           <table className="est-tabla">
                             <thead>
-                              <tr>{columnas.map(c => <th key={c.campo}>{c.etiqueta.toUpperCase()}</th>)}</tr>
+                              <tr>{columnas.map(c => (
+                                <th key={c.campo} style={{ cursor: 'pointer', whiteSpace: 'nowrap' }} title="Clic para ordenar" onClick={() => clickOrdenRefs(c.campo)}>
+                                  {c.etiqueta.toUpperCase()}{ordenRefs?.col === c.campo ? (ordenRefs.dir === 1 ? ' ▲' : ' ▼') : ''}
+                                </th>
+                              ))}</tr>
                               {/* ✅ Fila de FILTROS por columna */}
                               <tr className="est-fila-filtros">
                                 {columnas.map(c => (
