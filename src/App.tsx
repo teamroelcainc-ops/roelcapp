@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import { APP_VERSION, APP_AUTOR } from './config/version';
+import { Bell } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
@@ -1284,7 +1285,7 @@ function AppContenido() {
                 title={versionNueva ? `Nueva versión ${versionNueva} disponible` : 'Notificaciones'}
                 onClick={() => setAvisoVersionAbierto((v) => !v)}
                 style={{ background: 'none', border: `1px solid ${versionNueva ? '#d29922' : '#30363d'}`, borderRadius: '999px', color: versionNueva ? '#d29922' : '#8b949e', width: '34px', height: '34px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '8px' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+                <Bell size={17} color={versionNueva ? '#d29922' : '#8b949e'} strokeWidth={2} style={{ display: 'block', flexShrink: 0 }} />
                 {versionNueva && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
               </button>
               {avisoVersionAbierto && (
