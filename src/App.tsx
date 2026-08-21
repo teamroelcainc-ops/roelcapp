@@ -1277,29 +1277,38 @@ function AppContenido() {
                 Ver como
               </button>
             )}
-            {/* ✅ Campana de actualización disponible */}
-            {versionNueva && (
-              <div style={{ position: 'relative', display: 'inline-flex' }}>
-                <button type="button" title={`Nueva versión ${versionNueva} disponible`}
-                  onClick={() => setAvisoVersionAbierto((v) => !v)}
-                  style={{ background: 'none', border: '1px solid #d29922', borderRadius: '999px', color: '#d29922', width: '34px', height: '34px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '8px' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
-                  <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />
-                </button>
-                {avisoVersionAbierto && (
-                  <div style={{ position: 'absolute', top: '42px', right: 0, zIndex: 3000, width: '260px', background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '14px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                    <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '0.88rem', marginBottom: '4px' }}>Actualización disponible</div>
-                    <div style={{ color: '#8b949e', fontSize: '0.78rem', lineHeight: 1.45, marginBottom: '10px' }}>
-                      Hay una nueva versión de la app (<b style={{ color: '#d29922' }}>{versionNueva}</b>). Estás usando la {APP_VERSION}. Guarda lo que tengas a medias y actualiza.
+            {/* ✅ CAMPANA DE NOTIFICACIONES (fija) — hoy: avisos de nueva
+                versión; lista para colgarle más notificaciones después. */}
+            <div style={{ position: 'relative', display: 'inline-flex' }}>
+              <button type="button"
+                title={versionNueva ? `Nueva versión ${versionNueva} disponible` : 'Notificaciones'}
+                onClick={() => setAvisoVersionAbierto((v) => !v)}
+                style={{ background: 'none', border: `1px solid ${versionNueva ? '#d29922' : '#30363d'}`, borderRadius: '999px', color: versionNueva ? '#d29922' : '#8b949e', width: '34px', height: '34px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '8px' }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+                {versionNueva && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
+              </button>
+              {avisoVersionAbierto && (
+                <div style={{ position: 'absolute', top: '42px', right: 0, zIndex: 3000, width: '270px', background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '14px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                  <div style={{ color: '#f0f6fc', fontWeight: 700, fontSize: '0.88rem', marginBottom: '8px' }}>Notificaciones</div>
+                  {versionNueva ? (
+                    <>
+                      <div style={{ color: '#8b949e', fontSize: '0.78rem', lineHeight: 1.45, marginBottom: '10px' }}>
+                        <b style={{ color: '#d29922' }}>Actualización disponible:</b> hay una nueva versión de la app (<b style={{ color: '#d29922' }}>{versionNueva}</b>). Estás usando la {APP_VERSION}. Guarda lo que tengas a medias y actualiza.
+                      </div>
+                      <button type="button" onClick={actualizarAhora}
+                        style={{ width: '100%', padding: '9px 0', borderRadius: '8px', border: 'none', backgroundColor: '#D84315', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                        Actualizar ahora
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ color: '#8b949e', fontSize: '0.78rem', lineHeight: 1.45 }}>
+                      Sin notificaciones pendientes. ✅<br />
+                      <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>Versión actual: {APP_VERSION}</span>
                     </div>
-                    <button type="button" onClick={actualizarAhora}
-                      style={{ width: '100%', padding: '9px 0', borderRadius: '8px', border: 'none', backgroundColor: '#D84315', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                      Actualizar ahora
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
+            </div>
             {debeChecar && (
               <button className="app-x48" 
                 onClick={() => setModalChecadorAbierto(true)}
