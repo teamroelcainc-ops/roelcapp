@@ -242,6 +242,14 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       { name: 'trompo', label: 'Trompo', type: 'select', required: true, options: ['Sí', 'No'] },
       { name: 'regular_hazmat', label: 'Regular / Hazmat', type: 'select', required: true, options: ['Regular', 'Hazmat'] },
       { name: 'aduana', label: 'Aduana', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_aduanas', labelField: 'aduana', valueField: 'id' } },
+      // ✅ NUEVO — ORIGEN / DESTINO de la tarifa (según el Excel del cliente):
+      //   · Flete de IMPORTACIÓN: Origen fijo "Nuevo Laredo", Destino variable ("Ciudad Destino").
+      //   · Flete de EXPORTACIÓN: Origen variable ("Ciudad Origen"), Destino fijo "Nuevo Laredo".
+      //   · Door to Door: ambos variables. · Cruces/Demoras: pueden ir vacíos.
+      //   Son texto libre para poder guardar tanto la ciudad fija como el
+      //   marcador variable, tal cual el archivo de referencia.
+      { name: 'origen', label: 'Origen', type: 'text' },
+      { name: 'destino', label: 'Destino', type: 'text' },
       { name: 'descripcion', label: 'Descripción', type: 'text', required: true },
       { name: 'tarifa_cliente_1', label: 'Tarifa Cliente 1', type: 'number' },
       { name: 'tarifa_cliente_2', label: 'Tarifa Cliente 2', type: 'number' },
