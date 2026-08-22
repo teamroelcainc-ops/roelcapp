@@ -475,6 +475,36 @@ const EmpresasDashboard = () => {
   };
 
   // Referencias a reapuntar: [colección, campo id, campo nombre (opcional)].
+  // ✅ NUEVO — RESOLVER NOMBRES en la pestaña Referencias (origen/destino/
+  //   remolque llegan como IDs en operaciones viejas): se cargan los
+  //   catálogos una sola vez y se muestran los NOMBRES.
+  const [nombresRef, setNombresRef] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (nombresRef !== null) return;
+    (async () => {
+      try {
+        const mapa: Record<string, string> = {};
+        for (const col of ['direcciones', 'catalogo_direcciones', 'remolques', 'unidades_proveedor']) {
+          try {
+            const snap = await getDocs(query(collection(db, col), limit(2000)));
+            snap.docs.forEach((d) => {
+              const x: any = d.data();
+              mapa[d.id] = String(x.nombre || x.direccion || x.alias || x.numeroRemolque || x.placa || '').trim() || d.id;
+            });
+          } catch { /* colección inexistente: seguir */ }
+        }
+        setNombresRef(mapa);
+      } catch { setNombresRef({}); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const nombreDe = (v: any): string => {
+    const s = String(v || '').trim();
+    if (!s) return '—';
+    // Si parece un ID (hex corto sin espacios) y está en el mapa, se traduce.
+    return (nombresRef && nombresRef[s]) ? nombresRef[s] : s;
+  };
+
   const REFERENCIAS_EMPRESA: [string, string, string?][] = [
     ['operaciones', 'clientePaga', 'clientePagaNombre'],
     ['operaciones', 'clienteMercancia', 'clienteMercanciaNombre'],
@@ -1387,13 +1417,17 @@ const EmpresasDashboard = () => {
                             <tbody>
                               {visibles.map(op => (
                                 <tr key={op.id}>
-                                  <td className="ed-refs-ref">{op.ref || op.id}</td>
+                                  <td className="ed-refs-ref" style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                                    title="Copiar la referencia para buscarla en Operaciones"
+                                    onClick={() => { navigator.clipboard?.writeText(String(op.ref || op.id)).catch(() => {}); }}>
+                                    {op.ref || op.id}
+                                  </td>
                                   <td>{op.fechaServicio || '—'}</td>
                                   <td>{op.tipoOperacionNombre || '—'}</td>
                                   <td>{op.statusNombre || '—'}</td>
-                                  <td>{op.origen || '—'}</td>
-                                  <td>{op.destino || '—'}</td>
-                                  <td>{op.numeroRemolque || '—'}</td>
+                                  <td>{nombreDe(op.origenNombre || op.origen)}</td>
+                                  <td>{nombreDe(op.destinoNombre || op.destino)}</td>
+                                  <td>{nombreDe(op.remolqueNombre || op.numeroRemolque)}</td>
                                 </tr>
                               ))}
                             </tbody>
