@@ -607,7 +607,34 @@ const CatalogosDashboard = () => {
   const totalPaginas = Math.ceil(registrosFiltrados.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const registrosEnPantalla = registrosFiltrados.slice(indicePrimerRegistro, indiceUltimoRegistro);
+  // ✅ NUEVO — ORDEN POR COLUMNA (clic en el encabezado: asc/desc).
+  const [ordenCat, setOrdenCat] = useState<{ col: string; dir: 1 | -1 } | null>(null);
+  useEffect(() => { setOrdenCat(null); }, [catalogoSeleccionado?.id]);
+  const clickOrdenCat = (col: string) => setOrdenCat((prev) => prev && prev.col === col ? { col, dir: prev.dir === 1 ? -1 : 1 } : { col, dir: 1 });
+  const registrosOrdenadosCat = useMemo(() => {
+    if (!ordenCat) return registrosFiltrados;
+    const { col, dir } = ordenCat;
+    const valor = (r: any): string | number => {
+      if (col === '__uso') {
+        const u = usoTarifas?.[r.id];
+        return (u?.ops.length || 0) + (u?.convC.length || 0) + (u?.convP.length || 0);
+      }
+      if (col === '__usoTipo') return usoTarifarios?.[r.id] || 0;
+      const v = r?.[col];
+      if (v === undefined || v === null) return '';
+      const n = Number(String(v).replace(/[$,\s]/g, ''));
+      if (String(v).trim() !== '' && !isNaN(n) && /^[\d.,$\s-]+$/.test(String(v))) return n;
+      return String(v).toLowerCase();
+    };
+    return [...registrosFiltrados].sort((a, b) => {
+      const va = valor(a), vb = valor(b);
+      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
+      return String(va).localeCompare(String(vb), 'es') * dir;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [registrosFiltrados, ordenCat, usoTarifas, usoTarifarios]);
+
+  const registrosEnPantalla = registrosOrdenadosCat.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -700,7 +727,20 @@ const CatalogosDashboard = () => {
 
         <div className="content-body cd-x17">
           <div className="table-container cd-x18">
-            <table className="data-table cd-x19">
+            {catalogoSeleccionado.id === 'tarifas_referencia' && (
+            <div style={{ margin: '0 0 10px 0', color: '#8b949e', fontSize: '0.82rem' }}>
+              {/* ✅ NUEVO — TOTAL EN VIVO: suma de operaciones que usan alguna tarifa
+                  (se actualiza al abrir; sube al usarse y baja al eliminarse). */}
+              Total de operaciones usando tarifas:{' '}
+              <b style={{ color: '#3fb950', fontSize: '0.95rem' }}>
+                {usoTarifas === null ? '…' : Object.values(usoTarifas).reduce((s, u) => s + u.ops.length, 0)}
+              </b>
+              {usoTarifas !== null && (
+                <span> · en {Object.values(usoTarifas).filter((u) => u.ops.length > 0).length} tarifa(s) con uso</span>
+              )}
+            </div>
+          )}
+          <table className="data-table cd-x19">
               <thead className="cd-x20">
                 <tr>
                   {/* ✅ NUEVO: selección múltiple (marca todas las de la página) */}
@@ -728,14 +768,21 @@ const CatalogosDashboard = () => {
                   )}
 
                   {catalogoSeleccionado.fields.map((f: CatalogField) => (
-                    <th className="cd-x23" key={f.name}>{f.label}</th>
+                    <th className="cd-x23" key={f.name} style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      title="Clic para ordenar" onClick={() => clickOrdenCat(f.name)}>
+                      {f.label}{ordenCat?.col === f.name ? (ordenCat.dir === 1 ? ' ▲' : ' ▼') : ''}
+                    </th>
                   ))}
                   {/* ✅ NUEVO: uso del tipo de tarifario en Tarifas de Referencia */}
                   {catalogoSeleccionado.id === 'tipos_tarifarios' && (
-                    <th className="cd-x23" title="Cuántas Tarifas de Referencia usan este tipo">TARIFAS QUE LO USAN</th>
+                    <th className="cd-x23" style={{ cursor: 'pointer' }} title="Clic para ordenar" onClick={() => clickOrdenCat('__usoTipo')}>
+                      TARIFAS QUE LO USAN{ordenCat?.col === '__usoTipo' ? (ordenCat.dir === 1 ? ' ▲' : ' ▼') : ''}
+                    </th>
                   )}
                   {catalogoSeleccionado.id === 'tarifas_referencia' && (
-                    <th className="cd-x23" title="Operaciones y convenios que usan esta tarifa — clic en la celda para ver dónde">USO (OPS · CONVENIOS)</th>
+                    <th className="cd-x23" style={{ cursor: 'pointer' }} title="Clic para ordenar por uso" onClick={() => clickOrdenCat('__uso')}>
+                      USO (OPS · CONVENIOS){ordenCat?.col === '__uso' ? (ordenCat.dir === 1 ? ' ▲' : ' ▼') : ''}
+                    </th>
                   )}
                 </tr>
               </thead>
