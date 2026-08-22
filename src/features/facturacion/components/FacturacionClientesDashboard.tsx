@@ -9,7 +9,7 @@
 //    con encabezado editable ("⚙ Encabezado Remisión").
 // ═══════════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   collection,
   query,
@@ -968,6 +968,34 @@ export const FacturacionClientesDashboard = () => {
     const porCatalogo = mapaCatalogos[String(idOrName)];
     return porCatalogo || idOrName;
   };
+
+  // ✅ FIX — IDs sin resolver (empresas creadas DESPUÉS de cargar la lista o
+  //   con el caché viejo): se detectan en las operaciones visibles y se leen
+  //   de Firestore bajo demanda, agregándolas a la lista en memoria.
+  const idsResueltosRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const pareceId = (s: string) => /^[A-Za-z0-9]{15,}$/.test(s) || /^[a-f0-9]{8}$/.test(s);
+    const pendientes = Array.from(new Set(
+      operacionesGlobales
+        .map((op: any) => String(op.clientePaga || ''))
+        .filter((id) => id && pareceId(id) && !idsResueltosRef.current.has(id) &&
+          !empresasList.some((e: any) => e.id === id))
+    )).slice(0, 60);
+    if (pendientes.length === 0) return;
+    pendientes.forEach((id) => idsResueltosRef.current.add(id));
+    (async () => {
+      try {
+        const nuevas: any[] = [];
+        for (let i = 0; i < pendientes.length; i += 10) {
+          const lote = pendientes.slice(i, i + 10);
+          const snap = await getDocs(query(collection(db, 'empresas'), where(documentId(), 'in', lote)));
+          snap.docs.forEach((d) => nuevas.push({ id: d.id, ...(d.data() as any) }));
+        }
+        if (nuevas.length > 0) setEmpresasList((prev: any[]) => [...prev, ...nuevas.filter((n) => !prev.some((p) => p.id === n.id))]);
+      } catch (e) { console.warn('No se pudieron resolver empresas faltantes:', e); }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesGlobales, empresasList]);
 
   const clientesFiltradosBuscador = useMemo(() => {
     if (!empresasList.length) return [];
