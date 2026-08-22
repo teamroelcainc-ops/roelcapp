@@ -24,6 +24,26 @@ const CACHE_NOMBRES_COLECCIONES: Record<string, string> = {};
 const CatalogosDashboard = () => {
   const [catalogoSeleccionado, setCatalogoSeleccionado] = useState<CatalogSchema | null>(null);
   const [registrosGlobales, setRegistrosGlobales] = useState<any[]>([]);
+  // ✅ NUEVO — USO DE TIPOS DE TARIFARIOS: cuántas Tarifas de Referencia
+  //   usan cada tipo (tarifas_referencia.tipo_operacion -> id del tipo).
+  const [usoTarifarios, setUsoTarifarios] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    if (catalogoSeleccionado?.id !== 'tipos_tarifarios') return;
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
+        const c: Record<string, number> = {};
+        snap.docs.forEach((d) => {
+          const t = String((d.data() as any)?.tipo_operacion || '');
+          if (t) c[t] = (c[t] || 0) + 1;
+        });
+        if (activo) setUsoTarifarios(c);
+      } catch (e) { console.warn('No se pudo contar el uso de tarifarios:', e); }
+    })();
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogoSeleccionado?.id]);
   
   const [modalEstado, setModalEstado] = useState<'cerrado' | 'formulario' | 'config_obligatorios'>('cerrado');
   const [registroActual, setRegistroActual] = useState<any | null>(null);
@@ -667,6 +687,10 @@ const CatalogosDashboard = () => {
                   {catalogoSeleccionado.fields.map((f: CatalogField) => (
                     <th className="cd-x23" key={f.name}>{f.label}</th>
                   ))}
+                  {/* ✅ NUEVO: uso del tipo de tarifario en Tarifas de Referencia */}
+                  {catalogoSeleccionado.id === 'tipos_tarifarios' && (
+                    <th className="cd-x23" title="Cuántas Tarifas de Referencia usan este tipo">TARIFAS QUE LO USAN</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -720,6 +744,12 @@ const CatalogosDashboard = () => {
                       {catalogoSeleccionado.fields.map((f: CatalogField) => (
                         <td className="cd-x31" key={f.name}>{getDisplayValue(reg, f)}</td>
                       ))}
+                      {/* ✅ NUEVO: cuántas Tarifas de Referencia usan este tipo */}
+                      {catalogoSeleccionado.id === 'tipos_tarifarios' && (
+                        <td className="cd-x31" style={{ fontWeight: 700, color: (usoTarifarios?.[reg.id] || 0) > 0 ? '#3fb950' : '#6e7681' }}>
+                          {usoTarifarios === null ? '…' : (usoTarifarios[reg.id] || 0)}
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
