@@ -1441,7 +1441,8 @@ const CatalogosDashboard = () => {
                   return (
                     <div key={f.name}>
                       <label className="cd-x76">{f.label} {isReq && <span className="cd-x77">*</span>}</label>
-                      {f.dynamicOptions && opcionesDinamicas[f.dynamicOptions.collection] ? (
+                      {/* ✅ MODIFICADO (V00110): opciones dinámicas solo si el catálogo trae registros; si está vacío y hay `options` fijas, se usan de respaldo (caso C/V). */}
+                      {f.dynamicOptions && (opcionesDinamicas[f.dynamicOptions.collection]?.length ?? 0) > 0 ? (
                         <SelectBuscable
                           opciones={opcionesDinamicas[f.dynamicOptions.collection].map((opt: any) => {
                             const vField = f.dynamicOptions!.valueField || 'id';
@@ -1489,7 +1490,8 @@ const CatalogosDashboard = () => {
                   return (
                     <div key={f.name}>
                       <label className="cd-x76">{f.label || f.name}</label>
-                      {f.dynamicOptions && opcionesDinamicas[f.dynamicOptions.collection] ? (
+                      {/* ✅ MODIFICADO (V00110): opciones dinámicas solo si el catálogo trae registros; si está vacío y hay `options` fijas, se usan de respaldo (caso C/V). */}
+                      {f.dynamicOptions && (opcionesDinamicas[f.dynamicOptions.collection]?.length ?? 0) > 0 ? (
                         <SelectBuscable
                           opciones={opcionesDinamicas[f.dynamicOptions.collection].map((opt: any) => {
                             const vField = f.dynamicOptions!.valueField || 'id';

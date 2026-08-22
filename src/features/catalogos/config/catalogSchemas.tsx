@@ -152,6 +152,23 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
     icono: <path d="M19 15v4H5v-4h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1v-6c0-.55-.45-1-1-1zM7 18.5c-.82 0-1.5-.68-1.5-1.5s.68-1.5 1.5-1.5 1.5.68 1.5 1.5-.68 1.5-1.5 1.5zM19 5v4H5V5h14m1-2H4c-.55 0-1 .45-1 1v6c0 .55.45 1 1 1h16c.55 0 1-.45 1-1V4c0-.55-.45-1-1-1zM7 8.5c-.82 0-1.5-.68-1.5-1.5S6.18 5.5 7 5.5s1.5.68 1.5 1.5S7.82 8.5 7 8.5z" />,
     fields: [{ name: 'tipo_operacion', label: 'Tipo de Operación', type: 'text', required: true }]
   },
+  // ✅ NUEVO (V00110) — Catálogo C/V (Cargada / Vacía): administra las opciones
+  //   del selector "Cargada / Vacía". Lo consumen el campo `estado_carga` de
+  //   Tarifas de Referencia y el selector CARGA del Editor de Flujos (Reglas
+  //   de Status). Se guarda el NOMBRE (no el ID) para ser compatible con los
+  //   registros y flujos existentes ("Cargada", "Vacía", "N/A", "Trompo").
+  //   ⚠ Mientras este catálogo esté VACÍO, ambos consumidores usan la lista
+  //   fija de siempre (OPCIONES_CARGA); al capturar registros aquí, el
+  //   catálogo toma el control. Incluye Cargada/Vacía/N/A/Trompo si quieres
+  //   que los flujos y tarifas existentes sigan apareciendo en el selector.
+  carga_vacia: {
+    id: 'carga_vacia', titulo: 'C/V (Cargada / Vacía)',
+    icono: <path d="M20 8h-3V4H3c-1.1 0-2 .9-2 2v11h2c0 1.66 1.34 3 3 3s3-1.34 3-3h6c0 1.66 1.34 3 3 3s3-1.34 3-3h2v-5l-3-4zM6 18.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zm13.5-9l1.96 2.5H17V9.5h2.5zm-1.5 9c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z" />,
+    fields: [
+      { name: 'nombre', label: 'Nombre', type: 'text', required: true },
+      { name: 'descripcion', label: 'Descripción', type: 'text' },
+    ]
+  },
   tipo_cargo: {
     id: 'tipo_cargo', titulo: 'Tipo de Cargo',
     icono: <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />,
@@ -241,7 +258,11 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       { name: 'tipo_remolque', label: 'Tipo de Remolque', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_tipo_remolque', labelField: 'nombre', valueField: 'id' } },
       // ✅ MODIFICADO: "Cargada / Vacía" ahora usa las MISMAS opciones que la
       //    CARGA del Editor de Flujos (Reglas de Status): Cargada / Vacía / N/A.
-      { name: 'estado_carga', label: 'Cargada / Vacía', type: 'select', required: true, options: OPCIONES_CARGA },
+      // ✅ MODIFICADO (V00110): "Cargada / Vacía" ahora se alimenta del catálogo
+      //   C/V (`catalogo_carga_vacia`). Se guarda el NOMBRE (valueField), así
+      //   los registros existentes siguen siendo válidos. Si el catálogo está
+      //   vacío, se usa la lista fija `options` como respaldo.
+      { name: 'estado_carga', label: 'Cargada / Vacía', type: 'select', required: true, options: OPCIONES_CARGA, dynamicOptions: { collection: 'catalogo_carga_vacia', labelField: 'nombre', valueField: 'nombre' } },
       { name: 'trompo', label: 'Trompo', type: 'select', required: true, options: ['Sí', 'No'] },
       { name: 'regular_hazmat', label: 'Regular / Hazmat', type: 'select', required: true, options: ['Regular', 'Hazmat'] },
       { name: 'aduana', label: 'Aduana', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_aduanas', labelField: 'aduana', valueField: 'id' } },

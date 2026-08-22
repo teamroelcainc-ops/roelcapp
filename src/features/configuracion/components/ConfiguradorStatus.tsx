@@ -652,6 +652,9 @@ const EditorFlujoAppSheet = ({
   const [tipoServicio, setTipoServicio] = useState(flujoInicial?.tipoServicio || '');
   const [trafico, setTrafico]           = useState(flujoInicial?.trafico       || '');
   const [carga, setCarga]               = useState(flujoInicial?.carga         || '');
+  // ✅ NUEVO (V00110): opciones del dropdown "Carga" vienen del catálogo C/V
+  //   (`catalogo_carga_vacia`); si está vacío, se usa la lista fija de respaldo.
+  const [opcionesCarga, setOpcionesCarga] = useState<string[]>(OPCIONES_CARGA);
   const [reglas, setReglas]             = useState<ReglaStatus[]>([]);
   const [cargando, setCargando]         = useState(false);
   const [guardando, setGuardando]       = useState(false);
@@ -717,6 +720,15 @@ const EditorFlujoAppSheet = ({
             .filter((n: any) => typeof n === 'string' && n.trim() !== '')
             .sort((a: string, b: string) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
         );
+        // ✅ NUEVO (V00110): lee el catálogo C/V (`catalogo_carga_vacia`). Si
+        //   trae registros, sus nombres alimentan el dropdown "Carga"; si está
+        //   vacío, se conserva la lista fija de respaldo (OPCIONES_CARGA).
+        const cvSnap = await getDocs(collection(db, 'catalogo_carga_vacia'));
+        const nombresCV = cvSnap.docs
+          .map(d => (d.data() as { nombre?: unknown }).nombre)
+          .filter((n): n is string => typeof n === 'string' && n.trim() !== '')
+          .sort((a: string, b: string) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+        if (nombresCV.length > 0) setOpcionesCarga(nombresCV);
       } catch (e) {
         console.error(e);
       }
@@ -1323,7 +1335,7 @@ const EditorFlujoAppSheet = ({
             label="Carga"
             value={carga}
             onChange={setCarga}
-            options={OPCIONES_CARGA}
+            options={carga && !opcionesCarga.includes(carga) ? [...opcionesCarga, carga] : opcionesCarga}
             placeholder="Selecciona…"
           />
         </div>
