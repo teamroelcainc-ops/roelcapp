@@ -86,16 +86,47 @@ export const storage = getStorage(app);
 //    El cast interno a los tipos del SDK está documentado: updateDoc exige
 //    índices con notación de punto (`a.b`) que nuestros tipos de dominio no
 //    declaran, pero el dato en runtime es un objeto plano válido.
+
+// ✅ NUEVO (V00109) — INVALIDACIÓN CENTRAL DE CACHÉS DE CATÁLOGO: los módulos
+//   (Operaciones, Facturación, Estadísticas…) cachean los catálogos en
+//   localStorage (cat_v2__*) hasta 24 h. Antes, solo el módulo de Catálogos
+//   limpiaba esas cachés; al editar en Bases de Datos (empresas, empleados,
+//   unidades…) o Convenios, el resto de la app seguía mostrando valores viejos
+//   hasta que la caché expiraba. Ahora, CUALQUIER escritura hecha con estos
+//   helpers sobre una colección tipo catálogo borra las cachés locales, y los
+//   módulos re-descargan datos frescos en su siguiente carga.
+const COLECCIONES_TIPO_CATALOGO = new Set([
+  'empresas', 'unidades', 'empleados', 'remolques', 'proveedores_unidad',
+  'convenios_clientes', 'convenios_clientes_detalles',
+  'convenios_proveedores', 'convenios_proveedores_detalles',
+  'tipo_cambio', 'direcciones',
+]);
+const invalidarCachesCatalogosLocales = (nombreColeccion: string) => {
+  try {
+    if (!nombreColeccion.startsWith('catalogo_') && !COLECCIONES_TIPO_CATALOGO.has(nombreColeccion)) return;
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('cat_v2__') || k.startsWith('cat_v1__'))
+      .forEach((k) => localStorage.removeItem(k));
+    localStorage.setItem('catalogos_invalidados_en', String(Date.now()));
+  } catch { /* almacenamiento no disponible: continuar sin caché */ }
+};
+
 export const agregarRegistro = async (nombreColeccion: string, data: object) => {
-  return await addDoc(collection(db, nombreColeccion), data as DocumentData);
+  const ref = await addDoc(collection(db, nombreColeccion), data as DocumentData);
+  invalidarCachesCatalogosLocales(nombreColeccion);
+  return ref;
 };
 
 export const actualizarRegistro = async (nombreColeccion: string, id: string, data: object) => {
-  return await updateDoc(doc(db, nombreColeccion, id), data as UpdateData<DocumentData>);
+  const res = await updateDoc(doc(db, nombreColeccion, id), data as UpdateData<DocumentData>);
+  invalidarCachesCatalogosLocales(nombreColeccion);
+  return res;
 };
 
 export const eliminarRegistro = async (nombreColeccion: string, id: string) => {
-  return await deleteDoc(doc(db, nombreColeccion, id));
+  const res = await deleteDoc(doc(db, nombreColeccion, id));
+  invalidarCachesCatalogosLocales(nombreColeccion);
+  return res;
 };
 
 // --- TRUCO PARA CREAR USUARIOS SIN CERRAR SESIÓN DEL ADMIN ---

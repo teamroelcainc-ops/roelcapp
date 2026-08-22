@@ -1,6 +1,6 @@
 // src/features/empresas/components/FormularioEmpresa.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, onSnapshot, addDoc } from 'firebase/firestore';
+import { collection, getDocs, onSnapshot, addDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion'; 
 import { registrarLog } from '../../../utils/logger'; 
@@ -625,6 +625,39 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
       if (initialData && initialData.id) {
         await actualizarRegistro('empresas', initialData.id, payload);
         await registrarLog('Empresas', 'Edición', `Actualizó los datos de la empresa: ${formData.nombre}`);
+        // ✅ NUEVO (V00109) — PROPAGACIÓN DEL NOMBRE: las operaciones guardan
+        //   una copia del nombre de la empresa (clienteNombre, origenNombre,
+        //   destinoNombre, etc.) para pintar la tabla sin leer catálogos. Si
+        //   el nombre cambió, se actualizan esas copias en lote para que las
+        //   tablas dejen de mostrar el nombre viejo.
+        if (String(formData.nombre || '') !== String(initialData.nombre || '')) {
+          try {
+            const REFS_OPERACIONES: Array<[string, string]> = [
+              ['cliente', 'clienteNombre'],
+              ['origen', 'origenNombre'],
+              ['destino', 'destinoNombre'],
+              ['clienteMercancia', 'clienteMercanciaNombre'],
+              ['proveedorUnidad', 'proveedorUnidadNombre'],
+              ['provServicios', 'provServiciosNombre'],
+            ];
+            let propagados = 0;
+            for (const [campoId, campoNombre] of REFS_OPERACIONES) {
+              const snap = await getDocs(query(collection(db, 'operaciones'), where(campoId, '==', initialData.id)));
+              for (let i = 0; i < snap.docs.length; i += 400) {
+                const lote = snap.docs.slice(i, i + 400);
+                const batch = writeBatch(db);
+                lote.forEach((d) => batch.update(d.ref, { [campoNombre]: formData.nombre }));
+                await batch.commit();
+                propagados += lote.length;
+              }
+            }
+            if (propagados > 0) {
+              await registrarLog('Empresas', 'Edición', `Propagó el nuevo nombre de la empresa a ${propagados} operación(es)`);
+            }
+          } catch (ePropagar) {
+            console.error('No se pudo propagar el nombre de la empresa a operaciones:', ePropagar);
+          }
+        }
       } else {
         const correlativoFinal = generarSiguienteNumCliente();
         await agregarRegistro('empresas', { ...payload, numCliente: correlativoFinal });

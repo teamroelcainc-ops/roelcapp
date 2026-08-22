@@ -51,8 +51,11 @@ const payloadPapelera = (
 //    nombre (opcional)]. Las referencias ENTRE catálogos no van aquí: se
 //    detectan solas leyendo los dynamicOptions de catalogSchemas.
 const REFS_EXTERNAS_CATALOGO: Record<string, Array<[string, string, string?, string?]>> = {
-  tipo_operacion: [['operaciones', 'tipoOperacion']],
-  status_servicio: [['operaciones', 'status']],
+  tipo_operacion: [
+    ['operaciones', 'tipoOperacion', 'tipoOperacionNombre', 'tipo_operacion'],
+    ['operaciones', 'tipoOperacionId', 'tipoOperacionNombre', 'tipo_operacion'],
+  ],
+  status_servicio: [['operaciones', 'status', 'statusNombre', 'nombre']],
   embalaje: [['operaciones', 'embalaje']],
   paises: [['direcciones', 'paisId', 'paisNombre', 'nombre'], ['catalogo_direcciones', 'paisId', 'paisNombre', 'nombre']],
   estados: [['direcciones', 'estadoId', 'estadoNombre', 'estado'], ['catalogo_direcciones', 'estadoId', 'estadoNombre', 'estado']],
@@ -380,6 +383,33 @@ const CatalogosDashboard = () => {
       if (registroActual) {
         await actualizarRegistro(col, registroActual.id, formData);
         await registrarLog('Catálogos', 'Edición', `Editó un registro en el catálogo de ${catalogoSeleccionado.titulo}`);
+        // ✅ NUEVO (V00109) — PROPAGACIÓN DE NOMBRES: los módulos (Operaciones,
+        //   Direcciones, etc.) guardan una COPIA del nombre en cada documento
+        //   para pintar tablas sin leer catálogos. Al editar aquí, esa copia
+        //   quedaba vieja para siempre. Ahora, si cambió el valor fuente, se
+        //   actualizan en lote todos los documentos que lo referencian.
+        try {
+          let propagados = 0;
+          for (const [colRef, campoId, campoNombre, campoValorDe] of (REFS_EXTERNAS_CATALOGO[catalogoSeleccionado.id] || [])) {
+            if (!campoNombre || !campoValorDe) continue;
+            const nuevoValor = formData[campoValorDe];
+            const valorAnterior = registroActual[campoValorDe];
+            if (nuevoValor === undefined || String(nuevoValor) === String(valorAnterior ?? '')) continue;
+            const snap = await getDocs(query(collection(db, colRef), where(campoId, '==', registroActual.id)));
+            for (let i = 0; i < snap.docs.length; i += 400) {
+              const lote = snap.docs.slice(i, i + 400);
+              const batch = writeBatch(db);
+              lote.forEach((d) => batch.update(d.ref, { [campoNombre]: nuevoValor }));
+              await batch.commit();
+              propagados += lote.length;
+            }
+          }
+          if (propagados > 0) {
+            await registrarLog('Catálogos', 'Edición', `Propagó el nuevo nombre a ${propagados} documento(s) relacionados (${catalogoSeleccionado.titulo})`);
+          }
+        } catch (ePropagar) {
+          console.error('No se pudo propagar el nombre a los módulos relacionados:', ePropagar);
+        }
       } else {
         // ✅ NUEVO: bloqueo de DUPLICADOS al crear. Si ya existe un registro
         //    con exactamente los mismos valores en todos los campos, se avisa
@@ -1398,14 +1428,14 @@ const CatalogosDashboard = () => {
       {/* FORMULARIO DE AGREGAR / EDITAR PRINCIPAL */}
       {modalEstado === 'formulario' && catalogoSeleccionado && (
         <div className="modal-overlay cd-x72">
-          <div className="cd-x73">
+          <div className="cd-x73" style={(catalogoSeleccionado.formColumns || 1) >= 3 ? { maxWidth: '1000px', width: '95%' } : undefined}>
             <div className="cd-x38">
               <h2 className="cd-x39">{registroActual ? 'Editar' : 'Agregar'} {catalogoSeleccionado.titulo}</h2>
               <button className="cd-x41" onClick={() => setModalEstado('cerrado')}>✕</button>
             </div>
             
             <form className="cd-x74" onSubmit={guardarRegistro}>
-              <div className="cd-x75">
+              <div className={`cd-x75${(catalogoSeleccionado.formColumns || 1) >= 3 ? ' cd-x75-3col' : ''}`}>
                 {catalogoSeleccionado.fields.map((f: CatalogField) => {
                   const isReq = (camposRequeridos[catalogoSeleccionado.id] || []).includes(f.name);
                   return (

@@ -32,6 +32,8 @@ export interface CatalogSchema {
   icono: React.ReactNode;
   fields: CatalogField[];
   details?: CatalogDetailSchema[];
+  // ✅ NUEVO (V00109): columnas del formulario de alta/edición (1 por defecto).
+  formColumns?: number;
 }
 
 // ✅ Opciones de "Cargada / Vacía". DEBEN ser las mismas que el selector de
@@ -225,6 +227,7 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
   tarifas_referencia: {
     id: 'tarifas_referencia', 
     titulo: 'Tarifas de Referencia',
+    formColumns: 3, // ✅ NUEVO (V00109): formulario a 3 columnas (tiene muchos campos)
     icono: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="5" width="14" height="14" rx="2" />

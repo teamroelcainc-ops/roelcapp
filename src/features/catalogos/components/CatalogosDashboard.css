@@ -77,6 +77,12 @@
 .cd-x73 { max-width: 600px; width: 100%; background-color: #0d1117; border-radius: 12px; border: 1px solid #30363d; display: flex; flex-direction: column; max-height: 90vh; }
 .cd-x74 { display: flex; flex-direction: column; overflow: hidden; }
 .cd-x75 { padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+/* ✅ NUEVO (V00109): variante a 3 columnas para catálogos con muchos campos
+   (schema.formColumns = 3, p. ej. Tarifas de Referencia). En pantallas medianas
+   baja a 2 columnas y en móvil regresa a 1. */
+.cd-x75-3col { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 18px; align-items: start; }
+@media (max-width: 1024px) { .cd-x75-3col { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px) { .cd-x75-3col { grid-template-columns: 1fr; } }
 .cd-x76 { color: #8b949e; font-size: 0.9rem; font-weight: bold; display: block; margin-bottom: 8px; }
 .cd-x77 { color: #ef4444; }
 .cd-x78 { padding: 16px 24px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 12px; background-color: #0d1117; }
