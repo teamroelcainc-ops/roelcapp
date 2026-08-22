@@ -663,7 +663,16 @@ function AppContenido() {
         const r = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
         if (!r.ok) return;
         const d = await r.json();
-        if (activo && d?.version && d.version !== APP_VERSION) setVersionNueva(String(d.version));
+        // ✅ CORREGIDO: solo se avisa si la versión publicada es MÁS NUEVA que
+        //   la cargada. Antes bastaba con que fuera "diferente", así que un
+        //   version.json rezagado (p. ej. V00105) pedía "actualizar" a una
+        //   versión anterior estando ya en la V00108.
+        if (activo && d?.version && String(d.version) !== APP_VERSION) {
+          const numRemota = parseInt(String(d.version).replace(/\D/g, ''), 10);
+          const numLocal = parseInt(APP_VERSION.replace(/\D/g, ''), 10);
+          const esMasNueva = (!isNaN(numRemota) && !isNaN(numLocal)) ? numRemota > numLocal : true;
+          if (esMasNueva) setVersionNueva(String(d.version));
+        }
       } catch { /* sin conexión: se reintenta después */ }
     };
     checar();
