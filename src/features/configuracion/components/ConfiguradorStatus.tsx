@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { collection, doc, getDoc, setDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import './ConfiguradorStatus.css';
 
@@ -777,6 +777,25 @@ const EditorFlujoAppSheet = ({
           // pestañas" / "sin campos extra obligatorios" por defecto).
           setPestanasVisibles(Array.isArray(data.pestanasVisibles) ? data.pestanasVisibles : null);
           setCamposObligatorios(Array.isArray(data.camposObligatorios) ? data.camposObligatorios : null);
+        } else if (reglas.length > 0) {
+          // ✅ CORREGIDO (V00111): la combinación nueva NO tiene flujo guardado
+          //   pero el lienzo SÍ tiene pasos. Antes se borraba todo y, al solo
+          //   renombrar la carga (Cargada → Cargado), obligaba a capturar el
+          //   flujo desde cero. Ahora se pregunta: conservar los pasos (para
+          //   guardarlos bajo la nueva combinación) o empezar en blanco.
+          const conservar = window.confirm(
+            `La combinación "${configId.replace(/_/g, ' · ')}" no tiene un flujo guardado.\n\n` +
+            `¿Deseas CONSERVAR los ${reglas.length} pasos que están en el lienzo para guardarlos bajo esta nueva combinación?\n\n` +
+            `· Aceptar = conservar los pasos (útil para renombrar, p. ej. Cargada → Cargado)\n` +
+            `· Cancelar = empezar con el lienzo en blanco`
+          );
+          if (!conservar) {
+            setReglas([]);
+            setPestanasVisibles(null);
+            setCamposObligatorios(null);
+          }
+          // Si conserva: los pasos y la config del formulario viajan tal cual
+          // a la nueva combinación y se escriben al presionar "Guardar flujo".
         } else {
           setReglas([]);
           setPestanasVisibles(null);
@@ -1241,6 +1260,28 @@ const EditorFlujoAppSheet = ({
         flujo: flujoFinal,
         ...configFormulario,
       });
+      // ✅ NUEVO (V00111): si se está EDITANDO un flujo existente y se cambió
+      //   la combinación (p. ej. renombrar la carga Cargada → Cargado), el
+      //   flujo viejo sigue guardado bajo la combinación anterior. Se ofrece
+      //   eliminarlo para que no queden dos flujos duplicados en la lista.
+      const configIdOriginal = flujoInicial
+        ? `${flujoInicial.tipoServicio}_${flujoInicial.trafico}_${flujoInicial.carga}`
+        : '';
+      if (configIdOriginal && configIdOriginal !== configId) {
+        const borrarViejo = window.confirm(
+          `El flujo quedó guardado como "${configId.replace(/_/g, ' · ')}".\n\n` +
+          `¿Deseas ELIMINAR el flujo anterior "${configIdOriginal.replace(/_/g, ' · ')}" para no tener duplicados?\n\n` +
+          `· Aceptar = eliminar el anterior (renombrado limpio)\n` +
+          `· Cancelar = conservar ambos flujos`
+        );
+        if (borrarViejo) {
+          try {
+            await deleteDoc(doc(db, 'config_flujos_operacion', configIdOriginal));
+          } catch (eBorrar) {
+            console.error('No se pudo eliminar el flujo anterior:', eBorrar);
+          }
+        }
+      }
       setMensaje({ tipo: 'ok', texto: 'Flujo guardado correctamente.' });
       setTimeout(() => onVolver(), 700);
     } catch (e: any) {
