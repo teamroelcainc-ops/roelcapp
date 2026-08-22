@@ -1,6 +1,6 @@
 // src/features/conveniosProveedores/components/FormularioConvenioProveedor.tsx
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, writeBatch, query, where } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, writeBatch, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import type { ConvenioProveedorRecord, ConvenioProveedorDetalleRecord } from '../../../types/convenioProveedor';
 import './FormularioConvenioProveedor.css';
@@ -91,7 +91,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     monedaNombre: '',
     credito: 0,
     fechaConvenio: todayISO,
-    fechaVencimiento: todayISO
+    fechaVencimiento: `${new Date().getFullYear()}-12-31` // ✅ por defecto 31 de diciembre (editable)
   });
 
   const [detalles, setDetalles] = useState<(ConvenioProveedorDetalleRecord & { _isNew?: boolean })[]>([]);
@@ -295,7 +295,28 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                 <SearchableSelect 
                   options={proveedores.map(p => ({ id: p.id, label: p.nombre || p.empresa || 'S/N' }))} 
                   value={formData.proveedorId} 
-                  onChange={(id, label) => setFormData(prev => ({ ...prev, proveedorId: id, proveedorNombre: label }))} 
+                  onChange={async (id, label) => {
+                      // ✅ NUEVO: Moneda y Crédito se JALAN de la empresa (no editables aquí).
+                      let monId = '', monNom = '', cred = 0;
+                      try {
+                        const snapE = await getDoc(doc(db, 'empresas', id));
+                        if (snapE.exists()) {
+                          const e: any = snapE.data();
+                          monId = String(e.monedaId || e.moneda || '');
+                          monNom = String(e.monedaNombre || '');
+                          cred = Number(e.diasCredito || e.credito || 0) || 0;
+                          if (monId && !monNom) {
+                            const m = monedas.find((x: any) => x.id === monId);
+                            monNom = m?.moneda || '';
+                          }
+                          if (!monId && monNom) {
+                            const m = monedas.find((x: any) => String(x.moneda || '').toLowerCase() === monNom.toLowerCase());
+                            monId = m?.id || '';
+                          }
+                        }
+                      } catch (eE) { console.warn('No se pudo leer la empresa:', eE); }
+                      setFormData(prev => ({ ...prev, proveedorId: id, proveedorNombre: label, monedaId: monId || prev.monedaId, monedaNombre: monNom || prev.monedaNombre, credito: cred }));
+                    }} 
                   required 
                 />
               </div>
@@ -303,7 +324,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
               <div className="form-group"><label className="form-label">Fecha Vencimiento</label><input type="date" className="form-control" value={formData.fechaVencimiento} onChange={(e) => setFormData({...formData, fechaVencimiento: e.target.value})} required /></div>
               <div className="form-group">
                 <label className="form-label">Moneda</label>
-                <select className="form-control" value={formData.monedaId} onChange={(e) => {
+                <select className="form-control" disabled title="Se toma automáticamente de la empresa" style={{ opacity: 0.85, cursor: 'not-allowed' }} value={formData.monedaId} onChange={(e) => {
                   const m = monedas.find(x => x.id === e.target.value);
                   setFormData({...formData, monedaId: e.target.value, monedaNombre: m?.moneda || ''});
                 }} required>
@@ -311,7 +332,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                   {monedas.map(mon => <option key={mon.id} value={mon.id}>{mon.moneda}</option>)}
                 </select>
               </div>
-              <div className="form-group"><label className="form-label">Crédito (Días)</label><input type="number" className="form-control" value={formData.credito} onChange={(e) => setFormData({...formData, credito: parseInt(e.target.value) || 0})} required /></div>
+              <div className="form-group"><label className="form-label">Crédito (Días)</label><input type="number" className="form-control" readOnly title="Se toma automáticamente de la empresa (Días de Crédito)" style={{ opacity: 0.85, cursor: 'not-allowed' }} value={formData.credito} onChange={(e) => setFormData({...formData, credito: parseInt(e.target.value) || 0})} required /></div>
             </div>
 
             <div className="fcp-x8">

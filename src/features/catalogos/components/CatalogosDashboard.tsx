@@ -143,6 +143,17 @@ const CatalogosDashboard = () => {
     setSubDocsSnapshot({});
 
     const unsubscribe = onSnapshot(collection(db, `catalogo_${catalogoSeleccionado.id}`), (snapshot) => {
+      // ✅ NUEVO — al cambiar un catálogo se INVALIDAN los cachés locales
+      //   (cat_v2__/cat_v1__) para que Operaciones y demás módulos muestren
+      //   las opciones nuevas en su siguiente carga, sin datos viejos.
+      try {
+        if (!snapshot.metadata.fromCache) {
+          Object.keys(localStorage)
+            .filter((k) => k.startsWith('cat_v2__') || k.startsWith('cat_v1__'))
+            .forEach((k) => localStorage.removeItem(k));
+          localStorage.setItem('catalogos_invalidados_en', String(Date.now()));
+        }
+      } catch { /* almacenamiento no disponible */ }
       setRegistrosGlobales(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
