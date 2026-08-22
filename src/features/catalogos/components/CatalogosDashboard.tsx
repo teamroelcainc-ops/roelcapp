@@ -69,6 +69,14 @@ const REFS_EXTERNAS_CATALOGO: Record<string, Array<[string, string, string?, str
   ],
 };
 
+// ✅ NUEVO (V00113) — PROPAGACIÓN POR TEXTO: algunos módulos guardan el VALOR
+//   textual del catálogo, no un ID (p. ej. operaciones.carga = "Cargada").
+//   Al renombrar el registro del catálogo, se reemplaza el texto viejo por el
+//   nuevo en las colecciones listadas. El campo fuente es `nombre`.
+const REFS_TEXTO_CATALOGO: Record<string, Array<[string, string]>> = {
+  carga_vacia: [['operaciones', 'carga']],
+};
+
 // =========================================
 // COMPONENTE PRINCIPAL
 // =========================================
@@ -406,6 +414,28 @@ const CatalogosDashboard = () => {
           }
           if (propagados > 0) {
             await registrarLog('Catálogos', 'Edición', `Propagó el nuevo nombre a ${propagados} documento(s) relacionados (${catalogoSeleccionado.titulo})`);
+          }
+          // ✅ NUEVO (V00113): propagación por TEXTO (caso C/V → operaciones.carga).
+          //   Si cambió el `nombre`, se reemplaza el texto viejo por el nuevo en
+          //   las colecciones que lo guardan como valor literal.
+          const nombreViejo = String(registroActual.nombre ?? '').trim();
+          const nombreNuevo = String(formData.nombre ?? '').trim();
+          if (nombreViejo && nombreNuevo && nombreViejo !== nombreNuevo) {
+            let reemplazados = 0;
+            for (const [colTxt, campoTxt] of (REFS_TEXTO_CATALOGO[catalogoSeleccionado.id] || [])) {
+              const snapTxt = await getDocs(query(collection(db, colTxt), where(campoTxt, '==', nombreViejo)));
+              for (let i = 0; i < snapTxt.docs.length; i += 400) {
+                const lote = snapTxt.docs.slice(i, i + 400);
+                const batch = writeBatch(db);
+                lote.forEach((d) => batch.update(d.ref, { [campoTxt]: nombreNuevo }));
+                await batch.commit();
+                reemplazados += lote.length;
+              }
+            }
+            if (reemplazados > 0) {
+              await registrarLog('Catálogos', 'Edición', `Reemplazó "${nombreViejo}" por "${nombreNuevo}" en ${reemplazados} documento(s) (${catalogoSeleccionado.titulo})`);
+              alert(`Además, se actualizó "${nombreViejo}" → "${nombreNuevo}" en ${reemplazados} documento(s) relacionados (operaciones). ✅`);
+            }
           }
         } catch (ePropagar) {
           console.error('No se pudo propagar el nombre a los módulos relacionados:', ePropagar);
