@@ -48,6 +48,8 @@ const UnidadesDashboard = lazyWithRetry(() => import('./features/unidades/compon
 const RemolquesDashboard = lazyWithRetry(() => import('./features/remolques/components/RemolquesDashboard'), 'RemolquesDashboard');
 const ConveniosClientesDashboard = lazyWithRetry(() => import('./features/conveniosClientes/components/ConveniosClientesDashboard'), 'ConveniosClientesDashboard');
 const ConveniosProveedoresDashboard = lazyWithRetry(() => import('./features/conveniosProveedores/components/ConveniosProveedoresDashboard').then(m => ({ default: m.ConveniosProveedoresDashboard })), 'ConveniosProveedoresDashboard');
+// ✅ NUEVO (V00112): vista plana de tarifas de convenios (clientes y proveedores)
+const DetallesConvenioDashboard = lazyWithRetry(() => import('./features/conveniosDetalles/components/DetallesConvenioDashboard'), 'DetallesConvenioDashboard');
 const DireccionesDashboard = lazyWithRetry(() => import('./features/direcciones/components/DireccionesDashboard').then(m => ({ default: m.DireccionesDashboard })), 'DireccionesDashboard');
 const EmpleadosDashboard = lazyWithRetry(() => import('./features/empleados/components/EmpleadosDashboard').then(m => ({ default: m.EmpleadosDashboard })), 'EmpleadosDashboard');
 const RolesDashboard = lazyWithRetry(() => import('./usuarios/components/RolesDashboard').then(m => ({ default: m.RolesDashboard })), 'RolesDashboard');
@@ -623,7 +625,7 @@ function AppContenido() {
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -964,8 +966,8 @@ function AppContenido() {
   }
 
   const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
-  const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes';
-  const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores';
+  const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes' || moduloActivo === 'detallesConvenioClientes';
+  const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores' || moduloActivo === 'detallesConvenioProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion' || moduloActivo === 'datosEmpresa' || moduloActivo === 'autorizaciones';
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel' || moduloActivo === 'referenciasPuentes' || moduloActivo === 'costosAdicionales';
@@ -1161,6 +1163,8 @@ function AppContenido() {
             {menuClientesAbierto && (
               <div className="sidebar-submenu">
                 {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => navegarA('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.convenio_de_clientes', 'Convenio de Clientes')}</span></div>}
+                {/* ✅ NUEVO (V00112): Detalles del Convenio (clientes) */}
+                {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioClientes' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
                 {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => navegarA('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}
@@ -1177,6 +1181,8 @@ function AppContenido() {
             {menuProveedoresAbierto && (
               <div className="sidebar-submenu">
                 {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => navegarA('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">{etq('menu.convenio_de_proveedores', 'Convenio de Proveedores')}</span></div>}
+                {/* ✅ NUEVO (V00112): Detalles del Convenio (proveedores) */}
+                {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioProveedores' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
                 {puede('facturacionProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => navegarA('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}
@@ -1415,6 +1421,9 @@ function AppContenido() {
             {moduloActivo === 'proveedoresUnidad' && puede('proveedoresUnidad') && <ProveedoresUnidadDashboard />}
             {moduloActivo === 'unidadesProveedor' && puede('unidadesProveedor') && <UnidadesProveedorDashboard />}
             {moduloActivo === 'conveniosClientes' && puede('conveniosClientes') && <ConveniosClientesDashboard />}
+            {/* ✅ NUEVO (V00112): vistas Detalles del Convenio */}
+            {moduloActivo === 'detallesConvenioClientes' && puede('conveniosClientes') && <DetallesConvenioDashboard tipo="clientes" />}
+            {moduloActivo === 'detallesConvenioProveedores' && puede('conveniosProveedores') && <DetallesConvenioDashboard tipo="proveedores" />}
             {moduloActivo === 'conveniosProveedores' && puede('conveniosProveedores') && <ConveniosProveedoresDashboard />}
             {moduloActivo === 'catalogos' && puede('catalogos') && <CatalogosDashboard />}
             {moduloActivo === 'colaboradores' && puede('colaboradores') && <EmpleadosDashboard />}

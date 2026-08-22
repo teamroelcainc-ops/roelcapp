@@ -609,6 +609,55 @@ const CatalogosDashboard = () => {
     setUniendo(false);
   };
 
+  // ✅ NUEVO (V00112) — SINCRONIZAR NOMBRES: repara el HISTÓRICO. La
+  //   propagación de V00109 actualiza los módulos relacionados al editar,
+  //   pero los renombres hechos ANTES de esa versión dejaron copias viejas
+  //   (p. ej. operaciones que aún dicen "Logistica" tras renombrar el tipo
+  //   de operación a "Logistica Transfer"). Este botón recorre TODOS los
+  //   registros del catálogo abierto y reescribe el nombre actual en los
+  //   documentos que los referencian, solo donde el valor difiere.
+  const [sincronizandoNombres, setSincronizandoNombres] = useState(false);
+  const refsConNombre = useMemo(
+    () => (catalogoSeleccionado ? (REFS_EXTERNAS_CATALOGO[catalogoSeleccionado.id] || []).filter((r) => r[2] && r[3]) : []),
+    [catalogoSeleccionado]
+  );
+  const sincronizarNombres = async () => {
+    if (!catalogoSeleccionado || sincronizandoNombres || refsConNombre.length === 0) return;
+    const confirmado = window.confirm(
+      `Se revisarán las referencias de los ${registrosGlobales.length} registro(s) de "${catalogoSeleccionado.titulo}" ` +
+      `en los módulos relacionados (operaciones, direcciones…) y se corregirán los nombres que quedaron viejos.\n\n` +
+      `Solo se reescriben los que difieren del catálogo actual. ¿Continuar?`
+    );
+    if (!confirmado) return;
+    setSincronizandoNombres(true);
+    try {
+      let corregidos = 0;
+      for (const reg of registrosGlobales as any[]) {
+        for (const [colRef, campoId, campoNombre, campoValorDe] of refsConNombre) {
+          const valorActual = reg[campoValorDe as string];
+          if (valorActual === undefined || valorActual === null || valorActual === '') continue;
+          const snap = await getDocs(query(collection(db, colRef), where(campoId, '==', reg.id)));
+          const desfasados = snap.docs.filter((d) => String((d.data() as any)[campoNombre as string] ?? '') !== String(valorActual));
+          for (let i = 0; i < desfasados.length; i += 400) {
+            const lote = desfasados.slice(i, i + 400);
+            const batch = writeBatch(db);
+            lote.forEach((d) => batch.update(d.ref, { [campoNombre as string]: valorActual }));
+            await batch.commit();
+            corregidos += lote.length;
+          }
+        }
+      }
+      await registrarLog('Catálogos', 'Edición', `Sincronizó nombres de ${catalogoSeleccionado.titulo}: corrigió ${corregidos} documento(s) relacionados.`);
+      alert(corregidos > 0
+        ? `Sincronización completada. ✅\n\nSe corrigieron ${corregidos} documento(s) que tenían el nombre viejo.\n\nSi tienes abierto Operaciones u otro módulo, recárgalo para ver los nombres al día.`
+        : 'Sincronización completada. ✅\n\nTodos los módulos relacionados ya tenían los nombres al día; no hubo nada que corregir.');
+    } catch (e: any) {
+      console.error('Error sincronizando nombres:', e);
+      alert('La sincronización no terminó completa.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido') + '\n\nPuedes volver a ejecutarla: lo ya corregido no se repite.');
+    }
+    setSincronizandoNombres(false);
+  };
+
   // ═══════════ ✅ NUEVO (V00106) — PAPELERA DE CATÁLOGOS (RESTAURACIÓN) ═══════════
   //   Todo registro eliminado desde este módulo (individual, en lote, sub-
   //   registros y uniones) queda guardado en `papelera_catalogos` con su ID
@@ -1129,7 +1178,7 @@ const CatalogosDashboard = () => {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M6 21V9a9 9 0 0 0 9 9"></path></svg>
               {seleccionadosIds.length >= 2 ? `Unir (${seleccionadosIds.length})` : 'Unir'}
             </button>
-            {/* ✅ NUEVO (V00106): papelera filtrada al catálogo actual */}
+            {/* ✅ NUEVO (V00112): papelera filtrada al catálogo actual */}
             <button
               className="btn btn-outline cd-x15"
               title="Papelera: restaurar registros eliminados de este catálogo"
@@ -1137,6 +1186,24 @@ const CatalogosDashboard = () => {
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><polyline points="9 14 12 11 15 14"></polyline><line x1="12" y1="11" x2="12" y2="18"></line></svg>
             </button>
+            {/* ✅ NUEVO (V00112): sincronizar nombres históricos en módulos
+                relacionados (solo aparece en catálogos con referencias de
+                nombre: tipo de operación, status y direcciones) */}
+            {refsConNombre.length > 0 && (
+              <button
+                className="btn btn-outline cd-x15"
+                title="Sincronizar nombres: corrige en Operaciones y Direcciones los nombres viejos de este catálogo (renombres hechos antes de V00109)"
+                onClick={sincronizarNombres}
+                disabled={sincronizandoNombres}
+                style={{ opacity: sincronizandoNombres ? 0.6 : 1, cursor: sincronizandoNombres ? 'wait' : 'pointer' }}
+              >
+                {sincronizandoNombres ? (
+                  <span style={{ fontSize: '0.72rem' }}>Sincronizando…</span>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                )}
+              </button>
+            )}
             <button className="btn btn-outline cd-x15" title="Configurar Obligatorios" onClick={() => setModalEstado('config_obligatorios')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             </button>
