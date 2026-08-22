@@ -1,10 +1,10 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, getDocs, writeBatch, doc, query, limit } from 'firebase/firestore';
-import { db, agregarRegistro, actualizarRegistro, eliminarRegistro } from '../../../config/firebase';
+import { collection, onSnapshot, getDocs, writeBatch, doc, query, limit, where, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
+import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger'; // ✅ Importación del logger
 
-import { listaCatalogos } from '../config/catalogSchemas';
+import { listaCatalogos, catalogosConfig } from '../config/catalogSchemas';
 import type { CatalogSchema, CatalogField } from '../config/catalogSchemas';
 import { SelectBuscable } from './SelectBuscable';
 import './CatalogosDashboard.css';
@@ -17,6 +17,54 @@ const etiquetaDeOpcion = (opt: any, labelField: string, valueField: string): str
 // 🔥 CACHÉ GLOBAL DE MÓDULO PARA ELIMINAR LECTURAS EXCESIVAS EN FIREBASE 🔥
 const CACHE_OPCIONES_DINAMICAS: Record<string, any[]> = {};
 const CACHE_NOMBRES_COLECCIONES: Record<string, string> = {};
+
+// ✅ NUEVO (V00106) — PAPELERA DE CATÁLOGOS: colección donde se guarda una
+//    copia completa de cada registro ANTES de eliminarlo (borrado individual,
+//    en lote, sub-registros y uniones). Desde ahí se puede RESTAURAR con su
+//    ID original, por lo que las referencias que sigan vivas se reconectan.
+const COL_PAPELERA = 'papelera_catalogos';
+
+// ✅ NUEVO (V00106) — construye el documento que va a la papelera.
+const payloadPapelera = (
+  coleccion: string,
+  catalogoId: string,
+  catalogoTitulo: string,
+  registro: any,
+  motivo: string
+) => {
+  const { id, ...datos } = registro || {};
+  return {
+    coleccion,
+    catalogoId,
+    catalogoTitulo,
+    registroId: String(id || ''),
+    datos,
+    motivo,
+    eliminadoPor: auth.currentUser?.email || 'Sistema',
+    eliminadoEn: new Date().toISOString(),
+  };
+};
+
+// ✅ NUEVO (V00106) — REFERENCIAS EXTERNAS CONOCIDAS por catálogo para la
+//    herramienta de UNIR: [colección, campo con el ID, campo de nombre a
+//    refrescar (opcional), campo del registro conservado del que sale ese
+//    nombre (opcional)]. Las referencias ENTRE catálogos no van aquí: se
+//    detectan solas leyendo los dynamicOptions de catalogSchemas.
+const REFS_EXTERNAS_CATALOGO: Record<string, Array<[string, string, string?, string?]>> = {
+  tipo_operacion: [['operaciones', 'tipoOperacion']],
+  status_servicio: [['operaciones', 'status']],
+  embalaje: [['operaciones', 'embalaje']],
+  paises: [['direcciones', 'paisId', 'paisNombre', 'nombre'], ['catalogo_direcciones', 'paisId', 'paisNombre', 'nombre']],
+  estados: [['direcciones', 'estadoId', 'estadoNombre', 'estado'], ['catalogo_direcciones', 'estadoId', 'estadoNombre', 'estado']],
+  municipios: [['direcciones', 'municipioId', 'municipioNombre', 'municipio'], ['catalogo_direcciones', 'municipioId', 'municipioNombre', 'municipio']],
+  colonias: [['direcciones', 'coloniaId', 'coloniaNombre', 'colonia'], ['catalogo_direcciones', 'coloniaId', 'coloniaNombre', 'colonia']],
+  codigo_postal: [['direcciones', 'cpId', 'cpNombre', 'codigo_postal'], ['catalogo_direcciones', 'cpId', 'cpNombre', 'codigo_postal']],
+  calles: [['direcciones', 'calleId', 'calleNombre', 'calle'], ['catalogo_direcciones', 'calleId', 'calleNombre', 'calle']],
+  tarifas_referencia: [
+    ['convenios_clientes_detalles', 'tipoConvenioId'],
+    ['convenios_proveedores_detalles', 'tipoConvenioId'],
+  ],
+};
 
 // =========================================
 // COMPONENTE PRINCIPAL
@@ -356,10 +404,19 @@ const CatalogosDashboard = () => {
   //    se muestra la CAUSA real en lugar de un mensaje genérico.
   const eliminarRegistroPrincipal = async (id: string) => {
     if (!catalogoSeleccionado) return;
-    if (window.confirm('¿Desea eliminar permanentemente este registro?')) {
+    if (window.confirm('¿Desea eliminar este registro?\n\nSe enviará a la Papelera de catálogos, desde donde podrás restaurarlo.')) {
       try {
+        // ✅ NUEVO (V00106): copia a la PAPELERA antes de borrar. Si la copia
+        //    falla, NO se borra (así nunca se pierde un registro sin respaldo).
+        const reg = registrosGlobales.find((r: any) => r.id === id);
+        if (reg) {
+          await agregarRegistro(COL_PAPELERA, payloadPapelera(
+            `catalogo_${catalogoSeleccionado.id}`, catalogoSeleccionado.id,
+            catalogoSeleccionado.titulo, reg, 'Eliminación individual'
+          ));
+        }
         await eliminarRegistro(`catalogo_${catalogoSeleccionado.id}`, id);
-        await registrarLog('Catálogos', 'Eliminación', `Eliminó un registro del catálogo de ${catalogoSeleccionado.titulo}`);
+        await registrarLog('Catálogos', 'Eliminación', `Eliminó un registro del catálogo de ${catalogoSeleccionado.titulo} (enviado a la papelera)`);
       } catch (error: any) {
         console.error('Error al eliminar registro de catálogo:', error);
         alert(
@@ -386,66 +443,255 @@ const CatalogosDashboard = () => {
     return catalogoSeleccionado.fields.map((f: CatalogField) => norm(reg[f.name])).join('|||');
   };
 
-  // ✅ NUEVO: elimina registros duplicados del catálogo dejando UNO por clave.
-  //    Se conserva el registro con MÁS campos llenos (y en empate, el más
-  //    antiguo por createdAt). Borra en lotes de 400 para respetar el límite
-  //    de Firestore.
-  const [limpiandoDuplicados, setLimpiandoDuplicados] = useState(false);
-  const limpiarDuplicados = async () => {
-    if (!catalogoSeleccionado || limpiandoDuplicados) return;
+  // ═══════════ ✅ NUEVO (V00106) — UNIR REGISTROS DE CATÁLOGO ═══════════
+  //   Reemplaza al antiguo "limpiar duplicados". Se seleccionan 2+ registros
+  //   con los checkboxes y "Unir" conserva UNO, REAPUNTANDO hacia él todas
+  //   las referencias detectadas:
+  //     a) Sub-registros del propio catálogo (escaneo profundo en RAM).
+  //     b) OTROS catálogos que lo referencian vía dynamicOptions (se detecta
+  //        solo leyendo catalogSchemas: direcciones en cadena, bancos→moneda,
+  //        status→tipo de operación, tarifas→tarifarios/remolque/aduana, etc).
+  //     c) Referencias externas conocidas (operaciones, direcciones y
+  //        detalles de convenios) según REFS_EXTERNAS_CATALOGO.
+  //   Los registros absorbidos van a la PAPELERA antes de borrarse.
+  const [modalUnir, setModalUnir] = useState(false);
+  const [conservarId, setConservarId] = useState('');
+  const [uniendo, setUniendo] = useState(false);
 
-    const grupos = new Map<string, any[]>();
-    registrosGlobales.forEach(reg => {
-      const clave = claveDuplicado(reg);
-      if (!clave) return;
-      const arr = grupos.get(clave) || [];
-      arr.push(reg);
-      grupos.set(clave, arr);
-    });
+  const camposLlenos = (reg: any): number =>
+    Object.entries(reg || {}).filter(([k, v]) => k !== 'id' && v !== undefined && v !== null && v !== '').length;
 
-    const camposLlenos = (reg: any): number =>
-      Object.entries(reg).filter(([k, v]) => k !== 'id' && v !== undefined && v !== null && v !== '').length;
+  const abrirModalUnir = () => {
+    if (seleccionadosIds.length < 2) return;
+    // Por defecto se conserva el registro con MÁS campos llenos (empate: el más antiguo).
+    const regs = seleccionadosIds.map((id) => registrosGlobales.find((r: any) => r.id === id)).filter(Boolean);
+    const mejor = [...regs].sort((a: any, b: any) =>
+      camposLlenos(b) - camposLlenos(a) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')))[0];
+    setConservarId(mejor?.id || seleccionadosIds[0]);
+    setModalUnir(true);
+  };
 
-    const idsABorrar: string[] = [];
-    grupos.forEach(arr => {
-      if (arr.length < 2) return;
-      // El "mejor" registro se queda: más datos; empate -> el más antiguo.
-      const ordenados = [...arr].sort((a, b) => {
-        const dif = camposLlenos(b) - camposLlenos(a);
-        if (dif !== 0) return dif;
-        return String(a.createdAt || '').localeCompare(String(b.createdAt || ''));
-      });
-      ordenados.slice(1).forEach(r => idsABorrar.push(r.id));
-    });
+  // Resumen corto de un registro para mostrarlo en modales y en la papelera.
+  const resumenRegistro = (reg: any): string => {
+    if (!catalogoSeleccionado || !reg) return String(reg?.id || '');
+    return catalogoSeleccionado.fields
+      .map((f: CatalogField) => getDisplayValue(reg, f))
+      .filter((v: string) => v && v !== '-')
+      .slice(0, 3)
+      .join(' · ') || String(reg.id || '');
+  };
 
-    if (idsABorrar.length === 0) {
-      alert('No se encontraron registros duplicados en este catálogo. ✅');
-      return;
+  const ejecutarUnionCatalogo = async () => {
+    if (!catalogoSeleccionado || uniendo || !conservarId || seleccionadosIds.length < 2) return;
+    const kept: any = registrosGlobales.find((r: any) => r.id === conservarId);
+    const duplicados = seleccionadosIds.filter((id) => id !== conservarId);
+    if (!kept || duplicados.length === 0) return;
+
+    setUniendo(true);
+    try {
+      const colEste = `catalogo_${catalogoSeleccionado.id}`;
+      let totalReapuntados = 0;
+
+      // Helper: actualiza en lotes de 400 una lista de [ref, cambios].
+      const commitLotes = async (cambiosDocs: Array<{ ref: any; cambios: any }>) => {
+        for (let i = 0; i < cambiosDocs.length; i += 400) {
+          const lote = cambiosDocs.slice(i, i + 400);
+          const batch = writeBatch(db);
+          lote.forEach(({ ref, cambios }) => batch.update(ref, cambios));
+          await batch.commit();
+          totalReapuntados += lote.length;
+        }
+      };
+
+      for (const dupId of duplicados) {
+        const dupReg: any = registrosGlobales.find((r: any) => r.id === dupId);
+
+        // a) Sub-registros del propio catálogo: escaneo profundo del snapshot
+        //    en RAM (misma filosofía que el conteo de vinculados). Cualquier
+        //    campo cuyo valor sea el ID duplicado se reapunta al conservado.
+        for (const det of (catalogoSeleccionado.details || [])) {
+          const realCol = CACHE_NOMBRES_COLECCIONES[det.collection] || det.collection;
+          const docsDet = subDocsSnapshot[det.collection] || [];
+          const pendientes: Array<{ ref: any; cambios: any }> = [];
+          docsDet.forEach((d: any) => {
+            const cambios: any = {};
+            Object.entries(d).forEach(([k, v]) => {
+              if (k === 'id') return;
+              const val = (v && typeof v === 'object' && (v as any).id) ? String((v as any).id) : String(v ?? '');
+              if (val === dupId) cambios[k] = conservarId;
+            });
+            if (Object.keys(cambios).length > 0) pendientes.push({ ref: doc(db, realCol, d.id), cambios });
+          });
+          await commitLotes(pendientes);
+        }
+
+        // b) Otros catálogos que referencian a ESTE vía dynamicOptions
+        //    (campos principales y campos de sus sub-registros).
+        for (const cfg of Object.values(catalogosConfig)) {
+          const camposRef = cfg.fields.filter((f: CatalogField) => f.dynamicOptions?.collection === colEste);
+          for (const f of camposRef) {
+            const snap = await getDocs(query(collection(db, `catalogo_${cfg.id}`), where(f.name, '==', dupId)));
+            await commitLotes(snap.docs.map((d) => ({ ref: d.ref, cambios: { [f.name]: conservarId } })));
+          }
+          for (const det of (cfg.details || [])) {
+            const detCampos = det.fields.filter((f: CatalogField) => f.dynamicOptions?.collection === colEste);
+            for (const f of detCampos) {
+              // El nombre real puede llevar o no el prefijo `catalogo_`: se prueban ambos.
+              for (const colDet of [det.collection, `catalogo_${det.collection}`]) {
+                const snap = await getDocs(query(collection(db, colDet), where(f.name, '==', dupId)));
+                await commitLotes(snap.docs.map((d) => ({ ref: d.ref, cambios: { [f.name]: conservarId } })));
+              }
+            }
+          }
+        }
+
+        // c) Referencias externas conocidas (operaciones, direcciones, convenios).
+        for (const [col, campoId, campoNombre, campoValorDe] of (REFS_EXTERNAS_CATALOGO[catalogoSeleccionado.id] || [])) {
+          const snap = await getDocs(query(collection(db, col), where(campoId, '==', dupId)));
+          const cambios: any = { [campoId]: conservarId };
+          if (campoNombre && campoValorDe && kept[campoValorDe] !== undefined) cambios[campoNombre] = kept[campoValorDe];
+          await commitLotes(snap.docs.map((d) => ({ ref: d.ref, cambios })));
+        }
+
+        // d) El duplicado va a la PAPELERA y después se elimina.
+        if (dupReg) {
+          await agregarRegistro(COL_PAPELERA, payloadPapelera(
+            colEste, catalogoSeleccionado.id, catalogoSeleccionado.titulo, dupReg,
+            `Unión de duplicados (se conservó "${resumenRegistro(kept)}")`
+          ));
+        }
+        await deleteDoc(doc(db, colEste, dupId));
+      }
+
+      await registrarLog('Catálogos', 'Edición',
+        `Unió ${duplicados.length + 1} registros de ${catalogoSeleccionado.titulo} en "${resumenRegistro(kept)}" (${totalReapuntados} referencias reapuntadas).`);
+      alert(
+        `Unión completada. ✅\n\nSe conservó "${resumenRegistro(kept)}", se enviaron ${duplicados.length} registro(s) a la papelera ` +
+        `y se reapuntaron ${totalReapuntados} referencia(s) en sub-registros, catálogos relacionados y módulos externos.\n\n` +
+        `Nota: si otras pestañas del navegador tienen módulos abiertos, recárgalas para ver el cambio.`
+      );
+      setSeleccionadosIds([]);
+      setModalUnir(false);
+    } catch (e: any) {
+      console.error('Error al unir registros de catálogo:', e);
+      alert('La unión no se completó del todo.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido') + '\n\nVuelve a intentar: las referencias ya reapuntadas no se duplican.');
     }
+    setUniendo(false);
+  };
 
+  // ═══════════ ✅ NUEVO (V00106) — PAPELERA DE CATÁLOGOS (RESTAURACIÓN) ═══════════
+  //   Todo registro eliminado desde este módulo (individual, en lote, sub-
+  //   registros y uniones) queda guardado en `papelera_catalogos` con su ID
+  //   original. Desde aquí se puede RESTAURAR (recupera el mismo ID, así las
+  //   referencias que sigan vivas se reconectan) o borrar definitivamente.
+  //   ⚠ Solo contiene lo eliminado a partir de V00106: lo borrado con
+  //   versiones anteriores ya no existe en Firebase y no se puede recuperar.
+  const [papeleraAbierta, setPapeleraAbierta] = useState(false);
+  const [papeleraItems, setPapeleraItems] = useState<any[] | null>(null);
+  const [papeleraFiltroCat, setPapeleraFiltroCat] = useState('');
+  const [papeleraBusqueda, setPapeleraBusqueda] = useState('');
+  const [restaurandoId, setRestaurandoId] = useState<string | null>(null);
+  const [vaciandoPapelera, setVaciandoPapelera] = useState(false);
+
+  const cargarPapelera = async () => {
+    try {
+      const snap = await getDocs(collection(db, COL_PAPELERA));
+      const items = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+      items.sort((a, b) => String(b.eliminadoEn || '').localeCompare(String(a.eliminadoEn || '')));
+      setPapeleraItems(items);
+    } catch (e: any) {
+      console.error('Error cargando la papelera:', e);
+      setPapeleraItems([]);
+      alert('No se pudo cargar la papelera.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido'));
+    }
+  };
+
+  const abrirPapelera = (filtroCatId?: string) => {
+    setPapeleraFiltroCat(filtroCatId || '');
+    setPapeleraBusqueda('');
+    setPapeleraItems(null);
+    setPapeleraAbierta(true);
+    cargarPapelera();
+  };
+
+  const resumenPapelera = (item: any): string => {
+    const vals = Object.values(item?.datos || {})
+      .map((v: any) => (v && typeof v === 'object' && v.id) ? String(v.id) : String(v ?? ''))
+      .filter((v: string) => v && v.length < 80);
+    return vals.slice(0, 3).join(' · ') || item?.registroId || '—';
+  };
+
+  const restaurarDePapelera = async (item: any) => {
+    if (restaurandoId) return;
+    setRestaurandoId(item.id);
+    try {
+      const destino = doc(db, item.coleccion, item.registroId);
+      const existente = await getDoc(destino);
+      if (existente.exists()) {
+        const sobre = window.confirm(
+          `Ya existe un registro con ese mismo ID en "${item.catalogoTitulo || item.coleccion}".\n\n` +
+          `¿Deseas SOBRESCRIBIRLO con la copia de la papelera?`
+        );
+        if (!sobre) { setRestaurandoId(null); return; }
+      }
+      // setDoc con el ID ORIGINAL: las referencias que sigan vivas se reconectan.
+      await setDoc(destino, item.datos || {});
+      await deleteDoc(doc(db, COL_PAPELERA, item.id));
+      setPapeleraItems((prev) => (prev || []).filter((x) => x.id !== item.id));
+      await registrarLog('Catálogos', 'Restauración', `Restauró un registro de la papelera al catálogo de ${item.catalogoTitulo || item.coleccion}`);
+      alert(`Registro restaurado en "${item.catalogoTitulo || item.coleccion}" con su ID original. ✅`);
+    } catch (e: any) {
+      console.error('Error restaurando de la papelera:', e);
+      alert('No se pudo restaurar el registro.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido'));
+    }
+    setRestaurandoId(null);
+  };
+
+  const eliminarDefinitivo = async (item: any) => {
+    if (!window.confirm('¿Eliminar DEFINITIVAMENTE esta copia de la papelera?\n\nDespués de esto ya no se podrá restaurar.')) return;
+    try {
+      await deleteDoc(doc(db, COL_PAPELERA, item.id));
+      setPapeleraItems((prev) => (prev || []).filter((x) => x.id !== item.id));
+      await registrarLog('Catálogos', 'Eliminación', `Eliminó definitivamente un registro de la papelera (${item.catalogoTitulo || item.coleccion})`);
+    } catch (e: any) {
+      alert('No se pudo eliminar de la papelera.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido'));
+    }
+  };
+
+  const papeleraFiltrada = useMemo(() => {
+    let items = papeleraItems || [];
+    if (papeleraFiltroCat) items = items.filter((x) => x.catalogoId === papeleraFiltroCat);
+    if (papeleraBusqueda.trim()) {
+      const t = papeleraBusqueda.toLowerCase();
+      items = items.filter((x) =>
+        `${x.catalogoTitulo || ''} ${x.eliminadoPor || ''} ${x.motivo || ''} ${resumenPapelera(x)}`.toLowerCase().includes(t)
+      );
+    }
+    return items;
+  }, [papeleraItems, papeleraFiltroCat, papeleraBusqueda]);
+
+  const vaciarPapelera = async () => {
+    if (vaciandoPapelera || papeleraFiltrada.length === 0) return;
     const confirmado = window.confirm(
-      `Se encontraron ${idsABorrar.length} registros DUPLICADOS en "${catalogoSeleccionado.titulo}" ` +
-      `(mismo contenido en todos los campos).\n\n` +
-      `Se conservará UNA copia de cada uno y se eliminarán los ${idsABorrar.length} repetidos.\n\n¿Deseas continuar?`
+      `¿Eliminar DEFINITIVAMENTE los ${papeleraFiltrada.length} registro(s) visibles de la papelera` +
+      `${papeleraFiltroCat ? ' (solo el catálogo filtrado)' : ''}?\n\nEsta acción no se puede deshacer.`
     );
     if (!confirmado) return;
-
-    setLimpiandoDuplicados(true);
+    setVaciandoPapelera(true);
     try {
-      const col = `catalogo_${catalogoSeleccionado.id}`;
-      for (let i = 0; i < idsABorrar.length; i += 400) {
-        const lote = idsABorrar.slice(i, i + 400);
+      const ids = papeleraFiltrada.map((x) => x.id);
+      for (let i = 0; i < ids.length; i += 400) {
+        const lote = ids.slice(i, i + 400);
         const batch = writeBatch(db);
-        lote.forEach(id => batch.delete(doc(db, col, id)));
+        lote.forEach((id) => batch.delete(doc(db, COL_PAPELERA, id)));
         await batch.commit();
       }
-      await registrarLog('Catálogos', 'Eliminación', `Limpió ${idsABorrar.length} duplicados del catálogo de ${catalogoSeleccionado.titulo}`);
-      alert(`Listo: se eliminaron ${idsABorrar.length} registros duplicados. ✅`);
-    } catch (error: any) {
-      console.error('Error limpiando duplicados:', error);
-      alert('No se pudieron eliminar todos los duplicados.\n\nDetalle técnico: ' + (error?.message || error?.code || 'desconocido'));
+      setPapeleraItems((prev) => (prev || []).filter((x) => !ids.includes(x.id)));
+      await registrarLog('Catálogos', 'Eliminación', `Vació ${ids.length} registro(s) de la papelera de catálogos`);
+    } catch (e: any) {
+      alert('No se pudo vaciar la papelera por completo.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido'));
     }
-    setLimpiandoDuplicados(false);
+    setVaciandoPapelera(false);
   };
 
   // ✅ NUEVO: helpers de selección múltiple.
@@ -457,20 +703,31 @@ const CatalogosDashboard = () => {
   const eliminarSeleccionados = async () => {
     if (!catalogoSeleccionado || seleccionadosIds.length === 0 || borrandoSeleccion) return;
     const confirmado = window.confirm(
-      `¿Eliminar PERMANENTEMENTE los ${seleccionadosIds.length} registro(s) seleccionados de "${catalogoSeleccionado.titulo}"?\n\nEsta acción no se puede deshacer.`
+      `¿Eliminar los ${seleccionadosIds.length} registro(s) seleccionados de "${catalogoSeleccionado.titulo}"?\n\nSe enviarán a la Papelera de catálogos, desde donde podrás restaurarlos.`
     );
     if (!confirmado) return;
 
     setBorrandoSeleccion(true);
     try {
       const col = `catalogo_${catalogoSeleccionado.id}`;
-      for (let i = 0; i < seleccionadosIds.length; i += 400) {
-        const lote = seleccionadosIds.slice(i, i + 400);
+      // ✅ NUEVO (V00106): en el MISMO batch se copia cada registro a la
+      //    papelera y se borra el original (2 operaciones por registro, por
+      //    eso el lote baja a 200 para respetar el límite de 500 de Firestore).
+      for (let i = 0; i < seleccionadosIds.length; i += 200) {
+        const lote = seleccionadosIds.slice(i, i + 200);
         const batch = writeBatch(db);
-        lote.forEach((id) => batch.delete(doc(db, col, id)));
+        lote.forEach((id) => {
+          const reg = registrosGlobales.find((r: any) => r.id === id);
+          if (reg) {
+            batch.set(doc(collection(db, COL_PAPELERA)), payloadPapelera(
+              col, catalogoSeleccionado.id, catalogoSeleccionado.titulo, reg, 'Eliminación en lote'
+            ));
+          }
+          batch.delete(doc(db, col, id));
+        });
         await batch.commit();
       }
-      await registrarLog('Catálogos', 'Eliminación', `Eliminó ${seleccionadosIds.length} registros seleccionados del catálogo de ${catalogoSeleccionado.titulo}`);
+      await registrarLog('Catálogos', 'Eliminación', `Eliminó ${seleccionadosIds.length} registros seleccionados del catálogo de ${catalogoSeleccionado.titulo} (enviados a la papelera)`);
       setSeleccionadosIds([]);
     } catch (error: any) {
       console.error('Error en borrado en lote:', error);
@@ -518,11 +775,18 @@ const CatalogosDashboard = () => {
 
   // ✅ FUNCIÓN DE ELIMINACIÓN DE SUB-REGISTRO CON LOG
   const handleEliminarSubdetalle = async (coleccion: string, id: string) => {
-    if (window.confirm('¿Estás seguro de que deseas eliminar este registro permanentemente?')) {
+    if (window.confirm('¿Deseas eliminar este registro?\n\nSe enviará a la Papelera de catálogos, desde donde podrás restaurarlo.')) {
       try { 
         const realCol = CACHE_NOMBRES_COLECCIONES[coleccion] || coleccion;
+        // ✅ NUEVO (V00106): copia del sub-registro a la papelera antes de borrar.
+        const subReg = (subDocsSnapshot[coleccion] || []).find((d: any) => d.id === id);
+        if (subReg && catalogoSeleccionado) {
+          await agregarRegistro(COL_PAPELERA, payloadPapelera(
+            realCol, catalogoSeleccionado.id, `${catalogoSeleccionado.titulo} (sub-registro)`, subReg, 'Eliminación de sub-registro'
+          ));
+        }
         await eliminarRegistro(realCol, id); 
-        await registrarLog('Catálogos', 'Eliminación', `Eliminó un detalle vinculado al catálogo de ${catalogoSeleccionado?.titulo}`);
+        await registrarLog('Catálogos', 'Eliminación', `Eliminó un detalle vinculado al catálogo de ${catalogoSeleccionado?.titulo} (enviado a la papelera)`);
       } catch (error) { alert("Hubo un error al eliminar el registro."); }
     }
   };
@@ -639,11 +903,122 @@ const CatalogosDashboard = () => {
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
 
+  // ✅ NUEVO (V00106) — MODAL DE LA PAPELERA (restauración de eliminados).
+  //    Se define aquí (antes del return temprano) para poder mostrarlo tanto
+  //    desde la lista de catálogos como desde dentro de un catálogo.
+  const modalPapeleraJSX = papeleraAbierta ? (
+    <div className="modal-overlay" style={{ zIndex: 2100 }} onClick={() => !restaurandoId && !vaciandoPapelera && setPapeleraAbierta(false)}>
+      <div className="form-card" style={{ maxWidth: '900px', width: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+        <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3fb950" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><polyline points="9 14 12 11 15 14"></polyline><line x1="12" y1="11" x2="12" y2="18"></line></svg>
+            Papelera de Catálogos
+          </h2>
+          <button style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => setPapeleraAbierta(false)}>✕</button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', padding: '12px 0', flexWrap: 'wrap', alignItems: 'center' }}>
+          <select className="form-input-elegante" style={{ width: 'auto', minWidth: '220px' }} value={papeleraFiltroCat} onChange={(e) => setPapeleraFiltroCat(e.target.value)}>
+            <option value="">Todos los catálogos</option>
+            {listaCatalogos.map((cat: CatalogSchema) => (
+              <option key={cat.id} value={cat.id}>{cat.titulo}</option>
+            ))}
+          </select>
+          <input className="form-input-elegante" style={{ flex: 1, minWidth: '180px' }} type="text" placeholder="Buscar en la papelera..." value={papeleraBusqueda} onChange={(e) => setPapeleraBusqueda(e.target.value)} />
+          <button
+            className="btn"
+            onClick={vaciarPapelera}
+            disabled={vaciandoPapelera || papeleraFiltrada.length === 0}
+            style={{ backgroundColor: '#da3633', color: '#fff', border: 'none', fontWeight: 600, opacity: (vaciandoPapelera || papeleraFiltrada.length === 0) ? 0.5 : 1, cursor: vaciandoPapelera ? 'wait' : 'pointer' }}
+            title="Elimina definitivamente todo lo visible (respeta el filtro)"
+          >
+            {vaciandoPapelera ? 'Vaciando…' : `Vaciar (${papeleraFiltrada.length})`}
+          </button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {papeleraItems === null ? (
+            <div style={{ color: '#8b949e', padding: '30px', textAlign: 'center' }}>Cargando papelera…</div>
+          ) : papeleraFiltrada.length === 0 ? (
+            <div style={{ color: '#8b949e', padding: '30px', textAlign: 'center', lineHeight: 1.6 }}>
+              La papelera está vacía{papeleraFiltroCat ? ' para este catálogo' : ''}.<br />
+              <span style={{ fontSize: '0.82rem' }}>
+                Aquí aparecerá todo lo que elimines en Catálogos a partir de la versión V00106.
+                Lo eliminado con versiones anteriores ya no existe en Firebase y no se puede recuperar.
+              </span>
+            </div>
+          ) : (
+            <table className="data-table" style={{ width: '100%' }}>
+              <thead>
+                <tr>
+                  <th style={{ whiteSpace: 'nowrap' }}>Eliminado</th>
+                  <th>Catálogo</th>
+                  <th>Registro</th>
+                  <th>Motivo</th>
+                  <th>Por</th>
+                  <th style={{ textAlign: 'center' }}>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {papeleraFiltrada.map((item: any) => (
+                  <tr key={item.id} style={{ borderBottom: '1px solid #21262d' }}>
+                    <td style={{ whiteSpace: 'nowrap', color: '#8b949e', fontSize: '0.82rem' }}>
+                      {item.eliminadoEn ? new Date(item.eliminadoEn).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '—'}
+                    </td>
+                    <td>{item.catalogoTitulo || item.coleccion}</td>
+                    <td style={{ maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={resumenPapelera(item)}>
+                      {resumenPapelera(item)}
+                    </td>
+                    <td style={{ color: '#8b949e', fontSize: '0.82rem', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.motivo || ''}>
+                      {item.motivo || '—'}
+                    </td>
+                    <td style={{ color: '#8b949e', fontSize: '0.82rem' }}>{item.eliminadoPor || '—'}</td>
+                    <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <button
+                        className="btn btn-outline"
+                        onClick={() => restaurarDePapelera(item)}
+                        disabled={restaurandoId !== null}
+                        style={{ color: '#3fb950', borderColor: '#3fb950', marginRight: '6px', fontSize: '0.8rem', cursor: restaurandoId ? 'wait' : 'pointer' }}
+                        title="Restaurar con su ID original (las referencias vivas se reconectan)"
+                      >
+                        {restaurandoId === item.id ? 'Restaurando…' : 'Restaurar'}
+                      </button>
+                      <button
+                        className="btn-small btn-danger"
+                        onClick={() => eliminarDefinitivo(item)}
+                        title="Eliminar definitivamente de la papelera"
+                        style={{ fontSize: '0.8rem' }}
+                      >
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   if (!catalogoSeleccionado) return (
     <div className="module-container cd-x1">
-      <h1 className="module-title cd-x2">
-        Administración de Catálogos
-      </h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+        <h1 className="module-title cd-x2">
+          Administración de Catálogos
+        </h1>
+        {/* ✅ NUEVO (V00106): acceso a la papelera para restaurar eliminados */}
+        <button
+          className="btn btn-outline"
+          onClick={() => abrirPapelera()}
+          title="Ver y restaurar registros eliminados de todos los catálogos"
+          style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><polyline points="9 14 12 11 15 14"></polyline><line x1="12" y1="11" x2="12" y2="18"></line></svg>
+          Papelera
+        </button>
+      </div>
       <div className="catalog-grid">
         {listaCatalogos.map((cat: CatalogSchema) => (
           <div key={cat.id} className="catalog-card" onClick={() => setCatalogoSeleccionado(cat)}>
@@ -652,6 +1027,7 @@ const CatalogosDashboard = () => {
           </div>
         ))}
       </div>
+      {modalPapeleraJSX}
     </div>
   );
 
@@ -702,19 +1078,34 @@ const CatalogosDashboard = () => {
                 {borrandoSeleccion ? 'Eliminando…' : `Eliminar (${seleccionadosIds.length})`}
               </button>
             )}
-            {/* ✅ NUEVO: limpiador de registros duplicados del catálogo */}
+            {/* ✅ MODIFICADO (V00106): el antiguo botón de "limpiar duplicados"
+                ahora es UNIR — selecciona 2+ registros con los checkboxes y
+                los fusiona en uno solo reapuntando todas las referencias. */}
             <button
               className="btn btn-outline cd-x15"
-              title="Eliminar registros duplicados (mismo contenido)"
-              onClick={limpiarDuplicados}
-              disabled={limpiandoDuplicados}
-              style={{ opacity: limpiandoDuplicados ? 0.6 : 1, cursor: limpiandoDuplicados ? 'wait' : 'pointer' }}
+              title={seleccionadosIds.length < 2
+                ? 'Unir registros: selecciona 2 o más con los checkboxes para fusionarlos en uno'
+                : `Unir los ${seleccionadosIds.length} registros seleccionados en uno solo (reapunta referencias)`}
+              onClick={abrirModalUnir}
+              disabled={seleccionadosIds.length < 2 || uniendo}
+              style={{
+                opacity: (seleccionadosIds.length < 2 || uniendo) ? 0.55 : 1,
+                cursor: uniendo ? 'wait' : (seleccionadosIds.length < 2 ? 'not-allowed' : 'pointer'),
+                display: 'flex', alignItems: 'center', gap: '6px',
+                color: seleccionadosIds.length >= 2 ? '#3fb950' : undefined,
+                borderColor: seleccionadosIds.length >= 2 ? '#3fb950' : undefined,
+              }}
             >
-              {limpiandoDuplicados ? (
-                <span style={{ fontSize: '0.75rem' }}>Limpiando…</span>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path><line x1="12" y1="12" x2="19" y2="19"></line><line x1="19" y1="12" x2="12" y2="19"></line></svg>
-              )}
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M6 21V9a9 9 0 0 0 9 9"></path></svg>
+              {seleccionadosIds.length >= 2 ? `Unir (${seleccionadosIds.length})` : 'Unir'}
+            </button>
+            {/* ✅ NUEVO (V00106): papelera filtrada al catálogo actual */}
+            <button
+              className="btn btn-outline cd-x15"
+              title="Papelera: restaurar registros eliminados de este catálogo"
+              onClick={() => abrirPapelera(catalogoSeleccionado.id)}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><polyline points="9 14 12 11 15 14"></polyline><line x1="12" y1="11" x2="12" y2="18"></line></svg>
             </button>
             <button className="btn btn-outline cd-x15" title="Configurar Obligatorios" onClick={() => setModalEstado('config_obligatorios')}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -1130,6 +1521,84 @@ const CatalogosDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* ✅ NUEVO (V00106) — MODAL: UNIR REGISTROS SELECCIONADOS */}
+      {modalUnir && (
+        <div className="modal-overlay" style={{ zIndex: 2200 }} onClick={() => !uniendo && setModalUnir(false)}>
+          <div className="form-card" style={{ maxWidth: '680px', width: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+            <div className="form-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0 }}>Unir registros de {catalogoSeleccionado.titulo}</h2>
+              <button style={{ background: 'none', border: 'none', color: '#8b949e', fontSize: '1.2rem', cursor: 'pointer' }} onClick={() => !uniendo && setModalUnir(false)}>✕</button>
+            </div>
+
+            <p style={{ color: '#8b949e', fontSize: '0.83rem', lineHeight: 1.6, margin: '10px 0' }}>
+              Elige el registro que se va a <b style={{ color: '#3fb950' }}>CONSERVAR</b>. Los demás se
+              fusionarán en él: todas sus referencias (sub-registros, otros catálogos que los usan y
+              módulos como Operaciones, Direcciones y Convenios) se reapuntarán al conservado, y los
+              registros absorbidos se enviarán a la <b>Papelera</b> por si necesitas revisarlos después.
+            </p>
+
+            <div style={{ overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {seleccionadosIds.map((id) => {
+                const reg: any = registrosGlobales.find((r: any) => r.id === id);
+                if (!reg) return null;
+                const esConservado = conservarId === id;
+                const vinculados = conteoDetallesGlobal[String(id).toLowerCase()] || 0;
+                return (
+                  <label
+                    key={id}
+                    style={{
+                      display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 12px',
+                      border: `1px solid ${esConservado ? '#3fb950' : '#30363d'}`,
+                      background: esConservado ? 'rgba(63, 185, 80, 0.08)' : '#0d1117',
+                      borderRadius: '8px', cursor: uniendo ? 'wait' : 'pointer',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="conservar-registro"
+                      checked={esConservado}
+                      onChange={() => setConservarId(id)}
+                      disabled={uniendo}
+                      style={{ marginTop: '3px', cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: esConservado ? '#3fb950' : '#c9d1d9', fontWeight: 600, fontSize: '0.88rem' }}>
+                        {resumenRegistro(reg)}{esConservado ? '  ← SE CONSERVA' : ''}
+                      </div>
+                      <div style={{ color: '#8b949e', fontSize: '0.76rem', marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '4px 14px' }}>
+                        {catalogoSeleccionado.fields.slice(0, 5).map((f: CatalogField) => (
+                          <span key={f.name}>{f.label}: <b style={{ color: '#c9d1d9', fontWeight: 500 }}>{getDisplayValue(reg, f)}</b></span>
+                        ))}
+                        {(catalogoSeleccionado.details?.length || 0) > 0 && (
+                          <span>Sub-registros: <b style={{ color: vinculados > 0 ? '#d29922' : '#c9d1d9', fontWeight: 600 }}>{vinculados}</b></span>
+                        )}
+                        <span style={{ fontFamily: 'monospace', color: '#6e7681' }}>ID: {String(id).slice(0, 10)}</span>
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '14px' }}>
+              <button type="button" className="btn btn-outline" style={{ padding: '8px 16px' }} disabled={uniendo} onClick={() => setModalUnir(false)}>Cancelar</button>
+              <button
+                type="button"
+                className="btn"
+                onClick={ejecutarUnionCatalogo}
+                disabled={uniendo || !conservarId}
+                style={{ padding: '8px 16px', backgroundColor: '#238636', color: '#fff', border: 'none', fontWeight: 600, cursor: uniendo ? 'wait' : 'pointer', opacity: uniendo ? 0.7 : 1 }}
+              >
+                {uniendo ? 'Uniendo… no cierres la ventana' : `Unir ${seleccionadosIds.length} registros`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ NUEVO (V00106) — MODAL PAPELERA (también accesible desde la lista) */}
+      {modalPapeleraJSX}
     </div>
   );
 };
