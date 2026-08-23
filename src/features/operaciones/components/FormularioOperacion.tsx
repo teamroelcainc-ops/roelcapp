@@ -736,6 +736,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return '';
   };
 
+  const nombreMoneda = (monedaId: any) =>
+    listaMonedasLocal.find((m:any) => String(m.id) === String(monedaId))?.moneda || '';
+  const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // ✅ V00126: etiqueta del convenio en el dropdown = nombre + monto + moneda
+  const etiquetaConvenioCliente = (c: any) => `${c.descripcion || ''} — ${fmtMoney(c.tarifaMonto)}${nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}`;
+  const etiquetaConvenioProveedor = (c: any) => `${c.tipoConvenioNombre || ''} — ${fmtMoney(c.tarifaMonto)}${nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}`;
+
   const [tipoCambioDia, setTipoCambioDia] = useState<number | null>(null);
   const [buscandoTC, setBuscandoTC] = useState(false);
 
@@ -1366,7 +1373,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       return {
         ...d,
         id: d.id, tarifaBaseId: tarifaId, descripcion: nombreFinal,
-        monedaMaestro: d.moneda || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
+        // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto "Pesos"/"Dólares")
+        monedaMaestro: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
         tarifaMonto: montoDetalle(d),
       };
     });
@@ -1380,7 +1388,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         id: convGuardadoId,
         tarifaBaseId: tarifaId,
         descripcion: initialData.convenioNombre || (detReal as any)?.tipoConvenioNombre || 'Convenio guardado',
-        monedaMaestro: initialData.monedaConvenioCliente || (detReal as any)?.moneda || ID_USD,
+        monedaMaestro: initialData.monedaConvenioCliente || resolverMonedaIdDeEmpresa({ moneda: (detReal as any)?.moneda }) || ID_USD,
         tarifaMonto: Number(initialData.montoConvenioCliente ?? montoDetalle(detReal || {})) || 0,
       });
     }
@@ -1433,7 +1441,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       return {
         ...d,
         id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
-        monedaBase: maestroParent?.monedaId || maestroParent?.moneda || d.moneda || ID_USD,
+        // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto)
+        monedaBase: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroParent?.monedaId || maestroParent?.moneda || ID_USD,
         tarifaMonto: montoDetalle(d),
       };
     });
@@ -1447,7 +1456,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         id: convProvGuardadoId,
         tarifaBaseId: tarifaId,
         tipoConvenioNombre: initialData.convenioProveedorNombre || (detReal as any)?.tipoConvenioNombre || 'Convenio guardado',
-        monedaBase: initialData.monedaConvenioProv || (detReal as any)?.moneda || ID_USD,
+        monedaBase: initialData.monedaConvenioProv || resolverMonedaIdDeEmpresa({ moneda: (detReal as any)?.moneda }) || ID_USD,
         tarifaMonto: Number(initialData.totalAPagarProv ?? montoDetalle(detReal || {})) || 0,
       });
     }
@@ -1460,7 +1469,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!formData.convenio) return;
     if (searchConvenio && searchConvenio.trim()) return;
     const conv = listaConveniosCliente.find((c: any) => String(c.id) === String(formData.convenio));
-    const nombre = conv?.descripcion || initialData.convenioNombre || '';
+    const nombre = conv ? etiquetaConvenioCliente(conv) : (initialData.convenioNombre || '');
     if (nombre) setSearchConvenio(nombre);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, formData.convenio, searchConvenio, listaConveniosCliente]);
@@ -1470,7 +1479,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     if (!formData.convenioProveedor) return;
     if (searchConvenioProveedor && searchConvenioProveedor.trim()) return;
     const conv = listaConveniosProveedor.find((c: any) => String(c.id) === String(formData.convenioProveedor));
-    const nombre = conv?.tipoConvenioNombre || initialData.convenioProveedorNombre || '';
+    const nombre = conv ? etiquetaConvenioProveedor(conv) : (initialData.convenioProveedorNombre || '');
     if (nombre) setSearchConvenioProveedor(nombre);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData, formData.convenioProveedor, searchConvenioProveedor, listaConveniosProveedor]);
@@ -1794,7 +1803,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ Los filtros aceptan el ID del catálogo O el nombre del tipo, porque en la
   //   base conviven registros guardados en ambos formatos. Así, un cliente de
   //   mercancía recién creado desde este formulario aparece de inmediato.
-  const filClientesPaga = useMemo(() => empresas?.filter((e:any) => contieneId(e.tiposEmpresa, '7eec9cbb') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_PAGA)) || [], [empresas]);
+  // ✅ V00126: en Cliente (Paga) solo se listan las empresas que TIENEN convenio
+  //   (se conserva siempre la del registro que se está editando).
+  const idsClientesConConvenio = useMemo(() => {
+    const set = new Set<string>();
+    (catalogoConvClientes || []).forEach((c: any) => {
+      const id = String(c.clienteId ?? c.cliente ?? c.id_cliente ?? c.clientePaga ?? c.empresaId ?? c.empresa ?? '').trim();
+      if (id) set.add(id);
+    });
+    (catalogoConvDetalles || []).forEach((d: any) => { const id = ownerClienteDetalle(d); if (id) set.add(id); });
+    return set;
+  }, [catalogoConvClientes, catalogoConvDetalles]);
+  const filClientesPaga = useMemo(() => empresas?.filter((e:any) =>
+    (contieneId(e.tiposEmpresa, '7eec9cbb') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_PAGA)) &&
+    (idsClientesConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.clientePaga || ''))
+  ) || [], [empresas, idsClientesConConvenio, initialData?.clientePaga]);
   const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, '51246232') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_MERCANCIA)) && e.status === 'Activa') || [], [empresas]);
   // ✅ Solo empresas con tiposEmpresa 11894dfd (o su nombre) Y tiposServicio 42afffd3 o 7e70a3f7.
   const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) =>
@@ -1829,7 +1852,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const direccionDeEmpresaOD = (e: any) => mapaDirecciones[String(e?.direccionId || '')] || null;
   const direccionFormateadaOD = (e: any) => formatearDireccionPorPais(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
   const paisDeEmpresaOD = (e: any) => paisDeDireccion(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
-  const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, 'ca21ab07') || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_TRANSPORTE)) && e.status === 'Activa') || [], [empresas]);
+  // ✅ V00126: en Proveedor de Transporte solo se listan los que TIENEN convenio
+  //   (se conserva siempre el del registro que se está editando y la flota propia forzada).
+  const idsProveedoresConConvenio = useMemo(() => {
+    const set = new Set<string>();
+    (conveniosProv || []).forEach((c: any) => {
+      const id = String(c.proveedorId ?? c.proveedor ?? c.id_proveedor ?? c.empresaId ?? c.empresa ?? '').trim();
+      if (id) set.add(id);
+    });
+    (catalogoConvProvDetalles || []).forEach((d: any) => { const id = ownerProvDetalle(d); if (id) set.add(id); });
+    return set;
+  }, [conveniosProv, catalogoConvProvDetalles]);
+  const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) =>
+    (contieneId(e.tiposEmpresa, 'ca21ab07') || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_TRANSPORTE)) && e.status === 'Activa' &&
+    (idsProveedoresConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.proveedorUnidad || '') || String(e.id) === String(formData.proveedorUnidad || ''))
+  ) || [], [empresas, idsProveedoresConConvenio, initialData?.proveedorUnidad, formData.proveedorUnidad]);
 
   const sOrigen = (searchOrigen || '').toLowerCase();
   const sDestino = (searchDestino || '').toLowerCase();
@@ -1898,10 +1935,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const resultadosOperadorProveedor = listaOpeProvLocal.filter((o:any) => String(o.nombre || o.nombres || o.nombreCompleto || '').toLowerCase().includes(sOperadorProv));
   const resultadosConvenio = listaConveniosCliente.filter((c:any) =>
     (c.descripcion || '').toLowerCase().includes(sConvenio) ||
+    etiquetaConvenioCliente(c).toLowerCase().includes(sConvenio) ||
     String(c.tarifaBaseId || '').toLowerCase().includes(sConvenio)
   );
   const resultadosConvenioProveedor = listaConveniosProveedor.filter((c:any) =>
     (c.tipoConvenioNombre || '').toLowerCase().includes(sConvenioProveedor) ||
+    etiquetaConvenioProveedor(c).toLowerCase().includes(sConvenioProveedor) ||
     String(c.tarifaBaseId || '').toLowerCase().includes(sConvenioProveedor)
   );
 
@@ -1914,8 +1953,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const monedaClienteId = convClienteSel?.monedaMaestro;
   const monedaProveedorId = convProvSelObj?.monedaBase;
   const tarifasCoinciden = !!tarifaIdCliente && tarifaIdCliente === tarifaIdProveedor;
-  const nombreMoneda = (monedaId: any) =>
-    listaMonedasLocal.find((m:any) => String(m.id) === String(monedaId))?.moneda || '';
 
   // ✅ Color de los montos según la moneda de facturación:
   //   Dólares → azul (#58a6ff)   ·   Pesos → verde (#3fb950).
@@ -2257,7 +2294,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const tipoOpNombreResumen = tiposOperacion?.find((op: any) => op.id === formData.tipoOperacionId)?.tipo_operacion || '';
   const convenioNombreResumen = listaConveniosCliente.find((c: any) => c.id === formData.convenio)?.descripcion || '';
   const tcResumen = formData.tipoCambioAprobado || tipoCambioDia;
-  const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   const fmtFecha = (f: string) => { if (!f) return ''; try { return new Date(f).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }); } catch { return f; } };
 
   const opcionesTarifasRef = useMemo(() => {
@@ -2637,9 +2674,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {showDropdownConvenio && (
                             <div className="fo-x12">
                               {resultadosConvenio.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosConvenio.map((c:any) => (
-                                <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(c.descripcion); setShowDropdownConvenio(false); }}>
-                                  <div className="fo-x15">{c.descripcion}</div>
-                                  <div className="fo-x20">Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}</div>
+                                <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(etiquetaConvenioCliente(c)); setShowDropdownConvenio(false); }}>
+                                  {/* ✅ V00126: nombre + monto + moneda en la misma línea */}
+                                  <div className="fo-x15">{etiquetaConvenioCliente(c)}</div>
                                 </div>
                               ))}
                             </div>
@@ -2839,9 +2876,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {showDropdownConvenioProveedor && (
                             <div className="fo-x12">
                               {resultadosConvenioProveedor.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
-                                <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(c.tipoConvenioNombre); setShowDropdownConvenioProveedor(false); }}>
-                                  <div className="fo-x15">{c.tipoConvenioNombre}</div>
-                                  <div className="fo-x20">Monto: {fmtMoney(c.tarifaMonto)}{nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}</div>
+                                <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(etiquetaConvenioProveedor(c)); setShowDropdownConvenioProveedor(false); }}>
+                                  {/* ✅ V00126: nombre + monto + moneda en la misma línea */}
+                                  <div className="fo-x15">{etiquetaConvenioProveedor(c)}</div>
                                 </div>
                               ))}
                             </div>

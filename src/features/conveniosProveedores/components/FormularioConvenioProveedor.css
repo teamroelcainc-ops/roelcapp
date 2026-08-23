@@ -6,22 +6,22 @@
 .fcp-x2 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; z-index: 1000; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); padding: 0; list-style: none; }
 .fcp-x3 { padding: 8px 12px; cursor: pointer; color: #c9d1d9; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
 .fcp-x4 { padding: 8px 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
-.fcp-x5 { max-width: 850px; }
+.fcp-x5 { max-width: 1150px; width: 96vw; } /* ✅ V00126: formulario más ancho para ver todos los valores */
 .fcp-x6 { grid-template-columns: 1fr 1fr; gap: 20px; }
 .fcp-x7 { background-color: #21262d; }
 .fcp-x8 { margin-top: 32px; border: 1px solid #30363d; border-radius: 8px; padding: 24px; background-color: #0d1117; }
 .fcp-x9 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .fcp-x10 { font-size: 1rem; color: #f0f6fc; margin: 0; }
 .fcp-x11 { background-color: #161b22; padding: 20px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #30363d; }
-.fcp-x12 { grid-template-columns: 2fr 1fr 1fr auto; gap: 16px; align-items: end; }
+.fcp-x12 { grid-template-columns: 1fr 1fr; gap: 16px; align-items: end; }
 .fcp-x13 { height: 38px; background-color: #D84315; }
-.fcp-x14 { border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
-.fcp-x15 { width: 100%; border-collapse: collapse; }
+.fcp-x14 { border: 1px solid #30363d; border-radius: 8px; overflow-x: auto; }
+.fcp-x15 { width: 100%; border-collapse: collapse; table-layout: auto; min-width: 640px; }
 .fcp-x16 { background-color: #1f2937; color: #8b949e; }
 .fcp-x17 { padding: 12px; text-align: center; width: 50px; }
 .fcp-x18 { padding: 12px; text-align: left; }
-.fcp-x19 { padding: 12px; text-align: right; width: 150px; }
-.fcp-x20 { padding: 12px; text-align: center; width: 100px; }
+.fcp-x19 { padding: 12px; text-align: right; width: 160px; }
+.fcp-x20 { padding: 12px; text-align: center; width: 140px; }
 .fcp-x21 { text-align: center; padding: 32px; color: #8b949e; }
 .fcp-x22 { border-top: 1px solid #30363d; background-color: #0d1117; }
 .fcp-x23 { padding: 12px; text-align: center; color: #8b949e; }
@@ -33,6 +33,29 @@
 .fcp-x29 { padding: 10px 24px; border-radius: 6px; }
 .fcp-x30 { background-color: #238636; padding: 10px 24px; border-radius: 6px; border: none; font-weight: bold; }
 
+/* ✅ V00126: estilos extraídos de inline + modal de concepto + tabla ancha */
+.fcp-ss-input { cursor: text; background-color: #0d1117; color: #c9d1d9; }
+.fcp-ss-input.abierto { border: 1px solid #3b82f6; }
+.fcp-x3:hover { background-color: #21262d; }
+.fcp-x22:hover { background-color: #161b22; }
+.fcp-x27:hover { background-color: rgba(239, 68, 68, 0.1); }
+.fcp-cuerpo { display: block; padding: 24px; max-height: 80vh; overflow-y: auto; }
+.fcp-cuerpo.oculto { display: none; }
+.fcp-solo-lectura { opacity: 0.85; cursor: not-allowed; }
+.fcp-celda-nombre { white-space: normal; min-width: 260px; line-height: 1.35; }
+.fcp-input-tarifa { width: 140px; padding: 4px 8px; margin-left: auto; }
+.fcp-select-moneda { width: 130px; padding: 4px 6px; margin-left: auto; }
+.fcp-btn-editar { background: none; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 4px; padding: 2px 8px; cursor: pointer; margin-right: 6px; }
+.fcp-btn-editar:hover { background-color: rgba(88, 166, 255, 0.12); }
+.fcp-det-overlay { backdrop-filter: blur(4px); z-index: 2100; }
+.fcp-det-card { max-width: 680px; width: 94vw; padding: 0; border-radius: 16px; border: 1px solid #444; background-color: #0d1117; }
+.fcp-det-header { padding: 20px 24px; border-bottom: 1px solid #30363d; margin-bottom: 0; }
+.fcp-det-titulo { display: flex; align-items: center; gap: 8px; font-size: 1.1rem; margin: 0; color: #f0f6fc; }
+.fcp-det-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.fcp-det-cuerpo { padding: 24px; }
+.fcp-det-tipo { grid-column: 1 / -1; }
+.fcp-det-acciones { margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; }
+
 /* MOBILE-DENSITY-AUTO */
 /* Reglas de densidad móvil generadas automáticamente. */
 @media (max-width: 640px) {
@@ -40,6 +63,8 @@
   .fcp-x8 { padding: 14px 12px; }
   .fcp-x9 { flex-wrap: wrap; }
   .fcp-x12 { grid-template-columns: 1fr; }
+  .fcp-x5 { width: 100%; }
+  .fcp-det-acciones { flex-wrap: wrap; }
   .fcp-x21 { padding: 14px 12px; }
   .fcp-x28 { flex-wrap: wrap; padding: 14px 12px; }
 }

@@ -1,0 +1,438 @@
+/**
+ * Función principal para AppSheet
+ */
+function doGet(e) {
+  try {
+    const buscarParametro = (nombre) => {
+      if (e.parameter[nombre]) return e.parameter[nombre];
+      for (let key in e.parameter) {
+        if (key.toLowerCase().indexOf(nombre.toLowerCase()) !== -1) {
+          return e.parameter[key];
+        }
+      }
+      return "";
+    };
+
+    const data = {
+      Coordinador: buscarParametro("Coordinador"),
+      Referencia: buscarParametro("Referencia") || "S/R",
+      Remolque: buscarParametro("Remolque"),
+      TipoUnidad: buscarParametro("TipoUnidad"),
+      PlacasRemolque: buscarParametro("PlacasRemolque"),
+      Unidad: buscarParametro("Unidad"),
+      Operador: buscarParametro("Operador"),
+      FechaServicio: buscarParametro("FechaServicio"),
+      TipoCambio: buscarParametro("TipoCambio"),
+      Proveedor: buscarParametro("Proveedor"),
+      TipoOperacion: buscarParametro("TipoOperacion"),
+      ImpoExpoMov: buscarParametro("ImpoExpoMov"),
+
+      ClienteOrigen: buscarParametro("ClienteOrigen"),
+      CiudadOrigen: buscarParametro("CiudadOrigen"),
+      ClienteDestino: buscarParametro("ClienteDestino"),
+      CiudadDestino: buscarParametro("CiudadDestino"),
+      RefCliente: buscarParametro("RefCliente"),
+      Moneda: buscarParametro("Moneda"),
+      MonedaConvenio: buscarParametro("MonedaConvenio"),
+      DescripcionDireccion: buscarParametro("DescripcionDireccion"),
+      CityStateZip: buscarParametro("CityStateZip"),
+      ConvenioProv: buscarParametro("ConvenioProv"),
+      CostosAdic: buscarParametro("CostosAdic"),
+      SubtotalProv: buscarParametro("SubtotalProv"),
+      TotalAPagar: buscarParametro("TotalAPagar")
+    };
+
+    const pdfUrl = generatePDF(data);
+    
+    return HtmlService.createHtmlOutput(
+      "<html><body style='font-family: Arial; text-align: center; padding-top: 50px;'>" +
+      "<h2>Generando Confirmación de Tarifa...</h2>" +
+      "<script>window.location.replace('" + pdfUrl + "');</script></body></html>"
+    );
+    
+  } catch (error) {
+    return ContentService.createTextOutput("Error en el script: " + error.toString());
+  }
+}
+
+/**
+ * Función que construye el HTML y genera el PDF
+ */
+function generatePDF(data) {
+  const folderId = "1PFoVP6jK1WJPjeHsRTmGcMeGb55DxtW8"; 
+  const folder = DriveApp.getFolderById(folderId);
+  
+  // --- PROCESAMIENTO DE LA IMAGEN A BASE64 ---
+  const imageId = "1blNDWMQvvp7Xz3G7lm_whAxQw9krUOAz";
+  let base64Image = "";
+  try {
+    const imgBlob = DriveApp.getFileById(imageId).getBlob();
+    base64Image = "data:" + imgBlob.getContentType() + ";base64," + Utilities.base64Encode(imgBlob.getBytes());
+  } catch (e) { 
+    console.log("Error con la imagen: " + e); 
+  }
+  // ------------------------------------------
+
+  // HTML con mejoras CSS: fuente a 14px, líneas divisorias gris claro y arreglo del bloque Tipo de Cambio
+  const htmlTemplate = `<!DOCTYPE html>
+<html lang="es">
+<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirmación de Tarifa a Proveedor</title>
+  <style type="text/css">
+        @page { size: letter; margin: 0.2cm; }
+        
+        /* Configuración General a 14px (2 puntos menos) */
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 14px; 
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 10px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .document-container {
+            background-color: #fff;
+            width: 850px;
+            padding: 20px; 
+            border: 1px solid #ccc;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        /* Encabezado */
+        .header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0; /* Línea divisoria principal */
+            padding-bottom: 10px;
+        }
+
+        .logo-placeholder {
+            width: 180px;
+            text-align: center;
+        }
+
+        .logo-img {
+            max-width: 160px;
+            height: auto;
+        }
+
+        .title {
+            font-size: 22px; /* Ajustado proporcionalmente */
+            text-decoration: underline;
+            font-weight: bold;
+            flex-grow: 1;
+            text-align: center;
+        }
+
+        /* Estructura de Filas */
+        .row {
+            display: flex;
+            margin-bottom: 4px; /* Un poco más de aire entre filas */
+            border-bottom: 1px solid #f0f0f0; /* Línea divisoria muy sutil entre filas */
+            padding-bottom: 2px;
+        }
+
+        .col {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .field-group {
+            display: flex;
+            margin-bottom: 1px;
+            align-items: stretch;
+        }
+
+        .label {
+            background-color: #f8f9fa; /* Gris un poco más limpio */
+            width: 150px; 
+            padding: 5px 10px;
+            text-align: right;
+            text-transform: uppercase;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            border: 1px solid #e0e0e0; /* Borde gris claro */
+            border-right: none; /* Evita doble borde con el valor */
+        }
+
+        .value {
+            padding: 5px 10px;
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            border: 1px solid #e0e0e0; /* Borde gris claro */
+            background-color: #ffffff;
+        }
+
+        /* Colores y Estilos Especiales */
+        .highlight-yellow { background-color: #fff9c4; border-color: #e0e0e0; } /* Amarillo más suave profesional */
+        .text-blue { color: #007bb5; font-weight: bold; } /* Azul más corporativo */
+        .text-red { color: #d32f2f; font-weight: bold; }
+        .bold { font-weight: bold; }
+        .section-right { margin-left: 15px; }
+        
+        /* Espaciadores pequeños */
+        .spacer-sm { height: 10px; }
+
+        /* Footer */
+        .footer-info {
+            text-align: center;
+            line-height: 1.4;
+            margin-top: 15px;
+            border-top: 2px solid #e0e0e0; /* Línea divisoria del footer */
+            padding-top: 15px;
+            font-size: 13px; /* Más pequeño para el footer */
+        }
+
+        .contact-email { color: #007bb5; text-decoration: none; font-weight: bold; }
+  </style>
+</head>
+<body bis_frame_id="699" bis_status="ok">
+<div class="document-container">
+<div class="header">
+<div class="logo-placeholder"><img alt="Logo" class="logo-img" src="${base64Image}" />
+<div class="text-blue" style="font-size: 11px; margin-top: 5px;">LOGISTICA<br />
+www.roelca.com</div>
+</div>
+
+<div class="title">CONFIRMACION DE TARIFA A PROVEEDOR</div>
+</div>
+
+<div class="row">
+<div class="col">
+<div class="field-group">
+<div class="label">COORDINADOR</div>
+
+<div class="value bold">&lt;&lt;LOOKUP(USEREMAIL(), "BDUsuarios", "Correo", "Nombre")&gt;&gt; </div>
+</div>
+
+<div class="field-group">
+<div class="label">REMOLQUE</div>
+
+<div class="value bold">&lt;&lt;[ID_REMOLQUE].[NOMBRES]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">TIPO DE UNIDAD</div>
+
+<div class="value highlight-yellow">&lt;&lt;[UNIDAD_PROVEEDOR].[NUMERO_DE_SERIE]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">PLACAS REMOLQUE</div>
+
+<div class="value highlight-yellow">&lt;&lt;[ID_REMOLQUE].[PLACAS]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">UNIDAD</div>
+
+<div class="value highlight-yellow">&lt;&lt;[UNIDAD_PROVEEDOR].[NUMERO_DE_UNIDAD]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">OPERADOR</div>
+
+<div class="value bold">&lt;&lt;[OPERADOR_PROVEEDOR].[NOMBRES]&gt;&gt;</div>
+</div>
+</div>
+
+<div class="col section-right">
+<div class="field-group">
+<div class="label">No. REFERENCIA</div>
+
+<div class="value highlight-yellow bold">&lt;&lt;[NumeroDeReferenciaCalculadoDesdeGoogleSheets]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">FECHA DEL SERVICIO</div>
+
+<div class="value bold">&lt;&lt;[Fecha_de_servicio]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">TIPO DE CAMBIO DOF $</div>
+
+<div class="value bold">&lt;&lt;[TIPODECAMBIO]&gt;&gt;</div>
+</div>
+
+<div class="spacer-sm"> </div>
+
+<div class="field-group">
+<div class="label">PROVEEDOR</div>
+
+<div class="value bold">&lt;&lt;[ID_PROVEEDOR].[nombre]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">TIPO DE OPER.</div>
+
+<div class="value bold">&lt;&lt;[ID_TARIFARIO].[DescripcionTarifario]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">IMPO / EXPO / MOV</div>
+
+<div class="value bold">&lt;&lt;[Importacion/Exportacion]&gt;&gt;</div>
+</div>
+</div>
+</div>
+
+<div class="spacer-sm"> </div>
+
+<div class="row">
+<div class="col">
+<div class="field-group">
+
+</div>
+</div>
+</div>
+
+<div class="spacer-sm"> </div>
+
+<div class="row">
+<div class="col">
+<div class="field-group">
+<div class="label">CLIENTE ORIGEN</div>
+
+<div class="value bold">&lt;&lt;[ID_BODEGA].[nombre]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">CIUDAD ORIGEN</div>
+
+<div class="value bold">&lt;&lt;[BodegaDeOrigen].[Label]&gt;&gt;</div>
+</div>
+
+<div class="spacer-sm"> </div>
+
+<div class="field-group">
+<div class="label">CLIENTE DESTINO</div>
+
+<div class="value bold">&lt;&lt;[ID_BODEGADESTINO].[nombre]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">CIUDAD DESTINO</div>
+
+<div class="value bold">&lt;&lt;[BodegaDeDestino].[Label]&gt;&gt;</div>
+</div>
+
+<div class="spacer-sm"> </div>
+
+<div class="field-group">
+<div class="label">#REF CLIENTE</div>
+
+<div class="value bold">&lt;&lt;[Ret_cliente]&gt;&gt;</div>
+</div>
+</div>
+
+<div class="col section-right">
+<div class="field-group">
+<div class="label">FACTURADO EN:</div>
+
+<div class="value text-blue">&lt;&lt;[FACTURADO_EN_PROVEEDORES].[name]&gt;&gt;</div>
+</div>
+
+<div class="field-group">
+<div class="label">CONVENIO PROV. $</div>
+
+<div class="value text-blue" style="justify-content: space-between;"><span>&lt;&lt;[Convenio_proveedor]&gt;&gt;</span> <span>&lt;&lt;[Moneda_convenio_proveedores].[name]&gt;&gt;</span></div>
+</div>
+
+<div class="field-group">
+<div class="label">COSTOS ADIC. $</div>
+
+<div class="value text-blue" style="justify-content: space-between;"><span>&lt;&lt;[Costos_adicionales_proveedor]&gt;&gt;</span> <span>&lt;&lt;[Moneda_convenio_proveedores].[name]&gt;&gt;</span></div>
+</div>
+
+<div class="field-group">
+<div class="label">SUBTOTAL PROV. $</div>
+
+<div class="value text-blue" style="justify-content: space-between;"><span>&lt;&lt;[TOTAL_A_PAGAR]&gt;&gt;</span> <span>&lt;&lt;[Moneda_convenio_proveedores].[name]&gt;&gt;</span></div>
+</div>
+
+<div class="field-group">
+<div class="label">TOTAL A FACT. $</div>
+
+<div class="value text-red" style="justify-content: space-between;"><span>&lt;&lt;[MonedaConversion]&gt;&gt;</span> <span>&lt;&lt;[FACTURADO_EN_PROVEEDORES].[name]&gt;&gt;</span></div>
+</div>
+</div>
+</div>
+
+<div class="row" style="margin-top: 15px; border-bottom: none;">
+<div class="col">
+<div class="field-group">
+<div class="label" style="height: 110px; display: block; padding-top: 8px; line-height: 1.3; text-align: left;">FACTURAR A:<br />
+DIRECCION:<br />
+C.P:<br />
+RFC / TAX ID:<br />
+TEL:<br />
+CORREO:</div>
+
+<div class="value" style="background-color: #fafafa;"> </div>
+</div>
+</div>
+
+<div class="col section-right">
+<div class="footer-info">
+<div class="bold">ROELCAINC, S.A. DE C.V.</div>
+
+<div>&lt;&lt;[FACTURADO_EN_PROVEEDORES].[DescripcionDireccion]&gt;&gt;</div>
+
+<div>&lt;&lt;[FACTURADO_EN_PROVEEDORES].[CityStateZip]&gt;&gt;</div>
+
+<div class="bold" style="margin-top: 5px;">ROE - 180119 - IV4 / 8671964690</div>
+<a class="contact-email" href="mailto:proveedores@roelca.com">proveedores@roelca.com</a></div>
+</div>
+</div>
+</div>
+</body>
+</html>`;
+
+  // Sustitución de los valores
+  const htmlBody = htmlTemplate
+    .replace(/&lt;&lt;LOOKUP\(USEREMAIL\(\), "BDUsuarios", "Correo", "Nombre"\)&gt;&gt;/g, data.Coordinador || "")
+    .replace(/&lt;&lt;\[ID_REMOLQUE\]\.\[NOMBRES\]&gt;&gt;/g, data.Remolque || "")
+    .replace(/&lt;&lt;\[UNIDAD_PROVEEDOR\]\.\[NUMERO_DE_SERIE\]&gt;&gt;/g, data.TipoUnidad || "")
+    .replace(/&lt;&lt;\[ID_REMOLQUE\]\.\[PLACAS\]&gt;&gt;/g, data.PlacasRemolque || "")
+    .replace(/&lt;&lt;\[UNIDAD_PROVEEDOR\]\.\[NUMERO_DE_UNIDAD\]&gt;&gt;/g, data.Unidad || "")
+    .replace(/&lt;&lt;\[OPERADOR_PROVEEDOR\]\.\[NOMBRES\]&gt;&gt;/g, data.Operador || "")
+    .replace(/&lt;&lt;\[NumeroDeReferenciaCalculadoDesdeGoogleSheets\]&gt;&gt;/g, data.Referencia || "")
+    .replace(/&lt;&lt;\[Fecha_de_servicio\]&gt;&gt;/g, data.FechaServicio || "")
+    .replace(/&lt;&lt;\[TIPODECAMBIO\]&gt;&gt;/g, data.TipoCambio || "")
+    .replace(/&lt;&lt;\[ID_PROVEEDOR\]\.\[nombre\]&gt;&gt;/g, data.Proveedor || "")
+    .replace(/&lt;&lt;\[ID_TARIFARIO\]\.\[DescripcionTarifario\]&gt;&gt;/g, data.TipoOperacion || "")
+    .replace(/&lt;&lt;\[Importacion\/Exportacion\]&gt;&gt;/g, data.ImpoExpoMov || "")
+
+    .replace(/&lt;&lt;\[ID_BODEGA\]\.\[nombre\]&gt;&gt;/g, data.ClienteOrigen || "")
+    .replace(/&lt;&lt;\[BodegaDeOrigen\]\.\[Label\]&gt;&gt;/g, data.CiudadOrigen || "")
+    .replace(/&lt;&lt;\[ID_BODEGADESTINO\]\.\[nombre\]&gt;&gt;/g, data.ClienteDestino || "")
+    .replace(/&lt;&lt;\[BodegaDeDestino\]\.\[Label\]&gt;&gt;/g, data.CiudadDestino || "")
+    .replace(/&lt;&lt;\[Ret_cliente\]&gt;&gt;/g, data.RefCliente || "")
+    .replace(/&lt;&lt;\[FACTURADO_EN_PROVEEDORES\]\.\[name\]&gt;&gt;/g, data.Moneda || "")
+    .replace(/&lt;&lt;\[Moneda_convenio_proveedores\]\.\[name\]&gt;&gt;/g, data.MonedaConvenio || "")
+    .replace(/&lt;&lt;\[FACTURADO_EN_PROVEEDORES\]\.\[DescripcionDireccion\]&gt;&gt;/g, data.DescripcionDireccion || "")
+    .replace(/&lt;&lt;\[FACTURADO_EN_PROVEEDORES\]\.\[CityStateZip\]&gt;&gt;/g, data.CityStateZip || "")
+    .replace(/&lt;&lt;\[Convenio_proveedor\]&gt;&gt;/g, data.ConvenioProv || "")
+    .replace(/&lt;&lt;\[Costos_adicionales_proveedor\]&gt;&gt;/g, data.CostosAdic || "")
+    .replace(/&lt;&lt;\[TOTAL_A_PAGAR\]&gt;&gt;/g, data.SubtotalProv || "")
+    .replace(/&lt;&lt;\[MonedaConversion\]&gt;&gt;/g, data.TotalAPagar || "");
+
+  const timestamp = Utilities.formatDate(new Date(), "GMT-6", "yyyyMMdd_HHmmss");
+  const cleanConsecutivo = (data.Referencia || "Doc").toString().replace(/[^a-z0-9]/gi, '_');
+  const fileName = "ConfirmacionTarifa_" + cleanConsecutivo + "_" + timestamp;
+  
+  const blob = Utilities.newBlob(htmlBody, 'text/html', fileName + '.html');
+  const pdfFile = folder.createFile(blob.getAs('application/pdf')).setName(fileName + ".pdf");
+  pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  
+  return pdfFile.getUrl();
+}

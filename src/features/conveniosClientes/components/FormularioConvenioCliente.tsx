@@ -1,5 +1,5 @@
 // src/features/conveniosClientes/components/FormularioConvenioCliente.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, getDoc, doc, writeBatch, query, where } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import type { ConvenioClienteRecord, ConvenioDetalleRecord } from '../../../types/convenioCliente';
@@ -33,7 +33,6 @@ const SearchableSelect: React.FC<{
     <div className="fcc-x1">
       <input
         type="text"
-        className="form-control"
         placeholder={placeholder}
         value={isOpen ? searchTerm : selectedLabel}
         onChange={(e) => {
@@ -50,7 +49,7 @@ const SearchableSelect: React.FC<{
           setSearchTerm(selectedLabel); 
         }}
         required={required && !value} 
-        style={{ cursor: 'text', border: isOpen ? '1px solid #3b82f6' : '', backgroundColor: '#0d1117', color: '#c9d1d9' }}
+        className={`form-control fcc-ss-input${isOpen ? ' abierto' : ''}`}
       />
       
       {isOpen && (
@@ -66,8 +65,6 @@ const SearchableSelect: React.FC<{
                   setSearchTerm(opt.label); 
                   setIsOpen(false); 
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#21262d'}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
               >
                 {opt.label}
               </li>
@@ -209,12 +206,19 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   const [cargando, setCargando] = useState(false);
   const [mostrandoDetalleForm, setMostrandoDetalleForm] = useState(false);
   
-  const [detalleDraft, setDetalleDraft] = useState({
-    tipoConvenioId: '',
-    tipoConvenioNombre: '',
-    tarifaSugeridaSeleccionada: '',
-    tarifa: 0
-  });
+  interface DetalleDraft {
+    tipoConvenioId: string;
+    tipoConvenioNombre: string;
+    tarifaSugeridaSeleccionada: string;
+    tarifa: number;
+    moneda?: string;
+    _editandoId?: string;
+  }
+  const DRAFT_VACIO: DetalleDraft = { tipoConvenioId: '', tipoConvenioNombre: '', tarifaSugeridaSeleccionada: '', tarifa: 0 };
+  const [detalleDraft, setDetalleDraft] = useState<DetalleDraft>(DRAFT_VACIO);
+  const opcionesMoneda: string[] = monedas.length > 0 ? monedas.map((m: any) => String(m.moneda || '')).filter(Boolean) : ['Pesos', 'Dólares'];
+  const cerrarDetalleModal = () => { setDetalleDraft(DRAFT_VACIO); setTarifasSugeridasActuales([]); setMostrandoDetalleForm(false); };
+  const abrirNuevoDetalle = () => { setDetalleDraft({ ...DRAFT_VACIO, moneda: formData.monedaNombre || 'Pesos' }); setTarifasSugeridasActuales([]); setMostrandoDetalleForm(true); };
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [requiredFields, setRequiredFields] = useState<string[]>([]);
@@ -269,15 +273,25 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   }, []);
 
   // 3. CARGA DE DATOS Y CRUCE DE NOMBRES (JOIN)
+  // ✅ CORREGIDO (V00126): los detalles se cargan UNA sola vez por convenio.
+  //   Antes este efecto dependía de `registrosExistentes` (alimentado por un
+  //   onSnapshot del dashboard) y de la identidad del objeto `initialData`, por
+  //   lo que cualquier refresco de Firestore volvía a leer los detalles de la BD
+  //   y PISABA las ediciones locales (la moneda "se revertía" tras Actualizar).
+  const convenioCargadoRef = useRef<string | null>(null);
   useEffect(() => {
-    if (initialData && initialData.id && tarifarios.length > 0) {
-      setFormData(initialData);
-      
+    const idConv = initialData?.id || '';
+    if (idConv && tarifarios.length > 0) {
+      if (convenioCargadoRef.current === idConv) return; // ya cargado: no pisar ediciones locales
+      convenioCargadoRef.current = idConv;
+      setFormData(initialData!);
+      setDetallesEliminados([]);
+
       const cargarDetalles = async () => {
         try {
-          const q = query(collection(db, 'convenios_clientes_detalles'), where('convenioId', '==', initialData.id));
+          const q = query(collection(db, 'convenios_clientes_detalles'), where('convenioId', '==', idConv));
           const snap = await getDocs(q);
-          
+
           const detallesBD = snap.docs.map(docSnap => {
             const data = docSnap.data();
             const refMaster = tarifarios.find(t => t.id === data.tipoConvenioId);
@@ -290,16 +304,20 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
               moneda: data.moneda || '' // ✅ CORREGIDO (V00124): la moneda guardada del detalle ya NO se pierde al recargar
             } as ConvenioDetalleRecord;
           });
-          
+
           setDetalles(detallesBD);
         } catch (error) { console.error("Error cargando detalles:", error); }
       };
       cargarDetalles();
     } else if (!initialData) {
+      if (convenioCargadoRef.current === '__nuevo__') return;
+      convenioCargadoRef.current = '__nuevo__';
       setFormData(prev => ({ ...prev, numeroConvenio: generarSiguienteConvenio() }));
       setDetalles([]);
+      setDetallesEliminados([]);
     }
-  }, [initialData, registrosExistentes, tarifarios]); 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialData?.id, tarifarios]);
 
   const generarSiguienteConvenio = () => {
     if (registrosExistentes.length === 0) return 'CONV-001';
@@ -320,12 +338,15 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     }
     
     setTarifasSugeridasActuales(sugerencias);
-    setDetalleDraft({
+    // ✅ CORREGIDO (V00126): al cambiar el tipo se CONSERVAN la moneda elegida y
+    //   el modo edición (_editandoId); antes se perdían y la moneda se revertía.
+    setDetalleDraft(prev => ({
+      ...prev,
       tipoConvenioId: id,
       tipoConvenioNombre: nombreTarifario,
       tarifaSugeridaSeleccionada: sugerencias.length > 0 ? String(sugerencias[0]) : '', 
       tarifa: sugerencias.length > 0 ? sugerencias[0] : 0
-    });
+    }));
   };
 
   const handleAgregarDetalle = () => {
@@ -336,13 +357,13 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
 
     // ✅ NUEVO (V00120): moneda del detalle (por defecto la del convenio) y
     //   modo EDICIÓN (si _editandoId existe, se reemplaza el detalle en sitio).
-    const monedaDet = (detalleDraft as any).moneda || formData.monedaNombre || 'Pesos';
-    if ((detalleDraft as any)._editandoId) {
-      setDetalles(prev => prev.map(d => d.id === (detalleDraft as any)._editandoId
+    const monedaDet = detalleDraft.moneda || formData.monedaNombre || 'Pesos';
+    if (detalleDraft._editandoId) {
+      const idEd = detalleDraft._editandoId;
+      setDetalles(prev => prev.map(d => d.id === idEd
         ? { ...d, tipoConvenioId: detalleDraft.tipoConvenioId, tipoConvenioNombre: detalleDraft.tipoConvenioNombre, tarifa: detalleDraft.tarifa, moneda: monedaDet, _editado: !d._isNew ? true : d._editado }
         : d));
-      setDetalleDraft({ tipoConvenioId: '', tipoConvenioNombre: '', tarifaSugeridaSeleccionada: '', tarifa: 0 });
-      setMostrandoDetalleForm(false);
+      cerrarDetalleModal();
       return;
     }
 
@@ -355,9 +376,8 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
       _isNew: true 
     };
 
-    setDetalles([...detalles, nuevoDetalle]);
-    setDetalleDraft({ tipoConvenioId: '', tipoConvenioNombre: '', tarifaSugeridaSeleccionada: '', tarifa: 0 });
-    setMostrandoDetalleForm(false);
+    setDetalles(prev => [...prev, nuevoDetalle]);
+    cerrarDetalleModal();
   };
 
   const handleEliminarDetalle = (detalleId: string, isNew?: boolean) => {
@@ -435,6 +455,55 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     <>
       <FieldConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} fields={configuracionCampos} requiredFields={requiredFields} toggleRequired={toggleRequired} />
 
+      {/* ✅ NUEVO (V00126): captura/edición del detalle en MODAL (antes era un panel incrustado) */}
+      {mostrandoDetalleForm && (
+        <div className="modal-overlay fcc-det-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) cerrarDetalleModal(); }}>
+          <div className="form-card fcc-det-card">
+            <div className="form-header fcc-x7">
+              <h3 className="fcc-x8">{detalleDraft._editandoId ? '✎ Editar Detalle' : '+ Nuevo Detalle'}</h3>
+              <button type="button" className="close-x fcc-x9" onClick={cerrarDetalleModal}>✕</button>
+            </div>
+            <div className="fcc-x10">
+              <div className="form-grid fcc-x24">
+                <div className="form-group fcc-det-tipo">
+                  <label className="form-label">Tipo de Convenio (Referencia) *</label>
+                  <SearchableSelect
+                    options={tarifarios.map(t => ({ id: t.id, label: t.descripcion || 'Sin descripción' }))}
+                    value={detalleDraft.tipoConvenioId}
+                    onChange={(id) => handleTipoConvenioChange(id)}
+                    placeholder="Buscar tipo de convenio..."
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Tarifa Sugerida</label>
+                  <SearchableSelect
+                    options={tarifasSugeridasActuales.map(tar => ({ id: String(tar), label: `$${tar}` }))}
+                    value={detalleDraft.tarifaSugeridaSeleccionada}
+                    onChange={(id) => setDetalleDraft(prev => ({ ...prev, tarifaSugeridaSeleccionada: id, tarifa: parseFloat(id) || 0 }))}
+                    placeholder={tarifasSugeridasActuales.length > 0 ? 'Ver sugeridas...' : 'Sin sugeridas'}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Tarifa Final *</label>
+                  <input type="number" step="0.01" className="form-control" value={detalleDraft.tarifa} onChange={(e) => setDetalleDraft(prev => ({ ...prev, tarifa: parseFloat(e.target.value) || 0 }))} />
+                </div>
+                {/* ✅ NUEVO (V00120): moneda del detalle, editable */}
+                <div className="form-group">
+                  <label className="form-label">Moneda</label>
+                  <select className="form-control" value={detalleDraft.moneda || formData.monedaNombre || 'Pesos'} onChange={(e) => setDetalleDraft(prev => ({ ...prev, moneda: e.target.value }))}>
+                    {opcionesMoneda.map((m: string) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="fcc-det-acciones">
+                <button type="button" className="btn btn-outline" onClick={cerrarDetalleModal}>Cancelar</button>
+                <button type="button" className="btn btn-primary fcc-x25" onClick={handleAgregarDetalle}>{detalleDraft._editandoId ? 'Actualizar' : 'Guardar'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
         <div className="form-card fcc-x16">
           <div className="form-header">
@@ -446,7 +515,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
             </div>
           </div>
 
-          <div style={{ display: estado === 'minimizado' ? 'none' : 'block', padding: '24px', maxHeight: '75vh', overflowY: 'auto' }}>
+          <div className={`fcc-cuerpo${estado === 'minimizado' ? ' oculto' : ''}`}>
             <form onSubmit={handleSubmit}>
               <div className="form-grid fcc-x18">
                 <div className="form-group">
@@ -487,7 +556,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                 {/* ✅ MODIFICADO (V00119): el campo Moneda se eliminó del formulario; la moneda se hereda automáticamente de la empresa (monedaId/monedaNombre se guardan igual). */}
                 <div className="form-group">
                   <label className="form-label">Crédito (Días) *</label>
-                  <input type="number" className="form-control" readOnly title="Se toma automáticamente de la empresa (Días de Crédito)" style={{ opacity: 0.85, cursor: 'not-allowed' }} value={formData.credito} onChange={(e) => setFormData({...formData, credito: parseInt(e.target.value) || 0})} required />
+                  <input type="number" readOnly title="Se toma automáticamente de la empresa (Días de Crédito)" className="form-control fcc-solo-lectura" value={formData.credito} onChange={(e) => setFormData({...formData, credito: parseInt(e.target.value) || 0})} required />
                 </div>
               </div>
 
@@ -495,80 +564,41 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
               <div className="fcc-x20">
                 <div className="fcc-x21">
                   <h3 className="fcc-x22">Lista de Detalles</h3>
-                  <button type="button" className="btn btn-outline" onClick={() => setMostrandoDetalleForm(!mostrandoDetalleForm)}>
-                    {mostrandoDetalleForm ? 'Cancelar' : '+ Agregar Detalle'}
-                  </button>
+                  <button type="button" className="btn btn-outline" onClick={abrirNuevoDetalle}>+ Agregar Detalle</button>
                 </div>
 
-                {mostrandoDetalleForm && (
-                  <div className="fcc-x23">
-                    <div className="form-grid fcc-x24">
-                      <div className="form-group">
-                        <label className="form-label">Tipo de Convenio (Referencia)</label>
-                        {/* Buscador en lugar de lista desplegable */}
-                        <SearchableSelect
-                          options={tarifarios.map(t => ({ id: t.id, label: t.descripcion || 'Sin descripción' }))}
-                          value={detalleDraft.tipoConvenioId}
-                          onChange={(id) => handleTipoConvenioChange(id)}
-                          placeholder="Buscar tipo de convenio..."
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Sugerida</label>
-                        {/* Buscador en lugar de lista desplegable */}
-                        <SearchableSelect
-                          options={tarifasSugeridasActuales.map(tar => ({ id: String(tar), label: `$${tar}` }))}
-                          value={detalleDraft.tarifaSugeridaSeleccionada}
-                          onChange={(id) => setDetalleDraft({ ...detalleDraft, tarifaSugeridaSeleccionada: id, tarifa: parseFloat(id) || 0 })}
-                          placeholder={tarifasSugeridasActuales.length > 0 ? 'Ver sugeridas...' : 'Sin sugeridas'}
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Tarifa Final *</label>
-                        <input type="number" step="0.01" className="form-control" value={detalleDraft.tarifa} onChange={(e) => setDetalleDraft({...detalleDraft, tarifa: parseFloat(e.target.value) || 0})} />
-                      </div>
-                      {/* ✅ NUEVO (V00120): moneda del detalle, editable */}
-                      <div className="form-group">
-                        <label className="form-label">Moneda</label>
-                        <select className="form-control" value={(detalleDraft as any).moneda || formData.monedaNombre || 'Pesos'} onChange={(e) => setDetalleDraft({ ...detalleDraft, moneda: e.target.value } as any)}>
-                          {/* ✅ V00123: opciones desde el catálogo de Monedas */}{(monedas.length > 0 ? monedas.map((m: any) => String(m.moneda || '')).filter(Boolean) : ['Pesos', 'Dólares']).map((m: string) => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                      </div>
-                      <button type="button" className="btn btn-primary fcc-x25" onClick={handleAgregarDetalle}>{(detalleDraft as any)._editandoId ? 'Actualizar' : 'Guardar'}</button>
-                    </div>
-                  </div>
-                )}
-
-                <table className="data-table fcc-x26">
-                  <thead className="fcc-x27">
-                    <tr>
-                      <th className="fcc-x28">#</th>
-                      <th className="fcc-x28">TIPO DE CONVENIO</th>
-                      <th className="fcc-x28">TARIFA</th>
-                      <th className="fcc-x28">MONEDA</th>
-                      <th className="fcc-x29">ACCIÓN</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {detalles.length === 0 ? (
-                      <tr><td className="fcc-x30" colSpan={5}>No hay detalles agregados.</td></tr>
-                    ) : (
-                      detalles.map((det, index) => (
-                        <tr className="fcc-x31" key={det.id}>
-                          <td className="fcc-x32">{index + 1}</td>
-                          <td className="fcc-x33">{det.tipoConvenioNombre}</td>
-                          <td className="fcc-x34">{/* ✅ NUEVO (V00121): edición en línea (varios de golpe); se guarda todo con "Guardar Convenio" */}<input type="number" step="0.01" className="form-control" style={{ width: '110px', padding: '4px 8px' }} value={det.tarifa} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = parseFloat(e.target.value) || 0; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, tarifa: v } : d)); }} /></td>
-                          <td><select className="form-control" style={{ width: '100px', padding: '4px 6px' }} value={det.moneda || formData.monedaNombre || 'Pesos'} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v } : d)); }}>{/* ✅ V00123: opciones desde el catálogo de Monedas */}{(monedas.length > 0 ? monedas.map((m: any) => String(m.moneda || '')).filter(Boolean) : ['Pesos', 'Dólares']).map((m: string) => <option key={m} value={m}>{m}</option>)}</select></td>
-                          <td className="fcc-x29">
-                            {/* ✅ NUEVO (V00120): editar detalle */}
-                            <button type="button" title="Editar este detalle" style={{ background: 'none', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', marginRight: '6px' }} onClick={() => { setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: det.moneda || formData.monedaNombre || 'Pesos', _editandoId: det.id } as any); setMostrandoDetalleForm(true); }}>✎</button>
-                            <button className="fcc-x35" type="button" onClick={() => handleEliminarDetalle(det.id!, det._isNew)}>✕</button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                <div className="table-container fcc-tabla-wrap">
+                  <table className="data-table fcc-x26">
+                    <thead className="fcc-x27">
+                      <tr>
+                        <th className="fcc-x28 fcc-col-num">#</th>
+                        <th className="fcc-x28">TIPO DE CONVENIO</th>
+                        <th className="fcc-x28 fcc-col-tarifa">TARIFA</th>
+                        <th className="fcc-x28 fcc-col-moneda">MONEDA</th>
+                        <th className="fcc-x29 fcc-col-accion">ACCIÓN</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detalles.length === 0 ? (
+                        <tr><td className="fcc-x30" colSpan={5}>No hay detalles agregados.</td></tr>
+                      ) : (
+                        detalles.map((det, index) => (
+                          <tr className="fcc-x31" key={det.id}>
+                            <td className="fcc-x32">{index + 1}</td>
+                            <td className="fcc-x33 fcc-celda-nombre" title={det.tipoConvenioNombre}>{det.tipoConvenioNombre}</td>
+                            <td className="fcc-x34">{/* ✅ NUEVO (V00121): edición en línea (varios de golpe); se guarda todo con "Guardar Convenio" */}<input type="number" step="0.01" className="form-control fcc-input-tarifa" value={det.tarifa} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = parseFloat(e.target.value) || 0; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, tarifa: v } : d)); }} /></td>
+                            <td><select className="form-control fcc-select-moneda" value={det.moneda || formData.monedaNombre || 'Pesos'} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v, _editado: !d._isNew ? true : d._editado } : d)); }}>{/* ✅ V00123: opciones desde el catálogo de Monedas */}{opcionesMoneda.map((m: string) => <option key={m} value={m}>{m}</option>)}</select></td>
+                            <td className="fcc-x29">
+                              {/* ✅ NUEVO (V00120): editar detalle */}
+                              <button type="button" className="fcc-btn-editar" title="Editar este detalle" onClick={() => { const t = tarifarios.find(x => x.id === det.tipoConvenioId); const sug: number[] = []; if (t) [t.tarifa_cliente_1, t.tarifa_cliente_2, t.tarifa_cliente_3].forEach(v => { if (Number(v) > 0) sug.push(Number(v)); }); setTarifasSugeridasActuales(sug); setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: det.moneda || formData.monedaNombre || 'Pesos', _editandoId: det.id }); setMostrandoDetalleForm(true); }}>✎</button>
+                              <button className="fcc-x35" type="button" onClick={() => handleEliminarDetalle(det.id!, det._isNew)}>✕</button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <div className="form-actions fcc-x36">
