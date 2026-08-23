@@ -5,6 +5,7 @@ import { db } from '../../../config/firebase';
 import type { ConvenioClienteRecord, ConvenioDetalleRecord } from '../../../types/convenioCliente';
 import './FormularioConvenioCliente.css';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
+import { limpiarCacheMemoria } from '../../../utils/cacheMemoria';
 
 // =========================================
 // SUB-COMPONENTE: SELECTOR CON BUSCADOR
@@ -217,6 +218,21 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   const DRAFT_VACIO: DetalleDraft = { tipoConvenioId: '', tipoConvenioNombre: '', tarifaSugeridaSeleccionada: '', tarifa: 0 };
   const [detalleDraft, setDetalleDraft] = useState<DetalleDraft>(DRAFT_VACIO);
   const opcionesMoneda: string[] = monedas.length > 0 ? monedas.map((m: any) => String(m.moneda || '')).filter(Boolean) : ['Pesos', 'Dólares'];
+  // ✅ V00126: normaliza la moneda guardada a la opción exacta del catálogo
+  //   ("dolares"/"USD" → "Dólares"); si no coincide con ninguna, la conserva
+  //   como opción extra para que el <select> NUNCA muestre otra por defecto.
+  const normalizarMoneda = (v: string | undefined): string => {
+    const raw = String(v || '').trim();
+    if (!raw) return '';
+    const exacta = opcionesMoneda.find(m => m === raw); if (exacta) return exacta;
+    const norm = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const r = norm(raw);
+    const porNombre = opcionesMoneda.find(m => norm(m) === r); if (porNombre) return porNombre;
+    if (r.includes('usd') || r.includes('dolar')) { const d = opcionesMoneda.find(m => norm(m).includes('dolar') || norm(m).includes('usd')); if (d) return d; }
+    if (r.includes('mxn') || r.includes('peso')) { const pz = opcionesMoneda.find(m => norm(m).includes('peso') || norm(m).includes('mxn')); if (pz) return pz; }
+    return raw;
+  };
+  const opcionesMonedaCon = (v: string) => (v && !opcionesMoneda.includes(v)) ? [...opcionesMoneda, v] : opcionesMoneda;
   const cerrarDetalleModal = () => { setDetalleDraft(DRAFT_VACIO); setTarifasSugeridasActuales([]); setMostrandoDetalleForm(false); };
   const abrirNuevoDetalle = () => { setDetalleDraft({ ...DRAFT_VACIO, moneda: formData.monedaNombre || 'Pesos' }); setTarifasSugeridasActuales([]); setMostrandoDetalleForm(true); };
 
@@ -426,7 +442,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
             tipoConvenioId: det.tipoConvenioId,
             tipoConvenioNombre: det.tipoConvenioNombre,
             tarifa: Number(det.tarifa),
-            moneda: det.moneda || formData.monedaNombre || '' // ✅ NUEVO (V00120)
+            moneda: normalizarMoneda(det.moneda) || normalizarMoneda(formData.monedaNombre) || '' // ✅ NUEVO (V00120) · V00126 normalizada
           });
         } else {
           const detRef = doc(db, 'convenios_clientes_detalles', det.id!);
@@ -435,7 +451,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
             // ✅ NUEVO (V00120): la edición también persiste tipo y moneda
             tipoConvenioId: det.tipoConvenioId,
             tipoConvenioNombre: det.tipoConvenioNombre,
-            moneda: det.moneda || formData.monedaNombre || '',
+            moneda: normalizarMoneda(det.moneda) || normalizarMoneda(formData.monedaNombre) || '',
             convenioId: masterId // Garantizamos que la relación se mantenga en DB
           });
         }
@@ -444,6 +460,8 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
       detallesEliminados.forEach(delId => batch.delete(doc(db, 'convenios_clientes_detalles', delId)));
 
       await batch.commit();
+      // ✅ V00126: invalida la caché del módulo "Detalles del Convenio" para que refleje la moneda/tarifa recién guardadas
+      limpiarCacheMemoria('detalles_convenio__clientes');
       onClose();
     } catch (error) {
       console.error("Error batch:", error);
@@ -490,7 +508,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                 {/* ✅ NUEVO (V00120): moneda del detalle, editable */}
                 <div className="form-group">
                   <label className="form-label">Moneda</label>
-                  <select className="form-control" value={detalleDraft.moneda || formData.monedaNombre || 'Pesos'} onChange={(e) => setDetalleDraft(prev => ({ ...prev, moneda: e.target.value }))}>
+                  <select className="form-control" value={normalizarMoneda(detalleDraft.moneda) || normalizarMoneda(formData.monedaNombre) || opcionesMoneda[0] || 'Pesos'} onChange={(e) => setDetalleDraft(prev => ({ ...prev, moneda: e.target.value }))}>
                     {opcionesMoneda.map((m: string) => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
@@ -587,7 +605,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                             <td className="fcc-x32">{index + 1}</td>
                             <td className="fcc-x33 fcc-celda-nombre" title={det.tipoConvenioNombre}>{det.tipoConvenioNombre}</td>
                             <td className="fcc-x34">{/* ✅ NUEVO (V00121): edición en línea (varios de golpe); se guarda todo con "Guardar Convenio" */}<input type="number" step="0.01" className="form-control fcc-input-tarifa" value={det.tarifa} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = parseFloat(e.target.value) || 0; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, tarifa: v } : d)); }} /></td>
-                            <td><select className="form-control fcc-select-moneda" value={det.moneda || formData.monedaNombre || 'Pesos'} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v, _editado: !d._isNew ? true : d._editado } : d)); }}>{/* ✅ V00123: opciones desde el catálogo de Monedas */}{opcionesMoneda.map((m: string) => <option key={m} value={m}>{m}</option>)}</select></td>
+                            <td>{(() => { const val = normalizarMoneda(det.moneda) || normalizarMoneda(formData.monedaNombre) || opcionesMoneda[0] || 'Pesos'; return (<select className="form-control fcc-select-moneda" value={val} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v, _editado: !d._isNew ? true : d._editado } : d)); }}>{/* ✅ V00123: opciones desde el catálogo de Monedas · V00126: valor normalizado */}{opcionesMonedaCon(val).map((m: string) => <option key={m} value={m}>{m}</option>)}</select>); })()}</td>
                             <td className="fcc-x29">
                               {/* ✅ NUEVO (V00120): editar detalle */}
                               <button type="button" className="fcc-btn-editar" title="Editar este detalle" onClick={() => { const t = tarifarios.find(x => x.id === det.tipoConvenioId); const sug: number[] = []; if (t) [t.tarifa_cliente_1, t.tarifa_cliente_2, t.tarifa_cliente_3].forEach(v => { if (Number(v) > 0) sug.push(Number(v)); }); setTarifasSugeridasActuales(sug); setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: det.moneda || formData.monedaNombre || 'Pesos', _editandoId: det.id }); setMostrandoDetalleForm(true); }}>✎</button>

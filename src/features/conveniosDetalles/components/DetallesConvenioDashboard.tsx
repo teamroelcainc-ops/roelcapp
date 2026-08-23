@@ -112,7 +112,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           numeroConvenio: conv.numero || '—',
           numeroOrden: parseInt(String(conv.numero || '').replace(/\D/g, ''), 10) || 0,
           entidad: conv.entidad || '—',
-          moneda: conv.moneda || '—', // ✅ NUEVO (V00119)
+          // ✅ CORREGIDO (V00126): la moneda del DETALLE manda; la del maestro solo es respaldo.
+          //   Antes se mostraba siempre la del maestro, por lo que el cambio guardado parecía "revertirse".
+          moneda: String(x.moneda || '') || conv.moneda || '—',
           tarifa: tarifas[idTarifa] || String(x.tipoConvenioNombre || '') || '—',
           costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
         };
