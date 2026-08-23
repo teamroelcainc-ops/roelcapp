@@ -114,7 +114,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           entidad: conv.entidad || '—',
           // ✅ CORREGIDO (V00126): la moneda del DETALLE manda; la del maestro solo es respaldo.
           //   Antes se mostraba siempre la del maestro, por lo que el cambio guardado parecía "revertirse".
-          moneda: String(x.moneda || '') || conv.moneda || '—',
+          moneda: String(x.moneda || ''),
           tarifa: tarifas[idTarifa] || String(x.tipoConvenioNombre || '') || '—',
           costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
         };
@@ -139,7 +139,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     if (busqueda.trim()) {
       const b = busqueda.toLowerCase();
       lista = lista.filter((f) =>
-        `${f.id} ${f.numeroConvenio} ${f.entidad} ${f.tarifa} ${f.moneda} ${f.costo ?? ''}`.toLowerCase().includes(b)
+        `${f.id} ${f.numeroConvenio} ${f.entidad} ${f.tarifa} ${f.moneda || '—'} ${f.costo ?? ''}`.toLowerCase().includes(b)
       );
     }
     return [...lista].sort((a, b) => {
@@ -215,7 +215,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   <td>{f.entidad}</td>
                   <td>{f.tarifa}</td>
                   <td>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
-                    <select className="form-input-elegante" style={{ padding: '4px 6px', width: '110px' }} value={val || ops[0]} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
+                    <select className="form-input-elegante" style={{ padding: '4px 6px', width: '110px' }} value={val} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
+                      <option value="">— Sin moneda —</option>
                       {lista.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>); })()}</td>
                   <td className="dcv-x8"><input type="number" step="0.01" className="form-input-elegante" style={{ width: '110px', padding: '4px 8px', textAlign: 'right' }} value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>

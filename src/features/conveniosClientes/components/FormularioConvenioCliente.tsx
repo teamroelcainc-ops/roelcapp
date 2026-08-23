@@ -234,7 +234,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   };
   const opcionesMonedaCon = (v: string) => (v && !opcionesMoneda.includes(v)) ? [...opcionesMoneda, v] : opcionesMoneda;
   const cerrarDetalleModal = () => { setDetalleDraft(DRAFT_VACIO); setTarifasSugeridasActuales([]); setMostrandoDetalleForm(false); };
-  const abrirNuevoDetalle = () => { setDetalleDraft({ ...DRAFT_VACIO, moneda: formData.monedaNombre || 'Pesos' }); setTarifasSugeridasActuales([]); setMostrandoDetalleForm(true); };
+  const abrirNuevoDetalle = () => { setDetalleDraft({ ...DRAFT_VACIO, moneda: '' }); /* ✅ V00126: la moneda del detalle inicia EN BLANCO (no hereda la del convenio) */ setTarifasSugeridasActuales([]); setMostrandoDetalleForm(true); };
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [requiredFields, setRequiredFields] = useState<string[]>([]);
@@ -373,7 +373,9 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
 
     // ✅ NUEVO (V00120): moneda del detalle (por defecto la del convenio) y
     //   modo EDICIÓN (si _editandoId existe, se reemplaza el detalle en sitio).
-    const monedaDet = detalleDraft.moneda || formData.monedaNombre || 'Pesos';
+    // ✅ V00126: la moneda es obligatoria y se toma TAL CUAL del detalle (sin heredar la del convenio)
+    const monedaDet = normalizarMoneda(detalleDraft.moneda);
+    if (!monedaDet) { alert('Seleccione la moneda del detalle.'); return; }
     if (detalleDraft._editandoId) {
       const idEd = detalleDraft._editandoId;
       setDetalles(prev => prev.map(d => d.id === idEd
@@ -417,6 +419,10 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
       }
     } catch (eDup) { console.warn('No se pudo verificar duplicados:', eDup); }
     
+    // ✅ V00126: todos los detalles deben tener moneda propia
+    const sinMoneda = detalles.filter(d => !normalizarMoneda(d.moneda));
+    if (sinMoneda.length > 0) { alert(`Hay ${sinMoneda.length} detalle(s) sin moneda. Selecciona la moneda de cada detalle antes de guardar.`); return; }
+
     setCargando(true);
     try {
       const batch = writeBatch(db);
@@ -442,7 +448,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
             tipoConvenioId: det.tipoConvenioId,
             tipoConvenioNombre: det.tipoConvenioNombre,
             tarifa: Number(det.tarifa),
-            moneda: normalizarMoneda(det.moneda) || normalizarMoneda(formData.monedaNombre) || '' // ✅ NUEVO (V00120) · V00126 normalizada
+            moneda: normalizarMoneda(det.moneda) // ✅ V00126: moneda propia del detalle (obligatoria)
           });
         } else {
           const detRef = doc(db, 'convenios_clientes_detalles', det.id!);
@@ -451,7 +457,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
             // ✅ NUEVO (V00120): la edición también persiste tipo y moneda
             tipoConvenioId: det.tipoConvenioId,
             tipoConvenioNombre: det.tipoConvenioNombre,
-            moneda: normalizarMoneda(det.moneda) || normalizarMoneda(formData.monedaNombre) || '',
+            moneda: normalizarMoneda(det.moneda), // ✅ V00126: moneda propia del detalle (obligatoria)
             convenioId: masterId // Garantizamos que la relación se mantenga en DB
           });
         }
@@ -507,8 +513,9 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                 </div>
                 {/* ✅ NUEVO (V00120): moneda del detalle, editable */}
                 <div className="form-group">
-                  <label className="form-label">Moneda</label>
-                  <select className="form-control" value={normalizarMoneda(detalleDraft.moneda) || normalizarMoneda(formData.monedaNombre) || opcionesMoneda[0] || 'Pesos'} onChange={(e) => setDetalleDraft(prev => ({ ...prev, moneda: e.target.value }))}>
+                  <label className="form-label">Moneda *</label>
+                  <select className="form-control" value={normalizarMoneda(detalleDraft.moneda)} onChange={(e) => setDetalleDraft(prev => ({ ...prev, moneda: e.target.value }))}>
+                    <option value="">— Seleccionar —</option>
                     {opcionesMoneda.map((m: string) => <option key={m} value={m}>{m}</option>)}
                   </select>
                 </div>
@@ -605,10 +612,10 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                             <td className="fcc-x32">{index + 1}</td>
                             <td className="fcc-x33 fcc-celda-nombre" title={det.tipoConvenioNombre}>{det.tipoConvenioNombre}</td>
                             <td className="fcc-x34">{/* ✅ NUEVO (V00121): edición en línea (varios de golpe); se guarda todo con "Guardar Convenio" */}<input type="number" step="0.01" className="form-control fcc-input-tarifa" value={det.tarifa} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = parseFloat(e.target.value) || 0; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, tarifa: v } : d)); }} /></td>
-                            <td>{(() => { const val = normalizarMoneda(det.moneda) || normalizarMoneda(formData.monedaNombre) || opcionesMoneda[0] || 'Pesos'; return (<select className="form-control fcc-select-moneda" value={val} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v, _editado: !d._isNew ? true : d._editado } : d)); }}>{/* ✅ V00123: opciones desde el catálogo de Monedas · V00126: valor normalizado */}{opcionesMonedaCon(val).map((m: string) => <option key={m} value={m}>{m}</option>)}</select>); })()}</td>
+                            <td>{(() => { const val = normalizarMoneda(det.moneda); return (<select className={`form-control fcc-select-moneda${val ? '' : ' sin-moneda'}`} value={val} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v, _editado: !d._isNew ? true : d._editado } : d)); }}>{/* ✅ V00123: opciones desde el catálogo de Monedas · V00126: valor normalizado */}<option value="">— Seleccionar —</option>{opcionesMonedaCon(val).map((m: string) => <option key={m} value={m}>{m}</option>)}</select>); })()}</td>
                             <td className="fcc-x29">
                               {/* ✅ NUEVO (V00120): editar detalle */}
-                              <button type="button" className="fcc-btn-editar" title="Editar este detalle" onClick={() => { const t = tarifarios.find(x => x.id === det.tipoConvenioId); const sug: number[] = []; if (t) [t.tarifa_cliente_1, t.tarifa_cliente_2, t.tarifa_cliente_3].forEach(v => { if (Number(v) > 0) sug.push(Number(v)); }); setTarifasSugeridasActuales(sug); setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: det.moneda || formData.monedaNombre || 'Pesos', _editandoId: det.id }); setMostrandoDetalleForm(true); }}>✎</button>
+                              <button type="button" className="fcc-btn-editar" title="Editar este detalle" onClick={() => { const t = tarifarios.find(x => x.id === det.tipoConvenioId); const sug: number[] = []; if (t) [t.tarifa_cliente_1, t.tarifa_cliente_2, t.tarifa_cliente_3].forEach(v => { if (Number(v) > 0) sug.push(Number(v)); }); setTarifasSugeridasActuales(sug); setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: normalizarMoneda(det.moneda), _editandoId: det.id }); setMostrandoDetalleForm(true); }}>✎</button>
                               <button className="fcc-x35" type="button" onClick={() => handleEliminarDetalle(det.id!, det._isNew)}>✕</button>
                             </td>
                           </tr>

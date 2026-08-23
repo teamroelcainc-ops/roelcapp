@@ -17,7 +17,7 @@
 .fcc-x13 { width: 18px; height: 18px; accent-color: #D84315; }
 .fcc-x14 { margin-top: 30px; }
 .fcc-x15 { width: 100%; padding: 10px; }
-.fcc-x16 { max-width: 1150px; width: 96vw; } /* ✅ V00126: formulario más ancho para ver todos los valores */
+.modal-overlay .form-card.fcc-x16 { max-width: 1150px; width: 96vw; } /* ✅ V00126: formulario más ancho para ver todos los valores */
 .fcc-x17 { background: none; }
 .fcc-x18 { grid-template-columns: 1fr 1fr; gap: 20px; }
 .fcc-x19 { background-color: #21262d; }
@@ -54,6 +54,7 @@
 .fcc-col-accion { width: 120px; }
 .fcc-celda-nombre { white-space: normal; min-width: 260px; line-height: 1.35; }
 .fcc-input-tarifa { width: 140px; padding: 4px 8px; }
+.fcc-select-moneda.sin-moneda { border-color: #f85149; }
 .fcc-select-moneda { width: 130px; padding: 4px 6px; }
 .fcc-btn-editar { background: none; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 4px; padding: 2px 8px; cursor: pointer; margin-right: 6px; }
 .fcc-btn-editar:hover { background-color: rgba(88, 166, 255, 0.12); }
@@ -72,7 +73,7 @@
   .fcc-x20 { padding: 14px 12px; }
   .fcc-x21 { flex-wrap: wrap; }
   .fcc-x24 { grid-template-columns: 1fr; }
-  .fcc-x16 { width: 100%; }
+  .modal-overlay .form-card.fcc-x16 { width: 100%; }
   .fcc-det-acciones { flex-wrap: wrap; }
   .fcc-x30 { padding: 14px 12px; }
   .fcc-x36 { flex-wrap: wrap; }

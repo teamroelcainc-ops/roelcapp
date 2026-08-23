@@ -6,7 +6,7 @@
 .fcp-x2 { position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 4px; margin-top: 4px; z-index: 1000; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5); padding: 0; list-style: none; }
 .fcp-x3 { padding: 8px 12px; cursor: pointer; color: #c9d1d9; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
 .fcp-x4 { padding: 8px 12px; color: #8b949e; font-size: 0.85rem; text-align: center; }
-.fcp-x5 { max-width: 1150px; width: 96vw; } /* ✅ V00126: formulario más ancho para ver todos los valores */
+.modal-overlay .form-card.fcp-x5 { max-width: 1150px; width: 96vw; } /* ✅ V00126: formulario más ancho para ver todos los valores */
 .fcp-x6 { grid-template-columns: 1fr 1fr; gap: 20px; }
 .fcp-x7 { background-color: #21262d; }
 .fcp-x8 { margin-top: 32px; border: 1px solid #30363d; border-radius: 8px; padding: 24px; background-color: #0d1117; }
@@ -44,6 +44,7 @@
 .fcp-solo-lectura { opacity: 0.85; cursor: not-allowed; }
 .fcp-celda-nombre { white-space: normal; min-width: 260px; line-height: 1.35; }
 .fcp-input-tarifa { width: 140px; padding: 4px 8px; margin-left: auto; }
+.fcp-select-moneda.sin-moneda { border-color: #f85149; }
 .fcp-select-moneda { width: 130px; padding: 4px 6px; margin-left: auto; }
 .fcp-btn-editar { background: none; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 4px; padding: 2px 8px; cursor: pointer; margin-right: 6px; }
 .fcp-btn-editar:hover { background-color: rgba(88, 166, 255, 0.12); }
@@ -63,7 +64,7 @@
   .fcp-x8 { padding: 14px 12px; }
   .fcp-x9 { flex-wrap: wrap; }
   .fcp-x12 { grid-template-columns: 1fr; }
-  .fcp-x5 { width: 100%; }
+  .modal-overlay .form-card.fcp-x5 { width: 100%; }
   .fcp-det-acciones { flex-wrap: wrap; }
   .fcp-x21 { padding: 14px 12px; }
   .fcp-x28 { flex-wrap: wrap; padding: 14px 12px; }
