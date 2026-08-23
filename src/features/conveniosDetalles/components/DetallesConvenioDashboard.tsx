@@ -20,6 +20,7 @@ interface Props { tipo: 'clientes' | 'proveedores'; }
 interface FilaDetalle {
   id: string;
   numeroConvenio: string;
+  moneda: string;
   numeroOrden: number;
   entidad: string;      // cliente o proveedor según `tipo`
   tarifa: string;       // descripción de la tarifa de referencia
@@ -55,12 +56,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         getDocs(collection(db, 'catalogo_tarifas_referencia')),
       ]);
 
-      const convenios: Record<string, { numero: string; entidad: string }> = {};
+      const convenios: Record<string, { numero: string; entidad: string; moneda: string }> = {};
       snapConv.docs.forEach((d) => {
         const x = d.data() as Record<string, unknown>;
         convenios[d.id] = {
           numero: String(x.numeroConvenio || ''),
           entidad: String(x[CAMPO_ENTIDAD] || ''),
+          moneda: String(x.monedaNombre || ''), // ✅ NUEVO (V00119)
         };
       });
 
@@ -72,7 +74,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
       const resultado: FilaDetalle[] = snapDet.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
-        const conv = convenios[String(x.convenioId || '')] || { numero: '', entidad: '' };
+        const conv = convenios[String(x.convenioId || '')] || { numero: '', entidad: '', moneda: '' };
         const idTarifa = String(x.tipoConvenioId || '');
         const costoNum = x.costo === undefined || x.costo === null || x.costo === '' ? null : Number(x.costo);
         return {
@@ -80,6 +82,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           numeroConvenio: conv.numero || '—',
           numeroOrden: parseInt(String(conv.numero || '').replace(/\D/g, ''), 10) || 0,
           entidad: conv.entidad || '—',
+          moneda: conv.moneda || '—', // ✅ NUEVO (V00119)
           tarifa: tarifas[idTarifa] || String(x.tipoConvenioNombre || '') || '—',
           costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
         };
@@ -104,7 +107,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     if (busqueda.trim()) {
       const b = busqueda.toLowerCase();
       lista = lista.filter((f) =>
-        `${f.id} ${f.numeroConvenio} ${f.entidad} ${f.tarifa} ${f.costo ?? ''}`.toLowerCase().includes(b)
+        `${f.id} ${f.numeroConvenio} ${f.entidad} ${f.tarifa} ${f.moneda} ${f.costo ?? ''}`.toLowerCase().includes(b)
       );
     }
     return [...lista].sort((a, b) => {
@@ -165,6 +168,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <th>Convenio</th>
                 <th>{ETIQUETA_ENTIDAD}</th>
                 <th>Tarifa</th>
+                <th>Moneda</th>
                 <th className="dcv-x8">Costo de la Tarifa</th>
               </tr>
             </thead>
@@ -175,6 +179,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   <td className="dcv-x10">{f.numeroConvenio}</td>
                   <td>{f.entidad}</td>
                   <td>{f.tarifa}</td>
+                  <td>{f.moneda}</td>
                   <td className="dcv-x8">{formatoCosto(f.costo)}</td>
                 </tr>
               ))}

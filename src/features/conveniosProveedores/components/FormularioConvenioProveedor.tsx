@@ -279,6 +279,18 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.proveedorId) return alert("Seleccione un proveedor.");
+
+    // ✅ NUEVO (V00119) — SIN DUPLICADOS: cada proveedor puede tener UN solo
+    //   convenio. Antes de guardar se verifica en Firebase.
+    try {
+      const dupSnap = await getDocs(query(collection(db, 'convenios_proveedores'), where('proveedorId', '==', formData.proveedorId)));
+      const otro = dupSnap.docs.find((d) => d.id !== (initialData?.id || ''));
+      if (otro) {
+        const x: any = otro.data();
+        alert(`Este proveedor YA tiene un convenio registrado (${x.numeroConvenio || otro.id}).\n\nNo se permiten convenios duplicados por proveedor: edita el convenio existente o elímalo primero.`);
+        return;
+      }
+    } catch (eDup) { console.warn('No se pudo verificar duplicados:', eDup); }
     setCargando(true);
     try {
       const batch = writeBatch(db);
@@ -368,16 +380,7 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
               </div>
               <div className="form-group"><label className="form-label">Fecha Convenio</label><input type="date" className="form-control" value={formData.fechaConvenio} onChange={(e) => setFormData({...formData, fechaConvenio: e.target.value})} required /></div>
               <div className="form-group"><label className="form-label">Fecha Vencimiento</label><input type="date" className="form-control" value={formData.fechaVencimiento} onChange={(e) => setFormData({...formData, fechaVencimiento: e.target.value})} required /></div>
-              <div className="form-group">
-                <label className="form-label">Moneda</label>
-                <select className="form-control" disabled title="Se toma automáticamente de la empresa" style={{ opacity: 0.85, cursor: 'not-allowed' }} value={formData.monedaId} onChange={(e) => {
-                  const m = monedas.find(x => x.id === e.target.value);
-                  setFormData({...formData, monedaId: e.target.value, monedaNombre: m?.moneda || ''});
-                }} required>
-                  <option value="">Seleccione...</option>
-                  {monedas.map(mon => <option key={mon.id} value={mon.id}>{mon.moneda}</option>)}
-                </select>
-              </div>
+              {/* ✅ MODIFICADO (V00119): el campo Moneda se eliminó del formulario; la moneda se hereda automáticamente de la empresa (monedaId/monedaNombre se guardan igual). */}
               <div className="form-group"><label className="form-label">Crédito (Días)</label><input type="number" className="form-control" readOnly title="Se toma automáticamente de la empresa (Días de Crédito)" style={{ opacity: 0.85, cursor: 'not-allowed' }} value={formData.credito} onChange={(e) => setFormData({...formData, credito: parseInt(e.target.value) || 0})} required /></div>
             </div>
 
