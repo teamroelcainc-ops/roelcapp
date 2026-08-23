@@ -45,6 +45,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ NUEVO (V00122): edición en línea (varios de golpe) + eliminar con papelera
   const [cambios, setCambios] = useState<Record<string, { tarifa?: number; moneda?: string }>>({});
   const [guardando, setGuardando] = useState(false);
+  // ✅ NUEVO (V00123): monedas desde el CATÁLOGO (nada hardcodeado)
+  const [monedasCat, setMonedasCat] = useState<string[]>([]);
   const marcarCambio = (id: string, campo: 'tarifa' | 'moneda', v: number | string) =>
     setCambios((prev) => ({ ...prev, [id]: { ...prev[id], [campo]: v as never } }));
   const guardarCambios = async () => {
@@ -75,11 +77,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     }
     setCargando(true);
     try {
-      const [snapConv, snapDet, snapTar] = await Promise.all([
+      const [snapConv, snapDet, snapTar, snapMon] = await Promise.all([
         getDocs(collection(db, COL_CONVENIOS)),
         getDocs(collection(db, COL_DETALLES)),
         getDocs(collection(db, 'catalogo_tarifas_referencia')),
+        getDocs(collection(db, 'catalogo_moneda')), // ✅ V00123
       ]);
+      setMonedasCat(snapMon.docs.map((d) => String((d.data() as { moneda?: unknown }).moneda || '')).filter(Boolean));
 
       const convenios: Record<string, { numero: string; entidad: string; moneda: string }> = {};
       snapConv.docs.forEach((d) => {
@@ -208,7 +212,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   <td className="dcv-x10">{f.numeroConvenio}</td>
                   <td>{f.entidad}</td>
                   <td>{f.tarifa}</td>
-                  <td><select className="form-input-elegante" style={{ padding: '4px 6px', width: '100px' }} value={String(cambios[f.id]?.moneda ?? f.moneda ?? 'Pesos')} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}><option value="Pesos">Pesos</option><option value="Dólares">Dólares</option><option value="Dolares">Dolares</option><option value="—">—</option></select></td>
+                  <td>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
+                    <select className="form-input-elegante" style={{ padding: '4px 6px', width: '110px' }} value={val || ops[0]} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
+                      {lista.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>); })()}</td>
                   <td className="dcv-x8"><input type="number" step="0.01" className="form-input-elegante" style={{ width: '110px', padding: '4px 8px', textAlign: 'right' }} value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
                   <td className="dcv-x8"><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}>✕</button></td>
                 </tr>

@@ -595,6 +595,11 @@ export const ConveniosClientesDashboard: React.FC = () => {
                 : `DUPLICADOS ENCONTRADOS (${dups.length}):\n\n` + dups.map((g) => `• ${g.join('  |  ')}`).join('\n') + '\n\nElimina o une los sobrantes; desde V00119 ya no se pueden guardar nuevos duplicados.');
             } catch { alert('No se pudo revisar duplicados.'); }
           }}>Duplicados</button>
+          {/* ✅ NUEVO (V00123): recarga catálogos y referencias (monedas, tarifas) */}
+          <button className="btn btn-outline" style={{ marginRight: '8px' }} title="Actualizar referencias: limpia cachés de catálogos y recarga" onClick={() => {
+            try { Object.keys(localStorage).filter((k) => k.startsWith('cat_v2__') || k.startsWith('cat_v1__')).forEach((k) => localStorage.removeItem(k)); } catch { /* sin almacenamiento */ }
+            window.location.reload();
+          }}>↻ Referencias</button>
           <button 
               className="btn btn-primary ccd-x13" 
               title="Agregar Nuevo Convenio"

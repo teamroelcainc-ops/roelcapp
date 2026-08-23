@@ -530,8 +530,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                       <div className="form-group">
                         <label className="form-label">Moneda</label>
                         <select className="form-control" value={(detalleDraft as any).moneda || formData.monedaNombre || 'Pesos'} onChange={(e) => setDetalleDraft({ ...detalleDraft, moneda: e.target.value } as any)}>
-                          <option value="Pesos">Pesos</option>
-                          <option value="Dólares">Dólares</option>
+                          {/* ✅ V00123: opciones desde el catálogo de Monedas */}{(monedas.length > 0 ? monedas.map((m: any) => String(m.moneda || '')).filter(Boolean) : ['Pesos', 'Dólares']).map((m: string) => <option key={m} value={m}>{m}</option>)}
                         </select>
                       </div>
                       <button type="button" className="btn btn-primary fcc-x25" onClick={handleAgregarDetalle}>{(detalleDraft as any)._editandoId ? 'Actualizar' : 'Guardar'}</button>
@@ -558,7 +557,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                           <td className="fcc-x32">{index + 1}</td>
                           <td className="fcc-x33">{det.tipoConvenioNombre}</td>
                           <td className="fcc-x34">{/* ✅ NUEVO (V00121): edición en línea (varios de golpe); se guarda todo con "Guardar Convenio" */}<input type="number" step="0.01" className="form-control" style={{ width: '110px', padding: '4px 8px' }} value={det.tarifa} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = parseFloat(e.target.value) || 0; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, tarifa: v } : d)); }} /></td>
-                          <td><select className="form-control" style={{ width: '100px', padding: '4px 6px' }} value={det.moneda || formData.monedaNombre || 'Pesos'} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v } : d)); }}><option value="Pesos">Pesos</option><option value="Dólares">Dólares</option></select></td>
+                          <td><select className="form-control" style={{ width: '100px', padding: '4px 6px' }} value={det.moneda || formData.monedaNombre || 'Pesos'} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v } : d)); }}>{/* ✅ V00123: opciones desde el catálogo de Monedas */}{(monedas.length > 0 ? monedas.map((m: any) => String(m.moneda || '')).filter(Boolean) : ['Pesos', 'Dólares']).map((m: string) => <option key={m} value={m}>{m}</option>)}</select></td>
                           <td className="fcc-x29">
                             {/* ✅ NUEVO (V00120): editar detalle */}
                             <button type="button" title="Editar este detalle" style={{ background: 'none', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', marginRight: '6px' }} onClick={() => { setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: det.moneda || formData.monedaNombre || 'Pesos', _editandoId: det.id } as any); setMostrandoDetalleForm(true); }}>✎</button>

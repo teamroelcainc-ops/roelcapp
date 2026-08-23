@@ -2,8 +2,8 @@
 
 .dcv-x1 { padding: 24px; animation: fadeIn 0.3s ease; }
 .dcv-x2 { color: #8b949e; font-size: 0.85rem; margin: -8px 0 18px 0; }
-.dcv-x3 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
-.dcv-x4 { flex: 1; min-width: 240px; }
+.dcv-x3 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; margin-top: 6px; }
+.dcv-x4 { flex: 1; min-width: 240px; max-width: 520px; height: 36px; box-sizing: border-box; }
 .dcv-x5 { color: #8b949e; padding: 40px; text-align: center; background-color: #0d1117; border: 1px solid #30363d; border-radius: 10px; }
 .dcv-x6 { overflow-x: auto; background-color: #0d1117; border: 1px solid #30363d; border-radius: 10px; }
 .dcv-x7 { width: 100%; }
