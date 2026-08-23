@@ -1,6 +1,6 @@
 // src/features/conveniosClientes/components/FormularioConvenioCliente.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, getDocs, getDoc, doc, writeBatch, query, where } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import type { ConvenioClienteRecord, ConvenioDetalleRecord } from '../../../types/convenioCliente';
 import './FormularioConvenioCliente.css';
@@ -398,6 +398,77 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     cerrarDetalleModal();
   };
 
+  // ✅ V00126: GUARDADO DIRECTO DE DETALLES EN FIRESTORE (independiente de "Guardar Convenio Maestro")
+  const [guardandoDetalles, setGuardandoDetalles] = useState(false);
+  const [ultimoGuardadoDet, setUltimoGuardadoDet] = useState('');
+  const idMaestroActual = (): string => String(initialData?.id || (formData as any).id || '');
+
+  /** Escribe UN detalle ya existente en la BD (setDoc merge) y lo verifica leyéndolo de vuelta. */
+  const persistirDetalle = async (d: (typeof detalles)[number]) => {
+    const masterId = idMaestroActual();
+    const payload = {
+      convenioId: masterId,
+      tipoConvenioId: d.tipoConvenioId || '',
+      tipoConvenioNombre: d.tipoConvenioNombre || '',
+      tarifa: Number(d.tarifa) || 0,
+      moneda: normalizarMoneda(d.moneda),
+    };
+    if (d._isNew || !d.id || String(d.id).startsWith('local_')) {
+      if (!masterId) throw new Error('Guarda primero el convenio maestro para poder crear detalles.');
+      const ref = await addDoc(collection(db, 'convenios_clientes_detalles'), payload);
+      return ref.id;
+    }
+    const ref = doc(db, 'convenios_clientes_detalles', d.id);
+    await setDoc(ref, payload, { merge: true });
+    const back = await getDoc(ref);
+    if (!back.exists() || String(back.data()?.moneda || '') !== payload.moneda) {
+      throw new Error(`Firestore no devolvió la moneda guardada para "${d.tipoConvenioNombre}" (id ${d.id}).`);
+    }
+    return d.id;
+  };
+
+  /** Autoguardado: cambio de moneda en un detalle YA existente → se escribe al instante. */
+  const cambiarMonedaDetalle = async (detalleId: string, v: string) => {
+    const base = detalles.find(d => d.id === detalleId);
+    if (!base) return;
+    const objetivo = { ...base, moneda: v, _editado: !base._isNew ? true : base._editado };
+    setDetalles(prev => prev.map(d => d.id === detalleId ? objetivo : d));
+    if (objetivo._isNew || !v || !idMaestroActual()) return;
+    try {
+      await persistirDetalle(objetivo);
+      setDetalles(prev => prev.map(x => x.id === detalleId ? { ...x, _editado: false } : x));
+      setUltimoGuardadoDet(`Moneda guardada ✓ ${new Date().toLocaleTimeString()}`);
+    } catch (e: any) {
+      alert(`No se pudo guardar la moneda en Firestore:\n\n${e?.code || ''} ${e?.message || String(e)}`);
+    }
+  };
+
+  /** Botón "Guardar detalles": escribe TODOS los detalles (nuevos y existentes) ahora mismo. */
+  const guardarDetallesAhora = async () => {
+    if (guardandoDetalles) return;
+    const masterId = idMaestroActual();
+    if (!masterId) { alert('Este convenio aún no existe en la BD. Presiona "Guardar Convenio Maestro" primero; después podrás guardar detalles por separado.'); return; }
+    setGuardandoDetalles(true);
+    try {
+      const actualizados: typeof detalles = [];
+      for (const d of detalles) {
+        const id = await persistirDetalle(d);
+        actualizados.push({ ...d, id, convenioId: masterId, _isNew: false, _editado: false });
+      }
+      for (const delId of detallesEliminados) {
+        try { await setDoc(doc(db, 'convenios_clientes_detalles', delId), { _eliminado: true }, { merge: true }); } catch { /* se borra con el maestro */ }
+      }
+      setDetalles(actualizados);
+      limpiarCacheMemoria('detalles_convenio__clientes');
+      const sin = actualizados.filter(d => !normalizarMoneda(d.moneda)).length;
+      setUltimoGuardadoDet(`${actualizados.length} detalle(s) guardados ✓ ${new Date().toLocaleTimeString()}${sin ? ` · ${sin} sin moneda` : ''}`);
+      alert(`Se guardaron ${actualizados.length} detalle(s) en Firestore y se verificó la lectura.${sin ? `\n\nOjo: ${sin} detalle(s) siguen sin moneda.` : ''}`);
+    } catch (e: any) {
+      console.error('guardarDetallesAhora:', e);
+      alert(`Error al guardar detalles:\n\n${e?.code || ''} ${e?.message || String(e)}`);
+    } finally { setGuardandoDetalles(false); }
+  };
+
   const handleEliminarDetalle = (detalleId: string, isNew?: boolean) => {
     setDetalles(prev => prev.filter(d => d.id !== detalleId));
     if (!isNew) setDetallesEliminados(prev => [...prev, detalleId]);
@@ -595,16 +666,20 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                 {detalles.some(d => !normalizarMoneda(d.moneda)) && (
                   <label className="fcc-asignar-todos">
                     <span>Asignar a los {detalles.filter(d => !normalizarMoneda(d.moneda)).length} sin moneda:</span>
-                    <select className="form-control fcc-select-moneda" value="" onChange={(e) => { const v = e.target.value; if (!v) return; setDetalles(prev => prev.map(d => normalizarMoneda(d.moneda) ? d : { ...d, moneda: v, _editado: !d._isNew ? true : d._editado })); }}>
+                    <select className="form-control fcc-select-moneda" value="" onChange={(e) => { const v = e.target.value; if (!v) return; const vacios = detalles.filter(d => !normalizarMoneda(d.moneda)); setDetalles(prev => prev.map(d => normalizarMoneda(d.moneda) ? d : { ...d, moneda: v, _editado: !d._isNew ? true : d._editado })); if (idMaestroActual()) { (async () => { try { for (const d of vacios) if (!d._isNew) await persistirDetalle({ ...d, moneda: v }); setUltimoGuardadoDet(`Moneda asignada y guardada ✓ ${new Date().toLocaleTimeString()}`); } catch (e: any) { alert(`No se pudo guardar en Firestore:\n\n${e?.code || ''} ${e?.message || String(e)}`); } })(); } }}>
                       <option value="">— Elegir —</option>
                       {opcionesMoneda.map((m: string) => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </label>
                 )}
+                  <div className="fcc-acciones-lista">
+                  {ultimoGuardadoDet && <small className="fcc-estado-guardado">{ultimoGuardadoDet}</small>}
+                  <button type="button" className="btn btn-primary" disabled={guardandoDetalles || detalles.length === 0} onClick={guardarDetallesAhora} title="Escribe todos los detalles en Firestore ahora mismo (sin necesidad de guardar el convenio maestro)">{guardandoDetalles ? 'Guardando…' : '💾 Guardar detalles'}</button>
                   <button type="button" className="btn btn-outline" onClick={abrirNuevoDetalle}>+ Agregar Detalle</button>
                 </div>
+                </div>
 
-<small className="fcc-hint-guardar">Los cambios de tarifa/moneda se aplican en Firestore al presionar <b>Guardar Convenio Maestro</b>.</small>
+<small className="fcc-hint-guardar">La moneda se guarda en Firestore al instante al elegirla. Tarifas y tipos: presiona <b>💾 Guardar detalles</b> (o Guardar Convenio Maestro).</small>
                 <div className="table-container fcc-tabla-wrap">
                   <table className="data-table fcc-x26">
                     <thead className="fcc-x27">
@@ -625,7 +700,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                             <td className="fcc-x32">{index + 1}</td>
                             <td className="fcc-x33 fcc-celda-nombre" title={det.tipoConvenioNombre}>{det.tipoConvenioNombre}</td>
                             <td className="fcc-x34">{/* ✅ NUEVO (V00121): edición en línea (varios de golpe); se guarda todo con "Guardar Convenio" */}<input type="number" step="0.01" className="form-control fcc-input-tarifa" value={det.tarifa} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = parseFloat(e.target.value) || 0; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, tarifa: v } : d)); }} /></td>
-                            <td>{(() => { const val = normalizarMoneda(det.moneda); return (<select className={`form-control fcc-select-moneda${val ? '' : ' sin-moneda'}`} value={val} onClick={(e) => e.stopPropagation()} onChange={(e) => { const v = e.target.value; setDetalles(prev => prev.map(d => d.id === det.id ? { ...d, moneda: v, _editado: !d._isNew ? true : d._editado } : d)); }}>{/* ✅ V00123: opciones desde el catálogo de Monedas · V00126: valor normalizado */}<option value="">— Seleccionar —</option>{opcionesMonedaCon(val).map((m: string) => <option key={m} value={m}>{m}</option>)}</select>); })()}</td>
+                            <td>{(() => { const val = normalizarMoneda(det.moneda); return (<select className={`form-control fcc-select-moneda${val ? '' : ' sin-moneda'}`} value={val} onClick={(e) => e.stopPropagation()} onChange={(e) => cambiarMonedaDetalle(det.id!, e.target.value)}>{/* ✅ V00123: opciones desde el catálogo de Monedas · V00126: valor normalizado */}<option value="">— Seleccionar —</option>{opcionesMonedaCon(val).map((m: string) => <option key={m} value={m}>{m}</option>)}</select>); })()}</td>
                             <td className="fcc-x29">
                               {/* ✅ NUEVO (V00120): editar detalle */}
                               <button type="button" className="fcc-btn-editar" title="Editar este detalle" onClick={() => { const t = tarifarios.find(x => x.id === det.tipoConvenioId); const sug: number[] = []; if (t) [t.tarifa_cliente_1, t.tarifa_cliente_2, t.tarifa_cliente_3].forEach(v => { if (Number(v) > 0) sug.push(Number(v)); }); setTarifasSugeridasActuales(sug); setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: normalizarMoneda(det.moneda), _editandoId: det.id }); setMostrandoDetalleForm(true); }}>✎</button>
