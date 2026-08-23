@@ -2856,10 +2856,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnUnidad</span></label>
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del proveedor,
                             pero puedes corregir en qué moneda se factura. */}
-                        <select className="form-control" value={formData.facturadoEnUnidad || ''}
+                        <select disabled title="Viene de la moneda de la empresa (tabla Empresas); no se puede modificar" style={{ opacity: 0.75, cursor: 'not-allowed' }} className="form-control" value={formData.facturadoEnUnidad || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnUnidad: e.target.value }))}
-                          title="Se precarga según el proveedor; puedes corregirla"
-                          style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 700 : undefined }}>
+                          >
                           <option value="">— Sin definir —</option>
                           <option value={ID_USD}>Dólares</option>
                           <option value={ID_MXN}>Pesos</option>
@@ -3054,16 +3053,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnCobrar</span></label>
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del cliente,
                             pero puedes corregir en qué moneda se factura. */}
-                        <select className="form-control" value={formData.facturadoEnCobrar || ''}
+                        <select disabled title="Viene de la moneda de la empresa (tabla Empresas); no se puede modificar" style={{ opacity: 0.75, cursor: 'not-allowed' }} className="form-control" value={formData.facturadoEnCobrar || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnCobrar: e.target.value }))}
-                          title="Se precarga según el cliente; puedes corregirla"
-                          style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 700 : undefined }}>
+                          >
                           <option value="">— Sin definir —</option>
                           <option value={ID_USD}>Dólares</option>
                           <option value={ID_MXN}>Pesos</option>
                         </select>
                       </div>
-                      <div className="form-group"><label className="form-label">Monto Convenio Cliente <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.montoConvenioCliente || 0} readOnly={campoBloqueadoAut('montoConvenioCliente')} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Subtotal <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.montoConvenioCliente || 0} readOnly={campoBloqueadoAut('montoConvenioCliente')} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda></div>
                       {/* ✅ NUEVO: la MONEDA DEL MONTO ahora es VISIBLE y corregible.
                           El desglose Dólares/Pesos/Conversión parte de esta moneda
                           (viene del convenio); si el convenio la trae mal capturada,
@@ -3087,14 +3085,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <BotonAgregar title="Administrar costos adicionales" onClick={() => setMostrarCostosAdic(true)} />
                         </div>
                       </div>
-                      <div className="form-group"><label className="form-label">Tipo de Cambio Aprobado <span className="campo-badge">tipoCambioAprobado</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.tipoCambioAprobado || 0} readOnly={campoBloqueadoAut('tipoCambioAprobado')} onChange={e => setFormData(prev => ({ ...prev, tipoCambioAprobado: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('tipoCambioAprobado') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del TC oficial del día; puedes ajustarlo manualmente'} style={campoBloqueadoAut('tipoCambioAprobado') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Total <span className="campo-badge">subtotalCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.9, color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Tipo de Cambio <span className="campo-badge">tipoCambioAprobado</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.tipoCambioAprobado || 0} readOnly={campoBloqueadoAut('tipoCambioAprobado')} onChange={e => setFormData(prev => ({ ...prev, tipoCambioAprobado: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('tipoCambioAprobado') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del TC oficial del día; puedes ajustarlo manualmente'} style={campoBloqueadoAut('tipoCambioAprobado') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                     </div>
                   </div>
 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconTrendingUp /></div><h3 className="roelca-card-title">Conversión y Utilidad</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Subtotal Cliente <span className="campo-badge">subtotalCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.9, color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
+                      
                       <div className="form-group"><label className="form-label">Dólares (Cliente) <span className="campo-badge">dolaresCliente</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x28" value={Number(formData.dolaresCliente || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
                       <div className="form-group"><label className="form-label">Pesos (Cliente) <span className="campo-badge">pesosCliente</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x29" value={Number(formData.pesosCliente || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
                       <div className="form-group"><label className="form-label">Conversión Cliente (MXN) <span className="campo-badge">conversionCliente</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x29" value={Number(formData.conversionCliente || 0).toFixed(2)} readOnly /></ConSimboloMoneda></div>
@@ -3227,7 +3226,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
             <div className="roelca-sidebar-section">
               <div className="roelca-sidebar-label"><span className="roelca-sidebar-icon"><IconTrendingUp size={13} /></span> Financiero</div>
-              <div className="roelca-money-row"><span className="lbl">Subtotal Cliente</span><span className="val">{fmtMoney(formData.subtotalCliente)}</span></div>
+              <div className="roelca-money-row"><span className="lbl">Total</span><span className="val">{fmtMoney(formData.subtotalCliente)}</span></div>
               {!esFlotaPropiaRoelca && (
                 <div className="roelca-money-row"><span className="lbl">Subtotal Proveedor</span><span className="val">{fmtMoney(formData.subtotalProv)}</span></div>
               )}
