@@ -1,0 +1,28 @@
+/* Estilos hermanos de PapeleraDashboard.tsx (V00115). */
+
+.pr-x1 { padding: 24px; animation: fadeIn 0.3s ease; }
+.pr-x2 { color: #8b949e; font-size: 0.85rem; margin: -8px 0 18px 0; }
+.pr-x3 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.pr-x4 { width: auto; min-width: 220px; }
+.pr-x5 { flex: 1; min-width: 220px; }
+.pr-x6 { background-color: #da3633; color: #fff; border: none; font-weight: 600; }
+.pr-x6:disabled { opacity: 0.5; cursor: not-allowed; }
+.pr-x7 { color: #8b949e; padding: 40px; text-align: center; background-color: #0d1117; border: 1px solid #30363d; border-radius: 10px; }
+.pr-x8 { overflow-x: auto; background-color: #0d1117; border: 1px solid #30363d; border-radius: 10px; }
+.pr-x9 { width: 100%; }
+.pr-x10 { white-space: nowrap; }
+.pr-x11 { text-align: center; white-space: nowrap; }
+.pr-x12 { color: #8b949e; font-size: 0.82rem; white-space: nowrap; }
+.pr-x13 { color: #c9d1d9; font-weight: 600; }
+.pr-x14 { color: #6e7681; font-size: 0.72rem; font-family: monospace; }
+.pr-x15 { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-x16 { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d29922; font-size: 0.82rem; }
+.pr-x17 { color: #3fb950; border-color: #3fb950; margin-right: 6px; font-size: 0.8rem; }
+.pr-x18 { font-size: 0.8rem; }
+.pr-x19 { color: #8b949e; font-size: 0.8rem; margin-top: 10px; }
+
+/* MOBILE-DENSITY-AUTO */
+@media (max-width: 640px) {
+  .pr-x1 { padding: 14px 12px; }
+  .pr-x3 { flex-wrap: wrap; }
+}

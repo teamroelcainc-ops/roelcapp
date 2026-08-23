@@ -50,6 +50,8 @@ const ConveniosClientesDashboard = lazyWithRetry(() => import('./features/conven
 const ConveniosProveedoresDashboard = lazyWithRetry(() => import('./features/conveniosProveedores/components/ConveniosProveedoresDashboard').then(m => ({ default: m.ConveniosProveedoresDashboard })), 'ConveniosProveedoresDashboard');
 // ✅ NUEVO (V00112): vista plana de tarifas de convenios (clientes y proveedores)
 const DetallesConvenioDashboard = lazyWithRetry(() => import('./features/conveniosDetalles/components/DetallesConvenioDashboard'), 'DetallesConvenioDashboard');
+// ✅ NUEVO (V00115): papelera de reciclaje global
+const PapeleraDashboard = lazyWithRetry(() => import('./features/papelera/components/PapeleraDashboard'), 'PapeleraDashboard');
 const DireccionesDashboard = lazyWithRetry(() => import('./features/direcciones/components/DireccionesDashboard').then(m => ({ default: m.DireccionesDashboard })), 'DireccionesDashboard');
 const EmpleadosDashboard = lazyWithRetry(() => import('./features/empleados/components/EmpleadosDashboard').then(m => ({ default: m.EmpleadosDashboard })), 'EmpleadosDashboard');
 const RolesDashboard = lazyWithRetry(() => import('./usuarios/components/RolesDashboard').then(m => ({ default: m.RolesDashboard })), 'RolesDashboard');
@@ -625,7 +627,7 @@ function AppContenido() {
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -1249,6 +1251,8 @@ function AppContenido() {
                 {puede('usuarios') && <div className={`sidebar-subitem ${moduloActivo === 'usuarios' ? 'active' : ''}`} onClick={() => navegarA('usuarios')}><span className="sidebar-icon">{ICON.usuarios}</span><span className="sidebar-label">{etq('menu.usuarios', 'Usuarios')}</span></div>}
                 {puede('roles') && <div className={`sidebar-subitem ${moduloActivo === 'roles' ? 'active' : ''}`} onClick={() => navegarA('roles')}><span className="sidebar-icon">{ICON.roles}</span><span className="sidebar-label">{etq('menu.roles_y_permisos', 'Roles y Permisos')}</span></div>}
                 {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'logs' ? 'active' : ''}`} onClick={() => navegarA('logs')}><span className="sidebar-icon">{ICON.logs}</span><span className="sidebar-label">{etq('menu.historial_de_actividad', 'Historial de Actividad')}</span></div>}
+                {/* ✅ NUEVO (V00115): Papelera de Reciclaje global (mismo permiso que Historial) */}
+                {puede('logs') && <div className={`sidebar-subitem ${moduloActivo === 'papeleraReciclaje' ? 'active' : ''}`} onClick={() => navegarA('papeleraReciclaje')}><span className="sidebar-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><polyline points="9 14 12 11 15 14"></polyline><line x1="12" y1="11" x2="12" y2="18"></line></svg></span><span className="sidebar-label">{etq('menu.papelera_de_reciclaje', 'Papelera de Reciclaje')}</span></div>}
                 {puede('flujosOperacion') && <div className={`sidebar-subitem ${moduloActivo === 'flujosOperacion' ? 'active' : ''}`} onClick={() => navegarA('flujosOperacion')}><span className="sidebar-icon">{ICON.flujosOperacion}</span><span className="sidebar-label">{etq('menu.reglas_de_estatus', 'Reglas de Estatus')}</span></div>}
                 {puede('datosEmpresa') && <div className={`sidebar-subitem ${moduloActivo === 'datosEmpresa' ? 'active' : ''}`} onClick={() => navegarA('datosEmpresa')}><span className="sidebar-icon">{ICON.datosEmpresa}</span><span className="sidebar-label">{etq('menu.datos_de_la_empresa', 'Datos de la Empresa')}</span></div>}
                 {/* AUTORIZACIONES: lo ve quien tenga el módulo asignado en su rol (Admin siempre). */}
@@ -1424,6 +1428,8 @@ function AppContenido() {
             {/* ✅ NUEVO (V00112): vistas Detalles del Convenio */}
             {moduloActivo === 'detallesConvenioClientes' && puede('conveniosClientes') && <DetallesConvenioDashboard tipo="clientes" />}
             {moduloActivo === 'detallesConvenioProveedores' && puede('conveniosProveedores') && <DetallesConvenioDashboard tipo="proveedores" />}
+            {/* ✅ NUEVO (V00115): papelera de reciclaje */}
+            {moduloActivo === 'papeleraReciclaje' && puede('logs') && <PapeleraDashboard />}
             {moduloActivo === 'conveniosProveedores' && puede('conveniosProveedores') && <ConveniosProveedoresDashboard />}
             {moduloActivo === 'catalogos' && puede('catalogos') && <CatalogosDashboard />}
             {moduloActivo === 'colaboradores' && puede('colaboradores') && <EmpleadosDashboard />}

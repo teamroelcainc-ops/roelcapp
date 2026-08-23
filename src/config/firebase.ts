@@ -5,7 +5,7 @@ import {
   persistentLocalCache,
   persistentSingleTabManager,
   memoryLocalCache,
-  collection, addDoc, updateDoc, deleteDoc, doc,
+  collection, addDoc, updateDoc, deleteDoc, doc, getDoc,
 } from "firebase/firestore";
 import type { Firestore } from "firebase/firestore";
 import type { DocumentData, UpdateData } from "firebase/firestore";
@@ -123,10 +123,84 @@ export const actualizarRegistro = async (nombreColeccion: string, id: string, da
   return res;
 };
 
-export const eliminarRegistro = async (nombreColeccion: string, id: string) => {
+export const eliminarRegistro = async (nombreColeccion: string, id: string, opciones?: OpcionesEliminacion) => {
+  // ✅ NUEVO (V00115) — PAPELERA DE RECICLAJE GLOBAL con NOTA OBLIGATORIA:
+  //   1) Se pide una nota de eliminación (obligatoria) si el módulo no la
+  //      pasó ya en `opciones.motivo`. Cancelar o dejarla vacía ABORTA el
+  //      borrado (se lanza error y nada se elimina).
+  //   2) Se copia el documento COMPLETO a `papelera_reciclaje` con quién,
+  //      cuándo, de qué colección y la nota. La copia va ANTES del borrado:
+  //      si la copia falla, no se borra nada.
+  //   3) Desde el módulo Papelera de Reciclaje se restaura con su ID original
+  //      y datos idénticos.
+  //   Los módulos que ya capturan su propia nota la pasan en `opciones.motivo`
+  //   para no preguntar dos veces.
+  let motivo = String(opciones?.motivo ?? '').trim();
+  if (!motivo) {
+    motivo = pedirNotaEliminacion();
+  }
+  const snap = await getDoc(doc(db, nombreColeccion, id));
+  if (snap.exists()) {
+    await addDoc(collection(db, COL_PAPELERA_GLOBAL), {
+      coleccion: nombreColeccion,
+      registroId: id,
+      datos: snap.data(),
+      motivo,
+      modulo: opciones?.modulo || nombreColeccion,
+      etiqueta: opciones?.etiqueta || '',
+      eliminadoPor: auth.currentUser?.email || 'Sistema',
+      eliminadoEn: new Date().toISOString(),
+    });
+  }
   const res = await deleteDoc(doc(db, nombreColeccion, id));
   invalidarCachesCatalogosLocales(nombreColeccion);
   return res;
+};
+
+// ✅ NUEVO (V00115) — utilidades de la papelera global (exportadas para los
+//   módulos que borran en lote con writeBatch y copian por su cuenta).
+export const COL_PAPELERA_GLOBAL = 'papelera_reciclaje';
+
+export interface OpcionesEliminacion {
+  /** Nota de eliminación ya capturada por el módulo (evita doble pregunta). */
+  motivo?: string;
+  /** Nombre del módulo para mostrar en la papelera (por defecto, la colección). */
+  modulo?: string;
+  /** Descripción corta del registro para identificarlo en la papelera. */
+  etiqueta?: string;
+}
+
+/** Pide la nota de eliminación obligatoria. Si el usuario cancela o la deja
+ *  vacía, lanza un error para ABORTAR el borrado (nada se elimina). */
+export const pedirNotaEliminacion = (): string => {
+  const nota = window.prompt('Nota de eliminación (obligatoria):\n\nEscribe el motivo por el que se elimina este registro. Quedará guardado en la Papelera de Reciclaje junto con tu usuario y la fecha.', '');
+  const limpia = String(nota ?? '').trim();
+  if (!limpia) {
+    alert('Eliminación cancelada: la nota es obligatoria.');
+    throw new Error('Eliminación cancelada (nota obligatoria no capturada)');
+  }
+  return limpia;
+};
+
+/** Construye el documento que va a la papelera global (para borrados en lote). */
+export const payloadPapeleraGlobal = (
+  coleccion: string,
+  registro: { id?: string } & Record<string, unknown>,
+  motivo: string,
+  modulo?: string,
+  etiqueta?: string
+) => {
+  const { id, ...datos } = registro || {};
+  return {
+    coleccion,
+    registroId: String(id || ''),
+    datos,
+    motivo,
+    modulo: modulo || coleccion,
+    etiqueta: etiqueta || '',
+    eliminadoPor: auth.currentUser?.email || 'Sistema',
+    eliminadoEn: new Date().toISOString(),
+  };
 };
 
 // --- TRUCO PARA CREAR USUARIOS SIN CERRAR SESIÓN DEL ADMIN ---

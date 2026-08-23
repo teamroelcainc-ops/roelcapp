@@ -1,7 +1,7 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, getDocs, writeBatch, doc, query, limit, where, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
-import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro } from '../../../config/firebase';
+import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro, pedirNotaEliminacion } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger'; // ✅ Importación del logger
 
 import { listaCatalogos, catalogosConfig } from '../config/catalogSchemas';
@@ -22,7 +22,9 @@ const CACHE_NOMBRES_COLECCIONES: Record<string, string> = {};
 //    copia completa de cada registro ANTES de eliminarlo (borrado individual,
 //    en lote, sub-registros y uniones). Desde ahí se puede RESTAURAR con su
 //    ID original, por lo que las referencias que sigan vivas se reconectan.
-const COL_PAPELERA = 'papelera_catalogos';
+// ✅ MODIFICADO (V00115): la papelera de catálogos ahora es la PAPELERA DE
+//   RECICLAJE GLOBAL (`papelera_reciclaje`), compartida con todo el proyecto.
+const COL_PAPELERA = 'papelera_reciclaje';
 
 // ✅ NUEVO (V00106) — construye el documento que va a la papelera.
 const payloadPapelera = (
@@ -464,18 +466,11 @@ const CatalogosDashboard = () => {
   //    se muestra la CAUSA real en lugar de un mensaje genérico.
   const eliminarRegistroPrincipal = async (id: string) => {
     if (!catalogoSeleccionado) return;
-    if (window.confirm('¿Desea eliminar este registro?\n\nSe enviará a la Papelera de catálogos, desde donde podrás restaurarlo.')) {
+    if (window.confirm('¿Desea eliminar este registro?\n\nSe enviará a la Papelera de Reciclaje, desde donde podrás restaurarlo. Se te pedirá una nota obligatoria.')) {
       try {
-        // ✅ NUEVO (V00106): copia a la PAPELERA antes de borrar. Si la copia
-        //    falla, NO se borra (así nunca se pierde un registro sin respaldo).
-        const reg = registrosGlobales.find((r: any) => r.id === id);
-        if (reg) {
-          await agregarRegistro(COL_PAPELERA, payloadPapelera(
-            `catalogo_${catalogoSeleccionado.id}`, catalogoSeleccionado.id,
-            catalogoSeleccionado.titulo, reg, 'Eliminación individual'
-          ));
-        }
-        await eliminarRegistro(`catalogo_${catalogoSeleccionado.id}`, id);
+        // ✅ MODIFICADO (V00115): el helper central pide la NOTA OBLIGATORIA y
+        //    copia el registro a la papelera global antes de borrar.
+        await eliminarRegistro(`catalogo_${catalogoSeleccionado.id}`, id, { modulo: `Catálogos · ${catalogoSeleccionado.titulo}` });
         await registrarLog('Catálogos', 'Eliminación', `Eliminó un registro del catálogo de ${catalogoSeleccionado.titulo} (enviado a la papelera)`);
       } catch (error: any) {
         console.error('Error al eliminar registro de catálogo:', error);
@@ -812,12 +807,14 @@ const CatalogosDashboard = () => {
   const eliminarSeleccionados = async () => {
     if (!catalogoSeleccionado || seleccionadosIds.length === 0 || borrandoSeleccion) return;
     const confirmado = window.confirm(
-      `¿Eliminar los ${seleccionadosIds.length} registro(s) seleccionados de "${catalogoSeleccionado.titulo}"?\n\nSe enviarán a la Papelera de catálogos, desde donde podrás restaurarlos.`
+      `¿Eliminar los ${seleccionadosIds.length} registro(s) seleccionados de "${catalogoSeleccionado.titulo}"?\n\nSe enviarán a la Papelera de Reciclaje, desde donde podrás restaurarlos. Se te pedirá una nota obligatoria.`
     );
     if (!confirmado) return;
 
     setBorrandoSeleccion(true);
     try {
+      // ✅ NUEVO (V00115): nota obligatoria (una sola vez para todo el lote)
+      const notaLote = pedirNotaEliminacion();
       const col = `catalogo_${catalogoSeleccionado.id}`;
       // ✅ NUEVO (V00106): en el MISMO batch se copia cada registro a la
       //    papelera y se borra el original (2 operaciones por registro, por
@@ -829,7 +826,7 @@ const CatalogosDashboard = () => {
           const reg = registrosGlobales.find((r: any) => r.id === id);
           if (reg) {
             batch.set(doc(collection(db, COL_PAPELERA)), payloadPapelera(
-              col, catalogoSeleccionado.id, catalogoSeleccionado.titulo, reg, 'Eliminación en lote'
+              col, catalogoSeleccionado.id, catalogoSeleccionado.titulo, reg, `Eliminación en lote — ${notaLote}`
             ));
           }
           batch.delete(doc(db, col, id));
@@ -887,14 +884,9 @@ const CatalogosDashboard = () => {
     if (window.confirm('¿Deseas eliminar este registro?\n\nSe enviará a la Papelera de catálogos, desde donde podrás restaurarlo.')) {
       try { 
         const realCol = CACHE_NOMBRES_COLECCIONES[coleccion] || coleccion;
-        // ✅ NUEVO (V00106): copia del sub-registro a la papelera antes de borrar.
-        const subReg = (subDocsSnapshot[coleccion] || []).find((d: any) => d.id === id);
-        if (subReg && catalogoSeleccionado) {
-          await agregarRegistro(COL_PAPELERA, payloadPapelera(
-            realCol, catalogoSeleccionado.id, `${catalogoSeleccionado.titulo} (sub-registro)`, subReg, 'Eliminación de sub-registro'
-          ));
-        }
-        await eliminarRegistro(realCol, id); 
+        // ✅ MODIFICADO (V00115): el helper central pide la NOTA OBLIGATORIA y
+        //    copia el sub-registro a la papelera global antes de borrar.
+        await eliminarRegistro(realCol, id, { modulo: `Catálogos · ${catalogoSeleccionado?.titulo} (sub-registro)` }); 
         await registrarLog('Catálogos', 'Eliminación', `Eliminó un detalle vinculado al catálogo de ${catalogoSeleccionado?.titulo} (enviado a la papelera)`);
       } catch (error) { alert("Hubo un error al eliminar el registro."); }
     }
