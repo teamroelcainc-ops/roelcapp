@@ -87,3 +87,7 @@
   .fo-x54 { padding: 14px 12px; }
   .fo-x69 { flex-wrap: wrap; }
 }
+
+/* ✅ V00126: leyenda de conversión Convenio → moneda de factura */
+.fo-conv-nota { display: block; margin-top: 4px; color: #8b949e; font-size: 0.72rem; }
+.fo-conv-alerta { display: block; margin-top: 4px; color: #f85149; font-size: 0.72rem; font-weight: 600; }
