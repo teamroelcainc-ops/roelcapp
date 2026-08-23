@@ -6,6 +6,7 @@ import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '.
 import * as XLSX from 'xlsx';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
+import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombresOperaciones';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator';
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
@@ -122,6 +123,34 @@ const ServiciosCancelados = () => {
   const { config: empresaConfig } = useEmpresaConfig();
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
+  // ✅ NUEVO (V00114) — Sincronizar nombres (solo NOMBRES; nunca montos):
+  //   re-resuelve las operaciones canceladas cargadas contra los catálogos
+  //   actuales usando la utilidad compartida.
+  const [sincronizandoNombres, setSincronizandoNombres] = useState(false);
+  const sincronizarNombres = async () => {
+    if (sincronizandoNombres || operacionesGlobales.length === 0) return;
+    const ok = window.confirm(
+      `Se revisarán las ${operacionesGlobales.length} operaciones canceladas cargadas y se actualizarán los nombres ` +
+      `(tipo de operación, status, empresas y carga) que quedaron viejos tras renombrar en Catálogos.\n\n` +
+      `Solo se corrigen NOMBRES; los montos y tarifas guardados no se tocan.\n\n¿Continuar?`
+    );
+    if (!ok) return;
+    setSincronizandoNombres(true);
+    try {
+      const { cambiosPorId, corregidos } = await sincronizarNombresOperaciones(operacionesGlobales, 'Servicios Cancelados');
+      if (corregidos > 0) {
+        setOperacionesGlobales(prev => prev.map((o: any) =>
+          cambiosPorId[String(o.id)] ? { ...o, ...cambiosPorId[String(o.id)] } : o));
+      }
+      alert(corregidos > 0
+        ? `Sincronización completada. ✅\n\nSe actualizaron ${corregidos} operación(es).`
+        : 'Sincronización completada. ✅\n\nLas operaciones cargadas ya tenían los nombres al día.');
+    } catch (e: any) {
+      console.error('Error sincronizando nombres:', e);
+      alert('La sincronización no terminó completa.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido'));
+    }
+    setSincronizandoNombres(false);
+  };
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
   // ✅ NUEVO: modal de auditoría de la referencia (solo lectura).
@@ -1504,6 +1533,11 @@ const ServiciosCancelados = () => {
             <span className="sc-x47">Presiona Filtros para definir el rango de fechas y buscar.</span>
           )}
 
+          {/* ✅ NUEVO (V00114): sincronizar nombres contra catálogos actuales */}
+          <button className="btn btn-outline sc-x48" onClick={sincronizarNombres} disabled={sincronizandoNombres || operacionesGlobales.length === 0} title="Sincronizar nombres: actualiza registro por registro los nombres que quedaron viejos tras renombrar en Catálogos (no toca montos)" style={{ cursor: sincronizandoNombres ? 'wait' : 'pointer', opacity: (sincronizandoNombres || operacionesGlobales.length === 0) ? 0.6 : 1 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+            {sincronizandoNombres ? 'Sincronizando…' : 'Sincronizar nombres'}
+          </button>
           <button className="btn btn-outline sc-x48" onClick={abrirModalExportar} title="Exportar a Excel (elegir y ordenar columnas)">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           </button>

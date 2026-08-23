@@ -4,6 +4,7 @@ import { db, auth } from '../../../config/firebase';
 import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
+import { sincronizarNombresOperaciones } from '../../../utils/sincronizarNombresOperaciones';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
 // ✅ NUEVO: reglas de status (botones dinámicos + cascada) — igual que Operaciones Activas
@@ -275,6 +276,34 @@ interface ServiciosCompletadosProps {
 const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar }) => {
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(false);
+  // ✅ NUEVO (V00114) — Sincronizar nombres (solo NOMBRES; nunca montos):
+  //   re-resuelve las operaciones completadas cargadas contra los catálogos
+  //   actuales usando la utilidad compartida.
+  const [sincronizandoNombres, setSincronizandoNombres] = useState(false);
+  const sincronizarNombres = async () => {
+    if (sincronizandoNombres || operacionesGlobales.length === 0) return;
+    const ok = window.confirm(
+      `Se revisarán las ${operacionesGlobales.length} operaciones completadas cargadas y se actualizarán los nombres ` +
+      `(tipo de operación, status, empresas y carga) que quedaron viejos tras renombrar en Catálogos.\n\n` +
+      `Solo se corrigen NOMBRES; los montos y tarifas guardados no se tocan.\n\n¿Continuar?`
+    );
+    if (!ok) return;
+    setSincronizandoNombres(true);
+    try {
+      const { cambiosPorId, corregidos } = await sincronizarNombresOperaciones(operacionesGlobales, 'Servicios Completados');
+      if (corregidos > 0) {
+        setOperacionesGlobales(prev => prev.map((o: any) =>
+          cambiosPorId[String(o.id)] ? { ...o, ...cambiosPorId[String(o.id)] } : o));
+      }
+      alert(corregidos > 0
+        ? `Sincronización completada. ✅\n\nSe actualizaron ${corregidos} operación(es).`
+        : 'Sincronización completada. ✅\n\nLas operaciones cargadas ya tenían los nombres al día.');
+    } catch (e: any) {
+      console.error('Error sincronizando nombres:', e);
+      alert('La sincronización no terminó completa.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido'));
+    }
+    setSincronizandoNombres(false);
+  };
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
   // ✅ NUEVO: modal de auditoría de la referencia (solo lectura).
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false);
@@ -2238,6 +2267,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           <div className="sc-x68">
             <button className="btn btn-outline" onClick={refrescarDatos} disabled={cargandoOperaciones} style={{ padding: '10px 12px', cursor: cargandoOperaciones ? 'wait' : 'pointer' }} title="Actualizar (recargar desde la base de datos)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            </button>
+            {/* ✅ NUEVO (V00114): sincronizar nombres contra catálogos actuales */}
+            <button className="btn btn-outline" onClick={sincronizarNombres} disabled={sincronizandoNombres || operacionesGlobales.length === 0} style={{ padding: '10px 12px', cursor: sincronizandoNombres ? 'wait' : 'pointer', opacity: (sincronizandoNombres || operacionesGlobales.length === 0) ? 0.6 : 1 }} title="Sincronizar nombres: actualiza registro por registro los nombres que quedaron viejos tras renombrar en Catálogos (no toca montos)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
             </button>
             <button className="btn btn-outline sc-x69" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>

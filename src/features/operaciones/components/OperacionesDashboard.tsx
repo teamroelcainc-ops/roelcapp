@@ -5,7 +5,7 @@ import { FormularioOperacion } from './FormularioOperacion';
 import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
 import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
-import { registrarLog } from '../../../utils/logger';
+import { sincronizarNombresOperaciones as sincronizarNombresUtil } from '../../../utils/sincronizarNombresOperaciones';
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
 import * as XLSX from 'xlsx';
@@ -414,96 +414,29 @@ const OperacionesDashboard = () => {
     setCargandoOperaciones(false);
   };
 
-  // ✅ NUEVO (V00113) — SINCRONIZAR NOMBRES (registro por registro): la tabla
-  //   pinta NOMBRES guardados dentro de cada operación (tipoOperacionNombre,
-  //   statusNombre, clienteNombre…), así que un renombre en Catálogos o en
-  //   Empresas deja el texto viejo congelado en las operaciones ya creadas.
-  //   Este botón re-resuelve cada operación cargada contra los catálogos
-  //   ACTUALES y reescribe solo los campos que difieren. Para "Carga" (que se
-  //   guarda como texto, sin ID), detecta valores que ya no existen en el
-  //   catálogo C/V y pregunta por cuál reemplazarlos (p. ej. Cargada → Cargado).
+  // ✅ MODIFICADO (V00114) — SINCRONIZAR NOMBRES: ahora usa la utilidad
+  //   compartida `sincronizarNombresOperaciones` (misma que Servicios
+  //   Completados y Cancelados). Re-resuelve las operaciones cargadas contra
+  //   los catálogos actuales y reescribe SOLO nombres (nunca montos, tarifas,
+  //   monedas ni tipos de cambio).
   const [sincronizandoNombres, setSincronizandoNombres] = useState(false);
   const sincronizarNombresOperaciones = async () => {
     if (sincronizandoNombres || operacionesGlobales.length === 0) return;
     const confirmado = window.confirm(
       `Se revisarán las ${operacionesGlobales.length} operaciones cargadas y se actualizarán los nombres ` +
-      `(tipo de operación, status, empresas y carga) que quedaron viejos tras renombrar en Catálogos.\n\n¿Continuar?`
+      `(tipo de operación, status, empresas y carga) que quedaron viejos tras renombrar en Catálogos.\n\n` +
+      `Solo se corrigen NOMBRES; los montos y tarifas guardados no se tocan.\n\n¿Continuar?`
     );
     if (!confirmado) return;
     setSincronizandoNombres(true);
     try {
-      // Catálogos actuales (lectura directa para no depender del estado async)
-      const [snapTipoOp, snapStatus, snapEmp, snapCV] = await Promise.all([
-        getDocs(collection(db, 'catalogo_tipo_operacion')),
-        getDocs(collection(db, 'catalogo_status_servicio')),
-        getDocs(collection(db, 'empresas')),
-        getDocs(collection(db, 'catalogo_carga_vacia')),
-      ]);
-      const mapTipoOp: Record<string, string> = {};
-      snapTipoOp.docs.forEach((d) => { mapTipoOp[d.id] = String((d.data() as any).tipo_operacion || ''); });
-      const mapStatus: Record<string, string> = {};
-      snapStatus.docs.forEach((d) => { mapStatus[d.id] = String((d.data() as any).nombre || ''); });
-      const mapEmp: Record<string, string> = {};
-      snapEmp.docs.forEach((d) => { mapEmp[d.id] = String((d.data() as any).nombre || ''); });
-      const nombresCV = snapCV.docs.map((d) => String((d.data() as any).nombre || '')).filter(Boolean);
-
-      // "Carga" es texto: valores que ya no existen en el catálogo C/V se
-      // remapean preguntando UNA vez por cada valor distinto.
-      const remapCarga: Record<string, string> = {};
-      if (nombresCV.length > 0) {
-        const huerfanos = Array.from(new Set(
-          operacionesGlobales.map((o: any) => String(o.carga || '').trim()).filter((v) => v && !nombresCV.includes(v))
-        ));
-        for (const viejo of huerfanos) {
-          const nuevo = window.prompt(
-            `El valor de Carga "${viejo}" ya no existe en el catálogo C/V.\n\n` +
-            `Escribe el valor NUEVO por el que se reemplazará en las operaciones.\n` +
-            `Opciones del catálogo: ${nombresCV.join(', ')}\n\n` +
-            `Deja vacío o cancela para NO cambiar "${viejo}".`, ''
-          );
-          const limpio = String(nuevo || '').trim();
-          if (limpio && nombresCV.includes(limpio)) remapCarga[viejo] = limpio;
-          else if (limpio) alert(`"${limpio}" no está en el catálogo C/V; el valor "${viejo}" se dejará sin cambios.`);
-        }
-      }
-
-      const PARES_EMPRESA: Array<[string, string]> = [
-        ['cliente', 'clienteNombre'], ['origen', 'origenNombre'], ['destino', 'destinoNombre'],
-        ['clienteMercancia', 'clienteMercanciaNombre'], ['proveedorUnidad', 'proveedorUnidadNombre'],
-        ['provServicios', 'provServiciosNombre'],
-      ];
-
-      const cambiosPorId: Record<string, Record<string, string>> = {};
-      operacionesGlobales.forEach((op: any) => {
-        const cambios: Record<string, string> = {};
-        const nomTipo = mapTipoOp[String(op.tipoOperacion || '')] || mapTipoOp[String(op.tipoOperacionId || '')];
-        if (nomTipo && nomTipo !== String(op.tipoOperacionNombre || '')) cambios.tipoOperacionNombre = nomTipo;
-        const nomStatus = mapStatus[String(op.status || '')];
-        if (nomStatus && nomStatus !== String(op.statusNombre || '')) cambios.statusNombre = nomStatus;
-        PARES_EMPRESA.forEach(([campoId, campoNombre]) => {
-          const n = mapEmp[String(op[campoId] || '')];
-          if (n && n !== String(op[campoNombre] || '')) cambios[campoNombre] = n;
-        });
-        const cargaActual = String(op.carga || '').trim();
-        if (cargaActual && remapCarga[cargaActual]) cambios.carga = remapCarga[cargaActual];
-        if (Object.keys(cambios).length > 0) cambiosPorId[String(op.id)] = cambios;
-      });
-
-      const ids = Object.keys(cambiosPorId);
-      for (let i = 0; i < ids.length; i += 400) {
-        const lote = ids.slice(i, i + 400);
-        const batch = writeBatch(db);
-        lote.forEach((id) => batch.update(doc(db, 'operaciones', id), cambiosPorId[id]));
-        await batch.commit();
-      }
-      // Refresca la tabla en pantalla sin re-leer todo
-      if (ids.length > 0) {
+      const { cambiosPorId, corregidos } = await sincronizarNombresUtil(operacionesGlobales, 'Operaciones');
+      if (corregidos > 0) {
         setOperacionesGlobales((prev) => prev.map((o: any) =>
           cambiosPorId[String(o.id)] ? { ...o, ...cambiosPorId[String(o.id)] } : o));
       }
-      await registrarLog('Operaciones', 'Edición', `Sincronizó nombres en ${ids.length} operación(es) contra los catálogos actuales.`);
-      alert(ids.length > 0
-        ? `Sincronización completada. ✅\n\nSe actualizaron ${ids.length} operación(es) con los nombres actuales de los catálogos.`
+      alert(corregidos > 0
+        ? `Sincronización completada. ✅\n\nSe actualizaron ${corregidos} operación(es) con los nombres actuales de los catálogos.`
         : 'Sincronización completada. ✅\n\nLas operaciones cargadas ya tenían los nombres al día.');
     } catch (e: any) {
       console.error('Error sincronizando nombres de operaciones:', e);
