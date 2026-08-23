@@ -63,6 +63,9 @@
 .fcc-det-tipo { grid-column: 1 / -1; }
 .fcc-det-acciones { margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; }
 
+.fcc-asignar-todos { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: #e3b341; }
+.fcc-hint-guardar { display: block; margin: -8px 0 10px; color: #8b949e; font-size: 0.75rem; }
+
 /* MOBILE-DENSITY-AUTO */
 /* Reglas de densidad móvil generadas automáticamente. */
 @media (max-width: 640px) {
@@ -72,6 +75,7 @@
   .fcc-x18 { grid-template-columns: 1fr; }
   .fcc-x20 { padding: 14px 12px; }
   .fcc-x21 { flex-wrap: wrap; }
+  .fcc-asignar-todos { flex-wrap: wrap; }
   .fcc-x24 { grid-template-columns: 1fr; }
   .modal-overlay .form-card.fcc-x16 { width: 100%; }
   .fcc-det-acciones { flex-wrap: wrap; }

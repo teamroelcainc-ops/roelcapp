@@ -57,12 +57,16 @@
 .fcp-det-tipo { grid-column: 1 / -1; }
 .fcp-det-acciones { margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; }
 
+.fcp-asignar-todos { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: #e3b341; }
+.fcp-hint-guardar { display: block; margin: -8px 0 10px; color: #8b949e; font-size: 0.75rem; }
+
 /* MOBILE-DENSITY-AUTO */
 /* Reglas de densidad móvil generadas automáticamente. */
 @media (max-width: 640px) {
   .fcp-x6 { grid-template-columns: 1fr; }
   .fcp-x8 { padding: 14px 12px; }
   .fcp-x9 { flex-wrap: wrap; }
+  .fcp-asignar-todos { flex-wrap: wrap; }
   .fcp-x12 { grid-template-columns: 1fr; }
   .modal-overlay .form-card.fcp-x5 { width: 100%; }
   .fcp-det-acciones { flex-wrap: wrap; }

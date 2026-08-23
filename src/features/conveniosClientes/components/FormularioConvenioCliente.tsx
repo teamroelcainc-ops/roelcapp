@@ -421,7 +421,9 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     
     // ✅ V00126: todos los detalles deben tener moneda propia
     const sinMoneda = detalles.filter(d => !normalizarMoneda(d.moneda));
-    if (sinMoneda.length > 0) { alert(`Hay ${sinMoneda.length} detalle(s) sin moneda. Selecciona la moneda de cada detalle antes de guardar.`); return; }
+    // ✅ V00126: ya NO se bloquea el guardado (los convenios viejos traen todos los detalles sin moneda);
+    //   se avisa y se guarda lo capturado. Usa "Asignar a todos" para llenar los vacíos de golpe.
+    if (sinMoneda.length > 0 && !window.confirm(`Hay ${sinMoneda.length} detalle(s) sin moneda.\n\n¿Guardar de todos modos? (los detalles con moneda seleccionada SÍ se guardarán)`)) return;
 
     setCargando(true);
     try {
@@ -471,7 +473,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
       onClose();
     } catch (error) {
       console.error("Error batch:", error);
-      alert('Error al guardar. Revisa tu conexión.');
+      alert(`No se pudo guardar el convenio.\n\n${(error as any)?.code || ''} ${(error as any)?.message || String(error)}`);
     } finally { setCargando(false); }
   };
 
@@ -589,9 +591,20 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
               <div className="fcc-x20">
                 <div className="fcc-x21">
                   <h3 className="fcc-x22">Lista de Detalles</h3>
+                {/* ✅ V00126: asignar moneda a todos los detalles que aún no la tienen */}
+                {detalles.some(d => !normalizarMoneda(d.moneda)) && (
+                  <label className="fcc-asignar-todos">
+                    <span>Asignar a los {detalles.filter(d => !normalizarMoneda(d.moneda)).length} sin moneda:</span>
+                    <select className="form-control fcc-select-moneda" value="" onChange={(e) => { const v = e.target.value; if (!v) return; setDetalles(prev => prev.map(d => normalizarMoneda(d.moneda) ? d : { ...d, moneda: v, _editado: !d._isNew ? true : d._editado })); }}>
+                      <option value="">— Elegir —</option>
+                      {opcionesMoneda.map((m: string) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </label>
+                )}
                   <button type="button" className="btn btn-outline" onClick={abrirNuevoDetalle}>+ Agregar Detalle</button>
                 </div>
 
+<small className="fcc-hint-guardar">Los cambios de tarifa/moneda se aplican en Firestore al presionar <b>Guardar Convenio Maestro</b>.</small>
                 <div className="table-container fcc-tabla-wrap">
                   <table className="data-table fcc-x26">
                     <thead className="fcc-x27">
