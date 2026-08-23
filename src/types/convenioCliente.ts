@@ -2,6 +2,9 @@
 
 // 1. Colección: convenios_clientes_detalles
 export interface ConvenioDetalleRecord {
+  // ✅ NUEVO (V00120): moneda del detalle y bandera de edición local
+  moneda?: string;
+  _editado?: boolean;
   id?: string;
   convenioId?: string; // Llave foránea que lo une al Maestro
   tipoConvenioId: string;

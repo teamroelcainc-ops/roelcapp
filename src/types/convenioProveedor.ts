@@ -1,6 +1,9 @@
 // src/types/convenioProveedor.ts
 
 export interface ConvenioProveedorDetalleRecord {
+  // ✅ NUEVO (V00120): moneda del detalle y bandera de edición local
+  moneda?: string;
+  _editado?: boolean;
   id?: string;
   convenioId?: string; // Llave foránea que lo une al Maestro
   tipoConvenioId: string;

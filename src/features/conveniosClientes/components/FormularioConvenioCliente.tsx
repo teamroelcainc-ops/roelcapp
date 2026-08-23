@@ -333,11 +333,24 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
       return;
     }
 
+    // ✅ NUEVO (V00120): moneda del detalle (por defecto la del convenio) y
+    //   modo EDICIÓN (si _editandoId existe, se reemplaza el detalle en sitio).
+    const monedaDet = (detalleDraft as any).moneda || formData.monedaNombre || 'Pesos';
+    if ((detalleDraft as any)._editandoId) {
+      setDetalles(prev => prev.map(d => d.id === (detalleDraft as any)._editandoId
+        ? { ...d, tipoConvenioId: detalleDraft.tipoConvenioId, tipoConvenioNombre: detalleDraft.tipoConvenioNombre, tarifa: detalleDraft.tarifa, moneda: monedaDet, _editado: !d._isNew ? true : d._editado }
+        : d));
+      setDetalleDraft({ tipoConvenioId: '', tipoConvenioNombre: '', tarifaSugeridaSeleccionada: '', tarifa: 0 });
+      setMostrandoDetalleForm(false);
+      return;
+    }
+
     const nuevoDetalle = {
       id: `local_${Date.now()}`, 
       tipoConvenioId: detalleDraft.tipoConvenioId,
       tipoConvenioNombre: detalleDraft.tipoConvenioNombre,
       tarifa: detalleDraft.tarifa,
+      moneda: monedaDet, // ✅ NUEVO (V00120)
       _isNew: true 
     };
 
@@ -391,12 +404,17 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
             convenioId: masterId, // Relación fuerte a llave primaria
             tipoConvenioId: det.tipoConvenioId,
             tipoConvenioNombre: det.tipoConvenioNombre,
-            tarifa: Number(det.tarifa)
+            tarifa: Number(det.tarifa),
+            moneda: det.moneda || formData.monedaNombre || '' // ✅ NUEVO (V00120)
           });
         } else {
           const detRef = doc(db, 'convenios_clientes_detalles', det.id!);
           batch.update(detRef, { 
             tarifa: Number(det.tarifa),
+            // ✅ NUEVO (V00120): la edición también persiste tipo y moneda
+            tipoConvenioId: det.tipoConvenioId,
+            tipoConvenioNombre: det.tipoConvenioNombre,
+            moneda: det.moneda || formData.monedaNombre || '',
             convenioId: masterId // Garantizamos que la relación se mantenga en DB
           });
         }
@@ -508,7 +526,15 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                         <label className="form-label">Tarifa Final *</label>
                         <input type="number" step="0.01" className="form-control" value={detalleDraft.tarifa} onChange={(e) => setDetalleDraft({...detalleDraft, tarifa: parseFloat(e.target.value) || 0})} />
                       </div>
-                      <button type="button" className="btn btn-primary fcc-x25" onClick={handleAgregarDetalle}>Guardar</button>
+                      {/* ✅ NUEVO (V00120): moneda del detalle, editable */}
+                      <div className="form-group">
+                        <label className="form-label">Moneda</label>
+                        <select className="form-control" value={(detalleDraft as any).moneda || formData.monedaNombre || 'Pesos'} onChange={(e) => setDetalleDraft({ ...detalleDraft, moneda: e.target.value } as any)}>
+                          <option value="Pesos">Pesos</option>
+                          <option value="Dólares">Dólares</option>
+                        </select>
+                      </div>
+                      <button type="button" className="btn btn-primary fcc-x25" onClick={handleAgregarDetalle}>{(detalleDraft as any)._editandoId ? 'Actualizar' : 'Guardar'}</button>
                     </div>
                   </div>
                 )}
@@ -519,19 +545,23 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                       <th className="fcc-x28">#</th>
                       <th className="fcc-x28">TIPO DE CONVENIO</th>
                       <th className="fcc-x28">TARIFA</th>
+                      <th className="fcc-x28">MONEDA</th>
                       <th className="fcc-x29">ACCIÓN</th>
                     </tr>
                   </thead>
                   <tbody>
                     {detalles.length === 0 ? (
-                      <tr><td className="fcc-x30" colSpan={4}>No hay detalles agregados.</td></tr>
+                      <tr><td className="fcc-x30" colSpan={5}>No hay detalles agregados.</td></tr>
                     ) : (
                       detalles.map((det, index) => (
                         <tr className="fcc-x31" key={det.id}>
                           <td className="fcc-x32">{index + 1}</td>
                           <td className="fcc-x33">{det.tipoConvenioNombre}</td>
                           <td className="fcc-x34">${Number(det.tarifa).toFixed(2)}</td>
+                          <td className="fcc-x33">{det.moneda || formData.monedaNombre || '—'}</td>
                           <td className="fcc-x29">
+                            {/* ✅ NUEVO (V00120): editar detalle */}
+                            <button type="button" title="Editar este detalle" style={{ background: 'none', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', marginRight: '6px' }} onClick={() => { setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: det.moneda || formData.monedaNombre || 'Pesos', _editandoId: det.id } as any); setMostrandoDetalleForm(true); }}>✎</button>
                             <button className="fcc-x35" type="button" onClick={() => handleEliminarDetalle(det.id!, det._isNew)}>✕</button>
                           </td>
                         </tr>

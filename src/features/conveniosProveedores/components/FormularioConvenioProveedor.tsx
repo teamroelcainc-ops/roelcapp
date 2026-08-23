@@ -258,11 +258,24 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
   const handleAgregarDetalle = () => {
     if (!detalleDraft.tipoConvenioId || detalleDraft.tarifa <= 0) return alert("Complete los datos del detalle (Concepto y Tarifa Final).");
     
+    // ✅ NUEVO (V00120): moneda del concepto (por defecto la del convenio) y
+    //   modo EDICIÓN (si _editandoId existe, se reemplaza en sitio).
+    const monedaDet = (detalleDraft as any).moneda || formData.monedaNombre || 'Pesos';
+    if ((detalleDraft as any)._editandoId) {
+      setDetalles(prev => prev.map(d => d.id === (detalleDraft as any)._editandoId
+        ? { ...d, tipoConvenioId: detalleDraft.tipoConvenioId, tipoConvenioNombre: detalleDraft.tipoConvenioNombre, tarifa: detalleDraft.tarifa, moneda: monedaDet, _editado: !d._isNew ? true : d._editado }
+        : d));
+      setDetalleDraft({ tipoConvenioId: '', tipoConvenioNombre: '', tarifaSugeridaSeleccionada: '', tarifa: 0 });
+      setMostrandoDetalleForm(false);
+      return;
+    }
+
     const nuevoDetalle = {
       id: `local_${Date.now()}`, 
       tipoConvenioId: detalleDraft.tipoConvenioId,
       tipoConvenioNombre: detalleDraft.tipoConvenioNombre, 
       tarifa: detalleDraft.tarifa,
+      moneda: monedaDet, // ✅ NUEVO (V00120)
       _isNew: true 
     };
     
@@ -315,14 +328,16 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
             convenioId: masterId, // Forzado relacional fuerte
             tipoConvenioId: det.tipoConvenioId, 
             tipoConvenioNombre: det.tipoConvenioNombre, 
-            tarifa: Number(det.tarifa)
+            tarifa: Number(det.tarifa),
+            moneda: det.moneda || formData.monedaNombre || '' // ✅ NUEVO (V00120)
           });
         } else {
           const detRef = doc(db, 'convenios_proveedores_detalles', det.id!);
           batch.update(detRef, { 
-            tarifa: Number(det.tarifa), 
-            tipoConvenioId: det.tipoConvenioId, 
+            tarifa: Number(det.tarifa),
+            tipoConvenioId: det.tipoConvenioId,
             tipoConvenioNombre: det.tipoConvenioNombre,
+            moneda: det.moneda || formData.monedaNombre || '', // ✅ NUEVO (V00120) 
             convenioId: masterId // Garantizado en actualizaciones
           });
         }
@@ -408,7 +423,15 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                       </select>
                     </div>
                     <div className="form-group"><label className="form-label">Tarifa Final *</label><input type="number" step="0.01" className="form-control" value={detalleDraft.tarifa} onChange={(e) => setDetalleDraft({...detalleDraft, tarifa: parseFloat(e.target.value) || 0})} /></div>
-                    <button type="button" className="btn btn-primary fcp-x13" onClick={handleAgregarDetalle}>Guardar Concepto</button>
+                    {/* ✅ NUEVO (V00120): moneda del concepto, editable */}
+                    <div className="form-group">
+                      <label className="form-label">Moneda</label>
+                      <select className="form-control" value={(detalleDraft as any).moneda || formData.monedaNombre || 'Pesos'} onChange={(e) => setDetalleDraft({ ...detalleDraft, moneda: e.target.value } as any)}>
+                        <option value="Pesos">Pesos</option>
+                        <option value="Dólares">Dólares</option>
+                      </select>
+                    </div>
+                    <button type="button" className="btn btn-primary fcp-x13" onClick={handleAgregarDetalle}>{(detalleDraft as any)._editandoId ? 'Actualizar' : 'Guardar Concepto'}</button>
                   </div>
                 </div>
               )}
@@ -420,19 +443,23 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
                       <th className="fcp-x17">#</th>
                       <th className="fcp-x18">CONCEPTO</th>
                       <th className="fcp-x19">TARIFA</th>
+                      <th className="fcp-x19">MONEDA</th>
                       <th className="fcp-x20">ACCIÓN</th>
                     </tr>
                   </thead>
                   <tbody>
                     {detalles.length === 0 ? (
-                      <tr><td className="fcp-x21" colSpan={4}>No hay conceptos agregados a este convenio.</td></tr>
+                      <tr><td className="fcp-x21" colSpan={5}>No hay conceptos agregados a este convenio.</td></tr>
                     ) : (
                       detalles.map((det, index) => (
                         <tr className="fcp-x22" key={det.id} onMouseEnter={(e:any) => e.currentTarget.style.backgroundColor = '#161b22'} onMouseLeave={(e:any) => e.currentTarget.style.backgroundColor = '#0d1117'}>
                           <td className="fcp-x23">{index + 1}</td>
                           <td className="fcp-x24">{det.tipoConvenioNombre}</td>
                           <td className="fcp-x25">${` ${Number(det.tarifa).toFixed(2)}`}</td>
+                          <td className="fcp-x24">{det.moneda || formData.monedaNombre || '—'}</td>
                           <td className="fcp-x26">
+                            {/* ✅ NUEVO (V00120): editar concepto */}
+                            <button type="button" title="Editar este concepto" style={{ background: 'none', border: '1px solid #58a6ff', color: '#58a6ff', borderRadius: '4px', padding: '2px 8px', cursor: 'pointer', marginRight: '6px' }} onClick={() => { setDetalleDraft({ tipoConvenioId: det.tipoConvenioId, tipoConvenioNombre: det.tipoConvenioNombre, tarifaSugeridaSeleccionada: '', tarifa: Number(det.tarifa) || 0, moneda: det.moneda || formData.monedaNombre || 'Pesos', _editandoId: det.id } as any); setMostrandoDetalleForm(true); }}>✎</button>
                             <button className="fcp-x27" 
                               type="button" 
                               onClick={() => handleEliminarDetalle(det.id!, det._isNew)}
