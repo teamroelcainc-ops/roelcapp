@@ -1,6 +1,6 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, getDocs, writeBatch, doc, query, limit, where, setDoc, getDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer } from 'firebase/firestore';
 import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro, pedirNotaEliminacion } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger'; // ✅ Importación del logger
 
@@ -25,6 +25,11 @@ const CACHE_NOMBRES_COLECCIONES: Record<string, string> = {};
 // ✅ MODIFICADO (V00115): la papelera de catálogos ahora es la PAPELERA DE
 //   RECICLAJE GLOBAL (`papelera_reciclaje`), compartida con todo el proyecto.
 const COL_PAPELERA = 'papelera_reciclaje';
+
+// ✅ NUEVO (V00116) — caché del cálculo de uso de tarifas (10 min): antes se
+//   recalculaba en CADA visita al catálogo descargando hasta 5000 operaciones.
+let CACHE_USO_TARIFAS: { data: Record<string, { convC: string[]; convP: string[]; opsCount: number; detIds: string[] }> | null; ts: number } = { data: null, ts: 0 };
+const TTL_USO_TARIFAS = 10 * 60 * 1000;
 
 // ✅ NUEVO (V00106) — construye el documento que va a la papelera.
 const payloadPapelera = (
@@ -88,34 +93,77 @@ const CatalogosDashboard = () => {
   // ✅ NUEVO — USO DE TARIFAS DE REFERENCIA: dónde se usa cada tarifa
   //   (detalles de convenios de clientes/proveedores vía tipoConvenioId, y
   //   operaciones vía op.convenio -> detalle -> tarifa).
-  const [usoTarifas, setUsoTarifas] = useState<Record<string, { convC: any[]; convP: any[]; ops: string[] }> | null>(null);
+  const [usoTarifas, setUsoTarifas] = useState<Record<string, { convC: string[]; convP: string[]; opsCount: number; detIds: string[] }> | null>(null);
   const [modalUsoTarifa, setModalUsoTarifa] = useState<any | null>(null);
   useEffect(() => {
     if (catalogoSeleccionado?.id !== 'tarifas_referencia') return;
     let activo = true;
     (async () => {
       try {
-        const [detC, detP, masC, masP, opsSnap] = await Promise.all([
+        // ✅ OPTIMIZADO (V00116): antes este cálculo descargaba hasta 5000
+        //   operaciones COMPLETAS en cada visita (varios MB y miles de
+        //   lecturas). Ahora: (a) resultado en caché 10 min, (b) el conteo de
+        //   operaciones usa consultas de AGREGACIÓN del servidor
+        //   (getCountFromServer), que devuelven solo el número sin descargar
+        //   ningún documento. Las referencias de operaciones se cargan solo
+        //   al abrir el modal "Dónde se usa" de una tarifa concreta.
+        if (CACHE_USO_TARIFAS.data && Date.now() - CACHE_USO_TARIFAS.ts < TTL_USO_TARIFAS) {
+          setUsoTarifas(CACHE_USO_TARIFAS.data);
+          return;
+        }
+        const [detC, detP, masC, masP] = await Promise.all([
           getDocs(collection(db, 'convenios_clientes_detalles')),
           getDocs(collection(db, 'convenios_proveedores_detalles')),
           getDocs(collection(db, 'convenios_clientes')),
           getDocs(collection(db, 'convenios_proveedores')),
-          getDocs(query(collection(db, 'operaciones'), limit(5000))),
         ]);
         const nomC: Record<string, string> = {}; masC.docs.forEach((d) => { const x: any = d.data(); nomC[d.id] = `${x.numeroConvenio || d.id.slice(0, 6)} · ${x.clienteNombre || ''}`; });
         const nomP: Record<string, string> = {}; masP.docs.forEach((d) => { const x: any = d.data(); nomP[d.id] = `${x.numeroConvenio || d.id.slice(0, 6)} · ${x.proveedorNombre || ''}`; });
-        const detATarifa: Record<string, string> = {};
-        const uso: Record<string, { convC: any[]; convP: any[]; ops: string[] }> = {};
-        const asegura = (t: string) => { if (!uso[t]) uso[t] = { convC: [], convP: [], ops: [] }; return uso[t]; };
-        detC.docs.forEach((d) => { const x: any = d.data(); const t = String(x.tipoConvenioId || ''); if (!t) return; detATarifa[d.id] = t; asegura(t).convC.push(nomC[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
-        detP.docs.forEach((d) => { const x: any = d.data(); const t = String(x.tipoConvenioId || ''); if (!t) return; detATarifa[d.id] = t; asegura(t).convP.push(nomP[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
-        opsSnap.docs.forEach((d) => { const x: any = d.data(); const t = detATarifa[String(x.convenio || '')]; if (!t) return; asegura(t).ops.push(String(x.ref || d.id.slice(0, 8))); });
+        const uso: Record<string, { convC: string[]; convP: string[]; opsCount: number; detIds: string[] }> = {};
+        const asegura = (t: string) => { if (!uso[t]) uso[t] = { convC: [], convP: [], opsCount: 0, detIds: [] }; return uso[t]; };
+        detC.docs.forEach((d) => { const x: any = d.data(); const t = String(x.tipoConvenioId || ''); if (!t) return; const u = asegura(t); u.detIds.push(d.id); u.convC.push(nomC[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
+        detP.docs.forEach((d) => { const x: any = d.data(); const t = String(x.tipoConvenioId || ''); if (!t) return; const u = asegura(t); u.detIds.push(d.id); u.convP.push(nomP[String(x.convenioId)] || String(x.convenioId || '').slice(0, 8)); });
+        // Conteo por tarifa: una consulta agregada por cada 10 detalles ('in').
+        const tareas: Promise<void>[] = [];
+        Object.values(uso).forEach((u) => {
+          for (let i = 0; i < u.detIds.length; i += 10) {
+            const chunk = u.detIds.slice(i, i + 10);
+            tareas.push(
+              getCountFromServer(query(collection(db, 'operaciones'), where('convenio', 'in', chunk)))
+                .then((snap) => { u.opsCount += snap.data().count; })
+                .catch(() => { /* si una agregación falla, la tarifa muestra el resto */ })
+            );
+          }
+        });
+        await Promise.all(tareas);
+        CACHE_USO_TARIFAS = { data: uso, ts: Date.now() };
         if (activo) setUsoTarifas(uso);
       } catch (e) { console.warn('No se pudo calcular el uso de tarifas:', e); }
     })();
     return () => { activo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalogoSeleccionado?.id]);
+
+  // ✅ NUEVO (V00116): referencias de operaciones del modal "Dónde se usa" —
+  //   se descargan SOLO al abrirlo y SOLO las de esa tarifa.
+  const [opsDeModal, setOpsDeModal] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!modalUsoTarifa) { setOpsDeModal(null); return; }
+    let activo = true;
+    (async () => {
+      try {
+        const detIds: string[] = modalUsoTarifa.u.detIds || [];
+        const refs: string[] = [];
+        for (let i = 0; i < detIds.length; i += 10) {
+          const snap = await getDocs(query(collection(db, 'operaciones'), where('convenio', 'in', detIds.slice(i, i + 10))));
+          snap.docs.forEach((d) => refs.push(String((d.data() as any).ref || d.id.slice(0, 8))));
+        }
+        if (activo) setOpsDeModal(refs);
+      } catch { if (activo) setOpsDeModal([]); }
+    })();
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalUsoTarifa]);
 
   // ✅ NUEVO — USO DE TIPOS DE TARIFARIOS: cuántas Tarifas de Referencia
   //   usan cada tipo (tarifas_referencia.tipo_operacion -> id del tipo).
@@ -982,7 +1030,7 @@ const CatalogosDashboard = () => {
     const valor = (r: any): string | number => {
       if (col === '__uso') {
         const u = usoTarifas?.[r.id];
-        return (u?.ops.length || 0) + (u?.convC.length || 0) + (u?.convP.length || 0);
+        return (u?.opsCount || 0) + (u?.convC.length || 0) + (u?.convP.length || 0);
       }
       if (col === '__usoTipo') return usoTarifarios?.[r.id] || 0;
       const v = r?.[col];
@@ -1243,10 +1291,10 @@ const CatalogosDashboard = () => {
                   (se actualiza al abrir; sube al usarse y baja al eliminarse). */}
               Total de operaciones usando tarifas:{' '}
               <b style={{ color: '#3fb950', fontSize: '0.95rem' }}>
-                {usoTarifas === null ? '…' : Object.values(usoTarifas).reduce((s, u) => s + u.ops.length, 0)}
+                {usoTarifas === null ? '…' : Object.values(usoTarifas).reduce((s, u) => s + u.opsCount, 0)}
               </b>
               {usoTarifas !== null && (
-                <span> · en {Object.values(usoTarifas).filter((u) => u.ops.length > 0).length} tarifa(s) con uso</span>
+                <span> · en {Object.values(usoTarifas).filter((u) => u.opsCount > 0).length} tarifa(s) con uso</span>
               )}
             </div>
           )}
@@ -1355,12 +1403,12 @@ const CatalogosDashboard = () => {
                       )}
                       {catalogoSeleccionado.id === 'tarifas_referencia' && (() => {
                         const u = usoTarifas?.[reg.id];
-                        const total = (u?.ops.length || 0) + (u?.convC.length || 0) + (u?.convP.length || 0);
+                        const total = (u?.opsCount || 0) + (u?.convC.length || 0) + (u?.convP.length || 0);
                         return (
                           <td className="cd-x31" onClick={(e) => { e.stopPropagation(); if (u && total > 0) setModalUsoTarifa({ reg, u }); }}
                             style={{ fontWeight: 700, color: total > 0 ? '#3fb950' : '#6e7681', cursor: total > 0 ? 'pointer' : 'default', whiteSpace: 'nowrap' }}
                             title={total > 0 ? 'Clic para ver DÓNDE se usa' : 'Sin uso registrado'}>
-                            {usoTarifas === null ? '…' : `Ops ${u?.ops.length || 0} · ConvC ${u?.convC.length || 0} · ConvP ${u?.convP.length || 0}`}
+                            {usoTarifas === null ? '…' : `Ops ${u?.opsCount || 0} · ConvC ${u?.convC.length || 0} · ConvP ${u?.convP.length || 0}`}
                           </td>
                         );
                       })()}
@@ -1620,7 +1668,7 @@ const CatalogosDashboard = () => {
           <div style={{ width: 'min(640px, 94vw)', maxHeight: '82vh', overflowY: 'auto', background: '#161b22', border: '1px solid #30363d', borderRadius: '12px', padding: '18px' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 4px 0', color: '#f0f6fc', fontSize: '1rem' }}>Dónde se usa: {modalUsoTarifa.reg.descripcion || modalUsoTarifa.reg.id}</h3>
             <p style={{ margin: '0 0 12px 0', color: '#8b949e', fontSize: '0.78rem' }}>
-              {modalUsoTarifa.u.ops.length} operación(es) · {modalUsoTarifa.u.convC.length} convenio(s) de clientes · {modalUsoTarifa.u.convP.length} convenio(s) de proveedores
+              {modalUsoTarifa.u.opsCount} operación(es) · {modalUsoTarifa.u.convC.length} convenio(s) de clientes · {modalUsoTarifa.u.convP.length} convenio(s) de proveedores
             </p>
             {modalUsoTarifa.u.convC.length > 0 && (<>
               <div style={{ color: '#58a6ff', fontWeight: 700, fontSize: '0.8rem', margin: '10px 0 4px 0' }}>CONVENIOS DE CLIENTES</div>
@@ -1630,10 +1678,12 @@ const CatalogosDashboard = () => {
               <div style={{ color: '#d29922', fontWeight: 700, fontSize: '0.8rem', margin: '10px 0 4px 0' }}>CONVENIOS DE PROVEEDORES</div>
               {Array.from(new Set(modalUsoTarifa.u.convP)).map((c: any) => <div key={c} style={{ color: '#c9d1d9', fontSize: '0.8rem', padding: '2px 0' }}>{c}</div>)}
             </>)}
-            {modalUsoTarifa.u.ops.length > 0 && (<>
-              <div style={{ color: '#3fb950', fontWeight: 700, fontSize: '0.8rem', margin: '10px 0 4px 0' }}>OPERACIONES ({modalUsoTarifa.u.ops.length})</div>
+            {modalUsoTarifa.u.opsCount > 0 && (<>
+              <div style={{ color: '#3fb950', fontWeight: 700, fontSize: '0.8rem', margin: '10px 0 4px 0' }}>OPERACIONES ({modalUsoTarifa.u.opsCount})</div>
               <div style={{ color: '#c9d1d9', fontSize: '0.78rem', fontFamily: 'monospace', lineHeight: 1.7 }}>
-                {modalUsoTarifa.u.ops.slice(0, 120).join(' · ')}{modalUsoTarifa.u.ops.length > 120 ? ` … (+${modalUsoTarifa.u.ops.length - 120} más)` : ''}
+                {opsDeModal === null
+                  ? 'Cargando referencias…'
+                  : `${opsDeModal.slice(0, 120).join(' · ')}${opsDeModal.length > 120 ? ` … (+${opsDeModal.length - 120} más)` : ''}`}
               </div>
             </>)}
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
