@@ -214,7 +214,8 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
               convenioId: data.convenioId,
               tipoConvenioId: idReal,
               tipoConvenioNombre: nombreAsignado,
-              tarifa: data.tarifa || 0
+              tarifa: data.tarifa || 0,
+              moneda: data.moneda || '' // ✅ CORREGIDO (V00124): la moneda guardada del detalle ya NO se pierde al recargar
             } as ConvenioProveedorDetalleRecord;
           });
           

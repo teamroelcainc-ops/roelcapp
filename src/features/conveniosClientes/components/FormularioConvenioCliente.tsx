@@ -286,7 +286,8 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
               convenioId: data.convenioId,
               tipoConvenioId: data.tipoConvenioId,
               tipoConvenioNombre: data.tipoConvenioNombre || (refMaster ? refMaster.descripcion : 'No identificado'),
-              tarifa: data.tarifa || 0
+              tarifa: data.tarifa || 0,
+              moneda: data.moneda || '' // ✅ CORREGIDO (V00124): la moneda guardada del detalle ya NO se pierde al recargar
             } as ConvenioDetalleRecord;
           });
           
