@@ -10,7 +10,8 @@
 //   rápido para consultar y buscar tarifas sin abrir convenio por convenio.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
 import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import './DetallesConvenioDashboard.css';
@@ -41,6 +42,30 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [ordenAsc, setOrdenAsc] = useState(false);
+  // ✅ NUEVO (V00122): edición en línea (varios de golpe) + eliminar con papelera
+  const [cambios, setCambios] = useState<Record<string, { tarifa?: number; moneda?: string }>>({});
+  const [guardando, setGuardando] = useState(false);
+  const marcarCambio = (id: string, campo: 'tarifa' | 'moneda', v: number | string) =>
+    setCambios((prev) => ({ ...prev, [id]: { ...prev[id], [campo]: v as never } }));
+  const guardarCambios = async () => {
+    const ids = Object.keys(cambios);
+    if (ids.length === 0 || guardando) return;
+    setGuardando(true);
+    try {
+      for (const id of ids) await updateDoc(doc(dbFs, COL_DETALLES, id), { ...cambios[id] } as Record<string, unknown>);
+      setFilas((prev) => (prev || []).map((f) => cambios[f.id] ? { ...f, costo: cambios[f.id].tarifa ?? f.costo, moneda: String(cambios[f.id].moneda ?? f.moneda) } : f));
+      setCambios({});
+      alert(`Se guardaron ${ids.length} detalle(s). ✅`);
+    } catch { alert('No se pudieron guardar todos los cambios.'); }
+    setGuardando(false);
+  };
+  const eliminarDetalle = async (id: string) => {
+    if (!window.confirm('¿Eliminar este detalle del convenio?\n\nSe enviará a la Papelera de Reciclaje (nota obligatoria).')) return;
+    try {
+      await eliminarRegistro(COL_DETALLES, id, { modulo: 'Detalles del Convenio' });
+      setFilas((prev) => (prev || []).filter((f) => f.id !== id));
+    } catch { /* cancelado o error: sin cambios */ }
+  };
 
   const cargar = async (forzar = false) => {
     if (cargando) return;
@@ -76,7 +101,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         const x = d.data() as Record<string, unknown>;
         const conv = convenios[String(x.convenioId || '')] || { numero: '', entidad: '', moneda: '' };
         const idTarifa = String(x.tipoConvenioId || '');
-        const costoNum = x.costo === undefined || x.costo === null || x.costo === '' ? null : Number(x.costo);
+        const crudoCosto = (x.costo !== undefined && x.costo !== null && x.costo !== '') ? x.costo : x.tarifa; // ✅ V00122: los detalles guardan `tarifa`
+        const costoNum = (crudoCosto === undefined || crudoCosto === null || crudoCosto === '') ? null : Number(crudoCosto);
         return {
           id: d.id,
           numeroConvenio: conv.numero || '—',
@@ -117,9 +143,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     });
   }, [filas, busqueda, ordenAsc]);
 
-  const formatoCosto = (v: number | null) =>
-    v === null ? '—' : `$ ${v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
+  
   return (
     <div className="module-container dcv-x1">
       <h1 className="module-title">Detalles del Convenio — {esClientes ? 'Clientes' : 'Proveedores'}</h1>
@@ -151,6 +175,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         >
           {cargando ? 'Actualizando…' : 'Actualizar'}
         </button>
+        {/* ✅ NUEVO (V00122): guarda todos los renglones editados de golpe */}
+        <button className="btn" style={{ backgroundColor: '#238636', color: '#fff', border: 'none', fontWeight: 600, opacity: Object.keys(cambios).length === 0 ? 0.5 : 1 }} disabled={Object.keys(cambios).length === 0 || guardando} onClick={guardarCambios}>
+          {guardando ? 'Guardando…' : `Guardar cambios (${Object.keys(cambios).length})`}
+        </button>
       </div>
 
       {filas === null ? (
@@ -170,6 +198,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <th>Tarifa</th>
                 <th>Moneda</th>
                 <th className="dcv-x8">Costo de la Tarifa</th>
+                <th className="dcv-x8">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -179,8 +208,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   <td className="dcv-x10">{f.numeroConvenio}</td>
                   <td>{f.entidad}</td>
                   <td>{f.tarifa}</td>
-                  <td>{f.moneda}</td>
-                  <td className="dcv-x8">{formatoCosto(f.costo)}</td>
+                  <td><select className="form-input-elegante" style={{ padding: '4px 6px', width: '100px' }} value={String(cambios[f.id]?.moneda ?? f.moneda ?? 'Pesos')} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}><option value="Pesos">Pesos</option><option value="Dólares">Dólares</option><option value="Dolares">Dolares</option><option value="—">—</option></select></td>
+                  <td className="dcv-x8"><input type="number" step="0.01" className="form-input-elegante" style={{ width: '110px', padding: '4px 8px', textAlign: 'right' }} value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
+                  <td className="dcv-x8"><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}>✕</button></td>
                 </tr>
               ))}
             </tbody>
