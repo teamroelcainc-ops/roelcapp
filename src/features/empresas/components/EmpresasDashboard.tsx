@@ -40,6 +40,14 @@ const opcionesColumnasExcel = [
   { key: 'observacionesBaja', label: 'Observaciones de Baja' }
 ];
 
+// ✅ NUEVO (V00117): Cliente (Paga) y Proveedor (Transporte) DEBEN tener
+//   moneda y tipo de factura (regla de negocio obligatoria).
+const requiereMonedaFactura = (emp: any): boolean => {
+  const tipos: string[] = emp?._tiposEmpresaArray || [];
+  return tipos.includes('Cliente (Paga)') || tipos.includes('Proveedor (Transporte)');
+};
+const esEmpresaActiva = (emp: any): boolean => emp?.status !== 'Inactiva' && emp?.status !== 'Baja';
+
 // ✅ GRID DINÁMICO DE COLUMNAS BASE PARA LA TABLA PRINCIPAL
 const COLUMNAS_BASE = [
   { id: 'numCliente', label: '# de Cliente', visible: true },
@@ -48,6 +56,7 @@ const COLUMNAS_BASE = [
   { id: 'tiposEmpresa', label: 'Tipo de Empresa', visible: true },
   { id: 'servicios', label: 'Servicios', visible: true },
   { id: 'rfcTaxId', label: 'RFC / Tax Id', visible: true },
+  { id: 'moneda', label: 'Moneda', visible: true }, // ✅ NUEVO (V00117)
   { id: 'fechaServicio', label: 'Fecha Serv.', visible: true }
 ];
 
@@ -733,7 +742,21 @@ const EmpresasDashboard = () => {
     });
   }, [empresas, diccionarios, lastUsedMap]);
 
+  // ✅ NUEVO (V00117): apartado de empresas obligadas a tener moneda/factura
+  //   que aún no la tienen (Cliente Paga y Proveedor Transporte).
+  const [verSinMoneda, setVerSinMoneda] = useState(false);
+  const empresasSinMoneda = useMemo(
+    () => registrosListos.filter((e: any) => requiereMonedaFactura(e) && (!e.moneda || !e.tipoFactura)),
+    [registrosListos]
+  );
+
   const registrosFiltrados = useMemo(() => {
+    if (verSinMoneda) {
+      const base = empresasSinMoneda;
+      if (!busqueda.trim()) return base;
+      const term = busqueda.toLowerCase();
+      return base.filter((emp: any) => String(emp.nombre || '').toLowerCase().includes(term) || String(emp.numCliente || '').toLowerCase().includes(term));
+    }
     return registrosListos.filter(emp => {
       let pasaFiltro = true;
       if (filtroActivo === 'Empresa Inactiva') pasaFiltro = emp.status === 'Inactiva';
@@ -753,7 +776,7 @@ const EmpresasDashboard = () => {
         String(emp._clienteRelLabel || '').toLowerCase().includes(term)
       );
     });
-  }, [registrosListos, filtroActivo, busqueda]);
+  }, [registrosListos, filtroActivo, busqueda, verSinMoneda, empresasSinMoneda]);
 
   // ✅ NUEVO — ORDEN POR COLUMNA (clic en el encabezado: asc/desc), mismo
   //   patrón que Operaciones Activas.
@@ -776,10 +799,19 @@ const EmpresasDashboard = () => {
     });
   }, [registrosFiltrados, ordenEmp]);
 
-  const totalPaginas = Math.ceil(registrosOrdenados.length / registrosPorPagina);
+  // ✅ NUEVO (V00117): la tabla se separa en ACTIVAS (verde) e INACTIVAS/BAJA
+  //   (rojo): primero todas las activas, después las inactivas, con un
+  //   renglón separador entre grupos.
+  const registrosAgrupados = useMemo(() => {
+    const activas = registrosOrdenados.filter((e: any) => esEmpresaActiva(e));
+    const inactivas = registrosOrdenados.filter((e: any) => !esEmpresaActiva(e));
+    return [...activas, ...inactivas];
+  }, [registrosOrdenados]);
+
+  const totalPaginas = Math.ceil(registrosAgrupados.length / registrosPorPagina);
   const indiceUltimoRegistro = paginaActual * registrosPorPagina;
   const indicePrimerRegistro = indiceUltimoRegistro - registrosPorPagina;
-  const registrosEnPantalla = registrosOrdenados.slice(indicePrimerRegistro, indiceUltimoRegistro);
+  const registrosEnPantalla = registrosAgrupados.slice(indicePrimerRegistro, indiceUltimoRegistro);
 
   const irPaginaSiguiente = () => setPaginaActual(prev => Math.min(prev + 1, totalPaginas));
   const irPaginaAnterior = () => setPaginaActual(prev => Math.max(prev - 1, 1));
@@ -827,14 +859,14 @@ const EmpresasDashboard = () => {
                 style={{ width: '12px', height: '12px', borderRadius: '50%', backgroundColor: colorSemaforo, display: 'inline-block', flexShrink: 0, boxShadow: `0 0 5px ${colorSemaforo}` }}
               />
             )}
-            <span style={{ textDecoration: emp.status === 'Baja' ? 'line-through' : 'none', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc', fontFamily: 'monospace' }}>
+            <span style={{ textDecoration: emp.status === 'Baja' ? 'line-through' : 'none', color: esEmpresaActiva(emp) ? '#3fb950' : '#ef4444', fontFamily: 'monospace' }}>
               {emp.numCliente}
             </span>
           </div>
         );
       case 'nombre':
         return (
-          <span style={{ fontWeight: '500', color: emp.status === 'Baja' ? '#ef4444' : '#f0f6fc' }}>
+          <span style={{ fontWeight: '500', color: esEmpresaActiva(emp) ? '#3fb950' : '#ef4444' }}>
             {emp.nombre} {emp.status === 'Baja' && <span className="ed-x2">BAJA</span>}
           </span>
         );
@@ -842,6 +874,15 @@ const EmpresasDashboard = () => {
       case 'tiposEmpresa': return <span className="ed-x4">{renderArrayValues(emp._tiposEmpresaArray)}</span>;
       case 'servicios': return <span className="ed-x4">{renderArrayValues(emp._tiposServicioArray)}</span>;
       case 'rfcTaxId': return <span className="ed-x5">{mostrarDato(emp.rfcTaxId)}</span>;
+      // ✅ NUEVO (V00117): moneda resuelta desde el catálogo; si es obligatoria
+      //   y falta (o falta el tipo de factura), se marca en rojo.
+      case 'moneda': {
+        const faltante = requiereMonedaFactura(emp) && (!emp.moneda || !emp.tipoFactura);
+        if (faltante) {
+          return <span style={{ color: '#ef4444', fontWeight: 700, fontSize: '0.72rem', border: '1px solid #ef4444', borderRadius: '4px', padding: '2px 6px', whiteSpace: 'nowrap' }} title="Cliente (Paga) y Proveedor (Transporte) deben tener moneda y tipo de factura">{!emp.moneda ? 'SIN MONEDA' : 'SIN TIPO FACT.'}</span>;
+        }
+        return <span className="ed-x3" title={emp._facturaLabel !== '-' ? `Tipo de factura: ${emp._facturaLabel}` : undefined}>{mostrarDato(emp._monedaLabel)}</span>;
+      }
       case 'fechaService':
       case 'fechaServicio':
         return <span className="ed-x3">{mostrarDato(emp._fechaDinamicaUso)}</span>;
@@ -953,6 +994,23 @@ const EmpresasDashboard = () => {
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               Duplicadas
             </button>
+              {/* ✅ NUEVO (V00117): apartado de empresas sin moneda/factura obligatoria */}
+              <button className="btn btn-outline" onClick={() => { setVerSinMoneda(v => !v); setPaginaActual(1); }}
+                style={{ color: empresasSinMoneda.length > 0 ? '#ef4444' : undefined, borderColor: verSinMoneda ? '#ef4444' : undefined, fontWeight: verSinMoneda ? 700 : 400 }}
+                title="Cliente (Paga) y Proveedor (Transporte) deben tener moneda y tipo de factura. Este apartado muestra las que aún no los tienen.">
+                {verSinMoneda ? '✕ Ver todas' : `Sin moneda (${empresasSinMoneda.length})`}
+              </button>
+              {/* ✅ NUEVO (V00117): recarga los catálogos (moneda, tipo de factura, etc.) */}
+              <button className="btn btn-outline" title="Recargar catálogos: vuelve a leer moneda, tipo de factura, régimen y tipos desde Firebase"
+                onClick={() => {
+                  try {
+                    almacenSesion.removeItem('roelca_empresas_dict_v2');
+                    Object.keys(localStorage).filter(k => k.startsWith('cat_v2__') || k.startsWith('cat_v1__')).forEach(k => localStorage.removeItem(k));
+                  } catch { /* sin almacenamiento */ }
+                  window.location.reload();
+                }}>
+                ↻ Recargar catálogos
+              </button>
             {filtroActivo !== 'Todo' && (
               <span className="ed-x12">
                 {filtroActivo}
@@ -1039,9 +1097,16 @@ const EmpresasDashboard = () => {
                     </td>
                   </tr>
                 ) : (
-                  registrosEnPantalla.map((emp) => (
+                  registrosEnPantalla.map((emp, idxFila) => (<React.Fragment key={emp.id}>
+                    {/* ✅ NUEVO (V00117): encabezados de grupo Activas / Inactivas */}
+                    {(idxFila === 0 && esEmpresaActiva(emp)) && (
+                      <tr><td colSpan={columnasTabla.length + 2} style={{ padding: '6px 12px', color: '#3fb950', fontWeight: 700, fontSize: '0.72rem', letterSpacing: '1px', background: 'rgba(63,185,80,0.08)', borderBottom: '1px solid #21262d' }}>● EMPRESAS ACTIVAS</td></tr>
+                    )}
+                    {(!esEmpresaActiva(emp) && (idxFila === 0 || esEmpresaActiva(registrosEnPantalla[idxFila - 1]))) && (
+                      <tr><td colSpan={columnasTabla.length + 2} style={{ padding: '6px 12px', color: '#ef4444', fontWeight: 700, fontSize: '0.72rem', letterSpacing: '1px', background: 'rgba(239,68,68,0.08)', borderBottom: '1px solid #21262d' }}>● EMPRESAS INACTIVAS / BAJA</td></tr>
+                    )}
                     <tr 
-                      key={emp.id} 
+                      
                       style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === emp.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }}
                       onMouseEnter={() => setHoveredRowId(emp.id)} 
                       onMouseLeave={() => setHoveredRowId(null)}
@@ -1112,7 +1177,7 @@ const EmpresasDashboard = () => {
                         </td>
                       ))}
                     </tr>
-                  ))
+                  </React.Fragment>))
                 )}
               </tbody>
             </table>
@@ -1507,7 +1572,7 @@ const EmpresasDashboard = () => {
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: 'block', color: '#f0f6fc', fontWeight: 600 }}>{emp.nombre || '(sin nombre)'}</span>
                       <span style={{ display: 'block', color: '#8b949e', fontSize: '0.72rem' }}>
-                        {emp.tipo || ''}{emp.rfc ? ` · RFC ${emp.rfc}` : ''}{emp.createdAt ? ` · creado ${String(emp.createdAt).slice(0, 10)}` : ''} · id {String(id).slice(0, 8)}
+                        {emp.tipo || ''}{emp.rfc ? ` · RFC ${emp.rfc}` : ''}{emp.createdAt ? ` · creado ${String(emp.createdAt).slice(0, 10)}` : ''}
                       </span>
                     </span>
                     <span style={{ color: esConservado ? '#3fb950' : '#f85149', fontSize: '0.72rem', fontWeight: 700, flexShrink: 0 }}>

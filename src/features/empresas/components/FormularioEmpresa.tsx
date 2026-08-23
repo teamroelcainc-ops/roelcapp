@@ -596,6 +596,17 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
       return;
     }
 
+    // ✅ NUEVO (V00117) — REGLA OBLIGATORIA: Cliente (Paga) y Proveedor
+    //   (Transporte) DEBEN tener moneda y tipo de factura (vienen de los
+    //   catálogos de Moneda y Tipo de Facturas). Sin ellos no se guarda.
+    const tiposNombres = (formData.tiposEmpresa || []).map((v: string) => nombreTipoEmpresaDeId(String(v)));
+    const exigeMonedaFactura = tiposNombres.includes('Cliente (Paga)') || tiposNombres.includes('Proveedor (Transporte)');
+    if (exigeMonedaFactura && (!formData.moneda || !formData.tipoFactura)) {
+      alert('Los Clientes (Paga) y Proveedores (Transporte) deben tener OBLIGATORIAMENTE Moneda y Tipo de Factura.\n\nComplétalos en la pestaña Fiscal / Facturación antes de guardar.');
+      setActiveTab('fiscal');
+      return;
+    }
+
     // ✅ Si es Cliente (Mercancía), exige al menos un cliente que paga relacionado.
     if (formData.tiposEmpresa.includes('Cliente (Mercancía)') && formData.clienteRelacionadoIds.length === 0) {
       alert("Debes relacionar al menos un Cliente que Paga.");
