@@ -151,6 +151,59 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
   const [detallesEliminados, setDetallesEliminados] = useState<string[]>([]); 
   const [clientes, setClientes] = useState<any[]>([]);
   const [monedas, setMonedas] = useState<any[]>([]);
+
+  // ✅ CORREGIDO (V00118) — RESOLUCIÓN ROBUSTA DE LA MONEDA DE LA EMPRESA:
+  //   la empresa puede tener la moneda guardada como ID del catálogo o como
+  //   TEXTO legado ("Pesos"); además el catálogo puede no haber cargado aún
+  //   al elegir la empresa. Esta función cubre los tres casos, leyendo el
+  //   catálogo directo de Firebase si hace falta.
+  const resolverMonedaDeEmpresa = async (e: any): Promise<{ monId: string; monNom: string }> => {
+    const crudo = String(e?.monedaId || e?.moneda || '').trim();
+    let lista = monedas;
+    if (lista.length === 0) {
+      try {
+        const snapM = await getDocs(collection(db, 'catalogo_moneda'));
+        lista = snapM.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setMonedas(lista);
+      } catch { /* sin conexión: se intenta con lo que haya */ }
+    }
+    if (!crudo) {
+      const nom = String(e?.monedaNombre || '').trim();
+      if (nom) {
+        const m = lista.find((x: any) => String(x.moneda || '').toLowerCase() === nom.toLowerCase());
+        if (m) return { monId: m.id, monNom: String(m.moneda || nom) };
+      }
+      return { monId: '', monNom: '' };
+    }
+    const porId = lista.find((x: any) => x.id === crudo);
+    if (porId) return { monId: porId.id, monNom: String(porId.moneda || '') };
+    // Texto legado: buscar por nombre de moneda
+    const porNombre = lista.find((x: any) => String(x.moneda || '').toLowerCase() === crudo.toLowerCase());
+    if (porNombre) return { monId: porNombre.id, monNom: String(porNombre.moneda || crudo) };
+    return { monId: '', monNom: crudo };
+  };
+
+  // ✅ NUEVO (V00118): autocuración — si ya hay cliente elegido pero la
+  //   moneda del convenio quedó vacía o no coincide con el catálogo (caso de
+  //   la captura: empresa con moneda en texto legado), se vuelve a jalar de la
+  //   empresa automáticamente.
+  useEffect(() => {
+    const idEnt = String(formData.clienteId || '');
+    if (!idEnt) return;
+    const coincide = formData.monedaId && monedas.some((x: any) => x.id === formData.monedaId);
+    if (coincide) return;
+    let activo = true;
+    (async () => {
+      try {
+        const snapE = await getDoc(doc(db, 'empresas', idEnt));
+        if (!snapE.exists() || !activo) return;
+        const { monId, monNom } = await resolverMonedaDeEmpresa(snapE.data());
+        if (activo && monId) setFormData((prev: any) => ({ ...prev, monedaId: monId, monedaNombre: monNom }));
+      } catch { /* sin conexión */ }
+    })();
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.clienteId, monedas]);
   const [tarifarios, setTarifarios] = useState<any[]>([]);
   const [tarifasSugeridasActuales, setTarifasSugeridasActuales] = useState<number[]>([]); 
   const [cargando, setCargando] = useState(false);
@@ -381,17 +434,10 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                         const snapE = await getDoc(doc(db, 'empresas', id));
                         if (snapE.exists()) {
                           const e: any = snapE.data();
-                          monId = String(e.monedaId || e.moneda || '');
-                          monNom = String(e.monedaNombre || '');
                           cred = Number(e.diasCredito || e.credito || 0) || 0;
-                          if (monId && !monNom) {
-                            const m = monedas.find((x: any) => x.id === monId);
-                            monNom = m?.moneda || '';
-                          }
-                          if (!monId && monNom) {
-                            const m = monedas.find((x: any) => String(x.moneda || '').toLowerCase() === monNom.toLowerCase());
-                            monId = m?.id || '';
-                          }
+                          // ✅ CORREGIDO (V00118): resolución robusta (id, texto legado o catálogo sin cargar)
+                          const r = await resolverMonedaDeEmpresa(e);
+                          monId = r.monId; monNom = r.monNom;
                         }
                       } catch (eE) { console.warn('No se pudo leer la empresa:', eE); }
                       setFormData(prev => ({ ...prev, clienteId: id, clienteNombre: label, monedaId: monId || prev.monedaId, monedaNombre: monNom || prev.monedaNombre, credito: cred }));
