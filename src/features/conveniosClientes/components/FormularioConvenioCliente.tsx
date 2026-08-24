@@ -233,6 +233,9 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     return raw;
   };
   const opcionesMonedaCon = (v: string) => (v && !opcionesMoneda.includes(v)) ? [...opcionesMoneda, v] : opcionesMoneda;
+  // ✅ V00126: detecta si la empresa elegida YA tiene otro convenio (excluye el que se edita)
+  const convenioExistenteDe = (idEmpresa: string) => (registrosExistentes || []).find((r: any) => String(r.clienteId || '') === String(idEmpresa || '') && String(r.id) !== String(initialData?.id || '') && r.status !== 'Baja');
+  const convenioDuplicado = formData.clienteId ? convenioExistenteDe(formData.clienteId) : undefined;
   const cerrarDetalleModal = () => { setDetalleDraft(DRAFT_VACIO); setTarifasSugeridasActuales([]); setMostrandoDetalleForm(false); };
   const abrirNuevoDetalle = () => { setDetalleDraft({ ...DRAFT_VACIO, moneda: '' }); /* ✅ V00126: la moneda del detalle inicia EN BLANCO (no hereda la del convenio) */ setTarifasSugeridasActuales([]); setMostrandoDetalleForm(true); };
 
@@ -496,6 +499,8 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     //   se avisa y se guarda lo capturado. Usa "Asignar a todos" para llenar los vacíos de golpe.
     if (sinMoneda.length > 0 && !window.confirm(`Hay ${sinMoneda.length} detalle(s) sin moneda.\n\n¿Guardar de todos modos? (los detalles con moneda seleccionada SÍ se guardarán)`)) return;
 
+    // ✅ V00126: no se permite un segundo convenio para la misma empresa
+    if (convenioDuplicado) { alert(`Ya existe un convenio para este cliente: ${convenioDuplicado.numeroConvenio || convenioDuplicado.id}. Edítalo o únelo desde la lista de convenios.`); return; }
     setCargando(true);
     try {
       const batch = writeBatch(db);
@@ -638,10 +643,18 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
                           monId = r.monId; monNom = r.monNom;
                         }
                       } catch (eE) { console.warn('No se pudo leer la empresa:', eE); }
+                      const yaExiste = convenioExistenteDe(id); // ✅ V00126
+                      if (yaExiste) alert(`Ya existe un convenio para este cliente: ${yaExiste.numeroConvenio || yaExiste.id}.`);
                       setFormData(prev => ({ ...prev, clienteId: id, clienteNombre: label, monedaId: monId || prev.monedaId, monedaNombre: monNom || prev.monedaNombre, credito: cred }));
                     }} 
                     required={isRequired('clienteId')} 
                   />
+                </div>
+                {/* ✅ V00126: MONEDA visible pero NO editable — viene de la tabla Empresas */}
+                <div className="form-group">
+                  <label className="form-label">Moneda (de la empresa)</label>
+                  <input type="text" className="form-control fcc-solo-lectura" readOnly value={formData.monedaNombre || (formData.clienteId ? 'Sin moneda en la empresa' : '')} title="Se toma automáticamente de la moneda registrada en Empresas; no se puede editar ni quitar aquí" />
+                  {convenioDuplicado && <small className="fcc-aviso-duplicado">⚠ Ya existe un convenio para este cliente: {convenioDuplicado.numeroConvenio || convenioDuplicado.id}</small>}
                 </div>
                 <div className="form-group">
                   <label className="form-label">Fecha del Convenio *</label>

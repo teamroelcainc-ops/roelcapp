@@ -1,0 +1,12 @@
+#!/bin/sh
+# ✅ V00126: en CADA commit se sube la versión en 1 y se agregan al commit
+#   src/config/version.ts y public/version.json. Se activa con `npm install`
+#   (script "prepare": git config core.hooksPath .githooks).
+#   Para saltarlo una vez: SKIP_VERSION_BUMP=1 git commit ...
+[ -n "$SKIP_VERSION_BUMP" ] && exit 0
+# Si el commit SOLO toca los archivos de versión, no volver a subirla.
+CAMBIOS=$(git diff --cached --name-only | grep -v -E '^(src/config/version\.ts|public/version\.json)$' | wc -l | tr -d ' ')
+[ "$CAMBIOS" = "0" ] && exit 0
+node scripts/bump-version.mjs || exit 1
+git add src/config/version.ts public/version.json
+exit 0

@@ -133,18 +133,10 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
   moneda: {
     id: 'moneda', titulo: 'Monedas',
     icono: <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-2.67v-1.93c-1.71-.36-3.16-1.46-3.27-3.4h1.96c.1 1.05.82 1.87 2.21 1.87 1.53 0 2.15-.81 2.15-1.5 0-2.09-4.44-1.61-4.44-4.83 0-1.46 1.03-2.57 2.41-2.94V5.11h2.67v1.94c1.37.33 2.49 1.25 2.65 2.85h-2.04c-.11-.83-.69-1.34-1.69-1.34-1.21 0-1.9.59-1.9 1.37 0 1.9 4.46 1.35 4.46 4.62 0 1.51-.92 2.98-2.56 3.54z" />,
+    // ✅ V00126: el catálogo de Monedas solo maneja el nombre de la moneda
+    //   (se retiraron los campos de dirección heredados de AppSheet).
     fields: [
-      { name: 'moneda', label: 'Moneda', type: 'text', required: true },
-      { name: 'pais', label: 'Pais', type: 'text' },
-      { name: 'estado', label: 'Estado', type: 'text' },
-      { name: 'municipio', label: 'Municipio', type: 'text' },
-      { name: 'colonia', label: 'Colonia', type: 'text' },
-      { name: 'calle', label: 'Calle', type: 'text' },
-      { name: 'codigo_postal', label: 'Codigo_Postal', type: 'text' },
-      { name: 'num_interior', label: 'Numero_interior', type: 'text' },
-      { name: 'num_exterior', label: 'Numero_exterior', type: 'text' },
-      { name: 'descripcion_dir', label: 'DescripcionDireccion', type: 'text' },
-      { name: 'city_state_zip', label: 'CityStateZip', type: 'text' }
+      { name: 'moneda', label: 'Moneda', type: 'text', required: true }
     ]
   },
   tipo_operacion: {

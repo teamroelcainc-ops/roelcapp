@@ -77,3 +77,6 @@
   .fcp-x21 { padding: 14px 12px; }
   .fcp-x28 { flex-wrap: wrap; padding: 14px 12px; }
 }
+
+/* ✅ V00126 */
+.fcp-aviso-duplicado { display: block; margin-top: 6px; color: #f85149; font-weight: 700; font-size: 0.78rem; }

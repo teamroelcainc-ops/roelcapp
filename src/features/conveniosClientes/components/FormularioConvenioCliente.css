@@ -86,3 +86,6 @@
   .fcc-x30 { padding: 14px 12px; }
   .fcc-x36 { flex-wrap: wrap; }
 }
+
+/* ✅ V00126 */
+.fcc-aviso-duplicado { display: block; margin-top: 6px; color: #f85149; font-weight: 700; font-size: 0.78rem; }
