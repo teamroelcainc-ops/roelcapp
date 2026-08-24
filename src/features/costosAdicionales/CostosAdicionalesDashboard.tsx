@@ -371,7 +371,7 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
             {lista.map(c => (
               <div className="cad-x8" key={c.id}>
                 <div className="cad-x9">
-                  <div className="cad-x10">{c.convenioNombre || 'Sin convenio'}</div>
+                  <div className="cad-x10">{c.observaciones || c.convenioNombre || 'Costo adicional'}</div>
                   {c.observaciones && <div className="cad-x11">{c.observaciones}</div>}
                 </div>
                 <div className="cad-x12">
@@ -483,19 +483,8 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
               </div>
 
               <div className="cad-x47">
-                <div>
-                  <label style={labelInput}>Convenio</label>
-                  <select value={convenioSel} onChange={e => setConvenioSel(e.target.value)} style={{ ...inputStyle, cursor: 'pointer' }}>
-                    <option value="">-- Seleccionar --</option>
-                    {conveniosDelModal.map((c: any) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                  </select>
-                  {conveniosDelModal.length === 0 && (
-                    <span className="cad-x48">
-                      {modal.tipo === 'proveedor' ? 'Este proveedor no tiene convenios; puedes dejarlo vacío.' : 'Este cliente no tiene convenios; puedes dejarlo vacío.'}
-                    </span>
-                  )}
-                </div>
-
+                {/* ✅ V00126: se retiró el selector de Convenio del modal; el costo adicional
+                    solo pide Observaciones y Monto (convenioId se guarda vacío). */}
                 <div>
                   <label style={labelInput}>Observaciones</label>
                   <input type="text" value={observaciones} onChange={e => setObservaciones(e.target.value)} style={inputStyle} />
