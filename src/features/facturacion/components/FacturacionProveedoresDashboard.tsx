@@ -34,6 +34,7 @@ import {
   documentId,
   startAfter,
   arrayUnion,
+  onSnapshot,
 } from 'firebase/firestore';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { db } from '../../../config/firebase';
@@ -85,7 +86,8 @@ const EMISOR_USD_DEFAULT: EmisorRemision = {
 };
 // ⚠️ v2 (V00126): reset para aplicar el nuevo orden Subtotal → Costo Adicional → Total → TC … → Conversión (MXN)
 const DOC_COLUMNAS_OPS = 'facturacion_proveedores_ops_v2';
-const DOC_COLUMNAS_HISTORIAL = 'facturacion_proveedores_historial';
+// ⚠️ V00126: reset para incluir la columna # Pago
+const DOC_COLUMNAS_HISTORIAL = 'facturacion_proveedores_historial_v2';
 
 const LS_COLS_OPS = 'cfgcols_facturacion_prov_ops_v1';
 const LS_COLS_HIST = 'cfgcols_facturacion_prov_hist_v1';
@@ -187,6 +189,7 @@ const colorStatusFactura = (s: any): string => {
 const COLUMNAS_FACTURA_BASE = [
   { id: 'statusFactura', label: 'Status',        visible: true },
   { id: 'invoice',      label: 'Factura Prov.', visible: true },
+  { id: 'numeroPago',   label: '# Pago',        visible: true }, // ✅ V00126: número(s) de pago aplicados a la factura
   { id: 'fecha',        label: 'Fecha',         visible: true },
   { id: 'proveedor',    label: 'Proveedor',     visible: true },
   { id: 'moneda',       label: 'Moneda',        visible: true },
@@ -464,7 +467,34 @@ const obtenerMontoOperacion = (op: any) => {
 };
 
 export const FacturacionProveedoresDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial'>('operaciones');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
+  // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
+  const esHistorial = activeTab === 'historial' || activeTab === 'pagadas';
+  // ✅ V00126: mapa facturaId → número(s) de pago (colección `pagos`, en vivo)
+  const [pagosPorFactura, setPagosPorFactura] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    const q = query(collection(db, 'pagos'), where('tipo', '==', 'proveedor'));
+    const unsub = onSnapshot(q, (snap) => {
+      const mapa: Record<string, string[]> = {};
+      snap.docs.forEach(d => {
+        const pg: any = d.data();
+        const num = String(pg.numeroPago || d.id);
+        (Array.isArray(pg.facturas) ? pg.facturas : []).forEach((fa: any) => { const fid = String(fa?.facturaId || ''); if (!fid) return; (mapa[fid] = mapa[fid] || []); if (!mapa[fid].includes(num)) mapa[fid].push(num); });
+      });
+      setPagosPorFactura(mapa);
+    }, (e) => console.warn('[Facturación] pagos:', e));
+    return () => unsub();
+  }, []);
+  const numerosPagoDe = (f: any): string[] => {
+    const ids: string[] = Array.isArray(f?.__groupIds) && f.__groupIds.length ? f.__groupIds.map(String) : [String(f?.id || '')];
+    const out: string[] = [];
+    ids.forEach(id => (pagosPorFactura[id] || []).forEach(n => { if (!out.includes(n)) out.push(n); }));
+    return out;
+  };
+  const facturaPagada = (f: any): boolean => {
+    const docs: any[] = Array.isArray(f?.__groupDocs) && f.__groupDocs.length ? f.__groupDocs : [f];
+    return docs.every((d: any) => String(d?.statusPago || '').toUpperCase() === 'PAGADA' || ((Number(d?.montoPagado) || 0) > 0.009 && (Number(d?.saldoPendiente) || 0) <= 0.009));
+  };
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
@@ -2751,6 +2781,7 @@ export const FacturacionProveedoresDashboard = () => {
       }
     }
     let agrupadas = Array.from(grupos.values());
+    if (activeTab === 'pagadas') agrupadas = agrupadas.filter(g => facturaPagada(g)); // ✅ V00126
     if (filtroStatusFactura && filtroStatusFactura !== 'Todos') {
       agrupadas = agrupadas.filter(g => String(g.statusFactura || 'Facturado') === filtroStatusFactura);
     }
@@ -2761,7 +2792,7 @@ export const FacturacionProveedoresDashboard = () => {
       return String(va).localeCompare(String(vb)) * dir;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroProveedor, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura]);
+  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroProveedor, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, activeTab, pagosPorFactura]);
 
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
@@ -2837,7 +2868,7 @@ export const FacturacionProveedoresDashboard = () => {
   const pareceReferencia = (s: any): boolean => /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(String(s || '').trim());
 
   useEffect(() => {
-    const fuentes: any[] = activeTab === 'historial' ? [...registrosVisibles] : [];
+    const fuentes: any[] = esHistorial ? [...registrosVisibles] : [];
     if (facturaViendo) fuentes.push(facturaViendo);
     if (agregarRefFactura) fuentes.push(agregarRefFactura);
     if (fuentes.length === 0) return;
@@ -2919,6 +2950,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'invoice': return f.invoice || '';
       case 'fecha': return formatearFechaSpanish(f.fecha);
       case 'proveedor': return nombreProveedorFactura_(f);
+      case 'numeroPago': return numerosPagoDe(f).join(', ');
       case 'moneda': return monedaFacturaMostrar(f);
       case 'facturaCcp': return f.facturaCcp || '-';
       case 'cantOps': return f.operacionesIds?.length || 0;
@@ -2938,6 +2970,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'invoice': return <span className="fpd-x7">{f.invoice}</span>;
       case 'fecha': return <span className="fpd-x8">{formatearFechaSpanish(f.fecha)}</span>;
       case 'proveedor': return <span className="fpd-x9">{nombreProveedorFactura_(f)}</span>;
+      case 'numeroPago': { const nums = numerosPagoDe(f); return nums.length ? <span className="fac-chips-pago">{nums.map(n => <span key={n} className="fac-chip-pago" title="Número de pago aplicado">{n}</span>)}</span> : <span className="fac-sin-pago">—</span>; }
       case 'moneda': { const mon = monedaFacturaMostrar(f); return <span style={{ color: mon === 'N/A' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{mon}</span>; }
       case 'facturaCcp': return <span className="fpd-x8">{f.facturaCcp || '-'}</span>;
       case 'cantOps': return <span className="fpd-x10">{f.operacionesIds?.length || 0}</span>;
@@ -3108,6 +3141,8 @@ export const FacturacionProveedoresDashboard = () => {
       <div className="fpd-x30">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
+        {/* ✅ V00126: facturas liquidadas con su # de pago */}
+        <button onClick={() => setActiveTab('pagadas')} style={tabStyle(activeTab === 'pagadas')}>Pagadas</button>
       </div>
 
       <div className="fpd-x31">

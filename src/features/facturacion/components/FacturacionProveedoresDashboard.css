@@ -500,3 +500,8 @@
 .fpd-btn-editar-op:hover { background-color: rgba(88, 166, 255, 0.12); }
 .fpd-btn-hilo { border-color: #3fb950; color: #3fb950; }
 .fpd-btn-hilo:hover { background-color: rgba(63, 185, 80, 0.12); }
+
+/* ✅ V00126: columna # Pago (facturas pagadas) */
+.fac-chips-pago { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.fac-chip-pago { font-family: monospace; font-size: 0.72rem; font-weight: 700; color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.5); background: rgba(63, 185, 80, 0.1); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+.fac-sin-pago { color: #8b949e; }

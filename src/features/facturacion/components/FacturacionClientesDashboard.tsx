@@ -26,6 +26,7 @@ import {
   setDoc,
   documentId,
   startAfter,
+  onSnapshot,
 } from 'firebase/firestore';
 import { SelectBuscable } from '../../catalogos/components/SelectBuscable';
 import { db } from '../../../config/firebase';
@@ -56,7 +57,8 @@ const SS_OPS_TTL = 30 * 60 * 1000; // 30 min
 const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
 // ⚠️ v3 (V00126): reset para aplicar el nuevo orden Subtotal → Costo Adicional → Total → TC … → Conversión (MXN)
 const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops_v3';
-const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial_v2';
+// ⚠️ V00126: reset para incluir la columna # Pago
+const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial_v3';
 
 // ✅ (REMISIÓN) Documento de encabezado de remisiones (emisores) en Firestore.
 //    Se guarda en la MISMA colección config_columnas para reusar sus reglas.
@@ -186,6 +188,7 @@ const colorStatusFactura = (s: any): string => {
 const COLUMNAS_FACTURA_BASE = [
   { id: 'statusFactura', label: 'Status',       visible: true },
   { id: 'invoice',     label: 'Invoice',      visible: true },
+  { id: 'numeroPago',  label: '# Pago',       visible: true }, // ✅ V00126: número(s) de pago aplicados a la factura
   { id: 'fecha',       label: 'Fecha',        visible: true },
   { id: 'remolque',    label: '# Remolque',   visible: true },
   { id: 'cliente',     label: 'Cliente',      visible: true },
@@ -445,7 +448,34 @@ const obtenerMontoOperacion = (op: any) => {
 };
 
 export const FacturacionClientesDashboard = () => {
-  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial'>('operaciones');
+  const [activeTab, setActiveTab] = useState<'operaciones' | 'historial' | 'pagadas'>('operaciones');
+  // ✅ V00126: "Pagadas" reutiliza toda la vista de Historial filtrando facturas liquidadas
+  const esHistorial = activeTab === 'historial' || activeTab === 'pagadas';
+  // ✅ V00126: mapa facturaId → número(s) de pago (colección `pagos`, en vivo)
+  const [pagosPorFactura, setPagosPorFactura] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    const q = query(collection(db, 'pagos'), where('tipo', '==', 'cliente'));
+    const unsub = onSnapshot(q, (snap) => {
+      const mapa: Record<string, string[]> = {};
+      snap.docs.forEach(d => {
+        const pg: any = d.data();
+        const num = String(pg.numeroPago || d.id);
+        (Array.isArray(pg.facturas) ? pg.facturas : []).forEach((fa: any) => { const fid = String(fa?.facturaId || ''); if (!fid) return; (mapa[fid] = mapa[fid] || []); if (!mapa[fid].includes(num)) mapa[fid].push(num); });
+      });
+      setPagosPorFactura(mapa);
+    }, (e) => console.warn('[Facturación] pagos:', e));
+    return () => unsub();
+  }, []);
+  const numerosPagoDe = (f: any): string[] => {
+    const ids: string[] = Array.isArray(f?.__groupIds) && f.__groupIds.length ? f.__groupIds.map(String) : [String(f?.id || '')];
+    const out: string[] = [];
+    ids.forEach(id => (pagosPorFactura[id] || []).forEach(n => { if (!out.includes(n)) out.push(n); }));
+    return out;
+  };
+  const facturaPagada = (f: any): boolean => {
+    const docs: any[] = Array.isArray(f?.__groupDocs) && f.__groupDocs.length ? f.__groupDocs : [f];
+    return docs.every((d: any) => String(d?.statusPago || '').toUpperCase() === 'PAGADA' || ((Number(d?.montoPagado) || 0) > 0.009 && (Number(d?.saldoPendiente) || 0) <= 0.009));
+  };
 
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [facturasGlobales, setFacturasGlobales] = useState<any[]>([]);
@@ -2029,6 +2059,7 @@ export const FacturacionClientesDashboard = () => {
       case 'remolque': return remolquesFacturaTokens(f).join(' ').toLowerCase();
       case 'cliente': return String(f.clienteNombre || '').toLowerCase();
       case 'refCliente': return refClienteDeFactura(f).toLowerCase();
+      case 'numeroPago': return numerosPagoDe(f).join(', ').toLowerCase();
       case 'moneda': return String(f.monedaFacturacion || '').toLowerCase();
       case 'cantOps': return Number(f.operacionesIds?.length || 0);
       case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
@@ -2102,6 +2133,7 @@ export const FacturacionClientesDashboard = () => {
       }
     }
     let agrupadas = Array.from(grupos.values());
+    if (activeTab === 'pagadas') agrupadas = agrupadas.filter(g => facturaPagada(g)); // ✅ V00126
     if (filtroStatusFactura && filtroStatusFactura !== 'Todos') {
       agrupadas = agrupadas.filter(g => String(g.statusFactura || 'Facturado') === filtroStatusFactura);
     }
@@ -2111,7 +2143,7 @@ export const FacturacionClientesDashboard = () => {
       if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
       return String(va).localeCompare(String(vb)) * dir;
     });
-  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, filtroMonedaHist]);
+  }, [facturasGlobales, ordenFac, textoBuscarFactura, filtroCliente, fechaDesdeHist, fechaHastaHist, opInfoMap, filtroStatusFactura, filtroMonedaHist, activeTab, pagosPorFactura]);
 
   const resumenHistorial = useMemo(() => {
     let totalUSD = 0, totalMXN = 0, totalSinMoneda = 0, totalOps = 0;
@@ -2223,7 +2255,7 @@ export const FacturacionClientesDashboard = () => {
   const pareceReferencia = (s: any): boolean => /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(String(s || '').trim());
 
   useEffect(() => {
-    const fuentes: any[] = activeTab === 'historial' ? [...registrosVisibles] : [];
+    const fuentes: any[] = esHistorial ? [...registrosVisibles] : [];
     if (facturaViendo) fuentes.push(facturaViendo);
     if (agregarRefFactura) fuentes.push(agregarRefFactura);
     if (fuentes.length === 0) return;
@@ -2395,6 +2427,7 @@ export const FacturacionClientesDashboard = () => {
       case 'remolque': return renderRemolqueTokens(remolquesFacturaTokens(f));
       case 'cliente': return <span className="fcd-x12">{nombreClienteFactura_(f)}</span>;
       case 'refCliente': { const rc = refClienteDeFactura(f); return rc ? <span className="fcd-x11">{rc}</span> : <span className="fcd-x1">-</span>; }
+      case 'numeroPago': { const nums = numerosPagoDe(f); return nums.length ? <span className="fac-chips-pago">{nums.map(n => <span key={n} className="fac-chip-pago" title="Número de pago aplicado">{n}</span>)}</span> : <span className="fac-sin-pago">—</span>; }
       case 'moneda': { const mon = monedaFacturaMostrar(f); return <span style={{ color: mon === 'N/A' ? '#8b949e' : '#10b981', fontWeight: 'bold' }}>{mon}</span>; }
       case 'facturaCcp': return <span className="fcd-x11">{f.facturaCcp || '-'}</span>;
       case 'cantOps': return <span className="fcd-x1">{f.operacionesIds?.length || 0}</span>;
@@ -2443,6 +2476,7 @@ export const FacturacionClientesDashboard = () => {
         case 'remolque': return remolqueTokensTexto(remolquesFacturaTokens(f));
         case 'cliente': return nombreClienteFactura_(f);
         case 'refCliente': return refClienteDeFactura(f);
+        case 'numeroPago': return numerosPagoDe(f).join(', ');
         case 'moneda': return monedaFacturaMostrar(f);
         case 'facturaCcp': return f.facturaCcp || '';
         case 'cantOps': return Number(f.operacionesIds?.length || 0);
@@ -2766,6 +2800,8 @@ export const FacturacionClientesDashboard = () => {
       <div className="fcd-x32">
         <button onClick={() => setActiveTab('operaciones')} style={tabStyle(activeTab === 'operaciones')}>Asignar Operaciones</button>
         <button onClick={() => setActiveTab('historial')} style={tabStyle(activeTab === 'historial')}>Historial de Facturas</button>
+        {/* ✅ V00126: facturas liquidadas con su # de pago */}
+        <button onClick={() => setActiveTab('pagadas')} style={tabStyle(activeTab === 'pagadas')}>Pagadas</button>
         <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas}
           title="Vuelve a leer operaciones y facturas desde la base de datos (limpia la caché)"
           style={{ marginLeft: 'auto', marginBottom: '6px', display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: '#161b22', border: '1px solid #30363d', borderRadius: '8px', color: '#c9d1d9', cursor: (cargandoOperaciones || cargandoFacturas) ? 'wait' : 'pointer', fontWeight: 'bold', fontSize: '0.85rem', opacity: (cargandoOperaciones || cargandoFacturas) ? 0.6 : 1 }}>
@@ -2790,7 +2826,7 @@ export const FacturacionClientesDashboard = () => {
             <button className="fcd-x37" onClick={() => setFiltroTipoOp('')}>✕</button>
           </span>
         )}
-        {activeTab === 'historial' && filtroMonedaHist !== 'todas' && (
+        {esHistorial && filtroMonedaHist !== 'todas' && (
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: filtroMonedaHist === 'USD' ? 'rgba(16,185,129,0.1)' : 'rgba(59,130,246,0.1)', border: `1px solid ${filtroMonedaHist === 'USD' ? '#10b981' : '#3b82f6'}`, borderRadius: '14px', color: filtroMonedaHist === 'USD' ? '#10b981' : '#3b82f6', fontSize: '0.8rem', fontWeight: 'bold' }}>
             {filtroMonedaHist === 'USD' ? '$ Dólares (USD)' : '$ Pesos (MXN)'}
             <button className="fcd-x38" onClick={() => setFiltroMonedaHist('todas')}>✕</button>
