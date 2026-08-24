@@ -1741,13 +1741,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   };
 
   // ✅ V00126: MONTO DEL CONVENIO EXPRESADO EN LA MONEDA DE LA FACTURA.
-  //   El detalle del convenio puede estar en USD y la operación facturarse en MXN
-  //   (o viceversa): el Subtotal y el Total deben mostrarse en la moneda en que se
-  //   FACTURA, no en la del convenio.
   //   - Convenio USD + Factura MXN → monto × TC
   //   - Convenio MXN + Factura USD → monto ÷ TC
-  //   - Misma moneda (o moneda no identificada) → monto sin cambios
-  //   Devuelve también si hizo falta el TC y no había (para avisar en pantalla).
+  //   - Misma moneda (o no identificada) → monto sin cambios
+  //   Sin redondeo: el valor se guarda y muestra tal cual resulta de la operación.
   const convertirAMonedaFactura = (monto: number, tc: number, monConvenio: any, monFactura: any): { monto: number; convertido: boolean; sinTC: boolean } => {
     const m = Number(monto) || 0;
     const convUSD = esMonedaUSD(monConvenio), convMXN = esMonedaMXN(monConvenio);
@@ -1770,11 +1767,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const detConvProv = listaConveniosProveedor.find((c: any) => String(c.id) === String(formData.convenioProveedor || ''));
       monConvProv = detConvProv?.monedaBase || ID_USD;
     }
-    // ✅ V00126: el monto del convenio se convierte a la moneda de la factura ANTES de sumar cargos;
-    //   el desglose se hace sobre el total ya en moneda de factura.
+    // ✅ V00126: el monto del convenio se convierte a la moneda de la factura ANTES de sumar cargos.
     const montoFactProv = convertirAMonedaFactura(Number(formData.totalAPagarProv || 0), tc, monConvProv, formData.facturadoEnUnidad).monto;
     const subtotalFact = montoFactProv + Number(formData.cargosAdicionalesProv || 0);
-    const { dol, pes, conv } = desglosarPorMonedas(subtotalFact, tc, formData.facturadoEnUnidad || monConvProv, formData.facturadoEnUnidad || monConvProv);
+    const monFactProv = formData.facturadoEnUnidad || monConvProv;
+    const { dol, pes, conv } = desglosarPorMonedas(subtotalFact, tc, monFactProv, monFactProv);
     void subtotal;
     setFormData(prev => ({ ...prev, subtotalProv: subtotalFact, dolaresProv: dol, pesosProv: pes, conversionProv: conv }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1795,10 +1792,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       monConvCli = detConv?.monedaMaestro || ID_USD;
     }
     // ✅ V00126: el monto del convenio se convierte a la moneda de la factura ANTES de sumar cargos
-    //   (Convenio USD facturado en Pesos → 120 × TC). El desglose se hace sobre el total ya en moneda de factura.
+    //   (Convenio USD facturado en Pesos → 120 × TC, sin redondear).
     const montoFactCli = convertirAMonedaFactura(Number(formData.montoConvenioCliente || 0), tc, monConvCli, formData.facturadoEnCobrar).monto;
     const subtotalFact = montoFactCli + Number(formData.cargosAdicionales || 0);
-    const { dol, pes, conv } = desglosarPorMonedas(subtotalFact, tc, formData.facturadoEnCobrar || monConvCli, formData.facturadoEnCobrar || monConvCli);
+    const monFactCli = formData.facturadoEnCobrar || monConvCli;
+    const { dol, pes, conv } = desglosarPorMonedas(subtotalFact, tc, monFactCli, monFactCli);
     void subtotal;
     const utilidad = conv - Number(formData.conversionProv || 0); 
     setFormData(prev => ({ ...prev, subtotalCliente: subtotalFact, dolaresCliente: dol, pesosCliente: pes, conversionCliente: conv, utilidadEstimada: utilidad }));
@@ -1976,10 +1974,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const tarifaIdCliente = String(convClienteSel?.tarifaBaseId || '').trim();
   const tarifaIdProveedor = String(convProvSelObj?.tarifaBaseId || '').trim();
   const montoCliente = Number(convClienteSel?.tarifaMonto || 0);
-  // ✅ V00126: Subtotal mostrado en la MONEDA DE LA FACTURA (no en la del convenio)
+  // ✅ V00126: Subtotal mostrado en la MONEDA DE LA FACTURA (sin redondeo)
   const tcVigente = Number(formData.tipoCambioAprobado || tipoCambioDia) || 0;
-  const subtotalClienteFact = convertirAMonedaFactura(Number(formData.montoConvenioCliente || 0), tcVigente, formData.monedaConvenioCliente || convClienteSel?.monedaMaestro, formData.facturadoEnCobrar);
-  const subtotalProvFact = convertirAMonedaFactura(Number(formData.totalAPagarProv || 0), tcVigente, formData.monedaConvenioProv || convProvSelObj?.monedaBase, formData.facturadoEnUnidad);
+  const monConvCliActual = formData.monedaConvenioCliente || convClienteSel?.monedaMaestro;
+  const monConvProvActual = formData.monedaConvenioProv || convProvSelObj?.monedaBase;
+  const subtotalClienteFact = convertirAMonedaFactura(Number(formData.montoConvenioCliente || 0), tcVigente, monConvCliActual, formData.facturadoEnCobrar);
+  const subtotalProvFact = convertirAMonedaFactura(Number(formData.totalAPagarProv || 0), tcVigente, monConvProvActual, formData.facturadoEnUnidad);
   const leyendaConversion = (r: { convertido: boolean; sinTC: boolean }, monto: number, monConv: any) =>
     !r.convertido ? '' : r.sinTC ? `⚠ Falta el Tipo de Cambio del día para convertir ${fmtMoney(monto)} ${nombreMoneda(monConv)}` : `${fmtMoney(monto)} ${nombreMoneda(monConv)} × TC ${tcVigente}`;
   const montoProveedor = Number(convProvSelObj?.tarifaMonto || 0);
@@ -3060,7 +3060,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                   <div className="roelca-card">
                     <div className="roelca-card-header"><div className="roelca-card-icon"><IconDollar /></div><h3 className="roelca-card-title">Pago al Proveedor</h3></div>
                     <div className="form-grid">
-                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span></label><ConSimboloMoneda><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda>{subtotalProvFact.convertido && <small className={subtotalProvFact.sinTC ? 'fo-conv-alerta' : 'fo-conv-nota'}>{/* ✅ V00126: el Subtotal Proveedor se expresa en la moneda de la factura */}Subtotal en moneda de factura: {fmtMoney(subtotalProvFact.monto)} {nombreMoneda(formData.facturadoEnUnidad)} · {leyendaConversion(subtotalProvFact, Number(formData.totalAPagarProv || 0), formData.monedaConvenioProv || convProvSelObj?.monedaBase)}</small>}</div>
+                      <div className="form-group"><label className="form-label">Monto a Pagar Proveedor <span className="campo-badge">totalAPagarProv</span></label><ConSimboloMoneda><input type="number" step="0.01" name="totalAPagarProv" className={`form-control${claseSiFalta('totalAPagarProv')}`} value={formData.totalAPagarProv || 0} onChange={handleChange} style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda>{subtotalProvFact.convertido && <small className={subtotalProvFact.sinTC ? 'fo-conv-alerta' : 'fo-conv-ok'}>{/* ✅ V00126 */}Subtotal en moneda de factura: {fmtMoney(subtotalProvFact.monto)} {nombreMoneda(formData.facturadoEnUnidad)} · {leyendaConversion(subtotalProvFact, Number(formData.totalAPagarProv || 0), monConvProvActual)}</small>}</div>
                       {/* ✅ NUEVO: moneda del monto del proveedor, visible y corregible. */}
                       <div className="form-group">
                         <label className="form-label">Moneda del Monto <span className="campo-badge">monedaConvenioProv</span></label>
@@ -3131,23 +3131,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <option value={ID_MXN}>Pesos</option>
                         </select>
                       </div>
-                      <div className="form-group"><label className="form-label">Subtotal <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={subtotalClienteFact.convertido ? Number(subtotalClienteFact.monto.toFixed(2)) : (formData.montoConvenioCliente || 0)} readOnly={campoBloqueadoAut('montoConvenioCliente') || subtotalClienteFact.convertido} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : subtotalClienteFact.convertido ? leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), formData.monedaConvenioCliente || convClienteSel?.monedaMaestro) : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda>{subtotalClienteFact.convertido && <small className={subtotalClienteFact.sinTC ? 'fo-conv-alerta' : 'fo-conv-nota'}>{leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), formData.monedaConvenioCliente || convClienteSel?.monedaMaestro)}</small>}</div>
-                      {/* ✅ NUEVO: la MONEDA DEL MONTO ahora es VISIBLE y corregible.
-                          El desglose Dólares/Pesos/Conversión parte de esta moneda
-                          (viene del convenio); si el convenio la trae mal capturada,
-                          aquí se corrige para ESTA operación sin tocar el catálogo. */}
-                      <div className="form-group">
-                        <label className="form-label">Moneda del Monto <span className="campo-badge">monedaConvenioCliente</span></label>
-                        <select
-                          className="form-control"
-                          value={esMonedaMXN(formData.monedaConvenioCliente) ? ID_MXN : ID_USD}
-                          onChange={e => setFormData(prev => ({ ...prev, monedaConvenioCliente: e.target.value }))}
-                          title="Moneda en la que está capturado el Monto Convenio Cliente. Se toma del convenio; corrígela si el convenio la trae mal."
-                        >
-                          <option value={ID_USD}>Dólares</option>
-                          <option value={ID_MXN}>Pesos</option>
-                        </select>
-                      </div>
+                      <div className="form-group"><label className="form-label">Subtotal <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" step="any" className="form-control" value={subtotalClienteFact.convertido ? subtotalClienteFact.monto : (formData.montoConvenioCliente || 0)} readOnly={campoBloqueadoAut('montoConvenioCliente') || subtotalClienteFact.convertido} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : subtotalClienteFact.convertido ? leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual) : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda>{subtotalClienteFact.convertido && <small className={subtotalClienteFact.sinTC ? 'fo-conv-alerta' : 'fo-conv-ok'}>{leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual)}</small>}</div>
+                      {/* ✅ V00126: se eliminó el selector "Moneda del Monto"; la moneda del monto viene del detalle del convenio (monedaConvenioCliente se sigue guardando). */}
                       <div className="form-group">
                         <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
                         <div className="roelca-lookup-row">
