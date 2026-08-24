@@ -198,7 +198,10 @@ export function PagosDashboard() {
     setFEditCcp(String(fac.raw?.facturaCcp || fac.raw?.ccp || ''));
     setFEditStatus(String(fac.raw?.statusFactura || 'Facturado'));
     setFEditTotal(String(fac.total || ''));
-    setFEditMoneda(fac.moneda || '');
+    // ✅ V00126: moneda de la factura = moneda de la EMPRESA (tabla Empresas); solo respaldo la de la factura
+    const monEmpresa = monedaEmpresaDe({ entidadNombre: fac.entidadNombre, entidadId: (fac as any).entidadId });
+    const norm = monEmpresa.toLowerCase();
+    setFEditMoneda(norm.includes('dolar') || norm.includes('dólar') || norm.includes('usd') ? 'USD' : (norm.includes('peso') || norm.includes('mxn')) ? 'MXN' : (fac.moneda || ''));
 
     // ✅ OPERACIONES relacionadas: se leen SIEMPRE en vivo para mostrar la
     //   MONEDA DEL CONVENIO y el importe con la regla de monedas (convenio
@@ -1775,12 +1778,8 @@ export function PagosDashboard() {
                     <div><label style={etiquetaCampo}>Factura CCP</label><input style={inputF} type="text" value={fEditCcp} onChange={(e) => setFEditCcp(e.target.value)} /></div>
                     <div>
                       <label style={etiquetaCampo}>Moneda</label>
-                      <SelectBuscable
-                        opciones={[{ value: 'USD', label: 'USD (Dólares)' }, { value: 'MXN', label: 'MXN (Pesos)' }]}
-                        value={fEditMoneda}
-                        onChange={setFEditMoneda}
-                        placeholder="Buscar moneda..."
-                      />
+                      {/* ✅ V00126: la moneda de la factura viene de la tabla Empresas y NO se puede editar */}
+                      <input style={{ ...inputF, opacity: 0.75, cursor: 'not-allowed' }} type="text" readOnly value={fEditMoneda || fv.moneda || '—'} title="Se toma de la moneda registrada en Empresas para este cliente/proveedor; no se puede modificar aquí" />
                     </div>
                     <div>
                       <label style={etiquetaCampo}>Total ({fEditMoneda || fv.moneda || 'sin moneda'})</label>

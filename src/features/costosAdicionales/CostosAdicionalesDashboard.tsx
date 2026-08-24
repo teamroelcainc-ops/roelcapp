@@ -78,9 +78,11 @@ interface CostosAdicionalesDashboardProps {
   onCerrar?: () => void;
   // Avisa al padre los nuevos totales para que sincronice sus cálculos.
   onCostosActualizados?: (cambios: { cargosAdicionales: number; cargosAdicionalesProv: number }) => void;
+  // ✅ V00126: mostrar solo un lado ('cliente' o 'proveedor'); el otro panel se oculta.
+  soloTipo?: 'cliente' | 'proveedor';
 }
 
-export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosActualizados }: CostosAdicionalesDashboardProps = {}) => {
+export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosActualizados, soloTipo }: CostosAdicionalesDashboardProps = {}) => {
   const comoModal = !!operacionFija;
   const [operaciones, setOperaciones] = useState<any[]>([]);
   const [cargandoOps, setCargandoOps] = useState(true);
@@ -457,9 +459,10 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
             </div>
           </div>
 
-          <div className="cad-x39">
-            {renderPanelCostos('cliente')}
-            {renderPanelCostos('proveedor')}
+          <div className={`cad-x39${soloTipo ? ' cad-solo' : ''}`}>
+            {/* ✅ V00126: si se abre desde el "+" del cliente solo se ve Cliente; desde el del proveedor, solo Proveedor */}
+            {(!soloTipo || soloTipo === 'cliente') && renderPanelCostos('cliente')}
+            {(!soloTipo || soloTipo === 'proveedor') && renderPanelCostos('proveedor')}
           </div>
         </>
       )}

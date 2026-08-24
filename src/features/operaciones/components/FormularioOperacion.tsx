@@ -530,7 +530,7 @@ type CatalogoCreable =
 export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, onRestore, catalogosCacheados, onSave }: FormProps) => {
   const [pestañaActiva, setPestañaActiva] = useState<TabType>('general');
   const [cargando, setCargando] = useState(false);
-  const [mostrarCostosAdic, setMostrarCostosAdic] = useState(false);
+  const [mostrarCostosAdic, setMostrarCostosAdic] = useState<false | 'cliente' | 'proveedor'>(false);
   // ✅ V00126: editar el detalle del convenio elegido (moneda/tarifa) sin salir de Operaciones
   const [detalleConvenioEdit, setDetalleConvenioEdit] = useState<{ tipo: 'cliente' | 'proveedor'; detalleId: string } | null>(null);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
@@ -3088,7 +3088,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Cargos Adicionales (Prov) <span className="campo-badge">cargosAdicionalesProv</span></label>
                         <div className="roelca-lookup-row">
                           <ConSimboloMoneda className="fo-x27"><input type="number" step="0.01" name="cargosAdicionalesProv" className={`form-control${claseSiFalta('cargosAdicionalesProv')}`} value={formData.cargosAdicionalesProv || 0} onChange={handleChange} style={{ color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda>
-                          <BotonAgregar title="Administrar costos adicionales de esta operación" onClick={() => { if (!initialData?.id && !(formData as any).id) { alert('Guarda la operación primero; los costos adicionales se ligan a la operación ya guardada.'); return; } setMostrarCostosAdic(true); }} />
+                          <BotonAgregar title="Administrar costos adicionales del PROVEEDOR de esta operación" onClick={() => { if (!initialData?.id && !(formData as any).id) { alert('Guarda la operación primero; los costos adicionales se ligan a la operación ya guardada.'); return; } setMostrarCostosAdic('proveedor'); }} />
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Subtotal Proveedor <span className="campo-badge">subtotalProv</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalProv || 0} readOnly style={{ opacity: 0.9, color: colorMonedaProv, fontWeight: colorMonedaProv ? 600 : undefined }} /></ConSimboloMoneda></div>
@@ -3147,7 +3147,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <label className="form-label">Cargos Adicionales <span className="campo-badge">cargosAdicionales</span></label>
                         <div className="roelca-lookup-row">
                           <ConSimboloMoneda className="fo-x27"><input type="number" step="0.01" name="cargosAdicionales" className={`form-control${claseSiFalta('cargosAdicionales')}`} value={formData.cargosAdicionales || 0} onChange={handleChange} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda>
-                          <BotonAgregar title="Administrar costos adicionales de esta operación" onClick={() => { if (!initialData?.id && !(formData as any).id) { alert('Guarda la operación primero; los costos adicionales se ligan a la operación ya guardada.'); return; } setMostrarCostosAdic(true); }} />
+                          <BotonAgregar title="Administrar costos adicionales del CLIENTE de esta operación" onClick={() => { if (!initialData?.id && !(formData as any).id) { alert('Guarda la operación primero; los costos adicionales se ligan a la operación ya guardada.'); return; } setMostrarCostosAdic('cliente'); }} />
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Total <span className="campo-badge">subtotalCliente</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.subtotalCliente || 0} readOnly style={{ opacity: 0.9, color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined }} /></ConSimboloMoneda></div>
@@ -3361,6 +3361,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           <CostosAdicionalesDashboard
             /* ✅ V00126: abre DIRECTO en esta operación (antes mostraba la lista para elegir una) */
             operacionFija={{ id: String(initialData?.id || (formData as any).id || ''), ref: (formData as any).ref || initialData?.ref || '', clienteNombre: searchClientePaga || (formData as any).clientePagaNombre || '', proveedorUnidadNombre: searchProvTransporte || (formData as any).proveedorUnidadNombre || '', fechaServicio: formData.fechaServicio, convenio: formData.convenio, convenioProveedor: formData.convenioProveedor, tipoCambioAprobado: formData.tipoCambioAprobado, utilidadEstimada: formData.utilidadEstimada }}
+            soloTipo={mostrarCostosAdic === 'cliente' || mostrarCostosAdic === 'proveedor' ? mostrarCostosAdic : undefined}
             onCerrar={() => setMostrarCostosAdic(false)}
             /* ✅ V00126: la firma correcta es un objeto { cargosAdicionales, cargosAdicionalesProv } */
             onCostosActualizados={(cambios) => { const c = Number(cambios?.cargosAdicionales); const p = Number(cambios?.cargosAdicionalesProv); setFormData(prev => ({ ...prev, ...(Number.isFinite(c) ? { cargosAdicionales: c } : {}), ...(Number.isFinite(p) ? { cargosAdicionalesProv: p } : {}) })); }}

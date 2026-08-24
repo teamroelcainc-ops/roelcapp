@@ -71,3 +71,6 @@
   .cad-x42 { flex-wrap: wrap; }
   .cad-x44 { flex-wrap: wrap; }
 }
+
+/* ✅ V00126: modo de un solo panel */
+.cad-x39.cad-solo { grid-template-columns: 1fr; max-width: 760px; margin: 0 auto; }
