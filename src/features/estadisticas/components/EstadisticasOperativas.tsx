@@ -155,32 +155,41 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
     const diasLaboradosMes = (mes: number) => new Set(porMes[mes].map((op) => String(op.fechaServicio || '').slice(0, 10))).size;
     const filas = porMes.map((lista, i) => {
       const c = contar(lista); const dias = diasLaboradosMes(i);
-      return { mes: MESES[i], ...c, total: c.servicios - c.noCobrables, promedio: dias > 0 ? Math.round(c.servicios / dias) : 0, dias };
+      // Excel: PROMEDIO = TOTAL ÷ días laborados (en la hoja está fijo en 23; aquí se usan los días reales del mes)
+      return { mes: MESES[i], ...c, total: c.servicios - c.noCobrables, promedio: dias > 0 ? Math.round((c.servicios - c.noCobrables) / dias) : 0, dias };
     });
     const conDatos = filas.filter((f) => f.servicios > 0);
     const acum = contar(opsFiltradas);
     const n = conDatos.length || 1;
     const prom = { transfer: Math.round(acum.transfer / n), cruces: Math.round(acum.cruces / n), fletes: Math.round(acum.fletes / n), servicios: Math.round(acum.servicios / n), noCobrables: Math.round(acum.noCobrables / n), total: Math.round((acum.servicios - acum.noCobrables) / n), promedio: Math.round(conDatos.reduce((s, f) => s + f.promedio, 0) / n) };
-    const porDia = ORDEN_DIAS.map((d) => { const lab = porDiaSem.get(d)?.size || 0; const ac = opsDiaSem[d].length; return { dia: DIAS[d], laborados: lab, acumulado: ac, promedio: lab > 0 ? Math.round(ac / lab) : 0, ops: opsDiaSem[d] }; });
+    // Excel: LABORADOS = cuántos lunes/martes/… hay en el periodo (días calendario), ACUM = servicios de ese día, PROMEDIO = ACUM ÷ LABORADOS
+    const diasCalendario: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+    for (let d = fechaLocal(fechaDesde), fin = fechaLocal(fechaHasta); d <= fin; d.setDate(d.getDate() + 1)) diasCalendario[d.getDay()]++;
+    void porDiaSem;
+    const porDia = ORDEN_DIAS.map((d) => { const lab = diasCalendario[d]; const ac = opsDiaSem[d].length; return { dia: DIAS[d], laborados: lab, acumulado: ac, promedio: lab > 0 ? Math.round(ac / lab) : 0, ops: opsDiaSem[d] }; });
     const totDia = { laborados: porDia.reduce((s, f) => s + f.laborados, 0), acumulado: acum.servicios, promedio: Math.round(porDia.reduce((s, f) => s + f.promedio, 0) / (porDia.filter((f) => f.laborados > 0).length || 1)) };
     return { filas, acum: { ...acum, total: acum.servicios - acum.noCobrables, promedio: Math.round(conDatos.reduce((s, f) => s + f.promedio, 0) / n) }, prom, porDia, totDia };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opsFiltradas]);
+  }, [opsFiltradas, fechaDesde, fechaHasta]);
 
   // ── POR CLIENTE × grupo de tipo de operación ──
   const clientes = useMemo(() => {
     const m = new Map<string, Op[]>();
     opsFiltradas.forEach((op) => { const c = nombreCliente(op) || 'Sin cliente'; (m.get(c) || m.set(c, []).get(c)!).push(op); });
     const grupos = ['Exportación', 'Importación', 'Movimiento', 'Otros'] as const;
+    const esInterno = (c: string) => norm(c).includes('roelca');
     const filas = Array.from(m.entries()).map(([cliente, lista]) => {
       const conteo: Record<string, number> = { Exportación: 0, Importación: 0, Movimiento: 0, Otros: 0 };
       lista.forEach((op) => { conteo[grupoTipoDe(tipoDe(op))]++; });
-      return { cliente, total: lista.length, conteo, ops: lista };
-    }).sort((a, b) => b.total - a.total);
+      return { cliente, total: lista.length, conteo, ops: lista, interno: esInterno(cliente) };
+    }).sort((a, b) => (Number(a.interno) - Number(b.interno)) || (b.total - a.total));
     const totales: Record<string, number> = { Exportación: 0, Importación: 0, Movimiento: 0, Otros: 0 };
-    filas.forEach((f) => grupos.forEach((g) => { totales[g] += f.conteo[g]; }));
+    const totalesExternos: Record<string, number> = { Exportación: 0, Importación: 0, Movimiento: 0, Otros: 0 };
+    filas.forEach((f) => grupos.forEach((g) => { totales[g] += f.conteo[g]; if (!f.interno) totalesExternos[g] += f.conteo[g]; }));
     const granTotal = opsFiltradas.length;
-    return { filas, totales, granTotal, grupos };
+    // Excel: la base del "OPERACIÓN %" excluye a las empresas del grupo (Roelca), que van al final en rojo
+    const baseExterna = filas.filter((f) => !f.interno).reduce((s, f) => s + f.total, 0);
+    return { filas, totales, totalesExternos, granTotal, baseExterna, grupos };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opsFiltradas]);
 
@@ -206,7 +215,7 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
     if (sub === 'diario') hoja('Diario', [['MES', 'SEMANA', 'DÍA', 'FECHA', 'TRANSFER', 'CRUCES', 'FLETES', 'SERVICIOS'], ...diario.filas.map((f) => [f.mes, `SEMANA ${f.semana}`, f.dia, fmtFecha(f.iso), f.transfer, f.cruces, f.fletes, f.servicios]), ['ACUMULADO', '', '', '', diario.total.transfer, diario.total.cruces, diario.total.fletes, diario.total.servicios]]);
     if (sub === 'semanal') hoja('Semanal', [['SEMANA', 'TRANSFER', 'CRUCES', 'FLETES', 'SERVICIOS'], ...semanal.filas.map((f) => [`SEMANA ${f.semana}`, f.transfer, f.cruces, f.fletes, f.servicios]), ['PROMEDIO', Math.round(semanal.prom.transfer), Math.round(semanal.prom.cruces), Math.round(semanal.prom.fletes), Math.round(semanal.prom.servicios)], ['ACUMULADO', semanal.total.transfer, semanal.total.cruces, semanal.total.fletes, semanal.total.servicios]]);
     if (sub === 'mensual') { hoja('Mensual', [['MES', 'TRANSFER', 'CRUCES', 'FLETES', 'SERVICIOS', 'NO COBRABLES', 'TOTAL', 'PROMEDIO'], ...mensual.filas.map((f) => [f.mes.toUpperCase(), f.transfer, f.cruces, f.fletes, f.servicios, f.noCobrables, f.total, f.promedio]), ['ACUMULADO', mensual.acum.transfer, mensual.acum.cruces, mensual.acum.fletes, mensual.acum.servicios, mensual.acum.noCobrables, mensual.acum.total, mensual.acum.promedio]]); hoja('Día de la semana', [['DÍA', 'LABORADOS', 'ACUM', 'PROMEDIO'], ...mensual.porDia.map((f) => [f.dia.toUpperCase(), f.laborados, f.acumulado, f.promedio]), ['TOTAL', mensual.totDia.laborados, mensual.totDia.acumulado, mensual.totDia.promedio]]); }
-    if (sub === 'clientes') hoja('Por cliente', [['CLIENTE', ...clientes.grupos.flatMap((g) => [g.toUpperCase(), '%']), 'OPERACIÓN %'], ...clientes.filas.map((f) => [f.cliente, ...clientes.grupos.flatMap((g) => [f.conteo[g] || '', fmtPct(f.conteo[g], f.total)]), fmtPct(f.total, clientes.granTotal)]), ['ACUMULADO', ...clientes.grupos.flatMap((g) => [clientes.totales[g], fmtPct(clientes.totales[g], clientes.granTotal)]), '100%']]);
+    if (sub === 'clientes') hoja('Por cliente', [['CLIENTE', ...clientes.grupos.flatMap((g) => [g.toUpperCase(), '%']), 'OPERACIÓN %'], ...clientes.filas.map((f) => [f.cliente, ...clientes.grupos.flatMap((g) => [f.conteo[g] || '', fmtPct(f.conteo[g], f.total)]), clientes.baseExterna > 0 ? `${((f.total / clientes.baseExterna) * 100).toFixed(2)}%` : '']), ['ACUMULADO', ...clientes.grupos.flatMap((g) => [clientes.totales[g], fmtPct(clientes.totales[g], clientes.granTotal)]), '']]);
     if (sub === 'tipoCv') hoja('Tipo x CV', [['TIPO DE OPERACIÓN', 'LÍNEA', ...tipoCv.cvs.map((c) => c.toUpperCase()), 'TOTAL'], ...tipoCv.filas.map((f) => [f.tipo, f.linea, ...tipoCv.cvs.map((c) => f.porCv[c]?.length || 0), f.total]), ['TOTAL', '', ...tipoCv.cvs.map((c) => tipoCv.totCv[c]), tipoCv.granTotal]]);
     XLSX.writeFile(wb, `Estadistica_Operativa_${sub}_${fechaDesde}_${fechaHasta}.xlsx`);
   };
@@ -350,15 +359,16 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
         <div className="eo-tabla-wrap">
           <table className="eo-tabla eo-compacta">
             <thead>
+              <tr className="eo-fila-acum"><th>SIN GRUPO ROELCA</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{fmtNum(clientes.totalesExternos[g])}</th><th>{fmtPct(clientes.totalesExternos[g], clientes.baseExterna)}</th></Fragment>))}<th>{fmtNum(clientes.baseExterna)}</th></tr>
               <tr className="eo-fila-acum"><th>ACUMULADO</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{fmtNum(clientes.totales[g])}</th><th>{fmtPct(clientes.totales[g], clientes.granTotal)}</th></Fragment>))}<th>{fmtNum(clientes.granTotal)}</th></tr>
               <tr><th>CLIENTE</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{g.toUpperCase()}</th><th>%</th></Fragment>))}<th>OPERACIÓN %</th></tr>
             </thead>
             <tbody>
               {clientes.filas.map((f) => (
-                <tr key={f.cliente}>
+                <tr key={f.cliente} className={f.interno ? 'eo-interno' : ''}>
                   <td className="eo-cliente eo-click" onClick={() => ver(f.cliente, f.ops)}>{f.cliente}</td>
                   {clientes.grupos.map((g) => (<Fragment key={g}>{celda(f.conteo[g], `${f.cliente} · ${g}`, f.ops.filter((o) => grupoTipoDe(tipoDe(o)) === g))}<td className="eo-num eo-pct">{fmtPct(f.conteo[g], f.total)}</td></Fragment>))}
-                  <td className="eo-num eo-pct-total">{clientes.granTotal > 0 ? `${((f.total / clientes.granTotal) * 100).toFixed(2)}%` : ''}</td>
+                  <td className="eo-num eo-pct-total">{clientes.baseExterna > 0 ? `${((f.total / clientes.baseExterna) * 100).toFixed(2)}%` : ''}</td>
                 </tr>
               ))}
             </tbody>

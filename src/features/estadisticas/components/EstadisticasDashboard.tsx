@@ -1359,8 +1359,8 @@ export function EstadisticasDashboard() {
       <div className="est-tabs">
         {area === 'operativa' ? (
           <>
-            <button className={`est-tab${pestana === 'operativa' ? ' activa' : ''}`} onClick={() => setPestana('operativa')}>Reportes operativos (diario · semanal · mensual · clientes · tipo × C/V)</button>
-            <button className={`est-tab${pestana === 'servicios' ? ' activa' : ''}`} onClick={() => setPestana('servicios')}>Servicios (vista anterior)</button>
+            <button className={`est-tab${pestana === 'operativa' ? ' activa' : ''}`} onClick={() => setPestana('operativa')}>E S (Estadística de Servicios)</button>
+            <button className={`est-tab${pestana === 'servicios' ? ' activa' : ''}`} onClick={() => setPestana('servicios')}>Servicios por mes</button>
           </>
         ) : (
           <>
