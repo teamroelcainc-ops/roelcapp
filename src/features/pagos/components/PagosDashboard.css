@@ -428,3 +428,11 @@
 /* ✅ NUEVO — icono girando del botón Recargar */
 .pg-girando { animation: pg-girar 0.9s linear infinite; }
 @keyframes pg-girar { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ✅ V00126: acciones en línea, moneda de la empresa, hilo */
+.pg-acciones { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pg-btn-editar { color: #58a6ff; border-color: rgba(88, 166, 255, 0.4); }
+.pg-btn-hilo { color: #3fb950; border-color: rgba(63, 185, 80, 0.4); font-size: 0.85rem; }
+.pg-moneda-empresa { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; border: 1px solid #30363d; background: #161b22; color: #d29922; font-size: 0.7rem; font-weight: 700; vertical-align: 1px; white-space: nowrap; }
+.pg-btn-op-completa { background: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 6px; padding: 2px 7px; margin-left: 8px; cursor: pointer; font-size: 0.8rem; }
+.pg-btn-op-completa:hover { background-color: rgba(88, 166, 255, 0.12); }

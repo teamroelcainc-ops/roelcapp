@@ -12,6 +12,9 @@
 // ---------------------------------------------------------------------------
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
+import { HiloModal } from '../../hilo/HiloModal';
+import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
+import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache';
 import {
   collection, query, where, getDocs, onSnapshot, writeBatch, doc, arrayUnion, arrayRemove, limit,
   orderBy, startAfter, documentId,
@@ -122,6 +125,27 @@ export function PagosDashboard() {
   //   Permite revisar la factura (con sus OPERACIONES relacionadas) y corregir
   //   # de invoice, fecha, CCP, status y total sin salir del flujo de pago.
   const [facturaViendo, setFacturaViendo] = useState<FacturaPagable | null>(null);
+  // ✅ V00126: hilo Operaciones → Facturación → Pagos y edición completa de operaciones
+  const [hiloPago, setHiloPago] = useState<PagoDoc | null>(null);
+  const [opEditandoId, setOpEditandoId] = useState<string | null>(null);
+  // ✅ V00126: moneda de la EMPRESA junto al cliente/proveedor
+  const [empresasCat, setEmpresasCat] = useState<any[]>([]);
+  const [monedasCat, setMonedasCat] = useState<any[]>([]);
+  useEffect(() => {
+    cargarCatalogo('empresas', { ttlMs: TTL.MEDIO }).then(setEmpresasCat).catch(() => {});
+    cargarCatalogo('catalogo_moneda', { ttlMs: TTL.MEDIO }).then(setMonedasCat).catch(() => {});
+  }, []);
+  const monedaEmpresaDe = (p: { entidadNombre?: string } & Record<string, any>): string => {
+    const raw: any = p;
+    const id = String(raw.entidadId || raw.clienteId || raw.proveedorId || raw.empresaId || '');
+    const norm = (t: any) => String(t || '').trim().toLowerCase();
+    const emp = (id && empresasCat.find((e: any) => String(e.id) === id)) || empresasCat.find((e: any) => norm(e.nombre || e.empresa || e.razonSocial) === norm(p.entidadNombre));
+    if (!emp) return '';
+    const m = String(emp.monedaId || emp.moneda || '');
+    if (!m) return '';
+    const cat = monedasCat.find((x: any) => String(x.id) === m);
+    return String(cat?.moneda || (m.length < 12 ? m : '') || '');
+  };
   const [editandoFactura, setEditandoFactura] = useState(false);
   const [fEditInvoice, setFEditInvoice] = useState('');
   const [fEditFecha, setFEditFecha] = useState('');
@@ -1441,6 +1465,12 @@ export function PagosDashboard() {
   // ────────────────────────────── RENDER ──────────────────────────────
   return (
     <div className="pg-contenedor">
+      {hiloPago && (
+        <HiloModal tipo={hiloPago.tipo === 'proveedor' ? 'proveedor' : 'cliente'} pago={{ id: hiloPago.id, numeroPago: hiloPago.numeroPago, monto: hiloPago.monto, moneda: hiloPago.moneda, facturas: hiloPago.facturas || [] }} onClose={() => setHiloPago(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />
+      )}
+      {opEditandoId && (
+        <EditorOperacionEmbebido operacionId={opEditandoId} onClose={() => setOpEditandoId(null)} />
+      )}
       <div className="pg-encabezado">
         <h1 className="pg-titulo">Pagos</h1>
         <div className="pg-encabezado-acciones">
@@ -1521,18 +1551,20 @@ export function PagosDashboard() {
             ) : pagosFiltrados.map((p) => (
               <tr key={p.id} className="pg-fila" onClick={() => setPagoViendo(p)} title="Ver detalle del pago">
                 <td onClick={(e) => e.stopPropagation()}>
-                  {/* ✅ NUEVO: editar pago (fecha, número, referencia, método, obs., comprobante) */}
-                  <button className="pg-btn-borrar" style={{ color: '#58a6ff', borderColor: 'rgba(88,166,255,0.4)', marginRight: '6px' }}
-                    onClick={() => abrirEdicionPago(p)} title="Editar pago">
-                    <Pencil size={14} />
-                  </button>
-                  <button className="pg-btn-borrar" onClick={() => eliminarPago(p)} title="Eliminar pago (revierte su aplicación)">
-                    <Trash2 size={14} />
-                  </button>
+                  {/* ✅ V00126: acciones en una sola fila (editar · eliminar · hilo) */}
+                  <div className="pg-acciones">
+                    <button className="pg-btn-borrar pg-btn-editar" onClick={() => abrirEdicionPago(p)} title="Editar pago">
+                      <Pencil size={14} />
+                    </button>
+                    <button className="pg-btn-borrar" onClick={() => eliminarPago(p)} title="Eliminar pago (revierte su aplicación)">
+                      <Trash2 size={14} />
+                    </button>
+                    <button className="pg-btn-borrar pg-btn-hilo" onClick={() => setHiloPago(p)} title="Verificar el hilo Operaciones → Facturación → Pago">🔗</button>
+                  </div>
                 </td>
                 <td className="pg-fecha">{p.fecha}</td>
                 <td className="pg-numero">{p.numeroPago}</td>
-                <td className="pg-entidad">{p.entidadNombre}</td>
+                <td className="pg-entidad">{p.entidadNombre}{monedaEmpresaDe(p) && <span className="pg-moneda-empresa" title="Moneda registrada en la tabla Empresas">{monedaEmpresaDe(p)}</span>}</td>
                 <td>{p.metodoPago}</td>
                 <td className="pg-monto">{money(p.monto, p.moneda)}</td>
                 <td onClick={(e) => e.stopPropagation()}>
@@ -1786,6 +1818,8 @@ export function PagosDashboard() {
                                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
                                 </button>
                                 {o.ref || o.id || '-'}
+                                {/* ✅ V00126: editar la operación completa en el formulario de Operaciones */}
+                                {o.id && !String(o.id).startsWith('g_') && <button type="button" className="pg-btn-op-completa" title="Editar la operación completa (formulario de Operaciones)" onClick={() => setOpEditandoId(String(o.id))}>✎</button>}
                               </td>
                               <td>{o.fechaServicio || o.fecha || '-'}</td>
                               <td>{o.remolque || '-'}</td>

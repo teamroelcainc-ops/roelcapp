@@ -1,0 +1,24 @@
+/* ✅ V00126: verificador del hilo Operaciones → Facturación → Pagos */
+.hm-overlay { z-index: 2250; backdrop-filter: blur(4px); }
+.hm-card { max-width: 900px; width: 94vw; padding: 0; border-radius: 16px; border: 1px solid #444; background-color: #0d1117; }
+.hm-header { padding: 18px 24px; border-bottom: 1px solid #30363d; margin-bottom: 0; }
+.hm-titulo { margin: 0; font-size: 1.05rem; color: #f0f6fc; }
+.hm-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.hm-cuerpo { padding: 20px 24px; max-height: 75vh; overflow-y: auto; }
+.hm-cargando { color: #8b949e; margin: 0; }
+.hm-alerta { background: rgba(248, 81, 73, 0.12); border: 1px solid #f85149; color: #f85149; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; font-size: 0.85rem; }
+.hm-resumen { border-radius: 8px; padding: 10px 14px; font-weight: 700; margin-bottom: 16px; font-size: 0.9rem; }
+.hm-resumen.ok { background: rgba(63, 185, 80, 0.12); border: 1px solid #3fb950; color: #3fb950; }
+.hm-resumen.alerta { background: rgba(245, 158, 11, 0.12); border: 1px solid #f59e0b; color: #fbbf24; }
+.hm-factura { border: 1px solid #30363d; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+.hm-eslabon { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: #c9d1d9; font-size: 0.88rem; padding: 4px 0; }
+.hm-eslabon.ok .hm-icono { color: #3fb950; }
+.hm-eslabon.alerta .hm-icono { color: #f59e0b; }
+.hm-sub { padding-left: 22px; }
+.hm-icono { font-weight: 900; width: 16px; text-align: center; }
+.hm-meta { color: #8b949e; font-size: 0.8rem; }
+.hm-tabla { width: 100%; margin-top: 8px; font-size: 0.82rem; }
+.hm-fila-alerta td { background-color: rgba(245, 158, 11, 0.08); }
+.hm-mono { font-family: monospace; font-weight: 700; color: #58a6ff; }
+.hm-btn { padding: 3px 8px; font-size: 0.75rem; }
+@media (max-width: 768px) { .hm-card { width: 100%; } }

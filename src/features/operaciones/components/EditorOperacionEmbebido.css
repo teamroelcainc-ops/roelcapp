@@ -1,0 +1,5 @@
+/* ✅ V00126: estados de carga/error del editor embebido de operación */
+.eoe-overlay { z-index: 2300; }
+.eoe-card { max-width: 420px; padding: 24px; text-align: center; }
+.eoe-cargando { color: #c9d1d9; margin: 0; }
+.eoe-error { color: #f85149; margin: 0 0 16px; }

@@ -494,3 +494,9 @@
   .fpd-x369 { padding: 14px 12px; }
   .fpd-x372 { min-width: 0; }
 }
+
+/* ✅ V00126: botón editar operación desde Facturación */
+.fpd-btn-editar-op { background-color: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.78rem; font-weight: bold; white-space: nowrap; margin-bottom: 6px; display: block; }
+.fpd-btn-editar-op:hover { background-color: rgba(88, 166, 255, 0.12); }
+.fpd-btn-hilo { border-color: #3fb950; color: #3fb950; }
+.fpd-btn-hilo:hover { background-color: rgba(63, 185, 80, 0.12); }

@@ -16,6 +16,8 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
+import { HiloModal } from '../../hilo/HiloModal';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import {
   collection,
@@ -477,6 +479,9 @@ export const FacturacionProveedoresDashboard = () => {
   const [fechaHastaHist, setFechaHastaHist] = useState('');
   const [textoBuscarRemolqueOps, setTextoBuscarRemolqueOps] = useState('');
   const [vistaOps, setVistaOps] = useState<'pendientes' | 'facturadas' | 'todas'>('pendientes');
+  // ✅ V00126: editar la operación completa desde Facturación (mismo formulario de Operaciones)
+  const [opEditandoId, setOpEditandoId] = useState<string | null>(null);
+  const [hiloFacturaId, setHiloFacturaId] = useState<string | null>(null);
   // ✅ V00126: pestañas por moneda de facturación
   const [monedaVistaOps, setMonedaVistaOps] = useState<'todas' | 'USD' | 'MXN'>('todas');
   const [topeOpsAlcanzado, setTopeOpsAlcanzado] = useState(false);
@@ -3094,6 +3099,10 @@ export const FacturacionProveedoresDashboard = () => {
 
   return (
     <div className="module-container fpd-x28">
+      {hiloFacturaId && <HiloModal tipo="proveedor" facturaId={hiloFacturaId} onClose={() => setHiloFacturaId(null)} onEditarOperacion={(id) => setOpEditandoId(id)} />}
+      {opEditandoId && (
+        <EditorOperacionEmbebido operacionId={opEditandoId} operacion={operacionesGlobales.find((o: any) => String(o.id) === opEditandoId)} onClose={() => setOpEditandoId(null)} />
+      )}
       <h1 className="fpd-x29">Facturación de Proveedores</h1>
 
       <div className="fpd-x30">
@@ -3407,6 +3416,9 @@ export const FacturacionProveedoresDashboard = () => {
                       <tr key={op.id} onClick={() => { if (!yaFacturada) toggleSeleccion(op.id); }}
                         style={{ cursor: yaFacturada ? 'default' : 'pointer', borderBottom: '1px solid #21262d', backgroundColor: seleccionadas.includes(op.id) ? 'rgba(216,67,21,0.1)' : (yaFacturada ? 'rgba(16,185,129,0.04)' : 'transparent') }}>
                         <td className="fpd-x89">
+                          {/* ✅ V00126: editar la operación completa (hilo Operaciones → Facturación) */}
+                          <button className="fpd-btn-editar-op" onClick={(e) => { e.stopPropagation(); setOpEditandoId(String(op.id)); }} title="Editar esta operación en el formulario de Operaciones">✎ Operación</button>
+                          {yaFacturada && op.facturaProveedorId && <button className="fpd-btn-editar-op fpd-btn-hilo" onClick={(e) => { e.stopPropagation(); setHiloFacturaId(String(op.facturaProveedorId)); }} title="Verificar el hilo Operaciones → Facturación → Pagos de esta factura">🔗 Hilo</button>}
                           {yaFacturada ? (
                             <div className="fpd-x90">
                               <button className="fpd-x91" onClick={(e) => abrirConfirmacionTarifa(e, op)} title="Generar la Confirmación de Tarifa a Proveedor en PDF">Tarifa</button>
