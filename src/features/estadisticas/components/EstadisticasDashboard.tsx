@@ -22,12 +22,12 @@ import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
-import { Download, RefreshCw, X, Settings2 } from 'lucide-react';
+import { Download, RefreshCw, X, Settings2, Truck, Wallet } from 'lucide-react';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import { useEtiquetas } from '../../../contexts/EtiquetasContext';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { EstadisticasOperativas } from './EstadisticasOperativas';
-import { DesgloseJerarquico } from './DesgloseJerarquico';
+import { DesgloseJerarquico, capitalizar, type Dimension } from './DesgloseJerarquico';
 import './EstadisticasDashboard.css';
 
 const STATUS_CANCELADO_ID = '7607f692';
@@ -508,6 +508,20 @@ export function EstadisticasDashboard() {
   };
 
   const esTrompo = (op: Op) => textoDeOp(op).includes('trompo');
+
+  // ✅ V00126: etiqueta de cada dimensión del desglose (resuelta contra catálogos)
+  const etiquetaDimension = (op: Op, d: Dimension): string => {
+    switch (d) {
+      case 'tipo': return String(op.tipoOperacionNombre || op.tipoOperacion || '') || 'Sin tipo';
+      case 'cv': return String(op.carga || op.estadoCarga || op.cargaVacia || '') || 'N/A';
+      case 'movimiento': return movimientoDeOp(op);
+      case 'cliente': return valorColumna(op, 'clientePagaNombre') || 'Sin cliente';
+      case 'operador': return valorColumna(op, 'operadorNombre') || 'Sin operador';
+      case 'unidad': return valorColumna(op, 'unidadNombre') || 'Sin unidad';
+      case 'proveedor': return String(op.proveedorUnidadNombre || resolverNombre('empresas', op.proveedorUnidad) || '') || 'Sin proveedor';
+      default: return '';
+    }
+  };
 
   const contarPor = (lista: Op[], etiquetaDe: (op: Op) => string) => {
     const mapa = new Map<string, number>();
@@ -1354,20 +1368,20 @@ export function EstadisticasDashboard() {
 
       {/* ✅ V00126: separación clara OPERATIVA vs MONETARIA */}
       <div className="est-areas">
-        <button className={`est-area${area === 'operativa' ? ' activa operativa' : ''}`} onClick={() => cambiarArea('operativa')}>📦 Operaciones <small>cuántos servicios · sin montos</small></button>
-        <button className={`est-area${area === 'monetaria' ? ' activa monetaria' : ''}`} onClick={() => cambiarArea('monetaria')}>💵 Facturación <small>cuánto dinero · pesos y dólares</small></button>
+        <button className={`est-area${area === 'operativa' ? ' activa operativa' : ''}`} onClick={() => cambiarArea('operativa')}><span className="est-area-icono"><Truck size={18} /></span><span className="est-area-texto">Operaciones<small>Cuántos servicios · sin montos</small></span></button>
+        <button className={`est-area${area === 'monetaria' ? ' activa monetaria' : ''}`} onClick={() => cambiarArea('monetaria')}><span className="est-area-icono"><Wallet size={18} /></span><span className="est-area-texto">Facturación<small>Cuánto dinero · pesos y dólares · utilidad</small></span></button>
       </div>
       <div className="est-tabs">
         {area === 'operativa' ? (
           <>
-            <button className={`est-tab${pestana === 'desgloseOps' ? ' activa' : ''}`} onClick={() => setPestana('desgloseOps')}>Tipo de Operación → C/V → Exp/Imp/Mov</button>
-            <button className={`est-tab${pestana === 'operativa' ? ' activa' : ''}`} onClick={() => setPestana('operativa')}>E S (Estadística de Servicios)</button>
+            <button className={`est-tab${pestana === 'desgloseOps' ? ' activa' : ''}`} onClick={() => setPestana('desgloseOps')}>Desglose (tipo · C/V · exp/imp/mov · cliente · operador · unidad · proveedor)</button>
+            <button className={`est-tab${pestana === 'operativa' ? ' activa' : ''}`} onClick={() => setPestana('operativa')}>Estadística de servicios (diario · semanal · mensual · clientes)</button>
             <button className={`est-tab${pestana === 'servicios' ? ' activa' : ''}`} onClick={() => setPestana('servicios')}>Servicios por mes</button>
           </>
         ) : (
           <>
-            <button className={`est-tab${pestana === 'desgloseFact' ? ' activa' : ''}`} onClick={() => setPestana('desgloseFact')}>Tipo de Operación → C/V → Exp/Imp/Mov (Pesos / Dólares)</button>
-            <button className={`est-tab${pestana === 'tendencia' ? ' activa' : ''}`} onClick={() => setPestana('tendencia')}>Tendencia por Cliente</button>
+            <button className={`est-tab${pestana === 'desgloseFact' ? ' activa' : ''}`} onClick={() => setPestana('desgloseFact')}>Desglose (pesos / dólares · utilidad por tipo · C/V · cliente · operador · unidad · proveedor)</button>
+            <button className={`est-tab${pestana === 'tendencia' ? ' activa' : ''}`} onClick={() => setPestana('tendencia')}>Tendencia por cliente</button>
             <button className={`est-tab${pestana === 'ventas' ? ' activa' : ''}`} onClick={() => setPestana('ventas')}>Ventas</button>
             <button className={`est-tab${pestana === 'utilidad' ? ' activa' : ''}`} onClick={() => setPestana('utilidad')}>Utilidad</button>
             <button className={`est-tab${pestana === 'promedios' ? ' activa' : ''}`} onClick={() => setPestana('promedios')}>Promedios</button>
@@ -1394,8 +1408,10 @@ export function EstadisticasDashboard() {
               ops={ops}
               modo={pestana === 'desgloseFact' ? 'facturacion' : 'operaciones'}
               montoDe={montoClienteDe}
+              costoDe={costoProveedorDe}
               monedaDe={monedaClienteDe}
-              onVerOps={(etiqueta, lista) => setRefsFiltro({ etiqueta, ops: lista })}
+              etiquetaDe={etiquetaDimension}
+              onVerOps={(titulo, lista) => { setDetalleSel({ titulo, ops: lista }); setRefsFiltro(null); }}
             />
           )}
           {pestana === 'operativa' && (
@@ -1405,14 +1421,14 @@ export function EstadisticasDashboard() {
               fechaHasta={fechaHasta}
               lineaDeOp={lineaDeOp}
               esNoCobrable={(op) => { const m = montoClienteDe(op); return (m.conv || 0) <= 0 && (m.dol || 0) <= 0 && (m.pes || 0) <= 0; }}
-              nombreCliente={(op) => valorColumna(op, 'clientePagaNombre')}
-              onVerOps={(etiqueta, lista) => setRefsFiltro({ etiqueta, ops: lista })}
+              nombreCliente={(op) => capitalizar(valorColumna(op, 'clientePagaNombre'))}
+              onVerOps={(titulo, lista) => { setDetalleSel({ titulo, ops: lista }); setRefsFiltro(null); }}
             />
           )}
           {pestana === 'tendencia' && (
             <table className="est-tabla">
               <thead>
-                <tr><th>CLIENTE</th><th>SERVICIOS</th><th>TRANSFER</th><th>LOGÍSTICA</th><th>FLETES</th><th>MONTO (MXN)</th><th>PROMEDIO</th></tr>
+                <tr><th>Cliente</th><th>Servicios</th><th>Transfer</th><th>Logística</th><th>Fletes</th><th>Monto (MXN)</th><th>Promedio</th></tr>
               </thead>
               <tbody>
                 <tr className="est-fila-general est-fila-clicable" title="Ver el desglose general" onClick={() => abrirDetalleCliente('__ALL__')}>
@@ -1436,16 +1452,25 @@ export function EstadisticasDashboard() {
           {pestana === 'servicios' && (
             <table className="est-tabla">
               <thead>
-                <tr><th>MES</th><th>TRANSFER</th><th>LOGÍSTICA</th><th>FLETES</th><th>TOTAL</th></tr>
+                <tr><th>Mes</th><th>Transfer</th><th>Logística</th><th>Fletes</th><th>Total</th><th>% Del Rango</th><th>Vs. Promedio</th></tr>
               </thead>
               <tbody>
                 {MESES.map((m, i) => {
                   const s = servicios.porMes[i];
                   const total = s.transfer + s.logistica + s.fletes;
+                  // ✅ V00126: % de participación y comparación contra el promedio; mejor/peor mes resaltados
+                  const totalesMes = MESES.map((_, k) => servicios.porMes[k].transfer + servicios.porMes[k].logistica + servicios.porMes[k].fletes);
+                  const conDatos = totalesMes.filter((t) => t > 0);
+                  const granTotal = conDatos.reduce((a, b) => a + b, 0);
+                  const promedio = conDatos.length ? granTotal / conDatos.length : 0;
+                  const esMejor = total > 0 && total === Math.max(...conDatos);
+                  const esPeor = total > 0 && conDatos.length > 1 && total === Math.min(...conDatos);
+                  const pct = granTotal > 0 ? (total / granTotal) * 100 : 0;
+                  const vsProm = promedio > 0 ? ((total - promedio) / promedio) * 100 : 0;
                   return (
                     <tr
                       key={m}
-                      className={`${total === 0 ? 'est-fila-cero' : 'est-fila-clicable'}`}
+                      className={`${total === 0 ? 'est-fila-cero' : 'est-fila-clicable'}${esMejor ? ' est-mes-mejor' : ''}${esPeor ? ' est-mes-peor' : ''}`}
                       onClick={() => { if (total > 0) abrirDetalleMes(i); }}
                       title={total > 0 ? `Ver el detalle de ${m}` : undefined}
                     >
@@ -1455,6 +1480,8 @@ export function EstadisticasDashboard() {
                       <td onClick={(e) => { if (s.logistica > 0) { e.stopPropagation(); abrirDetalleMes(i, 'Logística'); } }} className={s.logistica > 0 ? 'est-num-clicable' : ''}>{num(s.logistica)}</td>
                       <td onClick={(e) => { if (s.fletes > 0) { e.stopPropagation(); abrirDetalleMes(i, 'Fletes'); } }} className={s.fletes > 0 ? 'est-num-clicable' : ''}>{num(s.fletes)}</td>
                       <td className="est-monto">{num(total)}</td>
+                      <td className="est-pct">{total > 0 ? `${pct.toFixed(2)}%` : ''}{esMejor && <span className="est-badge mejor">Mejor mes</span>}{esPeor && <span className="est-badge peor">Peor mes</span>}</td>
+                      <td className={`est-pct ${vsProm >= 0 ? 'est-pos' : 'est-neg'}`}>{total > 0 ? `${vsProm >= 0 ? '+' : ''}${vsProm.toFixed(1)}%` : ''}</td>
                     </tr>
                   );
                 })}
@@ -1465,6 +1492,7 @@ export function EstadisticasDashboard() {
                   <td className="est-celda-link" style={{ cursor: 'pointer' }} onClick={() => { setDetalleSel({ titulo: 'Total del rango · Logística', ops: ops.filter((o) => lineaDeOp(o) === 'Logística'), esLinea: true }); setRefsFiltro(null); }}>{num(servicios.porMes.reduce((a, s) => a + s.logistica, 0))}</td>
                   <td className="est-celda-link" style={{ cursor: 'pointer' }} onClick={() => { setDetalleSel({ titulo: 'Total del rango · Fletes', ops: ops.filter((o) => lineaDeOp(o) === 'Fletes'), esLinea: true }); setRefsFiltro(null); }}>{num(servicios.porMes.reduce((a, s) => a + s.fletes, 0))}</td>
                   <td className="est-monto est-celda-link" style={{ cursor: 'pointer' }} onClick={() => { setDetalleSel({ titulo: 'Total del rango', ops }); setRefsFiltro(null); }}>{num(servicios.porMes.reduce((a, s) => a + s.transfer + s.logistica + s.fletes, 0))}</td>
+                  <td className="est-pct">100%</td><td className="est-pct"></td>
                 </tr>
               </tbody>
             </table>
@@ -1473,7 +1501,7 @@ export function EstadisticasDashboard() {
           {pestana === 'ventas' && (
             <table className="est-tabla">
               <thead>
-                <tr><th>MES</th><th>FISCAL PESOS</th><th>DÓLARES</th><th>TC PROM.</th><th>CONVERSIÓN</th><th>VENTA PESOS</th></tr>
+                <tr><th>Mes</th><th>Fiscal Pesos</th><th>Dólares</th><th>TC Prom.</th><th>Conversión</th><th>Venta Pesos</th></tr>
               </thead>
               <tbody>
                 {MESES.map((m, i) => {
@@ -1502,7 +1530,7 @@ export function EstadisticasDashboard() {
           {pestana === 'utilidad' && (
             <table className="est-tabla">
               <thead>
-                <tr><th>LÍNEA</th><th>SERVICIOS</th><th>VENTA (MXN)</th><th>COSTO PROVEEDOR</th><th>UTILIDAD</th><th>MARGEN</th></tr>
+                <tr><th>Línea</th><th>Servicios</th><th>Venta (MXN)</th><th>Costo Proveedor</th><th>Utilidad</th><th>Margen</th></tr>
               </thead>
               <tbody>
                 {(['Transfer', 'Logística', 'Fletes'] as Linea[]).map((linea) => {
@@ -1525,7 +1553,7 @@ export function EstadisticasDashboard() {
           {pestana === 'promedios' && (
             <table className="est-tabla">
               <thead>
-                <tr><th>LÍNEA</th><th>SERVICIOS</th><th>VENTA (MXN)</th><th>PROM. VENTA / SERVICIO</th><th>PROM. UTILIDAD / SERVICIO</th></tr>
+                <tr><th>Línea</th><th>Servicios</th><th>Venta (MXN)</th><th>Prom. Venta / Servicio</th><th>Prom. Utilidad / Servicio</th></tr>
               </thead>
               <tbody>
                 {promedios.map((p) => {

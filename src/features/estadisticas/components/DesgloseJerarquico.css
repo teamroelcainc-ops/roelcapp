@@ -33,3 +33,13 @@
 .dj-barra { display: inline-block; width: 70px; height: 6px; background: #21262d; border-radius: 3px; margin-right: 8px; vertical-align: middle; overflow: hidden; }
 .dj-barra-fill { display: block; height: 100%; background: #D84315; width: calc(var(--pct, 0) * 1%); }
 .dj-vacio { text-align: center; color: #8b949e; padding: 20px; }
+
+.dj-izquierda { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dj-icono { color: #8b949e; }
+.dj-sub-sel { display: flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.75rem; }
+.dj-select { width: auto; padding: 4px 8px; font-size: 0.78rem; }
+.dj-toggle { display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.dj-costo { color: #d29922; }
+.dj-util { color: #3fb950; } .dj-perdida { color: #f85149; }
+.dj-th-mes, .dj-mes { border-left: 1px solid #21262d; }
+.dj-chip { display: inline-flex; align-items: center; gap: 5px; }

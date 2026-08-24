@@ -17,6 +17,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Download } from 'lucide-react';
 import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache';
+import { capitalizar } from './DesgloseJerarquico';
 import './EstadisticasOperativas.css';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico (mismo criterio que EstadisticasDashboard).
@@ -232,17 +233,17 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
       <div className="eo-filtros">
         {/* ✅ V00126: se retiró el filtro de Línea (las columnas Transfer/Cruces/Fletes ya la desglosan) */}
         <div className="eo-filtro">
-          <span className="eo-etq">Tipo de operación (catálogo)</span>
+          <span className="eo-etq">Tipo de operación</span>
           <button className={`eo-chip${filtroTipos.length === 0 ? ' activo' : ''}`} onClick={() => setFiltroTipos([])}>Todos</button>
           {opcionesTipo.map((t) => (
-            <button key={t} className={`eo-chip${filtroTipos.includes(t) ? ' activo' : ''}`} onClick={() => setFiltroTipos((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}>{t}</button>
+            <button key={t} className={`eo-chip${filtroTipos.includes(t) ? ' activo' : ''}`} onClick={() => setFiltroTipos((prev) => prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t])}>{capitalizar(t)}</button>
           ))}
         </div>
         <div className="eo-filtro">
-          <span className="eo-etq">C/V (catálogo)</span>
+          <span className="eo-etq">Cargada / vacía</span>
           <button className={`eo-chip${filtroCV === 'Todas' ? ' activo' : ''}`} onClick={() => setFiltroCV('Todas')}>Todas</button>
           {opcionesCV.map((c) => (
-            <button key={c} className={`eo-chip${filtroCV === c ? ' activo' : ''}`} onClick={() => setFiltroCV(c)}>{c}</button>
+            <button key={c} className={`eo-chip${filtroCV === c ? ' activo' : ''}`} onClick={() => setFiltroCV(c)}>{capitalizar(c)}</button>
           ))}
         </div>
       </div>
@@ -267,13 +268,13 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
         <div className="eo-tabla-wrap">
           <table className="eo-tabla">
             <thead>
-              <tr className="eo-fila-acum"><th colSpan={4}>ACUMULADO</th><th>{fmtNum(diario.total.transfer)}</th><th>{fmtNum(diario.total.cruces)}</th><th>{fmtNum(diario.total.fletes)}</th><th>{fmtNum(diario.total.servicios)}</th></tr>
-              <tr><th>MES</th><th>SEMANA</th><th>DÍA</th><th>FECHA</th><th>TRANSFER</th><th>CRUCES</th><th>FLETES</th><th>SERVICIOS</th></tr>
+              <tr className="eo-fila-acum"><th colSpan={4}>Acumulado</th><th>{fmtNum(diario.total.transfer)}</th><th>{fmtNum(diario.total.cruces)}</th><th>{fmtNum(diario.total.fletes)}</th><th>{fmtNum(diario.total.servicios)}</th></tr>
+              <tr><th>Mes</th><th>Semana</th><th>Día</th><th>Fecha</th><th>Transfer</th><th>Cruces</th><th>Fletes</th><th>Servicios</th></tr>
             </thead>
             <tbody>
               {diario.filas.map((f) => (
                 <tr key={f.iso} className={f.diaNum === 0 ? 'eo-domingo' : f.diaNum === 6 ? 'eo-sabado' : ''}>
-                  <td>{f.mes}</td><td>SEMANA {f.semana}</td><td>{f.dia}</td><td className="eo-mono">{fmtFecha(f.iso)}</td>
+                  <td>{capitalizar(f.mes)}</td><td>Semana {f.semana}</td><td>{capitalizar(f.dia)}</td><td className="eo-mono">{fmtFecha(f.iso)}</td>
                   {celda(f.transfer, `Transfer · ${fmtFecha(f.iso)}`, opsDe(f.ops, 'Transfer'))}
                   {celda(f.cruces, `Cruces · ${fmtFecha(f.iso)}`, opsDe(f.ops, 'Logística'))}
                   {celda(f.fletes, `Fletes · ${fmtFecha(f.iso)}`, opsDe(f.ops, 'Fletes'))}
@@ -289,14 +290,14 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
         <div className="eo-tabla-wrap">
           <table className="eo-tabla eo-compacta">
             <thead>
-              <tr className="eo-fila-acum"><th>PROMEDIO</th><th>{fmtNum(Math.round(semanal.prom.transfer))}</th><th>{fmtNum(Math.round(semanal.prom.cruces))}</th><th>{fmtNum(Math.round(semanal.prom.fletes))}</th><th>{fmtNum(Math.round(semanal.prom.servicios))}</th></tr>
-              <tr className="eo-fila-acum"><th>ACUMULADO</th><th>{fmtNum(semanal.total.transfer)}</th><th>{fmtNum(semanal.total.cruces)}</th><th>{fmtNum(semanal.total.fletes)}</th><th>{fmtNum(semanal.total.servicios)}</th></tr>
-              <tr><th>SEMANA</th><th>TRANSFER</th><th>CRUCES</th><th>FLETES</th><th>SERVICIOS</th></tr>
+              <tr className="eo-fila-acum"><th>Promedio</th><th>{fmtNum(Math.round(semanal.prom.transfer))}</th><th>{fmtNum(Math.round(semanal.prom.cruces))}</th><th>{fmtNum(Math.round(semanal.prom.fletes))}</th><th>{fmtNum(Math.round(semanal.prom.servicios))}</th></tr>
+              <tr className="eo-fila-acum"><th>Acumulado</th><th>{fmtNum(semanal.total.transfer)}</th><th>{fmtNum(semanal.total.cruces)}</th><th>{fmtNum(semanal.total.fletes)}</th><th>{fmtNum(semanal.total.servicios)}</th></tr>
+              <tr><th>Semana</th><th>Transfer</th><th>Cruces</th><th>Fletes</th><th>Servicios</th></tr>
             </thead>
             <tbody>
               {semanal.filas.map((f) => (
                 <tr key={f.semana}>
-                  <td>SEMANA {f.semana}</td>
+                  <td>Semana {f.semana}</td>
                   {celda(f.transfer, `Transfer · Semana ${f.semana}`, opsDe(f.ops, 'Transfer'))}
                   {celda(f.cruces, `Cruces · Semana ${f.semana}`, opsDe(f.ops, 'Logística'))}
                   {celda(f.fletes, `Fletes · Semana ${f.semana}`, opsDe(f.ops, 'Fletes'))}
@@ -313,13 +314,13 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
           <div className="eo-tabla-wrap">
             <table className="eo-tabla eo-compacta">
               <thead>
-                <tr className="eo-fila-acum"><th>PROMEDIO MENSUAL</th><th>{fmtNum(mensual.prom.transfer)}</th><th>{fmtNum(mensual.prom.cruces)}</th><th>{fmtNum(mensual.prom.fletes)}</th><th>{fmtNum(mensual.prom.servicios)}</th><th className="eo-rojo">{fmtNum(mensual.prom.noCobrables)}</th><th>{fmtNum(mensual.prom.total)}</th><th>{fmtNum(mensual.prom.promedio)}</th></tr>
-                <tr><th>MES</th><th>TRANSFER</th><th>CRUCES</th><th>FLETES</th><th>SERVICIOS</th><th className="eo-rojo">NO COBRABLES</th><th>TOTAL</th><th>PROMEDIO</th></tr>
+                <tr className="eo-fila-acum"><th>Promedio mensual</th><th>{fmtNum(mensual.prom.transfer)}</th><th>{fmtNum(mensual.prom.cruces)}</th><th>{fmtNum(mensual.prom.fletes)}</th><th>{fmtNum(mensual.prom.servicios)}</th><th className="eo-rojo">{fmtNum(mensual.prom.noCobrables)}</th><th>{fmtNum(mensual.prom.total)}</th><th>{fmtNum(mensual.prom.promedio)}</th></tr>
+                <tr><th>Mes</th><th>Transfer</th><th>Cruces</th><th>Fletes</th><th>Servicios</th><th className="eo-rojo">No cobrables</th><th>Total</th><th>Promedio</th></tr>
               </thead>
               <tbody>
                 {mensual.filas.map((f) => (
                   <tr key={f.mes} className={f.servicios === 0 ? 'eo-vacia' : ''}>
-                    <td className="eo-mes">{f.mes.toUpperCase()}</td>
+                    <td className="eo-mes">{capitalizar(f.mes)}</td>
                     {celda(f.transfer, `Transfer · ${f.mes}`, opsDe(f.ops, 'Transfer'))}
                     {celda(f.cruces, `Cruces · ${f.mes}`, opsDe(f.ops, 'Logística'))}
                     {celda(f.fletes, `Fletes · ${f.mes}`, opsDe(f.ops, 'Fletes'))}
@@ -329,7 +330,7 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
                     <td className="eo-num">{f.servicios > 0 ? fmtNum(f.promedio) : ''}</td>
                   </tr>
                 ))}
-                <tr className="eo-fila-acum"><td>ACUMULADO</td><td className="eo-num">{fmtNum(mensual.acum.transfer)}</td><td className="eo-num">{fmtNum(mensual.acum.cruces)}</td><td className="eo-num">{fmtNum(mensual.acum.fletes)}</td><td className="eo-num">{fmtNum(mensual.acum.servicios)}</td><td className="eo-num eo-rojo">{fmtNum(mensual.acum.noCobrables)}</td><td className="eo-num">{fmtNum(mensual.acum.total)}</td><td className="eo-num">{fmtNum(mensual.acum.promedio)}</td></tr>
+                <tr className="eo-fila-acum"><td>Acumulado</td><td className="eo-num">{fmtNum(mensual.acum.transfer)}</td><td className="eo-num">{fmtNum(mensual.acum.cruces)}</td><td className="eo-num">{fmtNum(mensual.acum.fletes)}</td><td className="eo-num">{fmtNum(mensual.acum.servicios)}</td><td className="eo-num eo-rojo">{fmtNum(mensual.acum.noCobrables)}</td><td className="eo-num">{fmtNum(mensual.acum.total)}</td><td className="eo-num">{fmtNum(mensual.acum.promedio)}</td></tr>
               </tbody>
             </table>
           </div>
@@ -337,11 +338,11 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
             <table className="eo-tabla eo-compacta">
               <thead>
                 <tr className="eo-fila-acum"><th></th><th>{fmtNum(mensual.totDia.laborados)}</th><th>{fmtNum(mensual.totDia.acumulado)}</th><th>{fmtNum(mensual.totDia.promedio)}</th></tr>
-                <tr><th>DÍA</th><th>LABORADOS</th><th>ACUM</th><th>PROMEDIO</th></tr>
+                <tr><th>Día</th><th>Laborados</th><th>Acumulado</th><th>Promedio</th></tr>
               </thead>
               <tbody>
                 {mensual.porDia.map((f) => (
-                  <tr key={f.dia}><td>{f.dia.toUpperCase()}</td><td className="eo-num">{fmtNum(f.laborados)}</td>{celda(f.acumulado, `Servicios · ${f.dia}`, f.ops)}<td className="eo-num">{fmtNum(f.promedio)}</td></tr>
+                  <tr key={f.dia}><td>{capitalizar(f.dia)}</td><td className="eo-num">{fmtNum(f.laborados)}</td>{celda(f.acumulado, `Servicios · ${f.dia}`, f.ops)}<td className="eo-num">{fmtNum(f.promedio)}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -354,14 +355,14 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
         <div className="eo-tabla-wrap">
           <table className="eo-tabla eo-compacta">
             <thead>
-              <tr className="eo-fila-acum"><th>SIN GRUPO ROELCA</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{fmtNum(clientes.totalesExternos[g])}</th><th>{fmtPct(clientes.totalesExternos[g], clientes.baseExterna)}</th></Fragment>))}<th>{fmtNum(clientes.baseExterna)}</th></tr>
-              <tr className="eo-fila-acum"><th>ACUMULADO</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{fmtNum(clientes.totales[g])}</th><th>{fmtPct(clientes.totales[g], clientes.granTotal)}</th></Fragment>))}<th>{fmtNum(clientes.granTotal)}</th></tr>
-              <tr><th>CLIENTE</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{g.toUpperCase()}</th><th>%</th></Fragment>))}<th>OPERACIÓN %</th></tr>
+              <tr className="eo-fila-acum"><th>Sin grupo Roelca</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{fmtNum(clientes.totalesExternos[g])}</th><th>{fmtPct(clientes.totalesExternos[g], clientes.baseExterna)}</th></Fragment>))}<th>{fmtNum(clientes.baseExterna)}</th></tr>
+              <tr className="eo-fila-acum"><th>Acumulado</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{fmtNum(clientes.totales[g])}</th><th>{fmtPct(clientes.totales[g], clientes.granTotal)}</th></Fragment>))}<th>{fmtNum(clientes.granTotal)}</th></tr>
+              <tr><th>Cliente</th>{clientes.grupos.map((g) => (<Fragment key={g}><th>{g}</th><th>%</th></Fragment>))}<th>Operación %</th></tr>
             </thead>
             <tbody>
               {clientes.filas.map((f) => (
                 <tr key={f.cliente} className={f.interno ? 'eo-interno' : ''}>
-                  <td className="eo-cliente eo-click" onClick={() => ver(f.cliente, f.ops)}>{f.cliente}</td>
+                  <td className="eo-cliente eo-click" onClick={() => ver(f.cliente, f.ops)}>{capitalizar(f.cliente)}</td>
                   {clientes.grupos.map((g) => (<Fragment key={g}>{celda(f.conteo[g], `${f.cliente} · ${g}`, f.ops.filter((o) => grupoTipoDe(tipoDe(o)) === g))}<td className="eo-num eo-pct">{fmtPct(f.conteo[g], f.total)}</td></Fragment>))}
                   <td className="eo-num eo-pct-total">{clientes.baseExterna > 0 ? `${((f.total / clientes.baseExterna) * 100).toFixed(2)}%` : ''}</td>
                 </tr>
@@ -375,17 +376,17 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
         <div className="eo-tabla-wrap">
           <table className="eo-tabla eo-compacta">
             <thead>
-              <tr><th>TIPO DE OPERACIÓN</th><th>GRUPO</th><th>LÍNEA</th>{tipoCv.cvs.map((c) => <th key={c}>{c.toUpperCase()}</th>)}<th>TOTAL</th><th>%</th></tr>
+              <tr><th>Tipo de operación</th><th>Grupo</th><th>Línea</th>{tipoCv.cvs.map((c) => <th key={c}>{capitalizar(c)}</th>)}<th>Total</th><th>%</th></tr>
             </thead>
             <tbody>
               {tipoCv.filas.map((f) => (
                 <tr key={f.tipo}>
-                  <td className="eo-cliente">{f.tipo}</td><td>{f.grupo}</td><td>{f.linea}</td>
+                  <td className="eo-cliente">{capitalizar(f.tipo)}</td><td>{f.grupo}</td><td>{f.linea}</td>
                   {tipoCv.cvs.map((c) => celda(f.porCv[c]?.length || 0, `${f.tipo} · ${c}`, f.porCv[c] || []))}
                   <td className="eo-num"><b>{fmtNum(f.total)}</b></td><td className="eo-num eo-pct">{fmtPct(f.total, tipoCv.granTotal)}</td>
                 </tr>
               ))}
-              <tr className="eo-fila-acum"><td>TOTAL</td><td></td><td></td>{tipoCv.cvs.map((c) => <td key={c} className="eo-num">{fmtNum(tipoCv.totCv[c])}</td>)}<td className="eo-num">{fmtNum(tipoCv.granTotal)}</td><td className="eo-num">100%</td></tr>
+              <tr className="eo-fila-acum"><td>Total</td><td></td><td></td>{tipoCv.cvs.map((c) => <td key={c} className="eo-num">{fmtNum(tipoCv.totCv[c])}</td>)}<td className="eo-num">{fmtNum(tipoCv.granTotal)}</td><td className="eo-num">100%</td></tr>
             </tbody>
           </table>
         </div>

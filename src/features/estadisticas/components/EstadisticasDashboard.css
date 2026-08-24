@@ -196,7 +196,7 @@
   color: #8b949e;
   font-size: 0.7rem;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.4px;
 }
 
@@ -476,7 +476,7 @@ button.est-detalle-item {
   color: #D84315;
   font-size: 0.74rem;
   font-weight: 800;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.6px;
   border-bottom: 1px solid #21262d;
   padding-bottom: 5px;
@@ -485,7 +485,7 @@ button.est-detalle-item {
 /* ═══════════ ✅ NUEVO — DESGLOSE ESTILO REPORTE ═══════════ */
 .est-rep { display: flex; flex-direction: column; gap: 16px; }
 .est-rep-card { background-color: #0d1117; border: 1px solid #21262d; border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.est-rep-titulo { color: #8b949e; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+.est-rep-titulo { color: #8b949e; font-size: 0.72rem; font-weight: 700; text-transform: none; letter-spacing: 0.5px; }
 
 /* Fila 1: KPIs */
 .est-rep-kpis { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(280px, 2fr) minmax(160px, 1fr); gap: 16px; }
@@ -563,8 +563,21 @@ button.est-detalle-item {
 
 /* ✅ V00126: selector de ÁREA (operativa / monetaria) */
 .est-areas { display: flex; gap: 10px; margin: 6px 0 4px; }
-.est-area { flex: 1; background: #161b22; border: 1px solid #30363d; color: #8b949e; border-radius: 10px; padding: 10px 14px; cursor: pointer; text-align: left; font-weight: 700; font-size: 0.9rem; display: flex; flex-direction: column; gap: 2px; }
+.est-area { flex: 1; background: #161b22; border: 1px solid #30363d; color: #8b949e; border-radius: 10px; padding: 10px 14px; cursor: pointer; text-align: left; font-weight: 700; font-size: 0.9rem; display: flex; align-items: center; gap: 12px; }
+.est-area-icono { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; background: #0d1117; border: 1px solid #30363d; color: inherit; flex-shrink: 0; }
+.est-area-texto { display: flex; flex-direction: column; gap: 2px; }
+.est-area.activa.operativa .est-area-icono { color: #3fb950; border-color: #3fb950; }
+.est-area.activa.monetaria .est-area-icono { color: #d29922; border-color: #d29922; }
 .est-area small { color: #6e7681; font-weight: 400; font-size: 0.72rem; }
 .est-area.activa { color: #f0f6fc; }
 .est-area.activa.operativa { border-color: #3fb950; background: rgba(63, 185, 80, 0.1); }
 .est-area.activa.monetaria { border-color: #d29922; background: rgba(210, 153, 34, 0.1); }
+
+/* ✅ V00126: Servicios por mes — % y mejor/peor mes */
+.est-pct { color: #8b949e; font-family: monospace; white-space: nowrap; }
+.est-pos { color: #3fb950; } .est-neg { color: #f85149; }
+.est-badge { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; font-family: inherit; }
+.est-badge.mejor { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid #3fb950; }
+.est-badge.peor { background: rgba(248, 81, 73, 0.15); color: #f85149; border: 1px solid #f85149; }
+.est-mes-mejor td { background: rgba(63, 185, 80, 0.06); }
+.est-mes-peor td { background: rgba(248, 81, 73, 0.06); }
