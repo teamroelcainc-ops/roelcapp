@@ -560,3 +560,11 @@ button.est-detalle-item {
 
 /* ✅ V00091 — desglose a pantalla completa */
 .est-detalle { width: 100vw !important; max-width: 100vw !important; height: 100vh !important; max-height: 100vh !important; border-radius: 0 !important; }
+
+/* ✅ V00126: selector de ÁREA (operativa / monetaria) */
+.est-areas { display: flex; gap: 10px; margin: 6px 0 4px; }
+.est-area { flex: 1; background: #161b22; border: 1px solid #30363d; color: #8b949e; border-radius: 10px; padding: 10px 14px; cursor: pointer; text-align: left; font-weight: 700; font-size: 0.9rem; display: flex; flex-direction: column; gap: 2px; }
+.est-area small { color: #6e7681; font-weight: 400; font-size: 0.72rem; }
+.est-area.activa { color: #f0f6fc; }
+.est-area.activa.operativa { border-color: #3fb950; background: rgba(63, 185, 80, 0.1); }
+.est-area.activa.monetaria { border-color: #d29922; background: rgba(210, 153, 34, 0.1); }

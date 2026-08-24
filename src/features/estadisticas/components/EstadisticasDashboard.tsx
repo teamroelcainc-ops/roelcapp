@@ -26,6 +26,7 @@ import { Download, RefreshCw, X, Settings2 } from 'lucide-react';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import { useEtiquetas } from '../../../contexts/EtiquetasContext';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
+import { EstadisticasOperativas } from './EstadisticasOperativas';
 import './EstadisticasDashboard.css';
 
 const STATUS_CANCELADO_ID = '7607f692';
@@ -33,7 +34,9 @@ const STATUS_CANCELADO_ID = '7607f692';
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 type Linea = 'Transfer' | 'Logística' | 'Fletes' | 'Otro';
-type Pestana = 'tendencia' | 'servicios' | 'ventas' | 'utilidad' | 'promedios';
+type Pestana = 'tendencia' | 'servicios' | 'ventas' | 'utilidad' | 'promedios' | 'operativa';
+// ✅ V00126: el módulo se divide en dos ÁREAS: OPERATIVA (conteo de servicios) y MONETARIA (ventas, utilidad, promedios)
+type Area = 'operativa' | 'monetaria';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico completo (mismo criterio que Facturación).
 type Op = any;
@@ -164,7 +167,9 @@ export function EstadisticasDashboard() {
   const { config } = useEmpresaConfig();
   const { etq } = useEtiquetas();
   const anioActual = new Date().getFullYear();
-  const [pestana, setPestana] = useState<Pestana>('tendencia');
+  const [pestana, setPestana] = useState<Pestana>('operativa');
+  const [area, setArea] = useState<Area>('operativa');
+  const cambiarArea = (a: Area) => { setArea(a); setPestana(a === 'operativa' ? 'operativa' : 'tendencia'); };
   const [lineaVista, setLineaVista] = useState<'Globales' | Linea>('Globales');
   const [ops, setOps] = useState<Op[]>([]);
   const [cargando, setCargando] = useState(false);
@@ -1072,6 +1077,7 @@ export function EstadisticasDashboard() {
 
   const exportarDetallePDF = async () => {
     if (!detalleSel || !detalle) return;
+    if (pestana === 'operativa') { alert('En Reportes operativos usa el botón Excel de la sub-pestaña.'); return; }
     setExportando(true);
     try {
       const logo = await cargarLogoDataUrl(config?.logoUrl).catch(() => null);
@@ -1175,6 +1181,7 @@ export function EstadisticasDashboard() {
   const nombreArchivo = (base: string, ext: string) => `${base}_${fechaDesde}_a_${fechaHasta}.${ext}`;
 
   const exportarExcel = () => {
+    if (pestana === 'operativa') { alert('En Reportes operativos usa el botón Excel de la sub-pestaña (exporta la vista activa).'); return; }
     const wb = XLSX.utils.book_new();
     if (pestana === 'tendencia') {
       const filas = tendencia.filas.map((f) => {
@@ -1344,12 +1351,25 @@ export function EstadisticasDashboard() {
         <p className="est-subtitulo">{ops.length} operaciones del {etiquetaRango} (excluye canceladas) · montos con el mismo criterio de Facturación</p>
       )}
 
+      {/* ✅ V00126: separación clara OPERATIVA vs MONETARIA */}
+      <div className="est-areas">
+        <button className={`est-area${area === 'operativa' ? ' activa operativa' : ''}`} onClick={() => cambiarArea('operativa')}>📦 Área Operativa <small>servicios · sin montos</small></button>
+        <button className={`est-area${area === 'monetaria' ? ' activa monetaria' : ''}`} onClick={() => cambiarArea('monetaria')}>💵 Área Monetaria <small>ventas · utilidad · promedios</small></button>
+      </div>
       <div className="est-tabs">
-        <button className={`est-tab${pestana === 'tendencia' ? ' activa' : ''}`} onClick={() => setPestana('tendencia')}>Tendencia por Cliente</button>
-        <button className={`est-tab${pestana === 'servicios' ? ' activa' : ''}`} onClick={() => setPestana('servicios')}>Servicios</button>
-        <button className={`est-tab${pestana === 'ventas' ? ' activa' : ''}`} onClick={() => setPestana('ventas')}>Ventas</button>
-        <button className={`est-tab${pestana === 'utilidad' ? ' activa' : ''}`} onClick={() => setPestana('utilidad')}>Utilidad</button>
-        <button className={`est-tab${pestana === 'promedios' ? ' activa' : ''}`} onClick={() => setPestana('promedios')}>Promedios</button>
+        {area === 'operativa' ? (
+          <>
+            <button className={`est-tab${pestana === 'operativa' ? ' activa' : ''}`} onClick={() => setPestana('operativa')}>Reportes operativos (diario · semanal · mensual · clientes · tipo × C/V)</button>
+            <button className={`est-tab${pestana === 'servicios' ? ' activa' : ''}`} onClick={() => setPestana('servicios')}>Servicios (vista anterior)</button>
+          </>
+        ) : (
+          <>
+            <button className={`est-tab${pestana === 'tendencia' ? ' activa' : ''}`} onClick={() => setPestana('tendencia')}>Tendencia por Cliente</button>
+            <button className={`est-tab${pestana === 'ventas' ? ' activa' : ''}`} onClick={() => setPestana('ventas')}>Ventas</button>
+            <button className={`est-tab${pestana === 'utilidad' ? ' activa' : ''}`} onClick={() => setPestana('utilidad')}>Utilidad</button>
+            <button className={`est-tab${pestana === 'promedios' ? ' activa' : ''}`} onClick={() => setPestana('promedios')}>Promedios</button>
+          </>
+        )}
       </div>
 
       {pestana === 'ventas' && (
@@ -1366,6 +1386,17 @@ export function EstadisticasDashboard() {
         </div>
       ) : cargando ? <p className="est-vacio">Buscando operaciones del {etiquetaRango}…</p> : (
         <div className="est-tabla-marco">
+          {pestana === 'operativa' && (
+            <EstadisticasOperativas
+              ops={ops}
+              fechaDesde={fechaDesde}
+              fechaHasta={fechaHasta}
+              lineaDeOp={lineaDeOp}
+              esNoCobrable={(op) => { const m = montoClienteDe(op); return (m.conv || 0) <= 0 && (m.dol || 0) <= 0 && (m.pes || 0) <= 0; }}
+              nombreCliente={(op) => valorColumna(op, 'clientePagaNombre')}
+              onVerOps={(etiqueta, lista) => setRefsFiltro({ etiqueta, ops: lista })}
+            />
+          )}
           {pestana === 'tendencia' && (
             <table className="est-tabla">
               <thead>
