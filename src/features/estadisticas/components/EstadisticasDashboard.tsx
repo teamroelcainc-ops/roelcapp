@@ -27,6 +27,7 @@ import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
 import { useEtiquetas } from '../../../contexts/EtiquetasContext';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { EstadisticasOperativas } from './EstadisticasOperativas';
+import { DesgloseJerarquico } from './DesgloseJerarquico';
 import './EstadisticasDashboard.css';
 
 const STATUS_CANCELADO_ID = '7607f692';
@@ -34,7 +35,7 @@ const STATUS_CANCELADO_ID = '7607f692';
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 type Linea = 'Transfer' | 'Logística' | 'Fletes' | 'Otro';
-type Pestana = 'tendencia' | 'servicios' | 'ventas' | 'utilidad' | 'promedios' | 'operativa';
+type Pestana = 'tendencia' | 'servicios' | 'ventas' | 'utilidad' | 'promedios' | 'operativa' | 'desgloseOps' | 'desgloseFact';
 // ✅ V00126: el módulo se divide en dos ÁREAS: OPERATIVA (conteo de servicios) y MONETARIA (ventas, utilidad, promedios)
 type Area = 'operativa' | 'monetaria';
 
@@ -167,9 +168,9 @@ export function EstadisticasDashboard() {
   const { config } = useEmpresaConfig();
   const { etq } = useEtiquetas();
   const anioActual = new Date().getFullYear();
-  const [pestana, setPestana] = useState<Pestana>('operativa');
+  const [pestana, setPestana] = useState<Pestana>('desgloseOps');
   const [area, setArea] = useState<Area>('operativa');
-  const cambiarArea = (a: Area) => { setArea(a); setPestana(a === 'operativa' ? 'operativa' : 'tendencia'); };
+  const cambiarArea = (a: Area) => { setArea(a); setPestana(a === 'operativa' ? 'desgloseOps' : 'desgloseFact'); };
   const [lineaVista, setLineaVista] = useState<'Globales' | Linea>('Globales');
   const [ops, setOps] = useState<Op[]>([]);
   const [cargando, setCargando] = useState(false);
@@ -1077,7 +1078,7 @@ export function EstadisticasDashboard() {
 
   const exportarDetallePDF = async () => {
     if (!detalleSel || !detalle) return;
-    if (pestana === 'operativa') { alert('En Reportes operativos usa el botón Excel de la sub-pestaña.'); return; }
+    if (pestana === 'operativa' || pestana === 'desgloseOps' || pestana === 'desgloseFact') { alert('Esta vista tiene su propio botón Excel (exporta la vista activa).'); return; }
     setExportando(true);
     try {
       const logo = await cargarLogoDataUrl(config?.logoUrl).catch(() => null);
@@ -1181,7 +1182,7 @@ export function EstadisticasDashboard() {
   const nombreArchivo = (base: string, ext: string) => `${base}_${fechaDesde}_a_${fechaHasta}.${ext}`;
 
   const exportarExcel = () => {
-    if (pestana === 'operativa') { alert('En Reportes operativos usa el botón Excel de la sub-pestaña (exporta la vista activa).'); return; }
+    if (pestana === 'operativa' || pestana === 'desgloseOps' || pestana === 'desgloseFact') { alert('Esta vista tiene su propio botón Excel (exporta la vista activa).'); return; }
     const wb = XLSX.utils.book_new();
     if (pestana === 'tendencia') {
       const filas = tendencia.filas.map((f) => {
@@ -1353,17 +1354,19 @@ export function EstadisticasDashboard() {
 
       {/* ✅ V00126: separación clara OPERATIVA vs MONETARIA */}
       <div className="est-areas">
-        <button className={`est-area${area === 'operativa' ? ' activa operativa' : ''}`} onClick={() => cambiarArea('operativa')}>📦 Área Operativa <small>servicios · sin montos</small></button>
-        <button className={`est-area${area === 'monetaria' ? ' activa monetaria' : ''}`} onClick={() => cambiarArea('monetaria')}>💵 Área Monetaria <small>ventas · utilidad · promedios</small></button>
+        <button className={`est-area${area === 'operativa' ? ' activa operativa' : ''}`} onClick={() => cambiarArea('operativa')}>📦 Operaciones <small>cuántos servicios · sin montos</small></button>
+        <button className={`est-area${area === 'monetaria' ? ' activa monetaria' : ''}`} onClick={() => cambiarArea('monetaria')}>💵 Facturación <small>cuánto dinero · pesos y dólares</small></button>
       </div>
       <div className="est-tabs">
         {area === 'operativa' ? (
           <>
+            <button className={`est-tab${pestana === 'desgloseOps' ? ' activa' : ''}`} onClick={() => setPestana('desgloseOps')}>Tipo de Operación → C/V → Exp/Imp/Mov</button>
             <button className={`est-tab${pestana === 'operativa' ? ' activa' : ''}`} onClick={() => setPestana('operativa')}>E S (Estadística de Servicios)</button>
             <button className={`est-tab${pestana === 'servicios' ? ' activa' : ''}`} onClick={() => setPestana('servicios')}>Servicios por mes</button>
           </>
         ) : (
           <>
+            <button className={`est-tab${pestana === 'desgloseFact' ? ' activa' : ''}`} onClick={() => setPestana('desgloseFact')}>Tipo de Operación → C/V → Exp/Imp/Mov (Pesos / Dólares)</button>
             <button className={`est-tab${pestana === 'tendencia' ? ' activa' : ''}`} onClick={() => setPestana('tendencia')}>Tendencia por Cliente</button>
             <button className={`est-tab${pestana === 'ventas' ? ' activa' : ''}`} onClick={() => setPestana('ventas')}>Ventas</button>
             <button className={`est-tab${pestana === 'utilidad' ? ' activa' : ''}`} onClick={() => setPestana('utilidad')}>Utilidad</button>
@@ -1386,6 +1389,15 @@ export function EstadisticasDashboard() {
         </div>
       ) : cargando ? <p className="est-vacio">Buscando operaciones del {etiquetaRango}…</p> : (
         <div className="est-tabla-marco">
+          {(pestana === 'desgloseOps' || pestana === 'desgloseFact') && (
+            <DesgloseJerarquico
+              ops={ops}
+              modo={pestana === 'desgloseFact' ? 'facturacion' : 'operaciones'}
+              montoDe={montoClienteDe}
+              monedaDe={monedaClienteDe}
+              onVerOps={(etiqueta, lista) => setRefsFiltro({ etiqueta, ops: lista })}
+            />
+          )}
           {pestana === 'operativa' && (
             <EstadisticasOperativas
               ops={ops}

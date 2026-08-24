@@ -65,7 +65,7 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
   const [sub, setSub] = useState<SubPestana>('diario');
   const [catTipos, setCatTipos] = useState<any[]>([]);
   const [catCV, setCatCV] = useState<any[]>([]);
-  const [filtroLinea, setFiltroLinea] = useState<'Todas' | Linea>('Todas');
+  const filtroLinea: 'Todas' | Linea = 'Todas';
   const [filtroTipos, setFiltroTipos] = useState<string[]>([]);
   const [filtroCV, setFiltroCV] = useState<string>('Todas');
 
@@ -230,12 +230,7 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
     <div className="eo-contenedor">
       {/* Filtros alimentados por los catálogos */}
       <div className="eo-filtros">
-        <div className="eo-filtro">
-          <span className="eo-etq">Línea</span>
-          {(['Todas', 'Logística', 'Transfer', 'Fletes'] as const).map((l) => (
-            <button key={l} className={`eo-chip${filtroLinea === l ? ' activo' : ''}`} onClick={() => setFiltroLinea(l)}>{l}</button>
-          ))}
-        </div>
+        {/* ✅ V00126: se retiró el filtro de Línea (las columnas Transfer/Cruces/Fletes ya la desglosan) */}
         <div className="eo-filtro">
           <span className="eo-etq">Tipo de operación (catálogo)</span>
           <button className={`eo-chip${filtroTipos.length === 0 ? ' activo' : ''}`} onClick={() => setFiltroTipos([])}>Todos</button>

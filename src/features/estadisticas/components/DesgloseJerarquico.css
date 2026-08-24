@@ -1,0 +1,35 @@
+/* ✅ V00126: desglose jerárquico Tipo de operación → C/V → Grupo (Operaciones y Facturación) */
+.dj-contenedor { display: flex; flex-direction: column; gap: 10px; }
+.dj-barra-sup { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dj-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.dj-tab { background: none; border: 1px solid #30363d; color: #8b949e; border-radius: 8px; padding: 6px 12px; font-size: 0.8rem; cursor: pointer; }
+.dj-tab.activa { color: #f0f6fc; border-color: #D84315; background: rgba(216, 67, 21, 0.12); font-weight: 700; }
+.dj-derecha { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dj-monedas { display: flex; gap: 4px; }
+.dj-chip { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; border-radius: 999px; padding: 3px 10px; font-size: 0.75rem; cursor: pointer; }
+.dj-chip.activo { background: rgba(210, 153, 34, 0.18); border-color: #d29922; color: #f0f6fc; font-weight: 700; }
+.dj-nota { color: #8b949e; font-size: 0.75rem; margin: 0; }
+.dj-tabla-wrap { border: 1px solid #30363d; border-radius: 10px; overflow: auto; max-height: 70vh; background: #0d1117; }
+.dj-tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.dj-tabla th { position: sticky; top: 0; background: #161b22; color: #8b949e; font-size: 0.7rem; letter-spacing: 0.04em; padding: 8px 10px; text-align: right; border-bottom: 1px solid #30363d; z-index: 1; }
+.dj-tabla thead tr.dj-total th { top: 31px; background: #1c2128; color: #f0f6fc; font-weight: 800; }
+.dj-th-nombre, .dj-total th:first-child { text-align: left !important; }
+.dj-tabla td { padding: 6px 10px; border-bottom: 1px solid #21262d; color: #c9d1d9; white-space: nowrap; }
+.dj-nombre { display: flex; align-items: center; gap: 4px; }
+.dj-sangria[data-prof="1"] { display: inline-block; width: 22px; }
+.dj-sangria[data-prof="2"] { display: inline-block; width: 44px; }
+.dj-toggle { background: none; border: 1px solid #30363d; color: #58a6ff; border-radius: 4px; width: 20px; height: 20px; cursor: pointer; font-size: 0.75rem; line-height: 1; }
+.dj-hoja { border-color: transparent; color: #484f58; cursor: default; }
+.dj-etiqueta { font-weight: 700; }
+.dj-n1 .dj-etiqueta { font-weight: 600; color: #c9d1d9; }
+.dj-n2 .dj-etiqueta { font-weight: 400; color: #8b949e; }
+.dj-n1 td { background: rgba(88, 166, 255, 0.04); }
+.dj-n2 td { background: rgba(88, 166, 255, 0.02); }
+.dj-click { cursor: pointer; }
+.dj-click:hover { color: #58a6ff; text-decoration: underline; }
+.dj-num { text-align: right; font-family: monospace; font-weight: 700; }
+.dj-mxn { color: #3b82f6; } .dj-usd { color: #10b981; } .dj-conv { color: #f0f6fc; }
+.dj-pct { color: #8b949e; font-weight: 400; min-width: 150px; }
+.dj-barra { display: inline-block; width: 70px; height: 6px; background: #21262d; border-radius: 3px; margin-right: 8px; vertical-align: middle; overflow: hidden; }
+.dj-barra-fill { display: block; height: 100%; background: #D84315; width: calc(var(--pct, 0) * 1%); }
+.dj-vacio { text-align: center; color: #8b949e; padding: 20px; }
