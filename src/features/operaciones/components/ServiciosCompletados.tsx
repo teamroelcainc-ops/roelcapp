@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase'; 
 import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
@@ -909,6 +910,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
       await batch.commit();
+      notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'completados-status'); // ✅ V00126
 
       // ✅ HISTORIAL: cambio de status con el valor anterior y el nuevo.
       const refLogH = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;

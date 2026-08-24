@@ -11,6 +11,7 @@
 //   · Eliminar un pago REVIERTE la aplicación en sus facturas.
 // ---------------------------------------------------------------------------
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import {
   collection, query, where, getDocs, onSnapshot, writeBatch, doc, arrayUnion, arrayRemove, limit,
   orderBy, startAfter, documentId,
@@ -71,8 +72,9 @@ interface PagoDoc {
   creadoPor?: string;
 }
 
+// ✅ V00126: sin redondeo — hasta 6 decimales tal cual resultan del cálculo.
 const money = (n: number, moneda = '') =>
-  `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${moneda ? ` ${moneda}` : ''}`;
+  `$${(Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}${moneda ? ` ${moneda}` : ''}`;
 
 // ✅ FIX DUPLICADOS FANTASMA: las facturas guardan el nombre de la entidad
 //   como texto y algunas traen diferencias invisibles (espacio al final,
@@ -130,6 +132,20 @@ export function PagosDashboard() {
   const [guardandoFactura, setGuardandoFactura] = useState(false);
   const [opsFactura, setOpsFactura] = useState<any[]>([]);
   const [cargandoOpsFactura, setCargandoOpsFactura] = useState(false);
+
+  // ✅ V00126: si se guarda una operación que pertenece a la factura abierta,
+  //   se vuelven a leer sus operaciones para reflejar el cambio al instante.
+  useEffect(() => {
+    return suscribirOperacionGuardada(({ id }) => {
+      const abierta = facturaViendoRef.current;
+      if (!abierta) return;
+      const ids: string[] = Array.isArray(abierta.raw?.operacionesIds) ? abierta.raw.operacionesIds.map(String) : [];
+      if (ids.includes(String(id))) abrirDetalleFactura(abierta);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const facturaViendoRef = useRef<FacturaPagable | null>(null);
+  useEffect(() => { facturaViendoRef.current = facturaViendo; }, [facturaViendo]);
 
   const abrirDetalleFactura = async (fac: FacturaPagable) => {
     // ✅ MTTO: el detalle son los GASTOS que componen el invoice.

@@ -1,5 +1,6 @@
 // src/features/operaciones/components/OperacionesDashboard.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { FormularioOperacion } from './FormularioOperacion';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
@@ -735,6 +736,7 @@ const OperacionesDashboard = () => {
       batch.update(opRef, limpiarUndefined({ status: statusId, statusNombre: statusNombreResuelto }));
 
       await batch.commit();
+      notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'operaciones-status'); // ✅ V00126
 
       const operacionActualizada = {
         ...operacionViendo,
@@ -839,6 +841,7 @@ const OperacionesDashboard = () => {
           }));
 
           await batch.commit();
+          notificarOperacionGuardada(String(operacionViendo._docId || operacionViendo.id), { ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'operaciones-status'); // ✅ V00126
 
           setGuardandoStatusRapido(null);
           setUltimoStatusGuardado(statusNombre);

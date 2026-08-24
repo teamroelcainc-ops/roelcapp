@@ -1,5 +1,6 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, startAfter } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
@@ -669,6 +670,7 @@ const ServiciosCancelados = () => {
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusId, statusNombre: statusNombreResuelto });
       await batch.commit();
+      notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusId, statusNombre: statusNombreResuelto }, 'cancelados-status'); // ✅ V00126
 
       // ✅ HISTORIAL: cambio de status con el valor anterior y el nuevo.
       const refLogH = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;
@@ -745,6 +747,7 @@ const ServiciosCancelados = () => {
       const opRef = doc(db, 'operaciones', String(operacionViendo.id));
       batch.update(opRef, { status: statusFinal.id, statusNombre: statusFinal.nombre });
       await batch.commit();
+      notificarOperacionGuardada(String(operacionViendo.id), { ...operacionViendo, status: statusFinal.id, statusNombre: statusFinal.nombre }, 'cancelados-status'); // ✅ V00126
 
       // ✅ HISTORIAL: status rápido (incluye la cascada de status automáticos).
       const refLogR = operacionViendo.ref || operacionViendo.id?.substring(0, 6) || operacionViendo.id;

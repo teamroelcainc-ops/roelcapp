@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
 import {
   collection,
   query,
@@ -51,7 +52,8 @@ const SS_OPS_TTL = 30 * 60 * 1000; // 30 min
 // ⚠️ v2: se cambió la versión para RESETEAR la configuración guardada y que
 //    apliquen las nuevas columnas por defecto (# Remolque + columnas AppSheet).
 const CONFIG_COLUMNAS_COLLECTION = 'config_columnas';
-const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops_v2';
+// ⚠️ v3 (V00126): reset para aplicar el nuevo orden Subtotal → Costo Adicional → Total → TC … → Conversión (MXN)
+const DOC_COLUMNAS_OPS = 'facturacion_clientes_ops_v3';
 const DOC_COLUMNAS_HISTORIAL = 'facturacion_clientes_historial_v2';
 
 // ✅ (REMISIÓN) Documento de encabezado de remisiones (emisores) en Firestore.
@@ -295,15 +297,19 @@ const COLUMNAS_OPS_BASE: any[] = [
   { id: 'destino',       label: 'Destino',         visible: true,  orden: true,  grupo: 'General' },
   // ✅ Columnas de facturación según AppSheet (misma lógica de monedas:
   //    USD → Dólares, MXN → Pesos, Conversión = total en MXN con el TC).
+  // ✅ V00126: orden fijo de facturación → Facturado en · Subtotal (convenio en
+  //    moneda de factura) · Costo Adicional · Total · Tipo de Cambio · … ·
+  //    Conversión (MXN) SIEMPRE al final. Montos sin redondeo.
   { id: 'moneda',        label: 'Facturado en',    visible: true,  orden: false, grupo: 'Por Cobrar' },
-  { id: 'montoConvenioCliente',  label: 'Convenio',           visible: true,  orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'montoConvenioCliente' },
-  { id: 'cargosAdicionales',     label: 'Cargos Adicionales', visible: true,  orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'cargosAdicionales' },
-  { id: 'subtotal',      label: 'Importe',         visible: true,  orden: true,  grupo: 'Por Cobrar' },
-  { id: 'dolares',       label: 'Dólares',         visible: true,  orden: false, grupo: 'Por Cobrar' },
+  { id: 'subtotal',      label: 'Subtotal',        visible: true,  orden: true,  grupo: 'Por Cobrar' },
+  { id: 'cargosAdicionales',     label: 'Costo Adicional',    visible: true,  orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'cargosAdicionales' },
+  { id: 'total',         label: 'Total',           visible: true,  orden: true,  grupo: 'Por Cobrar' },
   { id: 'tipoCambioAprobado',    label: 'Tipo de Cambio',     visible: true,  orden: true,  grupo: 'Por Cobrar', tipo: 'numero', sourceField: 'tipoCambioAprobado' },
-  { id: 'pesos',         label: 'Pesos',           visible: true,  orden: false, grupo: 'Por Cobrar' },
-  { id: 'conv',          label: 'Conversión',      visible: true,  orden: true,  grupo: 'Por Cobrar' },
+  { id: 'montoConvenioCliente',  label: 'Convenio (original)', visible: false, orden: true,  grupo: 'Por Cobrar', tipo: 'monto',  sourceField: 'montoConvenioCliente' },
+  { id: 'dolares',       label: 'Dólares',         visible: false, orden: false, grupo: 'Por Cobrar' },
+  { id: 'pesos',         label: 'Pesos',           visible: false, orden: false, grupo: 'Por Cobrar' },
   { id: 'observacionesCobrar',   label: 'Observaciones (Costos)', visible: true, orden: false, grupo: 'Por Cobrar', tipo: 'texto', sourceField: 'observacionesCobrar' },
+  { id: 'conv',          label: 'Conversión (MXN)', visible: true,  orden: true,  grupo: 'Por Cobrar' },
   { id: 'tipoOperacion',  label: 'Tipo de Operación', visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['tipoOperacionNombre', 'tipoOperacionId'] },
   { id: 'status',         label: 'Status',            visible: false, orden: true,  grupo: 'General', tipo: 'texto',     sourceField: ['statusNombre', 'status'] },
   { id: 'fechaCita',      label: 'Fecha Cita',        visible: false, orden: true,  grupo: 'General', tipo: 'fechaHora', sourceField: 'fechaCita' },
@@ -356,30 +362,30 @@ const COLUMNAS_OPS_BASE: any[] = [
 
 const calcularConversionCliente = (op: any) => {
   const fact = op.facturadoEnCobrar;
-  const tc = Number(op.tipoCambioAprobado) || 0;
-  const subtotal = Number(op.montoConvenioCliente || 0) + Number(op.cargosAdicionales || 0);
-  let dol = 0, pes = 0, conv = 0;
+  const tc = Number(op.tipoCambioAprobado) || Number(op.tipoCambioDia) || 0;
+  const montoConvenio = Number(op.montoConvenioCliente || 0);
+  const cargos = Number(op.cargosAdicionales || 0);
   const nombreMoneda = String(op.monedaCobroNombre || '').toUpperCase();
-  const factUSD = fact === ID_USD || nombreMoneda.includes('USD');
-  const factMXN = fact === ID_MXN || nombreMoneda.includes('MXN');
-  // ✅ REGLA DE MONEDAS (igual que el formulario de Operaciones):
-  //   - Convenio USD + Factura MXN -> se muestra la CONVERSIÓN (subtotal × TC).
-  //   - Convenio USD + Factura USD -> dólares tal cual.
-  //   - Convenio MXN + Factura MXN -> pesos tal cual.
-  //   - Convenio MXN + Factura USD -> dólares = subtotal ÷ TC.
-  //   Si la operación no trae la moneda del convenio (registros viejos), se
-  //   asume la de la factura (comportamiento anterior).
+  const factUSD = fact === ID_USD || nombreMoneda.includes('USD') || nombreMoneda.includes('DOLAR') || nombreMoneda.includes('DÓLAR');
+  const factMXN = fact === ID_MXN || nombreMoneda.includes('MXN') || nombreMoneda.includes('PESO');
   const monConv = String(op.monedaConvenioCliente || '');
-  const convUSD = monConv === ID_USD || (!!monConv && monConv.toUpperCase().includes('USD'));
-  const convMXN = monConv === ID_MXN || (!!monConv && monConv.toUpperCase().includes('MXN'));
-  const cUSD = convUSD || (!convMXN && factUSD);
-  const cMXN = convMXN || (!convUSD && factMXN);
-  if (cUSD && factMXN) { dol = 0; pes = subtotal * tc; conv = subtotal * tc; }
-  else if (cUSD) { dol = subtotal; pes = 0; conv = subtotal * tc; }
-  else if (cMXN && factUSD) { dol = tc > 0 ? subtotal / tc : 0; pes = 0; conv = subtotal; }
-  else if (cMXN) { dol = 0; pes = subtotal; conv = subtotal; }
-  else { conv = subtotal; }
-  return { subtotal, dol, pes, conv };
+  const convUSD = monConv === ID_USD || (!!monConv && (monConv.toUpperCase().includes('USD') || monConv.toUpperCase().includes('DOLAR') || monConv.toUpperCase().includes('DÓLAR')));
+  const convMXN = monConv === ID_MXN || (!!monConv && (monConv.toUpperCase().includes('MXN') || monConv.toUpperCase().includes('PESO')));
+  // ✅ V00126 — REGLA DE MONEDAS (igual que el formulario de Operaciones):
+  //   1) El monto del convenio se expresa en la MONEDA DE LA FACTURA:
+  //      Convenio USD + Factura MXN → × TC · Convenio MXN + Factura USD → ÷ TC · misma → igual.
+  //   2) Subtotal = ese monto; Total = Subtotal + Costo Adicional.
+  //   3) Conversión (MXN) = Total en pesos (si la factura es USD → Total × TC).
+  //   Sin redondeo en ningún paso.
+  let subtotal = montoConvenio;
+  if (convUSD && factMXN) subtotal = tc > 0 ? montoConvenio * tc : 0;
+  else if (convMXN && factUSD) subtotal = tc > 0 ? montoConvenio / tc : 0;
+  const total = subtotal + cargos;
+  let dol = 0, pes = 0, conv = 0;
+  const facturaUSD = factUSD || (!factMXN && convUSD);
+  if (facturaUSD) { dol = total; pes = 0; conv = total * tc; }
+  else { dol = 0; pes = total; conv = total; }
+  return { subtotal, cargos, total, dol, pes, conv, tc };
 };
 
 
@@ -424,16 +430,16 @@ const totalNativoFactura = (fac: any): number => {
 };
 
 const obtenerMontoOperacion = (op: any) => {
+  // ✅ V00126: se recalcula SIEMPRE a partir de los campos crudos de la operación
+  //   (convenio, cargos, monedas, TC) para que cualquier cambio en la colección
+  //   `operaciones` se refleje aquí de inmediato. Solo si falta el TC y no se
+  //   puede convertir, se respeta la conversión guardada en la operación.
+  const calc = calcularConversionCliente(op);
   const convGuardada = Number(op.conversionCliente);
-  if (!isNaN(convGuardada) && convGuardada > 0) {
-    return {
-      subtotal: Number(op.subtotalCliente) || 0,
-      dol: Number(op.dolaresCliente) || 0,
-      pes: Number(op.pesosCliente) || 0,
-      conv: convGuardada,
-    };
+  if (calc.conv === 0 && !isNaN(convGuardada) && convGuardada > 0) {
+    return { ...calc, conv: convGuardada, total: calc.total || Number(op.subtotalCliente) || 0, pes: Number(op.pesosCliente) || calc.pes, dol: Number(op.dolaresCliente) || calc.dol };
   }
-  return calcularConversionCliente(op);
+  return calc;
 };
 
 export const FacturacionClientesDashboard = () => {
@@ -452,6 +458,8 @@ export const FacturacionClientesDashboard = () => {
   const [fechaHastaHist, setFechaHastaHist] = useState('');
   const [textoBuscarRemolqueOps, setTextoBuscarRemolqueOps] = useState('');
   const [vistaOps, setVistaOps] = useState<'pendientes' | 'facturadas' | 'todas'>('pendientes');
+  // ✅ V00126: pestañas por moneda de facturación
+  const [monedaVistaOps, setMonedaVistaOps] = useState<'todas' | 'USD' | 'MXN'>('todas');
   const [topeOpsAlcanzado, setTopeOpsAlcanzado] = useState(false);
   const [filtroCliente, setFiltroCliente] = useState('');
   const [seleccionadas, setSeleccionadas] = useState<string[]>([]);
@@ -535,9 +543,10 @@ export const FacturacionClientesDashboard = () => {
   const [cargandoRemision, setCargandoRemision] = useState(false);
 
   // Formateadores
+  // ✅ V00126: sin redondeo — se muestran hasta 6 decimales tal cual resultan del cálculo.
   const formatoMoneda = (monto: any) => {
     const num = parseFloat(monto || 0);
-    return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return isNaN(num) ? '$ 0.00' : `$ ${num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
   };
   const formatearFechaSpanish = (fechaString: any) => {
     if (!fechaString) return '-';
@@ -949,6 +958,23 @@ export const FacturacionClientesDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [operacionesGlobales]);
 
+  // ✅ V00126: cualquier guardado en la colección `operaciones` (formulario,
+  //   cambio de status, etc.) se refleja aquí al instante sin recargar.
+  useEffect(() => {
+    return suscribirOperacionGuardada(({ id, data }) => {
+      setOperacionesGlobales(prev => {
+        const idx = prev.findIndex(o => String(o.id) === String(id));
+        const facturable = STATUS_FACTURABLES.includes(String((data as any).status || '').trim());
+        if (idx >= 0) {
+          if (!facturable) return prev.filter((_, k) => k !== idx);
+          const next = [...prev]; next[idx] = { ...prev[idx], ...data, id: String(id) }; return next;
+        }
+        if (!facturable) return prev;
+        return [{ id: String(id), ...data }, ...prev];
+      });
+    });
+  }, [STATUS_FACTURABLES]);
+
   const recargarOperaciones = () => {
     try { almacenSesion.removeItem(SS_OPS); } catch { /* noop */ }
     setSeleccionadas([]);
@@ -1226,6 +1252,7 @@ export const FacturacionClientesDashboard = () => {
       case 'cliente': return getNombreCliente(op.clientePaga || op.clientePagaId || op.clienteId).toLowerCase();
       case 'destino': return String(op.destinoNombre || op.destino || '').toLowerCase();
       case 'subtotal': return obtenerMontoOperacion(op).subtotal;
+      case 'total': return obtenerMontoOperacion(op).total;
       case 'conv': return obtenerMontoOperacion(op).conv;
       default: {
         const col = columnasOps.find(c => c.id === campo);
@@ -1259,6 +1286,20 @@ export const FacturacionClientesDashboard = () => {
   }, [operacionesGlobales, mapaCatalogos]);
   const coincideTipoOp = (op: any) => !filtroTipoOp || tipoOpNombre(op) === filtroTipoOp;
 
+  // ✅ V00126: moneda en la que se factura la operación (USD / MXN / '')
+  const monedaFacturacionOp = (op: any): 'USD' | 'MXN' | '' => {
+    const fact = String(op.facturadoEnCobrar || '');
+    const nom = String(op.monedaCobroNombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    if (fact === ID_USD || nom.includes('USD') || nom.includes('DOLAR')) return 'USD';
+    if (fact === ID_MXN || nom.includes('MXN') || nom.includes('PESO')) return 'MXN';
+    return '';
+  };
+  const resumenMonedaOps = useMemo(() => {
+    const base = operacionesGlobales.filter(op => dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op) && (vistaOps === 'todas' || (vistaOps === 'facturadas') === esFacturada(op)));
+    return { usd: base.filter(op => monedaFacturacionOp(op) === 'USD').length, mxn: base.filter(op => monedaFacturacionOp(op) === 'MXN').length, todas: base.length };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operacionesGlobales, fechaDesdeOps, fechaHastaOps, filtroCliente, filtroTipoOp, vistaOps, facturasGlobales]);
+
   const operacionesMostradas = useMemo(() => {
     const q = textoBuscarRemolqueOps.trim().toLowerCase();
     const coincide = (op: any) => {
@@ -1271,13 +1312,14 @@ export const FacturacionClientesDashboard = () => {
       ];
       return campos.some(v => String(v ?? '').toLowerCase().includes(q));
     };
+    const coincideMonedaVista = (op: any) => monedaVistaOps === 'todas' || monedaFacturacionOp(op) === monedaVistaOps;
     const coincideVista = (op: any) => {
       if (vistaOps === 'todas') return true;
       if (vistaOps === 'facturadas') return esFacturada(op);
       return !esFacturada(op);
     };
     const lista = operacionesGlobales.filter(op =>
-      dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op) && coincideVista(op) && coincide(op)
+      dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op) && coincideVista(op) && coincideMonedaVista(op) && coincide(op)
     );
     const dir = ordenOps.dir === 'asc' ? 1 : -1;
     return [...lista].sort((a, b) => {
@@ -1289,7 +1331,7 @@ export const FacturacionClientesDashboard = () => {
       return refNaturalKey(a).localeCompare(refNaturalKey(b));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operacionesGlobales, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, vistaOps, textoBuscarRemolqueOps, facturasGlobales, filtroCliente, filtroTipoOp]);
+  }, [operacionesGlobales, ordenOps, empresasList, fechaDesdeOps, fechaHastaOps, columnasOps, mapaCatalogos, vistaOps, monedaVistaOps, textoBuscarRemolqueOps, facturasGlobales, filtroCliente, filtroTipoOp]);
 
   const resumenOps = useMemo(() => {
     const enRango = operacionesGlobales.filter(op => dentroRangoFecha(op) && coincideClienteOp(op) && coincideTipoOp(op));
@@ -1351,6 +1393,7 @@ export const FacturacionClientesDashboard = () => {
       case 'destino': return <td key={key} style={tdBase}>{op.destinoNombre || op.destino || '-'}</td>;
       case 'moneda': return <td key={key} style={tdBase}>{op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar)}</td>;
       case 'subtotal': return <td key={key} style={tdBase}>{formatoMoneda(m.subtotal)}</td>;
+      case 'total': return <td key={key} style={{ ...tdBase, fontWeight: 700, color: '#f0f6fc' }}>{formatoMoneda(m.total)}</td>;
       case 'dolares': return <td key={key} style={{ ...tdBase, color: '#10b981' }}>{formatoMoneda(m.dol)}</td>;
       case 'pesos': return <td key={key} style={{ ...tdBase, color: '#3b82f6' }}>{formatoMoneda(m.pes)}</td>;
       case 'conv': return <td className="fcd-x9" key={key}>{formatoMoneda(m.conv)}</td>;
@@ -1409,6 +1452,7 @@ export const FacturacionClientesDashboard = () => {
         case 'destino': return op.destinoNombre || op.destino || '';
         case 'moneda': return op.monedaCobroNombre || mostrarMoneda(op.facturadoEnCobrar);
         case 'subtotal': return Number(m.subtotal) || 0;
+        case 'total': return Number(m.total) || 0;
         case 'dolares': return Number(m.dol) || 0;
         case 'pesos': return Number(m.pes) || 0;
         case 'conv': return Number(m.conv) || 0;
@@ -2804,6 +2848,15 @@ export const FacturacionClientesDashboard = () => {
                     <button onClick={() => { setVistaOps('todas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(vistaOps === 'todas', '#58a6ff'), flex: 1 }}>Todas ({resumenOps.total})</button>
                   </div>
                 </div>
+                {/* ✅ V00126: pestañas por MONEDA de facturación */}
+                <div className="fcd-x46">
+                  <label className="fcd-x55">MONEDA</label>
+                  <div className="fcd-x56">
+                    <button onClick={() => { setMonedaVistaOps('USD'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'USD', '#10b981'), flex: 1 }}>Dólares ({resumenMonedaOps.usd})</button>
+                    <button onClick={() => { setMonedaVistaOps('MXN'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'MXN', '#3b82f6'), flex: 1 }}>Pesos ({resumenMonedaOps.mxn})</button>
+                    <button onClick={() => { setMonedaVistaOps('todas'); setSeleccionadas([]); }} style={{ ...segBtnStyle(monedaVistaOps === 'todas', '#8b949e'), flex: 1 }}>Todas ({resumenMonedaOps.todas})</button>
+                  </div>
+                </div>
                 <div className="fcd-x46">
                   <label className="fcd-x47">ORDENAR POR</label>
                   <div className="fcd-x57">
@@ -2926,7 +2979,7 @@ export const FacturacionClientesDashboard = () => {
             </div>
 
             <div className="fcd-x72">
-              <button onClick={recargarOperaciones} style={btnDirStyle} title="Volver a leer todas las operaciones desde la base de datos">↻ Recargar</button>
+              <button onClick={recargarTodo} disabled={cargandoOperaciones || cargandoFacturas} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff', fontWeight: 700 }} title="Vuelve a leer operaciones y facturas desde Firestore (limpia la caché) y recalcula todos los montos">{cargandoOperaciones ? '⏳ Actualizando…' : '↻ Actualizar'}</button>
               <button onClick={() => setModalColumnasOps(true)} style={btnDirStyle} title="Elegir y reordenar columnas">⚙ Configurar Columnas</button>
               <button onClick={exportarExcelOps} disabled={operacionesMostradas.length === 0}
                 style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', fontWeight: 'bold', fontSize: '0.85rem', whiteSpace: 'nowrap',

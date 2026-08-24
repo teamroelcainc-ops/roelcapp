@@ -18,6 +18,7 @@ import { FormularioUnidad } from '../../unidades/components/FormularioUnidad';
 import { EmployeeForm } from '../../empleados/components/EmployeeForm';
 import { CostosAdicionalesDashboard } from '../../costosAdicionales/CostosAdicionalesDashboard';
 import './FormularioOperacion.css';
+import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
@@ -2277,12 +2278,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
         await updateDoc(doc(db, 'operaciones', String(initialData.id)), operacionData);
         idGuardado = String(initialData.id);
+        notificarOperacionGuardada(idGuardado, { ...(initialData as any), ...operacionData }); // ✅ V00126: avisa a Facturación/Pagos
         refGuardado = referenciaDeOperacion(idGuardado, operacionData.ref || (initialData as any).ref);
         if (onSave) onSave({ id: initialData.id, ...operacionData });
       } else {
         const resultado = await guardarOperacionSegura(operacionData);
         const nuevoId = (typeof resultado === 'object' && resultado?.id) ? resultado.id : Date.now().toString();
         idGuardado = String(nuevoId);
+        notificarOperacionGuardada(idGuardado, { ...operacionData, ref: (resultado as any)?.ref || operacionData.ref }); // ✅ V00126: avisa a Facturación/Pagos
         refGuardado = referenciaDeOperacion(idGuardado, (resultado as any)?.ref || operacionData.ref);
         if (onSave) onSave({ id: nuevoId, ...operacionData });
       }
