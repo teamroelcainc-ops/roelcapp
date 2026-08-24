@@ -1,0 +1,18 @@
+/* ✅ V00126: modal Unir convenios (compartido clientes/proveedores) — convención CLAUDE.md, sin inline style */
+.ucm-overlay { z-index: 2200; backdrop-filter: blur(4px); }
+.ucm-card { max-width: 820px; width: 94vw; padding: 0; border-radius: 16px; border: 1px solid #444; background-color: #0d1117; }
+.ucm-header { padding: 20px 24px; border-bottom: 1px solid #30363d; margin-bottom: 0; }
+.ucm-titulo { margin: 0; font-size: 1.1rem; color: #f0f6fc; }
+.ucm-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.2rem; }
+.ucm-cuerpo { padding: 20px 24px; max-height: 75vh; overflow-y: auto; }
+.ucm-texto { color: #8b949e; font-size: 0.85rem; margin: 0 0 12px; }
+.ucm-alerta { background: rgba(245, 158, 11, 0.12); border: 1px solid #f59e0b; color: #fbbf24; border-radius: 8px; padding: 8px 12px; font-size: 0.82rem; margin-bottom: 12px; }
+.ucm-tabla { width: 100%; }
+.ucm-tabla tbody tr { cursor: pointer; }
+.ucm-tabla tbody tr:hover { background-color: #161b22; }
+.ucm-fila-destino { background-color: rgba(88, 166, 255, 0.12); }
+.ucm-th-ent { min-width: 220px; }
+.ucm-mono { font-family: monospace; font-weight: 700; color: #58a6ff; }
+.ucm-motivo { margin-top: 16px; }
+.ucm-acciones { margin-top: 20px; display: flex; justify-content: flex-end; gap: 12px; }
+@media (max-width: 768px) { .ucm-card { width: 100%; } .ucm-acciones { flex-wrap: wrap; } }

@@ -179,3 +179,10 @@
   .ccd-x127 { flex-wrap: wrap; }
   .ccd-x130 { flex-wrap: wrap; }
 }
+
+/* ✅ V00126: selección múltiple y acciones masivas */
+.ccd-th-sel, .ccd-td-sel { width: 36px; text-align: center; padding: 8px 6px; }
+.ccd-th-sel input, .ccd-td-sel input { width: 16px; height: 16px; cursor: pointer; accent-color: #58a6ff; }
+.ccd-btn-masivo { margin-right: 8px; }
+.ccd-btn-eliminar { border-color: #f85149; color: #f85149; }
+.ccd-btn-eliminar:hover { background-color: rgba(248, 81, 73, 0.12); }

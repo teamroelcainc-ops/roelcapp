@@ -153,3 +153,10 @@
   .cpd-x101 { flex-wrap: wrap; }
   .cpd-x111 { flex-wrap: wrap; }
 }
+
+/* ✅ V00126: selección múltiple y acciones masivas */
+.cpd-th-sel, .cpd-td-sel { width: 36px; text-align: center; padding: 8px 6px; }
+.cpd-th-sel input, .cpd-td-sel input { width: 16px; height: 16px; cursor: pointer; accent-color: #58a6ff; }
+.cpd-btn-masivo { margin-right: 8px; }
+.cpd-btn-eliminar { border-color: #f85149; color: #f85149; }
+.cpd-btn-eliminar:hover { background-color: rgba(248, 81, 73, 0.12); }

@@ -1,5 +1,8 @@
 // src/features/conveniosProveedores/components/ConveniosProveedoresDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { registrarLog } from '../../../utils/logger';
+import { UnirConveniosModal } from '../../conveniosCompartido/UnirConveniosModal';
+import { eliminarConveniosMasivo } from '../../conveniosCompartido/unirConvenios';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy } from 'firebase/firestore';
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase'; 
 import { FormularioConvenioProveedor } from './FormularioConvenioProveedor';
@@ -61,6 +64,27 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
   const registrosPorPagina = 50;
 
   const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  // ✅ V00126: selección múltiple → unir duplicados / eliminar varios
+  const [seleccionados, setSeleccionados] = useState<string[]>([]);
+  const [modalUnir, setModalUnir] = useState(false);
+  const [eliminandoMasivo, setEliminandoMasivo] = useState(false);
+  const toggleSeleccion = (id: string) => setSeleccionados(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const conveniosSeleccionados = () => seleccionados.map(id => (registrosGlobales as any[]).find((r: any) => String(r.id) === id)).filter(Boolean);
+  const eliminarSeleccionados = async () => {
+    const sel = conveniosSeleccionados();
+    if (sel.length === 0) return;
+    const motivo = window.prompt(`Se eliminarán ${sel.length} convenio(s) con sus detalles (van a la papelera de reciclaje):\n\n${sel.map((r: any) => `• ${r.numeroConvenio || r.id} (${r.proveedorNombre || ''})`).join('\n')}\n\nEscribe el motivo:`, 'Convenios duplicados');
+    if (motivo === null || !motivo.trim()) return;
+    setEliminandoMasivo(true);
+    try {
+      const r = await eliminarConveniosMasivo('proveedores', sel.map((x: any) => String(x.id)), motivo.trim());
+      await registrarLog('Convenios', 'Eliminación', `Eliminó ${r.maestros} convenio(s) de proveedores (y ${r.detalles} detalle(s)) en lote. Motivo: ${motivo.trim()}`);
+      setSeleccionados([]);
+      alert(`Se enviaron a la papelera ${r.maestros} convenio(s) y ${r.detalles} detalle(s).`);
+    } catch (e: any) {
+      alert(`No se pudo eliminar: ${e?.code || ''} ${e?.message || String(e)}`);
+    } finally { setEliminandoMasivo(false); }
+  };
 
   // =========================================================
   // 1. CARGA EN TIEMPO REAL: CONVENIOS + DETALLES + OPERACIONES
@@ -423,6 +447,14 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
   return (
     <div className="module-container cpd-x1">
       
+      {modalUnir && (
+        <UnirConveniosModal
+          tipo="proveedores"
+          convenios={conveniosSeleccionados().map((r: any) => ({ id: String(r.id), numeroConvenio: r.numeroConvenio, entidadId: r.proveedorId, entidadNombre: r.proveedorNombre, fechaConvenio: r.fechaConvenio, monedaNombre: r.monedaNombre }))}
+          onClose={() => setModalUnir(false)}
+          onUnido={() => { setModalUnir(false); setSeleccionados([]); }}
+        />
+      )}
       {estadoFormulario !== 'cerrado' && (
         <FormularioConvenioProveedor 
           estado={estadoFormulario} 
@@ -473,13 +505,25 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
             try {
               const snapDup = await getDocs(collection(db, 'convenios_proveedores'));
               const grupos: Record<string, string[]> = {};
-              snapDup.docs.forEach((d) => { const x: any = d.data(); const k = String(x.proveedorId || ''); if (!k) return; (grupos[k] = grupos[k] || []).push(`${x.numeroConvenio || d.id} (${x.proveedorNombre || ''})`); });
+              const gruposIds: Record<string, string[]> = {};
+              snapDup.docs.forEach((d) => { const x: any = d.data(); const k = String(x.proveedorId || ''); if (!k) return; (gruposIds[k] = gruposIds[k] || []).push(d.id); (grupos[k] = grupos[k] || []).push(`${x.numeroConvenio || d.id} (${x.proveedorNombre || ''})`); });
               const dups = Object.values(grupos).filter((g) => g.length > 1);
               alert(dups.length === 0
                 ? 'Sin duplicados: ningún registro tiene más de un convenio. ✅'
                 : `DUPLICADOS ENCONTRADOS (${dups.length}):\n\n` + dups.map((g) => `• ${g.join('  |  ')}`).join('\n') + '\n\nElimina o une los sobrantes; desde V00119 ya no se pueden guardar nuevos duplicados.');
+              // ✅ V00126: deja seleccionados todos los duplicados para unirlos/eliminarlos
+              const idsDup = Object.values(gruposIds).filter((g) => g.length > 1).flat();
+              if (idsDup.length > 0 && window.confirm(`¿Seleccionar los ${idsDup.length} convenios duplicados en la tabla para unirlos o eliminarlos?`)) setSeleccionados(idsDup);
             } catch { alert('No se pudo revisar duplicados.'); }
           }}>Duplicados</button>
+          {/* ✅ V00126: acciones masivas sobre la selección */}
+          {seleccionados.length > 0 && (
+            <>
+              <button className="btn btn-primary cpd-btn-masivo" disabled={seleccionados.length < 2 || eliminandoMasivo} title="Unir los convenios seleccionados en uno solo (mueve sus detalles)" onClick={() => setModalUnir(true)}>🔗 Unir ({seleccionados.length})</button>
+              <button className="btn btn-outline cpd-btn-masivo cpd-btn-eliminar" disabled={eliminandoMasivo} title="Eliminar los convenios seleccionados (van a la papelera)" onClick={eliminarSeleccionados}>{eliminandoMasivo ? 'Eliminando…' : `🗑 Eliminar (${seleccionados.length})`}</button>
+              <button className="btn btn-outline cpd-btn-masivo" onClick={() => setSeleccionados([])} title="Quitar selección">✕</button>
+            </>
+          )}
           {/* ✅ NUEVO (V00123): recarga catálogos y referencias (monedas, tarifas) */}
           <button className="btn btn-outline" style={{ marginRight: '8px' }} title="Actualizar referencias: limpia cachés de catálogos y recarga" onClick={() => {
             try { Object.keys(localStorage).filter((k) => k.startsWith('cat_v2__') || k.startsWith('cat_v1__')).forEach((k) => localStorage.removeItem(k)); } catch { /* sin almacenamiento */ }
@@ -500,6 +544,9 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
             <table className="data-table cpd-x15">
               <thead className="cpd-x16">
                 <tr>
+                  <th className="cpd-th-sel">
+                    <input type="checkbox" title="Seleccionar todos los de esta página" checked={registrosEnPantalla.length > 0 && registrosEnPantalla.every((r: any) => seleccionados.includes(String(r.id)))} onChange={(e) => { const ids = registrosEnPantalla.map((r: any) => String(r.id)); setSeleccionados(prev => e.target.checked ? Array.from(new Set([...prev, ...ids])) : prev.filter(x => !ids.includes(x))); }} />
+                  </th>
                   <th className="cpd-x17">
                     Acciones
                   </th>
@@ -515,7 +562,7 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
               </thead>
               <tbody>
                 {!busquedaHecha ? (
-                  <tr><td className="cpd-x20" colSpan={9}>
+                  <tr><td className="cpd-x20" colSpan={10}>
                     <div className="cpd-x21">
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#30363d" strokeWidth="1.6"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                       <span className="cpd-x22">Define tus filtros y presiona <b className="cpd-x23">Buscar</b> para ver los convenios.</span>
@@ -524,7 +571,7 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                   </td></tr>
                 ) : registrosEnPantalla.length === 0 ? (
                   <tr>
-                    <td className="cpd-x25" colSpan={9}>
+                    <td className="cpd-x25" colSpan={10}>
                       {busqueda ? 'No se encontraron convenios para tu búsqueda.' : 'Aún no hay convenios registrados. Haz clic en el botón de "+" para comenzar.'}
                     </td>
                   </tr>
@@ -541,6 +588,9 @@ export const ConveniosProveedoresDashboard: React.FC = () => {
                       onMouseLeave={() => setHoveredRowId(null)}
                       onClick={() => verDetalle(reg)}
                     >
+                      <td className="cpd-td-sel" onClick={(e: any) => e.stopPropagation()}>
+                        <input type="checkbox" checked={seleccionados.includes(String(reg.id))} onChange={() => toggleSeleccion(String(reg.id))} />
+                      </td>
                       <td className="cpd-x26" onClick={(e: any) => e.stopPropagation()}>
                         <div className="actions-cell cpd-x27">
                           <button 
