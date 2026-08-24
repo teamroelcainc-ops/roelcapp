@@ -34,6 +34,15 @@ type TipoPago = 'cliente' | 'proveedor' | 'mtto';
 
 const METODOS_PAGO = ['Transferencia', 'ACH', 'Efectivo', 'Cheque', 'Depósito', 'Tarjeta', 'Otro'];
 
+// ✅ V00126: TOTAL FINAL de un gasto MTTO = el mismo que muestra el formulario de
+//   Gastos: total guardado, o importe + IVA − RET IVA − RET ISR. Antes Pagos
+//   sumaba solo importe + IVA (ignoraba las retenciones) y el saldo salía de más.
+const totalGastoMtto = (g: any): number => {
+  const guardado = Number(g?.total);
+  if (Number.isFinite(guardado) && guardado > 0) return guardado;
+  return (Number(g?.importe) || 0) + (Number(g?.ivaMonto) || 0) - (Number(g?.retIva) || 0) - (Number(g?.retIsr) || 0);
+};
+
 interface FacturaPagable {
   id: string;
   invoice: string;
@@ -184,8 +193,8 @@ export function PagosDashboard() {
         remolque: String(g.unidadNombre || g.unidad || ''),
         convenio: String(g.descripcion || g.concepto || '—'),
         monedaConvenio: 'MXN',
-        importe: (Number(g.importe) || 0) + (Number(g.ivaMonto) || 0),
-        importeDetalle: `${money((Number(g.importe) || 0) + (Number(g.ivaMonto) || 0))} MXN`,
+        importe: totalGastoMtto(g), // ✅ V00126: TOTAL FINAL (con retenciones)
+        importeDetalle: `${money(totalGastoMtto(g))} MXN`,
       })));
       setCargandoOpsFactura(false);
       return;
@@ -1121,7 +1130,7 @@ export function PagosDashboard() {
         if (!inv) return; // sin invoice no es pagable por grupo
         const clave = inv.toLowerCase();
         const prev = grupos.get(clave) || { invoice: inv, total: 0, fecha: '', entidad: '', gastos: [] as any[] };
-        prev.total += (Number(g.importe) || 0) + (Number(g.ivaMonto) || 0);
+        prev.total += totalGastoMtto(g); // ✅ V00126: usa el TOTAL FINAL (con retenciones)
         const fg = String(g.fecha || g.fechaGasto || '').slice(0, 10);
         if (fg > prev.fecha) prev.fecha = fg;
         if (!prev.entidad) prev.entidad = String(g.proveedorNombre || g.proveedor || '').trim() || 'VARIOS';
