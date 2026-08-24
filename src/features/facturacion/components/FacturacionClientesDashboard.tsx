@@ -2252,7 +2252,15 @@ export const FacturacionClientesDashboard = () => {
   const indexFirst = indexLast - registrosPorPagina;
   const registrosVisibles = historialOrdenado.slice(indexFirst, indexLast);
 
-  const pareceReferencia = (s: any): boolean => /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(String(s || '').trim());
+  // ✅ V00126: un id de Firestore como "d449e0e7…" empieza con letra+dígitos y el
+  //   patrón anterior lo tomaba por referencia válida, por lo que la ficha
+  //   mostraba el ID en lugar de la referencia real. Ahora los tokens que son
+  //   puro hexadecimal (ids) se descartan explícitamente.
+  const pareceReferencia = (s: any): boolean => {
+    const t = String(s || '').trim();
+    if (!t || /^[0-9a-f]{8,}$/i.test(t)) return false; // id de Firestore (hex), no referencia
+    return /^[A-Za-z]{1,6}[-\s]?\d{3,}/.test(t);
+  };
 
   useEffect(() => {
     const fuentes: any[] = esHistorial ? [...registrosVisibles] : [];
@@ -2314,7 +2322,9 @@ export const FacturacionClientesDashboard = () => {
     const resueltas: string[] = [];
     tokens.forEach(t => { const i = opInfoMap[t]; if (i?.ref && pareceReferencia(String(i.ref))) resueltas.push(String(i.ref)); });
     if (resueltas.length) return Array.from(new Set(resueltas)).join(', ');
-    return directos[0] || (info?.ref ? String(info.ref) : '') || id;
+    // ✅ V00126: preferir la referencia resuelta de la operación antes que un valor directo tipo id
+    const infoRef = info?.ref ? String(info.ref) : '';
+    return (infoRef && !/^[0-9a-f]{8,}$/i.test(infoRef) ? infoRef : '') || directos[0] || infoRef || id;
   };
 
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
