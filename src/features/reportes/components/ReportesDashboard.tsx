@@ -827,7 +827,8 @@ export const ReportesDashboard = () => {
         }
         if (/fecha/i.test(campo)) { const iso = normalizarFechaISO(v); return iso ? fmtFechaCorta(iso) : String(v); }
         if (typeof v === 'number' && esCampoMonetario(campo)) return fmtMoneda(v);
-        return typeof v === 'number' ? v : String(v);
+        // ✅ V00133: sin ruido de flotantes (80.06899999999999 → 80.069): máximo 3 decimales
+        return typeof v === 'number' ? Number(v.toFixed(3)) : String(v);
       };
 
       const ctx: Ctx = { ops, desde, hasta, clasificarTipo, esNoCobrable, statusNombreDe, pasaFiltroStatus, nombreEmpresa, nombreConvenio, camposColeccion, valorCrudo, mon: monMap };
@@ -939,6 +940,25 @@ export const ReportesDashboard = () => {
     };
   }, [resultado, colConfigs, cfgKey]);
 
+  // ✅ V00133: orden por columna al hacer clic en el encabezado (como en Empresas)
+  const [ordenRep, setOrdenRep] = useState<{ idx: number; dir: 1 | -1 } | null>(null);
+  useEffect(() => { setOrdenRep(null); }, [resultado]);
+  const vistaOrdenada = useMemo(() => {
+    if (!vista || !ordenRep) return vista;
+    const tuplas = vista.filas.map((f: any[], i: number) => ({ f, total: !!(vista.totalFlags && vista.totalFlags[i]), wk: !!(vista.weekendFlags && vista.weekendFlags[i]) }));
+    const normales = tuplas.filter(t => !t.total);
+    const totales = tuplas.filter(t => t.total);
+    normales.sort((a, b) => {
+      const va = a.f[ordenRep.idx], vb = b.f[ordenRep.idx];
+      const na = typeof va === 'number' ? va : parseFloat(String(va).replace(/[^0-9.-]/g, ''));
+      const nb = typeof vb === 'number' ? vb : parseFloat(String(vb).replace(/[^0-9.-]/g, ''));
+      if (Number.isFinite(na) && Number.isFinite(nb)) return (na - nb) * ordenRep.dir;
+      return String(va ?? '').localeCompare(String(vb ?? ''), 'es', { numeric: true }) * ordenRep.dir;
+    });
+    const orden = [...normales, ...totales];
+    return { ...vista, filas: orden.map(t => t.f), totalFlags: orden.map(t => t.total), weekendFlags: orden.map(t => t.wk) };
+  }, [vista, ordenRep]);
+
   // Handlers para el modal de columnas (mostrar/ocultar + reordenar arrastrando)
   const toggleColumna = (idx: number) => {
     setColConfigs(prev => {
@@ -1042,13 +1062,14 @@ export const ReportesDashboard = () => {
   // ✅ EXCEL profesional con logo (ExcelJS). Requiere: npm install exceljs
   const exportarExcel = async () => {
     if (!vista) return;
+    const vv = vistaOrdenada ?? vista; // ✅ V00133: el Excel respeta el orden en pantalla
     try {
       const ExcelJS: any = (await import('exceljs')).default || (await import('exceljs'));
       const wb = new ExcelJS.Workbook();
       wb.creator = 'Roelca Inc.';
       wb.created = new Date();
       const ws = wb.addWorksheet('Reporte', { views: [{ showGridLines: false }] });
-      const nCols = vista.columnas.length;
+      const nCols = vv.columnas.length;
 
       // Logo (col A, filas superiores)
       try {
@@ -1079,7 +1100,7 @@ export const ReportesDashboard = () => {
       const borderAll = { top: thin, left: thin, bottom: thin, right: thin };
 
       // Encabezados
-      vista.columnas.forEach((col, i) => {
+      vv.columnas.forEach((col, i) => {
         const cell = ws.getCell(headerRow, i + 1);
         cell.value = col.label;
         cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
@@ -1090,10 +1111,10 @@ export const ReportesDashboard = () => {
       ws.getRow(headerRow).height = 22;
 
       // Filas de datos
-      vista.filas.forEach((f, ri) => {
+      vv.filas.forEach((f, ri) => {
         const r = headerRow + 1 + ri;
-        const esTotalRow = !!(vista.totalFlags && vista.totalFlags[ri]);
-        const weekend = vista.weekendFlags && vista.weekendFlags[ri];
+        const esTotalRow = !!(vv.totalFlags && vv.totalFlags[ri]);
+        const weekend = vv.weekendFlags && vv.weekendFlags[ri];
         f.forEach((v, ci) => {
           const cell = ws.getCell(r, ci + 1);
           const num = aNumeroMoneda(v);
@@ -1110,9 +1131,9 @@ export const ReportesDashboard = () => {
       });
 
       // Ancho de columnas (auto aproximado)
-      vista.columnas.forEach((col, i) => {
+      vv.columnas.forEach((col, i) => {
         let max = String(col.label).length;
-        vista.filas.forEach(f => { const s = String(f[i] ?? ''); if (s.length > max) max = s.length; });
+        vv.filas.forEach(f => { const s = String(f[i] ?? ''); if (s.length > max) max = s.length; });
         ws.getColumn(i + 1).width = Math.min(Math.max(max + 2, 11), 42);
       });
 
@@ -1132,10 +1153,11 @@ export const ReportesDashboard = () => {
   // ✅ PDF profesional con logo y rango de fechas (ventana de impresión → Guardar como PDF)
   const exportarPDF = () => {
     if (!vista) return;
-    const cols = vista.columnas;
-    const filasHtml = vista.filas.map((f, i) => {
-      const esTotalRow = !!(vista.totalFlags && vista.totalFlags[i]);
-      const weekend = vista.weekendFlags && vista.weekendFlags[i];
+    const vv = vistaOrdenada ?? vista; // ✅ V00133: el PDF respeta el orden en pantalla
+    const cols = vv.columnas;
+    const filasHtml = vv.filas.map((f, i) => {
+      const esTotalRow = !!(vv.totalFlags && vv.totalFlags[i]);
+      const weekend = vv.weekendFlags && vv.weekendFlags[i];
       const bg = esTotalRow ? '#e8eef7' : (weekend ? '#fff6e5' : (i % 2 ? '#f6f8fa' : '#ffffff'));
       const fw = esTotalRow ? '700' : '400';
       const tds = f.map((v) => `<td style="padding:7px 11px;border:1px solid #d0d7de;text-align:center;font-weight:${fw};white-space:nowrap">${v === '' || v == null ? '' : String(v)}</td>`).join('');
@@ -1305,17 +1327,17 @@ export const ReportesDashboard = () => {
             <table className="rd-x23">
               <thead className="rd-x24">
                 <tr>
-                  {vista.columnas.map(c => (
-                    <th key={c.key} style={{ padding: '12px 14px', background: '#161b22', color: '#8b949e', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', textAlign: c.align || 'left', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' }}>{c.label}</th>
+                  {vista.columnas.map((c, ci) => (
+                    <th key={c.key} onClick={() => setOrdenRep(prev => prev && prev.idx === ci ? { idx: ci, dir: prev.dir === 1 ? -1 : 1 } : { idx: ci, dir: 1 })} title="Ordenar por esta columna" style={{ padding: '12px 14px', background: '#161b22', color: '#8b949e', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.4px', textAlign: c.align || 'left', borderBottom: '1px solid #30363d', whiteSpace: 'nowrap' , cursor: 'pointer', userSelect: 'none' }}>{c.label}{ordenRep?.idx === ci ? (ordenRep.dir === 1 ? ' ▲' : ' ▼') : ''}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {vista.filas.length === 0 ? (
+                {(vistaOrdenada ?? vista).filas.length === 0 ? (
                   <tr><td className="rd-x25" colSpan={vista.columnas.length}>Sin datos.</td></tr>
-                ) : vista.filas.map((f, i) => {
-                  const esTotalRow = !!(vista.totalFlags && vista.totalFlags[i]);
-                  const weekend = vista.weekendFlags && vista.weekendFlags[i];
+                ) : (vistaOrdenada ?? vista).filas.map((f, i) => {
+                  const esTotalRow = !!((vistaOrdenada ?? vista).totalFlags && (vistaOrdenada ?? vista).totalFlags![i]);
+                  const weekend = (vistaOrdenada ?? vista).weekendFlags && (vistaOrdenada ?? vista).weekendFlags![i];
                   const bg = esTotalRow ? '#161b22' : (weekend ? 'rgba(210,153,34,.07)' : 'transparent');
                   return (
                     <tr key={i} style={{ background: bg, borderBottom: '1px solid #21262d' }}>

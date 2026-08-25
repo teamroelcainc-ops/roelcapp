@@ -49,8 +49,10 @@ const num = (n: number) => (Number(n) || 0).toLocaleString('en-US');
 const lineaDeOp = (op: Op): Linea => {
   const t = String(op.tipoOperacionNombre || op.tipoOperacion || '').toLowerCase();
   if (t.includes('transfer')) return 'Transfer';
-  if (t.includes('log') || t.includes('cruce')) return 'Logística';
+  // ✅ V00133: "Logistica Fletes" contiene "log", así que FLETES debe evaluarse ANTES
+  //   que Logística (antes todos los fletes se contaban como Cruces y la columna quedaba en 0).
   if (t.includes('flet')) return 'Fletes';
+  if (t.includes('log') || t.includes('cruce')) return 'Logística';
   const ref = String(op.ref || '').toUpperCase();
   if (ref.startsWith('TR')) return 'Transfer';
   if (ref.startsWith('LG') || ref.startsWith('LO')) return 'Logística';

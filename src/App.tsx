@@ -549,8 +549,14 @@ function ResumenDelDia() {
           </span>
           <span style={valorCss('#fb923c')}>{cargando ? '…' : (datos.diesel != null ? `$${datos.diesel.toFixed(2)}` : '—')}</span>
           <span style={sub}>
-            {cargando ? ' ' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedores > 1 ? `Prom. ${datos.dieselProveedores} proveedores` : 'Por litro'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
+            {cargando ? ' ' : datos.diesel == null ? 'Sin captura' : `${datos.dieselProveedores > 1 ? `Prom. ${datos.dieselProveedores} proveedores` : 'Por galón (USA)'}${datos.dieselFecha && datos.dieselFecha !== hoyISO ? ` · al ${fmtDia(datos.dieselFecha)}` : ''}`}
           </span>
+          {/* ✅ V00133: equivalencia por LITRO en pesos — $/galón ÷ 3.78541 × TC del día */}
+          {!cargando && datos.diesel != null && (
+            <span style={sub} title={datos.tc != null ? `${datos.diesel.toFixed(2)} ÷ 3.78541 × TC ${datos.tc.toFixed(4)}` : 'Captura el tipo de cambio del día para calcular el precio por litro en pesos'}>
+              {`≈ $${(datos.diesel / 3.78541).toFixed(2)} USD/L`}{datos.tc != null ? ` · $${((datos.diesel / 3.78541) * datos.tc).toFixed(2)} MXN/L` : ' · MXN/L: falta TC'}
+            </span>
+          )}
           {!cargando && datos.dieselFecha !== hoyISO && (
             <button className="app-x11" onClick={abrirModalDiesel} title="Capturar el costo del diesel de hoy">
               + Capturar el de hoy
