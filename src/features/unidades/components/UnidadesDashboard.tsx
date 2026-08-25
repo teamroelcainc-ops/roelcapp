@@ -52,6 +52,8 @@ export const UnidadesDashboard: React.FC = () => {
   // ✅ NUEVO: unidad a la que se le sube un documento DIRECTO desde la fila
   //   (sin abrir el visor de documentos).
   const [unidadSubirDocs, setUnidadSubirDocs] = useState<UnidadRecord | null>(null);
+  // ✅ V00134: DETALLE de la unidad (clic en la fila) con sus documentos integrados
+  const [unidadDetalle, setUnidadDetalle] = useState<UnidadRecord | null>(null);
 
   // Suscripción en tiempo real a Firebase
   useEffect(() => {
@@ -323,7 +325,7 @@ export const UnidadesDashboard: React.FC = () => {
                       style={{ borderBottom: '1px solid #21262d', backgroundColor: hoveredRowId === reg.id ? '#21262d' : '#0d1117', transition: 'background-color 0.2s', cursor: 'pointer' }}
                       onMouseEnter={() => setHoveredRowId(reg.id!)} 
                       onMouseLeave={() => setHoveredRowId(null)}
-                      onClick={() => editarRegistro(reg)}
+                      onClick={() => setUnidadDetalle(reg)} /* ✅ V00134: clic en la fila = ver detalle (el lápiz sigue editando) */
                     >
                       {/* Celda de Acciones fija a la izquierda */}
                       <td className="ud-x32" onClick={(e: any) => e.stopPropagation()}>
@@ -445,6 +447,60 @@ export const UnidadesDashboard: React.FC = () => {
             </ul>
             <div className="ud-x50">
               <button className="ud-x51" onClick={() => setModalColumnas(false)}>Aplicar Cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ V00134: MODAL DETALLE DE LA UNIDAD (ficha + documentos) */}
+      {unidadDetalle && (
+        <div className="modal-overlay ud-det-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setUnidadDetalle(null); }}>
+          <div className="ud-det-card">
+            <div className="ud-det-header">
+              <h3 className="ud-det-titulo">Detalle de Unidad: <span className="ud-det-nombre">{(unidadDetalle as any).unidad || (unidadDetalle as any).placas || unidadDetalle.id}</span></h3>
+              <div className="ud-det-acciones-top">
+                <button className="ud-det-btn-editar" onClick={() => { const reg = unidadDetalle; setUnidadDetalle(null); editarRegistro(reg); }}>✎ Editar</button>
+                <button className="ud-x59" onClick={() => setUnidadDetalle(null)}>✕</button>
+              </div>
+            </div>
+            <div className="ud-det-cuerpo">
+              <div className="ud-det-grid">
+                {[
+                  ['Tipo de unidad', (unidadDetalle as any).tipoUnidadNombre || (unidadDetalle as any).tipo],
+                  ['Nombre', (unidadDetalle as any).unidad],
+                  ['Placas', (unidadDetalle as any).placas],
+                  ['Número de serie', (unidadDetalle as any).serie],
+                  ['Marca', (unidadDetalle as any).marca],
+                  ['Modelo (año)', (unidadDetalle as any).modelo],
+                  ['Color', (unidadDetalle as any).color],
+                  ['Combustible', (unidadDetalle as any).combustible],
+                  ['Kilometraje inicial', (unidadDetalle as any).kilometrajeInicial ?? (unidadDetalle as any).kilometraje],
+                  ['No. de ejes', (unidadDetalle as any).ejes],
+                  ['No. de llantas', (unidadDetalle as any).llantas],
+                  ['Tanque 1 (Lts)', (unidadDetalle as any).tanqueUno ?? (unidadDetalle as any).tanque1],
+                  ['Tanque 2 (Lts)', (unidadDetalle as any).tanqueDos ?? (unidadDetalle as any).tanque2],
+                  ['TAG AVC', (unidadDetalle as any).tagAvc],
+                  ['Clase', (unidadDetalle as any).clase],
+                  ['Peso vehicular (Kg)', (unidadDetalle as any).pesoVehicular],
+                  ['Toneladas', (unidadDetalle as any).toneladas],
+                ].filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '' && String(v) !== '0').map(([k, v]) => (
+                  <div className="ud-det-item" key={String(k)}>
+                    <span className="ud-det-etq">{k}</span>
+                    <span className="ud-det-val">{String(v)}</span>
+                  </div>
+                ))}
+                <div className="ud-det-item">
+                  <span className="ud-det-etq">Status</span>
+                  <span className={`ud-det-val ${((unidadDetalle as any).activa ?? (unidadDetalle as any).activo ?? true) ? 'ud-det-ok' : 'ud-det-baja'}`}>{((unidadDetalle as any).activa ?? (unidadDetalle as any).activo ?? true) ? 'Activa / Disponible' : 'Inactiva'}</span>
+                </div>
+              </div>
+              <div className="ud-det-docs">
+                <div className="ud-det-docs-header">
+                  <h4 className="ud-det-subtitulo">📎 Documentos de la unidad</h4>
+                  <button className="ud-x58" type="button" onClick={() => { setUnidadSubirDocs(unidadDetalle); setMostrarSubirDoc(true); }}>Subir Documento</button>
+                </div>
+                <DocumentosLista coleccionOrigen="unidades" registroId={unidadDetalle.id ?? ''} />
+              </div>
             </div>
           </div>
         </div>

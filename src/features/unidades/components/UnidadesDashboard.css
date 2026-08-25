@@ -108,3 +108,24 @@
   .ud-x63 { flex-wrap: wrap; }
   .ud-x74 { flex-wrap: wrap; }
 }
+
+/* ✅ V00134: detalle de unidad (ficha + documentos) */
+.ud-det-overlay { z-index: 2100; backdrop-filter: blur(4px); }
+.ud-det-card { background: #0d1117; border: 1px solid #444; border-radius: 16px; max-width: 860px; width: 94vw; max-height: 88vh; display: flex; flex-direction: column; }
+.ud-det-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px; border-bottom: 1px solid #30363d; }
+.ud-det-titulo { margin: 0; font-size: 1.05rem; color: #f0f6fc; }
+.ud-det-nombre { color: #D84315; }
+.ud-det-acciones-top { display: flex; align-items: center; gap: 10px; }
+.ud-det-btn-editar { background: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-weight: 700; font-size: 0.82rem; }
+.ud-det-btn-editar:hover { background: rgba(88, 166, 255, 0.12); }
+.ud-det-cuerpo { padding: 18px 22px; overflow-y: auto; }
+.ud-det-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px 18px; margin-bottom: 18px; }
+.ud-det-item { display: flex; flex-direction: column; gap: 2px; }
+.ud-det-etq { color: #8b949e; font-size: 0.7rem; }
+.ud-det-val { color: #f0f6fc; font-weight: 600; font-size: 0.9rem; }
+.ud-det-ok { color: #3fb950; }
+.ud-det-baja { color: #f85149; }
+.ud-det-docs { border-top: 1px solid #30363d; padding-top: 14px; }
+.ud-det-docs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.ud-det-subtitulo { margin: 0; color: #c9d1d9; font-size: 0.9rem; }
+@media (max-width: 640px) { .ud-det-grid { grid-template-columns: 1fr 1fr; } }
