@@ -763,6 +763,20 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     return '';
   };
 
+  // ✅ V00130: opciones de moneda para "Facturado En" — SALEN DEL CATÁLOGO de
+  //   Monedas (más los ids canónicos por compatibilidad). Antes el <select> solo
+  //   tenía los dos ids fijos; si la empresa guardaba OTRO id del catálogo, el
+  //   navegador no encontraba la opción y seguía mostrando la selección anterior
+  //   ("Actualizar moneda" avisaba Dólares pero se veía Pesos).
+  const opcionesFacturadoEn = (): Array<{ id: string; nombre: string }> => {
+    const out: Array<{ id: string; nombre: string }> = [];
+    const vistos = new Set<string>();
+    (listaMonedasLocal || []).forEach((m: any) => { const id = String(m.id); if (!vistos.has(id)) { vistos.add(id); out.push({ id, nombre: String(m.moneda || id) }); } });
+    if (!vistos.has(ID_USD)) out.push({ id: ID_USD, nombre: 'Dólares' });
+    if (!vistos.has(ID_MXN)) out.push({ id: ID_MXN, nombre: 'Pesos' });
+    return out;
+  };
+
   const nombreMoneda = (monedaId: any) =>
     listaMonedasLocal.find((m:any) => String(m.id) === String(monedaId))?.moneda || '';
   const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -2965,8 +2979,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnUnidad: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
-                          <option value={ID_USD}>Dólares</option>
-                          <option value={ID_MXN}>Pesos</option>
+                          {opcionesFacturadoEn().map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                         </select>
                       </div>
                       )}
@@ -3164,8 +3177,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnCobrar: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
-                          <option value={ID_USD}>Dólares</option>
-                          <option value={ID_MXN}>Pesos</option>
+                          {opcionesFacturadoEn().map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
                         </select>
                       </div>
                       <div className="form-group"><label className="form-label">Subtotal <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" step="any" className="form-control" value={subtotalClienteFact.convertido ? subtotalClienteFact.monto : (formData.montoConvenioCliente || 0)} readOnly={campoBloqueadoAut('montoConvenioCliente') || subtotalClienteFact.convertido} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : subtotalClienteFact.convertido ? leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual) : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda>{subtotalClienteFact.convertido && <small className={subtotalClienteFact.sinTC ? 'fo-conv-alerta' : 'fo-conv-ok'}>{leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual)}</small>}</div>
