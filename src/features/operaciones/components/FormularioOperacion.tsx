@@ -724,6 +724,29 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const listaOpeProvLocal: any[] = proveedoresUnidad;
   const listaMonedasLocal: any[] = catalogoMoneda;
 
+  // ✅ V00129: ACTUALIZAR MONEDA — relee la empresa en Firestore y ajusta
+  //   "Facturado En" de este registro a la moneda actual de la tabla Empresas
+  //   (útil cuando la moneda del cliente/proveedor cambió después de crear la operación).
+  const [actualizandoMoneda, setActualizandoMoneda] = useState<'' | 'cliente' | 'proveedor'>('');
+  const actualizarMonedaDesdeEmpresa = async (lado: 'cliente' | 'proveedor') => {
+    const empresaId = String(lado === 'cliente' ? formData.clientePaga : formData.proveedorUnidad || '');
+    if (!empresaId) { alert(lado === 'cliente' ? 'Primero selecciona el Cliente (Paga).' : 'Primero selecciona el Proveedor de Transporte.'); return; }
+    setActualizandoMoneda(lado);
+    try {
+      const snapE = await getDoc(doc(db, 'empresas', empresaId));
+      const emp: any = snapE.exists() ? { id: snapE.id, ...snapE.data() } : (empresas || []).find((e: any) => String(e.id) === empresaId);
+      const monId = emp ? resolverMonedaIdDeEmpresa(emp) : '';
+      if (!monId) { alert('Esta empresa no tiene moneda registrada en la tabla Empresas. Asígnala en el módulo Empresas y vuelve a intentar.'); return; }
+      const nombre = listaMonedasLocal.find((m: any) => String(m.id) === monId)?.moneda || monId;
+      setEmpresasLocal(prev => prev.some((e: any) => String(e.id) === empresaId) ? prev.map((e: any) => String(e.id) === empresaId ? { ...e, ...emp } : e) : prev);
+      if (lado === 'cliente') setFormData(prev => ({ ...prev, facturadoEnCobrar: monId }));
+      else setFormData(prev => ({ ...prev, facturadoEnUnidad: monId }));
+      alert(`Facturado En actualizado a "${nombre}" (moneda actual de la empresa).\n\nRecuerda presionar Guardar para que quede en la operación.`);
+    } catch (e: any) {
+      alert(`No se pudo leer la empresa: ${e?.message || String(e)}`);
+    } finally { setActualizandoMoneda(''); }
+  };
+
   const resolverMonedaIdDeEmpresa = (emp: any): string => {
     if (!emp) return '';
     const raw = String(emp.moneda ?? emp.monedaId ?? emp.monedaRef ?? '').trim();
@@ -2934,6 +2957,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       {!esFlotaPropiaRoelca && (
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnUnidad</span></label>
+                        {/* ✅ V00129: re-sincronizar con la moneda actual de la empresa */}
+                        <button type="button" className="fo-btn-act-moneda" disabled={actualizandoMoneda === 'proveedor'} onClick={() => actualizarMonedaDesdeEmpresa('proveedor')} title="Vuelve a leer la moneda del proveedor en la tabla Empresas y la aplica a este registro">{actualizandoMoneda === 'proveedor' ? '⏳…' : '⟳ Actualizar moneda'}</button>
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del proveedor,
                             pero puedes corregir en qué moneda se factura. */}
                         <select disabled title="Viene de la moneda de la empresa (tabla Empresas); no se puede modificar" style={{ opacity: 0.75, cursor: 'not-allowed' }} className="form-control" value={formData.facturadoEnUnidad || ''}
@@ -3131,6 +3156,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Facturado En <span className="campo-badge">facturadoEnCobrar</span></label>
+                        {/* ✅ V00129: re-sincronizar con la moneda actual de la empresa */}
+                        <button type="button" className="fo-btn-act-moneda" disabled={actualizandoMoneda === 'cliente'} onClick={() => actualizarMonedaDesdeEmpresa('cliente')} title="Vuelve a leer la moneda del cliente en la tabla Empresas y la aplica a este registro">{actualizandoMoneda === 'cliente' ? '⏳…' : '⟳ Actualizar moneda'}</button>
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del cliente,
                             pero puedes corregir en qué moneda se factura. */}
                         <select disabled title="Viene de la moneda de la empresa (tabla Empresas); no se puede modificar" style={{ opacity: 0.75, cursor: 'not-allowed' }} className="form-control" value={formData.facturadoEnCobrar || ''}
