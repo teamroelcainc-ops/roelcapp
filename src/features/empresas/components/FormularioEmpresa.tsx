@@ -692,7 +692,21 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   });
 
   const monedaSeleccionadaString = monedas.find(m => m.id === formData.moneda)?.moneda || formData.moneda;
-  const tiposFacturasFiltrados = tiposFacturas.filter(tf => tf.moneda === monedaSeleccionadaString);
+  // ✅ V00127: el catálogo "Tipo de Facturas" guarda la moneda como texto sin
+  //   acento ("Dolares") y el catálogo de Monedas la tiene con acento
+  //   ("Dólares"); la comparación exacta dejaba el selector VACÍO. Ahora se
+  //   compara sin acentos ni mayúsculas, y también se acepta que el tipo de
+  //   factura tenga guardado el ID de la moneda.
+  const normMoneda = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const monedaObjetivo = normMoneda(monedaSeleccionadaString);
+  const tiposFacturasFiltrados = tiposFacturas.filter(tf => {
+    const tfMon = String(tf.moneda ?? '');
+    if (!monedaObjetivo) return true;
+    if (normMoneda(tfMon) === monedaObjetivo) return true;
+    if (tfMon && String(formData.moneda) === tfMon) return true; // guardado como id de moneda
+    const monCat = monedas.find(m => m.id === tfMon)?.moneda;
+    return normMoneda(monCat) === monedaObjetivo;
+  });
   
   // ✅ CORRECCIÓN: el campo tiposEmpresa puede venir guardado como el ID del
   //    catálogo ('7eec9cbb') o como el texto ('Cliente (Paga)'). Antes solo se

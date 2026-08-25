@@ -326,7 +326,8 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
     ),
     fields: [
       { name: 'nombre', label: 'Name', type: 'text', required: true },
-      { name: 'moneda', label: 'Moneda', type: 'select', required: true, options: ['Dolares', 'Pesos'] },
+      // ✅ V00127: la moneda del tipo de factura se elige del catálogo de Monedas (misma escritura, con acentos)
+      { name: 'moneda', label: 'Moneda', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_moneda', labelField: 'moneda', valueField: 'moneda' } },
       { name: 'empresaId', label: 'Empresa', type: 'select', required: true, dynamicOptions: { collection: 'empresas', labelField: 'nombre', valueField: 'id' } }
     ]
   },
