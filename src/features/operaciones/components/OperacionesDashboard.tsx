@@ -4,8 +4,9 @@ import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { FormularioOperacion } from './FormularioOperacion';
 // ✅ NUEVO: Resúmenes Diarios (Transfer / Logística / Fletes) en PDF.
 import { ResumenDiarioOperaciones } from '../../reportes/components/ResumenDiarioOperaciones';
-import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter } from 'firebase/firestore';
+import { collection, doc, writeBatch, query, getDocs, limit, where, startAfter, orderBy } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
+import { registrarLog } from '../../../utils/logger';
 import { sincronizarNombresOperaciones as sincronizarNombresUtil } from '../../../utils/sincronizarNombresOperaciones';
 import { obtenerBotonesHorarioDinamicos, resolverCascadaStatus } from '../config/statusRules';
 import { generarSolicitudRetiroPDF, generarInstruccionesServicioPDF, generarCheckListPDF, generarPruebaEntregaPDF, generarCartaInstruccionesPDF, setLogoPdf } from '../../../utils/pdfGenerator'; 
@@ -421,6 +422,105 @@ const OperacionesDashboard = () => {
   //   los catálogos actuales y reescribe SOLO nombres (nunca montos, tarifas,
   //   monedas ni tipos de cambio).
   const [sincronizandoNombres, setSincronizandoNombres] = useState(false);
+  // ✅ V00132: SINCRONIZAR MONEDAS — recorre TODAS las operaciones de la BD y
+  //   fuerza que "Facturado En" (cliente y proveedor) sea SÍ O SÍ la moneda que
+  //   la empresa tiene guardada HOY en la tabla Empresas. Solo escribe donde
+  //   hay diferencia; reporta cuántas cambió y cuáles empresas no tienen moneda.
+  const [sincronizandoMonedas, setSincronizandoMonedas] = useState(false);
+  const sincronizarMonedasOperaciones = async () => {
+    if (sincronizandoMonedas) return;
+    if (!window.confirm(
+      'Se revisarán TODAS las operaciones de la base de datos y se les colocará, tanto en el lado del CLIENTE (Facturado En) como en el del PROVEEDOR, ' +
+      'la moneda que cada empresa tiene guardada actualmente en la tabla Empresas.\n\n' +
+      'Solo se escriben las operaciones donde la moneda sea distinta; montos y tarifas no se tocan.\n\n¿Continuar?'
+    )) return;
+    setSincronizandoMonedas(true);
+    try {
+      const [snapMon, snapEmp] = await Promise.all([
+        getDocs(collection(db, 'catalogo_moneda')),
+        getDocs(collection(db, 'empresas')),
+      ]);
+      const monedasCat = snapMon.docs.map((d) => ({ id: d.id, moneda: String((d.data() as any).moneda || '') }));
+      const resolver = (raw: string): string => {
+        const v = String(raw || '').trim();
+        if (!v) return '';
+        if (monedasCat.some((m) => m.id === v)) return v;
+        const up = v.toUpperCase();
+        const porTexto = monedasCat.find((m) => { const n = m.moneda.toUpperCase(); return n === up || (!!n && (n.includes(up) || up.includes(n))); });
+        if (porTexto) return porTexto.id;
+        if (up.includes('USD') || up.includes('DOLAR') || up.includes('DÓLAR')) return ID_USD;
+        if (up.includes('MXN') || up.includes('PESO')) return ID_MXN;
+        return '';
+      };
+      const monedaEmpresa: Record<string, string> = {};
+      const nombreEmpresa: Record<string, string> = {};
+      snapEmp.docs.forEach((d) => {
+        const e: any = d.data();
+        monedaEmpresa[d.id] = resolver(String(e.moneda ?? e.monedaId ?? e.monedaRef ?? ''));
+        nombreEmpresa[d.id] = String(e.nombre || e.empresa || d.id);
+      });
+
+      let revisadas = 0, cambiadasCli = 0, cambiadasProv = 0, opsEscritas = 0;
+      const sinMoneda = new Set<string>();
+      const cambiosLocales: Record<string, any> = {};
+      let batch = writeBatch(db);
+      let enBatch = 0;
+      const flush = async () => { if (enBatch > 0) { await batch.commit(); batch = writeBatch(db); enBatch = 0; } };
+
+      let cursor: any = null;
+      for (;;) {
+        const cons: any[] = [orderBy('__name__'), limit(500)];
+        if (cursor) cons.push(startAfter(cursor));
+        const snap = await getDocs(query(collection(db, 'operaciones'), ...cons));
+        if (snap.empty) break;
+        cursor = snap.docs[snap.docs.length - 1];
+        for (const d of snap.docs) {
+          const op: any = d.data();
+          revisadas++;
+          const upd: Record<string, string> = {};
+          const cliId = String(op.clientePaga || '');
+          if (cliId) {
+            const monCli = monedaEmpresa[cliId];
+            if (!monCli) sinMoneda.add(nombreEmpresa[cliId] || cliId);
+            else if (String(op.facturadoEnCobrar || '') !== monCli) { upd.facturadoEnCobrar = monCli; cambiadasCli++; }
+          }
+          const provId = String(op.proveedorUnidad || '');
+          if (provId) {
+            const monProv = monedaEmpresa[provId];
+            if (!monProv) sinMoneda.add(nombreEmpresa[provId] || provId);
+            else if (String(op.facturadoEnUnidad || '') !== monProv) { upd.facturadoEnUnidad = monProv; cambiadasProv++; }
+          }
+          if (Object.keys(upd).length) {
+            batch.update(d.ref, upd);
+            cambiosLocales[d.id] = upd;
+            opsEscritas++; enBatch++;
+            if (enBatch >= 400) await flush();
+          }
+        }
+        if (snap.docs.length < 500) break;
+      }
+      await flush();
+
+      if (opsEscritas > 0) {
+        setOperacionesGlobales((prev) => prev.map((o: any) => cambiosLocales[String(o.id)] ? { ...o, ...cambiosLocales[String(o.id)] } : o));
+        // Un solo aviso al bus: invalida las cachés de Facturación/Pagos.
+        const primero = Object.keys(cambiosLocales)[0];
+        notificarOperacionGuardada(primero, cambiosLocales[primero], 'sincronizar-monedas');
+      }
+      alert(
+        `Sincronización de monedas completada. ✅\n\n` +
+        `Operaciones revisadas: ${revisadas}\n` +
+        `Operaciones actualizadas: ${opsEscritas} (cliente: ${cambiadasCli} · proveedor: ${cambiadasProv})` +
+        (sinMoneda.size ? `\n\n⚠ Empresas SIN moneda en la tabla Empresas (no se tocaron sus operaciones):\n· ${Array.from(sinMoneda).slice(0, 15).join('\n· ')}${sinMoneda.size > 15 ? `\n… y ${sinMoneda.size - 15} más` : ''}` : '')
+      );
+      await registrarLog('Operaciones', 'Edición', `Sincronizó monedas desde Empresas: ${opsEscritas} operación(es) actualizadas (cliente ${cambiadasCli}, proveedor ${cambiadasProv}) de ${revisadas} revisadas.`);
+    } catch (e: any) {
+      console.error('sincronizarMonedasOperaciones:', e);
+      alert('La sincronización de monedas no terminó completa.\n\nDetalle: ' + (e?.message || e?.code || 'desconocido') + '\n\nPuedes volver a ejecutarla; continúa donde hizo falta.');
+    }
+    setSincronizandoMonedas(false);
+  };
+
   const sincronizarNombresOperaciones = async () => {
     if (sincronizandoNombres || operacionesGlobales.length === 0) return;
     const confirmado = window.confirm(
@@ -1593,6 +1693,10 @@ const OperacionesDashboard = () => {
             <button className="btn btn-outline" onClick={sincronizarNombresOperaciones} disabled={sincronizandoNombres || cargandoOperaciones} style={{ fontSize: '0.9rem', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '6px', cursor: sincronizandoNombres ? 'wait' : 'pointer' }} title="Sincronizar nombres: actualiza registro por registro los nombres (tipo de operación, status, empresas, carga) que quedaron viejos tras renombrar en Catálogos">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
               <span>{sincronizandoNombres ? 'Sincronizando...' : 'Sincronizar nombres'}</span>
+            </button>
+            {/* ✅ V00132: forzar la moneda de Empresas en TODAS las operaciones */}
+            <button className="btn btn-outline od-btn-monedas" onClick={sincronizarMonedasOperaciones} disabled={sincronizandoMonedas || cargandoOperaciones} title="Coloca en TODAS las operaciones (cliente y proveedor) la moneda que cada empresa tiene guardada en la tabla Empresas">
+              <span>{sincronizandoMonedas ? '⏳ Actualizando monedas…' : '⟳ Actualizar monedas'}</span>
             </button>
             <button className="btn btn-outline od-x23" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>

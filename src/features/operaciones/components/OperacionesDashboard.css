@@ -352,3 +352,8 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+/* ✅ V00132: botón Actualizar monedas (masivo) */
+.od-btn-monedas { font-size: 0.9rem; padding: 8px 12px; display: flex; align-items: center; gap: 6px; border-color: #3fb950; color: #3fb950; }
+.od-btn-monedas:hover { background-color: rgba(63, 185, 80, 0.12); }
+.od-btn-monedas:disabled { opacity: 0.6; cursor: wait; }
