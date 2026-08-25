@@ -2975,7 +2975,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <button type="button" className="fo-btn-act-moneda" disabled={actualizandoMoneda === 'proveedor'} onClick={() => actualizarMonedaDesdeEmpresa('proveedor')} title="Vuelve a leer la moneda del proveedor en la tabla Empresas y la aplica a este registro">{actualizandoMoneda === 'proveedor' ? '⏳…' : '⟳ Actualizar moneda'}</button>
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del proveedor,
                             pero puedes corregir en qué moneda se factura. */}
-                        <select disabled title="Viene de la moneda de la empresa (tabla Empresas); no se puede modificar" style={{ opacity: 0.75, cursor: 'not-allowed' }} className="form-control" value={formData.facturadoEnUnidad || ''}
+                        {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
+                        <select title="Se precarga de la moneda de la empresa; puedes cambiarla para esta operación" className="form-control" value={formData.facturadoEnUnidad || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnUnidad: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
@@ -3173,7 +3174,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <button type="button" className="fo-btn-act-moneda" disabled={actualizandoMoneda === 'cliente'} onClick={() => actualizarMonedaDesdeEmpresa('cliente')} title="Vuelve a leer la moneda del cliente en la tabla Empresas y la aplica a este registro">{actualizandoMoneda === 'cliente' ? '⏳…' : '⟳ Actualizar moneda'}</button>
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del cliente,
                             pero puedes corregir en qué moneda se factura. */}
-                        <select disabled title="Viene de la moneda de la empresa (tabla Empresas); no se puede modificar" style={{ opacity: 0.75, cursor: 'not-allowed' }} className="form-control" value={formData.facturadoEnCobrar || ''}
+                        {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
+                        <select title="Se precarga de la moneda de la empresa; puedes cambiarla para esta operación" className="form-control" value={formData.facturadoEnCobrar || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnCobrar: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
