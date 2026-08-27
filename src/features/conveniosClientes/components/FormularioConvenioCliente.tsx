@@ -1,5 +1,6 @@
 // src/features/conveniosClientes/components/FormularioConvenioCliente.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
@@ -560,6 +561,8 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
 
   return (
     <>
+      {/* ✅ V00141: modal de acceso a campo bloqueado */}
+      <ModalAccesoCampo aut={aut} />
       <FieldConfigModal isOpen={isConfigOpen} onClose={() => setIsConfigOpen(false)} fields={configuracionCampos} requiredFields={requiredFields} toggleRequired={toggleRequired} />
 
       {/* ✅ NUEVO (V00126): captura/edición del detalle en MODAL (antes era un panel incrustado) */}

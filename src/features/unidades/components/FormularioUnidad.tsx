@@ -1,5 +1,6 @@
 // src/features/unidades/components/FormularioUnidad.tsx
 import React, { useState, useEffect } from 'react';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
@@ -163,13 +164,13 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
   // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
   const aut = useAutorizacionesCampos('unidades');
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    if (aut.campoBloqueado((e.target as any).name)) { alert(`⛔ El campo está bloqueado por Autorizaciones para tu rol.`); return; }
+    if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value } = e.target;
     setFormData((prev: UnidadRecord) => ({ ...prev, [name]: value }));
   };
 
   const handleNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (aut.campoBloqueado((e.target as any).name)) { alert(`⛔ El campo está bloqueado por Autorizaciones para tu rol.`); return; }
+    if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value } = e.target;
     setFormData((prev: UnidadRecord) => ({ ...prev, [name]: parseFloat(value) || 0 }));
   };
@@ -210,6 +211,8 @@ export const FormularioUnidad = ({ estado, initialData, onClose, onMinimize, onR
 
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
+      {/* ✅ V00141: modal de acceso a campo bloqueado */}
+      <ModalAccesoCampo aut={aut} />
       <div className="form-card fu-x5">
         <div className="form-header fu-x6">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Unidad: ${formData.unidad}` : 'Nueva Unidad Propia')}</h2>

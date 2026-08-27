@@ -50,6 +50,15 @@ export interface SolicitudAut {
   // 'segura' = usar el guardado especial del módulo al aprobar (ej. consecutivo
   // de referencia en operaciones). La aplica el AutorizacionesDashboard.
   estrategiaCrear?: 'directa' | 'segura';
+  // ✅ V00141: SOLICITUD DE ACCESO A UN CAMPO BLOQUEADO
+  //   tipo 'accesoCampo': el usuario pide poder editar un campo que Autorizaciones
+  //   le bloquea. Al aprobarse NO se aplica ningún dato: se otorga un permiso
+  //   temporal (vigenciaHasta) solo para ese usuario, módulo y campo.
+  tipo?: 'accion' | 'accesoCampo';
+  campoSolicitado?: string;
+  campoSolicitadoLabel?: string;
+  vigenciaHasta?: string;          // ISO — fin del permiso otorgado
+  notificadaSolicitante?: boolean; // la campana ya avisó del resultado
 }
 
 // ── Registro de módulos autorizables ────────────────────────────────────────
@@ -337,3 +346,45 @@ export const aplicarSolicitudGenerica = async (s: SolicitudAut): Promise<void> =
 
 // Re-export de utilidades de Firestore que usa el dashboard (evita imports dobles).
 export { getDocs, collection, updateDoc, doc, db };
+
+// ── ✅ V00141: Acceso temporal a campos bloqueados ──────────────────────────
+export const HORAS_VIGENCIA_ACCESO = 24;
+
+/** Crea una solicitud de ACCESO a un campo bloqueado (no aplica datos al aprobarse). */
+export const crearSolicitudAccesoCampo = async (p: {
+  modulo: string; moduloLabel: string; coleccion: string;
+  campo: string; campoLabel: string; docId?: string; referencia?: string;
+}): Promise<string> => {
+  const u = await obtenerUsuarioAut();
+  const ref = await addDoc(collection(db, 'solicitudes_autorizacion'), {
+    tipo: 'accesoCampo',
+    modulo: p.modulo, moduloLabel: p.moduloLabel, coleccion: p.coleccion,
+    accion: 'editar',
+    campoSolicitado: p.campo, campoSolicitadoLabel: p.campoLabel,
+    camposAfectados: [p.campo],
+    docId: p.docId || '', referencia: p.referencia || '',
+    motivosControl: [`Acceso al campo "${p.campoLabel}" bloqueado por Autorizaciones.`],
+    estado: 'pendiente',
+    solicitanteUid: u.uid, solicitanteNombre: u.nombre, solicitanteRoles: u.roles,
+    creadaEn: new Date().toISOString(),
+    notificadaSolicitante: false,
+  });
+  return ref.id;
+};
+
+/** Campos con acceso APROBADO y vigente para el usuario, por módulo. */
+export const cargarAccesosCampoVigentes = async (uid: string): Promise<Record<string, Set<string>>> => {
+  const out: Record<string, Set<string>> = {};
+  try {
+    const { query, where } = await import('firebase/firestore');
+    const snap = await getDocs(query(collection(db, 'solicitudes_autorizacion'), where('solicitanteUid', '==', uid), where('tipo', '==', 'accesoCampo')));
+    const ahora = Date.now();
+    snap.docs.forEach((d) => {
+      const x: any = d.data();
+      if (x.estado !== 'aprobada' || !x.campoSolicitado) return;
+      if (x.vigenciaHasta && new Date(x.vigenciaHasta).getTime() < ahora) return; // expirado
+      (out[x.modulo] ||= new Set()).add(String(x.campoSolicitado));
+    });
+  } catch (e) { console.error('cargarAccesosCampoVigentes:', e); }
+  return out;
+};

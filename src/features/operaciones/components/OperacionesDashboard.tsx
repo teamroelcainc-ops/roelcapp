@@ -182,6 +182,28 @@ const OperacionesDashboard = () => {
 
   const [estadoFormulario, setEstadoFormulario] = useState<'cerrado' | 'abierto' | 'minimizado'>('cerrado');
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
+  // ✅ V00141: si una notificación de acceso aprobado pidió abrir un registro, ábrelo
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = localStorage.getItem('roelca_abrir_registro');
+        if (!raw) return;
+        const ped = JSON.parse(raw);
+        if (ped?.modulo !== 'operaciones' || !ped?.docId) return;
+        if (Date.now() - Number(ped.ts || 0) > 10 * 60000) { localStorage.removeItem('roelca_abrir_registro'); return; }
+        localStorage.removeItem('roelca_abrir_registro');
+        const snap = await getDocs(query(collection(db, 'operaciones'), where('__name__', '==', String(ped.docId)), limit(1)));
+        if (!snap.empty) {
+          const op = { id: snap.docs[0].id, ...(snap.docs[0].data() as any) };
+          await cargarCatalogosSiEsNecesario();
+          setOperacionEditando(op);
+          setOperacionViendo(null);
+          setEstadoFormulario('abierto');
+        }
+      } catch { /* noop */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   
   const [operacionesGlobales, setOperacionesGlobales] = useState<any[]>([]);
   const [cargandoOperaciones, setCargandoOperaciones] = useState(true);

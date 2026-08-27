@@ -1,5 +1,6 @@
 // src/features/gastos/components/mtto/FormularioMtto.tsx
 import { useState, useEffect, useRef } from 'react';
+import { ModalAccesoCampo } from '../../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../../autorizaciones/useAutorizacionesCampos';
 // ✅ IMPORTAMOS 'doc' y 'updateDoc' DE FIREBASE
 import { collection, getDocs, query, limit, orderBy, doc, updateDoc } from 'firebase/firestore';
@@ -347,7 +348,7 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
   // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
   const aut = useAutorizacionesCampos('mtto');
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    if (aut.campoBloqueado((e.target as any).name)) { alert(`⛔ El campo está bloqueado por Autorizaciones para tu rol.`); return; }
+    if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -491,6 +492,8 @@ export const FormularioMtto = ({ estado, catalogos, initialData, onClose, onSave
 
   return (
     <div className="modal-overlay" onClick={() => setShowServicios(false)}>
+      {/* ✅ V00141: modal de acceso a campo bloqueado */}
+      <ModalAccesoCampo aut={aut} />
       <div className="form-card fm-x2" onClick={(e) => e.stopPropagation()}>
         
         {/* ENCABEZADO */}

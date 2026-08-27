@@ -1,0 +1,11 @@
+/* ✅ V00141: modal de acceso a campo bloqueado */
+.mac-overlay { z-index: 2700; backdrop-filter: blur(4px); }
+.mac-card { background: #0d1117; border: 1px solid #444; border-radius: 16px; max-width: 460px; width: 92vw; }
+.mac-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #30363d; }
+.mac-titulo { margin: 0; color: #f0f6fc; font-size: 1rem; }
+.mac-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.1rem; }
+.mac-cuerpo { padding: 18px 20px; }
+.mac-txt { color: #f0f6fc; font-weight: 700; margin: 0 0 8px; }
+.mac-ok { color: #3fb950; }
+.mac-sub { color: #8b949e; font-size: 0.85rem; margin: 0; line-height: 1.5; }
+.mac-acciones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }

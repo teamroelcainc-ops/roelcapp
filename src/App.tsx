@@ -743,6 +743,38 @@ function AppContenido() {
   //   campana con el aviso para actualizar sin esperar al Service Worker.
   const [versionNueva, setVersionNueva] = useState('');
   const [avisoVersionAbierto, setAvisoVersionAbierto] = useState(false);
+  // ✅ V00141: notificaciones de solicitudes de acceso resueltas (aprobada/rechazada)
+  const [notisAcceso, setNotisAcceso] = useState<any[]>([]);
+  useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const q = query(collection(db, 'solicitudes_autorizacion'), where('solicitanteUid', '==', uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const lista = snap.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .filter((x: any) => (x.estado === 'aprobada' || x.estado === 'rechazada') && x.notificadaSolicitante === false)
+        .sort((a: any, b: any) => String(b.resueltaEn || '').localeCompare(String(a.resueltaEn || '')));
+      setNotisAcceso(lista);
+    }, () => setNotisAcceso([]));
+    return () => unsub();
+  }, [usuarioActualDB?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Módulo de autorizaciones -> clave de moduloActivo para navegar al formulario
+  const CLAVE_NAV_AUT: Record<string, string> = {
+    operaciones: 'operaciones', tipoCambio: 'tipoCambio', empresas: 'empresas',
+    conveniosClientes: 'conveniosClientes', conveniosProveedores: 'conveniosProveedores',
+    mtto: 'mtto', costosAdicionales: 'costosAdicionales', unidades: 'unidades',
+    colaboradores: 'colaboradores',
+  };
+  const abrirNotiAcceso = async (n: any) => {
+    try { await updateDoc(doc(db, 'solicitudes_autorizacion', n.id), { notificadaSolicitante: true }); } catch { /* seguir */ }
+    setAvisoVersionAbierto(false);
+    if (n.estado !== 'aprobada') return;
+    // deja la instrucción para que el módulo destino abra el registro solicitado
+    try { localStorage.setItem('roelca_abrir_registro', JSON.stringify({ modulo: n.modulo, coleccion: n.coleccion, docId: n.docId || '', campo: n.campoSolicitado || '', ts: Date.now() })); } catch { /* noop */ }
+    const clave = CLAVE_NAV_AUT[String(n.modulo)] || '';
+    if (clave) navegarA(clave as any);
+  };
   useEffect(() => {
     let activo = true;
     const checar = async () => {
@@ -1416,7 +1448,7 @@ function AppContenido() {
                 onClick={() => setAvisoVersionAbierto((v) => !v)}
                 style={{ background: 'none', border: `1px solid ${versionNueva ? '#d29922' : '#30363d'}`, borderRadius: '999px', color: versionNueva ? '#d29922' : '#8b949e', width: '34px', height: '34px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '8px' }}>
                 <Bell size={17} color={versionNueva ? '#d29922' : '#8b949e'} strokeWidth={2} style={{ display: 'block', flexShrink: 0 }} />
-                {versionNueva && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
+                {(versionNueva || notisAcceso.length > 0) && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
               </button>
               {avisoVersionAbierto && (
                 <div style={{ position: 'absolute', top: '42px', right: 0, zIndex: 3000, width: '270px', background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '14px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
@@ -1431,12 +1463,26 @@ function AppContenido() {
                         Actualizar ahora
                       </button>
                     </>
-                  ) : (
+                  ) : notisAcceso.length === 0 ? (
                     <div style={{ color: '#8b949e', fontSize: '0.78rem', lineHeight: 1.45 }}>
                       Sin notificaciones pendientes. ✅<br />
                       <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>Versión actual: {APP_VERSION}</span>
                     </div>
-                  )}
+                  ) : null}
+                  {/* ✅ V00141: resultado de solicitudes de acceso a campos */}
+                  {notisAcceso.map((n: any) => (
+                    <div key={n.id} style={{ borderTop: '1px solid #30363d', paddingTop: '8px', marginTop: '8px' }}>
+                      <div style={{ color: '#8b949e', fontSize: '0.78rem', lineHeight: 1.45, marginBottom: '8px' }}>
+                        {n.estado === 'aprobada'
+                          ? <><b style={{ color: '#3fb950' }}>✅ Acceso aprobado:</b> ya puedes editar <b style={{ color: '#f0f6fc' }}>{n.campoSolicitadoLabel || n.campoSolicitado}</b> en {n.moduloLabel}{n.referencia ? <> ({n.referencia})</> : null}.</>
+                          : <><b style={{ color: '#f85149' }}>⛔ Acceso rechazado:</b> {n.campoSolicitadoLabel || n.campoSolicitado} en {n.moduloLabel}{n.motivoRechazo ? <> — {n.motivoRechazo}</> : null}.</>}
+                      </div>
+                      <button type="button" onClick={() => abrirNotiAcceso(n)}
+                        style={{ width: '100%', padding: '8px 0', borderRadius: '8px', border: n.estado === 'aprobada' ? 'none' : '1px solid #30363d', backgroundColor: n.estado === 'aprobada' ? '#238636' : 'transparent', color: n.estado === 'aprobada' ? '#fff' : '#8b949e', fontWeight: 700, fontSize: '0.78rem', cursor: 'pointer' }}>
+                        {n.estado === 'aprobada' ? 'Abrir formulario' : 'Entendido'}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

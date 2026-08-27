@@ -1,5 +1,6 @@
 // src/features/empresas/components/FormularioEmpresa.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs, onSnapshot, addDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
@@ -543,7 +544,7 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
   const aut = useAutorizacionesCampos('empresas');
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    if (aut.campoBloqueado((e.target as any).name)) { alert(`⛔ El campo está bloqueado por Autorizaciones para tu rol.`); return; }
+    if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value } = e.target;
     
     setFormData(prev => {
@@ -727,6 +728,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
 
   return (
     <>
+      {/* ✅ V00141: modal de acceso a campo bloqueado */}
+      <ModalAccesoCampo aut={aut} />
       <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`} style={{ zIndex: 1050 }}>
         <div className="form-card fe-x26">
           

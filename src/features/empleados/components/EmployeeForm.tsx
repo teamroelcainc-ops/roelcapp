@@ -1,5 +1,6 @@
 // src/features/empleados/components/EmployeeForm.tsx
 import React, { useState, useEffect } from 'react';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
@@ -341,7 +342,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
   // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
   const aut = useAutorizacionesCampos('colaboradores');
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    if (aut.campoBloqueado((e.target as any).name)) { alert(`⛔ El campo está bloqueado por Autorizaciones para tu rol.`); return; }
+    if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value, type } = e.target;
     setFormData((prev: any) => ({ 
       ...prev, 
@@ -404,6 +405,8 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
 
   return (
     <>
+      {/* ✅ V00141: modal de acceso a campo bloqueado */}
+      <ModalAccesoCampo aut={aut} />
       <style>{`
         .strict-3-col-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
         @media (max-width: 768px) { .strict-3-col-grid { grid-template-columns: 1fr; } }

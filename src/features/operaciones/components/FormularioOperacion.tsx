@@ -6,6 +6,8 @@ import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { guardarOperacionSegura } from '../services/operacionesService';
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
 import { cargarConfigModulo, evaluarAutorizacion, camposModificadosDe, obtenerUsuarioAut, MODULOS_AUTORIZABLES } from '../../autorizaciones/autorizaciones';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
 import { calcularStatusDinamico } from '../config/statusRules';
@@ -557,13 +559,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ Bloqueo proactivo en la UI: campos que autorizaciones marca como
   //    controlados para los roles del usuario actual. Admin nunca se bloquea.
   //    (El guardado sigue validando TODO como respaldo.)
-  const camposBloqueadosAut = useMemo(() => {
-    if (!configAut || !usuarioAut || usuarioAut.esAdmin) return new Set<string>();
-    const claves = Object.keys(configAut.campos || {});
-    const r = evaluarAutorizacion(configAut, 'editar', usuarioAut, claves, {});
-    return new Set(r.camposControlados);
-  }, [configAut, usuarioAut]);
-  const campoBloqueadoAut = (k: string) => camposBloqueadosAut.has(k);
+  // ✅ V00141: hook central (config + accesos temporales aprobados + modal de solicitud)
+  const autHook = useAutorizacionesCampos('operaciones');
+  const campoBloqueadoAut = (k: string) => autHook.campoBloqueado(k);
+  // clic sobre un campo bloqueado → modal "No tienes acceso…" con Solicitar autorización
+  const clicCampoBloqueado = (k: string) => autHook.abrirSolicitudAcceso(k, { docId: String(initialData?.id || ''), referencia: String((formData as any).ref || initialData?.ref || '') });
   const [referencia, setReferencia] = useState('');
 
   const [statusPreview, setStatusPreview] = useState<string>('');
@@ -2985,12 +2985,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del proveedor,
                             pero puedes corregir en qué moneda se factura. */}
                         {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
-                        <select disabled={campoBloqueadoAut('facturadoEnUnidad')} title={campoBloqueadoAut('facturadoEnUnidad') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'Se precarga de la moneda de la empresa; puedes cambiarla para esta operación'} style={campoBloqueadoAut('facturadoEnUnidad') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control" value={formData.facturadoEnUnidad || ''}
+                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnUnidad') && clicCampoBloqueado('facturadoEnUnidad')}><select disabled={campoBloqueadoAut('facturadoEnUnidad')} title={campoBloqueadoAut('facturadoEnUnidad') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'Se precarga de la moneda de la empresa; puedes cambiarla para esta operación'} style={campoBloqueadoAut('facturadoEnUnidad') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control" value={formData.facturadoEnUnidad || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnUnidad: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
                           {opcionesFacturadoEn().map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                        </select>
+                        </select></div>
                       </div>
                       )}
                     </div>
@@ -3062,14 +3062,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {formData.operador && <AlertaDocumentos coleccionOrigen="empleados" registroId={String(formData.operador)} registroNombre={searchOperador} etiqueta="Operador" />}
                         </div>
                         {/* Sueldo/Combustible base: BLOQUEADOS (vienen del tarifario de rendimientos). Los totales son calculados. */}
-                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly={campoBloqueadoAut('sueldoOperador')} onChange={e => setFormData(prev => ({ ...prev, sueldoOperador: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('sueldoOperador') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('sueldoOperador') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
+                        <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly={campoBloqueadoAut('sueldoOperador')} onClick={() => campoBloqueadoAut('sueldoOperador') && clicCampoBloqueado('sueldoOperador')} onChange={e => setFormData(prev => ({ ...prev, sueldoOperador: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('sueldoOperador') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('sueldoOperador') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                         <div className="form-group"><label className="form-label">Sueldo Extra <span className="campo-badge">sueldoExtra</span></label><ConSimboloMoneda><input type="number" step="0.01" name="sueldoExtra" className="form-control" value={formData.sueldoExtra || 0} onChange={handleChange} /></ConSimboloMoneda></div>
                         <div className="form-group"><label className="form-label">Sueldo Total <span className="campo-badge">sueldoTotal</span></label><ConSimboloMoneda><input type="number" className="form-control fo-x22" value={formData.sueldoTotal || 0} readOnly /></ConSimboloMoneda></div>
                         {/* Notas del Sueldo Extra: solo aparecen cuando el extra es distinto de 0. */}
                         {Number(formData.sueldoExtra) !== 0 && (
                           <div className="form-group fo-x24"><label className="form-label fo-x26">Notas del Sueldo Extra <span className="campo-badge">sueldoExtraNotas</span></label><input type="text" name="sueldoExtraNotas" className="form-control" placeholder="Motivo del sueldo extra..." value={formData.sueldoExtraNotas || ''} onChange={handleChange} /></div>
                         )}
-                        <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustible) || 0)} readOnly={campoBloqueadoAut('combustible')} onChange={e => setFormData(prev => ({ ...prev, combustible: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('combustible') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('combustible') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></div>
+                        <div className="form-group"><label className="form-label">Combustible <span className="campo-badge">combustible</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustible) || 0)} readOnly={campoBloqueadoAut('combustible')} onClick={() => campoBloqueadoAut('combustible') && clicCampoBloqueado('combustible')} onChange={e => setFormData(prev => ({ ...prev, combustible: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('combustible') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('combustible') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></div>
                         <div className="form-group"><label className="form-label">Combustible Extra <span className="campo-badge">combustibleExtra</span></label><input type="number" step="1" className="form-control" value={Math.round(Number(formData.combustibleExtra) || 0)} onChange={(e) => setFormData(prev => ({ ...prev, combustibleExtra: Math.round(Number(e.target.value) || 0) }))} /></div>
                         <div className="form-group"><label className="form-label">Combustible Total <span className="campo-badge">combustibleTotal</span></label><input type="number" step="1" className="form-control fo-x22" value={Math.round(Number(formData.combustibleTotal) || 0)} readOnly /></div>
                         {/* Notas del Combustible Extra: solo aparecen cuando el extra es distinto de 0. */}
@@ -3169,7 +3169,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           {formData.puenteId && !opcionesPuente.some((g:any) => String(g.id) === String(formData.puenteId)) && (<option value={formData.puenteId}>{formData.puenteNombre || formData.puenteId}</option>)}
                         </select>
                       </div>
-                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly={campoBloqueadoAut('puenteMonto')} onChange={e => setFormData(prev => ({ ...prev, puenteMonto: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('puenteMonto') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del catálogo (Importe); puedes ajustarlo manualmente'} style={campoBloqueadoAut('puenteMonto') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
+                      <div className="form-group"><label className="form-label">Puente Monto <span className="campo-badge">puenteMonto</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.puenteMonto || 0} readOnly={campoBloqueadoAut('puenteMonto')} onClick={() => campoBloqueadoAut('puenteMonto') && clicCampoBloqueado('puenteMonto')} onChange={e => setFormData(prev => ({ ...prev, puenteMonto: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('puenteMonto') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del catálogo (Importe); puedes ajustarlo manualmente'} style={campoBloqueadoAut('puenteMonto') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>
                     </div>
                   </div>
                   )}
@@ -3188,12 +3188,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del cliente,
                             pero puedes corregir en qué moneda se factura. */}
                         {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
-                        <select disabled={campoBloqueadoAut('facturadoEnCobrar')} title={campoBloqueadoAut('facturadoEnCobrar') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'Se precarga de la moneda de la empresa; puedes cambiarla para esta operación'} style={campoBloqueadoAut('facturadoEnCobrar') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control" value={formData.facturadoEnCobrar || ''}
+                        <div onMouseDownCapture={() => campoBloqueadoAut('facturadoEnCobrar') && clicCampoBloqueado('facturadoEnCobrar')}><select disabled={campoBloqueadoAut('facturadoEnCobrar')} title={campoBloqueadoAut('facturadoEnCobrar') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'Se precarga de la moneda de la empresa; puedes cambiarla para esta operación'} style={campoBloqueadoAut('facturadoEnCobrar') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control" value={formData.facturadoEnCobrar || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnCobrar: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
                           {opcionesFacturadoEn().map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                        </select>
+                        </select></div>
                       </div>
                       <div className="form-group"><label className="form-label">Subtotal <span className="campo-badge">montoConvenioCliente</span></label><ConSimboloMoneda><input type="number" step="any" className="form-control" value={subtotalClienteFact.convertido ? subtotalClienteFact.monto : (formData.montoConvenioCliente || 0)} readOnly={campoBloqueadoAut('montoConvenioCliente') || subtotalClienteFact.convertido} onChange={e => setFormData(prev => ({ ...prev, montoConvenioCliente: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('montoConvenioCliente') ? 'Bloqueado por autorizaciones para tu rol' : subtotalClienteFact.convertido ? leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual) : 'Se toma del convenio (tarifario) del cliente; puedes ajustarlo manualmente'} style={{ color: colorMonedaCliente, fontWeight: colorMonedaCliente ? 600 : undefined, ...(campoBloqueadoAut('montoConvenioCliente') ? { opacity: 0.65, cursor: 'not-allowed' } : {}) }} /></ConSimboloMoneda>{subtotalClienteFact.convertido && <small className={subtotalClienteFact.sinTC ? 'fo-conv-alerta' : 'fo-conv-ok'}>{leyendaConversion(subtotalClienteFact, Number(formData.montoConvenioCliente || 0), monConvCliActual)}</small>}</div>
                       {/* ✅ V00126: se eliminó el selector "Moneda del Monto"; la moneda del monto viene del detalle del convenio (monedaConvenioCliente se sigue guardando). */}
@@ -3389,6 +3389,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         <EmployeeForm estado="abierto" onClose={cerrarCreacion} onMinimize={() => {}} onRestore={() => {}} />
       )}
 
+      {/* ✅ V00141: modal de acceso a campo bloqueado */}
+      <ModalAccesoCampo aut={autHook} />
       {detalleConvenioEdit && (
         <EditorDetalleConvenioModal
           tipo={detalleConvenioEdit.tipo}

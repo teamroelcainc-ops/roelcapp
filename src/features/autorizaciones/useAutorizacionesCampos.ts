@@ -8,17 +8,32 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   cargarConfigModulo, evaluarAutorizacion, obtenerUsuarioAut,
-  MODULOS_AUTORIZABLES, type AccionAut, type ConfigModuloAut,
+  MODULOS_AUTORIZABLES, crearSolicitudAccesoCampo, cargarAccesosCampoVigentes,
+  type AccionAut, type ConfigModuloAut,
 } from './autorizaciones';
 
 export const useAutorizacionesCampos = (moduloClave: string) => {
   const [config, setConfig] = useState<ConfigModuloAut | null | undefined>(undefined);
   const [usuario, setUsuario] = useState<{ uid: string; nombre: string; roles: string[]; esAdmin: boolean } | null>(null);
+  // ✅ V00141: accesos temporales aprobados (Solicitar autorización → aprobada)
+  const [accesosVigentes, setAccesosVigentes] = useState<Set<string>>(new Set());
+  // ✅ V00141: modal "No tienes acceso para modificar este campo"
+  const [solicitudCampo, setSolicitudCampo] = useState<string>('');
+  const [solicitudEnviando, setSolicitudEnviando] = useState(false);
+  const [solicitudEnviada, setSolicitudEnviada] = useState(false);
+  const [contextoRegistro, setContextoRegistro] = useState<{ docId?: string; referencia?: string }>({});
 
   useEffect(() => {
     let activo = true;
     cargarConfigModulo(moduloClave).then((c) => { if (activo) setConfig(c); }).catch(() => { if (activo) setConfig(null); });
-    obtenerUsuarioAut().then((u) => { if (activo) setUsuario(u); }).catch(() => { if (activo) setUsuario(null); });
+    obtenerUsuarioAut().then(async (u) => {
+      if (!activo) return;
+      setUsuario(u);
+      if (u && !u.esAdmin) {
+        const acc = await cargarAccesosCampoVigentes(u.uid);
+        if (activo) setAccesosVigentes(acc[moduloClave] || new Set());
+      }
+    }).catch(() => { if (activo) setUsuario(null); });
     return () => { activo = false; };
   }, [moduloClave]);
 
@@ -33,8 +48,9 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
     if (!config || !usuario || usuario.esAdmin) return new Set<string>();
     const claves = Object.keys(config.campos || {});
     const r = evaluarAutorizacion(config, 'editar', usuario, claves, etiquetas);
-    return new Set(r.camposControlados);
-  }, [config, usuario, etiquetas]);
+    // ✅ V00141: un acceso aprobado y vigente destapa el campo para este usuario
+    return new Set(r.camposControlados.filter((k) => !accesosVigentes.has(k)));
+  }, [config, usuario, etiquetas, accesosVigentes]);
 
   const campoBloqueado = (k: string) => camposBloqueados.has(k);
   const propsBloqueo = (k: string) => campoBloqueado(k)
@@ -50,5 +66,34 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
     return false;
   };
 
-  return { cargado: config !== undefined && usuario !== null, esAdmin: !!usuario?.esAdmin, campoBloqueado, propsBloqueo, verificarAccion, camposBloqueados };
+  /** ✅ V00141: abre el modal "No tienes acceso…" para un campo bloqueado. */
+  const abrirSolicitudAcceso = (campo: string, ctx?: { docId?: string; referencia?: string }) => {
+    setSolicitudCampo(campo); setSolicitudEnviada(false);
+    if (ctx) setContextoRegistro(ctx);
+  };
+  const cerrarSolicitudAcceso = () => { setSolicitudCampo(''); setSolicitudEnviada(false); };
+  const enviarSolicitudAcceso = async () => {
+    if (!solicitudCampo || solicitudEnviando) return;
+    setSolicitudEnviando(true);
+    try {
+      const m = MODULOS_AUTORIZABLES.find((x) => x.clave === moduloClave);
+      await crearSolicitudAccesoCampo({
+        modulo: moduloClave, moduloLabel: m?.label || moduloClave, coleccion: m?.coleccion || moduloClave,
+        campo: solicitudCampo, campoLabel: etiquetas[solicitudCampo] || solicitudCampo,
+        docId: contextoRegistro.docId, referencia: contextoRegistro.referencia,
+      });
+      setSolicitudEnviada(true);
+    } catch (e: any) {
+      alert(`No se pudo enviar la solicitud: ${e?.message || e}`);
+    } finally { setSolicitudEnviando(false); }
+  };
+
+  return {
+    cargado: config !== undefined && usuario !== null, esAdmin: !!usuario?.esAdmin,
+    campoBloqueado, propsBloqueo, verificarAccion, camposBloqueados,
+    etiquetas, abrirSolicitudAcceso, cerrarSolicitudAcceso, enviarSolicitudAcceso,
+    solicitudCampo, solicitudEnviando, solicitudEnviada, setContextoRegistro,
+  };
 };
+
+export type CtrlAutorizaciones = ReturnType<typeof useAutorizacionesCampos>;

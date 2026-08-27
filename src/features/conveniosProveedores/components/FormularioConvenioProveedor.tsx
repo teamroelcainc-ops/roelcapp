@@ -1,5 +1,6 @@
 // src/features/conveniosProveedores/components/FormularioConvenioProveedor.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
@@ -480,6 +481,8 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
 
   return (
     <>
+      {/* ✅ V00141: modal de acceso a campo bloqueado */}
+      <ModalAccesoCampo aut={aut} />
       {/* ✅ NUEVO (V00126): captura/edición del concepto en MODAL (antes era un panel incrustado) */}
       {mostrandoDetalleForm && (
         <div className="modal-overlay fcp-det-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) cerrarDetalleModal(); }}>

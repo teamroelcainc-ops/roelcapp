@@ -13,7 +13,7 @@ import type { CSSProperties } from 'react';
 import { onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import {
   MODULOS_AUTORIZABLES, ACCIONES,
-  cargarConfigModulo, guardarConfigModulo, aplicarSolicitudGenerica, reglaAplica,
+  cargarConfigModulo, guardarConfigModulo, aplicarSolicitudGenerica, reglaAplica, HORAS_VIGENCIA_ACCESO,
   obtenerUsuarioAut,
   getDocs, collection, updateDoc, doc, db,
 } from '../autorizaciones';
@@ -208,6 +208,22 @@ export const AutorizacionesDashboard = () => {
   // ── Aprobar / Rechazar ──
   const aprobar = async (s: SolicitudAut) => {
     if (!s.id || procesando) return;
+    // ✅ V00141: solicitud de ACCESO a un campo — no aplica datos: otorga permiso temporal
+    if (s.tipo === 'accesoCampo') {
+      if (!window.confirm(`¿Dar ACCESO al campo "${s.campoSolicitadoLabel || s.campoSolicitado}" de ${s.moduloLabel} a ${s.solicitanteNombre} durante ${HORAS_VIGENCIA_ACCESO} horas?`)) return;
+      setProcesando(s.id);
+      try {
+        await updateDoc(doc(db, 'solicitudes_autorizacion', s.id), {
+          estado: 'aprobada', resueltaEn: new Date().toISOString(), resueltaPorNombre: usuario?.nombre || 'Admin',
+          vigenciaHasta: new Date(Date.now() + HORAS_VIGENCIA_ACCESO * 3600000).toISOString(),
+          notificadaSolicitante: false,
+        });
+        await registrarLog('Autorizaciones', 'Aprobación', `Otorgó acceso temporal (${HORAS_VIGENCIA_ACCESO}h) al campo "${s.campoSolicitadoLabel || s.campoSolicitado}" de ${s.moduloLabel} a ${s.solicitanteNombre}.`);
+        setSolicitudDetalle(null);
+      } catch (e: any) { alert(`No se pudo otorgar el acceso: ${e?.message || 'error'}`); }
+      finally { setProcesando(''); }
+      return;
+    }
     if (!window.confirm(`¿Aprobar y APLICAR este cambio?\n\nMódulo: ${s.moduloLabel}\nAcción: ${ACCIONES.find(a => a.key === s.accion)?.label}\n${s.referencia ? `Registro: ${s.referencia}` : ''}`)) return;
     setProcesando(s.id);
     try {
@@ -237,7 +253,7 @@ export const AutorizacionesDashboard = () => {
     setProcesando(s.id);
     try {
       await updateDoc(doc(db, 'solicitudes_autorizacion', s.id), {
-        estado: 'rechazada', resueltaEn: new Date().toISOString(), resueltaPorNombre: usuario?.nombre || 'Admin', motivoRechazo: motivo || 'Sin motivo',
+        estado: 'rechazada', notificadaSolicitante: false, resueltaEn: new Date().toISOString(), resueltaPorNombre: usuario?.nombre || 'Admin', motivoRechazo: motivo || 'Sin motivo',
       });
       const camposTxtR = camposDeSolicitudLog(s);
       await registrarLog('Autorizaciones', 'Rechazo', `Rechazó ${ACCIONES.find(a => a.key === s.accion)?.label || s.accion} en ${s.moduloLabel}${s.referencia ? ` (${s.referencia})` : ''} solicitado por ${s.solicitanteNombre}${camposTxtR ? `. Campos del cambio: ${camposTxtR}` : ''}. Motivo: ${motivo || 'Sin motivo'}`);
