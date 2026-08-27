@@ -3,7 +3,7 @@ import { APP_VERSION, APP_AUTOR } from './config/version';
 import { Bell } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, updateDoc, getDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
+import { doc, updateDoc, getDoc, setDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
 import { auth, db } from './config/firebase'; 
 import { registrarLog } from './utils/logger';
 import { AvisoSinConexion } from './components/AvisoSinConexion';
@@ -317,6 +317,11 @@ function ResumenDelDia() {
   // ✅ NUEVO: captura rápida del TC y del diesel del día desde la vista principal
   //   (los botones solo aparecen cuando el dato de HOY aún no existe).
   const [modalTCAbierto, setModalTCAbierto] = useState(false);
+  // ✅ V00137: METAS DE OPERACIONES POR DÍA (lunes…domingo) — doc configuracion/metas_operaciones
+  const [metasDia, setMetasDia] = useState<Record<string, number> | null>(null);
+  const [modalMetasAbierto, setModalMetasAbierto] = useState(false);
+  const [metasEdit, setMetasEdit] = useState<Record<string, string>>({});
+  const [guardandoMetas, setGuardandoMetas] = useState(false);
   const [nuevoTC, setNuevoTC] = useState('');
   const [modalDieselAbierto, setModalDieselAbierto] = useState(false);
   const [nuevoDieselCosto, setNuevoDieselCosto] = useState('');
@@ -407,6 +412,37 @@ function ResumenDelDia() {
 
   const empresasDieselFiltradas = empresasDiesel.filter((e: any) =>
     !buscarProvDiesel.trim() || String(e.nombre || '').toLowerCase().includes(buscarProvDiesel.toLowerCase()));
+
+  const DIAS_META = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'] as const;
+  const ETQ_DIA: Record<string, string> = { lunes: 'Lunes', martes: 'Martes', miercoles: 'Miércoles', jueves: 'Jueves', viernes: 'Viernes', sabado: 'Sábado', domingo: 'Domingo' };
+  const claveDiaHoy = () => DIAS_META[(new Date().getDay() + 6) % 7];
+  const metaDeHoy = (): number => Number(metasDia?.[claveDiaHoy()] ?? 0) || 0;
+  const cargarMetas = async () => {
+    try {
+      const snap = await getDoc(doc(db, 'configuracion', 'metas_operaciones'));
+      setMetasDia(snap.exists() ? (snap.data() as Record<string, number>) : {});
+    } catch { setMetasDia({}); }
+  };
+  useEffect(() => { cargarMetas(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const abrirModalMetas = () => {
+    const base: Record<string, string> = {};
+    DIAS_META.forEach((d) => { base[d] = String(metasDia?.[d] ?? ''); });
+    setMetasEdit(base);
+    setModalMetasAbierto(true);
+  };
+  const guardarMetas = async () => {
+    setGuardandoMetas(true);
+    try {
+      const data: Record<string, number> = {};
+      DIAS_META.forEach((d) => { data[d] = Math.max(0, parseInt(metasEdit[d] || '0', 10) || 0); });
+      await setDoc(doc(db, 'configuracion', 'metas_operaciones'), data, { merge: true });
+      setMetasDia(data);
+      setModalMetasAbierto(false);
+    } catch (e) {
+      console.error('[Metas] guardar:', e);
+      alert('No se pudieron guardar las metas. Inténtalo de nuevo.');
+    } finally { setGuardandoMetas(false); }
+  };
 
   const cargar = async () => {
     setCargando(true);
@@ -506,6 +542,19 @@ function ResumenDelDia() {
           </span>
           <span style={valorCss('#58a6ff')}>{cargando ? '…' : datos.totalHoy}</span>
           <span style={sub}>{cargando ? ' ' : `${Math.max(0, datos.totalHoy - datos.completadasHoy - datos.canceladasHoy)} en proceso`}</span>
+          {/* ✅ V00137: meta de operaciones del día (configurable por día de la semana) */}
+          {!cargando && metasDia !== null && (
+            metaDeHoy() > 0 ? (
+              <span style={sub} title={`Meta de ${ETQ_DIA[claveDiaHoy()]}: ${metaDeHoy()} operaciones`}>
+                {datos.totalHoy >= metaDeHoy()
+                  ? <b className="app-meta-ok">✅ Meta de {ETQ_DIA[claveDiaHoy()]} alcanzada ({datos.totalHoy}/{metaDeHoy()})</b>
+                  : <b className="app-meta-falta">🎯 Faltan {metaDeHoy() - datos.totalHoy} para la meta ({datos.totalHoy}/{metaDeHoy()})</b>}
+              </span>
+            ) : (
+              <span style={sub}>Sin meta para {ETQ_DIA[claveDiaHoy()]}</span>
+            )
+          )}
+          <button className="app-x10 app-btn-metas" onClick={abrirModalMetas} title="Configurar la meta de operaciones para cada día de la semana">🎯 Metas por día</button>
         </div>
 
         <div style={tarjeta}>
@@ -566,6 +615,31 @@ function ResumenDelDia() {
       </div>
 
       {/* Modal: capturar TIPO DE CAMBIO de hoy */}
+      {/* ✅ V00137: modal de METAS por día de la semana */}
+      {modalMetasAbierto && (
+        <div className="app-x12" onClick={() => !guardandoMetas && setModalMetasAbierto(false)}>
+          <div className="app-x13 app-metas-card" onClick={(e) => e.stopPropagation()}>
+            <div className="app-x14">
+              <h3 className="app-x15">🎯 Metas de operaciones por día</h3>
+              <button className="app-x16" onClick={() => setModalMetasAbierto(false)}>✕</button>
+            </div>
+            <span className="app-x6">Cuántas operaciones se esperan cada día. La tarjeta "Operaciones del día" muestra cuántas faltan para la meta del día en curso.</span>
+            <div className="app-metas-grid">
+              {DIAS_META.map((d) => (
+                <label className="app-meta-item" key={d}>
+                  <span className="app-meta-etq">{ETQ_DIA[d]}</span>
+                  <input className="app-x20 app-meta-input" type="number" min="0" step="1" placeholder="0" value={metasEdit[d] ?? ''}
+                    onChange={(e) => setMetasEdit((prev) => ({ ...prev, [d]: e.target.value }))} />
+                </label>
+              ))}
+            </div>
+            <div className="app-x21">
+              <button className="app-x22" onClick={() => setModalMetasAbierto(false)} disabled={guardandoMetas}>Cancelar</button>
+              <button onClick={guardarMetas} disabled={guardandoMetas} style={{ flex: 1, padding: '10px', backgroundColor: '#D84315', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 700, cursor: guardandoMetas ? 'wait' : 'pointer' }}>{guardandoMetas ? 'Guardando…' : 'Guardar metas'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {modalTCAbierto && (
         <div className="app-x12" onClick={() => !guardandoCaptura && setModalTCAbierto(false)}>
           <div className="app-x13" onClick={(e) => e.stopPropagation()}>

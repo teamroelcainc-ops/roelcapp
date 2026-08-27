@@ -1198,3 +1198,14 @@ body {
 .app-version-footer { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 8px 6px 10px 6px; user-select: none; order: 99; width: 100%; }
 .app-version-num { color: #8b949e; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.5px; }
 .app-version-autor { color: #6e7681; font-size: 0.64rem; }
+
+/* ✅ V00137: metas de operaciones por día */
+.app-meta-ok { color: #3fb950; }
+.app-meta-falta { color: #f59e0b; }
+.app-btn-metas { margin-top: 4px; }
+.app-metas-card { max-width: 420px; }
+.app-metas-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 14px 0 4px; }
+.app-meta-item { display: flex; flex-direction: column; gap: 4px; }
+.app-meta-etq { color: #8b949e; font-size: 0.72rem; font-weight: 700; }
+.app-meta-input { width: 100%; }
+@media (max-width: 480px) { .app-metas-grid { grid-template-columns: 1fr 1fr; } }
