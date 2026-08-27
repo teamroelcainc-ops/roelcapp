@@ -20,6 +20,7 @@ import { CostosAdicionalesDashboard } from '../../costosAdicionales/CostosAdicio
 import './FormularioOperacion.css';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { EditorDetalleConvenioModal } from './EditorDetalleConvenioModal';
+import { AlertaDocumentos } from '../../documentos/AlertaDocumentos';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
@@ -2720,6 +2721,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Cliente (Paga) <span className="campo-badge">clientePaga</span></label>
+                        {/* ✅ V00135: alerta de documentos vencidos / faltantes */}
+                        {formData.clientePaga && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.clientePaga)} registroNombre={searchClientePaga} etiqueta="Cliente" />}
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('clientePaga')}`} placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga} onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }} onFocus={() => setShowDropdownClientePaga(true)} onBlur={() => setTimeout(() => setShowDropdownClientePaga(false), 200)} />
@@ -2920,6 +2923,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Proveedor de Transporte <span className="campo-badge">proveedorUnidad</span></label>
+                        {formData.proveedorUnidad && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.proveedorUnidad)} registroNombre={searchProvTransporte} etiqueta="Proveedor" />}
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Buscar proveedor de transporte..." value={searchProvTransporte} disabled={proveedorForzado} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} style={proveedorForzado ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} />
@@ -2993,6 +2997,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-grid">
                         <div className="form-group">
                           <label className="form-label">Unidad <span className="campo-badge">unidad</span></label>
+                          {formData.unidad && <AlertaDocumentos coleccionOrigen="unidades" registroId={String(formData.unidad)} registroNombre={searchUnidad} etiqueta="Unidad" />}
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
                               <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
@@ -3032,6 +3037,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                         <div className="form-group">
                           <label className="form-label">Operador <span className="campo-badge">operador</span></label>
+                          {formData.operador && <AlertaDocumentos coleccionOrigen="empleados" registroId={String(formData.operador)} registroNombre={searchOperador} etiqueta="Operador" />}
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
                               <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />

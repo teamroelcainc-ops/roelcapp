@@ -1,0 +1,28 @@
+/* ✅ V00135: alerta de documentos vencidos / faltantes (convención CLAUDE.md) */
+.adoc-alerta { display: inline-block; margin-top: 6px; border-radius: 999px; padding: 3px 10px; font-size: 0.72rem; font-weight: 700; cursor: pointer; background: transparent; }
+.adoc-rojo { border: 1px solid #f85149; color: #f85149; background: rgba(248, 81, 73, 0.1); }
+.adoc-rojo:hover { background: rgba(248, 81, 73, 0.2); }
+.adoc-ambar { border: 1px solid #f59e0b; color: #fbbf24; background: rgba(245, 158, 11, 0.1); }
+.adoc-ambar:hover { background: rgba(245, 158, 11, 0.2); }
+.adoc-overlay { z-index: 2500; backdrop-filter: blur(4px); }
+.adoc-card { background: #0d1117; border: 1px solid #444; border-radius: 16px; max-width: 640px; width: 94vw; max-height: 82vh; display: flex; flex-direction: column; }
+.adoc-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #30363d; }
+.adoc-titulo { margin: 0; font-size: 1rem; color: #f0f6fc; }
+.adoc-nombre { color: #D84315; }
+.adoc-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.1rem; }
+.adoc-cuerpo { padding: 16px 20px; overflow-y: auto; }
+.adoc-vacio { text-align: center; padding: 18px 8px; }
+.adoc-vacio-txt { color: #f0f6fc; margin: 0 0 6px; }
+.adoc-vacio-sub { color: #8b949e; margin: 0; font-size: 0.85rem; }
+.adoc-sub { margin: 10px 0 6px; font-size: 0.8rem; }
+.adoc-sub-rojo { color: #f85149; }
+.adoc-sub-ambar { color: #fbbf24; }
+.adoc-tabla { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-bottom: 8px; }
+.adoc-tabla td { padding: 6px 8px; border-bottom: 1px solid #21262d; color: #c9d1d9; }
+.adoc-doc { font-weight: 600; color: #f0f6fc; }
+.adoc-mod { color: #8b949e; font-weight: 400; font-size: 0.75rem; }
+.adoc-fecha { font-family: monospace; white-space: nowrap; }
+.adoc-estado { white-space: nowrap; text-align: right; }
+.adoc-txt-rojo { color: #f85149; font-weight: 700; }
+.adoc-txt-ambar { color: #fbbf24; font-weight: 700; }
+.adoc-acciones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
