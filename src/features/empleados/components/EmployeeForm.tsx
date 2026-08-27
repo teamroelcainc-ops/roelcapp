@@ -1,5 +1,6 @@
 // src/features/empleados/components/EmployeeForm.tsx
 import React, { useState, useEffect } from 'react';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, onSnapshot, getDocs, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
@@ -337,7 +338,10 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
     }
   }, [initialData]);
 
+  // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
+  const aut = useAutorizacionesCampos('colaboradores');
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (aut.campoBloqueado((e.target as any).name)) { alert(`⛔ El campo está bloqueado por Autorizaciones para tu rol.`); return; }
     const { name, value, type } = e.target;
     setFormData((prev: any) => ({ 
       ...prev, 
@@ -360,6 +364,8 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
     e.preventDefault();
     
     if (!formData.employeeId || formData.employeeId.trim() === '' || formData.employeeId === 'Generando...') {

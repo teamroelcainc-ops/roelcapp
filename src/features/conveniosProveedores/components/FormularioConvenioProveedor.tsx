@@ -1,5 +1,6 @@
 // src/features/conveniosProveedores/components/FormularioConvenioProveedor.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, addDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import type { ConvenioProveedorRecord, ConvenioProveedorDetalleRecord } from '../../../types/convenioProveedor';
@@ -400,7 +401,11 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
     if (!isNew) setDetallesEliminados(prev => [...prev, id]);
   };
 
+  // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
+  const aut = useAutorizacionesCampos('conveniosProveedores');
   const handleSubmit = async (e: React.FormEvent) => {
+    // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
     e.preventDefault();
     if (!formData.proveedorId) return alert("Seleccione un proveedor.");
 

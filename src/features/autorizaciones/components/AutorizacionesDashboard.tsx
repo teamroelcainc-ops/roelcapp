@@ -13,7 +13,7 @@ import type { CSSProperties } from 'react';
 import { onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import {
   MODULOS_AUTORIZABLES, ACCIONES,
-  cargarConfigModulo, guardarConfigModulo, aplicarSolicitudGenerica,
+  cargarConfigModulo, guardarConfigModulo, aplicarSolicitudGenerica, reglaAplica,
   obtenerUsuarioAut,
   getDocs, collection, updateDoc, doc, db,
 } from '../autorizaciones';
@@ -51,6 +51,9 @@ export const AutorizacionesDashboard = () => {
 
   // ── Configuración ──
   const [configs, setConfigs] = useState<Record<string, ConfigModuloAut>>({});
+  // ✅ V00140: VISTA PREVIA del formulario de un módulo (simula un rol)
+  const [previewModulo, setPreviewModulo] = useState<string>('');
+  const [previewRol, setPreviewRol] = useState<string>('');
   const [moduloAbierto, setModuloAbierto] = useState<string>('');
   const [rolesCatalogo, setRolesCatalogo] = useState<string[]>([]);
   const [guardandoModulo, setGuardandoModulo] = useState<string>('');
@@ -392,6 +395,9 @@ export const AutorizacionesDashboard = () => {
                     <span className="ad-x31">{abierto ? '▼' : '▶'}</span>
                     <span className="ad-x32">{m.label}</span>
                     {!m.integrado && <span className="ad-x33">pendiente de integrar</span>}
+                    {m.campos.length > 0 && (
+                      <button className="ad-prev-btn" onClick={(e) => { e.stopPropagation(); setPreviewModulo(m.clave); setPreviewRol(rolesCatalogo[0] || ''); }} title="Simula cómo verá el formulario cada rol con las reglas actuales">👁 Vista previa</button>
+                    )}
                   </div>
                   {activas > 0 && <span className="ad-x34">{activas} regla{activas === 1 ? '' : 's'} activa{activas === 1 ? '' : 's'}</span>}
                 </div>
@@ -509,6 +515,53 @@ export const AutorizacionesDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* ✅ V00140: VISTA PREVIA — simula el formulario del módulo con las reglas actuales */}
+      {previewModulo && (() => {
+        const mod = MODULOS_AUTORIZABLES.find(x => x.clave === previewModulo);
+        if (!mod) return null;
+        const cfg = configs[previewModulo] || { acciones: {}, campos: {} };
+        const rolSel = previewRol ? [previewRol] : [];
+        const accionesCtrl = ACCIONES.filter(a => reglaAplica((cfg.acciones as any)?.[a.key], rolSel));
+        return (
+          <div className="modal-overlay ad-prev-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setPreviewModulo(''); }}>
+            <div className="ad-prev-card">
+              <div className="ad-prev-header">
+                <h3 className="ad-prev-titulo">👁 Vista previa · {mod.label}</h3>
+                <button className="ad-x16 ad-prev-cerrar" onClick={() => setPreviewModulo('')}>✕</button>
+              </div>
+              <div className="ad-prev-cuerpo">
+                <label className="ad-prev-rol">
+                  <span>Simular con el rol:</span>
+                  <select className="form-control ad-prev-select" value={previewRol} onChange={(e) => setPreviewRol(e.target.value)}>
+                    {rolesCatalogo.length === 0 && <option value="">(sin roles en catálogo)</option>}
+                    {rolesCatalogo.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <span className="ad-prev-nota">Los Admin siempre ven todo editable.</span>
+                </label>
+                <div className="ad-prev-acciones">
+                  {ACCIONES.map(a => {
+                    const ctrl = accionesCtrl.some(x => x.key === a.key);
+                    return <span key={a.key} className={`ad-prev-chip ${ctrl ? 'ctrl' : 'libre'}`}>{ctrl ? '🔒' : '✓'} {a.label}{ctrl ? ' → requiere autorización' : ''}</span>;
+                  })}
+                </div>
+                <div className="ad-prev-form">
+                  {mod.campos.map(c => {
+                    const bloqueado = reglaAplica((cfg.campos as any)?.[c.key], rolSel);
+                    return (
+                      <div className="ad-prev-campo" key={c.key}>
+                        <label className="ad-prev-etq">{c.label}{bloqueado && <span className="ad-prev-lock"> 🔒</span>}</label>
+                        <input className="ad-prev-input" disabled={bloqueado} readOnly placeholder={bloqueado ? 'Bloqueado por Autorizaciones para este rol' : 'Editable'} title={bloqueado ? `Con el rol "${previewRol}" este campo queda bloqueado` : 'Editable para este rol'} />
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="ad-prev-pie">Así se verá el formulario de <b>{mod.label}</b> para un usuario con el rol <b>{previewRol || '—'}</b> con las reglas actuales{'\u00A0'}(incluye cambios sin guardar). 🔒 = campo deshabilitado; acciones controladas piden autorización al guardar.</p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

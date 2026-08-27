@@ -116,15 +116,68 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
   { clave: 'referenciasPuentes', label: 'Referencias de Puentes', coleccion: 'referencias_puentes', campos: [], integrado: false },
   { clave: 'referenciasNomina', label: 'Nómina', coleccion: 'referencias_nomina', campos: [], integrado: false },
   { clave: 'deducciones', label: 'Deducciones', coleccion: 'deducciones', campos: [], integrado: false },
-  { clave: 'mtto', label: 'MTTO', coleccion: 'mtto', campos: [], integrado: false },
-  { clave: 'costosAdicionales', label: 'Costos Adicionales', coleccion: 'costos_adicionales', campos: [], integrado: false },
-  { clave: 'empresas', label: 'Empresas', coleccion: 'empresas', campos: [], integrado: false },
+  { clave: 'mtto', label: 'MTTO', coleccion: 'mtto', campos: [
+      { key: 'proveedor', label: 'Proveedor' },
+      { key: 'tipoServicio', label: 'Tipo de Servicio' },
+      { key: 'condicionPago', label: 'Condición de Pago' },
+      { key: 'moneda', label: 'Moneda' },
+      { key: 'importe', label: 'Importe (Monto Base)' },
+      { key: 'ivaPorcentaje', label: 'IVA (%)' },
+      { key: 'retIva', label: 'RET IVA' },
+      { key: 'retIsr', label: 'RET ISR' },
+      { key: 'fecha', label: 'Fecha' },
+    ], integrado: true },
+  { clave: 'costosAdicionales', label: 'Costos Adicionales', coleccion: 'costos_adicionales', campos: [
+      { key: 'observaciones', label: 'Observaciones' },
+      { key: 'monto', label: 'Cargos Adicionales (Monto)' },
+    ], integrado: true },
+  { clave: 'empresas', label: 'Empresas', coleccion: 'empresas', campos: [
+      { key: 'nombre', label: 'Nombre' },
+      { key: 'rfc', label: 'RFC' },
+      { key: 'moneda', label: 'Moneda' },
+      { key: 'tipoFactura', label: 'Tipo de Factura' },
+      { key: 'creditoContado', label: 'Crédito / Contado' },
+      { key: 'diasCredito', label: 'Días de Crédito' },
+      { key: 'limiteCredito', label: 'Límite de Crédito' },
+      { key: 'regimenFiscal', label: 'Régimen Fiscal' },
+      { key: 'tiposEmpresa', label: 'Tipos de Empresa' },
+      { key: 'status', label: 'Status' },
+    ], integrado: true },
   { clave: 'contactos', label: 'Contactos', coleccion: 'contactos', campos: [], integrado: false },
   { clave: 'direcciones', label: 'Direcciones', coleccion: 'direcciones', campos: [], integrado: false },
-  { clave: 'conveniosClientes', label: 'Convenios de Clientes', coleccion: 'convenios_clientes', campos: [], integrado: false },
-  { clave: 'conveniosProveedores', label: 'Convenios de Proveedores', coleccion: 'convenios_proveedores', campos: [], integrado: false },
-  { clave: 'colaboradores', label: 'Colaboradores', coleccion: 'empleados', campos: [], integrado: false },
-  { clave: 'unidades', label: 'Unidades Propias', coleccion: 'unidades', campos: [], integrado: false },
+  { clave: 'conveniosClientes', label: 'Convenios de Clientes', coleccion: 'convenios_clientes', campos: [
+      { key: 'clienteId', label: 'Cliente' },
+      { key: 'fechaConvenio', label: 'Fecha del Convenio' },
+      { key: 'fechaVencimiento', label: 'Fecha de Vencimiento' },
+      { key: 'credito', label: 'Crédito (Días)' },
+      { key: 'status', label: 'Status' },
+    ], integrado: true },
+  { clave: 'conveniosProveedores', label: 'Convenios de Proveedores', coleccion: 'convenios_proveedores', campos: [
+      { key: 'proveedorId', label: 'Proveedor' },
+      { key: 'fechaConvenio', label: 'Fecha del Convenio' },
+      { key: 'fechaVencimiento', label: 'Fecha de Vencimiento' },
+      { key: 'credito', label: 'Crédito (Días)' },
+      { key: 'status', label: 'Status' },
+    ], integrado: true },
+  { clave: 'colaboradores', label: 'Colaboradores', coleccion: 'empleados', campos: [
+      { key: 'nombres', label: 'Nombres' },
+      { key: 'apellidoPaterno', label: 'Apellido Paterno' },
+      { key: 'apellidoMaterno', label: 'Apellido Materno' },
+      { key: 'cargo', label: 'Cargo' },
+      { key: 'sueldo', label: 'Sueldo' },
+      { key: 'telefonoAsignado', label: 'Teléfono Asignado' },
+      { key: 'activo', label: 'Activo' },
+    ], integrado: true },
+  { clave: 'unidades', label: 'Unidades Propias', coleccion: 'unidades', campos: [
+      { key: 'unidad', label: 'Nombre de Unidad' },
+      { key: 'placas', label: 'Placas' },
+      { key: 'serie', label: 'Número de Serie' },
+      { key: 'marca', label: 'Marca' },
+      { key: 'modelo', label: 'Modelo (Año)' },
+      { key: 'kilometrajeInicial', label: 'Kilometraje Inicial' },
+      { key: 'combustible', label: 'Combustible' },
+      { key: 'activa', label: 'Unidad Activa / Disponible' },
+    ], integrado: true },
   { clave: 'remolques', label: 'Remolques', coleccion: 'remolques', campos: [], integrado: false },
   { clave: 'proveedoresUnidad', label: 'Proveedores de Unidad', coleccion: 'proveedores_unidad', campos: [], integrado: false },
   { clave: 'unidadesProveedor', label: 'Unidades del Proveedor', coleccion: 'unidades_proveedor', campos: [], integrado: false },
@@ -189,7 +242,7 @@ export const cargarConfigModulo = async (modulo: string): Promise<ConfigModuloAu
   }
 };
 
-const reglaAplica = (regla: ReglaAut | undefined, rolesUsuario: string[]): boolean => {
+export const reglaAplica = (regla: ReglaAut | undefined, rolesUsuario: string[]): boolean => {
   if (!regla || !regla.requiere) return false;
   const objetivo = (regla.roles || []).filter(Boolean);
   if (objetivo.length === 0) return true; // sin roles = aplica a todos

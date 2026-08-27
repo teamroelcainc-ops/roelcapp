@@ -16,6 +16,7 @@
 // de la operación seleccionada.
 
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useAutorizacionesCampos } from '../autorizaciones/useAutorizacionesCampos';
 import {
   collection, getDocs, query, orderBy, limit, startAfter,
   doc, addDoc, deleteDoc, updateDoc, where
@@ -293,7 +294,10 @@ export const CostosAdicionalesDashboard = ({ operacionFija, onCerrar, onCostosAc
   const totalActualTipo = modal?.tipo === 'proveedor' ? totalProveedor : totalCliente;
   const totalConNuevo = totalActualTipo + (Number(monto) || 0);
 
+  // ✅ V00140: respeta Autorizaciones (módulo Costos Adicionales)
+  const aut = useAutorizacionesCampos('costosAdicionales');
   const guardarCosto = async (e: React.FormEvent) => {
+    if (!aut.verificarAccion('crear', ['observaciones', 'monto'])) return;
     e.preventDefault();
     if (!opSeleccionada || !modal) return;
     if (!monto && monto !== 0) return alert('Captura el monto de Cargos Adicionales.');

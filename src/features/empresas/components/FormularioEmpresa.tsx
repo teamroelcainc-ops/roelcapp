@@ -1,5 +1,6 @@
 // src/features/empresas/components/FormularioEmpresa.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs, onSnapshot, addDoc, query, where, writeBatch } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioDireccion } from '../../direcciones/components/FormularioDireccion'; 
@@ -539,7 +540,10 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
     }
   }, [initialData, registros]);
 
+  // ✅ V00140: este formulario respeta Autorizaciones (campos bloqueados + acciones)
+  const aut = useAutorizacionesCampos('empresas');
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    if (aut.campoBloqueado((e.target as any).name)) { alert(`⛔ El campo está bloqueado por Autorizaciones para tu rol.`); return; }
     const { name, value } = e.target;
     
     setFormData(prev => {
@@ -582,6 +586,8 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    // ✅ V00140: reglas de acción (crear/editar) de Autorizaciones
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
     e.preventDefault();
 
     if (!formData.nombre || !formData.rfcTaxId) {
