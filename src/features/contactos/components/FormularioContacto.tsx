@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import './FormularioContacto.css';
@@ -66,7 +68,11 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
     setMostrarDropdown(false);
   };
 
+  // ✅ V00142: este formulario respeta Autorizaciones
+  const aut = useAutorizacionesCampos('contactos');
   const handleSubmit = async (e: React.FormEvent) => {
+    // ✅ V00142: reglas de Autorizaciones
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
     e.preventDefault();
     if (!formData.id_cliente) return alert("Por favor, selecciona una empresa válida del buscador.");
     
@@ -90,6 +96,7 @@ export const FormularioContacto: React.FC<Props> = ({ estado, initialData, onClo
   if (estado === 'minimizado') {
     return (
       <div className="fc-x1">
+      <ModalAccesoCampo aut={aut} />
         <span className="fc-x2">{initialData ? 'Editando Contacto' : 'Nuevo Contacto'}</span>
         <div className="fc-x3">
           <button className="fc-x4" onClick={onRestore}>🗖 Restaurar</button>

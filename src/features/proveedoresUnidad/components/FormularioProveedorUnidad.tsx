@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs } from 'firebase/firestore';
 import { db, agregarRegistro, actualizarRegistro } from '../../../config/firebase';
 import './FormularioProveedorUnidad.css';
@@ -90,7 +92,10 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
     }
   }, [initialData]);
 
+  // ✅ V00142: este formulario respeta Autorizaciones
+  const aut = useAutorizacionesCampos('proveedoresUnidad');
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    if (aut.campoBloqueado((e.target as any).name)) { aut.abrirSolicitudAcceso((e.target as any).name); return; }
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -111,6 +116,8 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
+    // ✅ V00142: reglas de Autorizaciones
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
     e.preventDefault();
     if (!formData.proveedorId) {
       alert("Por favor selecciona un proveedor válido.");
@@ -135,6 +142,7 @@ export const FormularioProveedorUnidad = ({ estado, initialData, onClose, onMini
 
   return (
     <div className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}>
+      <ModalAccesoCampo aut={aut} />
       <div className="form-card fpu-x1">
         <div className="form-header">
           <h2>{estado === 'minimizado' ? 'Editando...' : (initialData ? `Editar Proveedor` : 'Nuevo Proveedor de Unidad')}</h2>

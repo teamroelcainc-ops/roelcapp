@@ -1,5 +1,7 @@
 // src/features/direcciones/components/FormularioDireccion.tsx
 import React, { useState, useEffect } from 'react';
+import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs, addDoc, updateDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import type { DireccionRecord } from '../../../types/direccion';
@@ -348,7 +350,11 @@ export const FormularioDireccion: React.FC<FormProps> = ({
     }
   };
 
+  // ✅ V00142: este formulario respeta Autorizaciones
+  const aut = useAutorizacionesCampos('direcciones');
   const handleSubmit = async (e: React.FormEvent) => {
+    // ✅ V00142: reglas de Autorizaciones
+    if (!aut.verificarAccion(initialData?.id ? 'editar' : 'crear', Object.keys(formData || {}))) return;
     e.preventDefault();
 
     // ✅ Resolución de textos pendientes: si el usuario escribió pero no dio
@@ -455,6 +461,7 @@ export const FormularioDireccion: React.FC<FormProps> = ({
 
     return (
       <div className="form-group" key={nivel}>
+      <ModalAccesoCampo aut={aut} />
         <label className="form-label" style={{ color: conError ? '#f85149' : '#8b949e', fontSize: '0.85rem' }}>
           {cfg.label}{esObligatorio(keyId) ? ' *' : ''}
         </label>

@@ -13,6 +13,7 @@
 // ============================================================================
 import { doc, getDoc, getDocs, collection, setDoc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db, auth } from '../../config/firebase';
+import { almacenSesion } from '../../utils/cacheMemoria';
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
 export type AccionAut = 'crear' | 'editar' | 'borrar';
@@ -152,8 +153,19 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
       { key: 'tiposEmpresa', label: 'Tipos de Empresa' },
       { key: 'status', label: 'Status' },
     ], integrado: true },
-  { clave: 'contactos', label: 'Contactos', coleccion: 'contactos', campos: [], integrado: false },
-  { clave: 'direcciones', label: 'Direcciones', coleccion: 'direcciones', campos: [], integrado: false },
+  { clave: 'contactos', label: 'Contactos', coleccion: 'contactos', campos: [
+      { key: 'nombre', label: 'Nombre' },
+      { key: 'telefono', label: 'Teléfono' },
+      { key: 'correo', label: 'Correo' },
+      { key: 'empresaId', label: 'Empresa' },
+    ], integrado: true },
+  { clave: 'direcciones', label: 'Direcciones', coleccion: 'direcciones', campos: [
+      { key: 'nombre', label: 'Nombre' },
+      { key: 'direccion', label: 'Dirección' },
+      { key: 'ciudad', label: 'Ciudad' },
+      { key: 'estado', label: 'Estado' },
+      { key: 'pais', label: 'País' },
+    ], integrado: true },
   { clave: 'conveniosClientes', label: 'Convenios de Clientes', coleccion: 'convenios_clientes', campos: [
       { key: 'clienteId', label: 'Cliente' },
       { key: 'fechaConvenio', label: 'Fecha del Convenio' },
@@ -187,9 +199,26 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
       { key: 'combustible', label: 'Combustible' },
       { key: 'activa', label: 'Unidad Activa / Disponible' },
     ], integrado: true },
-  { clave: 'remolques', label: 'Remolques', coleccion: 'remolques', campos: [], integrado: false },
-  { clave: 'proveedoresUnidad', label: 'Proveedores de Unidad', coleccion: 'proveedores_unidad', campos: [], integrado: false },
-  { clave: 'unidadesProveedor', label: 'Unidades del Proveedor', coleccion: 'unidades_proveedor', campos: [], integrado: false },
+  { clave: 'remolques', label: 'Remolques', coleccion: 'remolques', campos: [
+      { key: 'remolque', label: 'Nombre del Remolque' },
+      { key: 'placas', label: 'Placas' },
+      { key: 'serie', label: 'Número de Serie' },
+      { key: 'marca', label: 'Marca' },
+      { key: 'modelo', label: 'Modelo (Año)' },
+      { key: 'activo', label: 'Activo' },
+    ], integrado: true },
+  { clave: 'proveedoresUnidad', label: 'Proveedores de Unidad', coleccion: 'proveedores_unidad', campos: [
+      { key: 'nombre', label: 'Nombre' },
+      { key: 'telefono', label: 'Teléfono' },
+      { key: 'activo', label: 'Activo' },
+    ], integrado: true },
+  { clave: 'unidadesProveedor', label: 'Unidades del Proveedor', coleccion: 'unidades_proveedor', campos: [
+      { key: 'unidad', label: 'Unidad' },
+      { key: 'placas', label: 'Placas' },
+      { key: 'serie', label: 'Número de Serie' },
+      { key: 'proveedorId', label: 'Proveedor' },
+      { key: 'activo', label: 'Activo' },
+    ], integrado: true },
   { clave: 'combustible', label: 'Combustible', coleccion: 'combustible', campos: [], integrado: false },
   { clave: 'catalogos', label: 'Catálogos', coleccion: 'catalogos', campos: [], integrado: false },
 ];
@@ -207,18 +236,37 @@ export const esRolAdmin = (roles: string[]): boolean =>
   (roles || []).some(r => normAut(r).includes('ADMIN'));
 
 /** Usuario actual con sus roles (misma lógica que el resto de la app). */
+// ✅ V00142: "Ver como" (vista previa de rol/usuario) también aplica en
+//   Autorizaciones: si un Admin está simulando un rol, los formularios deben
+//   comportarse EXACTAMENTE como los vería ese rol (campos bloqueados, acciones
+//   controladas y solicitudes). La simulación vive en sessionStorage
+//   (roelca_vista_como) — solo visual: las security rules del servidor no cambian.
+const vistaComoRoles = (): string[] | null => {
+  try {
+    const raw = almacenSesion.getItem('roelca_vista_como');
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    const roles = Array.isArray(v?.roles) ? v.roles.map((r: any) => String(r)).filter(Boolean) : [];
+    return roles.length ? roles : null;
+  } catch { return null; }
+};
+
 export const obtenerUsuarioAut = async (): Promise<{ uid: string; nombre: string; roles: string[]; esAdmin: boolean }> => {
+  const simulados = vistaComoRoles();
   const u = auth.currentUser;
-  // Sin sesión con doc (bypass) = acceso total, se trata como Admin.
-  if (!u) return { uid: '', nombre: 'Sistema', roles: ['ADMIN'], esAdmin: true };
+  // Sin sesión con doc (bypass) = acceso total, se trata como Admin (salvo simulación).
+  if (!u) {
+    if (simulados) return { uid: '', nombre: 'Sistema (vista previa)', roles: simulados, esAdmin: esRolAdmin(simulados) };
+    return { uid: '', nombre: 'Sistema', roles: ['ADMIN'], esAdmin: true };
+  }
   try {
     const snap = await getDoc(doc(db, 'usuarios', u.uid));
-    if (!snap.exists()) return { uid: u.uid, nombre: u.email || 'Usuario', roles: ['ADMIN'], esAdmin: true };
-    const data: any = snap.data();
-    const roles: string[] = Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : []);
-    return { uid: u.uid, nombre: data.nombre || u.email || 'Usuario', roles, esAdmin: esRolAdmin(roles) };
+    const data: any = snap.exists() ? snap.data() : null;
+    const rolesReales: string[] = data ? (Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : [])) : ['ADMIN'];
+    const roles = simulados ?? rolesReales;
+    return { uid: u.uid, nombre: (data?.nombre || u.email || 'Usuario') + (simulados ? ' (vista previa)' : ''), roles, esAdmin: esRolAdmin(roles) };
   } catch {
-    return { uid: u.uid, nombre: u.email || 'Usuario', roles: [], esAdmin: false };
+    return { uid: u.uid, nombre: u.email || 'Usuario', roles: simulados ?? [], esAdmin: simulados ? esRolAdmin(simulados) : false };
   }
 };
 
