@@ -59,7 +59,7 @@ export interface ModuloAutorizable {
   clave: string;
   label: string;
   coleccion: string;
-  campos: { key: string; label: string }[];
+  campos: { key: string; label: string; porDefecto?: boolean }[]; // porDefecto: la regla nace MARCADA para todos los roles (el Admin puede desmarcarla en Autorizaciones)
   integrado: boolean; // true = su formulario ya intercepta el guardado
 }
 
@@ -93,6 +93,10 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
       { key: 'montoConvenioCliente', label: 'Monto Convenio Cliente' },
       { key: 'cargosAdicionales', label: 'Cargos Adicionales (Cliente)' },
       { key: 'tipoCambioAprobado', label: 'Tipo de Cambio Aprobado' },
+      // ✅ V00139: la MONEDA de facturación viene de la tabla Empresas; por defecto
+      //   queda BLOQUEADA para todos los roles (se controla desde Autorizaciones).
+      { key: 'facturadoEnCobrar', label: 'Facturado En (Moneda · Cliente)', porDefecto: true },
+      { key: 'facturadoEnUnidad', label: 'Facturado En (Moneda · Proveedor)', porDefecto: true },
       { key: 'status', label: 'Status' },
     ],
   },
@@ -157,15 +161,31 @@ export const obtenerUsuarioAut = async (): Promise<{ uid: string; nombre: string
 };
 
 /** Config de un módulo (o null si no se ha configurado). */
+/** ✅ V00139: reglas que nacen marcadas (porDefecto) aunque nadie haya configurado el módulo. */
+const camposPorDefectoDe = (modulo: string): Record<string, ReglaAut> => {
+  const def: Record<string, ReglaAut> = {};
+  const m = MODULOS_AUTORIZABLES.find(x => x.clave === modulo);
+  (m?.campos || []).forEach(c => { if (c.porDefecto) def[c.key] = { requiere: true, roles: [] }; });
+  return def;
+};
+
 export const cargarConfigModulo = async (modulo: string): Promise<ConfigModuloAut | null> => {
+  const defaults = camposPorDefectoDe(modulo);
   try {
     const snap = await getDoc(doc(db, 'config_autorizaciones', modulo));
-    if (!snap.exists()) return null;
+    if (!snap.exists()) {
+      // Sin configuración guardada: aplican solo las reglas por defecto (si las hay).
+      return Object.keys(defaults).length ? { acciones: {}, campos: defaults } : null;
+    }
     const d: any = snap.data();
-    return { acciones: d.acciones || {}, campos: d.campos || {} };
+    const campos: Record<string, ReglaAut> = { ...(d.campos || {}) };
+    // Las reglas por defecto solo se inyectan si el Admin NO las ha tocado
+    // (si ya existen en el doc —marcadas o desmarcadas— se respeta lo guardado).
+    Object.entries(defaults).forEach(([k, regla]) => { if (campos[k] === undefined) campos[k] = regla; });
+    return { acciones: d.acciones || {}, campos };
   } catch (e) {
     console.error('Error cargando config de autorizaciones:', modulo, e);
-    return null;
+    return Object.keys(defaults).length ? { acciones: {}, campos: defaults } : null;
   }
 };
 

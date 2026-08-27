@@ -2985,7 +2985,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del proveedor,
                             pero puedes corregir en qué moneda se factura. */}
                         {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
-                        <select title="Se precarga de la moneda de la empresa; puedes cambiarla para esta operación" className="form-control" value={formData.facturadoEnUnidad || ''}
+                        <select disabled={campoBloqueadoAut('facturadoEnUnidad')} title={campoBloqueadoAut('facturadoEnUnidad') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'Se precarga de la moneda de la empresa; puedes cambiarla para esta operación'} style={campoBloqueadoAut('facturadoEnUnidad') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control" value={formData.facturadoEnUnidad || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnUnidad: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
@@ -3188,7 +3188,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         {/* ✅ CAMBIO: ahora EDITABLE — se precarga del cliente,
                             pero puedes corregir en qué moneda se factura. */}
                         {/* ✅ V00132: EDITABLE otra vez a petición — se precarga de la empresa (y "⟳ Actualizar moneda" la re-sincroniza), pero aquí puedes corregirla para esta operación */}
-                        <select title="Se precarga de la moneda de la empresa; puedes cambiarla para esta operación" className="form-control" value={formData.facturadoEnCobrar || ''}
+                        <select disabled={campoBloqueadoAut('facturadoEnCobrar')} title={campoBloqueadoAut('facturadoEnCobrar') ? 'La moneda viene de la tabla Empresas y está bloqueada por Autorizaciones para tu rol (usa ⟳ Actualizar moneda para re-sincronizarla)' : 'Se precarga de la moneda de la empresa; puedes cambiarla para esta operación'} style={campoBloqueadoAut('facturadoEnCobrar') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} className="form-control" value={formData.facturadoEnCobrar || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, facturadoEnCobrar: e.target.value }))}
                           >
                           <option value="">— Sin definir —</option>
