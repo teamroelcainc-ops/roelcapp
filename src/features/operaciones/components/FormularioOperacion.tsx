@@ -2721,8 +2721,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Cliente (Paga) <span className="campo-badge">clientePaga</span></label>
-                        {/* ✅ V00135: alerta de documentos vencidos / faltantes */}
-                        {formData.clientePaga && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.clientePaga)} registroNombre={searchClientePaga} etiqueta="Cliente" />}
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('clientePaga')}`} placeholder="Escriba para buscar cliente..." required={!formData.clientePaga && !searchClientePaga} value={searchClientePaga} onChange={e => { setSearchClientePaga(e.target.value); setShowDropdownClientePaga(true); if (formData.clientePaga) setFormData(prev => ({ ...prev, clientePaga: '', convenio: '' })); }} onFocus={() => setShowDropdownClientePaga(true)} onBlur={() => setTimeout(() => setShowDropdownClientePaga(false), 200)} />
@@ -2738,6 +2736,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                           <BotonAgregar title="Agregar nuevo Cliente (Paga)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_PAGA }, (id, reg) => { setFormData(prev => ({ ...prev, clientePaga: id, convenio: '', facturadoEnCobrar: resolverMonedaIdDeEmpresa(reg) })); setSearchClientePaga(labelEmpresa(reg)); setSearchConvenio(''); })} />
                         </div>
+                        {/* ✅ V00136: alerta de documentos DEBAJO del campo (no empuja el input) */}
+                        {formData.clientePaga && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.clientePaga)} registroNombre={searchClientePaga} etiqueta="Cliente" />}
                       </div>
                       <div className="form-group">
                         <div className="fo-x16">
@@ -2799,6 +2799,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); })} />
                         </div>
+                        {/* ✅ V00136: alerta de documentos del origen/destino */}
+                        {formData.origen && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.origen)} registroNombre={searchOrigen} etiqueta="Origen" />}
                       </div>
                       <div className="form-group">
                         <label className="form-label orange">Destino <span className="campo-badge">destino</span></label>
@@ -2809,6 +2811,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>
+                        {/* ✅ V00136: alerta de documentos del origen/destino */}
+                        {formData.destino && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.destino)} registroNombre={searchDestino} etiqueta="Destino" />}
                       </div>
                       {/* ✅ NUEVO: kilometraje estimado del viaje (junto a Destino) */}
                       <div className="form-group">
@@ -2923,7 +2927,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                     <div className="form-grid">
                       <div className="form-group">
                         <label className="form-label">Proveedor de Transporte <span className="campo-badge">proveedorUnidad</span></label>
-                        {formData.proveedorUnidad && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.proveedorUnidad)} registroNombre={searchProvTransporte} etiqueta="Proveedor" />}
                         <div className="roelca-lookup-row">
                           <div className="roelca-lookup-input">
                             <input type="text" className={`form-control${claseSiFalta('proveedorUnidad')}`} placeholder="Buscar proveedor de transporte..." value={searchProvTransporte} disabled={proveedorForzado} onChange={e => { setSearchProvTransporte(e.target.value); setShowDropdownProvTransporte(true); if (formData.proveedorUnidad) setFormData(prev => ({ ...prev, proveedorUnidad: '', convenioProveedor: '' })); }} onFocus={() => setShowDropdownProvTransporte(true)} onBlur={() => setTimeout(() => setShowDropdownProvTransporte(false), 200)} style={proveedorForzado ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} />
@@ -2941,6 +2944,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE }, (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: resolverMonedaIdDeEmpresa(reg) || prev.facturadoEnUnidad })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); })} />
                           )}
                         </div>
+                        {/* ✅ V00136: alerta de documentos DEBAJO del campo (no empuja el input) */}
+                        {formData.proveedorUnidad && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.proveedorUnidad)} registroNombre={searchProvTransporte} etiqueta="Proveedor" />}
                       </div>
 
                       {!esFlotaPropiaRoelca && (
@@ -2997,7 +3002,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <div className="form-grid">
                         <div className="form-group">
                           <label className="form-label">Unidad <span className="campo-badge">unidad</span></label>
-                          {formData.unidad && <AlertaDocumentos coleccionOrigen="unidades" registroId={String(formData.unidad)} registroNombre={searchUnidad} etiqueta="Unidad" />}
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
                               <input type="text" className={`form-control${claseSiFalta('unidad')}`} placeholder="Buscar unidad..." value={searchUnidad} onChange={e => { setSearchUnidad(e.target.value); setShowDropdownUnidad(true); if (formData.unidad) setFormData(prev => ({ ...prev, unidad: '' })); }} onFocus={() => setShowDropdownUnidad(true)} onBlur={() => setTimeout(() => setShowDropdownUnidad(false), 200)} />
@@ -3013,6 +3017,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             </div>
                             <BotonAgregar title="Agregar nueva Unidad" onClick={() => abrirCreacion({ tipo: 'unidad', coleccion: 'unidades' }, (id, reg) => { setFormData(prev => ({ ...prev, unidad: id })); setSearchUnidad(labelUnidad(reg)); })} />
                           </div>
+                          {/* ✅ V00136: alerta de documentos DEBAJO del campo (no empuja el input) */}
+                          {formData.unidad && <AlertaDocumentos coleccionOrigen="unidades" registroId={String(formData.unidad)} registroNombre={searchUnidad} etiqueta="Unidad" />}
                           {/* ✅ NUEVO: último servicio y última carga de diesel de la unidad */}
                           {formData.unidad && (
                             <div style={{ marginTop: '6px', fontSize: '0.75rem', lineHeight: 1.6, color: '#8b949e' }}>
@@ -3037,7 +3043,6 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         </div>
                         <div className="form-group">
                           <label className="form-label">Operador <span className="campo-badge">operador</span></label>
-                          {formData.operador && <AlertaDocumentos coleccionOrigen="empleados" registroId={String(formData.operador)} registroNombre={searchOperador} etiqueta="Operador" />}
                           <div className="roelca-lookup-row">
                             <div className="roelca-lookup-input">
                               <input type="text" className={`form-control${claseSiFalta('operador')}`} placeholder="Buscar operador..." value={searchOperador} onChange={e => { setSearchOperador(e.target.value); setShowDropdownOperador(true); if (formData.operador) setFormData(prev => ({ ...prev, operador: '' })); }} onFocus={() => setShowDropdownOperador(true)} onBlur={() => setTimeout(() => setShowDropdownOperador(false), 200)} />
@@ -3053,6 +3058,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             </div>
                             <BotonAgregar title="Agregar nuevo Operador" onClick={() => abrirCreacion({ tipo: 'empleado', coleccion: 'empleados' }, (id, reg) => { setFormData(prev => ({ ...prev, operador: id })); setSearchOperador(labelEmpleado(reg)); })} />
                           </div>
+                          {/* ✅ V00136: alerta de documentos DEBAJO del campo (no empuja el input) */}
+                          {formData.operador && <AlertaDocumentos coleccionOrigen="empleados" registroId={String(formData.operador)} registroNombre={searchOperador} etiqueta="Operador" />}
                         </div>
                         {/* Sueldo/Combustible base: BLOQUEADOS (vienen del tarifario de rendimientos). Los totales son calculados. */}
                         <div className="form-group"><label className="form-label">Sueldo Operador <span className="campo-badge">sueldoOperador</span></label><ConSimboloMoneda><input type="number" className="form-control" value={formData.sueldoOperador || 0} readOnly={campoBloqueadoAut('sueldoOperador')} onChange={e => setFormData(prev => ({ ...prev, sueldoOperador: Number(e.target.value) || 0 }))} title={campoBloqueadoAut('sueldoOperador') ? 'Bloqueado por autorizaciones para tu rol' : 'Se toma del tarifario de rendimientos; puedes ajustarlo manualmente'} style={campoBloqueadoAut('sueldoOperador') ? { opacity: 0.65, cursor: 'not-allowed' } : undefined} /></ConSimboloMoneda></div>

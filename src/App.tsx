@@ -702,7 +702,13 @@ function AppContenido() {
         await Promise.all(claves.map((k) => caches.delete(k)));
       }
     } catch { /* recarga de todas formas */ }
-    window.location.reload();
+    // ✅ V00136: recarga DURA con cache-busting — location.reload() podía volver a
+    //   servir el index.html viejo desde la caché HTTP/CDN aunque ya se hubiera
+    //   quitado el service worker, y la app "no actualizaba". Con el parámetro
+    //   ?actualizar=<timestamp> el navegador pide el HTML fresco al servidor.
+    const url = new URL(window.location.href);
+    url.searchParams.set('actualizar', String(Date.now()));
+    window.location.replace(url.toString());
   };
   // ✅ MÓVIL: editor de accesos de la barra de navegación inferior.
   const [editorNavAbierto, setEditorNavAbierto] = useState(false);
