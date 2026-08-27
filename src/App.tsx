@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
+import { DocumentosLista } from './features/documentos/DocumentosLista';
 import { APP_VERSION, APP_AUTOR } from './config/version';
 import { Bell } from 'lucide-react';
 import type { CSSProperties } from 'react';
@@ -722,6 +723,8 @@ function AppContenido() {
   
   const [perfilAbierto, setPerfilAbierto] = useState(false);
   const [miPerfilAbierto, setMiPerfilAbierto] = useState(false); // modal "Mi Perfil"
+  // ✅ V00138: visor de documentos del usuario (solo lectura) desde el menú de perfil
+  const [misDocsAbierto, setMisDocsAbierto] = useState(false);
   // ✅ MÓVIL: en pantallas chicas el menú inicia CERRADO (flota sobre el
   //   contenido); en escritorio inicia abierto como siempre.
   const [menuAbierto, setMenuAbierto] = useState(() => window.innerWidth > 768);
@@ -1163,6 +1166,28 @@ function AppContenido() {
         </div>
       )}
 
+      {/* ✅ V00138: MODAL "VER DOCUMENTOS" del usuario — SOLO LECTURA (sin subir, reemplazar ni eliminar) */}
+      {misDocsAbierto && (
+        <div className="app-x12" onClick={() => setMisDocsAbierto(false)}>
+          <div className="app-x13 app-misdocs-card" onClick={(e) => e.stopPropagation()}>
+            <div className="app-x14">
+              <h3 className="app-x15">📄 Mis documentos</h3>
+              <button className="app-x16" onClick={() => setMisDocsAbierto(false)}>✕</button>
+            </div>
+            {usuarioActualDB?.colaboradorId ? (
+              <>
+                <span className="app-x6">Documentos registrados de <b className="app-x17">{usuarioActualDB?.nombre || 'tu colaborador'}</b>. Vista de solo consulta: aquí puedes verlos y descargarlos, pero no editarlos, reemplazarlos ni eliminarlos.</span>
+                <div className="app-misdocs-lista">
+                  <DocumentosLista coleccionOrigen="empleados" registroId={String(usuarioActualDB.colaboradorId)} permitirEliminar={false} />
+                </div>
+              </>
+            ) : (
+              <span className="app-x6">Tu usuario no está ligado a un colaborador del directorio de Empleados, por lo que no hay expediente de documentos que mostrar. Pide a un administrador que ligue tu usuario (campo colaborador) en Configuración → Usuarios.</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {miPerfilAbierto && usuarioActualDB && (
         <MiPerfil
           usuario={usuarioActualDB}
@@ -1446,6 +1471,8 @@ function AppContenido() {
                 </div>
                 <div className="profile-actions">
                   <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setMiPerfilAbierto(true); }}>Mi Perfil (Foto y Contraseña)</button>
+                  {/* ✅ V00138: ver (solo lectura) los documentos del colaborador ligado al usuario */}
+                  <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setMisDocsAbierto(true); }}>Ver documentos</button>
                   {accesoTotalReal && !vistaComoAplicada && (
                     <button className="btn-profile" onClick={() => { setPerfilAbierto(false); setModalVerComo(true); }}>Ver como (rol o usuario)</button>
                   )}

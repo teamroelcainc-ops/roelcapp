@@ -1209,3 +1209,7 @@ body {
 .app-meta-etq { color: #8b949e; font-size: 0.72rem; font-weight: 700; }
 .app-meta-input { width: 100%; }
 @media (max-width: 480px) { .app-metas-grid { grid-template-columns: 1fr 1fr; } }
+
+/* ✅ V00138: visor solo-lectura de documentos del usuario */
+.app-misdocs-card { max-width: 720px; width: 94vw; }
+.app-misdocs-lista { margin-top: 12px; max-height: 60vh; overflow-y: auto; }
