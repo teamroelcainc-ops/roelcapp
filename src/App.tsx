@@ -848,12 +848,18 @@ function AppContenido() {
     setPerfilAbierto(false);
     setVerComoError('');
     registrarLog('Seguridad', 'Vista Previa', `Activó la vista previa como ${v.tipo === 'rol' ? 'rol' : 'usuario'}: ${v.etiqueta}`).catch(() => {});
+    // ✅ V00143: la vista es TOTAL — recarga completa para que TODA la app
+    //   (formularios, autorizaciones, permisos, cachés) arranque con el rol simulado,
+    //   exactamente como si tu usuario tuviera ese rol.
+    setTimeout(() => window.location.reload(), 200);
   };
 
   const salirVistaComo = () => {
     setVistaComo(null);
     try { almacenSesion.removeItem(CLAVE_VISTA_COMO); } catch { /* sin storage */ }
     registrarLog('Seguridad', 'Vista Previa', 'Salió de la vista previa y regresó a sus permisos.').catch(() => {});
+    // ✅ V00143: regresar a tus permisos reales también recarga todo
+    setTimeout(() => window.location.reload(), 200);
   };
 
   const aplicarVerComoRol = () => {
