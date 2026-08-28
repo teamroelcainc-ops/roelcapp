@@ -1040,6 +1040,14 @@ export function PagosDashboard() {
   // campos donde puede vivir; si ninguno se reconoce, devuelve el primer
   // texto no vacío tal cual (para no ocultar monedas raras).
   const monedaDeFactura = (raw: any): string => {
+    // ✅ V00148: la MONEDA de la EMPRESA (tabla Empresas) manda SIEMPRE — la
+    //   moneda y sus cálculos siguen a la empresa en todas partes; los campos
+    //   guardados en la factura son solo respaldo para empresas sin moneda.
+    const canonEmp = monedaCanonica(monedaEmpresaDe({
+      entidadId: raw?.clienteId || raw?.proveedorId || raw?.entidadId || '',
+      entidadNombre: raw?.clienteNombre || raw?.proveedorNombre || raw?.entidadNombre || '',
+    }));
+    if (canonEmp) return canonEmp;
     const candidatos = [raw?.monedaFacturacion, raw?.monedaProveedor, raw?.moneda, raw?.monedaId];
     for (const c of candidatos) {
       const canon = monedaCanonica(c);

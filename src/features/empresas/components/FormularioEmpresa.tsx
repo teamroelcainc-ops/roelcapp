@@ -1,5 +1,6 @@
 // src/features/empresas/components/FormularioEmpresa.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { collection, getDocs, onSnapshot, addDoc, query, where, writeBatch } from 'firebase/firestore';
@@ -643,6 +644,19 @@ export const FormularioEmpresa: React.FC<FormProps> = ({ estado, initialData, re
       if (initialData && initialData.id) {
         await actualizarRegistro('empresas', initialData.id, payload);
         await registrarLog('Empresas', 'Edición', `Actualizó los datos de la empresa: ${formData.nombre}`);
+        // ✅ V00148: si la MONEDA cambió, se propaga AUTOMÁTICAMENTE en cascada:
+        //   convenios (cliente/proveedor) → operaciones (Facturado En) →
+        //   facturación de clientes/proveedores (las facturas que usa Pagos).
+        if (String(formData.moneda || '') !== String(initialData.moneda || initialData.monedaId || '')) {
+          try {
+            const r = await propagarMonedaEmpresa(String(initialData.id));
+            await registrarLog('Empresas', 'Edición', `Propagó la nueva moneda "${r.monedaNombre}" de ${formData.nombre}: convenios ${r.conveniosClientes + r.conveniosProveedores}, operaciones ${r.opsCliente + r.opsProveedor}, facturas ${r.facturasClientes + r.facturasProveedores}.`);
+            alert(`Moneda "${r.monedaNombre}" propagada automáticamente. ✅\n\n· Convenios: ${r.conveniosClientes + r.conveniosProveedores}\n· Operaciones (Facturado En): ${r.opsCliente + r.opsProveedor}\n· Facturas (clientes/proveedores): ${r.facturasClientes + r.facturasProveedores}`);
+          } catch (eMon) {
+            console.error('Propagación de moneda:', eMon);
+            alert('La empresa se guardó, pero la propagación de la moneda no terminó completa. Puedes reintentarla con el botón 💱 de la tabla de Empresas.');
+          }
+        }
         // ✅ NUEVO (V00109) — PROPAGACIÓN DEL NOMBRE: las operaciones guardan
         //   una copia del nombre de la empresa (clienteNombre, origenNombre,
         //   destinoNombre, etc.) para pintar la tabla sin leer catálogos. Si
