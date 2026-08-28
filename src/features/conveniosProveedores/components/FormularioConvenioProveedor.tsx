@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
-import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, addDoc } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../../config/firebase'; 
 import type { ConvenioProveedorRecord, ConvenioProveedorDetalleRecord } from '../../../types/convenioProveedor';
 import './FormularioConvenioProveedor.css';
@@ -105,6 +105,30 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
   //   TEXTO legado ("Pesos"); además el catálogo puede no haber cargado aún
   //   al elegir la empresa. Esta función cubre los tres casos, leyendo el
   //   catálogo directo de Firebase si hace falta.
+  // ✅ V00145: re-lee la EMPRESA en Firestore y actualiza la moneda del convenio
+  //   (útil cuando la moneda se cambió en Empresas después de crear el convenio).
+  const [actualizandoMonedaConv, setActualizandoMonedaConv] = useState(false);
+  const actualizarMonedaConvenio = async () => {
+    const entId = String(formData.proveedorId || '');
+    if (!entId) { alert('Primero selecciona la empresa del convenio.'); return; }
+    setActualizandoMonedaConv(true);
+    try {
+      const snapE = await getDoc(doc(db, 'empresas', entId));
+      if (!snapE.exists()) { alert('No se encontró la empresa en la base de datos.'); return; }
+      const { monId, monNom } = await resolverMonedaDeEmpresa(snapE.data());
+      if (!monId) { alert('Esta empresa no tiene moneda registrada en la tabla Empresas. Asígnala en el módulo Empresas y vuelve a intentar.'); return; }
+      setFormData((prev: any) => ({ ...prev, monedaId: monId, monedaNombre: monNom }));
+      if (initialData?.id) {
+        await updateDoc(doc(db, 'convenios_proveedores', String(initialData.id)), { monedaId: monId, monedaNombre: monNom });
+        alert(`Moneda del convenio actualizada a "${monNom}" (moneda actual de la empresa) y guardada en el convenio.`);
+      } else {
+        alert(`Moneda actualizada a "${monNom}"; se guardará al crear el convenio.`);
+      }
+    } catch (e: any) {
+      alert(`No se pudo actualizar la moneda: ${e?.message || e}`);
+    } finally { setActualizandoMonedaConv(false); }
+  };
+
   const resolverMonedaDeEmpresa = async (e: any): Promise<{ monId: string; monNom: string }> => {
     const crudo = String(e?.monedaId || e?.moneda || '').trim();
     let lista = monedas;
@@ -573,6 +597,8 @@ export const FormularioConvenioProveedor = ({ estado, initialData, registrosExis
               {/* ✅ V00126: MONEDA visible pero NO editable — viene de la tabla Empresas */}
               <div className="form-group">
                 <label className="form-label">Moneda (de la empresa)</label>
+                {/* ✅ V00145: re-sincronizar con la moneda actual de la empresa */}
+                <button type="button" className="fcp-btn-act-moneda" disabled={actualizandoMonedaConv} onClick={actualizarMonedaConvenio} title="Vuelve a leer la moneda de la empresa en la tabla Empresas y la aplica a este convenio">{actualizandoMonedaConv ? '⏳…' : '⟳ Actualizar moneda'}</button>
                 <input type="text" className="form-control fcp-solo-lectura" readOnly value={formData.monedaNombre || (formData.proveedorId ? 'Sin moneda en la empresa' : '')} title="Se toma automáticamente de la moneda registrada en Empresas; no se puede editar ni quitar aquí" />
                 {convenioDuplicado && <small className="fcp-aviso-duplicado">⚠ Ya existe un convenio para este proveedor: {convenioDuplicado.numeroConvenio || convenioDuplicado.id}</small>}
               </div>

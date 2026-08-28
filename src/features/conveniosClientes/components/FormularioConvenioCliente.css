@@ -89,3 +89,8 @@
 
 /* ✅ V00126 */
 .fcc-aviso-duplicado { display: block; margin-top: 6px; color: #f85149; font-weight: 700; font-size: 0.78rem; }
+
+/* ✅ V00145: botón Actualizar moneda del convenio */
+.fcc-btn-act-moneda { background: transparent; border: 1px solid #3fb950; color: #3fb950; border-radius: 6px; padding: 2px 8px; font-size: 0.7rem; font-weight: 700; cursor: pointer; margin-left: 8px; }
+.fcc-btn-act-moneda:hover { background-color: rgba(63, 185, 80, 0.12); }
+.fcc-btn-act-moneda:disabled { opacity: 0.6; cursor: wait; }
