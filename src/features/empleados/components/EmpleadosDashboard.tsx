@@ -3,6 +3,7 @@ import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase';
 import { EmployeeForm, TIPOS_DOCUMENTO_EMPLEADO } from './EmployeeForm';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import { CargaMasivaDocumentosModal } from '../../documentos/CargaMasivaDocumentosModal';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { HerramientasEmpleado } from './HerramientasEmpleado'; 
 import type { Employee } from '../../../types/empleado';
@@ -36,6 +37,8 @@ export const EmpleadosDashboard = () => {
   const [empleadoViendo, setEmpleadoViendo] = useState<Employee | null>(null);
   const [activeTabDetalle, setActiveTabDetalle] = useState<'general' | 'empresa' | 'herramientas' | 'documentos'>('general');
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
+  // ✅ V00144: carga masiva por carpetas
+  const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false);
   // ✅ NUEVO: empleado al que se le subirá un documento DIRECTO desde la fila
   //   (sin abrir la ficha). Si es null, el modal usa el empleado de la ficha.
   const [empleadoDocs, setEmpleadoDocs] = useState<any | null>(null);
@@ -262,6 +265,11 @@ export const EmpleadosDashboard = () => {
                             style={{ color: '#fb923c' }}
                             onClick={(ev) => { ev.stopPropagation(); setEmpleadoDocs(emp); setMostrarSubirDoc(true); }}
                           ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg></button>
+                          <button
+                            className="btn-icono btn-carga-masiva"
+                            title="Carga masiva: sube de golpe la carpeta completa de documentos de este colaborador"
+                            onClick={(ev) => { ev.stopPropagation(); setEmpleadoDocs(emp); setMostrarCargaMasiva(true); }}
+                          >📁</button>
                           <button className="ed-x33" onClick={(ev) => { ev.stopPropagation(); eliminarEmpleado(emp.id!); }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
                         </div>
                       </td>
@@ -380,6 +388,15 @@ export const EmpleadosDashboard = () => {
         // ✅ NUEVO: el modal funciona tanto desde la ficha como desde la fila.
         const objetivo = empleadoDocs || empleadoViendo;
         return (
+          <>
+          {/* ✅ V00144: carga masiva por carpetas */}
+          <CargaMasivaDocumentosModal
+            isOpen={mostrarCargaMasiva}
+            onClose={() => { setMostrarCargaMasiva(false); setEmpleadoDocs(null); }}
+            coleccionOrigen="empleados"
+            registroId={objetivo?.id ?? ''}
+            registroNombre={`${objetivo?.nombres ?? ''} ${objetivo?.apellidoPaterno ?? ''}`.trim() || (objetivo?.id ?? '')}
+          />
           <DocumentoUploadModal
             isOpen={mostrarSubirDoc}
             onClose={() => { setMostrarSubirDoc(false); setEmpleadoDocs(null); }}
@@ -389,6 +406,7 @@ export const EmpleadosDashboard = () => {
             tiposDocumento={TIPOS_DOCUMENTO_EMPLEADO}
             onUploaded={() => { if (empleadoViendo && !empleadoDocs) setActiveTabDetalle('documentos'); }}
           />
+          </>
         );
       })()}
 
