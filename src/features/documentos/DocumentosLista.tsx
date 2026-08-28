@@ -11,6 +11,7 @@
 //   <DocumentosLista coleccionOrigen="empleados" registroId={empleado.id} />
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
@@ -227,8 +228,9 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
         );
       })}
 
-      {/* ✅ V00149: modal editar UN documento */}
-      {editDoc && (
+      {/* ✅ V00149: modal editar UN documento — en PORTAL al body para que no lo
+          recorte ni lo desplace la ficha contenedora (V00150) */}
+      {editDoc && createPortal(
         <div className="modal-overlay dl-edit-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !guardandoEdit) setEditDoc(null); }}>
           <div className="dl-edit-card">
             <div className="dl-edit-header">
@@ -255,10 +257,10 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
 
-      {/* ✅ V00149: modal actualizar FECHAS de todos los que vencen */}
-      {fechasMasivo && (
+      {/* ✅ V00149: modal actualizar FECHAS de todos los que vencen — también en portal (V00150) */}
+      {fechasMasivo && createPortal(
         <div className="modal-overlay dl-edit-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !guardandoMasivo) setFechasMasivo(false); }}>
           <div className="dl-edit-card dl-fechas-card">
             <div className="dl-edit-header">
@@ -288,7 +290,7 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 };
