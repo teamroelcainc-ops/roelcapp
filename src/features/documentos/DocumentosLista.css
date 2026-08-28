@@ -26,3 +26,31 @@
   .dl-x3 { padding: 14px 12px; }
   .dl-x6 { flex-wrap: wrap; }
 }
+
+/* ✅ V00149: editar documento + fechas masivas */
+.dl-encabezado { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dl-btn-fechas { background: transparent; border: 1px solid #f59e0b; color: #fbbf24; border-radius: 8px; padding: 5px 12px; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
+.dl-btn-fechas:hover { background: rgba(245, 158, 11, 0.12); }
+.dl-btn-editar { display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 8px; padding: 5px 10px; font-size: 0.72rem; font-weight: 700; cursor: pointer; }
+.dl-btn-editar:hover { background: rgba(88, 166, 255, 0.12); }
+.dl-edit-overlay { z-index: 2750; backdrop-filter: blur(4px); }
+.dl-edit-card { background: #0d1117; border: 1px solid #444; border-radius: 16px; max-width: 480px; width: 92vw; max-height: 86vh; display: flex; flex-direction: column; }
+.dl-fechas-card { max-width: 680px; }
+.dl-edit-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #30363d; }
+.dl-edit-titulo { margin: 0; color: #f0f6fc; font-size: 0.95rem; }
+.dl-edit-nombre { color: #D84315; }
+.dl-edit-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.05rem; }
+.dl-edit-cuerpo { padding: 14px 18px; overflow-y: auto; }
+.dl-edit-check { display: flex; align-items: center; gap: 8px; color: #c9d1d9; font-size: 0.85rem; margin-bottom: 12px; cursor: pointer; }
+.dl-edit-fechas { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.dl-edit-fechas label, .dl-edit-obs { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.72rem; font-weight: 700; }
+.dl-edit-fechas input, .dl-edit-obs textarea, .dl-fechas-tabla input { background: #161b22; border: 1px solid #30363d; border-radius: 8px; color: #c9d1d9; padding: 7px 9px; font-size: 0.82rem; }
+.dl-edit-obs { margin-bottom: 4px; }
+.dl-edit-nota { color: #8b949e; font-size: 0.73rem; margin: 8px 0 0; }
+.dl-edit-acciones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.dl-fechas-tabla-wrap { max-height: 48vh; overflow: auto; border: 1px solid #21262d; border-radius: 10px; margin-top: 10px; }
+.dl-fechas-tabla { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.dl-fechas-tabla th { position: sticky; top: 0; background: #161b22; color: #8b949e; text-align: left; padding: 8px 10px; font-size: 0.7rem; }
+.dl-fechas-tabla td { padding: 6px 10px; border-top: 1px solid #21262d; color: #c9d1d9; }
+.dl-fechas-doc { font-weight: 700; color: #f0f6fc; }
+.dl-fecha-falta { border-color: #f59e0b !important; }
