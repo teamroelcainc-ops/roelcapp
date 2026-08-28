@@ -478,7 +478,13 @@ export function PagosDashboard() {
 
       const sumDol = guardadasNuevas.reduce((s: number, o: any) => s + (Number(o.dol) || 0), 0);
       const sumConv = guardadasNuevas.reduce((s: number, o: any) => s + (Number(o.monto) || 0), 0);
-      const monedaCanon = monedaDeFactura(fv.raw || {});
+      // ✅ V00146: la MONEDA de la factura se re-sincroniza con la EMPRESA (tabla
+      //   Empresas). Si la empresa cambió de moneda, el recálculo la aplica y la
+      //   guarda en la factura; solo si la empresa no tiene moneda se usa la guardada.
+      const monEmp = monedaEmpresaDe({ entidadNombre: fv.entidadNombre, entidadId: (fv as any).entidadId });
+      const nEmp = monEmp.toLowerCase();
+      const canonEmp = nEmp.includes('dolar') || nEmp.includes('dólar') || nEmp.includes('usd') ? 'USD' : (nEmp.includes('peso') || nEmp.includes('mxn')) ? 'MXN' : '';
+      const monedaCanon = canonEmp || monedaDeFactura(fv.raw || {});
       const totalNativoNuevo = monedaCanon === 'USD' ? sumDol : sumConv;
       if (totalNativoNuevo <= 0) { alert('El recálculo dio $0.00 — revisa las operaciones (montos de convenio y tipo de cambio).'); setRecalculandoFactura(false); return; }
       if (totalNativoNuevo < fv.montoPagado - 0.009) {
@@ -496,6 +502,7 @@ export function PagosDashboard() {
         editadoEn: new Date().toISOString(),
         editadoPor: usuario?.nombre || usuario?.email || usuario?.id || '',
       };
+      if (canonEmp) cambios.moneda = canonEmp; // ✅ V00146: persiste la moneda actual de la empresa
       if (fv.montoPagado > 0.009) cambios.statusPago = saldoNuevo <= 0.009 ? 'PAGADA' : 'PARCIAL';
 
       const coleccion = tab === 'cliente' ? 'facturas_clientes' : 'facturas_proveedores';
@@ -1766,7 +1773,7 @@ export function PagosDashboard() {
                     <div><label style={etiquetaCampo}>Fecha</label><span style={valorF}>{fv.fecha || '-'}</span></div>
                     <div><label style={etiquetaCampo}>Status</label><span style={{ ...valorF, color: String(fv.raw?.statusFactura || 'Facturado').toLowerCase().includes('cancel') ? '#f85149' : '#3fb950' }}>{fv.raw?.statusFactura || 'Facturado'}</span></div>
                     <div><label style={etiquetaCampo}>Factura CCP</label><span style={valorF}>{fv.raw?.facturaCcp || fv.raw?.ccp || '-'}</span></div>
-                    <div><label style={etiquetaCampo}>Moneda</label><span style={valorF}>{fv.moneda || '-'}</span></div>
+                    <div><label style={etiquetaCampo}>Moneda</label><span style={valorF} title="Moneda actual de la empresa (tabla Empresas); si difiere de la guardada, usa Recalcular montos para actualizarla en la factura">{(() => { const m = monedaEmpresaDe({ entidadNombre: fv.entidadNombre, entidadId: (fv as any).entidadId }); const n = m.toLowerCase(); const canon = n.includes('dolar') || n.includes('dólar') || n.includes('usd') ? 'USD' : (n.includes('peso') || n.includes('mxn')) ? 'MXN' : ''; return canon ? <>{canon}{canon !== String(fv.moneda || '') && <small style={{ color: '#f59e0b' }}> (antes {fv.moneda || '—'})</small>}</> : (fv.moneda || '-'); })()}</span></div>
                     <div><label style={etiquetaCampo}>Total</label><span style={valorF}>{money(fv.total)}</span></div>
                     <div><label style={etiquetaCampo}>Pagado</label><span style={{ ...valorF, color: '#3fb950' }}>{money(fv.montoPagado)}</span></div>
                     <div><label style={etiquetaCampo}>Saldo abierto</label><span style={{ ...valorF, color: fv.saldo > 0.009 ? '#d29922' : '#3fb950' }}>{fv.saldo > 0.009 ? money(fv.saldo) : 'PAGADA'}</span></div>

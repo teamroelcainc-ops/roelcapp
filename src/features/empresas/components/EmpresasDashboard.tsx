@@ -1,5 +1,7 @@
 // src/features/empresas/components/EmpresasDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { propagarMonedaEmpresa } from '../services/propagarMoneda';
+import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc } from 'firebase/firestore';
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
@@ -610,6 +612,38 @@ const EmpresasDashboard = () => {
     setUniendo(false);
   };
 
+  // ✅ V00147: PROPAGAR la moneda de la empresa a TODAS partes
+  //   (convenios → operaciones → facturación/pagos), en cascada y de un clic.
+  const [propagandoMoneda, setPropagandoMoneda] = useState('');
+  const propagarMoneda = async (emp: any) => {
+    if (propagandoMoneda) return;
+    if (!window.confirm(
+      `Se aplicará la moneda ACTUAL de "${emp.nombre}" (tabla Empresas) en cascada:\n\n` +
+      '1) Convenios de clientes y proveedores de esta empresa\n' +
+      '2) Operaciones: Facturado En (cliente si es Cliente-Paga, proveedor si es Transporte)\n' +
+      '3) Facturación de Clientes y Proveedores (las mismas facturas que usa Pagos)\n\n' +
+      'Solo se escriben los registros donde la moneda sea distinta; montos y tarifas no se tocan.\n\n¿Continuar?'
+    )) return;
+    setPropagandoMoneda(String(emp.id));
+    try {
+      const r = await propagarMonedaEmpresa(String(emp.id));
+      notificarOperacionGuardada(String(emp.id), { moneda: r.monedaNombre }, 'propagar-moneda'); // invalida cachés de Facturación/Pagos
+      alert(
+        `Moneda "${r.monedaNombre}"${r.canon ? ` (${r.canon})` : ''} aplicada en todas partes. ✅\n\n` +
+        `· Convenios de clientes: ${r.conveniosClientes}\n` +
+        `· Convenios de proveedores: ${r.conveniosProveedores}\n` +
+        `· Operaciones (Facturado En · cliente): ${r.opsCliente}\n` +
+        `· Operaciones (Facturado En · proveedor): ${r.opsProveedor}\n` +
+        `· Facturas de clientes: ${r.facturasClientes}\n` +
+        `· Facturas de proveedores: ${r.facturasProveedores}\n\n` +
+        'Nota: los totales de facturas ya emitidas no se recalculan solos; si alguna debe rehacerse con la nueva moneda, usa "Recalcular montos" en su ficha (Pagos). Las monedas de los DETALLES de convenio (tarifas por concepto) son independientes y se editan en el convenio.'
+      );
+      await registrarLog('Empresas', 'Edición', `Propagó la moneda "${r.monedaNombre}" de ${emp.nombre} a convenios (${r.conveniosClientes + r.conveniosProveedores}), operaciones (${r.opsCliente + r.opsProveedor}) y facturas (${r.facturasClientes + r.facturasProveedores}).`);
+    } catch (e: any) {
+      alert(`No se pudo propagar la moneda:\n\n${e?.message || e}`);
+    } finally { setPropagandoMoneda(''); }
+  };
+
   const eliminarEmpresa = async (id: string) => {
     if (window.confirm('¿Estás seguro de que deseas eliminar permanentemente esta empresa?')) {
       try {
@@ -1125,6 +1159,13 @@ const EmpresasDashboard = () => {
                       <td className="ed-x32" onClick={(e: any) => e.stopPropagation()}>
                         <div className="actions-cell ed-x33">
                           
+                          {/* ✅ V00147: moneda de la empresa → todas partes */}
+                          <button
+                            className="btn-small ed-btn-moneda"
+                            title="Actualizar la moneda de esta empresa en TODAS partes: convenios, operaciones (Facturado En) y facturación/pagos"
+                            disabled={propagandoMoneda === String(emp.id)}
+                            onClick={(e) => { e.stopPropagation(); propagarMoneda(emp); }}
+                          >{propagandoMoneda === String(emp.id) ? '⏳' : '💱'}</button>
                           <button 
                             className="btn-small btn-edit ed-x34" 
                             title="Editar Empresa"
