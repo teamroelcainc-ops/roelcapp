@@ -9,7 +9,7 @@
 //     instante en Firestore).
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, onSnapshot, updateDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { db } from '../../config/firebase';
 import './ReporteVencimientosDashboard.css';
@@ -46,6 +46,33 @@ export const ReporteVencimientosDashboard = () => {
   const [busqueda, setBusqueda] = useState('');
   const [soloQueVencen, setSoloQueVencen] = useState(true); // pestaña 2
   const [guardandoId, setGuardandoId] = useState('');
+  // ✅ V00155: nombres reales de los registros — muchos documentos guardan solo
+  //   el ID (registroNombre vacío o con pinta de id); se resuelven contra
+  //   empleados / empresas / unidades.
+  const [nombres, setNombres] = useState<Record<string, Record<string, string>>>({});
+  useEffect(() => {
+    (async () => {
+      const out: Record<string, Record<string, string>> = { empleados: {}, empresas: {}, unidades: {} };
+      try {
+        const [se, sm, su] = await Promise.all([
+          getDocs(collection(db, 'empleados')),
+          getDocs(collection(db, 'empresas')),
+          getDocs(collection(db, 'unidades')),
+        ]);
+        se.docs.forEach((d) => { const x: any = d.data(); out.empleados[d.id] = `${x.nombres || ''} ${x.apellidoPaterno || ''} ${x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim() || d.id; });
+        sm.docs.forEach((d) => { const x: any = d.data(); out.empresas[d.id] = String(x.nombre || x.empresa || d.id); });
+        su.docs.forEach((d) => { const x: any = d.data(); out.unidades[d.id] = String(x.unidad || x.placas || d.id); });
+      } catch (e) { console.error('[Reporte Vencimiento] nombres:', e); }
+      setNombres(out);
+    })();
+  }, []);
+  const pareceId = (t: string) => /^[0-9a-f]{8,}$/i.test(String(t || '').trim());
+  const nombreRegistro = (d: DocVenc): string => {
+    const resuelto = nombres[d.coleccionOrigen]?.[d.registroId];
+    if (resuelto) return resuelto;
+    if (d.registroNombre && !pareceId(d.registroNombre)) return d.registroNombre;
+    return d.registroNombre || d.registroId || '—';
+  };
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'documentos'), (snap) => {
@@ -81,7 +108,7 @@ export const ReporteVencimientosDashboard = () => {
     if (filtroOrigen !== 'todos' && d.coleccionOrigen !== filtroOrigen) return false;
     const q = busqueda.trim().toLowerCase();
     if (!q) return true;
-    return `${d.registroNombre} ${d.tipoDocumento} ${ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen}`.toLowerCase().includes(q);
+    return `${nombreRegistro(d)} ${d.registroNombre} ${d.tipoDocumento} ${ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen}`.toLowerCase().includes(q);
   };
 
   // Pestaña 1: vencidos primero, luego por vencer, por proximidad.
@@ -95,7 +122,7 @@ export const ReporteVencimientosDashboard = () => {
   // Pestaña 2: sin fecha de emisión o vencimiento (editable en la tabla).
   const filasSinFechas = useMemo(() =>
     docs.filter((d) => coincide(d) && (soloQueVencen ? d.vence : true) && (!d.fechaVencimiento || !d.fechaExpedicion))
-      .sort((a, b) => Number(b.vence) - Number(a.vence) || a.registroNombre.localeCompare(b.registroNombre, 'es') || a.tipoDocumento.localeCompare(b.tipoDocumento, 'es')),
+      .sort((a, b) => Number(b.vence) - Number(a.vence) || nombreRegistro(a).localeCompare(nombreRegistro(b), 'es') || a.tipoDocumento.localeCompare(b.tipoDocumento, 'es')),
   [docs, filtroOrigen, busqueda, soloQueVencen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const guardarCampo = async (d: DocVenc, campo: 'fechaExpedicion' | 'fechaVencimiento' | 'vence', valor: string | boolean) => {
@@ -108,7 +135,7 @@ export const ReporteVencimientosDashboard = () => {
   const exportarExcel = () => {
     const wb = XLSX.utils.book_new();
     const filas = filasVencimientos.todas.map((d) => [
-      ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen, d.registroNombre, d.tipoDocumento,
+      ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen, nombreRegistro(d), d.tipoDocumento,
       fmtFecha(d.fechaExpedicion), fmtFecha(d.fechaVencimiento),
       (d.dias as number) < 0 ? `VENCIDO hace ${Math.abs(d.dias as number)} día(s)` : `Vence en ${d.dias} día(s)`,
     ]);
@@ -171,7 +198,7 @@ export const ReporteVencimientosDashboard = () => {
                 {filasVencimientos.todas.map((d) => (
                   <tr key={d.id} className={(d.dias as number) < 0 ? 'rv-fila-vencido' : 'rv-fila-porvencer'}>
                     <td>{ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen || '—'}</td>
-                    <td className="rv-registro">{d.registroNombre}</td>
+                    <td className="rv-registro">{nombreRegistro(d)}</td>
                     <td className="rv-doc">{d.tipoDocumento}</td>
                     <td className="rv-fecha">{fmtFecha(d.fechaExpedicion)}</td>
                     <td className="rv-fecha">{fmtFecha(d.fechaVencimiento)}</td>
@@ -189,13 +216,13 @@ export const ReporteVencimientosDashboard = () => {
                 {filasSinFechas.map((d) => (
                   <tr key={d.id} className={guardandoId === d.id ? 'rv-fila-guardando' : ''}>
                     <td>{ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen || '—'}</td>
-                    <td className="rv-registro">{d.registroNombre}</td>
+                    <td className="rv-registro">{nombreRegistro(d)}</td>
                     <td className="rv-doc">{d.tipoDocumento}</td>
                     <td><input type="checkbox" checked={d.vence} title="¿Este documento vence?" onChange={(e) => guardarCampo(d, 'vence', e.target.checked)} /></td>
                     {/* ✅ Edición DIRECTA en la tabla: se guarda al elegir la fecha */}
                     <td><input type="date" className={`rv-input-fecha${!d.fechaExpedicion ? ' rv-falta' : ''}`} value={d.fechaExpedicion} onChange={(e) => guardarCampo(d, 'fechaExpedicion', e.target.value)} /></td>
                     <td><input type="date" className={`rv-input-fecha${!d.fechaVencimiento ? ' rv-falta' : ''}`} value={d.fechaVencimiento} disabled={!d.vence} title={d.vence ? '' : 'Marca "Vence" para capturar el vencimiento'} onChange={(e) => guardarCampo(d, 'fechaVencimiento', e.target.value)} /></td>
-                    <td>{guardandoId === d.id ? '⏳' : d.url ? <a className="rv-ver" href={d.url} target="_blank" rel="noopener noreferrer">Ver</a> : null}</td>
+                    <td className="rv-celda-ver">{guardandoId === d.id && <span className="rv-guardando">⏳</span>}{d.url && <a className="rv-ver" href={d.url} target="_blank" rel="noopener noreferrer" title="Visualizar el documento">Ver</a>}</td>
                   </tr>
                 ))}
               </tbody>
