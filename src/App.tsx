@@ -38,6 +38,8 @@ const EtiquetasDashboard = lazyWithRetry(() => import('./features/etiquetas/comp
 const ServiciosCompletados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCompletados'), 'ServiciosCompletados');
 const ServiciosCancelados = lazyWithRetry(() => import('./features/operaciones/components/ServiciosCancelados'), 'ServiciosCancelados');
 const ReportesDashboard = lazyWithRetry(() => import('./features/reportes/components/ReportesDashboard'), 'ReportesDashboard');
+// ✅ V00154: Reporte de Vencimiento (documentos vencidos / por vencer / sin fechas)
+const ReporteVencimientosDashboard = lazyWithRetry(() => import('./features/vencimientos/ReporteVencimientosDashboard').then(m => ({ default: m.ReporteVencimientosDashboard })), 'ReporteVencimientosDashboard');
 const EmpresasDashboard = lazyWithRetry(() => import('./features/empresas/components/EmpresasDashboard'), 'EmpresasDashboard');
 const ContactosDashboard = lazyWithRetry(() => import('./features/contactos/components/ContactosDashboard').then(m => ({ default: m.ContactosDashboard })), 'ContactosDashboard');
 const TipoCambioDashboard = lazyWithRetry(() => import('./features/tipoCambio/components/TipoCambioDashboard').then(m => ({ default: m.TipoCambioDashboard })), 'TipoCambioDashboard');
@@ -96,6 +98,7 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Servicios Completados': 'serviciosCompletados',
   'Servicios Cancelados': 'serviciosCancelados',
   'Reportes': 'reportes',
+  'Reporte de Vencimiento': 'reporteVencimientos',
   'MTTO': 'mtto',
   'Referencias del Diesel': 'referenciasDiesel',
   'Referencias de Puentes': 'referenciasPuentes',
@@ -168,6 +171,9 @@ const ICON: Record<string, React.ReactNode> = {
   ),
   serviciosCancelados: (
     <Ico><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></Ico>
+  ),
+  reporteVencimientos: (
+    <Ico><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /><path d="M5 3 2.5 5.5M19 3l2.5 2.5" /></Ico>
   ),
   reportes: (
     <Ico><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></Ico>
@@ -708,7 +714,7 @@ function AppContenido() {
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -1274,6 +1280,13 @@ function AppContenido() {
             <span className="sidebar-label">{etq('menu.reportes', 'Reportes')}</span>
           </div>
         )}
+        {/* ✅ V00154: Reporte de Vencimiento */}
+        {puede('reporteVencimientos') && (
+          <div className={`sidebar-item ${moduloActivo === 'reporteVencimientos' ? 'active' : ''}`} title="Reporte de Vencimiento" onClick={() => navegarA('reporteVencimientos')}>
+            <span className="sidebar-icon">{ICON.reporteVencimientos}</span>
+            <span className="sidebar-label">{etq('menu.reporte_de_vencimiento', 'Reporte de Vencimiento')}</span>
+          </div>
+        )}
         {puede('estadisticas') && (
           <div className={`sidebar-item ${moduloActivo === 'estadisticas' ? 'active' : ''}`} title="Estadísticas" onClick={() => navegarA('estadisticas')}>
             <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
@@ -1572,6 +1585,7 @@ function AppContenido() {
             {moduloActivo === 'serviciosCompletados' && puede('serviciosCompletados') && <ServiciosCompletados />}
             {moduloActivo === 'serviciosCancelados' && puede('serviciosCancelados') && <ServiciosCancelados />}
             {moduloActivo === 'reportes' && puede('reportes') && <ReportesDashboard />}
+            {moduloActivo === 'reporteVencimientos' && puede('reporteVencimientos') && <ReporteVencimientosDashboard />}
             {moduloActivo === 'autorizaciones' && puede('autorizaciones') && <AutorizacionesDashboard />}
             {moduloActivo === 'mtto' && puede('mtto') && <MttoDashboard />} 
             {moduloActivo === 'referenciasDiesel' && puede('referenciasDiesel') && <ReferenciasDieselDashboard />} 

@@ -1,0 +1,37 @@
+/* ✅ V00154: Reporte de Vencimiento */
+.rv-contenedor { display: flex; flex-direction: column; gap: 14px; }
+.rv-encabezado { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.rv-titulo { margin: 0; color: #f0f6fc; }
+.rv-sub { margin: 4px 0 0; color: #8b949e; font-size: 0.85rem; }
+.rv-btn-excel { font-size: 0.85rem; }
+.rv-tabs { display: flex; gap: 8px; border-bottom: 1px solid #30363d; }
+.rv-tab { background: transparent; border: none; border-bottom: 2px solid transparent; color: #8b949e; padding: 10px 14px; cursor: pointer; font-weight: 700; font-size: 0.88rem; display: flex; align-items: center; gap: 6px; }
+.rv-tab.activa { color: #f0f6fc; border-bottom-color: #D84315; }
+.rv-badge { border-radius: 999px; padding: 1px 8px; font-size: 0.68rem; font-weight: 800; }
+.rv-badge.rv-rojo { background: rgba(248, 81, 73, 0.15); color: #f85149; border: 1px solid #f85149; }
+.rv-badge.rv-ambar { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid #f59e0b; }
+.rv-badge.rv-gris { background: rgba(139, 148, 158, 0.15); color: #8b949e; border: 1px solid #30363d; }
+.rv-filtros { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.rv-buscar { max-width: 340px; }
+.rv-select { width: auto; }
+.rv-check { display: flex; align-items: center; gap: 6px; color: #8b949e; font-size: 0.8rem; cursor: pointer; }
+.rv-cargando { color: #8b949e; }
+.rv-tabla-wrap { overflow: auto; border: 1px solid #30363d; border-radius: 12px; max-height: 68vh; }
+.rv-tabla { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+.rv-tabla th { position: sticky; top: 0; background: #161b22; color: #8b949e; text-align: left; padding: 10px 12px; font-size: 0.7rem; letter-spacing: 0.03em; z-index: 2; }
+.rv-tabla td { padding: 8px 12px; border-top: 1px solid #21262d; color: #c9d1d9; }
+.rv-registro { font-weight: 700; color: #f0f6fc; }
+.rv-doc { color: #c9d1d9; }
+.rv-fecha { font-family: monospace; white-space: nowrap; }
+.rv-chip { border-radius: 999px; padding: 2px 10px; font-size: 0.72rem; font-weight: 800; white-space: nowrap; }
+.rv-chip.rv-rojo { background: rgba(248, 81, 73, 0.14); color: #f85149; border: 1px solid #f85149; }
+.rv-chip.rv-ambar { background: rgba(245, 158, 11, 0.14); color: #fbbf24; border: 1px solid #f59e0b; }
+.rv-fila-vencido td { background: rgba(248, 81, 73, 0.05); }
+.rv-fila-porvencer td { background: rgba(245, 158, 11, 0.04); }
+.rv-fila-guardando td { opacity: 0.7; }
+.rv-ver { color: #58a6ff; font-weight: 700; text-decoration: none; }
+.rv-ver:hover { text-decoration: underline; }
+.rv-input-fecha { background: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; padding: 5px 7px; font-size: 0.8rem; }
+.rv-input-fecha.rv-falta { border-color: #f59e0b; }
+.rv-input-fecha:disabled { opacity: 0.45; cursor: not-allowed; }
+.rv-vacio { text-align: center; color: #8b949e; padding: 22px 10px !important; }
