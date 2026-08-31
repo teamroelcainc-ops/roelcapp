@@ -6,6 +6,7 @@ import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBat
 import { db, eliminarRegistro, actualizarRegistro } from '../../../config/firebase';
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
+import { CargaMasivaDocumentosModal } from '../../documentos/CargaMasivaDocumentosModal';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
@@ -230,6 +231,8 @@ const EmpresasDashboard = () => {
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
+  // ✅ V00156: carga masiva de documentos por carpetas (como en Colaboradores)
+  const [mostrarCargaMasiva, setMostrarCargaMasiva] = useState(false);
   // ✅ NUEVO: empresa a la que se le subirá un documento DIRECTO desde la fila
   //   (sin abrir la ficha). Si es null, el modal usa la empresa de la ficha.
   const [empresaDocs, setEmpresaDocs] = useState<any | null>(null);
@@ -1199,6 +1202,11 @@ const EmpresasDashboard = () => {
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                           </button>
+                          <button
+                            className="btn-small ed-btn-carga-masiva"
+                            title="Carga masiva: sube de golpe la carpeta completa de documentos de esta empresa"
+                            onClick={(e) => { e.stopPropagation(); setEmpresaDocs(emp); setMostrarCargaMasiva(true); }}
+                          >📁</button>
 
                           <button 
                             className="btn-small btn-danger ed-x36" 
@@ -1640,6 +1648,15 @@ const EmpresasDashboard = () => {
       {(empresaDocs || empresaViendo) && (() => {
         const objetivo = empresaDocs || empresaViendo;
         return (
+          <>
+          {/* ✅ V00156: carga masiva por carpetas */}
+          <CargaMasivaDocumentosModal
+            isOpen={mostrarCargaMasiva}
+            onClose={() => { setMostrarCargaMasiva(false); setEmpresaDocs(null); }}
+            coleccionOrigen="empresas"
+            registroId={objetivo.id ?? ''}
+            registroNombre={objetivo.nombre || ''}
+          />
           <DocumentoUploadModal
             isOpen={mostrarSubirDoc}
             onClose={() => { setMostrarSubirDoc(false); setEmpresaDocs(null); }}
@@ -1648,6 +1665,7 @@ const EmpresasDashboard = () => {
             registroNombre={objetivo.nombre || ''}
             tiposDocumento={TIPOS_DOCUMENTO_EMPRESA}
           />
+          </>
         );
       })()}
 

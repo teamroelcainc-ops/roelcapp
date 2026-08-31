@@ -354,3 +354,7 @@
 .ed-btn-moneda { border: 1px solid #3fb950 !important; color: #3fb950 !important; background: transparent; }
 .ed-btn-moneda:hover { background-color: rgba(63, 185, 80, 0.12) !important; }
 .ed-btn-moneda:disabled { opacity: 0.6; cursor: wait; }
+
+/* ✅ V00156: botón carga masiva de documentos */
+.ed-btn-carga-masiva { border: 1px solid #58a6ff !important; color: #58a6ff !important; background: transparent; }
+.ed-btn-carga-masiva:hover { background-color: rgba(88, 166, 255, 0.12) !important; }
