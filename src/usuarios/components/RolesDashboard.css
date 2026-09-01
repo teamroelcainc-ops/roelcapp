@@ -70,3 +70,16 @@
   .rd-x45 { flex-wrap: wrap; }
   .rd-x46 { flex-wrap: wrap; }
 }
+
+/* ✅ V00160: vistas adicionales por usuario */
+.rd-vistas-card { background: #0d1117; border: 1px solid #30363d; border-radius: 14px; padding: 18px 20px; margin-top: 20px; }
+.rd-vistas-titulo { margin: 0 0 4px; color: #f0f6fc; font-size: 1rem; }
+.rd-vistas-sub { margin: 0 0 12px; color: #8b949e; font-size: 0.82rem; line-height: 1.5; }
+.rd-vistas-select { max-width: 360px; margin-bottom: 10px; }
+.rd-vistas-roles { color: #8b949e; font-size: 0.78rem; margin-bottom: 10px; }
+.rd-vistas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px 18px; }
+.rd-vistas-grupo-titulo { color: #D84315; font-weight: 800; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 6px; }
+.rd-vistas-item { display: flex; align-items: center; gap: 7px; color: #c9d1d9; font-size: 0.82rem; padding: 2px 0; cursor: pointer; }
+.rd-vistas-item.rd-vistas-rol { opacity: 0.65; cursor: default; }
+.rd-vistas-tag { color: #3fb950; font-size: 0.66rem; font-style: normal; border: 1px solid #3fb950; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+.rd-vistas-acciones { display: flex; justify-content: flex-end; margin-top: 14px; }

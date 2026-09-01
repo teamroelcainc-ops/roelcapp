@@ -31,6 +31,11 @@ const TODOS_LOS_MODULOS = GRUPOS_MODULOS.flatMap(g => g.modulos);
 
 export const RolesDashboard: React.FC = () => {
   const [roles, setRoles] = useState<any[]>([]);
+  // ✅ V00160: VISTAS ADICIONALES POR USUARIO — módulos extra fuera del rol.
+  const [usuariosLista, setUsuariosLista] = useState<any[]>([]);
+  const [usuarioVistasId, setUsuarioVistasId] = useState('');
+  const [extrasSel, setExtrasSel] = useState<string[]>([]);
+  const [guardandoExtras, setGuardandoExtras] = useState(false);
   const [ipOficial, setIpOficial] = useState('');
   const [guardandoIp, setGuardandoIp] = useState(false);
   
@@ -44,6 +49,9 @@ export const RolesDashboard: React.FC = () => {
 
   useEffect(() => {
     // Suscripción a Roles
+    const unsubUsuarios = onSnapshot(collection(db, 'usuarios'), (snapshot) => {
+      setUsuariosLista(snapshot.docs.map(d => ({ id: d.id, ...d.data() })).sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')));
+    });
     const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
       const rolesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setRoles(rolesData);
@@ -59,7 +67,7 @@ export const RolesDashboard: React.FC = () => {
     };
     fetchConfig();
 
-    return () => unsubRoles();
+    return () => { unsubRoles(); unsubUsuarios(); };
   }, []);
 
   const detectarIp = async () => {
@@ -240,6 +248,67 @@ export const RolesDashboard: React.FC = () => {
       </div>
 
       {/* MODAL DE EDICIÓN DE ROL */}
+      {/* ✅ V00160: VISTAS ADICIONALES POR USUARIO
+          Permite que un usuario vea módulos que su rol NO incluye, sin crear
+          otro rol. Se guarda en usuarios/{id}.modulosExtra y App los suma a los
+          permisos del rol al iniciar sesión. */}
+      {(() => {
+        const usuarioSel: any = usuariosLista.find((u: any) => u.id === usuarioVistasId) || null;
+        const rolesDelUsuario: string[] = usuarioSel ? (Array.isArray(usuarioSel.roles) ? usuarioSel.roles : (usuarioSel.rol ? [usuarioSel.rol] : [])) : [];
+        const porRol = new Set<string>();
+        roles.forEach((r: any) => { if (rolesDelUsuario.includes(r.nombre)) (r.modulosPermitidos || []).forEach((m: string) => porRol.add(m)); });
+        const toggleExtra = (m: string) => setExtrasSel(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
+        const guardarExtras = async () => {
+          if (!usuarioSel || guardandoExtras) return;
+          setGuardandoExtras(true);
+          try {
+            await updateDoc(doc(db, 'usuarios', usuarioSel.id), { modulosExtra: extrasSel });
+            await registrarLog('Roles y Permisos', 'Edición', `Asignó vistas adicionales a ${usuarioSel.nombre || usuarioSel.correo || usuarioSel.id}: ${extrasSel.length ? extrasSel.join(', ') : '(ninguna)'}.`);
+            alert(`Vistas adicionales guardadas. ✅\n\nEl usuario las verá al recargar o volver a iniciar sesión.`);
+          } catch (e: any) { alert(`No se pudo guardar: ${e?.message || e}`); }
+          finally { setGuardandoExtras(false); }
+        };
+        return (
+          <div className="rd-vistas-card">
+            <h3 className="rd-vistas-titulo">🖥 Vistas adicionales por usuario</h3>
+            <p className="rd-vistas-sub">Dale a un usuario acceso a módulos que su rol no incluye, sin crear un rol nuevo. Lo del rol aparece marcado y bloqueado; lo que marques aquí se SUMA solo para ese usuario.</p>
+            <select className="form-control rd-vistas-select" value={usuarioVistasId}
+              onChange={(e) => {
+                const id = e.target.value; setUsuarioVistasId(id);
+                const u: any = usuariosLista.find((x: any) => x.id === id);
+                setExtrasSel(Array.isArray(u?.modulosExtra) ? u.modulosExtra : []);
+              }}>
+              <option value="">— Elige un usuario —</option>
+              {usuariosLista.map((u: any) => <option key={u.id} value={u.id}>{u.nombre || u.correo || u.id}{Array.isArray(u.modulosExtra) && u.modulosExtra.length ? ` (+${u.modulosExtra.length})` : ''}</option>)}
+            </select>
+            {usuarioSel && (
+              <>
+                <div className="rd-vistas-roles">Roles del usuario: {rolesDelUsuario.length ? rolesDelUsuario.join(', ') : '(sin rol)'}</div>
+                <div className="rd-vistas-grid">
+                  {GRUPOS_MODULOS.map(g => (
+                    <div key={g.grupo} className="rd-vistas-grupo">
+                      <div className="rd-vistas-grupo-titulo">{g.grupo}</div>
+                      {g.modulos.map(m => {
+                        const delRol = porRol.has(m);
+                        return (
+                          <label key={m} className={`rd-vistas-item${delRol ? ' rd-vistas-rol' : ''}`} title={delRol ? 'Incluido por su rol' : 'Vista adicional solo para este usuario'}>
+                            <input type="checkbox" checked={delRol || extrasSel.includes(m)} disabled={delRol} onChange={() => toggleExtra(m)} />
+                            <span>{m}</span>{delRol && <em className="rd-vistas-tag">por rol</em>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+                <div className="rd-vistas-acciones">
+                  <button type="button" className="btn btn-primary" onClick={guardarExtras} disabled={guardandoExtras}>{guardandoExtras ? 'Guardando…' : 'Guardar vistas del usuario'}</button>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
+
       {modalAbierto && (
         <div className="modal-overlay rd-x26">
           <div className="form-card rd-x27">

@@ -1071,6 +1071,12 @@ function AppContenido() {
         (rol.modulosPermitidos || []).forEach((m: string) => etiquetas.add(m));
       }
     });
+    // ✅ V00160: vistas ADICIONALES por usuario (Roles → "Vistas adicionales por
+    //   usuario"): se SUMAN a las del rol. En "Ver como" no aplican, para que la
+    //   simulación sea fiel al rol/usuario simulado.
+    if (!vistaComoAplicada) {
+      (usuarioActualDB?.modulosExtra || []).forEach((m: string) => etiquetas.add(m));
+    }
     const claves = new Set<string>();
     etiquetas.forEach((et) => { const k = MODULOS_A_CLAVE[et]; if (k) claves.add(k); });
     return claves;
