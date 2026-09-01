@@ -59,17 +59,37 @@ export const ReporteVencimientosDashboard = () => {
           getDocs(collection(db, 'empresas')),
           getDocs(collection(db, 'unidades')),
         ]);
-        se.docs.forEach((d) => { const x: any = d.data(); out.empleados[d.id] = `${x.nombres || ''} ${x.apellidoPaterno || ''} ${x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim() || d.id; });
+        se.docs.forEach((d) => { const x: any = d.data(); out.empleados[d.id] = (`${x.nombres || ''} ${x.apellidoPaterno || ''} ${x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim()) || String(x.nombre || x.nombreCompleto || d.id); });
         sm.docs.forEach((d) => { const x: any = d.data(); out.empresas[d.id] = String(x.nombre || x.empresa || d.id); });
-        su.docs.forEach((d) => { const x: any = d.data(); out.unidades[d.id] = String(x.unidad || x.placas || d.id); });
+        su.docs.forEach((d) => { const x: any = d.data(); out.unidades[d.id] = String(x.unidad || x.placas || x.nombre || d.id); });
       } catch (e) { console.error('[Reporte Vencimiento] nombres:', e); }
       setNombres(out);
     })();
   }, []);
   const pareceId = (t: string) => /^[0-9a-f]{8,}$/i.test(String(t || '').trim());
+  // ✅ V00158: resolución ROBUSTA del nombre — muchos documentos migrados guardan
+  //   el id recortado o solo en el docId (empleados__<id>__<tipo>); se prueba
+  //   coincidencia exacta y por prefijo contra la colección correspondiente.
   const nombreRegistro = (d: DocVenc): string => {
-    const resuelto = nombres[d.coleccionOrigen]?.[d.registroId];
-    if (resuelto) return resuelto;
+    const col = String(d.coleccionOrigen || '').toLowerCase();
+    const colKey = col.startsWith('emple') ? 'empleados' : col.startsWith('empre') ? 'empresas' : col.startsWith('unidad') ? 'unidades' : col;
+    const mapa = nombres[colKey] || {};
+    const delDocId = (() => {
+      const partes = String(d.id || '').split('__');
+      return partes.length >= 3 ? partes[1] : '';
+    })();
+    const candidatos = [d.registroId, delDocId, pareceId(d.registroNombre) ? d.registroNombre : '']
+      .map((c) => String(c || '').trim()).filter(Boolean);
+    for (const c of candidatos) {
+      if (mapa[c]) return mapa[c]; // exacto
+    }
+    // por prefijo (ids recortados en la migración): el candidato es prefijo del id
+    // real, o el id real es prefijo del candidato.
+    for (const c of candidatos) {
+      if (c.length < 6) continue;
+      const k = Object.keys(mapa).find((id) => id.startsWith(c) || c.startsWith(id));
+      if (k) return mapa[k];
+    }
     if (d.registroNombre && !pareceId(d.registroNombre)) return d.registroNombre;
     return d.registroNombre || d.registroId || '—';
   };
