@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { generarTarifarioPDF } from '../../convenios/generarTarifarioPDF';
 import { UnirConveniosModal } from '../../conveniosCompartido/UnirConveniosModal';
 import { eliminarConveniosMasivo } from '../../conveniosCompartido/unirConvenios';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc } from 'firebase/firestore';
@@ -834,6 +835,29 @@ export const ConveniosClientesDashboard: React.FC = () => {
               <button type="button" onClick={() => setActiveTabDetalle('general')} style={tabStyle(activeTabDetalle === 'general')}>General</button>
               <button type="button" onClick={() => setActiveTabDetalle('detalles')} style={tabStyle(activeTabDetalle === 'detalles')}>Detalles / Tarifas</button>
               <button type="button" onClick={() => setActiveTabDetalle('uso')} style={tabStyle(activeTabDetalle === 'uso')}>Historial de Uso (Operaciones)</button>
+              {/* ✅ V00157: exportar el tarifario del convenio en PDF (sin clave de servicio) */}
+              <button type="button" className="ccd-btn-tarifario" title="Exporta el tarifario de este convenio en PDF con el formato oficial (sin clave de servicio)"
+                onClick={() => {
+                  const dets: any[] = Array.isArray(convenioViendo.detalles) ? convenioViendo.detalles : [];
+                  if (dets.length === 0) { alert('Este convenio no tiene detalles o tarifas registradas.'); return; }
+                  const filas = dets.map((det: any) => {
+                    const refDoc = det.tipoConvenioId ? (tarifasReferencia as any)[String(det.tipoConvenioId)] : null;
+                    const descripcion = det.tipoConvenioNombre || refDoc?.descripcion || refDoc?.nombre || det.tarifaNombre || det.nombre || det.tipoOperacionNombre || det.tipoServicio || 'Servicio';
+                    const tarifa = det.tarifa !== undefined && det.tarifa !== null && det.tarifa !== '' ? det.tarifa : (det.venta || det.costo || 0);
+                    return { descripcion: String(descripcion), tarifa, monedaNombre: det.monedaNombre || '' };
+                  });
+                  const monedas = Array.from(new Set(filas.map((f: any) => String(f.monedaNombre || '').trim()).filter(Boolean)));
+                  const monedaEtiqueta = (monedas.length ? monedas.join('/') : (convenioViendo.monedaNombre || '—')).toUpperCase();
+                  generarTarifarioPDF({
+                    etiquetaEntidad: 'CLIENTE',
+                    entidadNombre: convenioViendo.clienteNombre || '',
+                    monedaEtiqueta,
+                    creditoDias: convenioViendo.credito ?? 0,
+                    filas,
+                    numeroConvenio: convenioViendo.numeroConvenio || '',
+                  }).catch((e: any) => alert(`No se pudo generar el PDF: ${e?.message || e}`));
+                }}
+              >📄 Tarifario PDF</button>
             </div>
 
             <div className="detail-content ccd-x50">

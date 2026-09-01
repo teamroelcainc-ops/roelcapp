@@ -160,3 +160,7 @@
 .cpd-btn-masivo { margin-right: 8px; }
 .cpd-btn-eliminar { border-color: #f85149; color: #f85149; }
 .cpd-btn-eliminar:hover { background-color: rgba(248, 81, 73, 0.12); }
+
+/* ✅ V00157: botón Tarifario PDF */
+.ccp-btn-tarifario { margin-left: auto; background: transparent; border: 1px solid #D84315; color: #ff7043; border-radius: 8px; padding: 6px 12px; font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+.ccp-btn-tarifario:hover { background: rgba(216, 67, 21, 0.12); }
