@@ -395,7 +395,7 @@ export const EmpleadosDashboard = () => {
             onClose={() => { setMostrarCargaMasiva(false); setEmpleadoDocs(null); }}
             coleccionOrigen="empleados"
             registroId={objetivo?.id ?? ''}
-            registroNombre={`${objetivo?.nombres ?? ''} ${objetivo?.apellidoPaterno ?? ''}`.trim() || (objetivo?.id ?? '')}
+            registroNombre={`${objetivo?.firstName ?? objetivo?.nombres ?? ''} ${objetivo?.lastNamePaternal ?? objetivo?.apellidoPaterno ?? ''}`.trim() || (objetivo?.id ?? '')}
           />
           <DocumentoUploadModal
             isOpen={mostrarSubirDoc}

@@ -59,7 +59,7 @@ export const ReporteVencimientosDashboard = () => {
           getDocs(collection(db, 'empresas')),
           getDocs(collection(db, 'unidades')),
         ]);
-        se.docs.forEach((d) => { const x: any = d.data(); out.empleados[d.id] = (`${x.nombres || ''} ${x.apellidoPaterno || ''} ${x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim()) || String(x.nombre || x.nombreCompleto || d.id); });
+        se.docs.forEach((d) => { const x: any = d.data(); out.empleados[d.id] = (`${x.firstName || x.nombres || ''} ${x.lastNamePaternal || x.apellidoPaterno || ''} ${x.lastNameMaternal || x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim()) || String(x.nombre || x.nombreCompleto || x.employeeId || d.id); });
         sm.docs.forEach((d) => { const x: any = d.data(); out.empresas[d.id] = String(x.nombre || x.empresa || d.id); });
         su.docs.forEach((d) => { const x: any = d.data(); out.unidades[d.id] = String(x.unidad || x.placas || x.nombre || d.id); });
       } catch (e) { console.error('[Reporte Vencimiento] nombres:', e); }
@@ -81,14 +81,14 @@ export const ReporteVencimientosDashboard = () => {
     const candidatos = [d.registroId, delDocId, pareceId(d.registroNombre) ? d.registroNombre : '']
       .map((c) => String(c || '').trim()).filter(Boolean);
     for (const c of candidatos) {
-      if (mapa[c]) return mapa[c]; // exacto
+      if (mapa[c] && !pareceId(mapa[c])) return mapa[c]; // exacto (y con nombre real)
     }
     // por prefijo (ids recortados en la migración): el candidato es prefijo del id
     // real, o el id real es prefijo del candidato.
     for (const c of candidatos) {
       if (c.length < 6) continue;
       const k = Object.keys(mapa).find((id) => id.startsWith(c) || c.startsWith(id));
-      if (k) return mapa[k];
+      if (k && !pareceId(mapa[k])) return mapa[k];
     }
     if (d.registroNombre && !pareceId(d.registroNombre)) return d.registroNombre;
     return d.registroNombre || d.registroId || '—';
@@ -159,7 +159,7 @@ export const ReporteVencimientosDashboard = () => {
       fmtFecha(d.fechaExpedicion), fmtFecha(d.fechaVencimiento),
       (d.dias as number) < 0 ? `VENCIDO hace ${Math.abs(d.dias as number)} día(s)` : `Vence en ${d.dias} día(s)`,
     ]);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['TIPO', 'REGISTRO', 'DOCUMENTO', 'EXPEDICIÓN', 'VENCIMIENTO', 'ESTADO'], ...filas]), 'Vencimientos');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['TIPO', 'USUARIO DEL DOCUMENTO', 'DOCUMENTO', 'EXPEDICIÓN', 'VENCIMIENTO', 'ESTADO'], ...filas]), 'Vencimientos');
     XLSX.writeFile(wb, 'Reporte_Vencimientos.xlsx');
   };
 
@@ -193,7 +193,7 @@ export const ReporteVencimientosDashboard = () => {
       </div>
 
       <div className="rv-filtros">
-        <input className="form-control rv-buscar" type="text" placeholder="Buscar por registro o documento…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+        <input className="form-control rv-buscar" type="text" placeholder="Buscar por usuario o documento…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
         <select className="form-control rv-select" value={filtroOrigen} onChange={(e) => setFiltroOrigen(e.target.value)}>
           <option value="todos">Todos (empleados, empresas, unidades)</option>
           <option value="empleados">Empleados</option>
@@ -212,7 +212,7 @@ export const ReporteVencimientosDashboard = () => {
         <div className="rv-tabla-wrap">
           {pestana === 'vencimientos' ? (
             <table className="rv-tabla">
-              <thead><tr><th>Tipo</th><th>Registro</th><th>Documento</th><th>Expedición</th><th>Vencimiento</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Tipo</th><th>Usuario del documento</th><th>Documento</th><th>Expedición</th><th>Vencimiento</th><th>Estado</th><th></th></tr></thead>
               <tbody>
                 {filasVencimientos.todas.length === 0 && <tr><td colSpan={7} className="rv-vacio">Sin documentos vencidos ni por vencer con los filtros actuales. ✅</td></tr>}
                 {filasVencimientos.todas.map((d) => (
@@ -230,7 +230,7 @@ export const ReporteVencimientosDashboard = () => {
             </table>
           ) : (
             <table className="rv-tabla">
-              <thead><tr><th>Tipo</th><th>Registro</th><th>Documento</th><th>Vence</th><th>Expedición</th><th>Vencimiento</th><th></th></tr></thead>
+              <thead><tr><th>Tipo</th><th>Usuario del documento</th><th>Documento</th><th>Vence</th><th>Expedición</th><th>Vencimiento</th><th></th></tr></thead>
               <tbody>
                 {filasSinFechas.length === 0 && <tr><td colSpan={7} className="rv-vacio">Todos los documentos tienen sus fechas completas. ✅</td></tr>}
                 {filasSinFechas.map((d) => (
