@@ -449,6 +449,73 @@ const OperacionesDashboard = () => {
   //   la empresa tiene guardada HOY en la tabla Empresas. Solo escribe donde
   //   hay diferencia; reporta cuántas cambió y cuáles empresas no tienen moneda.
   const [sincronizandoMonedas, setSincronizandoMonedas] = useState(false);
+  // ✅ V00162: REPARAR CONSECUTIVOS de un día — cierra brincos y duplicados YA
+  //   guardados (los creados por la función vieja o por borrados). Renumera las
+  //   operaciones de cada (prefijo, fecha) en 1..N por orden de creación,
+  //   actualiza ref/refConsecutivo SOLO donde cambia y re-sincroniza el contador.
+  //   Es seguro para Facturación/Pagos: los dashboards resuelven la ref VIVA de
+  //   cada operación por su id (refDeOp); los PDF ya emitidos conservan el texto viejo.
+  const [reparandoConsec, setReparandoConsec] = useState(false);
+  const repararConsecutivos = async () => {
+    if (reparandoConsec) return;
+    const hoy = new Date();
+    const defFecha = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    const fecha = window.prompt('Fecha de SERVICIO a reparar (AAAA-MM-DD).\nSe renumeran los folios de ese día en 1..N por orden de creación, cerrando brincos y duplicados:', defFecha);
+    if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha.trim())) { if (fecha !== null) alert('Fecha inválida. Usa el formato AAAA-MM-DD.'); return; }
+    const f = fecha.trim();
+    const [aa, mm, dd] = f.split('-');
+    const ddmmyy = `${dd}${mm}${aa.slice(2)}`;
+    setReparandoConsec(true);
+    try {
+      const snap = await getDocs(query(collection(db, 'operaciones'), where('fechaServicio', '==', f)));
+      const porPrefijo = new Map<string, any[]>();
+      snap.docs.forEach((d) => {
+        const x: any = d.data();
+        const ref = String(x.ref || '');
+        const m = ref.match(/^([A-ZÑ0-9.]+)-(\d{6})-(\d+)/i);
+        const prefijo = String(x.refPrefijo || '').split('-')[0] || (m ? m[1].toUpperCase() : '');
+        if (!prefijo) return; // sin ref ni prefijo: no se toca
+        if (!porPrefijo.has(prefijo)) porPrefijo.set(prefijo, []);
+        porPrefijo.get(prefijo)!.push({ id: d.id, ref, num: m ? Number(m[3]) || 0 : Number(x.refConsecutivo) || 0, createdAt: String(x.createdAt || x.creadoEn || '') });
+      });
+      if (porPrefijo.size === 0) { alert(`No hay operaciones con fecha de servicio ${f}.`); return; }
+
+      const resumen: string[] = [];
+      let totalCambios = 0;
+      let batch = writeBatch(db);
+      let enBatch = 0;
+      const flush = async () => { if (enBatch > 0) { await batch.commit(); batch = writeBatch(db); enBatch = 0; } };
+
+      for (const [prefijo, lista] of porPrefijo.entries()) {
+        // Orden estable: por fecha de creación; respaldo por número actual.
+        lista.sort((a, b) => (a.createdAt && b.createdAt && a.createdAt !== b.createdAt) ? a.createdAt.localeCompare(b.createdAt) : (a.num - b.num));
+        const cambios: string[] = [];
+        lista.forEach((op, i) => {
+          const asignado = i + 1;
+          const nuevoRef = `${prefijo}-${ddmmyy}-${String(asignado).padStart(3, '0')}`;
+          if (op.ref !== nuevoRef) {
+            batch.update(doc(db, 'operaciones', op.id), { ref: nuevoRef, refPrefijo: `${prefijo}-${ddmmyy}`, refConsecutivo: asignado });
+            enBatch++; totalCambios++;
+            cambios.push(`${op.ref || '(sin ref)'} → ${nuevoRef}`);
+          }
+        });
+        // Contador re-sincronizado con la realidad compactada.
+        batch.set(doc(db, 'counters', `operaciones_${prefijo}_${ddmmyy}`), { count: lista.length, prefijo, fecha: ddmmyy, syncAt: new Date().toISOString(), reparadoManual: true }, { merge: true });
+        enBatch++;
+        if (enBatch >= 380) await flush();
+        resumen.push(`${prefijo}: ${lista.length} op(s), ${cambios.length} renumerada(s)${cambios.length ? `\n   · ${cambios.slice(0, 12).join('\n   · ')}${cambios.length > 12 ? `\n   · … y ${cambios.length - 12} más` : ''}` : ''}`);
+      }
+      const seguir = window.confirm(`Reparación de consecutivos — ${f}:\n\n${resumen.join('\n')}\n\n${totalCambios === 0 ? 'Todo está en orden; solo se re-sincronizan los contadores.' : `Se renumerarán ${totalCambios} operación(es) y se re-sincronizan los contadores.`}\n\n¿Aplicar?`);
+      if (!seguir) { setReparandoConsec(false); return; }
+      await flush();
+      notificarOperacionGuardada('reparar-consecutivos', {}, 'reparar-consecutivos');
+      await registrarLog('Operaciones', 'Edición', `Reparó los consecutivos del ${f}: ${totalCambios} operación(es) renumeradas (${Array.from(porPrefijo.keys()).join(', ')}).`);
+      alert(`Consecutivos del ${f} reparados. ✅\n\n${totalCambios} operación(es) renumeradas; contadores re-sincronizados.\nNota: los PDF/remisiones ya emitidos conservan el folio anterior en su texto.`);
+    } catch (e: any) {
+      alert(`No se pudo reparar: ${e?.message || e}`);
+    } finally { setReparandoConsec(false); }
+  };
+
   const sincronizarMonedasOperaciones = async () => {
     if (sincronizandoMonedas) return;
     if (!window.confirm(
@@ -1719,6 +1786,10 @@ const OperacionesDashboard = () => {
             {/* ✅ V00132: forzar la moneda de Empresas en TODAS las operaciones */}
             <button className="btn btn-outline od-btn-monedas" onClick={sincronizarMonedasOperaciones} disabled={sincronizandoMonedas || cargandoOperaciones} title="Coloca en TODAS las operaciones (cliente y proveedor) la moneda que cada empresa tiene guardada en la tabla Empresas">
               <span>{sincronizandoMonedas ? '⏳ Actualizando monedas…' : '⟳ Actualizar monedas'}</span>
+            </button>
+            {/* ✅ V00162: cierra brincos/duplicados de folios ya guardados */}
+            <button type="button" className="btn btn-outline od-btn-reparar" disabled={reparandoConsec} onClick={repararConsecutivos} title="Renumera los folios de un día en 1..N por orden de creación: cierra brincos (006 → 024) y duplicados que dejó la numeración vieja, y re-sincroniza los contadores">
+              <span>{reparandoConsec ? '⏳ Reparando…' : '🔢 Reparar consecutivos'}</span>
             </button>
             <button className="btn btn-outline od-x23" onClick={() => setModalColumnas(true)} title="Configurar Columnas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>
