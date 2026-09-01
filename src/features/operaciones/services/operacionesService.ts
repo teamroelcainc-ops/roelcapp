@@ -139,7 +139,11 @@ export const guardarOperacionSegura = async (operacionData: any) => {
       clienteOpId,
     });
 
-    const { id, ref } = (res?.data || {}) as { id: string; ref: string };
+    const { id, ref, version, yaExistia } = (res?.data || {}) as { id: string; ref: string; version?: string; yaExistia?: boolean };
+    // ✅ Diagnóstico del consecutivo: confirma qué versión de la Cloud Function
+    //   respondió (v2.1 = la que corrige duplicados/saltos). Si esto no aparece
+    //   o dice otra cosa, la función desplegada es VIEJA.
+    console.info(`[consecutivo] ref=${ref} · función=${version || 'v1/desconocida (¡desplegar!)'}${yaExistia ? ' · reutilizada por idempotencia' : ''}`);
     if (!id) {
       throw new Error('La función no devolvió un id de operación válido.');
     }

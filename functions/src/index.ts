@@ -71,6 +71,11 @@ import type { DocumentReference } from 'firebase-admin/firestore';
 if (getApps().length === 0) initializeApp();
 const db = getFirestore();
 
+// ✅ Marcador para confirmar QUÉ versión está desplegada:
+//   · aparece en los logs de cada invocación: [crearOperacion v2.1]
+//   · viaja en la respuesta: { version: 'v2.1' }
+const FN_VERSION = 'v2.1';
+
 /** Extrae el número final de un ref "PR-DDMMYY-NNN" (tolera sin padding). */
 const consecutivoDesdeRef = (ref: unknown): number => {
   const m = String(ref || '').match(/-(\d+)\s*$/);
@@ -109,6 +114,7 @@ export const crearOperacion = onCall({ region: 'us-central1' }, async (request) 
   const counterRef = db.collection('counters').doc(`operaciones_${prefijo}_${ddmmyy}`);
   const clienteOpId = data.clienteOpId ? String(data.clienteOpId) : null;
 
+  console.log(`[crearOperacion ${FN_VERSION}] prefijo=${refPrefijo} clienteOpId=${clienteOpId || '(sin id)'}`);
   try {
     const resultado = await db.runTransaction(
       async (tx) => {
@@ -214,7 +220,7 @@ export const crearOperacion = onCall({ region: 'us-central1' }, async (request) 
       { maxAttempts: 10 } // ✅ más reintentos ante contención (default: 5)
     );
 
-    return { success: true, ...resultado };
+    return { success: true, version: FN_VERSION, ...resultado };
   } catch (err: any) {
     console.error('Error creando operación:', err);
     // ✅ Contención agotada (ABORTED, gRPC code 10): código reintentable para
