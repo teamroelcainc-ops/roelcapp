@@ -236,3 +236,65 @@ export const crearOperacion = onCall({ region: 'us-central1' }, async (request) 
     throw new HttpsError('internal', err?.message || 'No se pudo crear la operación.');
   }
 });
+
+/**
+ * ✅ v2.1: renumerarOperacion — cambia la LÍNEA (prefijo) de una operación ya
+ * guardada asignando el siguiente consecutivo REAL de la nueva línea, con la
+ * MISMA transacción atómica que crearOperacion (máximo real + 1: no duplica,
+ * no salta). Sustituye la regeneración que el cliente hacía con una consulta
+ * lexicográfica sin transacción (fuente de brincos como 006 → 024).
+ */
+export const renumerarOperacion = onCall({ region: 'us-central1' }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Debes iniciar sesión.');
+  const operacionId = String(request.data?.operacionId || '');
+  const prefijo = String(request.data?.prefijo || '').toUpperCase();
+  const ddmmyy = String(request.data?.ddmmyy || '');
+  if (!operacionId) throw new HttpsError('invalid-argument', 'Falta operacionId.');
+  if (!/^[A-ZÑ0-9.]{1,6}$/.test(prefijo)) throw new HttpsError('invalid-argument', 'Prefijo inválido.');
+  if (!/^\d{6}$/.test(ddmmyy)) throw new HttpsError('invalid-argument', 'ddmmyy inválido.');
+
+  const refPrefijo = `${prefijo}-${ddmmyy}`;
+  const counterRef = db.collection('counters').doc(`operaciones_${prefijo}_${ddmmyy}`);
+  const opRef = db.collection('operaciones').doc(operacionId);
+  console.log(`[renumerarOperacion ${FN_VERSION}] op=${operacionId} → ${refPrefijo}`);
+
+  try {
+    const out = await db.runTransaction(async (tx) => {
+      const opSnap = await tx.get(opRef);
+      if (!opSnap.exists) throw new HttpsError('not-found', 'La operación no existe.');
+      const actual = opSnap.data() as any;
+      if (String(actual.refPrefijo || '') === refPrefijo && Number(actual.refConsecutivo) > 0) {
+        return { ref: String(actual.ref || ''), sinCambio: true }; // ya está en esa línea
+      }
+      const counterSnap = await tx.get(counterRef);
+      void counterSnap; // ancla de serialización
+      const [porPrefijoSnap, porRefSnap] = await Promise.all([
+        tx.get(db.collection('operaciones').where('refPrefijo', '==', refPrefijo).select('ref', 'refConsecutivo')),
+        tx.get(db.collection('operaciones').where('ref', '>=', `${refPrefijo}-`).where('ref', '<=', `${refPrefijo}-\uf8ff`).select('ref', 'refConsecutivo')),
+      ]);
+      let maximoReal = 0;
+      const acumular = (d: { data: () => any }) => {
+        const dd = d.data() as any;
+        const n = Math.max(Number(dd.refConsecutivo) || 0, consecutivoDesdeRef(dd.ref));
+        if (n > maximoReal) maximoReal = n;
+      };
+      porPrefijoSnap.forEach(acumular);
+      porRefSnap.forEach(acumular);
+      const asignado = maximoReal + 1;
+      const ref = `${prefijo}-${ddmmyy}-${String(asignado).padStart(3, '0')}`;
+      tx.set(counterRef, { count: asignado, prefijo, fecha: ddmmyy, syncAt: new Date().toISOString() }, { merge: true });
+      tx.update(opRef, { ref, refPrefijo, refConsecutivo: asignado });
+      return { ref, sinCambio: false };
+    }, { maxAttempts: 10 });
+    return { success: true, version: FN_VERSION, ...out };
+  } catch (err: any) {
+    console.error('Error renumerando operación:', err);
+    if (err instanceof HttpsError) throw err;
+    const code = err?.code;
+    if (code === 10 || String(code).toUpperCase() === 'ABORTED') {
+      throw new HttpsError('aborted', 'Contención al renumerar; reintenta en unos segundos.');
+    }
+    throw new HttpsError('internal', err?.message || 'No se pudo renumerar la operación.');
+  }
+});
