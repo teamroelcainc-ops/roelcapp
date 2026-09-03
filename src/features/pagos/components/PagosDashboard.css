@@ -436,3 +436,8 @@
 .pg-moneda-empresa { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; border: 1px solid #30363d; background: #161b22; color: #d29922; font-size: 0.7rem; font-weight: 700; vertical-align: 1px; white-space: nowrap; }
 .pg-btn-op-completa { background: transparent; border: 1px solid #58a6ff; color: #58a6ff; border-radius: 6px; padding: 2px 7px; margin-left: 8px; cursor: pointer; font-size: 0.8rem; }
 .pg-btn-op-completa:hover { background-color: rgba(88, 166, 255, 0.12); }
+
+/* ✅ V00170: paginación de pagos */
+.pd-paginacion { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.pd-pag-info { color: #8b949e; font-size: 0.78rem; margin-right: auto; }
+.pd-pag-num { color: #f0f6fc; font-weight: 700; font-size: 0.82rem; }

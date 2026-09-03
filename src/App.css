@@ -1213,3 +1213,7 @@ body {
 /* ✅ V00138: visor solo-lectura de documentos del usuario */
 .app-misdocs-card { max-width: 720px; width: 94vw; }
 .app-misdocs-lista { margin-top: 12px; max-height: 60vh; overflow-y: auto; }
+
+/* ✅ V00170: respiro uniforme en todos los módulos */
+.dashboard-container { padding: 20px 24px 34px !important; }
+@media (max-width: 640px) { .dashboard-container { padding: 14px 12px 26px !important; } }

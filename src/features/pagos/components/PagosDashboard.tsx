@@ -113,6 +113,13 @@ export function PagosDashboard() {
   const usuario = useUsuarioStore((s) => s.usuario);
 
   const [tab, setTab] = useState<TipoPago>('cliente');
+
+  // ✅ V00170: paginación (50 pagos por página) en todas las pestañas
+
+  const [paginaPagos, setPaginaPagos] = useState(1);
+
+  const PAGOS_POR_PAGINA = 50;
+  useEffect(() => { setPaginaPagos(1); }, [tab]);
   const [pagos, setPagos] = useState<PagoDoc[]>([]);
   const [busqueda, setBusqueda] = useState('');
   const [pagoViendo, setPagoViendo] = useState<PagoDoc | null>(null);
@@ -1575,7 +1582,7 @@ export function PagosDashboard() {
           <tbody>
             {pagosFiltrados.length === 0 ? (
               <tr><td colSpan={8} className="pg-vacio">{busqueda ? 'Sin resultados.' : 'Aún no hay pagos registrados.'}</td></tr>
-            ) : pagosFiltrados.map((p) => (
+            ) : pagosFiltrados.slice((paginaPagos - 1) * PAGOS_POR_PAGINA, paginaPagos * PAGOS_POR_PAGINA).map((p) => (
               <tr key={p.id} className="pg-fila" onClick={() => setPagoViendo(p)} title="Ver detalle del pago">
                 <td onClick={(e) => e.stopPropagation()}>
                   {/* ✅ V00126: acciones en una sola fila (editar · eliminar · hilo) */}
@@ -1617,6 +1624,15 @@ export function PagosDashboard() {
             ))}
           </tbody>
         </table>
+          {/* ✅ V00170: paginación de pagos */}
+          {pagosFiltrados.length > PAGOS_POR_PAGINA && (
+            <div className="pd-paginacion">
+              <span className="pd-pag-info">Mostrando {(paginaPagos - 1) * PAGOS_POR_PAGINA + 1}–{Math.min(paginaPagos * PAGOS_POR_PAGINA, pagosFiltrados.length)} de {pagosFiltrados.length} pago(s)</span>
+              <button type="button" className="btn btn-outline" disabled={paginaPagos <= 1} onClick={() => setPaginaPagos((x) => x - 1)}>← Anterior</button>
+              <span className="pd-pag-num">{paginaPagos} / {Math.ceil(pagosFiltrados.length / PAGOS_POR_PAGINA)}</span>
+              <button type="button" className="btn btn-outline" disabled={paginaPagos >= Math.ceil(pagosFiltrados.length / PAGOS_POR_PAGINA)} onClick={() => setPaginaPagos((x) => x + 1)}>Siguiente →</button>
+            </div>
+          )}
       </div>
 
       {/* ══════════ FICHA DEL PAGO ══════════ */}

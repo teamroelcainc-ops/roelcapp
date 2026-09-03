@@ -40,6 +40,8 @@ const ServiciosCancelados = lazyWithRetry(() => import('./features/operaciones/c
 const ReportesDashboard = lazyWithRetry(() => import('./features/reportes/components/ReportesDashboard'), 'ReportesDashboard');
 // ✅ V00154: Reporte de Vencimiento (documentos vencidos / por vencer / sin fechas)
 const ReporteVencimientosDashboard = lazyWithRetry(() => import('./features/vencimientos/ReporteVencimientosDashboard').then(m => ({ default: m.ReporteVencimientosDashboard })), 'ReporteVencimientosDashboard');
+// ✅ V00170: Tablero (CRM) de prueba — drag & drop de status
+const TableroOperacionesDashboard = lazyWithRetry(() => import('./features/tablero/TableroOperacionesDashboard').then(m => ({ default: m.TableroOperacionesDashboard })), 'TableroOperacionesDashboard');
 // ✅ V00164: Panel de Control (metas + dashboard gráfico)
 const PanelControlDashboard = lazyWithRetry(() => import('./features/panelControl/PanelControlDashboard').then(m => ({ default: m.PanelControlDashboard })), 'PanelControlDashboard');
 const EmpresasDashboard = lazyWithRetry(() => import('./features/empresas/components/EmpresasDashboard'), 'EmpresasDashboard');
@@ -102,6 +104,7 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Reportes': 'reportes',
   'Reporte de Vencimiento': 'reporteVencimientos',
   'Panel de Control': 'panelControl',
+  'Tablero (CRM)': 'tableroCrm',
   'MTTO': 'mtto',
   'Referencias del Diesel': 'referenciasDiesel',
   'Referencias de Puentes': 'referenciasPuentes',
@@ -174,6 +177,9 @@ const ICON: Record<string, React.ReactNode> = {
   ),
   serviciosCancelados: (
     <Ico><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></Ico>
+  ),
+  tableroCrm: (
+    <Ico><rect x="3" y="4" width="5" height="16" rx="1" /><rect x="10" y="4" width="5" height="10" rx="1" /><rect x="17" y="4" width="5" height="13" rx="1" /></Ico>
   ),
   panelControl: (
     <Ico><rect x="3" y="12" width="4" height="8" rx="1" /><rect x="10" y="7" width="4" height="13" rx="1" /><rect x="17" y="3" width="4" height="17" rx="1" /></Ico>
@@ -720,7 +726,7 @@ function AppContenido() {
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -1306,6 +1312,13 @@ function AppContenido() {
             <span className="sidebar-label">{etq('menu.panel_de_control', 'Panel de Control')}</span>
           </div>
         )}
+        {/* ✅ V00170: Tablero (CRM) de prueba */}
+        {puede('tableroCrm') && (
+          <div className={`sidebar-item ${moduloActivo === 'tableroCrm' ? 'active' : ''}`} title="Tablero (CRM)" onClick={() => navegarA('tableroCrm')}>
+            <span className="sidebar-icon">{ICON.tableroCrm}</span>
+            <span className="sidebar-label">{etq('menu.tablero_crm', 'Tablero (CRM)')}</span>
+          </div>
+        )}
         {puede('estadisticas') && (
           <div className={`sidebar-item ${moduloActivo === 'estadisticas' ? 'active' : ''}`} title="Estadísticas" onClick={() => navegarA('estadisticas')}>
             <span className="sidebar-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
@@ -1606,6 +1619,7 @@ function AppContenido() {
             {moduloActivo === 'reportes' && puede('reportes') && <ReportesDashboard />}
             {moduloActivo === 'reporteVencimientos' && puede('reporteVencimientos') && <ReporteVencimientosDashboard />}
             {moduloActivo === 'panelControl' && puede('panelControl') && <PanelControlDashboard />}
+            {moduloActivo === 'tableroCrm' && puede('tableroCrm') && <TableroOperacionesDashboard />}
             {moduloActivo === 'autorizaciones' && puede('autorizaciones') && <AutorizacionesDashboard />}
             {moduloActivo === 'mtto' && puede('mtto') && <MttoDashboard />} 
             {moduloActivo === 'referenciasDiesel' && puede('referenciasDiesel') && <ReferenciasDieselDashboard />} 
