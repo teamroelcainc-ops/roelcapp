@@ -12,6 +12,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDocs, onSnapshot, updateDoc } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
 import { db } from '../../config/firebase';
+import { EditorEncabezados } from '../../components/EditorEncabezados';
+import { useEtiquetas } from '../../contexts/EtiquetasContext';
 import './ReporteVencimientosDashboard.css';
 
 interface DocVenc {
@@ -39,6 +41,7 @@ const fmtFecha = (iso?: string) => {
 };
 
 export const ReporteVencimientosDashboard = () => {
+  const { etq } = useEtiquetas();
   const [docs, setDocs] = useState<DocVenc[]>([]);
   const [cargando, setCargando] = useState(true);
   const [pestana, setPestana] = useState<'vencimientos' | 'sinFechas'>('vencimientos');
@@ -174,20 +177,28 @@ export const ReporteVencimientosDashboard = () => {
     <div className="dashboard-container rv-contenedor">
       <div className="rv-encabezado">
         <div>
-          <h2 className="rv-titulo">Reporte de Vencimiento</h2>
+          <h2 className="rv-titulo">{etq('rv.titulo', 'Reporte de Vencimiento')}</h2>
           <p className="rv-sub">Documentos de empleados, empresas y unidades con control de vencimiento.</p>
         </div>
-        <button className="btn btn-outline rv-btn-excel" onClick={exportarExcel} disabled={filasVencimientos.todas.length === 0}>⬇ Excel</button>
+        <div className="rv-encabezado-der">
+          <EditorEncabezados titulo="Reporte de Vencimiento" claves={[
+            { clave: 'rv.titulo', porDefecto: 'Reporte de Vencimiento', ayuda: 'Título del módulo' },
+            { clave: 'rv.tab_vencidos', porDefecto: 'Vencidos y por vencer', ayuda: 'Pestaña 1' },
+            { clave: 'rv.tab_sin_fechas', porDefecto: 'Sin fechas de emisión o vencimiento', ayuda: 'Pestaña 2' },
+            { clave: 'rv.col_usuario', porDefecto: 'Usuario del documento', ayuda: 'Columna del poseedor' },
+          ]} />
+          <button className="btn btn-outline rv-btn-excel" onClick={exportarExcel} disabled={filasVencimientos.todas.length === 0}>⬇ Excel</button>
+        </div>
       </div>
 
       <div className="rv-tabs">
         <button className={`rv-tab${pestana === 'vencimientos' ? ' activa' : ''}`} onClick={() => setPestana('vencimientos')}>
-          Vencidos y por vencer
+          {etq('rv.tab_vencidos', 'Vencidos y por vencer')}
           {filasVencimientos.vencidos.length > 0 && <span className="rv-badge rv-rojo">{filasVencimientos.vencidos.length}</span>}
           {filasVencimientos.porVencer.length > 0 && <span className="rv-badge rv-ambar">{filasVencimientos.porVencer.length}</span>}
         </button>
         <button className={`rv-tab${pestana === 'sinFechas' ? ' activa' : ''}`} onClick={() => setPestana('sinFechas')}>
-          Sin fechas de emisión o vencimiento
+          {etq('rv.tab_sin_fechas', 'Sin fechas de emisión o vencimiento')}
           {filasSinFechas.length > 0 && <span className="rv-badge rv-gris">{filasSinFechas.length}</span>}
         </button>
       </div>
@@ -212,7 +223,7 @@ export const ReporteVencimientosDashboard = () => {
         <div className="rv-tabla-wrap">
           {pestana === 'vencimientos' ? (
             <table className="rv-tabla">
-              <thead><tr><th>Tipo</th><th>Usuario del documento</th><th>Documento</th><th>Expedición</th><th>Vencimiento</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr><th>Tipo</th><th>{etq('rv.col_usuario', 'Usuario del documento')}</th><th>Documento</th><th>Expedición</th><th>Vencimiento</th><th>Estado</th><th></th></tr></thead>
               <tbody>
                 {filasVencimientos.todas.length === 0 && <tr><td colSpan={7} className="rv-vacio">Sin documentos vencidos ni por vencer con los filtros actuales. ✅</td></tr>}
                 {filasVencimientos.todas.map((d) => (
@@ -230,7 +241,7 @@ export const ReporteVencimientosDashboard = () => {
             </table>
           ) : (
             <table className="rv-tabla">
-              <thead><tr><th>Tipo</th><th>Usuario del documento</th><th>Documento</th><th>Vence</th><th>Expedición</th><th>Vencimiento</th><th></th></tr></thead>
+              <thead><tr><th>Tipo</th><th>{etq('rv.col_usuario', 'Usuario del documento')}</th><th>Documento</th><th>Vence</th><th>Expedición</th><th>Vencimiento</th><th></th></tr></thead>
               <tbody>
                 {filasSinFechas.length === 0 && <tr><td colSpan={7} className="rv-vacio">Todos los documentos tienen sus fechas completas. ✅</td></tr>}
                 {filasSinFechas.map((d) => (

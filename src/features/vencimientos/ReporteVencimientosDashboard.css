@@ -37,3 +37,4 @@
 .rv-vacio { text-align: center; color: #8b949e; padding: 22px 10px !important; }
 .rv-celda-ver { white-space: nowrap; }
 .rv-guardando { margin-right: 6px; }
+.rv-encabezado-der { display: flex; gap: 10px; align-items: center; }

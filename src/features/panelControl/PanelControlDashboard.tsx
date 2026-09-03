@@ -11,6 +11,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import { db } from '../../config/firebase';
+import { EditorEncabezados } from '../../components/EditorEncabezados';
+import { useEtiquetas } from '../../contexts/EtiquetasContext';
 import './PanelControlDashboard.css';
 
 interface Metas { opsMes: number; opsAnio: number; factMes: number; factAnio: number; utilMes: number; utilAnio: number; }
@@ -26,6 +28,7 @@ const fmtCompacto = (n: number, dinero?: boolean) => {
 const num = (v: any) => { const n = parseFloat(String(v ?? '').replace(/[^0-9.-]/g, '')); return isNaN(n) ? 0 : n; };
 
 export const PanelControlDashboard = () => {
+  const { etq } = useEtiquetas();
   const anioActual = new Date().getFullYear();
   const [anio, setAnio] = useState(anioActual);
   const [metas, setMetas] = useState<Metas>(METAS_VACIAS);
@@ -239,13 +242,21 @@ export const PanelControlDashboard = () => {
     <div className="dashboard-container pc-contenedor">
       <div className="pc-encabezado">
         <div>
-          <h2 className="pc-titulo">Panel de Control</h2>
+          <h2 className="pc-titulo">{etq('pc.titulo', 'Panel de Control')}</h2>
           <p className="pc-sub">Metas mensuales y anuales vs. resultados reales, y salud general del app.</p>
         </div>
         <div className="pc-encabezado-der">
           <select className="form-control pc-select-anio" value={anio} onChange={(e) => setAnio(Number(e.target.value))}>
             {[anioActual + 1, anioActual, anioActual - 1, anioActual - 2].map((a) => <option key={a} value={a}>{a}</option>)}
           </select>
+          <EditorEncabezados titulo="Panel de Control" claves={[
+            { clave: 'pc.titulo', porDefecto: 'Panel de Control', ayuda: 'Título del módulo' },
+            { clave: 'pc.graf_ops', porDefecto: 'Operaciones por mes', ayuda: 'Gráfica 1' },
+            { clave: 'pc.graf_fact', porDefecto: 'Facturación por mes (MXN)', ayuda: 'Gráfica 2' },
+            { clave: 'pc.graf_util', porDefecto: 'Utilidad estimada por mes (MXN)', ayuda: 'Gráfica 3' },
+            { clave: 'pc.top_unidades', porDefecto: '🚛 Unidades más usadas', ayuda: 'Top de unidades' },
+            { clave: 'pc.top_operadores', porDefecto: '👷 Operadores más asignados', ayuda: 'Top de operadores' },
+          ]} />
           <button className="btn btn-outline pc-btn-metas" onClick={() => { setMetasDraft(metas); setEditandoMetas(true); }}>🎯 Configurar metas</button>
         </div>
       </div>
@@ -270,14 +281,14 @@ export const PanelControlDashboard = () => {
             <Tarjeta titulo="Facturación del año (MXN)" real={totalAnio.fact} meta={metas.factAnio} dinero />
             <Tarjeta titulo="Utilidad del año (MXN)" real={totalAnio.util} meta={metas.utilAnio} dinero />
           </div>
-          <Grafica titulo={`Operaciones por mes · ${anio}`} valores={porMes.map((m) => m.ops)} meta={metas.opsMes} />
-          <Grafica titulo={`Facturación por mes (MXN) · ${anio}`} valores={porMes.map((m) => m.fact)} meta={metas.factMes} dinero />
-          <Grafica titulo={`Utilidad estimada por mes (MXN) · ${anio}`} valores={porMes.map((m) => m.util)} meta={metas.utilMes} dinero />
+          <Grafica titulo={`${etq('pc.graf_ops', 'Operaciones por mes')} · ${anio}`} valores={porMes.map((m) => m.ops)} meta={metas.opsMes} />
+          <Grafica titulo={`${etq('pc.graf_fact', 'Facturación por mes (MXN)')} · ${anio}`} valores={porMes.map((m) => m.fact)} meta={metas.factMes} dinero />
+          <Grafica titulo={`${etq('pc.graf_util', 'Utilidad estimada por mes (MXN)')} · ${anio}`} valores={porMes.map((m) => m.util)} meta={metas.utilMes} dinero />
 
           {/* ✅ V00166: unidad más usada y operador más asignado */}
           <div className="pc-tops">
-            <TopBarras titulo={`🚛 Unidades más usadas · ${anio}`} datos={tops.unidades} total={totalAnio.ops} />
-            <TopBarras titulo={`👷 Operadores más asignados · ${anio}`} datos={tops.operadores} total={totalAnio.ops} />
+            <TopBarras titulo={`${etq('pc.top_unidades', '🚛 Unidades más usadas')} · ${anio}`} datos={tops.unidades} total={totalAnio.ops} />
+            <TopBarras titulo={`${etq('pc.top_operadores', '👷 Operadores más asignados')} · ${anio}`} datos={tops.operadores} total={totalAnio.ops} />
           </div>
         </>
       )}
