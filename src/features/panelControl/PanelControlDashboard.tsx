@@ -17,6 +17,12 @@ interface Metas { opsMes: number; opsAnio: number; factMes: number; factAnio: nu
 const METAS_VACIAS: Metas = { opsMes: 0, opsAnio: 0, factMes: 0, factAnio: 0, utilMes: 0, utilAnio: 0 };
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const fmtMon = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+// Etiqueta compacta para que quepa sobre la barra: $2.9M, $210K, 75
+const fmtCompacto = (n: number, dinero?: boolean) => {
+  const abs = Math.abs(n);
+  const txt = abs >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : abs >= 1e3 ? `${(n / 1e3).toFixed(0)}K` : `${Math.round(n)}`;
+  return dinero ? `$${txt}` : txt;
+};
 const num = (v: any) => { const n = parseFloat(String(v ?? '').replace(/[^0-9.-]/g, '')); return isNaN(n) ? 0 : n; };
 
 export const PanelControlDashboard = () => {
@@ -29,6 +35,8 @@ export const PanelControlDashboard = () => {
   const [ops, setOps] = useState<any[]>([]);
   const [cargando, setCargando] = useState(true);
   const [alertas, setAlertas] = useState({ docsVencidos: 0, solicitudesPend: 0, empresasSinMoneda: 0 });
+  // ✅ V00165: detalle del mes al hacer clic en una barra
+  const [mesDetalle, setMesDetalle] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -87,20 +95,98 @@ export const PanelControlDashboard = () => {
 
   const Grafica = ({ titulo, valores, meta, dinero }: { titulo: string; valores: number[]; meta: number; dinero?: boolean }) => {
     const maxVal = Math.max(...valores, meta, 1);
+    // 🏆 mejor mes de esta métrica (solo meses con valor)
+    const mejor = valores.reduce((mi, v, i) => (v > valores[mi] ? i : mi), 0);
+    const hayDatos = valores.some((v) => v > 0);
     return (
       <div className="pc-grafica">
-        <div className="pc-grafica-titulo">{titulo}{meta > 0 && <span className="pc-grafica-meta">Meta mensual: {dinero ? fmtMon(meta) : meta}</span>}</div>
+        <div className="pc-grafica-titulo">
+          <span>{titulo}{hayDatos && <span className="pc-mejor-chip" title={`Mejor mes: ${MESES[mejor]} (${dinero ? fmtMon(valores[mejor]) : valores[mejor]})`}>🏆 Mejor: {MESES[mejor]}</span>}</span>
+          {meta > 0 && <span className="pc-grafica-meta">Meta mensual: {dinero ? fmtMon(meta) : meta}</span>}
+        </div>
         <div className="pc-barras">
           {meta > 0 && <div className="pc-linea-meta" style={{ '--pc-meta-frac': String(meta / maxVal) } as React.CSSProperties} />}
           {valores.map((v, i) => {
             const p = pct(v, meta);
             return (
-              <div key={i} className={`pc-barra-col${i === mesActual && anio === anioActual ? ' pc-mes-actual' : ''}`} title={`${MESES[i]}: ${dinero ? fmtMon(v) : v}${p !== null ? ` (${p}% de la meta)` : ''}`}>
-                <div className={`pc-barra ${meta > 0 ? (v >= meta ? 'pc-b-ok' : v >= meta * 0.7 ? 'pc-b-medio' : 'pc-b-bajo') : 'pc-b-neutra'}`} style={{ '--pc-h': `${(v / maxVal) * 100}%` } as React.CSSProperties} />
+              <div key={i} role="button" tabIndex={0}
+                className={`pc-barra-col pc-clic${i === mesActual && anio === anioActual ? ' pc-mes-actual' : ''}`}
+                title={`${MESES[i]}: ${dinero ? fmtMon(v) : v}${p !== null ? ` (${p}% de la meta)` : ''} — clic para ver el detalle del mes`}
+                onClick={() => setMesDetalle(i)}
+                onKeyDown={(e) => { if (e.key === 'Enter') setMesDetalle(i); }}
+                style={{ '--pc-frac': String(v / maxVal) } as React.CSSProperties}>
+                {/* ✅ V00165: cantidad y % sobre cada barra */}
+                <span className="pc-barra-valor">
+                  {fmtCompacto(v, dinero)}
+                  {p !== null && <em className={`pc-barra-pct ${v >= meta ? 'pc-pct-ok' : v >= meta * 0.7 ? 'pc-pct-medio' : 'pc-pct-bajo'}`}>{p}%</em>}
+                </span>
+                {i === mejor && hayDatos && <span className="pc-barra-corona" title="Mejor mes">🏆</span>}
+                <div className={`pc-barra ${meta > 0 ? (v >= meta ? 'pc-b-ok' : v >= meta * 0.7 ? 'pc-b-medio' : 'pc-b-bajo') : 'pc-b-neutra'}`} />
                 <span className="pc-barra-mes">{MESES[i]}</span>
               </div>
             );
           })}
+        </div>
+      </div>
+    );
+  };
+
+  // ✅ V00165: detalle completo del mes (clic en una barra)
+  const DetalleMes = ({ mes }: { mes: number }) => {
+    const d = porMes[mes];
+    const opsMes = ops.filter((o: any) => Number(String(o.fechaServicio || '').split('-')[1]) - 1 === mes);
+    const dias = new Set(opsMes.map((o: any) => String(o.fechaServicio || ''))).size;
+    const mesesConDatos = porMes.filter((m) => m.ops > 0).length || 1;
+    const prom = {
+      ops: totalAnio.ops / mesesConDatos,
+      fact: totalAnio.fact / mesesConDatos,
+      util: totalAnio.util / mesesConDatos,
+    };
+    const topClientes = Object.entries(opsMes.reduce((acc: Record<string, { n: number; fact: number }>, o: any) => {
+      const nom = String(o.clientePagaNombre || o.clienteNombre || o.clientePaga || 'Sin cliente');
+      (acc[nom] ||= { n: 0, fact: 0 }); acc[nom].n++; acc[nom].fact += num(o.conversionCliente);
+      return acc;
+    }, {})).sort((a, b) => b[1].fact - a[1].fact).slice(0, 5);
+    const vsProm = (v: number, p: number) => p > 0 ? `${v >= p ? '+' : ''}${Math.round(((v - p) / p) * 100)}% vs promedio` : '';
+    const filas: Array<{ etq: string; real: number; meta: number; promedio: number; dinero?: boolean }> = [
+      { etq: 'Operaciones', real: d.ops, meta: metas.opsMes, promedio: prom.ops },
+      { etq: 'Facturación (MXN)', real: d.fact, meta: metas.factMes, promedio: prom.fact, dinero: true },
+      { etq: 'Utilidad estimada (MXN)', real: d.util, meta: metas.utilMes, promedio: prom.util, dinero: true },
+    ];
+    return (
+      <div className="modal-overlay pc-detalle-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setMesDetalle(null); }}>
+        <div className="pc-detalle-card">
+          <div className="pc-metas-header"><h3>📊 Detalle de {MESES[mes]} {anio}</h3><button className="pc-metas-cerrar" onClick={() => setMesDetalle(null)}>✕</button></div>
+          <div className="pc-detalle-cuerpo">
+            <div className="pc-detalle-grid">
+              {filas.map((f) => {
+                const p = pct(f.real, f.meta);
+                return (
+                  <div key={f.etq} className={`pc-tarjeta ${claseAvance(p)}`}>
+                    <div className="pc-tarjeta-titulo">{f.etq}</div>
+                    <div className="pc-tarjeta-valor">{f.dinero ? fmtMon(f.real) : f.real.toLocaleString('en-US')}</div>
+                    <div className="pc-tarjeta-meta">
+                      {f.meta > 0 ? <>Meta {f.dinero ? fmtMon(f.meta) : f.meta} · <b>{p}%</b></> : 'Sin meta configurada'}
+                      {f.promedio > 0 && <><br />{vsProm(f.real, f.promedio)}</>}
+                    </div>
+                    {f.meta > 0 && <div className="pc-progreso"><div className="pc-progreso-fill" style={{ '--pc-w': `${Math.min(100, p || 0)}%` } as React.CSSProperties} /></div>}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="pc-detalle-datos">Días con operaciones: <b>{dias}</b>{dias > 0 && <> · Promedio: <b>{(d.ops / dias).toFixed(1)}</b> op(s)/día</>}</div>
+            {topClientes.length > 0 && (
+              <>
+                <h4 className="pc-detalle-sub">Top clientes del mes (por facturación MXN)</h4>
+                <table className="pc-detalle-tabla">
+                  <thead><tr><th>Cliente</th><th>Ops</th><th>Facturación</th></tr></thead>
+                  <tbody>
+                    {topClientes.map(([nom, x]) => <tr key={nom}><td>{nom}</td><td>{x.n}</td><td>{fmtMon(x.fact)}</td></tr>)}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -158,6 +244,8 @@ export const PanelControlDashboard = () => {
           <Grafica titulo={`Utilidad estimada por mes (MXN) · ${anio}`} valores={porMes.map((m) => m.util)} meta={metas.utilMes} dinero />
         </>
       )}
+
+      {mesDetalle !== null && <DetalleMes mes={mesDetalle} />}
 
       {editandoMetas && (
         <div className="modal-overlay pc-metas-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !guardandoMetas) setEditandoMetas(false); }}>
