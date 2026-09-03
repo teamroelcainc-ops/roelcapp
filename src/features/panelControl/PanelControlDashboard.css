@@ -1,0 +1,56 @@
+/* ✅ V00164: Panel de Control — metas y dashboard gráfico */
+.pc-contenedor { display: flex; flex-direction: column; gap: 14px; }
+.pc-encabezado { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.pc-titulo { margin: 0; color: #f0f6fc; }
+.pc-sub { margin: 4px 0 0; color: #8b949e; font-size: 0.85rem; }
+.pc-encabezado-der { display: flex; gap: 10px; align-items: center; }
+.pc-select-anio { width: auto; }
+.pc-btn-metas { border-color: #D84315 !important; color: #ff7043 !important; }
+.pc-alertas { display: flex; gap: 10px; flex-wrap: wrap; }
+.pc-alerta { border: 1px solid #30363d; border-radius: 10px; padding: 8px 14px; color: #8b949e; font-size: 0.82rem; background: #0d1117; }
+.pc-alerta b { color: #f0f6fc; }
+.pc-alerta-mal { border-color: #f85149; color: #f85149; }
+.pc-alerta-mal b { color: #f85149; }
+.pc-alerta-medio { border-color: #f59e0b; color: #fbbf24; }
+.pc-alerta-medio b { color: #fbbf24; }
+.pc-cargando { color: #8b949e; }
+.pc-seccion { color: #f0f6fc; margin: 8px 0 0; font-size: 0.95rem; }
+.pc-tarjetas { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.pc-tarjeta { background: #0d1117; border: 1px solid #30363d; border-radius: 14px; padding: 14px 16px; }
+.pc-tarjeta.pc-ok { border-color: #3fb950; }
+.pc-tarjeta.pc-medio { border-color: #f59e0b; }
+.pc-tarjeta.pc-bajo { border-color: #f85149; }
+.pc-tarjeta-titulo { color: #8b949e; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.pc-tarjeta-valor { color: #f0f6fc; font-size: 1.5rem; font-weight: 800; margin: 4px 0 2px; }
+.pc-tarjeta-meta { color: #8b949e; font-size: 0.78rem; }
+.pc-ok .pc-tarjeta-meta b { color: #3fb950; }
+.pc-medio .pc-tarjeta-meta b { color: #fbbf24; }
+.pc-bajo .pc-tarjeta-meta b { color: #f85149; }
+.pc-progreso { height: 7px; background: #21262d; border-radius: 999px; margin-top: 8px; overflow: hidden; }
+.pc-progreso-fill { height: 100%; width: var(--pc-w, 0%); border-radius: 999px; background: linear-gradient(90deg, #D84315, #ff7043); }
+.pc-ok .pc-progreso-fill { background: #3fb950; }
+.pc-medio .pc-progreso-fill { background: #f59e0b; }
+.pc-bajo .pc-progreso-fill { background: #f85149; }
+.pc-grafica { background: #0d1117; border: 1px solid #30363d; border-radius: 14px; padding: 14px 16px; }
+.pc-grafica-titulo { color: #f0f6fc; font-weight: 700; font-size: 0.88rem; display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pc-grafica-meta { color: #8b949e; font-size: 0.75rem; font-weight: 600; }
+.pc-barras { position: relative; display: flex; align-items: flex-end; gap: 8px; height: 150px; margin-top: 12px; padding-bottom: 18px; }
+.pc-linea-meta { position: absolute; left: 0; right: 0; height: 0; border-top: 2px dashed #8b949e; opacity: 0.7; bottom: calc(18px + (100% - 18px) * var(--pc-meta-frac, 0)); }
+.pc-barra-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; position: relative; }
+.pc-barra { width: 70%; max-width: 42px; height: var(--pc-h, 0%); border-radius: 6px 6px 0 0; min-height: 2px; transition: height 0.25s ease; }
+.pc-b-ok { background: #3fb950; }
+.pc-b-medio { background: #f59e0b; }
+.pc-b-bajo { background: #f8514966; border: 1px solid #f85149; }
+.pc-b-neutra { background: #58a6ff; }
+.pc-mes-actual .pc-barra { outline: 2px solid #D84315; outline-offset: 2px; }
+.pc-barra-mes { position: absolute; bottom: 0; color: #8b949e; font-size: 0.66rem; }
+.pc-metas-overlay { z-index: 2600; backdrop-filter: blur(4px); }
+.pc-metas-card { background: #0d1117; border: 1px solid #444; border-radius: 16px; max-width: 560px; width: 94vw; padding: 0 0 16px; }
+.pc-metas-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #30363d; }
+.pc-metas-header h3 { margin: 0; color: #f0f6fc; font-size: 1rem; }
+.pc-metas-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.1rem; }
+.pc-metas-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; padding: 16px 20px 4px; }
+.pc-metas-grid label { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.72rem; font-weight: 700; }
+.pc-metas-nota { color: #8b949e; font-size: 0.74rem; margin: 8px 20px 0; line-height: 1.45; }
+.pc-metas-acciones { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 20px 0; }
+@media (max-width: 640px) { .pc-metas-grid { grid-template-columns: 1fr; } .pc-barra-mes { font-size: 0.55rem; } }
