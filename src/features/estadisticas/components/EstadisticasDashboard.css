@@ -581,3 +581,16 @@ button.est-detalle-item {
 .est-badge.peor { background: rgba(248, 81, 73, 0.15); color: #f85149; border: 1px solid #f85149; }
 .est-mes-mejor td { background: rgba(63, 185, 80, 0.06); }
 .est-mes-peor td { background: rgba(248, 81, 73, 0.06); }
+
+/* ✅ V00167: editor de encabezados */
+.est-btn-enc { margin-left: auto; border: 1px dashed #58a6ff !important; color: #58a6ff !important; border-radius: 8px; }
+.est-enc-overlay { z-index: 2600; backdrop-filter: blur(4px); }
+.est-enc-card { background: #0d1117; border: 1px solid #444; border-radius: 16px; max-width: 620px; width: 94vw; max-height: 86vh; display: flex; flex-direction: column; }
+.est-enc-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #30363d; }
+.est-enc-header h3 { margin: 0; color: #f0f6fc; font-size: 1rem; }
+.est-enc-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1.1rem; }
+.est-enc-cuerpo { padding: 16px 20px; overflow-y: auto; }
+.est-enc-nota { color: #8b949e; font-size: 0.8rem; line-height: 1.5; margin: 0 0 12px; }
+.est-enc-nota b { color: #c9d1d9; }
+.est-enc-campo { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.72rem; font-weight: 700; margin-bottom: 10px; }
+.est-enc-acciones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }

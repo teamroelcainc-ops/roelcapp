@@ -56,6 +56,12 @@ const CATALOGO: { seccion: string; items: { clave: string; porDefecto: string }[
       { clave: 'menu.reglas_de_estatus', porDefecto: 'Reglas de Estatus' },
       { clave: 'menu.autorizaciones', porDefecto: 'Autorizaciones' },
       { clave: 'menu.personalizar_etiquetas', porDefecto: 'Personalizar Etiquetas' },
+      // ✅ V00167: encabezados del módulo Estadísticas (también editables ahí con "✎ Encabezados")
+      { clave: 'est.modo_operaciones', porDefecto: 'Operaciones' },
+      { clave: 'est.modo_facturacion', porDefecto: 'Facturación' },
+      { clave: 'est.tab_desglose', porDefecto: 'Desglose (tipo · C/V · exp/imp/mov · cliente · operador · unidad · proveedor)' },
+      { clave: 'est.tab_operativa', porDefecto: 'Estadística de servicios (diario · semanal · mensual · clientes)' },
+      { clave: 'est.tab_servicios', porDefecto: 'Servicios por mes' },
       { clave: 'menu.datos_de_la_empresa', porDefecto: 'Datos de la Empresa' },
       { clave: 'menu.importaci_n_de_datos', porDefecto: 'Importación de Datos' },
       { clave: 'menu.logs', porDefecto: 'Logs' },

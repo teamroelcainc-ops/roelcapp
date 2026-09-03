@@ -16,6 +16,7 @@
 // Exportación: Excel (XLSX) y PDF horizontal con el logo de la empresa.
 // ---------------------------------------------------------------------------
 import { useState, useMemo, useEffect } from 'react';
+import { obtenerUsuarioAut } from '../../autorizaciones/autorizaciones';
 import { collection, query, where, getDocs, documentId } from 'firebase/firestore';
 import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
@@ -168,7 +169,38 @@ const DIAS_SEMANA_TXT = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', '
 
 export function EstadisticasDashboard() {
   const { config } = useEmpresaConfig();
-  const { etq } = useEtiquetas();
+  const { etq, guardarEtiquetas } = useEtiquetas();
+  // ✅ V00167: EDITOR DE ENCABEZADOS (pestañas y modos) — solo Admin.
+  //   Escribe en settings_ui/etiquetas (mismo motor de "Personalizar Etiquetas"),
+  //   así el cambio aplica para todos y también es editable desde ese módulo.
+  const [esAdminUI, setEsAdminUI] = useState(false);
+  useEffect(() => { obtenerUsuarioAut().then((u) => setEsAdminUI(!!u?.esAdmin)).catch(() => setEsAdminUI(false)); }, []);
+  const [editandoEncabezados, setEditandoEncabezados] = useState(false);
+  const [encDraft, setEncDraft] = useState<Record<string, string>>({});
+  const [guardandoEnc, setGuardandoEnc] = useState(false);
+  const CLAVES_ENCABEZADOS: { clave: string; porDefecto: string; ayuda: string }[] = [
+    { clave: 'est.modo_operaciones', porDefecto: 'Operaciones', ayuda: 'Tarjeta selectora superior (conteo de servicios)' },
+    { clave: 'est.modo_facturacion', porDefecto: 'Facturación', ayuda: 'Tarjeta selectora superior (dinero y utilidad)' },
+    { clave: 'est.tab_desglose', porDefecto: 'Desglose (tipo · C/V · exp/imp/mov · cliente · operador · unidad · proveedor)', ayuda: 'Pestaña 1' },
+    { clave: 'est.tab_operativa', porDefecto: 'Estadística de servicios (diario · semanal · mensual · clientes)', ayuda: 'Pestaña 2' },
+    { clave: 'est.tab_servicios', porDefecto: 'Servicios por mes', ayuda: 'Pestaña 3' },
+  ];
+  const abrirEncabezados = () => {
+    const d: Record<string, string> = {};
+    CLAVES_ENCABEZADOS.forEach((c) => { d[c.clave] = etq(c.clave, c.porDefecto); });
+    setEncDraft(d); setEditandoEncabezados(true);
+  };
+  const guardarEncabezados = async () => {
+    if (guardandoEnc) return;
+    setGuardandoEnc(true);
+    try {
+      const cambios: Record<string, string> = {};
+      CLAVES_ENCABEZADOS.forEach((c) => { cambios[c.clave] = String(encDraft[c.clave] ?? '').trim(); });
+      await guardarEtiquetas(cambios); // texto vacío = regresa al valor por defecto
+      setEditandoEncabezados(false);
+    } catch (e: any) { alert(`No se pudieron guardar los encabezados: ${e?.message || e}`); }
+    finally { setGuardandoEnc(false); }
+  };
   const anioActual = new Date().getFullYear();
   const [pestana, setPestana] = useState<Pestana>('desgloseOps');
   const [area, setArea] = useState<Area>('operativa');
@@ -1370,15 +1402,17 @@ export function EstadisticasDashboard() {
 
       {/* ✅ V00126: separación clara OPERATIVA vs MONETARIA */}
       <div className="est-areas">
-        <button className={`est-area${area === 'operativa' ? ' activa operativa' : ''}`} onClick={() => cambiarArea('operativa')}><span className="est-area-icono"><Truck size={18} /></span><span className="est-area-texto">Operaciones<small>Cuántos servicios · sin montos</small></span></button>
-        <button className={`est-area${area === 'monetaria' ? ' activa monetaria' : ''}`} onClick={() => cambiarArea('monetaria')}><span className="est-area-icono"><Wallet size={18} /></span><span className="est-area-texto">Facturación<small>Cuánto dinero · pesos y dólares · utilidad</small></span></button>
+        <button className={`est-area${area === 'operativa' ? ' activa operativa' : ''}`} onClick={() => cambiarArea('operativa')}><span className="est-area-icono"><Truck size={18} /></span><span className="est-area-texto">{etq('est.modo_operaciones', 'Operaciones')}<small>Cuántos servicios · sin montos</small></span></button>
+        <button className={`est-area${area === 'monetaria' ? ' activa monetaria' : ''}`} onClick={() => cambiarArea('monetaria')}><span className="est-area-icono"><Wallet size={18} /></span><span className="est-area-texto">{etq('est.modo_facturacion', 'Facturación')}<small>Cuánto dinero · pesos y dólares · utilidad</small></span></button>
       </div>
       <div className="est-tabs">
         {area === 'operativa' ? (
           <>
-            <button className={`est-tab${pestana === 'desgloseOps' ? ' activa' : ''}`} onClick={() => setPestana('desgloseOps')}>Desglose (tipo · C/V · exp/imp/mov · cliente · operador · unidad · proveedor)</button>
-            <button className={`est-tab${pestana === 'operativa' ? ' activa' : ''}`} onClick={() => setPestana('operativa')}>Estadística de servicios (diario · semanal · mensual · clientes)</button>
-            <button className={`est-tab${pestana === 'servicios' ? ' activa' : ''}`} onClick={() => setPestana('servicios')}>Servicios por mes</button>
+            <button className={`est-tab${pestana === 'desgloseOps' ? ' activa' : ''}`} onClick={() => setPestana('desgloseOps')}>{etq('est.tab_desglose', 'Desglose (tipo · C/V · exp/imp/mov · cliente · operador · unidad · proveedor)')}</button>
+            <button className={`est-tab${pestana === 'operativa' ? ' activa' : ''}`} onClick={() => setPestana('operativa')}>{etq('est.tab_operativa', 'Estadística de servicios (diario · semanal · mensual · clientes)')}</button>
+            <button className={`est-tab${pestana === 'servicios' ? ' activa' : ''}`} onClick={() => setPestana('servicios')}>{etq('est.tab_servicios', 'Servicios por mes')}</button>
+            {/* ✅ V00167: el Admin edita los encabezados desde aquí */}
+            {esAdminUI && <button className="est-tab est-btn-enc" title="Configurar los nombres de las pestañas y tarjetas (aplica para todos)" onClick={abrirEncabezados}>✎ Encabezados</button>}
           </>
         ) : (
           <>
@@ -2088,6 +2122,28 @@ export function EstadisticasDashboard() {
 
       {pestana === 'utilidad' && !cargando && (
         <p className="est-nota">Nota: para Transfer (flota propia) el costo de proveedor suele ser cero; su costo real (sueldos, diésel, casetas) vive en Nómina y Diésel y puede integrarse en una siguiente fase.</p>
+      )}
+
+      {/* ✅ V00167: modal de encabezados (Admin) */}
+      {editandoEncabezados && (
+        <div className="modal-overlay est-enc-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !guardandoEnc) setEditandoEncabezados(false); }}>
+          <div className="est-enc-card">
+            <div className="est-enc-header"><h3>✎ Encabezados de Estadísticas</h3><button className="est-enc-cerrar" onClick={() => setEditandoEncabezados(false)} disabled={guardandoEnc}>✕</button></div>
+            <div className="est-enc-cuerpo">
+              <p className="est-enc-nota">Cambia el nombre de las pestañas y tarjetas de este módulo. Aplica para <b>todos los usuarios</b> al instante; deja un campo vacío para regresar a su nombre original. También puedes editarlos desde Configuración → Personalizar Etiquetas.</p>
+              {CLAVES_ENCABEZADOS.map((c) => (
+                <label key={c.clave} className="est-enc-campo">
+                  <span>{c.ayuda}</span>
+                  <input className="form-control" type="text" placeholder={c.porDefecto} value={encDraft[c.clave] ?? ''} onChange={(e) => setEncDraft((p) => ({ ...p, [c.clave]: e.target.value }))} />
+                </label>
+              ))}
+              <div className="est-enc-acciones">
+                <button className="btn btn-outline" onClick={() => setEditandoEncabezados(false)} disabled={guardandoEnc}>Cancelar</button>
+                <button className="btn btn-primary" onClick={guardarEncabezados} disabled={guardandoEnc}>{guardandoEnc ? 'Guardando…' : 'Guardar encabezados'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
