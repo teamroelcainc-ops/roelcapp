@@ -76,6 +76,20 @@ export const PanelControlDashboard = () => {
     return base;
   }, [ops]);
 
+  // ✅ V00166: TOP unidad más usada y operador más asignado (año elegido)
+  const tops = useMemo(() => {
+    const cuenta = (campoNombre: string, campoId: string) => {
+      const acc: Record<string, number> = {};
+      ops.forEach((o: any) => {
+        const nom = String(o[campoNombre] || o[campoId] || '').trim();
+        if (!nom) return;
+        acc[nom] = (acc[nom] || 0) + 1;
+      });
+      return Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    };
+    return { unidades: cuenta('unidadNombre', 'unidad'), operadores: cuenta('operadorNombre', 'operador') };
+  }, [ops]);
+
   const mesActual = new Date().getMonth();
   const totalAnio = useMemo(() => porMes.reduce((a, m) => ({ ops: a.ops + m.ops, fact: a.fact + m.fact, util: a.util + m.util }), { ops: 0, fact: 0, util: 0 }), [porMes]);
 
@@ -127,6 +141,23 @@ export const PanelControlDashboard = () => {
             );
           })}
         </div>
+      </div>
+    );
+  };
+
+  // ✅ V00166: top horizontal (unidades / operadores) con conteo y % del total
+  const TopBarras = ({ titulo, datos, total }: { titulo: string; datos: [string, number][]; total: number }) => {
+    const max = datos.length ? datos[0][1] : 1;
+    return (
+      <div className="pc-grafica">
+        <div className="pc-grafica-titulo"><span>{titulo}{datos.length > 0 && <span className="pc-mejor-chip">🏆 {datos[0][0]} ({datos[0][1]})</span>}</span></div>
+        {datos.length === 0 ? <p className="pc-detalle-datos">Sin datos en el año.</p> : datos.map(([nom, n]) => (
+          <div key={nom} className="pc-top-fila" title={`${nom}: ${n} operación(es) — ${total > 0 ? Math.round((n / total) * 100) : 0}% del total`}>
+            <span className="pc-top-nombre">{nom}</span>
+            <div className="pc-top-barra-wrap"><div className="pc-top-barra" style={{ '--pc-frac': String(n / max) } as React.CSSProperties} /></div>
+            <span className="pc-top-cifra"><b>{n}</b> · {total > 0 ? Math.round((n / total) * 100) : 0}%</span>
+          </div>
+        ))}
       </div>
     );
   };
@@ -242,6 +273,12 @@ export const PanelControlDashboard = () => {
           <Grafica titulo={`Operaciones por mes · ${anio}`} valores={porMes.map((m) => m.ops)} meta={metas.opsMes} />
           <Grafica titulo={`Facturación por mes (MXN) · ${anio}`} valores={porMes.map((m) => m.fact)} meta={metas.factMes} dinero />
           <Grafica titulo={`Utilidad estimada por mes (MXN) · ${anio}`} valores={porMes.map((m) => m.util)} meta={metas.utilMes} dinero />
+
+          {/* ✅ V00166: unidad más usada y operador más asignado */}
+          <div className="pc-tops">
+            <TopBarras titulo={`🚛 Unidades más usadas · ${anio}`} datos={tops.unidades} total={totalAnio.ops} />
+            <TopBarras titulo={`👷 Operadores más asignados · ${anio}`} datos={tops.operadores} total={totalAnio.ops} />
+          </div>
         </>
       )}
 
