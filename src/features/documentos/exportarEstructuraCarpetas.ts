@@ -29,7 +29,7 @@ export const exportarEstructuraCarpetas = async (p: {
         .map((m: any) => normalizar(String(m)));
       return { nombre: sanitizar(String(x.nombre || '')), mods, orden: Number(x.orden) || 9999 };
     })
-    .filter((t) => t.nombre && (t.mods.length === 0 || t.mods.includes('todos') || t.mods.some((m: string) => modsBuscados.includes(m))))
+    .filter((t) => t.nombre && (t.mods.includes('todos') || t.mods.some((m: string) => modsBuscados.some((b) => m.includes(b) || b.includes(m)))))
     .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre, 'es'));
 
   if (tipos.length === 0) throw new Error('El catálogo de Tipos de Archivo no tiene tipos para esta categoría.');

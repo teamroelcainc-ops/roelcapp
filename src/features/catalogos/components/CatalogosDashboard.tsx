@@ -984,7 +984,14 @@ const CatalogosDashboard = () => {
 
     if (filtroFijo) {
       const [campo, valor] = filtroFijo.split('|||');
-      resultado = resultado.filter(reg => String(reg[campo]) === valor);
+      // ✅ V00173: el filtro busca por CONTENIDO, no igualdad exacta — si el campo
+      //   guarda una lista ("Cliente, Empresa"), filtrar por "Cliente" la incluye.
+      const nrm = (t: any) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      resultado = resultado.filter(reg => {
+        const v = reg[campo];
+        const texto = Array.isArray(v) ? v.map(nrm).join(', ') : nrm(v);
+        return texto.includes(nrm(valor));
+      });
     }
 
     if (busqueda.trim()) {

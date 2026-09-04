@@ -1210,11 +1210,14 @@ const EmpresasDashboard = () => {
                             onClick={async (e) => {
                               e.stopPropagation();
                               try {
+                                // ✅ V00173: SOLO las carpetas de su categoría — Cliente (Paga) trae
+                                //   únicamente los tipos cuyo Módulo es o CONTIENE "Cliente".
                                 const tipos = String((emp as any).tiposEmpresa || (emp as any).tipoEmpresa || '').toLowerCase();
-                                const modulos = ['empresa'];
-                                if (tipos.includes('cliente') || tipos.includes('bode') || tipos.includes('bóde')) modulos.push('cliente');
+                                const modulos: string[] = [];
+                                if (tipos.includes('cliente')) modulos.push('cliente');
+                                if (tipos.includes('bode') || tipos.includes('bóde')) modulos.push('bodega');
                                 if (tipos.includes('proveedor') || tipos.includes('transport')) modulos.push('proveedor');
-                                if (modulos.length === 1) modulos.push('cliente', 'proveedor'); // sin categoría clara: todas
+                                if (modulos.length === 0) modulos.push('empresa'); // sin categoría: los generales de empresa
                                 const n = await exportarEstructuraCarpetas({ registroNombre: emp.nombre || String(emp.id), modulos });
                                 alert(`Zip generado con ${n} carpeta(s) para "${emp.nombre}". Llénalas y súbelas con 📁 Carga masiva.`);
                               } catch (err: any) { alert(`No se pudo exportar: ${err?.message || err}`); }

@@ -129,3 +129,7 @@
 .ud-det-docs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .ud-det-subtitulo { margin: 0; color: #c9d1d9; font-size: 0.9rem; }
 @media (max-width: 640px) { .ud-det-grid { grid-template-columns: 1fr 1fr; } }
+
+/* ✅ V00173: exportar carpetas de documentos */
+.ud-btn-carpetas { border: 1px solid #a371f7 !important; color: #a371f7 !important; }
+.ud-btn-carpetas:hover { background-color: rgba(163, 113, 247, 0.12) !important; }

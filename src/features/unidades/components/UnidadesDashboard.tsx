@@ -1,5 +1,6 @@
 // src/features/unidades/components/UnidadesDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { exportarEstructuraCarpetas } from '../../documentos/exportarEstructuraCarpetas';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db, eliminarRegistro } from '../../../config/firebase'; 
 import { FormularioUnidad, TIPOS_DOCUMENTO_UNIDAD } from './FormularioUnidad';
@@ -330,6 +331,18 @@ export const UnidadesDashboard: React.FC = () => {
                       {/* Celda de Acciones fija a la izquierda */}
                       <td className="ud-x32" onClick={(e: any) => e.stopPropagation()}>
                         <div className="actions-cell ud-x33">
+                          <button
+                            className="btn-small ud-btn-carpetas"
+                            title="Exportar zip con las carpetas de documentos (vacías) de esta unidad — llénalas y súbelas con la carga de documentos"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const nombre = String((reg as any).unidad || (reg as any).placas || reg.id);
+                                const n = await exportarEstructuraCarpetas({ registroNombre: nombre, modulos: ['unidad'] });
+                                alert(`Zip generado con ${n} carpeta(s) para "${nombre}".`);
+                              } catch (err: any) { alert(`No se pudo exportar: ${err?.message || err}`); }
+                            }}
+                          >📦</button>
                           <button 
                             className="btn-small btn-edit ud-x34" 
                             title="Editar Unidad"
