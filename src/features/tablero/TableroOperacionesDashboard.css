@@ -19,3 +19,8 @@
 .tb-tarjeta-linea { color: #f0f6fc; font-size: 0.78rem; font-weight: 600; margin: 3px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tb-tarjeta-meta { color: #8b949e; font-size: 0.68rem; display: flex; gap: 4px; flex-wrap: wrap; }
 .tb-col-vacia { border: 1px dashed #30363d; border-radius: 10px; color: #6e7681; font-size: 0.72rem; text-align: center; padding: 16px 8px; }
+
+/* ✅ V00171: color de prueba por status */
+.tb-col-header { border-top: 3px solid var(--tb-color, #58a6ff); border-radius: 14px 14px 0 0; }
+.tb-col-titulo { color: var(--tb-color, #f0f6fc); }
+.tb-tarjeta { border-left: 4px solid var(--tb-color, #30363d); }
