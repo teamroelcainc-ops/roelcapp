@@ -4,6 +4,7 @@ import { db, eliminarRegistro } from '../../../config/firebase';
 import { EmployeeForm, TIPOS_DOCUMENTO_EMPLEADO } from './EmployeeForm';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { CargaMasivaDocumentosModal } from '../../documentos/CargaMasivaDocumentosModal';
+import { exportarEstructuraCarpetas } from '../../documentos/exportarEstructuraCarpetas';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { HerramientasEmpleado } from './HerramientasEmpleado'; 
 import type { Employee } from '../../../types/empleado';
@@ -265,6 +266,19 @@ export const EmpleadosDashboard = () => {
                             style={{ color: '#fb923c' }}
                             onClick={(ev) => { ev.stopPropagation(); setEmpleadoDocs(emp); setMostrarSubirDoc(true); }}
                           ><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg></button>
+                          {/* ✅ V00172: carpetas vacías de documentos de empleado */}
+                          <button
+                            className="btn-icono btn-carpetas"
+                            title="Exportar zip con las carpetas de documentos (vacías) del colaborador — llénalas y súbelas con 📁 Carga masiva"
+                            onClick={async (ev) => {
+                              ev.stopPropagation();
+                              try {
+                                const nombre = `${(emp as any).firstName ?? ''} ${(emp as any).lastNamePaternal ?? ''}`.trim() || String(emp.id);
+                                const n = await exportarEstructuraCarpetas({ registroNombre: nombre, modulos: ['empleado'] });
+                                alert(`Zip generado con ${n} carpeta(s) para "${nombre}". Llénalas y súbelas con 📁 Carga masiva.`);
+                              } catch (err: any) { alert(`No se pudo exportar: ${err?.message || err}`); }
+                            }}
+                          >📦</button>
                           <button
                             className="btn-icono btn-carga-masiva"
                             title="Carga masiva: sube de golpe la carpeta completa de documentos de este colaborador"

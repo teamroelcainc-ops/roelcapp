@@ -7,6 +7,7 @@ import { db, eliminarRegistro, actualizarRegistro } from '../../../config/fireba
 import { FormularioEmpresa, TIPOS_DOCUMENTO_EMPRESA } from './FormularioEmpresa';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { CargaMasivaDocumentosModal } from '../../documentos/CargaMasivaDocumentosModal';
+import { exportarEstructuraCarpetas } from '../../documentos/exportarEstructuraCarpetas';
 import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
@@ -1202,6 +1203,23 @@ const EmpresasDashboard = () => {
                           >
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
                           </button>
+                          {/* ✅ V00172: exporta las carpetas vacías según la categoría de la empresa */}
+                          <button
+                            className="btn-small ed-btn-carpetas"
+                            title="Exportar zip con las carpetas de documentos (vacías) que aplican a esta empresa según su categoría — llénalas y súbelas con 📁 Carga masiva"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const tipos = String((emp as any).tiposEmpresa || (emp as any).tipoEmpresa || '').toLowerCase();
+                                const modulos = ['empresa'];
+                                if (tipos.includes('cliente') || tipos.includes('bode') || tipos.includes('bóde')) modulos.push('cliente');
+                                if (tipos.includes('proveedor') || tipos.includes('transport')) modulos.push('proveedor');
+                                if (modulos.length === 1) modulos.push('cliente', 'proveedor'); // sin categoría clara: todas
+                                const n = await exportarEstructuraCarpetas({ registroNombre: emp.nombre || String(emp.id), modulos });
+                                alert(`Zip generado con ${n} carpeta(s) para "${emp.nombre}". Llénalas y súbelas con 📁 Carga masiva.`);
+                              } catch (err: any) { alert(`No se pudo exportar: ${err?.message || err}`); }
+                            }}
+                          >📦</button>
                           <button
                             className="btn-small ed-btn-carga-masiva"
                             title="Carga masiva: sube de golpe la carpeta completa de documentos de esta empresa"

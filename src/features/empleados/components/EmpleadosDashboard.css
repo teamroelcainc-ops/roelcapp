@@ -111,3 +111,5 @@
 /* ✅ V00144: botón de carga masiva de documentos */
 .btn-carga-masiva { border: 1px solid #58a6ff !important; color: #58a6ff !important; }
 .btn-carga-masiva:hover { background-color: rgba(88, 166, 255, 0.12) !important; }
+.btn-carpetas { border: 1px solid #a371f7 !important; color: #a371f7 !important; }
+.btn-carpetas:hover { background-color: rgba(163, 113, 247, 0.12) !important; }
