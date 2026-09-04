@@ -1210,13 +1210,15 @@ const EmpresasDashboard = () => {
                             onClick={async (e) => {
                               e.stopPropagation();
                               try {
-                                // ✅ V00173: SOLO las carpetas de su categoría — Cliente (Paga) trae
-                                //   únicamente los tipos cuyo Módulo es o CONTIENE "Cliente".
-                                const tipos = String((emp as any).tiposEmpresa || (emp as any).tipoEmpresa || '').toLowerCase();
+                                // ✅ V00174: la categoría se toma de los NOMBRES resueltos del tipo de
+                                //   empresa (tiposEmpresa guarda ids del catálogo) — Cliente (Paga) trae
+                                //   TODAS las carpetas cuyo Módulo contenga "Cliente", etc.
+                                const nombresTipo: string[] = ((emp as any)._tiposEmpresaArray || []).map((t: string) => String(t).toLowerCase());
+                                const texto = nombresTipo.join(' ') || String((emp as any).tiposEmpresa || (emp as any).tipoEmpresa || '').toLowerCase();
                                 const modulos: string[] = [];
-                                if (tipos.includes('cliente')) modulos.push('cliente');
-                                if (tipos.includes('bode') || tipos.includes('bóde')) modulos.push('bodega');
-                                if (tipos.includes('proveedor') || tipos.includes('transport')) modulos.push('proveedor');
+                                if (texto.includes('cliente')) modulos.push('cliente');
+                                if (texto.includes('bode') || texto.includes('bóde')) modulos.push('bodega');
+                                if (texto.includes('proveedor') || texto.includes('transport')) modulos.push('proveedor');
                                 if (modulos.length === 0) modulos.push('empresa'); // sin categoría: los generales de empresa
                                 const n = await exportarEstructuraCarpetas({ registroNombre: emp.nombre || String(emp.id), modulos });
                                 alert(`Zip generado con ${n} carpeta(s) para "${emp.nombre}". Llénalas y súbelas con 📁 Carga masiva.`);
