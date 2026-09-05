@@ -36,8 +36,10 @@ const ID_MXN = 'f95d8894';
 const colorTipoOperacion = (nombre: any): string => {
   const n = String(nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   if (n.includes('transfer')) return '#fb923c';
-  if (n.includes('logist')) return '#58a6ff';
+  // ✅ V00177: 'flete' se evalúa ANTES que 'logist' — "Logistica Fletes"
+  //   contiene ambas palabras y debe pintarse VERDE (línea de fletes).
   if (n.includes('flete')) return '#3fb950';
+  if (n.includes('logist')) return '#58a6ff';
   return '#c9d1d9';
 };
 
