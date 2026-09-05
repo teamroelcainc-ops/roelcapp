@@ -38,8 +38,7 @@ const MODULO_POR_COLECCION: Record<string, string[]> = {
 
 interface ItemCarga {
   tipoLabel: string;       // nombre de la subcarpeta ya limpio ("Solicitud Empleo")
-  archivo: File;
-  extras: number;          // archivos adicionales en la misma carpeta (se omiten)
+  archivos: File[];        // ✅ V00175: TODOS los archivos de la carpeta (multi-documento)
   vence: boolean;          // según catálogo
   enCatalogo: boolean;
   fechaExpedicion: string;
@@ -90,7 +89,7 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
           return c.modulos.some((m) => modsColeccion.includes(m)) || c.modulos.includes('todos');
         }) || catalogo.find((c) => normalizar(c.nombre) === normalizar(tipoLabel));
         return {
-          tipoLabel, archivo: archivos[0], extras: archivos.length - 1,
+          tipoLabel, archivos,
           vence: cat ? cat.vence : false, enCatalogo: !!cat,
           fechaExpedicion: '', fechaVencimiento: '', estado: 'pendiente' as const,
         };
@@ -103,7 +102,7 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
     setItems((prev) => prev.map((it, i) => i === idx ? { ...it, [campo]: valor } : it));
 
   const resumen = useMemo(() => ({
-    total: items.length,
+    total: items.reduce((a, i) => a + i.archivos.length, 0),
     conVenc: items.filter((i) => i.vence).length,
     sinFecha: items.filter((i) => i.vence && !i.fechaVencimiento).length,
   }), [items]);
@@ -119,42 +118,54 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
       if (!ok) return;
     }
     setSubiendo(true);
-    setProgreso({ hechas: 0, total: items.length });
+    const totalArchivos = items.reduce((a, i) => a + i.archivos.length, 0);
+    setProgreso({ hechas: 0, total: totalArchivos });
     const carpeta = sanitizarRuta(registroNombre) || sanitizarRuta(registroId) || 'sin_nombre';
     let hechas = 0;
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       setItems((prev) => prev.map((x, k) => k === i ? { ...x, estado: 'subiendo' } : x));
-      try {
-        const punto = it.archivo.name.lastIndexOf('.');
-        const extension = punto >= 0 ? it.archivo.name.slice(punto) : '';
-        const subcarpeta = sanitizarRuta(it.tipoLabel);
-        const nombreFinal = `${subcarpeta}${extension}`;
-        const ruta = `${sanitizarRuta(coleccionOrigen)}/${carpeta}/${subcarpeta}/${nombreFinal}`;
-        const r = storageRef(storage, ruta);
-        await uploadBytes(r, it.archivo, it.archivo.type ? { contentType: it.archivo.type } : undefined);
-        const url = await getDownloadURL(r);
-        const docId = sanitizarRuta(`${coleccionOrigen}__${registroId}__${subcarpeta}`).replace(/\s+/g, '_');
-        await setDoc(doc(db, 'documentos', docId), {
-          coleccionOrigen, registroId, registroNombre: registroNombre || '',
-          tipoDocumento: it.tipoLabel, carpeta, subcarpeta,
-          nombreArchivo: nombreFinal, path: ruta, url,
-          vence: it.vence,
-          fechaExpedicion: it.vence ? it.fechaExpedicion : '',
-          fechaVencimiento: it.vence ? it.fechaVencimiento : '',
-          observaciones: '', createdAt: new Date().toISOString(),
-        }, { merge: true });
-        setItems((prev) => prev.map((x, k) => k === i ? { ...x, estado: 'ok' } : x));
-      } catch (e) {
-        console.error('Carga masiva — error en', it.tipoLabel, e);
-        setItems((prev) => prev.map((x, k) => k === i ? { ...x, estado: 'error' } : x));
+      let falloItem = false;
+      const subcarpeta = sanitizarRuta(it.tipoLabel);
+      // ✅ V00175: se suben TODOS los archivos de la carpeta. El primero conserva
+      //   el esquema clásico (un doc canónico por tipo: <tipo>.ext y docId base);
+      //   los adicionales guardan su nombre original y docId con sufijo (__2, __3…),
+      //   así el visor, alertas y reportes los listan todos.
+      for (let a = 0; a < it.archivos.length; a++) {
+        const archivo = it.archivos[a];
+        try {
+          const punto = archivo.name.lastIndexOf('.');
+          const extension = punto >= 0 ? archivo.name.slice(punto) : '';
+          const base = archivo.name.slice(0, punto >= 0 ? punto : undefined);
+          const nombreFinal = a === 0 ? `${subcarpeta}${extension}` : `${sanitizarRuta(base) || `archivo ${a + 1}`}${extension}`;
+          const ruta = `${sanitizarRuta(coleccionOrigen)}/${carpeta}/${subcarpeta}/${nombreFinal}`;
+          const r = storageRef(storage, ruta);
+          await uploadBytes(r, archivo, archivo.type ? { contentType: archivo.type } : undefined);
+          const url = await getDownloadURL(r);
+          const docIdBase = sanitizarRuta(`${coleccionOrigen}__${registroId}__${subcarpeta}`).replace(/\s+/g, '_');
+          const docId = a === 0 ? docIdBase : `${docIdBase}__${a + 1}`;
+          await setDoc(doc(db, 'documentos', docId), {
+            coleccionOrigen, registroId, registroNombre: registroNombre || '',
+            tipoDocumento: it.archivos.length > 1 && a > 0 ? `${it.tipoLabel} (${a + 1})` : it.tipoLabel,
+            carpeta, subcarpeta,
+            nombreArchivo: nombreFinal, path: ruta, url,
+            vence: it.vence,
+            fechaExpedicion: it.vence ? it.fechaExpedicion : '',
+            fechaVencimiento: it.vence ? it.fechaVencimiento : '',
+            observaciones: '', createdAt: new Date().toISOString(),
+          }, { merge: true });
+        } catch (e) {
+          console.error('Carga masiva — error en', it.tipoLabel, archivo.name, e);
+          falloItem = true;
+        }
+        hechas++; setProgreso({ hechas, total: totalArchivos });
       }
-      hechas++; setProgreso({ hechas, total: items.length });
+      setItems((prev) => prev.map((x, k) => k === i ? { ...x, estado: falloItem ? 'error' : 'ok' } : x));
     }
     setSubiendo(false);
     onUploaded?.();
     const errores = items.filter((i) => i.estado === 'error').length;
-    alert(`Carga masiva terminada.\n\nSubidos: ${items.length - errores} de ${items.length}${errores ? `\nCon error: ${errores} (reintenta solo esos)` : ''}`);
+    alert(`Carga masiva terminada.\n\nArchivos subidos: ${totalArchivos} (en ${items.length} tipo(s))${errores ? `\nTipos con error: ${errores} (reintenta solo esos)` : ''}`);
   };
 
   if (!isOpen) return null;
@@ -185,8 +196,8 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
                   <tbody>
                     {items.map((it, i) => (
                       <tr key={it.tipoLabel} className={`cmd-fila-${it.estado}`}>
-                        <td className="cmd-tipo">{it.tipoLabel}{!it.enCatalogo && <span className="cmd-nuevo" title="No está en el catálogo de tipos; se sube como no-vence">nuevo</span>}{it.extras > 0 && <span className="cmd-extra" title="Solo se sube el primer archivo de la carpeta">+{it.extras} omitido(s)</span>}</td>
-                        <td className="cmd-arch">{it.archivo.name}</td>
+                        <td className="cmd-tipo">{it.tipoLabel}{!it.enCatalogo && <span className="cmd-nuevo" title="No está en el catálogo de tipos; se sube como no-vence">nuevo</span>}{it.archivos.length > 1 && <span className="cmd-extra" title={it.archivos.map((f) => f.name).join('\n')}>{it.archivos.length} archivos</span>}</td>
+                        <td className="cmd-arch" title={it.archivos.map((f) => f.name).join('\n')}>{it.archivos.length === 1 ? it.archivos[0].name : `${it.archivos[0].name} +${it.archivos.length - 1} más`}</td>
                         <td>{it.vence ? <input type="date" className="cmd-fecha" value={it.fechaExpedicion} disabled={subiendo} onChange={(e) => setFecha(i, 'fechaExpedicion', e.target.value)} /> : <span className="cmd-na">No vence</span>}</td>
                         <td>{it.vence ? <input type="date" className={`cmd-fecha${!it.fechaVencimiento ? ' cmd-fecha-falta' : ''}`} value={it.fechaVencimiento} disabled={subiendo} onChange={(e) => setFecha(i, 'fechaVencimiento', e.target.value)} /> : <span className="cmd-na">—</span>}</td>
                         <td className="cmd-estado">{it.estado === 'ok' ? '✅' : it.estado === 'error' ? '❌' : it.estado === 'subiendo' ? '⏳' : ''}</td>
@@ -198,7 +209,7 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
               <div className="cmd-acciones">
                 {subiendo && <span className="cmd-progreso">Subiendo… {progreso.hechas}/{progreso.total}</span>}
                 <button type="button" className="btn btn-outline" onClick={cerrar} disabled={subiendo}>Cancelar</button>
-                <button type="button" className="btn btn-primary" onClick={subirTodo} disabled={subiendo || items.length === 0}>{subiendo ? '⏳ Subiendo…' : `⬆ Subir todo (${items.length})`}</button>
+                <button type="button" className="btn btn-primary" onClick={subirTodo} disabled={subiendo || items.length === 0}>{subiendo ? '⏳ Subiendo…' : `⬆ Subir todo (${items.reduce((a, i) => a + i.archivos.length, 0)})`}</button>
               </div>
             </>
           )}
