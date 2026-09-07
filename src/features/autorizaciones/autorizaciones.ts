@@ -26,6 +26,9 @@ export interface ReglaAut {
 export interface ConfigModuloAut {
   acciones: Partial<Record<AccionAut, ReglaAut>>;
   campos: Record<string, ReglaAut>; // key de campo -> regla (aplica al EDITAR ese campo)
+  // ✅ V00181: usuarios EXENTOS de este módulo — para ellos todo queda abierto
+  //   (desbloqueo permanente por usuario, además de los accesos temporales de 24h).
+  usuariosExentos?: string[];
 }
 
 export interface SolicitudAut {

@@ -51,6 +51,8 @@ export const AutorizacionesDashboard = () => {
 
   // ── Configuración ──
   const [configs, setConfigs] = useState<Record<string, ConfigModuloAut>>({});
+  // ✅ V00181: usuarios (para exenciones permanentes por módulo)
+  const [usuariosApp, setUsuariosApp] = useState<any[]>([]);
   // ✅ V00140: VISTA PREVIA del formulario de un módulo (simula un rol)
   const [previewModulo, setPreviewModulo] = useState<string>('');
   const [previewRol, setPreviewRol] = useState<string>('');
@@ -65,6 +67,9 @@ export const AutorizacionesDashboard = () => {
   const [procesando, setProcesando] = useState<string>('');
   const [solicitudDetalle, setSolicitudDetalle] = useState<SolicitudAut | null>(null);
 
+  useEffect(() => {
+    getDocs(collection(db, 'usuarios')).then((snap) => setUsuariosApp(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })).sort((a: any, b: any) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es')))).catch(() => setUsuariosApp([]));
+  }, []);
   useEffect(() => {
     (async () => {
       const u = await obtenerUsuarioAut();
@@ -419,6 +424,29 @@ export const AutorizacionesDashboard = () => {
                 </div>
                 {abierto && (
                   <div className="ad-x35">
+                    {/* ✅ V00181: usuarios EXENTOS de este módulo (desbloqueo permanente) */}
+                    <div className="ad-exentos">
+                      <div className="ad-exentos-titulo">Usuarios exentos de este módulo (ven todo abierto):</div>
+                      <div className="ad-exentos-chips">
+                        {(configs[m.clave]?.usuariosExentos || []).map((uid: string) => {
+                          const u = usuariosApp.find((x: any) => x.id === uid);
+                          return <span key={uid} className="ad-exento-chip">{u?.nombre || u?.correo || uid}<button type="button" onClick={() => setConfigs((prev: any) => ({ ...prev, [m.clave]: { ...(prev[m.clave] || { acciones: {}, campos: {} }), usuariosExentos: (prev[m.clave]?.usuariosExentos || []).filter((x: string) => x !== uid) } }))}>✕</button></span>;
+                        })}
+                        <select className="ad-exentos-select" value="" onChange={(e) => {
+                          const uid = e.target.value; if (!uid) return;
+                          setConfigs((prev: any) => {
+                            const act = prev[m.clave]?.usuariosExentos || [];
+                            if (act.includes(uid)) return prev;
+                            return { ...prev, [m.clave]: { ...(prev[m.clave] || { acciones: {}, campos: {} }), usuariosExentos: [...act, uid] } };
+                          });
+                        }}>
+                          <option value="">+ Agregar usuario exento…</option>
+                          {usuariosApp.filter((u: any) => !(configs[m.clave]?.usuariosExentos || []).includes(u.id)).map((u: any) => <option key={u.id} value={u.id}>{u.nombre || u.correo || u.id}</option>)}
+                        </select>
+                      </div>
+                      <div className="ad-exentos-nota">La exención es permanente hasta que la quites y se guarda con el botón "Guardar" del módulo. Los accesos temporales de 24h por solicitud siguen funcionando aparte.</div>
+                    </div>
+
                     <div>
                       <div className="ad-x36">Acciones</div>
                       <div className="ad-x37">

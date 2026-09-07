@@ -9,9 +9,33 @@ import { HORAS_VIGENCIA_ACCESO } from './autorizaciones';
 import './ModalAccesoCampo.css';
 
 export const ModalAccesoCampo: React.FC<{ aut: CtrlAutorizaciones }> = ({ aut }) => {
-  if (!aut.solicitudCampo) return null;
+  // ✅ V00181: BARRA "Solicitar autorización" — si el formulario tiene campos
+  //   bloqueados para este usuario, aparece una píldora flotante (no rompe el
+  //   diseño del formulario) con la lista de campos; elegir uno abre la
+  //   solicitud de siempre. El modal de abajo sigue igual.
+  const [listaAbierta, setListaAbierta] = React.useState(false);
+  const bloqueados = Array.from(aut.camposBloqueados || []);
+  const barra = (!aut.esAdmin && bloqueados.length > 0) ? (
+    <div className="mac-barra">
+      {listaAbierta && (
+        <div className="mac-barra-lista">
+          <div className="mac-barra-titulo">Campos bloqueados para ti — elige para solicitar autorización:</div>
+          {bloqueados.map((k) => (
+            <button key={k} type="button" className="mac-barra-item" onClick={() => { setListaAbierta(false); aut.abrirSolicitudAcceso(k); }}>
+              🔒 {aut.etiquetas[k] || k}
+            </button>
+          ))}
+        </div>
+      )}
+      <button type="button" className="mac-barra-btn" title="Este formulario tiene campos bloqueados para tu rol; solicita autorización para editarlos" onClick={() => setListaAbierta((v) => !v)}>
+        🔒 Solicitar autorización{bloqueados.length > 1 ? ` (${bloqueados.length})` : ''}
+      </button>
+    </div>
+  ) : null;
+  if (!aut.solicitudCampo) return barra;
   const etiqueta = aut.etiquetas[aut.solicitudCampo] || aut.solicitudCampo;
-  return (
+  return (<>
+    {barra}
     <div className="modal-overlay mac-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget && !aut.solicitudEnviando) aut.cerrarSolicitudAcceso(); }}>
       <div className="mac-card">
         <div className="mac-header">
@@ -38,5 +62,5 @@ export const ModalAccesoCampo: React.FC<{ aut: CtrlAutorizaciones }> = ({ aut })
         </div>
       </div>
     </div>
-  );
+  </>);
 };

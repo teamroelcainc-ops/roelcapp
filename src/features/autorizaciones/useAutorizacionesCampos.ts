@@ -46,6 +46,8 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
 
   const camposBloqueados = useMemo(() => {
     if (!config || !usuario || usuario.esAdmin) return new Set<string>();
+    // ✅ V00181: usuario exento del módulo → todo abierto para él
+    if ((config.usuariosExentos || []).includes(String(usuario.uid || ''))) return new Set<string>();
     const claves = Object.keys(config.campos || {});
     const r = evaluarAutorizacion(config, 'editar', usuario, claves, etiquetas);
     // ✅ V00141: un acceso aprobado y vigente destapa el campo para este usuario

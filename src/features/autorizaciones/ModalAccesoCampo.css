@@ -9,3 +9,12 @@
 .mac-ok { color: #3fb950; }
 .mac-sub { color: #8b949e; font-size: 0.85rem; margin: 0; line-height: 1.5; }
 .mac-acciones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
+/* ✅ V00181: barra flotante "Solicitar autorización" */
+.mac-barra { position: fixed; right: 22px; bottom: 22px; z-index: 2147481000; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.mac-barra-btn { background: #1c1408; border: 1px solid #f59e0b; color: #fbbf24; border-radius: 999px; padding: 9px 16px; font-size: 0.8rem; font-weight: 800; cursor: pointer; box-shadow: 0 8px 22px rgba(0,0,0,0.45); }
+.mac-barra-btn:hover { background: rgba(245, 158, 11, 0.18); }
+.mac-barra-lista { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; padding: 10px; max-width: 320px; max-height: 300px; overflow-y: auto; box-shadow: 0 12px 30px rgba(0,0,0,0.5); }
+.mac-barra-titulo { color: #8b949e; font-size: 0.7rem; font-weight: 700; margin-bottom: 6px; }
+.mac-barra-item { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #f0f6fc; font-size: 0.8rem; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.mac-barra-item:hover { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }

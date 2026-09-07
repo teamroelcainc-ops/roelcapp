@@ -777,6 +777,25 @@ function AppContenido() {
     return () => unsub();
   }, [usuarioActualDB?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ✅ V00181: NUEVAS solicitudes pendientes → notifican a TODOS los usuarios
+  //   que tienen habilitado el módulo de Autorizaciones (campana con punto rojo).
+  const [solicitudesPendientes, setSolicitudesPendientes] = useState<any[]>([]);
+  const puedeVerAut = useMemo(() => {
+    if (usuarioActualDB?.esAdmin) return true;
+    const rolesEf: string[] = Array.isArray(usuarioActualDB?.roles) ? usuarioActualDB.roles : (usuarioActualDB?.rol ? [usuarioActualDB.rol] : []);
+    const porRol = rolesCatalogo.some((r: any) => rolesEf.includes(r.nombre) && (r.modulosPermitidos || []).includes('Autorizaciones'));
+    return porRol || (usuarioActualDB?.modulosExtra || []).includes('Autorizaciones');
+  }, [usuarioActualDB, rolesCatalogo]);
+  useEffect(() => {
+    if (!usuarioActualDB?.id || !puedeVerAut) { setSolicitudesPendientes([]); return; }
+    const qPend = query(collection(db, 'solicitudes_autorizacion'), where('estado', '==', 'pendiente'));
+    const unsubP = onSnapshot(qPend, (snap) => {
+      setSolicitudesPendientes(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .sort((a: any, b: any) => String(b.creadaEn || '').localeCompare(String(a.creadaEn || ''))));
+    }, () => setSolicitudesPendientes([]));
+    return () => unsubP();
+  }, [usuarioActualDB?.id, puedeVerAut]);
+
   // Módulo de autorizaciones -> clave de moduloActivo para navegar al formulario
   const CLAVE_NAV_AUT: Record<string, string> = {
     operaciones: 'operaciones', tipoCambio: 'tipoCambio', empresas: 'empresas',
@@ -1542,7 +1561,7 @@ function AppContenido() {
                 onClick={() => setAvisoVersionAbierto((v) => !v)}
                 style={{ background: 'none', border: `1px solid ${versionNueva ? '#d29922' : '#30363d'}`, borderRadius: '999px', color: versionNueva ? '#d29922' : '#8b949e', width: '34px', height: '34px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '8px' }}>
                 <Bell size={17} color={versionNueva ? '#d29922' : '#8b949e'} strokeWidth={2} style={{ display: 'block', flexShrink: 0 }} />
-                {(versionNueva || notisAcceso.length > 0) && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
+                {(versionNueva || notisAcceso.length > 0 || solicitudesPendientes.length > 0) && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
               </button>
               {avisoVersionAbierto && (
                 <div style={{ position: 'absolute', top: '42px', right: 0, zIndex: 3000, width: '270px', background: '#161b22', border: '1px solid #30363d', borderRadius: '10px', padding: '14px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
@@ -1557,12 +1576,21 @@ function AppContenido() {
                         Actualizar ahora
                       </button>
                     </>
-                  ) : notisAcceso.length === 0 ? (
+                  ) : (notisAcceso.length === 0 && solicitudesPendientes.length === 0) ? (
                     <div style={{ color: '#8b949e', fontSize: '0.78rem', lineHeight: 1.45 }}>
                       Sin notificaciones pendientes. ✅<br />
                       <span style={{ color: '#6e7681', fontSize: '0.72rem' }}>Versión actual: {APP_VERSION}</span>
                     </div>
                   ) : null}
+                  {/* ✅ V00181: NUEVAS solicitudes de autorización (para quien tiene el módulo) */}
+                  {solicitudesPendientes.slice(0, 6).map((n: any) => (
+                    <div key={`p-${n.id}`} className="app-noti-solicitud" onClick={() => { setAvisoVersionAbierto(false); navegarA('autorizaciones' as any); }} title="Abrir el módulo de Autorizaciones">
+                      <b className="app-noti-solicitud-b">📨 Solicitud pendiente:</b> {n.solicitanteNombre || 'Un usuario'} pide {n.tipo === 'accesoCampo' ? <>editar <b className="app-noti-campo">{n.campoLabel || n.campo}</b></> : (n.accion || 'autorización')} en <b className="app-noti-campo">{n.moduloLabel || n.modulo}</b>{n.referencia ? <> ({n.referencia})</> : null}.
+                    </div>
+                  ))}
+                  {solicitudesPendientes.length > 6 && (
+                    <div className="app-noti-solicitud" onClick={() => { setAvisoVersionAbierto(false); navegarA('autorizaciones' as any); }}>… y {solicitudesPendientes.length - 6} solicitud(es) más — abrir Autorizaciones</div>
+                  )}
                   {/* ✅ V00141: resultado de solicitudes de acceso a campos */}
                   {notisAcceso.map((n: any) => (
                     <div key={n.id} style={{ borderTop: '1px solid #30363d', paddingTop: '8px', marginTop: '8px' }}>
