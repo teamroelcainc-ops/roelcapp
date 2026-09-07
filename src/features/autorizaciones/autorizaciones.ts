@@ -43,6 +43,7 @@ export interface SolicitudAut {
   datosPropuestos?: Record<string, any>;
   datosAnteriores?: Record<string, any>;
   motivosControl?: string[]; // por qué requirió autorización
+  motivoSolicitante?: string; // ✅ V00183: el PORQUÉ que escribe el usuario al solicitar
   estado: 'pendiente' | 'aprobada' | 'rechazada';
   solicitanteUid: string;
   solicitanteNombre: string;
@@ -405,10 +406,12 @@ export const HORAS_VIGENCIA_ACCESO = 24;
 export const crearSolicitudAccesoCampo = async (p: {
   modulo: string; moduloLabel: string; coleccion: string;
   campo: string; campoLabel: string; docId?: string; referencia?: string;
+  motivoSolicitante?: string; // ✅ V00183: porqué del usuario
 }): Promise<string> => {
   const u = await obtenerUsuarioAut();
   const ref = await addDoc(collection(db, 'solicitudes_autorizacion'), {
     tipo: 'accesoCampo',
+    motivoSolicitante: String(p.motivoSolicitante || '').trim(),
     modulo: p.modulo, moduloLabel: p.moduloLabel, coleccion: p.coleccion,
     accion: 'editar',
     campoSolicitado: p.campo, campoSolicitadoLabel: p.campoLabel,

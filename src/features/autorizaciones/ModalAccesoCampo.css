@@ -18,3 +18,8 @@
 .mac-barra-titulo { color: #8b949e; font-size: 0.7rem; font-weight: 700; margin-bottom: 6px; }
 .mac-barra-item { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #f0f6fc; font-size: 0.8rem; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
 .mac-barra-item:hover { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
+
+/* ✅ V00183: motivo del solicitante */
+.mac-motivo { display: flex; flex-direction: column; gap: 5px; color: #8b949e; font-size: 0.74rem; font-weight: 700; margin: 4px 0 12px; }
+.mac-motivo textarea { background: #010409; border: 1px solid #30363d; color: #f0f6fc; border-radius: 8px; padding: 8px 10px; font-size: 0.83rem; resize: vertical; font-family: inherit; }
+.mac-motivo textarea:focus { outline: none; border-color: #D84315; }

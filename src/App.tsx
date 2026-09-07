@@ -1585,7 +1585,7 @@ function AppContenido() {
                   {/* ✅ V00181: NUEVAS solicitudes de autorización (para quien tiene el módulo) */}
                   {solicitudesPendientes.slice(0, 6).map((n: any) => (
                     <div key={`p-${n.id}`} className="app-noti-solicitud" onClick={() => { setAvisoVersionAbierto(false); navegarA('autorizaciones' as any); }} title="Abrir el módulo de Autorizaciones">
-                      <b className="app-noti-solicitud-b">📨 Solicitud pendiente:</b> {n.solicitanteNombre || 'Un usuario'} pide {n.tipo === 'accesoCampo' ? <>editar <b className="app-noti-campo">{n.campoLabel || n.campo}</b></> : (n.accion || 'autorización')} en <b className="app-noti-campo">{n.moduloLabel || n.modulo}</b>{n.referencia ? <> ({n.referencia})</> : null}.
+                      <b className="app-noti-solicitud-b">📨 Solicitud pendiente:</b> {n.solicitanteNombre || 'Un usuario'} pide {n.tipo === 'accesoCampo' ? <>editar <b className="app-noti-campo">{n.campoLabel || n.campo}</b></> : (n.accion || 'autorización')} en <b className="app-noti-campo">{n.moduloLabel || n.modulo}</b>{n.referencia ? <> ({n.referencia})</> : null}.{n.motivoSolicitante ? <> <i>«{String(n.motivoSolicitante).slice(0, 90)}»</i></> : null}
                     </div>
                   ))}
                   {solicitudesPendientes.length > 6 && (
@@ -1596,7 +1596,7 @@ function AppContenido() {
                     <div key={n.id} style={{ borderTop: '1px solid #30363d', paddingTop: '8px', marginTop: '8px' }}>
                       <div style={{ color: '#8b949e', fontSize: '0.78rem', lineHeight: 1.45, marginBottom: '8px' }}>
                         {n.estado === 'aprobada'
-                          ? <><b style={{ color: '#3fb950' }}>✅ Acceso aprobado:</b> ya puedes editar <b style={{ color: '#f0f6fc' }}>{n.campoSolicitadoLabel || n.campoSolicitado}</b> en {n.moduloLabel}{n.referencia ? <> ({n.referencia})</> : null}.</>
+                          ? <><b style={{ color: '#3fb950' }}>✅ Acceso aprobado:</b> ya puedes editar <b style={{ color: '#f0f6fc' }}>{n.campoSolicitadoLabel || n.campoSolicitado}</b> en {n.moduloLabel}{n.referencia ? <> ({n.referencia})</> : null}.{n.motivoSolicitante ? <> <i>«{String(n.motivoSolicitante).slice(0, 90)}»</i></> : null}</>
                           : <><b style={{ color: '#f85149' }}>⛔ Acceso rechazado:</b> {n.campoSolicitadoLabel || n.campoSolicitado} en {n.moduloLabel}{n.motivoRechazo ? <> — {n.motivoRechazo}</> : null}.</>}
                       </div>
                       <button type="button" onClick={() => abrirNotiAcceso(n)}

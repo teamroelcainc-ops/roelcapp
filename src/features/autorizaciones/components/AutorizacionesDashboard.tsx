@@ -379,6 +379,8 @@ export const AutorizacionesDashboard = () => {
                     {ACCIONES.find(a => a.key === s.accion)?.label || s.accion}
                   </span>
                   {s.referencia && <span className="ad-x21">{s.referencia}</span>}
+                  {/* ✅ V00183: porqué del solicitante */}
+                  {s.motivoSolicitante && <div className="ad-motivo-sol"><b>Motivo del solicitante:</b> {s.motivoSolicitante}</div>}
                 </div>
                 <div className="ad-x22">
                   Solicitó <b className="ad-x23">{s.solicitanteNombre}</b> ({(s.solicitanteRoles || []).join(', ') || 'sin rol'}) · {fmtFecha(s.creadaEn)}

@@ -79,8 +79,10 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
     if (ctx) setContextoRegistro(ctx);
   };
   const cerrarSolicitudAcceso = () => { setSolicitudCampo(''); setSolicitudEnviada(false); };
-  const enviarSolicitudAcceso = async () => {
+  const enviarSolicitudAcceso = async (motivoSolicitante?: string) => {
     if (!solicitudCampo || solicitudEnviando) return;
+    // ✅ V00183: el porqué es OBLIGATORIO — el Admin lo verá en Autorizaciones.
+    if (!String(motivoSolicitante || '').trim()) { alert('Escribe por qué necesitas editar este campo; el motivo aparecerá en Autorizaciones.'); return; }
     setSolicitudEnviando(true);
     try {
       const m = MODULOS_AUTORIZABLES.find((x) => x.clave === moduloClave);
@@ -88,6 +90,7 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
         modulo: moduloClave, moduloLabel: m?.label || moduloClave, coleccion: m?.coleccion || moduloClave,
         campo: solicitudCampo, campoLabel: etiquetas[solicitudCampo] || solicitudCampo,
         docId: contextoRegistro.docId, referencia: contextoRegistro.referencia,
+        motivoSolicitante: String(motivoSolicitante || '').trim(),
       });
       setSolicitudEnviada(true);
     } catch (e: any) {

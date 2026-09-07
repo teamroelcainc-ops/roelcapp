@@ -217,6 +217,10 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
       const configA = await cargarConfigModulo('tipoCambio');
       const evalAut = evaluarAutorizacion(configA, accionAut, usuarioA, camposCambiadosAut, { fecha: 'Fecha', tcDof: 'T.C. DOF' });
       if (evalAut.requiere) {
+        // ✅ V00183: el usuario DEBE explicar el porqué; se muestra en Autorizaciones.
+        const motivoSolicitante = window.prompt(`Este cambio requiere autorización del administrador:\n\n${evalAut.motivos.join('\n')}\n\nExplica POR QUÉ necesitas ${esEdicion ? 'editar' : 'agregar'} este registro (obligatorio):`, '');
+        if (motivoSolicitante === null) { setGuardando(false); return; }
+        if (!motivoSolicitante.trim()) { alert('El motivo es obligatorio para enviar la solicitud.'); setGuardando(false); return; }
         const datosAnterioresAut: Record<string, any> = {};
         camposCambiadosAut.forEach(k => { datosAnterioresAut[k] = (initialData as any)?.[k] ?? ''; });
         await crearSolicitudAutorizacion({
@@ -234,6 +238,7 @@ export const FormularioTipoCambio = ({ estado, initialData, registros, onClose, 
           solicitanteNombre: usuarioA.nombre,
           solicitanteRoles: usuarioA.roles,
           estrategiaCrear: 'directa',
+          motivoSolicitante: motivoSolicitante.trim(),
         });
         alert(`Este cambio requiere autorización del administrador.\n\n${evalAut.motivos.join('\n')}\n\nSe envió la solicitud. Los cambios NO se guardaron todavía; se aplicarán cuando el Admin los apruebe.`);
         onClose();
