@@ -241,6 +241,9 @@ const EmpresasDashboard = () => {
   const [empresas, setEmpresas] = useState<any[]>([]);
   const [lastUsedMap, setLastUsedMap] = useState<Record<string, string>>({}); 
   const [filtroActivo, setFiltroActivo] = useState('Todo');
+  // ✅ V00186: filtro por MONEDA + autocompletado del buscador
+  const [filtroMoneda, setFiltroMoneda] = useState('Todas');
+  const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
@@ -800,6 +803,22 @@ const EmpresasDashboard = () => {
     [registrosListos]
   );
 
+  // ✅ V00186: sugerencias del buscador — al teclear recomienda las empresas
+  //   más cercanas (empiezan-con primero, luego contiene), máx. 8.
+  const sugerenciasBusqueda = useMemo(() => {
+    const t = busqueda.trim().toLowerCase();
+    if (t.length < 2) return [] as any[];
+    const norm = (x: any) => String(x || '').toLowerCase();
+    const empieza: any[] = []; const contiene: any[] = [];
+    for (const emp of registrosListos) {
+      const nombre = norm(emp.nombre); const corto = norm(emp.nombreCorto); const num = norm(emp.numCliente);
+      if (nombre.startsWith(t) || corto.startsWith(t) || num.startsWith(t)) empieza.push(emp);
+      else if (nombre.includes(t) || corto.includes(t) || num.includes(t)) contiene.push(emp);
+      if (empieza.length >= 8) break;
+    }
+    return [...empieza, ...contiene].slice(0, 8);
+  }, [busqueda, registrosListos]);
+
   const registrosFiltrados = useMemo(() => {
     if (verSinMoneda) {
       const base = empresasSinMoneda;
@@ -816,6 +835,14 @@ const EmpresasDashboard = () => {
       }
       if (!pasaFiltro) return false;
 
+      // ✅ V00186: filtro por moneda de la empresa (canon USD/MXN o sin moneda)
+      if (filtroMoneda !== 'Todas') {
+        const monTxt = String(emp.monedaNombre || emp.moneda || '').toUpperCase();
+        const tiene = Boolean(String(emp.monedaId || '').trim() || monTxt.trim());
+        if (filtroMoneda === 'Sin moneda') { if (tiene) return false; }
+        else if (!(monTxt.includes(filtroMoneda) || (filtroMoneda === 'MXN' && (monTxt.includes('PESO') || monTxt.includes('MN'))) || (filtroMoneda === 'USD' && monTxt.includes('DOLAR')))) return false;
+      }
+
       if (!busqueda.trim()) return true;
       const term = busqueda.toLowerCase();
       return (
@@ -826,7 +853,7 @@ const EmpresasDashboard = () => {
         String(emp._clienteRelLabel || '').toLowerCase().includes(term)
       );
     });
-  }, [registrosListos, filtroActivo, busqueda, verSinMoneda, empresasSinMoneda]);
+  }, [registrosListos, filtroActivo, busqueda, verSinMoneda, empresasSinMoneda, filtroMoneda]);
 
   // ✅ NUEVO — ORDEN POR COLUMNA (clic en el encabezado: asc/desc), mismo
   //   patrón que Operaciones Activas.
@@ -1725,11 +1752,30 @@ const EmpresasDashboard = () => {
               <label className="ed-x121">BÚSQUEDA</label>
               <div className="ed-x122">
                 <svg className="ed-x123" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input className="ed-x124" type="text" placeholder="Razón social, RFC, alias o # cliente..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
+                <input className="ed-x124" type="text" placeholder="Razón social, RFC, alias o # cliente..." value={busqueda} onFocus={() => setSugerenciasAbiertas(true)} onChange={(e) => { setBusqueda(e.target.value); setSugerenciasAbiertas(true); }} />
                 {busqueda && (
-                  <button className="ed-x125" onClick={() => setBusqueda('')} title="Limpiar">✕</button>
+                  <button className="ed-x125" onClick={() => { setBusqueda(''); setSugerenciasAbiertas(false); }} title="Limpiar">✕</button>
+                )}
+                {/* ✅ V00186: recomendaciones en vivo */}
+                {sugerenciasAbiertas && sugerenciasBusqueda.length > 0 && (
+                  <div className="ed-sugerencias">
+                    {sugerenciasBusqueda.map((emp: any) => (
+                      <button key={emp.id} type="button" className="ed-sugerencia" onClick={() => { setBusqueda(emp.nombre || ''); setSugerenciasAbiertas(false); setBusquedaHecha(true); }}>
+                        <span className="ed-sug-nombre">{emp.nombre}</span>
+                        <span className="ed-sug-extra">{emp.numCliente ? `${emp.numCliente} · ` : ''}{(emp._tiposEmpresaArray || [])[0] || ''}{emp.monedaNombre ? ` · ${emp.monedaNombre}` : ''}</span>
+                      </button>
+                    ))}
+                  </div>
                 )}
               </div>
+            </div>
+
+            <div className="ed-x120">
+              <label className="ed-x126">MONEDA</label>
+              <select value={filtroMoneda} onChange={(e) => setFiltroMoneda(e.target.value)}
+                style={{ width: '100%', padding: '10px', backgroundColor: '#161b22', border: `1px solid ${filtroMoneda !== 'Todas' ? '#D84315' : '#30363d'}`, borderRadius: '8px', color: '#f0f6fc', fontSize: '0.85rem' }}>
+                {['Todas', 'USD', 'MXN', 'Sin moneda'].map((op) => <option key={op} value={op}>{op}</option>)}
+              </select>
             </div>
 
             <div className="ed-x120">
@@ -1747,7 +1793,7 @@ const EmpresasDashboard = () => {
             </div>
 
             <div className="ed-x129">
-              <button className="ed-x130" onClick={() => { setBusqueda(''); setFiltroActivo('Todo'); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="ed-x130" onClick={() => { setBusqueda(''); setFiltroActivo('Todo'); setFiltroMoneda('Todas'); setSugerenciasAbiertas(false); setBusquedaHecha(false); }}>Limpiar</button>
               <button className="ed-x131" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
