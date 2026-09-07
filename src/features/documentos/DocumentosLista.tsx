@@ -12,7 +12,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc, writeBatch, getDocs } from 'firebase/firestore';
 import { ref as storageRef, deleteObject } from 'firebase/storage';
 import { db, storage } from '../../config/firebase';
 import './DocumentosLista.css';
@@ -49,7 +49,16 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
   const [error, setError] = useState('');
   // ✅ V00149: edición de un documento (fechas/observaciones) y edición MASIVA de fechas
   const [editDoc, setEditDoc] = useState<any | null>(null);
-  const [editVals, setEditVals] = useState<{ vence: boolean; fechaExpedicion: string; fechaVencimiento: string; observaciones: string }>({ vence: false, fechaExpedicion: '', fechaVencimiento: '', observaciones: '' });
+  const [editVals, setEditVals] = useState<{ vence: boolean; fechaExpedicion: string; fechaVencimiento: string; observaciones: string; tipoDocumento: string }>({ vence: false, fechaExpedicion: '', fechaVencimiento: '', observaciones: '', tipoDocumento: '' });
+  // ✅ V00177: catálogo de tipos para REUBICAR un documento (ej. los "Por clasificar")
+  const [tiposCatalogo, setTiposCatalogo] = useState<{ nombre: string; vence: boolean }[]>([]);
+  useEffect(() => {
+    getDocs(collection(db, 'catalogo_tipo_archivo')).then((snap) => {
+      const esSi = (v: any) => v === true || /^(s|y|1|true)/i.test(String(v ?? ''));
+      setTiposCatalogo(snap.docs.map((d) => { const x: any = d.data(); return { nombre: String(x.nombre || '').trim(), vence: esSi(x.vence) }; })
+        .filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+    }).catch(() => setTiposCatalogo([]));
+  }, []);
   const [guardandoEdit, setGuardandoEdit] = useState(false);
   const [fechasMasivo, setFechasMasivo] = useState(false);
   const [fechasVals, setFechasVals] = useState<Record<string, { fechaExpedicion: string; fechaVencimiento: string }>>({});
@@ -57,13 +66,20 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
 
   const abrirEdicion = (d: any) => {
     setEditDoc(d);
-    setEditVals({ vence: !!d.vence, fechaExpedicion: d.fechaExpedicion || '', fechaVencimiento: d.fechaVencimiento || '', observaciones: d.observaciones || '' });
+    setEditVals({ vence: !!d.vence, fechaExpedicion: d.fechaExpedicion || '', fechaVencimiento: d.fechaVencimiento || '', observaciones: d.observaciones || '', tipoDocumento: d.tipoDocumento || '' });
   };
   const guardarEdicion = async () => {
     if (!editDoc || guardandoEdit) return;
     setGuardandoEdit(true);
     try {
+      // ✅ V00177: reubicación — si se cambió el Tipo de documento, el archivo
+      //   queda clasificado en su carpeta correcta (metadatos); el nombre del
+      //   archivo no cambia.
+      const tipoNuevo = String(editVals.tipoDocumento || editDoc.tipoDocumento || '').trim();
       await updateDoc(doc(db, 'documentos', editDoc.id), {
+        tipoDocumento: tipoNuevo,
+        subcarpeta: tipoNuevo,
+        porClasificar: tipoNuevo === 'Por clasificar',
         vence: editVals.vence,
         fechaExpedicion: editVals.vence ? editVals.fechaExpedicion : '',
         fechaVencimiento: editVals.vence ? editVals.fechaVencimiento : '',
@@ -238,6 +254,21 @@ export const DocumentosLista: React.FC<DocumentosListaProps> = ({ coleccionOrige
               <button type="button" className="dl-edit-cerrar" onClick={() => setEditDoc(null)} disabled={guardandoEdit}>✕</button>
             </div>
             <div className="dl-edit-cuerpo">
+              {/* ✅ V00177: reubicar el documento en su tipo/carpeta correcta */}
+              <label className="dl-edit-tipo">
+                <span>Tipo de documento (carpeta)</span>
+                <select
+                  value={tiposCatalogo.some((t) => t.nombre === editVals.tipoDocumento) ? editVals.tipoDocumento : ''}
+                  onChange={(e) => {
+                    const nom = e.target.value;
+                    const cat = tiposCatalogo.find((t) => t.nombre === nom);
+                    setEditVals((p) => ({ ...p, tipoDocumento: nom || p.tipoDocumento, vence: cat ? cat.vence : p.vence }));
+                  }}>
+                  <option value="">{editVals.tipoDocumento ? `${editVals.tipoDocumento} (actual)` : '— Elegir tipo —'}</option>
+                  {tiposCatalogo.map((t) => <option key={t.nombre} value={t.nombre}>{t.nombre}{t.vence ? ' · vence' : ''}</option>)}
+                </select>
+                {(editDoc.porClasificar || editDoc.tipoDocumento === 'Por clasificar') && <em className="dl-edit-pendiente">⚠ Pendiente de clasificar: elige el tipo correcto y guarda.</em>}
+              </label>
               <label className="dl-edit-check">
                 <input type="checkbox" checked={editVals.vence} onChange={(e) => setEditVals((p) => ({ ...p, vence: e.target.checked }))} />
                 <span>Este documento vence (requiere fechas)</span>

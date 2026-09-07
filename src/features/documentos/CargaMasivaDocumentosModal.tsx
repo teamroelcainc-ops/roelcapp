@@ -76,8 +76,12 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
         const rel = String(f.webkitRelativePath || f.name);
         const partes = rel.split('/').filter(Boolean);
         if (/^\./.test(f.name)) return; // ocultos
-        const carpeta = partes.length >= 2 ? partes[partes.length - 2] : (partes[0] || f.name);
-        const clave = quitarPrefijoNum(carpeta) || sanitizarRuta(f.name);
+        // ✅ V00177: archivos SUELTOS en la raíz (sin subcarpeta de tipo) se agrupan
+        //   como "Por clasificar": suben con su nombre original y otra persona los
+        //   reubica después desde el app (✎ Editar → Tipo de documento).
+        const esRaiz = partes.length < 3; // [carpetaRaiz, archivo] → sin subcarpeta
+        const carpeta = esRaiz ? 'Por clasificar' : partes[partes.length - 2];
+        const clave = esRaiz ? 'Por clasificar' : (quitarPrefijoNum(carpeta) || sanitizarRuta(f.name));
         if (!porCarpeta.has(clave)) porCarpeta.set(clave, []);
         porCarpeta.get(clave)!.push(f);
       });
@@ -137,7 +141,8 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
           const punto = archivo.name.lastIndexOf('.');
           const extension = punto >= 0 ? archivo.name.slice(punto) : '';
           const base = archivo.name.slice(0, punto >= 0 ? punto : undefined);
-          const nombreFinal = a === 0 ? `${subcarpeta}${extension}` : `${sanitizarRuta(base) || `archivo ${a + 1}`}${extension}`;
+          const esPorClasificar = it.tipoLabel === 'Por clasificar';
+          const nombreFinal = (a === 0 && !esPorClasificar) ? `${subcarpeta}${extension}` : `${sanitizarRuta(base) || `archivo ${a + 1}`}${extension}`;
           const ruta = `${sanitizarRuta(coleccionOrigen)}/${carpeta}/${subcarpeta}/${nombreFinal}`;
           const r = storageRef(storage, ruta);
           await uploadBytes(r, archivo, archivo.type ? { contentType: archivo.type } : undefined);
@@ -146,7 +151,8 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
           const docId = a === 0 ? docIdBase : `${docIdBase}__${a + 1}`;
           await setDoc(doc(db, 'documentos', docId), {
             coleccionOrigen, registroId, registroNombre: registroNombre || '',
-            tipoDocumento: it.archivos.length > 1 && a > 0 ? `${it.tipoLabel} (${a + 1})` : it.tipoLabel,
+            tipoDocumento: esPorClasificar ? 'Por clasificar' : (it.archivos.length > 1 && a > 0 ? `${it.tipoLabel} (${a + 1})` : it.tipoLabel),
+            porClasificar: esPorClasificar,
             carpeta, subcarpeta,
             nombreArchivo: nombreFinal, path: ruta, url,
             vence: it.vence,
@@ -196,7 +202,7 @@ export const CargaMasivaDocumentosModal: React.FC<Props> = ({ isOpen, onClose, c
                   <tbody>
                     {items.map((it, i) => (
                       <tr key={it.tipoLabel} className={`cmd-fila-${it.estado}`}>
-                        <td className="cmd-tipo">{it.tipoLabel}{!it.enCatalogo && <span className="cmd-nuevo" title="No está en el catálogo de tipos; se sube como no-vence">nuevo</span>}{it.archivos.length > 1 && <span className="cmd-extra" title={it.archivos.map((f) => f.name).join('\n')}>{it.archivos.length} archivos</span>}</td>
+                        <td className="cmd-tipo">{it.tipoLabel}{it.tipoLabel === 'Por clasificar' ? <span className="cmd-clasificar" title="Archivos sueltos en la raíz: suben con su nombre original y se reubican después con ✎ Editar en la lista de documentos">por clasificar</span> : (!it.enCatalogo && <span className="cmd-nuevo" title="No está en el catálogo de tipos; se sube como no-vence">nuevo</span>)}{it.archivos.length > 1 && <span className="cmd-extra" title={it.archivos.map((f) => f.name).join('\n')}>{it.archivos.length} archivos</span>}</td>
                         <td className="cmd-arch" title={it.archivos.map((f) => f.name).join('\n')}>{it.archivos.length === 1 ? it.archivos[0].name : `${it.archivos[0].name} +${it.archivos.length - 1} más`}</td>
                         <td>{it.vence ? <input type="date" className="cmd-fecha" value={it.fechaExpedicion} disabled={subiendo} onChange={(e) => setFecha(i, 'fechaExpedicion', e.target.value)} /> : <span className="cmd-na">No vence</span>}</td>
                         <td>{it.vence ? <input type="date" className={`cmd-fecha${!it.fechaVencimiento ? ' cmd-fecha-falta' : ''}`} value={it.fechaVencimiento} disabled={subiendo} onChange={(e) => setFecha(i, 'fechaVencimiento', e.target.value)} /> : <span className="cmd-na">—</span>}</td>

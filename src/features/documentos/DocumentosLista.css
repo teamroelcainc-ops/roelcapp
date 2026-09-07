@@ -61,3 +61,8 @@
 .dl-fechas-tabla td { padding: 6px 10px; border-top: 1px solid #21262d; color: #c9d1d9; }
 .dl-fechas-doc { font-weight: 700; color: #f0f6fc; }
 .dl-fecha-falta { border-color: #f59e0b !important; }
+
+/* ✅ V00177: reubicar documento (tipo/carpeta) */
+.dl-edit-tipo { display: flex; flex-direction: column; gap: 4px; color: #8b949e; font-size: 0.72rem; font-weight: 700; margin-bottom: 12px; }
+.dl-edit-tipo select { background: #0d1117; border: 1px solid #30363d; color: #f0f6fc; border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; }
+.dl-edit-pendiente { color: #fbbf24; font-style: normal; font-size: 0.72rem; margin-top: 2px; }
