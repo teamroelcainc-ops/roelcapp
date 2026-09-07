@@ -1672,7 +1672,7 @@ export const ReferenciasNominaDashboard = () => {
       margin:       0.15,
       filename:     filename,
       image:        { type: 'jpeg' as const, quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true, windowWidth: 780 },
+      html2canvas:  { backgroundColor: '#ffffff', scale: 2, useCORS: true, windowWidth: 780 },
       jsPDF:        { unit: 'in' as const, format: 'letter', orientation: 'portrait' as const },
       pagebreak:    { mode: ['css', 'legacy'], avoid: ['tr', '.card', '.footer-total', 'header'] }
     };

@@ -155,7 +155,7 @@ export const generarSolicitudRetiroPDF = (datos: DatosSolicitudRetiro) => {
     margin:       0,
     filename:     filename,
     image:        { type: 'jpeg' as const, quality: 0.98 }, 
-    html2canvas:  { scale: 2, useCORS: true },
+    html2canvas:  { backgroundColor: '#ffffff', scale: 2, useCORS: true },
     jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' as const } 
   };
 
@@ -296,7 +296,7 @@ export const generarInstruccionesServicioPDF = (datos: DatosInstruccionesServici
     margin:       10, 
     filename:     filename,
     image:        { type: 'jpeg' as const, quality: 0.98 }, 
-    html2canvas:  { scale: 2, useCORS: true },
+    html2canvas:  { backgroundColor: '#ffffff', scale: 2, useCORS: true },
     jsPDF:        { unit: 'mm', format: 'letter', orientation: 'portrait' as const } 
   };
 
@@ -425,7 +425,7 @@ export const generarCheckListPDF = (datos: DatosCheckList) => {
     margin:       10, 
     filename:     filename,
     image:        { type: 'jpeg' as const, quality: 0.98 }, 
-    html2canvas:  { scale: 2, useCORS: true },
+    html2canvas:  { backgroundColor: '#ffffff', scale: 2, useCORS: true },
     jsPDF:        { unit: 'mm', format: 'letter', orientation: 'portrait' as const } 
   };
 
@@ -653,7 +653,7 @@ export const generarPruebaEntregaPDF = (datos: DatosPruebaEntrega) => {
     margin:       0, 
     filename:     filename,
     image:        { type: 'jpeg' as const, quality: 0.98 }, 
-    html2canvas:  { scale: 2, useCORS: true },
+    html2canvas:  { backgroundColor: '#ffffff', scale: 2, useCORS: true },
     jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' as const } 
   };
 
@@ -910,7 +910,7 @@ export const generarCartaInstruccionesPDF = (datos: DatosCartaInstrucciones) => 
     margin:       0, 
     filename:     filename,
     image:        { type: 'jpeg' as const, quality: 0.98 }, 
-    html2canvas:  { scale: 2, useCORS: true },
+    html2canvas:  { backgroundColor: '#ffffff', scale: 2, useCORS: true },
     jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' as const } 
   };
 

@@ -931,7 +931,7 @@ export function PagosDashboard() {
         margin: 8,
         filename: nombreArchivo,
         image: { type: 'jpeg', quality: 0.95 },
-        html2canvas: { scale: 2 },
+        html2canvas: { backgroundColor: '#ffffff', scale: 2 },
         jsPDF: { unit: 'mm', format: 'letter', orientation: 'landscape' },
       }).from(cont).save();
     } finally {

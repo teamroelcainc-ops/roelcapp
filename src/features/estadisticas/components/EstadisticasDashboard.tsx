@@ -1163,7 +1163,7 @@ export function EstadisticasDashboard() {
           margin: 8,
           filename: `Desglose_${tituloDetalleTab().replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.pdf`,
           image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: { scale: 2, useCORS: true },
+          html2canvas: { backgroundColor: '#ffffff', scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'letter', orientation: 'landscape' },
         }).from(cont).save();
       } finally {
@@ -1214,7 +1214,7 @@ export function EstadisticasDashboard() {
           margin: 8,
           filename: `Reporte_${refsFiltro.etiqueta.replace(/[^\w]+/g, '_')}_${fechaDesde}_a_${fechaHasta}.pdf`,
           image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: { scale: 2, useCORS: true },
+          html2canvas: { backgroundColor: '#ffffff', scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'letter', orientation: 'landscape' },
         }).from(cont).save();
       } finally {
@@ -1355,7 +1355,7 @@ export function EstadisticasDashboard() {
           margin: 8,
           filename: nombreArchivo(`Estadisticas_${pestana}`, 'pdf'),
           image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: { scale: 2, useCORS: true },
+          html2canvas: { backgroundColor: '#ffffff', scale: 2, useCORS: true },
           jsPDF: { unit: 'mm', format: 'letter', orientation: 'landscape' },
         }).from(cont).save();
       } finally {
