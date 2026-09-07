@@ -12,7 +12,7 @@ import { DocumentosLista } from '../../documentos/DocumentosLista';
 import { registrarLog } from '../../../utils/logger';
 import * as XLSX from 'xlsx';
 import './EmpresasDashboard.css';
-import { almacenSesion } from '../../../utils/cacheMemoria';
+import { almacenSesion, obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { hoyLocalISO, fechaLocalISO } from '../../../utils/fechaHoraLocal';
 
 const opcionesFiltro = [
@@ -57,6 +57,7 @@ const COLUMNAS_BASE = [
   { id: 'numCliente', label: '# de Cliente', visible: true },
   { id: 'nombre', label: 'Empresa', visible: true },
   { id: 'nombreCorto', label: 'Nombre Corto', visible: true },
+  { id: 'cantidadOps', label: 'Cantidad de Operaciones', visible: true }, // ✅ NUEVO (V00190)
   { id: 'tiposEmpresa', label: 'Tipo de Empresa', visible: true },
   { id: 'servicios', label: 'Servicios', visible: true },
   { id: 'rfcTaxId', label: 'RFC / Tax Id', visible: true },
@@ -78,6 +79,63 @@ const EmpresasDashboard = () => {
   const [refsCliente, setRefsCliente] = useState<any[] | null>(null);
   const [cargandoRefs, setCargandoRefs] = useState(false);
   const [busquedaRefs, setBusquedaRefs] = useState('');
+  // ✅ NUEVO (V00190): la pestaña Referencias ahora también trae los CONVENIOS,
+  //   FACTURAS y PAGOS ligados a la empresa, en secciones con su conteo, y un
+  //   modal de detalle por operación (clic en la referencia).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio del módulo).
+  const [refsConvenios, setRefsConvenios] = useState<any[] | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio del módulo).
+  const [refsFacturas, setRefsFacturas] = useState<any[] | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio del módulo).
+  const [refsPagos, setRefsPagos] = useState<any[] | null>(null);
+  const [seccionRefs, setSeccionRefs] = useState<'operaciones' | 'convenios' | 'facturas' | 'pagos'>('operaciones');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
+  const [opDetalle, setOpDetalle] = useState<any | null>(null);
+
+  // ✅ NUEVO (V00190): conteo GLOBAL de operaciones por empresa, para la columna
+  //   "Cantidad de Operaciones" y para el conteo de la pestaña Referencias.
+  //   Se descarga UNA sola vez por sesión (caché en memoria + sessionStorage) y
+  //   cada operación cuenta UNA vez por empresa, sin importar en cuántos papeles
+  //   aparezca (cliente que paga, mercancía, proveedor, unidad, origen o destino).
+  const [conteoOps, setConteoOps] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    const CLAVE = 'empresas_conteo_ops_v1';
+    const enMemoria = obtenerCacheMemoria<Record<string, number>>(CLAVE, 15 * 60 * 1000);
+    if (enMemoria) { setConteoOps(enMemoria); return; }
+    const crudo = almacenSesion.getItem(CLAVE);
+    if (crudo) {
+      try {
+        const mapa = JSON.parse(crudo);
+        guardarCacheMemoria(CLAVE, mapa);
+        setConteoOps(mapa);
+        return;
+      } catch { /* caché corrupta: se recalcula abajo */ }
+    }
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'operaciones'));
+        const mapa: Record<string, number> = {};
+        snap.docs.forEach((d) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
+          const x: any = d.data();
+          const participantes = new Set(
+            [x.clientePaga, x.clienteMercancia, x.provServicios, x.proveedorUnidad, x.origen, x.destino]
+              .filter((v) => v && typeof v === 'string') as string[]
+          );
+          participantes.forEach((idEmp) => { mapa[idEmp] = (mapa[idEmp] || 0) + 1; });
+        });
+        if (!activo) return;
+        guardarCacheMemoria(CLAVE, mapa);
+        almacenSesion.setItem(CLAVE, JSON.stringify(mapa));
+        setConteoOps(mapa);
+      } catch (e) {
+        console.error('No se pudo contar las operaciones por empresa:', e);
+        if (activo) setConteoOps({});
+      }
+    })();
+    return () => { activo = false; };
+  }, []);
 
   // ═══════════════════════════════════════════════════════════════════════
   // ✅ EMPRESAS DUPLICADAS: grupos con el MISMO NOMBRE (normalizado) o el
@@ -199,36 +257,87 @@ const EmpresasDashboard = () => {
     }
   };
 
-  // ✅ Cargar las operaciones del cliente al abrir su pestaña de Referencias.
+  // ✅ Cargar las referencias del cliente al abrir su pestaña de Referencias.
+  // ✅ NUEVO (V00190): además de las operaciones (ahora buscadas en TODOS los
+  //   papeles: cliente que paga, mercancía, proveedor de servicios, unidad,
+  //   origen y destino), se cargan los CONVENIOS, FACTURAS y PAGOS ligados.
+  //   Todo se descarga una sola vez por empresa (al cambiar de pestaña y
+  //   volver, no se vuelve a leer de Firestore).
   useEffect(() => {
     if (!empresaViendo?.id || activeTabDetalle !== 'referencias') return;
+    if (refsCliente !== null) return; // ya cargado para esta empresa
     let activo = true;
     setCargandoRefs(true);
     (async () => {
       try {
-        const snap = await getDocs(query(
-          collection(db, 'operaciones'),
-          where('clientePaga', '==', empresaViendo.id),
-          limit(1000)
-        ));
-        if (!activo) return;
-        const lista = snap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
+        const idEmp = String(empresaViendo.id);
+
+        // 1) OPERACIONES en cualquier papel, deduplicadas por id, con etiqueta
+        //    de rol para mostrar en qué participó la empresa.
+        const ROLES: [string, string][] = [
+          ['clientePaga', 'Cliente que Paga'],
+          ['clienteMercancia', 'Cliente (Mercancía)'],
+          ['provServicios', 'Proveedor (Servicios)'],
+          ['proveedorUnidad', 'Proveedor (Unidad)'],
+          ['origen', 'Origen'],
+          ['destino', 'Destino'],
+        ];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs de operación sin tipo canónico.
+        const porOp = new Map<string, any>();
+        await Promise.all(ROLES.map(async ([campo, etiqueta]) => {
+          try {
+            const snap = await getDocs(query(collection(db, 'operaciones'), where(campo, '==', idEmp), limit(1000)));
+            snap.docs.forEach((d) => {
+              const previo = porOp.get(d.id);
+              if (previo) { previo._roles.push(etiqueta); return; }
+              porOp.set(d.id, { id: d.id, ...d.data(), _roles: [etiqueta] });
+            });
+          } catch { /* índice o colección faltante: seguir con los demás papeles */ }
+        }));
+        const lista = Array.from(porOp.values())
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
           .sort((a: any, b: any) => String(b.fechaServicio || '').localeCompare(String(a.fechaServicio || '')));
+
+        // 2) CONVENIOS, FACTURAS y PAGOS ligados a la empresa.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico.
+        const cargar = async (col: string, campo: string, extra: Record<string, any> = {}) => {
+          try {
+            const snap = await getDocs(query(collection(db, col), where(campo, '==', idEmp), limit(500)));
+            return snap.docs.map((d) => ({ id: d.id, ...d.data(), ...extra }));
+          } catch { return []; }
+        };
+        const [convCli, convProv, factCli, factProv, pagosEmp] = await Promise.all([
+          cargar('convenios_clientes', 'clienteId', { _tipo: 'Cliente' }),
+          cargar('convenios_proveedores', 'proveedorId', { _tipo: 'Proveedor' }),
+          cargar('facturas_clientes', 'clienteId', { _tipo: 'Cliente' }),
+          cargar('facturas_proveedores', 'proveedorId', { _tipo: 'Proveedor' }),
+          cargar('pagos', 'entidadId'),
+        ]);
+
+        if (!activo) return;
         setRefsCliente(lista);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico.
+        const ordenarPor = (arr: any[], campo: string) =>
+          [...arr].sort((a, b) => String(b[campo] || '').localeCompare(String(a[campo] || '')));
+        setRefsConvenios(ordenarPor([...convCli, ...convProv], 'fechaConvenio'));
+        setRefsFacturas(ordenarPor([...factCli, ...factProv], 'fecha'));
+        setRefsPagos(ordenarPor(pagosEmp, 'fecha'));
       } catch (e) {
         console.error('No se pudieron cargar las referencias del cliente:', e);
-        if (activo) setRefsCliente([]);
+        if (activo) { setRefsCliente([]); setRefsConvenios([]); setRefsFacturas([]); setRefsPagos([]); }
       } finally {
         if (activo) setCargandoRefs(false);
       }
     })();
     return () => { activo = false; };
-  }, [empresaViendo?.id, activeTabDetalle]);
+  }, [empresaViendo?.id, activeTabDetalle, refsCliente]);
 
   // Al cambiar de empresa, las referencias del anterior se descartan.
-  useEffect(() => { setRefsCliente(null); setBusquedaRefs(''); }, [empresaViendo?.id]);
+  useEffect(() => {
+    setRefsCliente(null); setBusquedaRefs('');
+    setRefsConvenios(null); setRefsFacturas(null); setRefsPagos(null);
+    setSeccionRefs('operaciones'); setOpDetalle(null);
+  }, [empresaViendo?.id]);
   const [operacionesUso, setOperacionesUso] = useState<any[]>([]);
   const [cargandoUso, setCargandoUso] = useState(false);
   const [mostrarSubirDoc, setMostrarSubirDoc] = useState(false);
@@ -523,6 +632,49 @@ const EmpresasDashboard = () => {
     return (nombresRef && nombresRef[s]) ? nombresRef[s] : s;
   };
 
+  // ✅ NUEVO (V00190) — helpers de la pestaña Referencias y del detalle de
+  //   operación: convenio usado, facturas que incluyen la operación y pagos
+  //   aplicados a esas facturas (todo se resuelve EN MEMORIA con lo ya cargado).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de factura sin tipo canónico.
+  const invoiceDe = (f: any): string => String(f?.invoice || f?.numeroInvoice || f?.numInvoice || f?.folio || f?.id || '').trim();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- monto crudo del doc.
+  const fmtMonto = (v: any): string => {
+    const n = Number(v);
+    return Number.isFinite(n) && n !== 0 ? n.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : (n === 0 ? '0.00' : '—');
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de factura sin tipo canónico.
+  const montoFactura = (f: any): number => Number(f?.subtotalFactura) || Number(f?.total) || Number(f?.montoFactura) || 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
+  const convenioDeOperacion = (op: any): string => {
+    const directo = op?.convenioNombre || op?.convenioTarifaNombre || op?.tarifaNombre;
+    if (directo) return String(directo);
+    const idConv = String(op?.convenio || op?.convenioTarifa || op?.convenioTarifaId || op?.tarifaId || '').trim();
+    if (!idConv) return '—';
+    const c = refsConvenios?.find((x) => String(x.id) === idConv);
+    return c ? String(c.numeroConvenio || idConv) : idConv;
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico.
+  const facturasDeOperacion = (op: any): any[] => {
+    const ref = String(op?.ref || '').trim();
+    if (!ref || !refsFacturas) return [];
+    return refsFacturas.filter((f) =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- refs crudas del doc de factura.
+      Array.isArray(f.operaciones) && f.operaciones.some((r: any) => String(r).trim() === ref)
+    );
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico.
+  const pagosDeFacturas = (facturas: any[]): any[] => {
+    if (!refsPagos || facturas.length === 0) return [];
+    const ids = new Set(facturas.map((f) => String(f.id)));
+    const invoices = new Set(facturas.map((f) => invoiceDe(f)).filter(Boolean));
+    return refsPagos.filter((p) =>
+      (Array.isArray(p.facturas) ? p.facturas : []).some(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- factura aplicada cruda del doc de pago.
+        (fa: any) => ids.has(String(fa?.facturaId || '')) || invoices.has(String(fa?.invoice || '').trim())
+      )
+    );
+  };
+
   const REFERENCIAS_EMPRESA: [string, string, string?][] = [
     ['operaciones', 'clientePaga', 'clientePagaNombre'],
     ['operaciones', 'clienteMercancia', 'clienteMercanciaNombre'],
@@ -783,6 +935,9 @@ const EmpresasDashboard = () => {
 
       return {
         ...emp,
+        // ✅ NUEVO (V00190): conteo para la columna "Cantidad de Operaciones"
+        //   (también permite ordenar por ella). -1 = aún cargando.
+        cantidadOps: conteoOps ? (conteoOps[emp.id] || 0) : -1,
         _fechaDinamicaUso: fechaDinamicaUso,
         _regimenLabel: getLabelExt(emp.regimenFiscalLabel, emp.regimenFiscalId || emp.regimenFiscal, 'regimenes'),
         _monedaLabel: getLabel(emp.moneda, 'monedas'),
@@ -793,7 +948,7 @@ const EmpresasDashboard = () => {
         _tiposServicioArray: getArrayLabels(emp.tiposServicio, 'tiposServicio')
       };
     });
-  }, [empresas, diccionarios, lastUsedMap]);
+  }, [empresas, diccionarios, lastUsedMap, conteoOps]);
 
   // ✅ NUEVO (V00117): apartado de empresas obligadas a tener moneda/factura
   //   que aún no la tienen (Cliente Paga y Proveedor Transporte).
@@ -948,6 +1103,20 @@ const EmpresasDashboard = () => {
           </span>
         );
       case 'nombreCorto': return <span className="ed-x3">{mostrarDato(emp.nombreCorto)}</span>;
+      // ✅ NUEVO (V00190): total de operaciones donde participa la empresa
+      //   (cliente que paga, mercancía, proveedor de servicios, unidad, origen o destino).
+      case 'cantidadOps': {
+        if (!conteoOps) return <span className="ed-cant-ops ed-cant-ops--cargando" title="Contando operaciones…">…</span>;
+        const n = Math.max(0, Number(emp.cantidadOps) || 0);
+        return (
+          <span
+            className={`ed-cant-ops${n === 0 ? ' ed-cant-ops--cero' : ''}`}
+            title="Operaciones donde participa esta empresa (cliente que paga, cliente de mercancía, proveedor de servicios, unidad, origen o destino)"
+          >
+            {n}
+          </span>
+        );
+      }
       case 'tiposEmpresa': return <span className="ed-x4">{renderArrayValues(emp._tiposEmpresaArray)}</span>;
       case 'servicios': return <span className="ed-x4">{renderArrayValues(emp._tiposServicioArray)}</span>;
       case 'rfcTaxId': return <span className="ed-x5">{mostrarDato(emp.rfcTaxId)}</span>;
@@ -1432,7 +1601,10 @@ const EmpresasDashboard = () => {
               <button type="button" onClick={() => setActiveTabDetalle('contacto')} style={tabStyle(activeTabDetalle === 'contacto')}>Contacto</button>
               <button type="button" onClick={() => setActiveTabDetalle('uso')} style={tabStyle(activeTabDetalle === 'uso')}>Historial de Uso</button>
               <button type="button" onClick={() => setActiveTabDetalle('documentos')} style={tabStyle(activeTabDetalle === 'documentos')}>Documentos</button>
-              <button type="button" onClick={() => setActiveTabDetalle('referencias')} style={tabStyle(activeTabDetalle === 'referencias')}>Referencias</button>
+              {/* ✅ NUEVO (V00190): la pestaña muestra el conteo de operaciones sin necesidad de abrirla */}
+              <button type="button" onClick={() => setActiveTabDetalle('referencias')} style={tabStyle(activeTabDetalle === 'referencias')}>
+                Referencias{conteoOps ? ` (${conteoOps[empresaViendo.id] || 0})` : ''}
+              </button>
             </div>
 
             <div className="detail-content ed-x76">
@@ -1565,61 +1737,169 @@ const EmpresasDashboard = () => {
                 <DocumentosLista coleccionOrigen="empresas" registroId={empresaViendo.id ?? ''} />
               )}
 
-              {/* ✅ NUEVO: todas las referencias (operaciones) de este cliente */}
+              {/* ✅ NUEVO (V00190): referencias completas del cliente/proveedor,
+                  en secciones — Operaciones (en cualquier papel), Convenios,
+                  Facturas y Pagos — cada una con su conteo. Clic en la
+                  referencia de una operación abre su detalle. */}
               {activeTabDetalle === 'referencias' && (
                 <div className="ed-refs">
                   {cargandoRefs ? (
                     <p className="ed-refs-vacio">Cargando referencias…</p>
-                  ) : !refsCliente || refsCliente.length === 0 ? (
-                    <p className="ed-refs-vacio">Este cliente no tiene operaciones registradas (como "Cliente que Paga").</p>
-                  ) : (() => {
-                    const b = busquedaRefs.trim().toLowerCase();
-                    const visibles = !b ? refsCliente : refsCliente.filter(op =>
-                      String(op.ref || '').toLowerCase().includes(b) ||
-                      String(op.statusNombre || '').toLowerCase().includes(b) ||
-                      String(op.tipoOperacionNombre || '').toLowerCase().includes(b) ||
-                      String(op.origen || '').toLowerCase().includes(b) ||
-                      String(op.destino || '').toLowerCase().includes(b)
-                    );
-                    return (
-                      <>
-                        <div className="ed-refs-encabezado">
-                          <span className="ed-refs-conteo"><b>{visibles.length}</b>{b ? ` de ${refsCliente.length}` : ''} referencia(s)</span>
-                          <input
-                            type="text"
-                            className="ed-refs-buscador"
-                            placeholder="Buscar por referencia, status, tipo, origen o destino..."
-                            value={busquedaRefs}
-                            onChange={(e) => setBusquedaRefs(e.target.value)}
-                          />
-                        </div>
-                        <div className="ed-refs-marco">
-                          <table className="ed-refs-tabla">
-                            <thead>
-                              <tr><th>REFERENCIA</th><th>FECHA SERVICIO</th><th>TIPO</th><th>STATUS</th><th>ORIGEN</th><th>DESTINO</th><th>REMOLQUE</th></tr>
-                            </thead>
-                            <tbody>
-                              {visibles.map(op => (
-                                <tr key={op.id}>
-                                  <td className="ed-refs-ref" style={{ cursor: 'pointer', textDecoration: 'underline' }}
-                                    title="Copiar la referencia para buscarla en Operaciones"
-                                    onClick={() => { navigator.clipboard?.writeText(String(op.ref || op.id)).catch(() => {}); }}>
-                                    {op.ref || op.id}
-                                  </td>
-                                  <td>{op.fechaServicio || '—'}</td>
-                                  <td>{op.tipoOperacionNombre || '—'}</td>
-                                  <td>{op.statusNombre || '—'}</td>
-                                  <td>{nombreDe(op.origenNombre || op.origen)}</td>
-                                  <td>{nombreDe(op.destinoNombre || op.destino)}</td>
-                                  <td>{nombreDe(op.remolqueNombre || op.numeroRemolque)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </>
-                    );
-                  })()}
+                  ) : (
+                    <>
+                      <div className="ed-refs-secciones">
+                        {([
+                          ['operaciones', 'Operaciones', refsCliente],
+                          ['convenios', 'Convenios', refsConvenios],
+                          ['facturas', 'Facturas', refsFacturas],
+                          ['pagos', 'Pagos', refsPagos],
+                        ] as const).map(([clave, etiqueta, datos]) => (
+                          <button
+                            key={clave}
+                            type="button"
+                            className={`ed-refs-chip${seccionRefs === clave ? ' ed-refs-chip--activo' : ''}`}
+                            onClick={() => setSeccionRefs(clave)}
+                          >
+                            {etiqueta} <b>{datos ? datos.length : '…'}</b>
+                          </button>
+                        ))}
+                      </div>
+
+                      {seccionRefs === 'operaciones' && (
+                        !refsCliente || refsCliente.length === 0 ? (
+                          <p className="ed-refs-vacio">Esta empresa no participa en ninguna operación registrada.</p>
+                        ) : (() => {
+                          const b = busquedaRefs.trim().toLowerCase();
+                          const visibles = !b ? refsCliente : refsCliente.filter(op =>
+                            String(op.ref || '').toLowerCase().includes(b) ||
+                            String(op.statusNombre || '').toLowerCase().includes(b) ||
+                            String(op.tipoOperacionNombre || '').toLowerCase().includes(b) ||
+                            String(op.origen || '').toLowerCase().includes(b) ||
+                            String(op.destino || '').toLowerCase().includes(b) ||
+                            convenioDeOperacion(op).toLowerCase().includes(b) ||
+                            (op._roles || []).join(' ').toLowerCase().includes(b)
+                          );
+                          return (
+                            <>
+                              <div className="ed-refs-encabezado">
+                                <span className="ed-refs-conteo"><b>{visibles.length}</b>{b ? ` de ${refsCliente.length}` : ''} referencia(s) — clic en la referencia para ver su detalle</span>
+                                <input
+                                  type="text"
+                                  className="ed-refs-buscador"
+                                  placeholder="Buscar por referencia, status, tipo, origen, destino, convenio o papel..."
+                                  value={busquedaRefs}
+                                  onChange={(e) => setBusquedaRefs(e.target.value)}
+                                />
+                              </div>
+                              <div className="ed-refs-marco">
+                                <table className="ed-refs-tabla">
+                                  <thead>
+                                    <tr><th>REFERENCIA</th><th>PAPEL</th><th>FECHA SERVICIO</th><th>TIPO</th><th>STATUS</th><th>ORIGEN</th><th>DESTINO</th><th>CONVENIO</th></tr>
+                                  </thead>
+                                  <tbody>
+                                    {visibles.map(op => (
+                                      <tr key={op.id}>
+                                        <td className="ed-refs-ref ed-refs-ref--clic"
+                                          title="Ver el detalle de esta operación (convenio, facturas y pagos ligados)"
+                                          onClick={() => setOpDetalle(op)}>
+                                          {op.ref || op.id}
+                                        </td>
+                                        <td className="ed-refs-roles">{(op._roles || []).join(' · ') || '—'}</td>
+                                        <td>{op.fechaServicio || '—'}</td>
+                                        <td>{op.tipoOperacionNombre || '—'}</td>
+                                        <td>{op.statusNombre || '—'}</td>
+                                        <td>{nombreDe(op.origenNombre || op.origen)}</td>
+                                        <td>{nombreDe(op.destinoNombre || op.destino)}</td>
+                                        <td>{convenioDeOperacion(op)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </>
+                          );
+                        })()
+                      )}
+
+                      {seccionRefs === 'convenios' && (
+                        !refsConvenios || refsConvenios.length === 0 ? (
+                          <p className="ed-refs-vacio">Esta empresa no tiene convenios ligados.</p>
+                        ) : (
+                          <div className="ed-refs-marco">
+                            <table className="ed-refs-tabla">
+                              <thead>
+                                <tr><th># CONVENIO</th><th>COMO</th><th>FECHA</th><th>MONEDA</th><th>STATUS</th></tr>
+                              </thead>
+                              <tbody>
+                                {refsConvenios.map(c => (
+                                  <tr key={c.id}>
+                                    <td className="ed-refs-ref">{c.numeroConvenio || c.id}</td>
+                                    <td>{c._tipo}</td>
+                                    <td>{c.fechaConvenio || '—'}</td>
+                                    <td>{c.monedaNombre || '—'}</td>
+                                    <td>{c.status || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )
+                      )}
+
+                      {seccionRefs === 'facturas' && (
+                        !refsFacturas || refsFacturas.length === 0 ? (
+                          <p className="ed-refs-vacio">Esta empresa no tiene facturas ligadas.</p>
+                        ) : (
+                          <div className="ed-refs-marco">
+                            <table className="ed-refs-tabla">
+                              <thead>
+                                <tr><th>INVOICE</th><th>COMO</th><th>FECHA</th><th>TOTAL</th><th>MONEDA</th><th>STATUS</th><th># OPS</th></tr>
+                              </thead>
+                              <tbody>
+                                {refsFacturas.map(f => (
+                                  <tr key={f.id}>
+                                    <td className="ed-refs-ref">{invoiceDe(f) || '—'}</td>
+                                    <td>{f._tipo}</td>
+                                    <td>{f.fecha || f.fechaFactura || '—'}</td>
+                                    <td className="ed-refs-monto">{fmtMonto(montoFactura(f))}</td>
+                                    <td>{f.moneda || '—'}</td>
+                                    <td>{f.status || '—'}</td>
+                                    <td>{Array.isArray(f.operaciones) ? f.operaciones.length : '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )
+                      )}
+
+                      {seccionRefs === 'pagos' && (
+                        !refsPagos || refsPagos.length === 0 ? (
+                          <p className="ed-refs-vacio">Esta empresa no tiene pagos ligados.</p>
+                        ) : (
+                          <div className="ed-refs-marco">
+                            <table className="ed-refs-tabla">
+                              <thead>
+                                <tr><th># PAGO</th><th>FECHA</th><th>MÉTODO</th><th>MONTO</th><th>MONEDA</th><th># FACTURAS</th></tr>
+                              </thead>
+                              <tbody>
+                                {refsPagos.map(p => (
+                                  <tr key={p.id}>
+                                    <td className="ed-refs-ref">{p.numeroPago || p.id}</td>
+                                    <td>{p.fecha || '—'}</td>
+                                    <td>{p.metodoPago || '—'}</td>
+                                    <td className="ed-refs-monto">{fmtMonto(p.monto)}</td>
+                                    <td>{p.moneda || '—'}</td>
+                                    <td>{Array.isArray(p.facturas) ? p.facturas.length : '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )
+                      )}
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1631,6 +1911,103 @@ const EmpresasDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* ✅ NUEVO (V00190) — DETALLE DE OPERACIÓN desde la pestaña Referencias:
+          datos generales + convenio usado + facturas que la incluyen + pagos
+          aplicados a esas facturas. */}
+      {opDetalle && (() => {
+        const facturasOp = facturasDeOperacion(opDetalle);
+        const pagosOp = pagosDeFacturas(facturasOp);
+        return (
+          <div className="modal-overlay ed-opdet-overlay" onClick={() => setOpDetalle(null)}>
+            <div className="ed-opdet-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="ed-opdet-encabezado">
+                <h3 className="ed-opdet-titulo">Detalle de Operación <span className="ed-x29">{opDetalle.ref || opDetalle.id}</span></h3>
+                <div className="ed-opdet-acciones">
+                  <button type="button" className="ed-opdet-copiar"
+                    title="Copiar la referencia para buscarla en Operaciones"
+                    onClick={() => { navigator.clipboard?.writeText(String(opDetalle.ref || opDetalle.id)).catch(() => {}); }}>
+                    Copiar Ref.
+                  </button>
+                  <button type="button" className="ed-x46" onClick={() => setOpDetalle(null)}>✕</button>
+                </div>
+              </div>
+
+              <div className="ed-opdet-grid">
+                <div className="detail-item"><span className="detail-label ed-x78">Fecha de Servicio</span><span className="detail-value ed-x3">{mostrarDato(opDetalle.fechaServicio)}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Tipo de Operación</span><span className="detail-value ed-x3">{mostrarDato(opDetalle.tipoOperacionNombre)}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Status</span><span className="detail-value ed-x3">{mostrarDato(opDetalle.statusNombre)}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Cliente que Paga</span><span className="detail-value ed-x3">{mostrarDato(opDetalle.clientePagaNombre || nombreDe(opDetalle.clientePaga))}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Cliente (Mercancía)</span><span className="detail-value ed-x3">{mostrarDato(opDetalle.clienteMercanciaNombre || nombreDe(opDetalle.clienteMercancia))}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Proveedor (Servicios)</span><span className="detail-value ed-x3">{mostrarDato(opDetalle.provServiciosNombre || nombreDe(opDetalle.provServicios))}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Origen</span><span className="detail-value ed-x3">{nombreDe(opDetalle.origenNombre || opDetalle.origen)}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Destino</span><span className="detail-value ed-x3">{nombreDe(opDetalle.destinoNombre || opDetalle.destino)}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Remolque</span><span className="detail-value ed-x3">{nombreDe(opDetalle.remolqueNombre || opDetalle.numeroRemolque)}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Convenio Usado</span><span className="detail-value ed-x83">{convenioDeOperacion(opDetalle)}</span></div>
+                <div className="detail-item"><span className="detail-label ed-x78">Papel de la Empresa</span><span className="detail-value ed-x3">{(opDetalle._roles || []).join(' · ') || '—'}</span></div>
+              </div>
+
+              <div className="ed-opdet-seccion">
+                <h4 className="ed-opdet-subtitulo">Facturas que incluyen esta operación ({facturasOp.length})</h4>
+                {!refsFacturas ? (
+                  <p className="ed-refs-vacio">Cargando facturas…</p>
+                ) : facturasOp.length === 0 ? (
+                  <p className="ed-refs-vacio">Esta operación no aparece en ninguna factura de la empresa.</p>
+                ) : (
+                  <div className="ed-refs-marco ed-opdet-marco">
+                    <table className="ed-refs-tabla">
+                      <thead><tr><th>INVOICE</th><th>COMO</th><th>FECHA</th><th>TOTAL</th><th>MONEDA</th><th>STATUS</th></tr></thead>
+                      <tbody>
+                        {facturasOp.map(f => (
+                          <tr key={f.id}>
+                            <td className="ed-refs-ref">{invoiceDe(f) || '—'}</td>
+                            <td>{f._tipo}</td>
+                            <td>{f.fecha || f.fechaFactura || '—'}</td>
+                            <td className="ed-refs-monto">{fmtMonto(montoFactura(f))}</td>
+                            <td>{f.moneda || '—'}</td>
+                            <td>{f.status || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="ed-opdet-seccion">
+                <h4 className="ed-opdet-subtitulo">Pagos aplicados a esas facturas ({pagosOp.length})</h4>
+                {!refsPagos ? (
+                  <p className="ed-refs-vacio">Cargando pagos…</p>
+                ) : pagosOp.length === 0 ? (
+                  <p className="ed-refs-vacio">No hay pagos aplicados a las facturas de esta operación.</p>
+                ) : (
+                  <div className="ed-refs-marco ed-opdet-marco">
+                    <table className="ed-refs-tabla">
+                      <thead><tr><th># PAGO</th><th>FECHA</th><th>MÉTODO</th><th>MONTO</th><th>MONEDA</th><th># FACTURAS</th></tr></thead>
+                      <tbody>
+                        {pagosOp.map(p => (
+                          <tr key={p.id}>
+                            <td className="ed-refs-ref">{p.numeroPago || p.id}</td>
+                            <td>{p.fecha || '—'}</td>
+                            <td>{p.metodoPago || '—'}</td>
+                            <td className="ed-refs-monto">{fmtMonto(p.monto)}</td>
+                            <td>{p.moneda || '—'}</td>
+                            <td>{Array.isArray(p.facturas) ? p.facturas.length : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="ed-opdet-pie">
+                <button type="button" className="btn btn-outline" onClick={() => setOpDetalle(null)}>Cerrar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL DE BAJA DE EMPRESA */}
       {modalBajaAbierto && (
