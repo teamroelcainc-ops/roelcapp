@@ -1217,3 +1217,12 @@ body {
 /* ✅ V00170: respiro uniforme en todos los módulos */
 .dashboard-container { padding: 20px 24px 34px !important; }
 @media (max-width: 640px) { .dashboard-container { padding: 14px 12px 26px !important; } }
+
+/* ✅ V00180: candado del Reloj Checador */
+.chk-candado { position: fixed; inset: 0; z-index: 2500; background: rgba(2, 6, 12, 0.92); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.chk-candado-card { background: #0d1117; border: 1px solid #30363d; border-radius: 18px; padding: 34px 38px; max-width: 460px; width: 100%; text-align: center; }
+.chk-candado-icono { font-size: 3rem; margin-bottom: 10px; }
+.chk-candado-card h2 { color: #f0f6fc; margin: 0 0 8px; }
+.chk-candado-card p { color: #8b949e; font-size: 0.92rem; line-height: 1.55; margin: 0 0 18px; }
+.chk-candado-card p b { color: #ff7043; }
+.chk-candado-btn { min-width: 220px; }

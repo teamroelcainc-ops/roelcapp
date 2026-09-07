@@ -1075,7 +1075,30 @@ function AppContenido() {
     ? rolesEfectivos.some((r: string) => String(r).toUpperCase() === 'ADMIN')
     : accesoTotalReal;
 
+  // ✅ V00180: CANDADO POR RELOJ CHECADOR (por usuario, requiereChecador=true).
+  //   Sin "Llegada al Turno" hoy → no ve módulos; con "Salida a la Comida" sin
+  //   "Llegada de la Comida" → tampoco (aviso de Buen Provecho). "Ver como" no
+  //   activa el candado de otros.
+  const [marcasHoy, setMarcasHoy] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!usuarioActualDB?.id || usuarioActualDB?.requiereChecador !== true) { setMarcasHoy(null); return; }
+    const fechaLocal = new Date().toLocaleDateString('es-MX');
+    const qMarcas = query(collection(db, 'reloj_checador'), where('userId', '==', usuarioActualDB.id), where('fecha', '==', fechaLocal));
+    const unsub = onSnapshot(qMarcas, (snap) => {
+      setMarcasHoy(snap.docs.map((d) => String((d.data() as any).tipoRegistro || '')));
+    }, () => setMarcasHoy([]));
+    return () => unsub();
+  }, [usuarioActualDB?.id, usuarioActualDB?.requiereChecador]);
+  const bloqueoChecador: 'entrada' | 'comida' | null = useMemo(() => {
+    if (usuarioActualDB?.requiereChecador !== true || vistaComoAplicada) return null;
+    if (marcasHoy === null) return null; // cargando: no parpadear el candado
+    if (!marcasHoy.includes('Llegada al Turno')) return 'entrada';
+    if (marcasHoy.includes('Salida a la Comida') && !marcasHoy.includes('Llegada de la Comida')) return 'comida';
+    return null;
+  }, [usuarioActualDB?.requiereChecador, marcasHoy, vistaComoAplicada]);
+
   const clavesPermitidas = useMemo(() => {
+    if (bloqueoChecador) return new Set<string>(); // candado: sin módulos hasta marcar
     if (accesoTotal) return new Set<string>(ORDEN_CLAVES);
     const etiquetas = new Set<string>();
     rolesCatalogo.forEach((rol: any) => {
@@ -1093,7 +1116,7 @@ function AppContenido() {
     etiquetas.forEach((et) => { const k = MODULOS_A_CLAVE[et]; if (k) claves.add(k); });
     return claves;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accesoTotal, usuarioActualDB, rolesCatalogo, vistaComoAplicada]);
+  }, [bloqueoChecador, accesoTotal, usuarioActualDB, rolesCatalogo, vistaComoAplicada]);
 
   const puede = (clave: string) => clavesPermitidas.has(clave);
 
@@ -1160,6 +1183,26 @@ function AppContenido() {
       />
       <EditorNavMovil abierto={editorNavAbierto} onCerrar={() => setEditorNavAbierto(false)} puedeVer={puede} />
 
+      {/* ✅ V00180: pantalla de candado del Reloj Checador */}
+      {bloqueoChecador && (
+        <div className="chk-candado">
+          <div className="chk-candado-card">
+            <div className="chk-candado-icono">{bloqueoChecador === 'entrada' ? '⏰' : '🍽️'}</div>
+            {bloqueoChecador === 'entrada' ? (
+              <>
+                <h2>Marca tu entrada</h2>
+                <p>Tus módulos aparecerán después de marcar tu <b>Llegada al Turno</b> en el Reloj Checador.</p>
+              </>
+            ) : (
+              <>
+                <h2>¡Buen Provecho! 🍽️</h2>
+                <p>Al regresar recuerda marcar que <b>llegaste de comer</b> para volver a ver tus módulos.</p>
+              </>
+            )}
+            <button type="button" className="btn btn-primary chk-candado-btn" onClick={() => setModalChecadorAbierto(true)}>⏰ Abrir Reloj Checador</button>
+          </div>
+        </div>
+      )}
       <RelojChecadorModal isOpen={modalChecadorAbierto} onClose={() => setModalChecadorAbierto(false)} usuario={usuarioActualDB} />
 
       {/* BANNER DE VISTA PREVIA: siempre visible mientras se está "viendo como" */}

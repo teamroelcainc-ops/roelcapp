@@ -59,6 +59,8 @@ export const UsuariosDashboard = () => {
   // ✅ NUEVO: horario de trabajo semanal (lo usan el Reloj Checador y la
   //   alerta global de "no has marcado").
   const [horarioTrabajo, setHorarioTrabajo] = useState<HorarioTrabajo>({ ...HORARIO_VACIO });
+  // ✅ V00180: candado por checador — sin marcar entrada no ve sus módulos.
+  const [requiereChecador, setRequiereChecador] = useState(false);
   // ✅ NUEVO: ficha de usuario (clic en la fila) + modal dedicado de horarios.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- el doc de usuario no tiene tipo canónico en este módulo (igual que la lista `usuarios`).
   const [usuarioFicha, setUsuarioFicha] = useState<any | null>(null);
@@ -165,6 +167,7 @@ export const UsuariosDashboard = () => {
       setColaboradorId(user.colaboradorId || ''); // ✅ NUEVO
       setBusquedaColab('');
       setHorarioTrabajo({ ...HORARIO_VACIO, ...(user.horarioTrabajo || {}) }); // ✅ NUEVO
+      setRequiereChecador(user.requiereChecador === true);
     } else {
       setUsuarioActual(null);
       setNombre('');
@@ -223,6 +226,7 @@ export const UsuariosDashboard = () => {
           exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
           colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
           horarioTrabajo, // ✅ NUEVO: horario semanal para el Reloj Checador
+          requiereChecador,
           fechaActualizacion: new Date().toISOString()
         }, { merge: true });
         
@@ -246,6 +250,7 @@ export const UsuariosDashboard = () => {
           exentoIpChecador, // ✅ NUEVO: puede checar desde cualquier red
           colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
           horarioTrabajo, // ✅ NUEVO: horario semanal para el Reloj Checador
+          requiereChecador,
           fechaCreacion: new Date().toISOString(),
           activo: true,
           isOnline: false,
@@ -525,7 +530,14 @@ export const UsuariosDashboard = () => {
 
               <div className="ud-form-col">
                 {/* ✅ Horario de trabajo: resumen + edición en su propio modal */}
-                <div className="ud-horario">
+                <div className="form-group udx-chk-checador">
+                {/* ✅ V00180: candado por Reloj Checador (por usuario, apagado por defecto) */}
+                <label className="udx-checador-label" title="Con esto activo, el usuario NO ve sus módulos hasta marcar su Llegada al Turno; al marcar Salida a la Comida se ocultan hasta que marque Llegada de la Comida.">
+                  <input type="checkbox" checked={requiereChecador} onChange={(e) => setRequiereChecador(e.target.checked)} />
+                  <span>Requiere Reloj Checador para ver sus módulos (entrada y regreso de comida)</span>
+                </label>
+              </div>
+              <div className="ud-horario">
                   <label className="form-label">Horario de trabajo (Reloj Checador)</label>
                   <small className="ud-horario-nota">Con el horario configurado, el checador avisa si se marca antes o después, y la app alerta cuando no se ha marcado.</small>
                   <div className="ud-horario-resumen">
