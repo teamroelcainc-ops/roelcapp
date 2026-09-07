@@ -255,7 +255,7 @@ const vistaComoRoles = (): string[] | null => {
   } catch { return null; }
 };
 
-export const obtenerUsuarioAut = async (): Promise<{ uid: string; nombre: string; roles: string[]; esAdmin: boolean }> => {
+export const obtenerUsuarioAut = async (): Promise<{ uid: string; nombre: string; roles: string[]; esAdmin: boolean; puedeEditarApp?: boolean }> => {
   const simulados = vistaComoRoles();
   const u = auth.currentUser;
   // Sin sesión con doc (bypass) = acceso total, se trata como Admin (salvo simulación).
@@ -268,7 +268,7 @@ export const obtenerUsuarioAut = async (): Promise<{ uid: string; nombre: string
     const data: any = snap.exists() ? snap.data() : null;
     const rolesReales: string[] = data ? (Array.isArray(data.roles) ? data.roles : (data.rol ? [String(data.rol)] : [])) : ['ADMIN'];
     const roles = simulados ?? rolesReales;
-    return { uid: u.uid, nombre: (data?.nombre || u.email || 'Usuario') + (simulados ? ' (vista previa)' : ''), roles, esAdmin: esRolAdmin(roles) };
+    return { uid: u.uid, nombre: (data?.nombre || u.email || 'Usuario') + (simulados ? ' (vista previa)' : ''), puedeEditarApp: data?.puedeEditarApp === true, roles, esAdmin: esRolAdmin(roles) };
   } catch {
     return { uid: u.uid, nombre: u.email || 'Usuario', roles: simulados ?? [], esAdmin: simulados ? esRolAdmin(simulados) : false };
   }

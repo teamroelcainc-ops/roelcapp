@@ -22,7 +22,8 @@ export const EditorEncabezados: React.FC<{ titulo: string; claves: ClaveEncabeza
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [guardando, setGuardando] = useState(false);
 
-  useEffect(() => { obtenerUsuarioAut().then((u) => setEsAdmin(!!u?.esAdmin)).catch(() => setEsAdmin(false)); }, []);
+  // ✅ V00184: Admin o usuarios con "Puede personalizar el app" (Usuarios → Editar)
+  useEffect(() => { obtenerUsuarioAut().then((u) => setEsAdmin(!!u?.esAdmin || u?.puedeEditarApp === true)).catch(() => setEsAdmin(false)); }, []);
   if (!esAdmin) return null;
 
   const abrir = () => {

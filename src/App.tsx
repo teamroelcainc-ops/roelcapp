@@ -780,6 +780,27 @@ function AppContenido() {
   // ✅ V00181: NUEVAS solicitudes pendientes → notifican a TODOS los usuarios
   //   que tienen habilitado el módulo de Autorizaciones (campana con punto rojo).
   const [solicitudesPendientes, setSolicitudesPendientes] = useState<any[]>([]);
+  // ✅ V00184: HISTÓRICO de notificaciones (últimas 30, estilo Facebook).
+  const [historialAbierto, setHistorialAbierto] = useState(false);
+  const [historialNotis, setHistorialNotis] = useState<any[] | null>(null);
+  const abrirHistorialNotis = async () => {
+    setHistorialAbierto(true); setHistorialNotis(null); setAvisoVersionAbierto(false);
+    try {
+      const qMias = query(collection(db, 'solicitudes_autorizacion'), where('solicitanteUid', '==', usuarioActualDB?.id || ''));
+      const [sMias, sPend] = await Promise.all([
+        getDocs(qMias),
+        puedeVerAut ? getDocs(query(collection(db, 'solicitudes_autorizacion'), where('estado', '==', 'pendiente'))) : Promise.resolve({ docs: [] } as any),
+      ]);
+      const mapa = new Map<string, any>();
+      sMias.docs.forEach((d: any) => mapa.set(d.id, { id: d.id, ...(d.data() as any), _mia: true }));
+      (sPend.docs || []).forEach((d: any) => { if (!mapa.has(d.id)) mapa.set(d.id, { id: d.id, ...(d.data() as any), _mia: false }); });
+      const lista = Array.from(mapa.values())
+        .sort((a, b) => String(b.resueltaEn || b.creadaEn || '').localeCompare(String(a.resueltaEn || a.creadaEn || '')))
+        .slice(0, 30);
+      setHistorialNotis(lista);
+    } catch { setHistorialNotis([]); }
+  };
+
   const puedeVerAut = useMemo(() => {
     if (usuarioActualDB?.esAdmin) return true;
     const rolesEf: string[] = Array.isArray(usuarioActualDB?.roles) ? usuarioActualDB.roles : (usuarioActualDB?.rol ? [usuarioActualDB.rol] : []);
@@ -1202,6 +1223,34 @@ function AppContenido() {
       />
       <EditorNavMovil abierto={editorNavAbierto} onCerrar={() => setEditorNavAbierto(false)} puedeVer={puede} />
 
+      {/* ✅ V00184: modal de histórico de notificaciones */}
+      {historialAbierto && (
+        <div className="modal-overlay app-hist-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) setHistorialAbierto(false); }}>
+          <div className="app-hist-card">
+            <div className="app-hist-header"><h3>🔔 Notificaciones (últimas 30)</h3><button className="app-hist-cerrar" onClick={() => setHistorialAbierto(false)}>✕</button></div>
+            <div className="app-hist-cuerpo">
+              {historialNotis === null ? <p className="app-hist-vacio">⏳ Cargando…</p>
+                : historialNotis.length === 0 ? <p className="app-hist-vacio">Sin notificaciones todavía.</p>
+                : historialNotis.map((n: any) => (
+                  <div key={n.id} className="app-hist-item">
+                    <div className="app-hist-linea1">
+                      {n.estado === 'pendiente' ? <span className="app-hist-tag app-hist-pend">📨 Pendiente</span>
+                        : n.estado === 'aprobada' ? <span className="app-hist-tag app-hist-ok">✅ Aprobada</span>
+                        : <span className="app-hist-tag app-hist-no">❌ Rechazada</span>}
+                      <span className="app-hist-fecha">{String(n.resueltaEn || n.creadaEn || '').slice(0, 16).replace('T', ' ')}</span>
+                    </div>
+                    <div className="app-hist-texto">
+                      {n._mia ? 'Tu solicitud' : `Solicitud de ${n.solicitanteNombre || 'un usuario'}`} — {n.tipo === 'accesoCampo' ? <>editar <b>{n.campoSolicitadoLabel || n.campoSolicitado || n.campoLabel || n.campo}</b></> : (n.accion || 'autorización')} en <b>{n.moduloLabel || n.modulo}</b>{n.referencia ? ` (${n.referencia})` : ''}.
+                      {n.motivoSolicitante && <div className="app-hist-motivo">«{n.motivoSolicitante}»</div>}
+                      {n.motivoRechazo && <div className="app-hist-motivo app-hist-motivo-no">Rechazo: {n.motivoRechazo}</div>}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ✅ V00180: pantalla de candado del Reloj Checador */}
       {bloqueoChecador && (
         <div className="chk-candado">
@@ -1605,6 +1654,8 @@ function AppContenido() {
                       </button>
                     </div>
                   ))}
+                  {/* ✅ V00184: histórico completo */}
+                  <button type="button" className="app-noti-vertodas" onClick={abrirHistorialNotis}>Ver todas</button>
                 </div>
               )}
             </div>

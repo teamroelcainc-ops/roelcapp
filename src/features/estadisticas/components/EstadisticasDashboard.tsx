@@ -174,7 +174,7 @@ export function EstadisticasDashboard() {
   //   Escribe en settings_ui/etiquetas (mismo motor de "Personalizar Etiquetas"),
   //   así el cambio aplica para todos y también es editable desde ese módulo.
   const [esAdminUI, setEsAdminUI] = useState(false);
-  useEffect(() => { obtenerUsuarioAut().then((u) => setEsAdminUI(!!u?.esAdmin)).catch(() => setEsAdminUI(false)); }, []);
+  useEffect(() => { obtenerUsuarioAut().then((u) => setEsAdminUI(!!u?.esAdmin || (u as any)?.puedeEditarApp === true)).catch(() => setEsAdminUI(false)); }, []);
   const [editandoEncabezados, setEditandoEncabezados] = useState(false);
   const [encDraft, setEncDraft] = useState<Record<string, string>>({});
   const [guardandoEnc, setGuardandoEnc] = useState(false);

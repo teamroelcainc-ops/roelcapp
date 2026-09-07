@@ -61,6 +61,7 @@ export const UsuariosDashboard = () => {
   const [horarioTrabajo, setHorarioTrabajo] = useState<HorarioTrabajo>({ ...HORARIO_VACIO });
   // ✅ V00180: candado por checador — sin marcar entrada no ve sus módulos.
   const [requiereChecador, setRequiereChecador] = useState(false);
+  const [puedeEditarApp, setPuedeEditarApp] = useState(false);
   // ✅ NUEVO: ficha de usuario (clic en la fila) + modal dedicado de horarios.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- el doc de usuario no tiene tipo canónico en este módulo (igual que la lista `usuarios`).
   const [usuarioFicha, setUsuarioFicha] = useState<any | null>(null);
@@ -168,6 +169,7 @@ export const UsuariosDashboard = () => {
       setBusquedaColab('');
       setHorarioTrabajo({ ...HORARIO_VACIO, ...(user.horarioTrabajo || {}) }); // ✅ NUEVO
       setRequiereChecador(user.requiereChecador === true);
+      setPuedeEditarApp(user.puedeEditarApp === true);
     } else {
       setUsuarioActual(null);
       setNombre('');
@@ -227,6 +229,7 @@ export const UsuariosDashboard = () => {
           colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
           horarioTrabajo, // ✅ NUEVO: horario semanal para el Reloj Checador
           requiereChecador,
+          puedeEditarApp,
           fechaActualizacion: new Date().toISOString()
         }, { merge: true });
         
@@ -251,6 +254,7 @@ export const UsuariosDashboard = () => {
           colaboradorId: colaboradorId || '', // ✅ NUEVO: vínculo con Colaborador
           horarioTrabajo, // ✅ NUEVO: horario semanal para el Reloj Checador
           requiereChecador,
+          puedeEditarApp,
           fechaCreacion: new Date().toISOString(),
           activo: true,
           isOnline: false,
@@ -535,6 +539,11 @@ export const UsuariosDashboard = () => {
                 <label className="udx-checador-label" title="Con esto activo, el usuario NO ve sus módulos hasta marcar su Llegada al Turno; al marcar Salida a la Comida se ocultan hasta que marque Llegada de la Comida.">
                   <input type="checkbox" checked={requiereChecador} onChange={(e) => setRequiereChecador(e.target.checked)} />
                   <span>Requiere Reloj Checador para ver sus módulos (entrada y regreso de comida)</span>
+                </label>
+                {/* ✅ V00184: personalización del app por usuario */}
+                <label className="udx-checador-label" title="Con esto activo, el usuario puede editar los encabezados de los módulos (botón ✎ Encabezados) y las demás opciones de personalización del app.">
+                  <input type="checkbox" checked={puedeEditarApp} onChange={(e) => setPuedeEditarApp(e.target.checked)} />
+                  <span>Puede personalizar el app (encabezados y textos de los módulos)</span>
                 </label>
               </div>
               <div className="ud-horario">
