@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import { DocumentosLista } from './features/documentos/DocumentosLista';
 import { APP_VERSION, APP_AUTOR } from './config/version';
 import { Bell } from 'lucide-react';
@@ -780,6 +780,39 @@ function AppContenido() {
   // ✅ V00181: NUEVAS solicitudes pendientes → notifican a TODOS los usuarios
   //   que tienen habilitado el módulo de Autorizaciones (campana con punto rojo).
   const [solicitudesPendientes, setSolicitudesPendientes] = useState<any[]>([]);
+  // ✅ V00185: PING + BRINCO de la campana.
+  //   · Suena UNA vez (ping suave, Web Audio, sin archivos) cuando LLEGA algo
+  //     nuevo — nunca al iniciar sesión ni repetido.
+  //   · La campana brinca mientras haya notificaciones SIN VER; se calma al
+  //     abrir el panel.
+  const [notisVistas, setNotisVistas] = useState(true);
+  const totalNotisRef = useRef<number | null>(null);
+  const sonarPing = () => {
+    try {
+      const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const t0 = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, t0);            // La5: timbre de campanita
+      osc.frequency.exponentialRampToValueAtTime(1320, t0 + 0.09);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.02); // volumen discreto
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(t0); osc.stop(t0 + 0.65);
+      osc.onended = () => { try { ctx.close(); } catch { /* nada */ } };
+    } catch { /* autoplay bloqueado: silencio, sin error */ }
+  };
+  useEffect(() => {
+    const total = notisAcceso.length + solicitudesPendientes.length;
+    if (totalNotisRef.current === null) { totalNotisRef.current = total; if (total > 0) setNotisVistas(false); return; } // primera carga: sin ping
+    if (total > totalNotisRef.current) { sonarPing(); setNotisVistas(false); }
+    totalNotisRef.current = total;
+  }, [notisAcceso.length, solicitudesPendientes.length]);
+
   // ✅ V00184: HISTÓRICO de notificaciones (últimas 30, estilo Facebook).
   const [historialAbierto, setHistorialAbierto] = useState(false);
   const [historialNotis, setHistorialNotis] = useState<any[] | null>(null);
@@ -1607,9 +1640,9 @@ function AppContenido() {
             <div style={{ position: 'relative', display: 'inline-flex' }}>
               <button type="button"
                 title={versionNueva ? `Nueva versión ${versionNueva} disponible` : 'Notificaciones'}
-                onClick={() => setAvisoVersionAbierto((v) => !v)}
+                onClick={() => { setAvisoVersionAbierto((v) => !v); setNotisVistas(true); }}
                 style={{ background: 'none', border: `1px solid ${versionNueva ? '#d29922' : '#30363d'}`, borderRadius: '999px', color: versionNueva ? '#d29922' : '#8b949e', width: '34px', height: '34px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: '8px' }}>
-                <Bell size={17} color={versionNueva ? '#d29922' : '#8b949e'} strokeWidth={2} style={{ display: 'block', flexShrink: 0 }} />
+                <span className={(!notisVistas && (notisAcceso.length + solicitudesPendientes.length) > 0) ? 'app-campana-brinco' : undefined} style={{ display: 'inline-flex' }}><Bell size={17} color={versionNueva ? '#d29922' : '#8b949e'} strokeWidth={2} style={{ display: 'block', flexShrink: 0 }} /></span>
                 {(versionNueva || notisAcceso.length > 0 || solicitudesPendientes.length > 0) && <span style={{ position: 'absolute', top: '-2px', right: '6px', width: '9px', height: '9px', borderRadius: '50%', backgroundColor: '#f85149', border: '2px solid #0d1117' }} />}
               </button>
               {avisoVersionAbierto && (
