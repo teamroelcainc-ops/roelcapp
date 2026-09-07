@@ -89,23 +89,42 @@ export const ReporteVencimientosDashboard = () => {
   //   el ID (registroNombre vacío o con pinta de id); se resuelven contra
   //   empleados / empresas / unidades.
   const [nombres, setNombres] = useState<Record<string, Record<string, string>>>({});
+  // ✅ V00189: dueños DE BAJA/INACTIVOS — sus documentos NO aparecen en el
+  //   reporte ni cuentan como vencidos (ids por colección).
+  const [bajas, setBajas] = useState<Record<string, Set<string>>>({ empleados: new Set(), empresas: new Set(), unidades: new Set() });
   useEffect(() => {
     (async () => {
       const out: Record<string, Record<string, string>> = { empleados: {}, empresas: {}, unidades: {} };
+      const bj: Record<string, Set<string>> = { empleados: new Set(), empresas: new Set(), unidades: new Set() };
       try {
         const [se, sm, su] = await Promise.all([
           getDocs(collection(db, 'empleados')),
           getDocs(collection(db, 'empresas')),
           getDocs(collection(db, 'unidades')),
         ]);
-        se.docs.forEach((d) => { const x: any = d.data(); out.empleados[d.id] = (`${x.firstName || x.nombres || ''} ${x.lastNamePaternal || x.apellidoPaterno || ''} ${x.lastNameMaternal || x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim()) || String(x.nombre || x.nombreCompleto || x.employeeId || d.id); });
-        sm.docs.forEach((d) => { const x: any = d.data(); out.empresas[d.id] = String(x.nombre || x.empresa || d.id); });
-        su.docs.forEach((d) => { const x: any = d.data(); out.unidades[d.id] = String(x.unidad || x.placas || x.nombre || d.id); });
+        se.docs.forEach((d) => { const x: any = d.data(); if (x.activo === false || /^(baja|inactiv)/i.test(String(x.status || ''))) bj.empleados.add(d.id); out.empleados[d.id] = (`${x.firstName || x.nombres || ''} ${x.lastNamePaternal || x.apellidoPaterno || ''} ${x.lastNameMaternal || x.apellidoMaterno || ''}`.replace(/\s+/g, ' ').trim()) || String(x.nombre || x.nombreCompleto || x.employeeId || d.id); });
+        sm.docs.forEach((d) => { const x: any = d.data(); if (/^(baja|inactiv)/i.test(String(x.status || ''))) bj.empresas.add(d.id); out.empresas[d.id] = String(x.nombre || x.empresa || d.id); });
+        su.docs.forEach((d) => { const x: any = d.data(); if ((x.activa ?? x.activo) === false || /^(baja|inactiv)/i.test(String(x.status || ''))) bj.unidades.add(d.id); out.unidades[d.id] = String(x.unidad || x.placas || x.nombre || d.id); });
       } catch (e) { console.error('[Reporte Vencimiento] nombres:', e); }
-      setNombres(out);
+      setNombres(out); setBajas(bj);
     })();
   }, []);
   const pareceId = (t: string) => /^[0-9a-f]{8,}$/i.test(String(t || '').trim());
+  // ✅ V00189: ¿el dueño del documento está de baja? (id exacto o por prefijo)
+  const duenioDeBaja = (d: DocVenc): boolean => {
+    const col = String(d.coleccionOrigen || '').toLowerCase();
+    const colKey = col.startsWith('emple') ? 'empleados' : col.startsWith('empre') ? 'empresas' : col.startsWith('unidad') ? 'unidades' : '';
+    if (!colKey) return false;
+    const set = bajas[colKey];
+    if (!set || set.size === 0) return false;
+    const delDocId = (() => { const partes = String(d.id || '').split('__'); return partes.length >= 3 ? partes[1] : ''; })();
+    const candidatos = [d.registroId, delDocId].map((c) => String(c || '').trim()).filter(Boolean);
+    for (const c of candidatos) {
+      if (set.has(c)) return true;
+      if (c.length >= 6) { for (const id of set) { if (id.startsWith(c) || c.startsWith(id)) return true; } }
+    }
+    return false;
+  };
   // ✅ V00158: resolución ROBUSTA del nombre — muchos documentos migrados guardan
   //   el id recortado o solo en el docId (empleados__<id>__<tipo>); se prueba
   //   coincidencia exacta y por prefijo contra la colección correspondiente.
@@ -172,8 +191,11 @@ export const ReporteVencimientosDashboard = () => {
   };
 
   // Pestaña 1: vencidos primero, luego por vencer, por proximidad.
+  // ✅ V00189: universo visible del reporte — sin documentos de dueños de baja.
+  const docsVisibles = useMemo(() => docs.filter((d) => !duenioDeBaja(d)), [docs, bajas]);
+
   const filasVencimientos = useMemo(() => {
-    const conFecha = docs.filter((d) => d.vence && d.dias !== null && coincide(d));
+    const conFecha = docsVisibles.filter((d) => d.vence && d.dias !== null && coincide(d));
     const vencidos = conFecha.filter((d) => (d.dias as number) < 0).sort((a, b) => (a.dias! - b.dias!)); // más vencido primero
     const porVencer = conFecha.filter((d) => (d.dias as number) >= 0).sort((a, b) => (a.dias! - b.dias!)); // más próximo primero
     return { vencidos, porVencer, todas: [...vencidos, ...porVencer] };
@@ -181,7 +203,7 @@ export const ReporteVencimientosDashboard = () => {
 
   // Pestaña 2: sin fecha de emisión o vencimiento (editable en la tabla).
   const filasSinFechas = useMemo(() =>
-    docs.filter((d) => coincide(d) && (soloQueVencen ? d.vence : true) && (!d.fechaVencimiento || !d.fechaExpedicion))
+    docsVisibles.filter((d) => coincide(d) && (soloQueVencen ? d.vence : true) && (!d.fechaVencimiento || !d.fechaExpedicion))
       .sort((a, b) => Number(b.vence) - Number(a.vence) || nombreRegistro(a).localeCompare(nombreRegistro(b), 'es') || a.tipoDocumento.localeCompare(b.tipoDocumento, 'es')),
   [docs, filtroOrigen, busqueda, soloQueVencen]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -242,7 +264,7 @@ export const ReporteVencimientosDashboard = () => {
         {/* ✅ V00179: pestaña 3 — documentos pendientes de clasificar */}
         <button className={`rv-tab${pestana === 'sinClasificar' ? ' activa' : ''}`} onClick={() => setPestana('sinClasificar')}>
           {etq('rv.tab_sin_clasificar', 'Documentos sin clasificar')}
-          <span className="rv-chip rv-chip-clasificar">{docs.filter((d) => d.porClasificar).length}</span>
+          <span className="rv-chip rv-chip-clasificar">{docsVisibles.filter((d) => d.porClasificar).length}</span>
         </button>
       </div>
 
@@ -268,9 +290,9 @@ export const ReporteVencimientosDashboard = () => {
             <table className="rv-tabla">
               <thead><tr><th>Tipo</th><th>{etq('rv.col_usuario', 'Usuario del documento')}</th><th>Archivo</th><th>Reubicar en la carpeta…</th><th></th></tr></thead>
               <tbody>
-                {docs.filter((d) => d.porClasificar && (filtroOrigen === 'todos' || d.coleccionOrigen === filtroOrigen)).length === 0 ? (
+                {docsVisibles.filter((d) => d.porClasificar && (filtroOrigen === 'todos' || d.coleccionOrigen === filtroOrigen)).length === 0 ? (
                   <tr><td colSpan={5} className="rv-vacio">No hay documentos pendientes de clasificar. 🎉</td></tr>
-                ) : docs.filter((d) => d.porClasificar && (filtroOrigen === 'todos' || d.coleccionOrigen === filtroOrigen)).map((d) => (
+                ) : docsVisibles.filter((d) => d.porClasificar && (filtroOrigen === 'todos' || d.coleccionOrigen === filtroOrigen)).map((d) => (
                   <tr key={d.id}>
                     <td>{ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen || '—'}</td>
                     <td className="rv-registro">{nombreRegistro(d)}</td>

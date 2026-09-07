@@ -57,8 +57,18 @@ export const PanelControlDashboard = () => {
         setMetas(cargadas); setMetasDraft(cargadas);
         setOps(oSnap.docs.map((d) => d.data()));
         const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+        // ✅ V00189: documentos de EMPRESAS de baja/inactivas no cuentan como vencidos
+        const empresasBaja = new Set<string>();
+        eSnap.docs.forEach((d) => { const x: any = d.data(); if (/^(baja|inactiv)/i.test(String(x.status || ''))) empresasBaja.add(d.id); });
         let vencidos = 0;
-        dSnap.docs.forEach((d) => { const x: any = d.data(); if (x.vence && x.fechaVencimiento) { const v = new Date(String(x.fechaVencimiento) + 'T00:00:00'); if (!isNaN(v.getTime()) && v.getTime() < hoy.getTime()) vencidos++; } });
+        dSnap.docs.forEach((d) => {
+          const x: any = d.data();
+          if (String(x.coleccionOrigen || '').toLowerCase().startsWith('empre')) {
+            const rid = String(x.registroId || '');
+            if (empresasBaja.has(rid) || Array.from(empresasBaja).some((id) => id.startsWith(rid) || rid.startsWith(id))) return;
+          }
+          if (x.vence && x.fechaVencimiento) { const v = new Date(String(x.fechaVencimiento) + 'T00:00:00'); if (!isNaN(v.getTime()) && v.getTime() < hoy.getTime()) vencidos++; }
+        });
         let sinMoneda = 0;
         eSnap.docs.forEach((d) => { const x: any = d.data(); if (!String(x.monedaId || x.moneda || x.monedaNombre || '').trim()) sinMoneda++; });
         setAlertas({ docsVencidos: vencidos, solicitudesPend: sSnap.size, empresasSinMoneda: sinMoneda });

@@ -301,6 +301,37 @@ export function EstadisticasDashboard() {
 
   // Devuelve el nombre si el valor es un ID conocido en alguno de los
   //   catálogos indicados (en orden); si no, el valor tal cual.
+  // ✅ V00189: MONEDA DE FACTURACIÓN por cliente — sale de la colección EMPRESAS
+  //   (la moneda de la empresa manda). Mapa nombre normalizado → USD/MXN.
+  const [monedaPorEmpresa, setMonedaPorEmpresa] = useState<Record<string, string>>({});
+  useEffect(() => {
+    getDocs(collection(db, 'empresas')).then((snap) => {
+      const mp: Record<string, string> = {};
+      const canon = (x: any) => {
+        const t = String(x.monedaNombre || x.moneda || '').toUpperCase();
+        if (t.includes('USD') || t.includes('DOLAR')) return 'USD';
+        if (t.includes('MXN') || t.includes('PESO') || t.includes('MN')) return 'MXN';
+        return t.trim() ? t.trim() : '';
+      };
+      snap.docs.forEach((d) => {
+        const x: any = d.data();
+        const mon = canon(x);
+        if (!mon) return;
+        const clave = String(x.nombre || '').trim().toLowerCase();
+        if (clave) mp[clave] = mon;
+        const corto = String(x.nombreCorto || '').trim().toLowerCase();
+        if (corto) mp[corto] = mon;
+      });
+      setMonedaPorEmpresa(mp);
+    }).catch(() => setMonedaPorEmpresa({}));
+  }, []);
+  const monedaDeCliente = (nombre: any): string => monedaPorEmpresa[String(nombre || '').trim().toLowerCase()] || '';
+  const ChipMoneda = ({ nombre }: { nombre: any }) => {
+    const mon = monedaDeCliente(nombre);
+    if (!mon) return null;
+    return <span className={`est-chip-moneda ${mon === 'USD' ? 'est-mon-usd' : 'est-mon-mxn'}`}>{mon}</span>;
+  };
+
   const resolverNombre = (aliases: string | string[], valor: any): string => {
     const s = String(valor ?? '').trim();
     if (!s) return '';
@@ -1475,7 +1506,7 @@ export function EstadisticasDashboard() {
                 </tr>
                 {tendencia.filas.map((f) => (
                   <tr key={f.cliente} className="est-fila-clicable" title={`Ver el desglose de ${f.cliente}`} onClick={() => abrirDetalleCliente(f.cliente)}>
-                    <td className="est-cliente">{f.cliente}</td><td>{num(f.total)}</td><td>{num(f.transfer)}</td>
+                    <td className="est-cliente">{f.cliente} <ChipMoneda nombre={f.cliente} /></td><td>{num(f.total)}</td><td>{num(f.transfer)}</td>
                     <td>{num(f.logistica)}</td><td>{num(f.fletes)}</td>
                     <td className="est-monto">{money(f.monto)}</td>
                     <td>{money(f.total > 0 ? f.monto / f.total : 0)}</td>
