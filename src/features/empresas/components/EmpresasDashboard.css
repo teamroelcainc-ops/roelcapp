@@ -374,7 +374,7 @@
 .ed-sug-nombre { color: #f0f6fc; font-size: 0.82rem; font-weight: 600; }
 .ed-sug-extra { color: #8b949e; font-size: 0.7rem; }
 
-/* ✅ V00190: columna "Cantidad de Operaciones" */
+/* ✅ V00191: columna "Cantidad de Operaciones" */
 .ed-cant-ops {
   display: inline-block;
   min-width: 34px;
@@ -391,7 +391,7 @@
 .ed-cant-ops--cero { background-color: transparent; border-color: #30363d; color: #8b949e; font-weight: 500; }
 .ed-cant-ops--cargando { background-color: transparent; border-color: transparent; color: #8b949e; }
 
-/* ✅ V00190: secciones de la pestaña Referencias (Operaciones/Convenios/Facturas/Pagos) */
+/* ✅ V00191: secciones de la pestaña Referencias (Operaciones/Convenios/Facturas/Pagos) */
 .ed-refs-secciones { display: flex; gap: 8px; flex-wrap: wrap; }
 .ed-refs-chip {
   padding: 6px 14px;
@@ -413,7 +413,7 @@
 .ed-refs-roles { color: #8b949e; font-size: 0.76rem; white-space: nowrap; }
 .ed-refs-monto { font-family: monospace; text-align: right; white-space: nowrap; }
 
-/* ✅ V00190: modal de detalle de operación (desde Referencias) */
+/* ✅ V00191: modal de detalle de operación (desde Referencias) */
 .ed-opdet-overlay { z-index: 2200; }
 .ed-opdet-modal {
   width: min(860px, 94vw);

@@ -126,6 +126,9 @@ export const ResumenDiarioOperaciones = () => {
   const [tipoActivo, setTipoActivo] = useState<TipoResumen>('Transfer');
 
   const [opsAll, setOpsAll] = useState<any[]>([]);
+  // ✅ V00191: referencias del diésel (para contar veces de carga por unidad y día).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio que opsAll).
+  const [refsDieselAll, setRefsDieselAll] = useState<any[]>([]);
   const [maps, setMaps] = useState<Maps>({ emp: {}, tipo: {}, status: {}, conv: {}, uni: {}, ope: {} });
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +147,7 @@ export const ResumenDiarioOperaciones = () => {
   const cargarTodo = async () => {
     setCargando(true); setError(null);
     try {
-      const [opSnap, eSnap, tSnap, sSnap, cdSnap, tarSnap, uniSnap, empSnap] = await Promise.all([
+      const [opSnap, eSnap, tSnap, sSnap, cdSnap, tarSnap, uniSnap, empSnap, dzSnap] = await Promise.all([
         getDocs(collection(db, 'operaciones')),
         getDocs(collection(db, 'empresas')),
         getDocs(collection(db, 'catalogo_tipo_operacion')),
@@ -153,6 +156,9 @@ export const ResumenDiarioOperaciones = () => {
         getDocs(collection(db, 'catalogo_tarifas_referencia')),
         getDocs(collection(db, 'unidades')),
         getDocs(collection(db, 'empleados')),
+        // ✅ V00191: referencias del diésel — para contar las VECES que cada
+        //   unidad fue a cargar en el día (columna DIESEL del resumen Transfer).
+        getDocs(collection(db, 'referencias_diesel')),
       ]);
 
       const emp: Record<string, string> = {};
@@ -199,6 +205,12 @@ export const ResumenDiarioOperaciones = () => {
 
       setMaps({ emp, tipo, status, conv, uni, ope });
       setOpsAll(ops);
+      // ✅ V00191: referencias del diésel con fecha normalizada a ISO.
+      setRefsDieselAll(dzSnap.docs.map(d => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de referencia de diésel sin tipo canónico.
+        const r = d.data() as any;
+        return { id: d.id, ...r, _fechaISO: normalizarFechaISO(r.fecha || r.createdAt) };
+      }));
       cargadoRef.current = true;
     } catch (e: any) {
       console.error('Error cargando datos para resúmenes diarios:', e);
@@ -215,8 +227,11 @@ export const ResumenDiarioOperaciones = () => {
   const clasificar = (o: any): TipoResumen | 'Otro' => {
     const t = norm(tipoTexto(o));
     if (t.includes('transfer')) return 'Transfer';
-    if (t.includes('logist')) return 'Logística';
+    // ✅ V00191: 'flete' se evalúa ANTES que 'logist' — "Logistica Fletes"
+    //   contiene ambas palabras y debe clasificarse como FLETES (misma regla
+    //   V00177/V00133 de Operaciones y Estadísticas).
     if (t.includes('flete')) return 'Fletes';
+    if (t.includes('logist')) return 'Logística';
     return 'Otro';
   };
   const nombreCliente = (o: any): string => {
@@ -256,11 +271,30 @@ export const ResumenDiarioOperaciones = () => {
     return maps.status[k] || (k && !esId(k) ? k : '');
   };
 
-  const dieselDe = (o: any): number => {
-    const t = Number(o.combustibleTotal);
-    if (!isNaN(t) && t) return t;
-    return (Number(o.combustible) || 0) + (Number(o.combustibleExtra) || 0);
+  // ✅ V00191: nombre de unidad de una REFERENCIA DE DIESEL (mismo criterio que
+  //   nombreUnidad de las operaciones: desnormalizado → catálogo → crudo).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de referencia de diésel sin tipo canónico.
+  const nombreUnidadDz = (r: any): string => {
+    const d = r.unidadNombre;
+    if (d && !esId(d)) return String(d).trim();
+    const k = String(r.unidadId || r.unidad || '').trim();
+    return (maps.uni[k] || (k && !esId(k) ? k : '')).trim();
   };
+  // ✅ V00191: VECES que cada unidad fue a cargar diésel en el día seleccionado,
+  //   según las Referencias del Diesel (se excluyen las "No Autorizado").
+  //   Antes la columna DIESEL sumaba galones de las operaciones; ahora es el
+  //   CONTEO de idas a cargar: si la unidad fue una vez, muestra 1.
+  const dieselVecesDia = useMemo(() => {
+    const m = new Map<string, number>();
+    refsDieselAll.forEach(r => {
+      if (r._fechaISO !== fecha) return;
+      if (norm(r.status).includes('no autorizado')) return;
+      const k = nombreUnidadDz(r) || '(Sin unidad)';
+      m.set(k, (m.get(k) || 0) + 1);
+    });
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refsDieselAll, fecha, maps.uni]);
   const textoServicio = (o: any): string => norm(`${nombreConvenio(o)} ${tipoTexto(o)}`);
   const matchKw = (o: any, kw: string): boolean => textoServicio(o).includes(kw);
   const esCancelada = (o: any): boolean => norm(statusNombre(o)).includes('cancel');
@@ -285,22 +319,26 @@ export const ResumenDiarioOperaciones = () => {
 
     if (tipo === 'Transfer') {
       const operadores = groupCount(ops, nombreOperador, '(Sin operador)');
-      // Unidades con OP (conteo) y DIESEL (suma de combustible).
+      // Unidades con OP (conteo de operaciones) y DIESEL.
+      // ✅ V00191: DIESEL = VECES que la unidad fue a cargar diésel ese día
+      //   (según Referencias del Diesel), NO la suma de galones de las
+      //   operaciones. Si la unidad fue una sola vez, la columna muestra 1.
       const um = new Map<string, { op: number; diesel: number }>();
       ops.forEach(o => {
         const k = (nombreUnidad(o) || '').trim() || '(Sin unidad)';
         const cur = um.get(k) || { op: 0, diesel: 0 };
-        cur.op += 1; cur.diesel += dieselDe(o);
+        cur.op += 1;
         um.set(k, cur);
       });
+      um.forEach((v, k) => { v.diesel = dieselVecesDia.get(k) || 0; });
       const unidades = [...um.entries()].map(([label, v]) => ({ label, op: v.op, diesel: v.diesel }))
         .sort((a, b) => b.op - a.op || a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }));
       const dieselTotal = unidades.reduce((s, u) => s + u.diesel, 0);
 
       const trompo = ops.filter(o => matchKw(o, 'trompo')).length;
-      // ✅ CARGA DE DIESEL = cantidad TOTAL de diésel cargado (suma), NO el
-      //    número de operaciones que cargaron. Coincide con la columna DIESEL
-      //    de la tabla de unidades (dieselTotal).
+      // ✅ V00191: CARGA DE DIESEL = total de VECES que las unidades del día
+      //   fueron a cargar diésel. Coincide con la suma de la columna DIESEL
+      //   de la tabla de unidades (dieselTotal).
       const cargaDiesel = dieselTotal;
       const cargaGasolina = ops.filter(o => matchKw(o, 'gasolina')).length;
       const logisticaRoelca = ops.filter(o => matchKw(o, 'logistica roelca') || matchKw(o, 'logística roelca')).length;

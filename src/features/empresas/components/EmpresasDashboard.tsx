@@ -57,7 +57,7 @@ const COLUMNAS_BASE = [
   { id: 'numCliente', label: '# de Cliente', visible: true },
   { id: 'nombre', label: 'Empresa', visible: true },
   { id: 'nombreCorto', label: 'Nombre Corto', visible: true },
-  { id: 'cantidadOps', label: 'Cantidad de Operaciones', visible: true }, // ✅ NUEVO (V00190)
+  { id: 'cantidadOps', label: 'Cantidad de Operaciones', visible: true }, // ✅ NUEVO (V00191)
   { id: 'tiposEmpresa', label: 'Tipo de Empresa', visible: true },
   { id: 'servicios', label: 'Servicios', visible: true },
   { id: 'rfcTaxId', label: 'RFC / Tax Id', visible: true },
@@ -79,7 +79,7 @@ const EmpresasDashboard = () => {
   const [refsCliente, setRefsCliente] = useState<any[] | null>(null);
   const [cargandoRefs, setCargandoRefs] = useState(false);
   const [busquedaRefs, setBusquedaRefs] = useState('');
-  // ✅ NUEVO (V00190): la pestaña Referencias ahora también trae los CONVENIOS,
+  // ✅ NUEVO (V00191): la pestaña Referencias ahora también trae los CONVENIOS,
   //   FACTURAS y PAGOS ligados a la empresa, en secciones con su conteo, y un
   //   modal de detalle por operación (clic en la referencia).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- docs sin tipo canónico (mismo criterio del módulo).
@@ -92,7 +92,7 @@ const EmpresasDashboard = () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de operación sin tipo canónico.
   const [opDetalle, setOpDetalle] = useState<any | null>(null);
 
-  // ✅ NUEVO (V00190): conteo GLOBAL de operaciones por empresa, para la columna
+  // ✅ NUEVO (V00191): conteo GLOBAL de operaciones por empresa, para la columna
   //   "Cantidad de Operaciones" y para el conteo de la pestaña Referencias.
   //   Se descarga UNA sola vez por sesión (caché en memoria + sessionStorage) y
   //   cada operación cuenta UNA vez por empresa, sin importar en cuántos papeles
@@ -258,7 +258,7 @@ const EmpresasDashboard = () => {
   };
 
   // ✅ Cargar las referencias del cliente al abrir su pestaña de Referencias.
-  // ✅ NUEVO (V00190): además de las operaciones (ahora buscadas en TODOS los
+  // ✅ NUEVO (V00191): además de las operaciones (ahora buscadas en TODOS los
   //   papeles: cliente que paga, mercancía, proveedor de servicios, unidad,
   //   origen y destino), se cargan los CONVENIOS, FACTURAS y PAGOS ligados.
   //   Todo se descarga una sola vez por empresa (al cambiar de pestaña y
@@ -354,6 +354,11 @@ const EmpresasDashboard = () => {
   const [filtroMoneda, setFiltroMoneda] = useState('Todas');
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  // ✅ V00191: al elegir una SUGERENCIA del buscador, se filtra EXACTAMENTE esa
+  //   empresa (por id) — antes se buscaba por su nombre y salían todas las que
+  //   compartían texto (p. ej. varias "Landstar Transportation"). Teclear o
+  //   limpiar la búsqueda regresa al filtrado por texto normal.
+  const [empresaExactaId, setEmpresaExactaId] = useState('');
   // ✅ NUEVO: panel lateral derecho de filtros + tabla VACÍA hasta presionar Buscar.
   const [drawerFiltrosAbierto, setDrawerFiltrosAbierto] = useState(false);
   const [busquedaHecha, setBusquedaHecha] = useState(false);
@@ -632,7 +637,7 @@ const EmpresasDashboard = () => {
     return (nombresRef && nombresRef[s]) ? nombresRef[s] : s;
   };
 
-  // ✅ NUEVO (V00190) — helpers de la pestaña Referencias y del detalle de
+  // ✅ NUEVO (V00191) — helpers de la pestaña Referencias y del detalle de
   //   operación: convenio usado, facturas que incluyen la operación y pagos
   //   aplicados a esas facturas (todo se resuelve EN MEMORIA con lo ya cargado).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- doc de factura sin tipo canónico.
@@ -935,7 +940,7 @@ const EmpresasDashboard = () => {
 
       return {
         ...emp,
-        // ✅ NUEVO (V00190): conteo para la columna "Cantidad de Operaciones"
+        // ✅ NUEVO (V00191): conteo para la columna "Cantidad de Operaciones"
         //   (también permite ordenar por ella). -1 = aún cargando.
         cantidadOps: conteoOps ? (conteoOps[emp.id] || 0) : -1,
         _fechaDinamicaUso: fechaDinamicaUso,
@@ -975,6 +980,8 @@ const EmpresasDashboard = () => {
   }, [busqueda, registrosListos]);
 
   const registrosFiltrados = useMemo(() => {
+    // ✅ V00191: selección exacta desde las sugerencias — trae SOLO esa empresa.
+    if (empresaExactaId) return registrosListos.filter((e: any) => e.id === empresaExactaId);
     if (verSinMoneda) {
       const base = empresasSinMoneda;
       if (!busqueda.trim()) return base;
@@ -1008,7 +1015,7 @@ const EmpresasDashboard = () => {
         String(emp._clienteRelLabel || '').toLowerCase().includes(term)
       );
     });
-  }, [registrosListos, filtroActivo, busqueda, verSinMoneda, empresasSinMoneda, filtroMoneda]);
+  }, [registrosListos, filtroActivo, busqueda, verSinMoneda, empresasSinMoneda, filtroMoneda, empresaExactaId]);
 
   // ✅ NUEVO — ORDEN POR COLUMNA (clic en el encabezado: asc/desc), mismo
   //   patrón que Operaciones Activas.
@@ -1103,7 +1110,7 @@ const EmpresasDashboard = () => {
           </span>
         );
       case 'nombreCorto': return <span className="ed-x3">{mostrarDato(emp.nombreCorto)}</span>;
-      // ✅ NUEVO (V00190): total de operaciones donde participa la empresa
+      // ✅ NUEVO (V00191): total de operaciones donde participa la empresa
       //   (cliente que paga, mercancía, proveedor de servicios, unidad, origen o destino).
       case 'cantidadOps': {
         if (!conteoOps) return <span className="ed-cant-ops ed-cant-ops--cargando" title="Contando operaciones…">…</span>;
@@ -1266,7 +1273,7 @@ const EmpresasDashboard = () => {
             {busqueda && (
               <span className="ed-x14">
                 "{busqueda}"
-                <button className="ed-x15" onClick={() => setBusqueda('')}>✕</button>
+                <button className="ed-x15" onClick={() => { setBusqueda(''); setEmpresaExactaId(''); }}>✕</button>
               </span>
             )}
             <span className="ed-x16">
@@ -1601,7 +1608,7 @@ const EmpresasDashboard = () => {
               <button type="button" onClick={() => setActiveTabDetalle('contacto')} style={tabStyle(activeTabDetalle === 'contacto')}>Contacto</button>
               <button type="button" onClick={() => setActiveTabDetalle('uso')} style={tabStyle(activeTabDetalle === 'uso')}>Historial de Uso</button>
               <button type="button" onClick={() => setActiveTabDetalle('documentos')} style={tabStyle(activeTabDetalle === 'documentos')}>Documentos</button>
-              {/* ✅ NUEVO (V00190): la pestaña muestra el conteo de operaciones sin necesidad de abrirla */}
+              {/* ✅ NUEVO (V00191): la pestaña muestra el conteo de operaciones sin necesidad de abrirla */}
               <button type="button" onClick={() => setActiveTabDetalle('referencias')} style={tabStyle(activeTabDetalle === 'referencias')}>
                 Referencias{conteoOps ? ` (${conteoOps[empresaViendo.id] || 0})` : ''}
               </button>
@@ -1737,7 +1744,7 @@ const EmpresasDashboard = () => {
                 <DocumentosLista coleccionOrigen="empresas" registroId={empresaViendo.id ?? ''} />
               )}
 
-              {/* ✅ NUEVO (V00190): referencias completas del cliente/proveedor,
+              {/* ✅ NUEVO (V00191): referencias completas del cliente/proveedor,
                   en secciones — Operaciones (en cualquier papel), Convenios,
                   Facturas y Pagos — cada una con su conteo. Clic en la
                   referencia de una operación abre su detalle. */}
@@ -1912,7 +1919,7 @@ const EmpresasDashboard = () => {
         </div>
       )}
 
-      {/* ✅ NUEVO (V00190) — DETALLE DE OPERACIÓN desde la pestaña Referencias:
+      {/* ✅ NUEVO (V00191) — DETALLE DE OPERACIÓN desde la pestaña Referencias:
           datos generales + convenio usado + facturas que la incluyen + pagos
           aplicados a esas facturas. */}
       {opDetalle && (() => {
@@ -2129,15 +2136,15 @@ const EmpresasDashboard = () => {
               <label className="ed-x121">BÚSQUEDA</label>
               <div className="ed-x122">
                 <svg className="ed-x123" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-                <input className="ed-x124" type="text" placeholder="Razón social, RFC, alias o # cliente..." value={busqueda} onFocus={() => setSugerenciasAbiertas(true)} onChange={(e) => { setBusqueda(e.target.value); setSugerenciasAbiertas(true); }} />
+                <input className="ed-x124" type="text" placeholder="Razón social, RFC, alias o # cliente..." value={busqueda} onFocus={() => setSugerenciasAbiertas(true)} onChange={(e) => { setBusqueda(e.target.value); setEmpresaExactaId(''); setSugerenciasAbiertas(true); }} />
                 {busqueda && (
-                  <button className="ed-x125" onClick={() => { setBusqueda(''); setSugerenciasAbiertas(false); }} title="Limpiar">✕</button>
+                  <button className="ed-x125" onClick={() => { setBusqueda(''); setEmpresaExactaId(''); setSugerenciasAbiertas(false); }} title="Limpiar">✕</button>
                 )}
                 {/* ✅ V00186: recomendaciones en vivo */}
                 {sugerenciasAbiertas && sugerenciasBusqueda.length > 0 && (
                   <div className="ed-sugerencias">
                     {sugerenciasBusqueda.map((emp: any) => (
-                      <button key={emp.id} type="button" className="ed-sugerencia" onClick={() => { setBusqueda(emp.nombre || ''); setSugerenciasAbiertas(false); setBusquedaHecha(true); }}>
+                      <button key={emp.id} type="button" className="ed-sugerencia" onClick={() => { setBusqueda(emp.nombre || ''); setEmpresaExactaId(String(emp.id)); setSugerenciasAbiertas(false); setBusquedaHecha(true); }}>
                         <span className="ed-sug-nombre">{emp.nombre}</span>
                         <span className="ed-sug-extra">{emp.numCliente ? `${emp.numCliente} · ` : ''}{(emp._tiposEmpresaArray || [])[0] || ''}{emp.monedaNombre ? ` · ${emp.monedaNombre}` : ''}</span>
                       </button>
@@ -2170,7 +2177,7 @@ const EmpresasDashboard = () => {
             </div>
 
             <div className="ed-x129">
-              <button className="ed-x130" onClick={() => { setBusqueda(''); setFiltroActivo('Todo'); setFiltroMoneda('Todas'); setSugerenciasAbiertas(false); setBusquedaHecha(false); }}>Limpiar</button>
+              <button className="ed-x130" onClick={() => { setBusqueda(''); setEmpresaExactaId(''); setFiltroActivo('Todo'); setFiltroMoneda('Todas'); setSugerenciasAbiertas(false); setBusquedaHecha(false); }}>Limpiar</button>
               <button className="ed-x131" onClick={() => { setBusquedaHecha(true); setDrawerFiltrosAbierto(false); }}>Buscar</button>
             </div>
           </div>
