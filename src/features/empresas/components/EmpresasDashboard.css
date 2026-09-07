@@ -360,3 +360,7 @@
 .ed-btn-carga-masiva:hover { background-color: rgba(88, 166, 255, 0.12) !important; }
 .ed-btn-carpetas { border: 1px solid #a371f7 !important; color: #a371f7 !important; background: transparent; }
 .ed-btn-carpetas:hover { background-color: rgba(163, 113, 247, 0.12) !important; }
+
+/* ✅ V00178: dar de alta empresas inactivas */
+.ed-btn-alta { border: 1px solid #3fb950 !important; color: #3fb950 !important; background: transparent; }
+.ed-btn-alta:hover { background-color: rgba(63, 185, 80, 0.12) !important; }

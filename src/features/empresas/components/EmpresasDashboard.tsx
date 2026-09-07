@@ -667,6 +667,18 @@ const EmpresasDashboard = () => {
     setModalBajaAbierto(true);
   };
 
+  // ✅ V00178: DAR DE ALTA una empresa inactiva o dada de baja.
+  const darDeAlta = async (empresa: any) => {
+    if (!window.confirm(`¿Dar de ALTA a "${empresa.nombre}"?\n\nVolverá a aparecer como empresa activa.`)) return;
+    try {
+      await actualizarRegistro('empresas', empresa.id, { status: 'Activa', fechaBaja: '', observacionesBaja: '' });
+      await registrarLog('Empresas', 'Edición', `Dio de ALTA a la empresa: ${empresa.nombre}`);
+      if (empresaViendo && empresaViendo.id === empresa.id) {
+        setEmpresaViendo({ ...empresaViendo, status: 'Activa', fechaBaja: '', observacionesBaja: '' });
+      }
+    } catch (e) { alert('Error al dar de alta. Revisa tu conexión.'); }
+  };
+
   const confirmarBaja = async (e: React.FormEvent) => {
     e.preventDefault();
     setGuardandoBaja(true);
@@ -1180,7 +1192,15 @@ const EmpresasDashboard = () => {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           
-                          {emp.status !== 'Baja' && (
+                          {/* ✅ V00178: activas → Dar de Baja; inactivas o de baja → Dar de Alta */}
+                          {!esEmpresaActiva(emp) && (
+                            <button
+                              className="btn-small ed-btn-alta"
+                              title="Dar de Alta (la empresa vuelve a estar activa)"
+                              onClick={(e) => { e.stopPropagation(); darDeAlta(emp); }}
+                            >✔</button>
+                          )}
+                          {esEmpresaActiva(emp) && (
                             <button 
                               className="btn-small btn-warning ed-x35" 
                               title="Dar de Baja"
