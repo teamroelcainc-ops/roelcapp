@@ -66,6 +66,7 @@ const CATALOGO: { seccion: string; items: { clave: string; porDefecto: string }[
       { clave: 'rv.titulo', porDefecto: 'Reporte de Vencimiento' },
       { clave: 'rv.tab_vencidos', porDefecto: 'Vencidos y por vencer' },
       { clave: 'rv.tab_sin_fechas', porDefecto: 'Sin fechas de emisión o vencimiento' },
+      { clave: 'rv.tab_sin_clasificar', porDefecto: 'Documentos sin clasificar' },
       { clave: 'rv.col_usuario', porDefecto: 'Usuario del documento' },
       { clave: 'pc.titulo', porDefecto: 'Panel de Control' },
       { clave: 'pc.graf_ops', porDefecto: 'Operaciones por mes' },

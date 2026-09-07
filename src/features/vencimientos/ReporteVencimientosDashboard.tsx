@@ -28,6 +28,7 @@ interface DocVenc {
   fechaExpedicion: string;
   fechaVencimiento: string;
   dias: number | null; // días para vencer (negativo = vencido); null si no hay fecha
+  porClasificar?: boolean;
 }
 
 const ETQ_ORIGEN: Record<string, string> = {
@@ -44,7 +45,42 @@ export const ReporteVencimientosDashboard = () => {
   const { etq } = useEtiquetas();
   const [docs, setDocs] = useState<DocVenc[]>([]);
   const [cargando, setCargando] = useState(true);
-  const [pestana, setPestana] = useState<'vencimientos' | 'sinFechas'>('vencimientos');
+  const [pestana, setPestana] = useState<'vencimientos' | 'sinFechas' | 'sinClasificar'>('vencimientos');
+  // ✅ V00179: DOCUMENTOS SIN CLASIFICAR — catálogo de tipos para reubicarlos aquí mismo.
+  const [tiposCatalogo, setTiposCatalogo] = useState<{ nombre: string; vence: boolean; modulos: string[] }[]>([]);
+  const [reubicandoId, setReubicandoId] = useState('');
+  useEffect(() => {
+    getDocs(collection(db, 'catalogo_tipo_archivo')).then((snap) => {
+      const esSi = (v: any) => v === true || /^(s|y|1|true)/i.test(String(v ?? ''));
+      const nrm = (t: any) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      setTiposCatalogo(snap.docs.map((d) => {
+        const x: any = d.data();
+        const mods = (Array.isArray(x.modulo) ? x.modulo : String(x.modulo || '').split(',')).map((m: any) => nrm(m)).filter(Boolean);
+        return { nombre: String(x.nombre || '').trim(), vence: esSi(x.vence), modulos: mods };
+      }).filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')));
+    }).catch(() => setTiposCatalogo([]));
+  }, []);
+  // tipos que aplican según la colección de origen del documento
+  const tiposParaDoc = (d: DocVenc) => {
+    const col = String(d.coleccionOrigen || '').toLowerCase();
+    const buscados = col.startsWith('emple') ? ['empleado']
+      : col.startsWith('empre') ? ['cliente', 'proveedor', 'bodega', 'empresa']
+      : col.startsWith('unidad') ? ['unidad'] : [];
+    if (!buscados.length) return tiposCatalogo;
+    const aplica = tiposCatalogo.filter((t) => !t.modulos.length || t.modulos.includes('todos') || t.modulos.some((m) => buscados.some((b) => m.includes(b) || b.includes(m))));
+    return aplica.length ? aplica : tiposCatalogo;
+  };
+  const reubicarDoc = async (d: DocVenc, tipoNombre: string) => {
+    const cat = tiposCatalogo.find((t) => t.nombre === tipoNombre);
+    if (!cat || reubicandoId) return;
+    setReubicandoId(d.id);
+    try {
+      await updateDoc(doc(db, 'documentos', d.id), {
+        tipoDocumento: cat.nombre, subcarpeta: cat.nombre, porClasificar: false, vence: cat.vence,
+      });
+    } catch (e: any) { alert(`No se pudo reubicar: ${e?.message || e}`); }
+    finally { setReubicandoId(''); }
+  };
   const [filtroOrigen, setFiltroOrigen] = useState<string>('todos');
   const [busqueda, setBusqueda] = useState('');
   const [soloQueVencen, setSoloQueVencen] = useState(true); // pestaña 2
@@ -110,6 +146,7 @@ export const ReporteVencimientosDashboard = () => {
         return {
           id: d.id,
           coleccionOrigen: String(x.coleccionOrigen || ''),
+          porClasificar: x.porClasificar === true || String(x.tipoDocumento || '').trim() === 'Por clasificar',
           registroId: String(x.registroId || ''),
           registroNombre: String(x.registroNombre || x.carpeta || x.registroId || '—'),
           tipoDocumento: String(x.tipoDocumento || x.subcarpeta || x.nombreArchivo || 'Documento'),
@@ -185,6 +222,7 @@ export const ReporteVencimientosDashboard = () => {
             { clave: 'rv.titulo', porDefecto: 'Reporte de Vencimiento', ayuda: 'Título del módulo' },
             { clave: 'rv.tab_vencidos', porDefecto: 'Vencidos y por vencer', ayuda: 'Pestaña 1' },
             { clave: 'rv.tab_sin_fechas', porDefecto: 'Sin fechas de emisión o vencimiento', ayuda: 'Pestaña 2' },
+            { clave: 'rv.tab_sin_clasificar', porDefecto: 'Documentos sin clasificar', ayuda: 'Pestaña 3' },
             { clave: 'rv.col_usuario', porDefecto: 'Usuario del documento', ayuda: 'Columna del poseedor' },
           ]} />
           <button className="btn btn-outline rv-btn-excel" onClick={exportarExcel} disabled={filasVencimientos.todas.length === 0}>⬇ Excel</button>
@@ -200,6 +238,11 @@ export const ReporteVencimientosDashboard = () => {
         <button className={`rv-tab${pestana === 'sinFechas' ? ' activa' : ''}`} onClick={() => setPestana('sinFechas')}>
           {etq('rv.tab_sin_fechas', 'Sin fechas de emisión o vencimiento')}
           {filasSinFechas.length > 0 && <span className="rv-badge rv-gris">{filasSinFechas.length}</span>}
+        </button>
+        {/* ✅ V00179: pestaña 3 — documentos pendientes de clasificar */}
+        <button className={`rv-tab${pestana === 'sinClasificar' ? ' activa' : ''}`} onClick={() => setPestana('sinClasificar')}>
+          {etq('rv.tab_sin_clasificar', 'Documentos sin clasificar')}
+          <span className="rv-chip rv-chip-clasificar">{docs.filter((d) => d.porClasificar).length}</span>
         </button>
       </div>
 
@@ -221,7 +264,33 @@ export const ReporteVencimientosDashboard = () => {
 
       {cargando ? <p className="rv-cargando">⏳ Cargando documentos…</p> : (
         <div className="rv-tabla-wrap">
-          {pestana === 'vencimientos' ? (
+          {pestana === 'sinClasificar' ? (
+            <table className="rv-tabla">
+              <thead><tr><th>Tipo</th><th>{etq('rv.col_usuario', 'Usuario del documento')}</th><th>Archivo</th><th>Reubicar en la carpeta…</th><th></th></tr></thead>
+              <tbody>
+                {docs.filter((d) => d.porClasificar && (filtroOrigen === 'todos' || d.coleccionOrigen === filtroOrigen)).length === 0 ? (
+                  <tr><td colSpan={5} className="rv-vacio">No hay documentos pendientes de clasificar. 🎉</td></tr>
+                ) : docs.filter((d) => d.porClasificar && (filtroOrigen === 'todos' || d.coleccionOrigen === filtroOrigen)).map((d) => (
+                  <tr key={d.id}>
+                    <td>{ETQ_ORIGEN[d.coleccionOrigen] || d.coleccionOrigen || '—'}</td>
+                    <td className="rv-registro">{nombreRegistro(d)}</td>
+                    <td>{d.nombreArchivo || d.tipoDocumento}</td>
+                    <td>
+                      {/* ✅ V00179: elegir el tipo lo REUBICA al instante en la carpeta
+                          correcta de ese cliente/proveedor/colaborador/unidad */}
+                      <select className="rv-select-tipo" value="" disabled={reubicandoId === d.id}
+                        onChange={(e) => { if (e.target.value) reubicarDoc(d, e.target.value); }}>
+                        <option value="">{reubicandoId === d.id ? '⏳ Reubicando…' : '— Elegir carpeta/tipo —'}</option>
+                        {tiposParaDoc(d).map((t) => <option key={t.nombre} value={t.nombre}>{t.nombre}{t.vence ? ' · vence' : ''}</option>)}
+                      </select>
+                    </td>
+                    <td className="rv-celda-ver">{d.url ? <a href={d.url} target="_blank" rel="noreferrer">Ver</a> : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : pestana === 'vencimientos' ? (
+
             <table className="rv-tabla">
               <thead><tr><th>Tipo</th><th>{etq('rv.col_usuario', 'Usuario del documento')}</th><th>Documento</th><th>Expedición</th><th>Vencimiento</th><th>Estado</th><th></th></tr></thead>
               <tbody>

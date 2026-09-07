@@ -38,3 +38,8 @@
 .rv-celda-ver { white-space: nowrap; }
 .rv-guardando { margin-right: 6px; }
 .rv-encabezado-der { display: flex; gap: 10px; align-items: center; }
+
+/* ✅ V00179: pestaña Documentos sin clasificar */
+.rv-chip-clasificar { background: rgba(163, 113, 247, 0.15); color: #a371f7; border: 1px solid #a371f7; border-radius: 999px; padding: 0 8px; margin-left: 6px; font-size: 0.7rem; font-weight: 800; }
+.rv-select-tipo { background: #0d1117; border: 1px solid #a371f7; color: #f0f6fc; border-radius: 8px; padding: 6px 8px; font-size: 0.78rem; max-width: 280px; }
+.rv-select-tipo:disabled { opacity: 0.6; }
