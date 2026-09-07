@@ -15,7 +15,7 @@ export const ModalAccesoCampo: React.FC<{ aut: CtrlAutorizaciones }> = ({ aut })
   //   solicitud de siempre. El modal de abajo sigue igual.
   const [listaAbierta, setListaAbierta] = React.useState(false);
   const bloqueados = Array.from(aut.camposBloqueados || []);
-  const barra = (!aut.esAdmin && bloqueados.length > 0) ? (
+  const barra = (bloqueados.length > 0) ? (
     <div className="mac-barra">
       {listaAbierta && (
         <div className="mac-barra-lista">

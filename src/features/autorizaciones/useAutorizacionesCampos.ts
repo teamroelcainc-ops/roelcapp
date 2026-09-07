@@ -45,11 +45,16 @@ export const useAutorizacionesCampos = (moduloClave: string) => {
   }, [moduloClave]);
 
   const camposBloqueados = useMemo(() => {
-    if (!config || !usuario || usuario.esAdmin) return new Set<string>();
+    if (!config || !usuario) return new Set<string>();
     // ✅ V00181: usuario exento del módulo → todo abierto para él
     if ((config.usuariosExentos || []).includes(String(usuario.uid || ''))) return new Set<string>();
+    // ✅ V00182: los CAMPOS marcados aplican a TODOS, incluidos Administradores —
+    //   "Todos los roles" significa exactamente eso. Un Admin se destapa
+    //   quitando la regla en Autorizaciones, agregándose a "Usuarios exentos"
+    //   o con un acceso temporal aprobado. (Las ACCIONES y la administración
+    //   del módulo siguen siendo libres para Admin.)
     const claves = Object.keys(config.campos || {});
-    const r = evaluarAutorizacion(config, 'editar', usuario, claves, etiquetas);
+    const r = evaluarAutorizacion(config, 'editar', { ...usuario, esAdmin: false }, claves, etiquetas);
     // ✅ V00141: un acceso aprobado y vigente destapa el campo para este usuario
     return new Set(r.camposControlados.filter((k) => !accesosVigentes.has(k)));
   }, [config, usuario, etiquetas, accesosVigentes]);
