@@ -69,15 +69,21 @@
 //     Convenio y las Operaciones vean lo mismo.
 //   · La fase de reparación de la migración marca "Aprobado" los detalles del
 //     convenio sin status (si están en Detalles, están aprobados).
+// ✅ V00203 — CONSECUTIVO DEL TARIFARIO (TAR-###):
+//   · Cada tarifario tiene su consecutivo TAR-001, TAR-002… único e
+//     irrepetible (misma transacción de contador que los detalles) y la CLAVE
+//     del documento nuevo ES su consecutivo. Primera columna de la tabla.
+//   · La migración lo asigna a los importados y la reparación se lo pone a
+//     los tarifarios existentes que no lo tengan.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
-import { reservarConsecutivosDetalle } from '../../conveniosDetalles/consecutivos'; // ✅ V00199
+import { reservarConsecutivosDetalle, reservarConsecutivosTarifario } from '../../conveniosDetalles/consecutivos'; // ✅ V00199/V00203
 import './TarifarioClientesDashboard.css';
 
 const ID_USD = '7dca62b3';
@@ -367,12 +373,15 @@ export function TarifarioClientesDashboard() {
         });
         await registrarLog('Tarifario Clientes', 'Edición', `Editó el pre convenio de "${clienteSel.nombre}" (${fecha}) con ${elegidas.length} tarifa(s).`);
       } else {
-        await addDoc(collection(db, 'tarifario_clientes'), {
+        // ✅ V00203: consecutivo TAR-### reservado por transacción; la CLAVE del doc ES el consecutivo.
+        const [consecTar] = await reservarConsecutivosTarifario(1);
+        await setDoc(doc(db, 'tarifario_clientes', consecTar), {
           ...payload,
+          consecutivo: consecTar,
           createdAt: new Date().toISOString(),
           creadoPor: auth.currentUser?.email || '',
         });
-        await registrarLog('Tarifario Clientes', 'Creación', `Creó un pre convenio de "${clienteSel.nombre}" con ${elegidas.length} tarifa(s) (status Pendiente).`);
+        await registrarLog('Tarifario Clientes', 'Creación', `Creó el pre convenio ${consecTar} de "${clienteSel.nombre}" con ${elegidas.length} tarifa(s) (status Pendiente).`);
       }
       setModalAbierto(false);
       setCapturaAbierta(false);
@@ -546,9 +555,11 @@ export function TarifarioClientesDashboard() {
         detallesPorConvenio[k].push(x);
       });
 
+      // ✅ V00203: consecutivos TAR-### para los convenios que se van a importar.
+      const porImportar = snapConv.docs.filter((d) => !yaVinculados.has(d.id));
+      const consecsTar = await reservarConsecutivosTarifario(porImportar.length);
       let importados = 0;
-      for (const d of snapConv.docs) {
-        if (yaVinculados.has(d.id)) continue;
+      for (const d of porImportar) {
         const c = d.data() as Doc;
         const emp = empresaDe[String(c.clienteId || '')] || {};
         const monedaConv = canonMoneda(c.monedaNombre) || canonMoneda(c.monedaId) || 'USD';
@@ -568,7 +579,9 @@ export function TarifarioClientesDashboard() {
             consecutivo: String(det.consecutivo || (String(det.id).startsWith('CONV-') ? det.id : '')),
           };
         });
-        await addDoc(collection(db, 'tarifario_clientes'), {
+        const consecTar = consecsTar[importados];
+        await setDoc(doc(db, 'tarifario_clientes', consecTar), {
+          consecutivo: consecTar, // ✅ V00203
           fecha: String(c.fechaConvenio || hoyLocalISO()),
           clienteId: String(c.clienteId || ''),
           clienteNombre: String(c.clienteNombre || ''),
@@ -588,6 +601,14 @@ export function TarifarioClientesDashboard() {
           aprobadoPor: auth.currentUser?.email || '',
         });
         importados += 1;
+      }
+
+      // ✅ V00203: tarifarios existentes sin TAR-### reciben el suyo (solo el
+      //   campo; conservan su clave original).
+      const tarSinConsec = snapTarifarios.docs.filter((td) => !String((td.data() as Doc).consecutivo || '').trim());
+      const tarNuevos = await reservarConsecutivosTarifario(tarSinConsec.length);
+      for (let i = 0; i < tarSinConsec.length; i++) {
+        await updateDoc(doc(db, 'tarifario_clientes', tarSinConsec[i].id), { consecutivo: tarNuevos[i] });
       }
 
       // ✅ V00200: REPARA los tarifarios ya migrados que no traían consecutivo
@@ -614,7 +635,7 @@ export function TarifarioClientesDashboard() {
       }
 
       await registrarLog('Tarifario Clientes', 'Migración', `Importó ${importados} convenio(s) a Tarifario Clientes en status Aprobado y asignó ${sinConsecutivo.length} consecutivo(s) a Detalles del Convenio.`);
-      alert(`Migración lista. ✅\n\n· Convenios importados como tarifarios Aprobados: ${importados}\n· Detalles con consecutivo nuevo: ${sinConsecutivo.length}\n· Convenios ya vinculados (saltados): ${yaVinculados.size}\n· Tarifarios reparados con consecutivos: ${reparados}\n· Detalles marcados Aprobado: ${statusPuestos}`);
+      alert(`Migración lista. ✅\n\n· Convenios importados como tarifarios Aprobados: ${importados}\n· Detalles con consecutivo nuevo: ${sinConsecutivo.length}\n· Convenios ya vinculados (saltados): ${yaVinculados.size}\n· Tarifarios reparados con consecutivos: ${reparados}\n· Detalles marcados Aprobado: ${statusPuestos}\n· Tarifarios con TAR- nuevo: ${tarSinConsec.length}`);
     } catch (e) {
       console.error('No se pudo importar los convenios:', e);
       alert('No se pudo completar la importación de convenios.');
@@ -891,7 +912,7 @@ export function TarifarioClientesDashboard() {
           <div className="tc-marco">
             <table className="tc-tabla">
               <thead>
-                <tr><th>ACCIONES</th><th>FECHA</th><th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>
+                <tr><th>CONSECUTIVO</th><th>ACCIONES</th><th>FECHA</th><th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>{/* ✅ V00203 */}
               </thead>
               <tbody>
                 {registros.map((r) => (
@@ -933,6 +954,7 @@ export function TarifarioClientesDashboard() {
               </div>
 
               <div className="tc-detalle-datos">
+                <div><span className="tc-label">Consecutivo</span><b className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TAR-') ? r.id : '—')}</b></div>{/* ✅ V00203 */}
                 <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>{/* ✅ V00201: sin número de convenio (no aplica) */}
                 <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
                 <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
