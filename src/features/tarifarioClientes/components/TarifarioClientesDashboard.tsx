@@ -1,23 +1,23 @@
 // src/features/tarifarioClientes/components/TarifarioClientesDashboard.tsx
 // ---------------------------------------------------------------------------
-// ✅ V00191 — TARIFARIO CLIENTES (módulo nuevo).
-//   Captura: Fecha, Cliente que Paga, Moneda del cliente y Crédito — moneda y
-//   crédito vienen DIRECTO de la tabla Empresas y NO son editables aquí.
-//   El botón "Pre convenios" abre un modal con las TARIFAS DE REFERENCIA
-//   (catalogo_tarifas_referencia) y al Guardar se crea el registro en
-//   `tarifario_clientes` con status "Pendiente".
-// ✅ V00192 — MEJORAS:
-//   · El formulario de captura ahora vive en un MODAL (botón "+ Nuevo
-//     Tarifario"); la página muestra solo la lista.
-//   · Al marcar una tarifa con varios costos sugeridos se elige UNO (el que
-//     saldrá como TARIFA en el documento); por defecto el primero.
-//   · EXPORTAR PDF con el formato del tarifario de Roelca (logo + encabezado +
-//     tabla TIPO DE SERVICIO / CLAVE / TARIFA + condiciones + firma), con
-//     botón tanto en la fila de la tabla como dentro del detalle expandido.
-//     Mismo mecanismo que los demás PDF: ventana con window.print().
+// ✅ V00191 — TARIFARIO CLIENTES (módulo nuevo): captura de pre convenios a
+//   partir de las Tarifas de Referencia; moneda y crédito vienen de Empresas.
+// ✅ V00192 — Captura en modal "+ Nuevo Tarifario"; costo elegido por tarifa;
+//   export PDF (formato tarifario Roelca) en fila y detalle vía window.print.
+// ✅ V00193 — Columna "Cotizado En" (USD/MXN); formulario a dos columnas;
+//   pre convenios guardados visibles dentro del formulario.
+// ✅ V00194 — MEJORAS:
+//   · Botones EDITAR y ELIMINAR al INICIO de la fila (convención de la app).
+//   · Clic en cualquier parte de la fila abre/cierra el DETALLE del registro.
+//   · Desde el detalle se puede APROBAR (status Pendiente → "Aprobado").
+//   · El modal de pre convenio queda con columnas: TARIFAS · TARIFAS
+//     SUGERIDAS · TARIFA (campo de moneda editable) · COTIZADO EN; los costos
+//     sugeridos son chips que llenan el campo TARIFA al hacer clic.
+//   · EDICIÓN de un pre convenio existente (mismo flujo de captura, guarda
+//     con updateDoc y registra log de Edición).
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -73,19 +73,21 @@ export function TarifarioClientesDashboard() {
   const [tarifasRef, setTarifasRef] = useState<Doc[]>([]);
   const [cargandoCat, setCargandoCat] = useState(true);
 
-  // ── Captura (✅ V00192: ahora en modal) ──
+  // ── Captura (modal) ──
   const [capturaAbierta, setCapturaAbierta] = useState(false);
   const [fecha, setFecha] = useState(hoyLocalISO());
   const [busquedaCliente, setBusquedaCliente] = useState('');
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
   const [clienteSel, setClienteSel] = useState<Doc | null>(null);
+  // ✅ V00194: si hay id, la captura está EDITANDO ese pre convenio.
+  const [editandoId, setEditandoId] = useState('');
 
   // ── Modal Pre convenios ──
   const [modalAbierto, setModalAbierto] = useState(false);
   const [busquedaTarifa, setBusquedaTarifa] = useState('');
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
-  // ✅ V00192: costo elegido por tarifa (índice dentro de costosDe). Default 0.
-  const [costoElegido, setCostoElegido] = useState<Record<string, number>>({});
+  // ✅ V00194: TARIFA como campo de moneda editable (texto numérico por tarifa).
+  const [tarifaValor, setTarifaValor] = useState<Record<string, string>>({});
   // ✅ V00193: moneda en que se cotiza cada tarifa ("Cotizado En"). Default: la del cliente.
   const [monedaTarifa, setMonedaTarifa] = useState<Record<string, 'USD' | 'MXN'>>({});
   const [guardando, setGuardando] = useState(false);
@@ -163,11 +165,49 @@ export function TarifarioClientesDashboard() {
     setSugerenciasAbiertas(false);
   };
 
+  const limpiarCaptura = () => {
+    setEditandoId('');
+    setSeleccion(new Set());
+    setTarifaValor({});
+    setMonedaTarifa({});
+    setBusquedaTarifa('');
+    setClienteSel(null);
+    setBusquedaCliente('');
+  };
+
   const cerrarCaptura = () => {
     if (guardando) return;
     setCapturaAbierta(false);
     setModalAbierto(false);
     setSugerenciasAbiertas(false);
+    limpiarCaptura();
+  };
+
+  // ✅ V00194: abrir la captura en modo EDICIÓN con todo precargado.
+  const abrirEdicion = (r: Doc) => {
+    const emp = empresas.find((e) => String(e.id) === String(r.clienteId));
+    const pseudo = emp || { id: r.clienteId, nombre: r.clienteNombre, nombreCorto: r.clienteNombreCorto, moneda: r.moneda, diasCredito: r.creditoDias, limiteCredito: r.limiteCredito };
+    setClienteSel(pseudo);
+    setBusquedaCliente(String(pseudo.nombre || ''));
+    setFecha(String(r.fecha || hoyLocalISO()));
+    const sel = new Set<string>();
+    const valores: Record<string, string> = {};
+    const monedas: Record<string, 'USD' | 'MXN'> = {};
+    (Array.isArray(r.tarifas) ? r.tarifas : []).forEach((t: Doc) => {
+      const id = String(t.tarifaReferenciaId || '');
+      if (!id) return;
+      sel.add(id);
+      valores[id] = String(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || '');
+      const m = canonMoneda(t.cotizadoEn);
+      if (m) monedas[id] = m;
+    });
+    setSeleccion(sel);
+    setTarifaValor(valores);
+    setMonedaTarifa(monedas);
+    setEditandoId(String(r.id));
+    setSugerenciasAbiertas(false);
+    setBusquedaTarifa('');
+    setCapturaAbierta(true);
   };
 
   const tarifasVisibles = useMemo(() => {
@@ -178,15 +218,25 @@ export function TarifarioClientesDashboard() {
     );
   }, [tarifasRef, busquedaTarifa]);
 
-  const toggleTarifa = (id: string) =>
-    setSeleccion((prev) => { const s = new Set(prev); if (s.has(id)) s.delete(id); else s.add(id); return s; });
+  const toggleTarifa = (t: Doc) =>
+    setSeleccion((prev) => {
+      const s = new Set(prev);
+      if (s.has(t.id)) {
+        s.delete(t.id);
+      } else {
+        s.add(t.id);
+        // Al marcar, precarga TARIFA con el primer costo sugerido si está vacía.
+        setTarifaValor((p) => (p[t.id] ? p : { ...p, [t.id]: String(costosDe(t)[0] ?? '') }));
+      }
+      return s;
+    });
 
   const guardarPreConvenio = async () => {
     if (!clienteSel || seleccion.size === 0 || guardando) return;
     setGuardando(true);
     try {
       const elegidas = tarifasRef.filter((t) => seleccion.has(t.id));
-      await addDoc(collection(db, 'tarifario_clientes'), {
+      const payload = {
         fecha,
         clienteId: String(clienteSel.id),
         clienteNombre: String(clienteSel.nombre || ''),
@@ -197,7 +247,6 @@ export function TarifarioClientesDashboard() {
         limiteCredito,
         tarifas: elegidas.map((t) => {
           const costos = costosDe(t);
-          const idx = Math.min(costoElegido[t.id] ?? 0, Math.max(costos.length - 1, 0));
           return {
             tarifaReferenciaId: String(t.id),
             descripcion: String(t.descripcion || ''),
@@ -205,26 +254,34 @@ export function TarifarioClientesDashboard() {
             origen: String(t.origen || ''),
             destino: String(t.destino || ''),
             costosSugeridos: costos,
-            // ✅ V00192: costo ELEGIDO — es el que sale como TARIFA en el PDF.
-            tarifa: costos[idx] || 0,
+            // ✅ V00194: TARIFA capturada en el campo de moneda (fallback: 1er sugerido).
+            tarifa: Number(tarifaValor[t.id]) || costos[0] || 0,
             // ✅ V00193: moneda en que quedó cotizada esta línea.
             cotizadoEn: monedaTarifa[t.id] || monedaCliente || 'USD',
             status: 'Pendiente',
           };
         }),
         status: 'Pendiente',
-        createdAt: new Date().toISOString(),
-        creadoPor: auth.currentUser?.email || '',
-      });
-      await registrarLog('Tarifario Clientes', 'Creación', `Creó un pre convenio de "${clienteSel.nombre}" con ${elegidas.length} tarifa(s) (status Pendiente).`);
+      };
+      if (editandoId) {
+        // ✅ V00194: EDICIÓN de un pre convenio existente.
+        await updateDoc(doc(db, 'tarifario_clientes', editandoId), {
+          ...payload,
+          editadoEl: new Date().toISOString(),
+          editadoPor: auth.currentUser?.email || '',
+        });
+        await registrarLog('Tarifario Clientes', 'Edición', `Editó el pre convenio de "${clienteSel.nombre}" (${fecha}) con ${elegidas.length} tarifa(s).`);
+      } else {
+        await addDoc(collection(db, 'tarifario_clientes'), {
+          ...payload,
+          createdAt: new Date().toISOString(),
+          creadoPor: auth.currentUser?.email || '',
+        });
+        await registrarLog('Tarifario Clientes', 'Creación', `Creó un pre convenio de "${clienteSel.nombre}" con ${elegidas.length} tarifa(s) (status Pendiente).`);
+      }
       setModalAbierto(false);
       setCapturaAbierta(false);
-      setSeleccion(new Set());
-      setCostoElegido({});
-      setMonedaTarifa({});
-      setBusquedaTarifa('');
-      setClienteSel(null);
-      setBusquedaCliente('');
+      limpiarCaptura();
     } catch (e) {
       console.error('No se pudo guardar el pre convenio:', e);
       alert('No se pudo guardar el pre convenio.');
@@ -244,7 +301,24 @@ export function TarifarioClientesDashboard() {
     }
   };
 
-  // ── ✅ V00192: EXPORTAR PDF con el formato del tarifario de Roelca ──
+  // ✅ V00194: aprobar desde el detalle (Pendiente → "Aprobado", doc + líneas).
+  const aprobarRegistro = async (r: Doc) => {
+    if (!window.confirm(`¿Aprobar el pre convenio de "${r.clienteNombre}" del ${r.fecha}?`)) return;
+    try {
+      await updateDoc(doc(db, 'tarifario_clientes', r.id), {
+        status: 'Aprobado',
+        tarifas: (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc) => ({ ...t, status: 'Aprobado' })),
+        aprobadoEl: new Date().toISOString(),
+        aprobadoPor: auth.currentUser?.email || '',
+      });
+      await registrarLog('Tarifario Clientes', 'Aprobación', `Aprobó el pre convenio de "${r.clienteNombre}" (${r.fecha}).`);
+    } catch (e) {
+      console.error('No se pudo aprobar el pre convenio:', e);
+      alert('No se pudo aprobar el pre convenio.');
+    }
+  };
+
+  // ── PDF con el formato del tarifario de Roelca (✅ V00192) ──
   const construirHTMLTarifario = (r: Doc): string => {
     const filas = (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc, i: number) => {
       const tarifa = Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0;
@@ -357,6 +431,31 @@ export function TarifarioClientesDashboard() {
     w.document.close();
   };
 
+  /** Tabla interna de tarifas de un registro (formulario y detalle — ✅ V00194). */
+  const tablaTarifasDe = (r: Doc) => (
+    <table className="tc-tabla-interna">
+      <thead>
+        <tr><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th></tr>
+      </thead>
+      <tbody>
+        {(Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc, i: number) => (
+          <tr key={`${r.id}-${i}`}>
+            <td>
+              <div>{t.descripcion || '—'}</div>
+              {(t.clave || t.origen || t.destino) && (
+                <div className="tc-sub-linea">{[t.clave, t.origen && `${t.origen} → ${t.destino || '?'}`].filter(Boolean).join(' · ')}</div>
+              )}
+            </td>
+            <td className="tc-td-num">{(t.costosSugeridos || []).length > 0 ? (t.costosSugeridos as number[]).map(fmtMoney).join(' · ') : '—'}</td>
+            <td className="tc-td-num">{fmtMoney(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0)}</td>
+            <td>{(t.cotizadoEn || r.moneda) ? <span className={`tc-chip ${(t.cotizadoEn || r.moneda) === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{t.cotizadoEn || r.moneda}</span> : '—'}</td>
+            <td><span className={`tc-chip ${String(t.status) === 'Aprobado' ? 'tc-chip-aprobado' : 'tc-chip-pendiente'}`}>{t.status || 'Pendiente'}</span></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+
   return (
     <div className="tc-contenedor">
       <div className="tc-encabezado">
@@ -364,8 +463,7 @@ export function TarifarioClientesDashboard() {
           <h1 className="tc-titulo">Tarifario Clientes</h1>
           <p className="tc-sub">Pre convenios del cliente a partir de las Tarifas de Referencia. La moneda y el crédito vienen de la tabla Empresas y no se editan aquí.</p>
         </div>
-        {/* ✅ V00192: la captura ahora abre en modal */}
-        <button type="button" className="tc-btn-preconvenio" onClick={() => { setCapturaAbierta(true); setFecha(hoyLocalISO()); }}>
+        <button type="button" className="tc-btn-preconvenio" onClick={() => { limpiarCaptura(); setCapturaAbierta(true); setFecha(hoyLocalISO()); }}>
           + Nuevo Tarifario
         </button>
       </div>
@@ -379,56 +477,36 @@ export function TarifarioClientesDashboard() {
           <div className="tc-marco">
             <table className="tc-tabla">
               <thead>
-                <tr><th></th><th>FECHA</th><th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th><th>ACCIONES</th></tr>
+                <tr><th>ACCIONES</th><th>FECHA</th><th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>
               </thead>
               <tbody>
                 {registros.map((r) => (
                   <>
-                    <tr key={r.id}>
-                      <td className="tc-td-toggle">
-                        <button type="button" className="tc-toggle" onClick={() => setFilaAbierta(filaAbierta === r.id ? '' : r.id)} title={filaAbierta === r.id ? 'Contraer' : 'Ver las tarifas'}>
-                          {filaAbierta === r.id ? '▾' : '▸'}
-                        </button>
+                    {/* ✅ V00194: clic en la fila abre el detalle; acciones al inicio */}
+                    <tr key={r.id} className="tc-fila-click" onClick={() => setFilaAbierta(filaAbierta === r.id ? '' : r.id)}>
+                      <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
+                        <button type="button" className="tc-btn-editar" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}>✏️</button>
+                        <button type="button" className="tc-btn-eliminar" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}>🗑</button>
+                        <button type="button" className="tc-btn-pdf" title="Exportar el tarifario en PDF" onClick={() => exportarPDF(r)}>PDF</button>
                       </td>
                       <td>{r.fecha || '—'}</td>
                       <td className="tc-td-cliente">{r.clienteNombre || '—'}</td>
                       <td>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</td>
                       <td>{r.creditoDias > 0 ? `${r.creditoDias} día(s)` : '—'}</td>
                       <td className="tc-td-num">{Array.isArray(r.tarifas) ? r.tarifas.length : 0}</td>
-                      <td><span className={`tc-chip ${String(r.status) === 'Pendiente' ? 'tc-chip-pendiente' : 'tc-chip-otro'}`}>{r.status || '—'}</span></td>
-                      <td className="tc-td-acciones">
-                        {/* ✅ V00192: exportar PDF desde la tabla */}
-                        <button type="button" className="tc-btn-pdf" title="Exportar el tarifario en PDF" onClick={() => exportarPDF(r)}>PDF</button>
-                        <button type="button" className="tc-btn-eliminar" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}>🗑</button>
-                      </td>
+                      <td><span className={`tc-chip ${String(r.status) === 'Aprobado' ? 'tc-chip-aprobado' : String(r.status) === 'Pendiente' ? 'tc-chip-pendiente' : 'tc-chip-otro'}`}>{r.status || '—'}</span></td>
                     </tr>
                     {filaAbierta === r.id && (
                       <tr key={`${r.id}-det`} className="tc-fila-detalle">
-                        <td colSpan={8}>
+                        <td colSpan={7}>
                           <div className="tc-detalle-acciones">
-                            {/* ✅ V00192: exportar PDF también desde el detalle */}
+                            {/* ✅ V00194: aprobar desde el detalle */}
+                            {String(r.status) !== 'Aprobado' && (
+                              <button type="button" className="tc-btn-aprobar" onClick={() => aprobarRegistro(r)}>✔ Aprobar</button>
+                            )}
                             <button type="button" className="tc-btn-pdf" onClick={() => exportarPDF(r)}>⬇ Descargar PDF</button>
                           </div>
-                          <table className="tc-tabla-interna">
-                            <thead>
-                              <tr><th>DESCRIPCIÓN</th><th>CLAVE</th><th>ORIGEN</th><th>DESTINO</th><th>COTIZADO EN</th><th>TARIFA</th><th>COSTOS SUGERIDOS</th><th>STATUS</th></tr>
-                            </thead>
-                            <tbody>
-                              {(r.tarifas || []).map((t: Doc, i: number) => (
-                                <tr key={`${r.id}-${i}`}>
-                                  <td>{t.descripcion || '—'}</td>
-                                  <td>{t.clave || '—'}</td>
-                                  <td>{t.origen || '—'}</td>
-                                  <td>{t.destino || '—'}</td>
-                                  {/* ✅ V00193: moneda en que se cotizó la línea */}
-                                  <td>{(t.cotizadoEn || r.moneda) ? <span className={`tc-chip ${(t.cotizadoEn || r.moneda) === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{t.cotizadoEn || r.moneda}</span> : '—'}</td>
-                                  <td className="tc-td-num">{fmtMoney(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0)}</td>
-                                  <td className="tc-td-num">{(t.costosSugeridos || []).length > 0 ? (t.costosSugeridos as number[]).map(fmtMoney).join(' · ') : '—'}</td>
-                                  <td><span className="tc-chip tc-chip-pendiente">{t.status || 'Pendiente'}</span></td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                          {tablaTarifasDe(r)}
                         </td>
                       </tr>
                     )}
@@ -440,13 +518,13 @@ export function TarifarioClientesDashboard() {
         )}
       </div>
 
-      {/* ── ✅ V00192: MODAL DE CAPTURA ── */}
+      {/* ── MODAL DE CAPTURA (✅ V00192; edición ✅ V00194) ── */}
       {capturaAbierta && (
         <div className="modal-overlay tc-overlay" onClick={cerrarCaptura}>
           <div className="tc-modal tc-modal-captura" onClick={(e) => e.stopPropagation()}>
             <div className="tc-modal-encabezado">
               <div>
-                <h3 className="tc-modal-titulo">Nuevo Tarifario</h3>
+                <h3 className="tc-modal-titulo">{editandoId ? 'Editar Tarifario' : 'Nuevo Tarifario'}</h3>
                 <p className="tc-modal-sub">Elige el cliente y presiona "Pre convenios" para armar el paquete de tarifas.</p>
               </div>
               <button type="button" className="tc-cerrar" onClick={cerrarCaptura}>✕</button>
@@ -499,20 +577,18 @@ export function TarifarioClientesDashboard() {
                 {registros.filter((r) => String(r.clienteId) === String(clienteSel.id)).length === 0 ? (
                   <p className="tc-vacio tc-vacio-mini">Este cliente aún no tiene pre convenios guardados.</p>
                 ) : (
-                  <table className="tc-tabla-interna">
-                    <thead><tr><th>FECHA</th><th>TARIFAS</th><th>COTIZADO EN</th><th>STATUS</th><th></th></tr></thead>
-                    <tbody>
-                      {registros.filter((r) => String(r.clienteId) === String(clienteSel.id)).map((r) => (
-                        <tr key={`cap-${r.id}`}>
-                          <td>{r.fecha || '—'}</td>
-                          <td className="tc-td-num">{Array.isArray(r.tarifas) ? r.tarifas.length : 0}</td>
-                          <td>{[...new Set((r.tarifas || []).map((t: Doc) => String(t.cotizadoEn || r.moneda || '')))].filter(Boolean).join(' · ') || '—'}</td>
-                          <td><span className={`tc-chip ${String(r.status) === 'Pendiente' ? 'tc-chip-pendiente' : 'tc-chip-otro'}`}>{r.status || '—'}</span></td>
-                          <td className="tc-td-acciones"><button type="button" className="tc-btn-pdf" onClick={() => exportarPDF(r)}>PDF</button></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  registros.filter((r) => String(r.clienteId) === String(clienteSel.id)).map((r) => (
+                    <div key={`cap-${r.id}`} className="tc-guardado-bloque">
+                      <div className="tc-guardado-encabezado">
+                        <span><b>{r.fecha || '—'}</b> · {Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s)</span>
+                        <span className="tc-guardado-acciones">
+                          <span className={`tc-chip ${String(r.status) === 'Aprobado' ? 'tc-chip-aprobado' : 'tc-chip-pendiente'}`}>{r.status || '—'}</span>
+                          <button type="button" className="tc-btn-pdf" onClick={() => exportarPDF(r)}>PDF</button>
+                        </span>
+                      </div>
+                      {tablaTarifasDe(r)}
+                    </div>
+                  ))
                 )}
               </div>
             )}
@@ -544,7 +620,7 @@ export function TarifarioClientesDashboard() {
               <div>
                 <h3 className="tc-modal-titulo">Pre convenio — <span className="tc-td-cliente">{clienteSel.nombre}</span></h3>
                 <p className="tc-modal-sub">
-                  Marca las tarifas y elige el costo que aplicará. Se guardará con status <b>Pendiente</b>.
+                  Marca las tarifas, captura la TARIFA y elige en qué moneda se cotiza. Se guardará con status <b>Pendiente</b>.
                   {etiquetaMoneda && <> Moneda del cliente: <span className={`tc-chip ${monedaCliente === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{monedaCliente}</span></>}
                 </p>
               </div>
@@ -565,23 +641,52 @@ export function TarifarioClientesDashboard() {
               ) : (
                 <table className="tc-tabla">
                   <thead>
-                    <tr><th className="tc-th-check"></th><th>DESCRIPCIÓN</th><th>CLAVE</th><th>ORIGEN</th><th>DESTINO</th><th>COTIZADO EN</th><th>COSTO A APLICAR</th></tr>
+                    {/* ✅ V00194: TARIFAS · TARIFAS SUGERIDAS · TARIFA (moneda) · COTIZADO EN */}
+                    <tr><th className="tc-th-check"></th><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th></tr>
                   </thead>
                   <tbody>
                     {tarifasVisibles.map((t) => {
                       const costos = costosDe(t);
                       const marcada = seleccion.has(t.id);
-                      const idx = Math.min(costoElegido[t.id] ?? 0, Math.max(costos.length - 1, 0));
                       return (
-                        <tr key={t.id} className={marcada ? 'tc-fila-marcada' : ''} onClick={() => toggleTarifa(t.id)}>
+                        <tr key={t.id} className={marcada ? 'tc-fila-marcada' : ''} onClick={() => toggleTarifa(t)}>
                           <td className="tc-th-check">
-                            <input type="checkbox" checked={marcada} onChange={() => toggleTarifa(t.id)} onClick={(e) => e.stopPropagation()} />
+                            <input type="checkbox" checked={marcada} onChange={() => toggleTarifa(t)} onClick={(e) => e.stopPropagation()} />
                           </td>
-                          <td>{t.descripcion || '—'}</td>
-                          <td className="tc-td-num">{claveDe(t) || '—'}</td>
-                          <td>{t.origen || '—'}</td>
-                          <td>{t.destino || '—'}</td>
-                          {/* ✅ V00193: columna "Cotizado En" (tipo moneda) a la izquierda del monto */}
+                          <td>
+                            <div>{t.descripcion || '—'}</div>
+                            {(claveDe(t) || t.origen || t.destino) && (
+                              <div className="tc-sub-linea">{[claveDe(t), t.origen && `${t.origen} → ${t.destino || '?'}`].filter(Boolean).join(' · ')}</div>
+                            )}
+                          </td>
+                          <td className="tc-td-num" onClick={(e) => e.stopPropagation()}>
+                            {costos.length === 0 ? '—' : costos.map((c, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                className="tc-chip-sugerido"
+                                title="Usar este costo como TARIFA"
+                                onClick={() => { setTarifaValor((p) => ({ ...p, [t.id]: String(c) })); if (!marcada) toggleTarifa(t); }}
+                              >
+                                {fmtMoney(c)}
+                              </button>
+                            ))}
+                          </td>
+                          <td className="tc-td-num" onClick={(e) => e.stopPropagation()}>
+                            {/* ✅ V00194: TARIFA como campo de moneda */}
+                            <div className="tc-input-moneda">
+                              <span>$</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                className="form-control tc-input-tarifa"
+                                placeholder="0.00"
+                                value={tarifaValor[t.id] ?? ''}
+                                onChange={(e) => setTarifaValor((p) => ({ ...p, [t.id]: e.target.value }))}
+                              />
+                            </div>
+                          </td>
                           <td className="tc-td-num" onClick={(e) => e.stopPropagation()}>
                             <select
                               className="form-control tc-select-costo"
@@ -591,18 +696,6 @@ export function TarifarioClientesDashboard() {
                               <option value="USD">USD</option>
                               <option value="MXN">MXN</option>
                             </select>
-                          </td>
-                          <td className="tc-td-num" onClick={(e) => e.stopPropagation()}>
-                            {costos.length === 0 ? '—' : costos.length === 1 ? fmtMoney(costos[0]) : (
-                              /* ✅ V00192: al haber varios costos sugeridos, se elige el que aplica */
-                              <select
-                                className="form-control tc-select-costo"
-                                value={idx}
-                                onChange={(e) => setCostoElegido((p) => ({ ...p, [t.id]: Number(e.target.value) }))}
-                              >
-                                {costos.map((c, i) => <option key={i} value={i}>{fmtMoney(c)}</option>)}
-                              </select>
-                            )}
                           </td>
                         </tr>
                       );
@@ -617,7 +710,7 @@ export function TarifarioClientesDashboard() {
               <div className="tc-modal-botones">
                 <button type="button" className="btn btn-outline" disabled={guardando} onClick={() => setModalAbierto(false)}>Cancelar</button>
                 <button type="button" className="tc-btn-guardar" disabled={seleccion.size === 0 || guardando} onClick={guardarPreConvenio}>
-                  {guardando ? 'Guardando…' : 'Guardar'}
+                  {guardando ? 'Guardando…' : editandoId ? 'Guardar cambios' : 'Guardar'}
                 </button>
               </div>
             </div>

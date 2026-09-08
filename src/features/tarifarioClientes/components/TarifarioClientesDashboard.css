@@ -184,3 +184,61 @@
   color: #c9d1d9;
 }
 .tc-vacio-mini { padding: 6px 0; font-size: 0.82rem; }
+
+/* ✅ V00194: acciones al inicio, fila clickeable, aprobar, campo TARIFA y chips sugeridos */
+.tc-fila-click { cursor: pointer; }
+.tc-fila-click:hover td { background-color: rgba(88, 166, 255, 0.05); }
+.tc-btn-editar {
+  padding: 4px 8px;
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  margin-right: 6px;
+}
+.tc-btn-editar:hover { border-color: #58a6ff; background-color: rgba(88, 166, 255, 0.1); }
+.tc-td-acciones { width: 150px; }
+.tc-btn-aprobar {
+  padding: 5px 14px;
+  background-color: #1a7f37;
+  border: 1px solid #2ea043;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-right: 8px;
+}
+.tc-btn-aprobar:hover { background-color: #2ea043; }
+.tc-chip-aprobado {
+  background-color: rgba(46, 160, 67, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(46, 160, 67, 0.4);
+}
+.tc-chip-sugerido {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 2px 8px;
+  background-color: #21262d;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  color: #c9d1d9;
+  cursor: pointer;
+  font-size: 0.74rem;
+}
+.tc-chip-sugerido:hover { border-color: #58a6ff; color: #58a6ff; }
+.tc-input-moneda { display: inline-flex; align-items: center; gap: 4px; }
+.tc-input-moneda > span { color: #8b949e; }
+.tc-input-tarifa { width: 96px; padding: 4px 8px; font-size: 0.82rem; text-align: right; }
+.tc-sub-linea { font-size: 0.72rem; color: #8b949e; margin-top: 2px; }
+.tc-guardado-bloque { margin-bottom: 14px; }
+.tc-guardado-encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0 6px 0;
+  font-size: 0.82rem;
+  color: #c9d1d9;
+}
+.tc-guardado-acciones { display: inline-flex; align-items: center; gap: 8px; }
