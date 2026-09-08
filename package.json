@@ -5,13 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/verificar-imports.mjs && node scripts/sync-version.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "prebuild": "node scripts/verificar-imports.mjs && node scripts/sync-version.mjs",
-    "prepare": "git config core.hooksPath .githooks || true",
-    "version:bump": "node scripts/bump-version.mjs",
-    "verificar": "node scripts/verificar-imports.mjs"
+    "version:bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
