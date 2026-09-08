@@ -68,6 +68,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [ordenAsc, setOrdenAsc] = useState(false);
+  // ✅ V00206: operaciones que usan cada detalle (op.convenio = id del detalle)
+  const [usosOps, setUsosOps] = useState<Record<string, { ref: string; fecha: string; status: string }[]>>({});
+  const [usoAbierto, setUsoAbierto] = useState<FilaDetalle | null>(null);
   // ✅ V00197: pestañas (solo clientes)
   // ✅ V00198: sin la pestaña "Convenios Cancelados"
   const PESTANAS = ['Convenios Activos', 'Convenios Inactivos', 'No identificados', 'Vacíos'] as const;
@@ -121,6 +124,26 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         getDocs(collection(db, 'catalogo_tarifas_referencia')),
         getDocs(collection(db, 'catalogo_moneda')), // ✅ V00123
       ]);
+      // ✅ V00206: operaciones que usan cada detalle (solo clientes; op.convenio = id del detalle)
+      if (esClientes) {
+        try {
+          const snapOps = await getDocs(collection(db, 'operaciones'));
+          const mapa: Record<string, { ref: string; fecha: string; status: string }[]> = {};
+          snapOps.docs.forEach((d) => {
+            const o = d.data() as Record<string, unknown>;
+            const conv = String(o.convenio || '').trim();
+            if (!conv) return;
+            if (!mapa[conv]) mapa[conv] = [];
+            mapa[conv].push({
+              ref: String(o.ref || d.id.substring(0, 6)),
+              fecha: String(o.fechaServicio || ''),
+              status: String(o.status || o.estatus || ''),
+            });
+          });
+          Object.values(mapa).forEach((lista) => lista.sort((a, b) => b.fecha.localeCompare(a.fecha)));
+          setUsosOps(mapa);
+        } catch { setUsosOps({}); }
+      }
       setMonedasCat(snapMon.docs.map((d) => String((d.data() as { moneda?: unknown }).moneda || '')).filter(Boolean));
 
       const hoyISO = new Date().toISOString().slice(0, 10);
@@ -280,34 +303,40 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <th>Tarifa</th>
                 <th>{esClientes ? 'Cotizado En' : 'Moneda'}</th>
                 {esClientes && <th>Status</th>}{/* ✅ V00199 */}
+                {esClientes && <th>Operaciones</th>}{/* ✅ V00206: veces usado */}
                 <th className="dcv-x8">Costo de la Tarifa</th>
                 <th className="dcv-x8">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {filasVisibles.map((f) => (
-                <tr key={f.id}>
+                /* ✅ V00206: clic en la fila = ver en cuántas operaciones se usó */
+                <tr key={f.id} className={esClientes ? 'dcv-fila-click' : ''} onClick={() => esClientes && setUsoAbierto(f)}>
                   {esClientes
                     ? <td className="dcv-x10" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>
                     : <><td className="dcv-x9" title={f.id}>{f.id}</td><td className="dcv-x10">{f.numeroConvenio}</td></>}
                   <td>{f.entidad}</td>
                   <td>{f.tarifa}</td>
-                  <td>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
+                  <td onClick={(e) => e.stopPropagation()}>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
                     <select className="form-control dcv-select-moneda" value={val} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
                       <option value="">— Sin moneda —</option>
                       {lista.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>); })()}</td>
                   {esClientes && (
                     /* ✅ V00199: status editable del detalle (se guarda con "Guardar cambios") */
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {/* ✅ V00202: vacío = Aprobado (estar en Detalles implica aprobado) */}
                       <select className="form-control dcv-select-moneda" value={String(cambios[f.id]?.status ?? (f.status || 'Aprobado'))} onChange={(e) => marcarCambio(f.id, 'status', e.target.value)}>
                         {ESTADOS_DETALLE.map((st) => <option key={st} value={st}>{st}</option>)}
                       </select>
                     </td>
                   )}
-                  <td className="dcv-x8"><input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
-                  <td className="dcv-x8"><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></td>
+                  {esClientes && (
+                    /* ✅ V00206: total de operaciones que usaron este convenio */
+                    <td className="dcv-td-usos">{(usosOps[f.id] || []).length}</td>
+                  )}
+                  <td className="dcv-x8" onClick={(e) => e.stopPropagation()}><input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
+                  <td className="dcv-x8" onClick={(e) => e.stopPropagation()}><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></td>
                 </tr>
               ))}
             </tbody>
@@ -316,6 +345,37 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       )}
 
       <div className="dcv-x11">Mostrando {filasVisibles.length} de {(filas || []).length} detalle(s)</div>
+
+      {/* ✅ V00206: MODAL — operaciones que han usado este convenio */}
+      {esClientes && usoAbierto && (
+        <div className="modal-overlay" onClick={() => setUsoAbierto(null)}>
+          <div className="dcv-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="dcv-modal-encabezado">
+              <div>
+                <h3 className="dcv-modal-titulo">Uso del convenio <span className="dcv-x10">{usoAbierto.consecutivo || usoAbierto.numeroConvenio || usoAbierto.id}</span></h3>
+                <p className="dcv-modal-sub">{usoAbierto.entidad} · {usoAbierto.tarifa}</p>
+              </div>
+              <button type="button" className="dcv-cerrar" onClick={() => setUsoAbierto(null)}>✕</button>
+            </div>
+            <p className="dcv-uso-total">Usado en <b>{(usosOps[usoAbierto.id] || []).length}</b> operación(es).</p>
+            {(usosOps[usoAbierto.id] || []).length > 0 && (
+              <div className="dcv-modal-marco">
+                <table className="dcv-tabla-usos">
+                  <thead><tr><th>REF</th><th>FECHA DE SERVICIO</th><th>STATUS</th></tr></thead>
+                  <tbody>
+                    {(usosOps[usoAbierto.id] || []).map((o, i) => (
+                      <tr key={`${o.ref}-${i}`}><td className="dcv-x10">{o.ref || '—'}</td><td>{o.fecha || '—'}</td><td>{o.status || '—'}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="dcv-modal-pie">
+              <button type="button" className="btn btn-outline" onClick={() => setUsoAbierto(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

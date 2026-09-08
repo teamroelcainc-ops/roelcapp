@@ -46,3 +46,28 @@
 }
 .dcv-select-moneda { padding: 4px 6px; width: 110px; }
 .dcv-input-costo { width: 110px; padding: 4px 8px; text-align: right; }
+
+/* ✅ V00206: fila clickeable, columna de usos y modal de operaciones */
+.dcv-fila-click { cursor: pointer; }
+.dcv-fila-click:hover td { background-color: rgba(88, 166, 255, 0.05); }
+.dcv-td-usos { font-weight: 700; color: #58a6ff; text-align: center; }
+.dcv-modal {
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 20px 22px;
+  width: min(560px, 94vw);
+  max-height: 84vh;
+  overflow-y: auto;
+}
+.dcv-modal-encabezado { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.dcv-modal-titulo { margin: 0 0 4px 0; font-size: 1.05rem; color: #e6edf3; }
+.dcv-modal-sub { margin: 0; font-size: 0.82rem; color: #8b949e; }
+.dcv-cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1rem; }
+.dcv-cerrar:hover { color: #e6edf3; }
+.dcv-uso-total { margin: 6px 0 10px 0; font-size: 0.9rem; color: #c9d1d9; }
+.dcv-modal-marco { border: 1px solid #30363d; border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+.dcv-tabla-usos { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.dcv-tabla-usos th { text-align: left; padding: 8px 12px; background-color: #21262d; color: #8b949e; font-size: 0.72rem; letter-spacing: 0.4px; }
+.dcv-tabla-usos td { padding: 7px 12px; border-top: 1px solid #21262d; color: #c9d1d9; }
+.dcv-modal-pie { display: flex; justify-content: flex-end; }
