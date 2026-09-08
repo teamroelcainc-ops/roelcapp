@@ -25,6 +25,8 @@
 // ✅ V00199 (clientes): columna STATUS editable por renglón (Pendiente ·
 //   Aprobado · Inactivo · Cancelado) — se guarda con "Guardar cambios" y
 //   respeta Autorizaciones como edición del campo Status.
+// ✅ V00202: si un detalle está aquí, está APROBADO — el status vacío se
+//   muestra (y se guarda al editar) como "Aprobado".
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -298,8 +300,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   {esClientes && (
                     /* ✅ V00199: status editable del detalle (se guarda con "Guardar cambios") */
                     <td>
-                      <select className="form-control dcv-select-moneda" value={String(cambios[f.id]?.status ?? f.status ?? '')} onChange={(e) => marcarCambio(f.id, 'status', e.target.value)}>
-                        <option value="">—</option>
+                      {/* ✅ V00202: vacío = Aprobado (estar en Detalles implica aprobado) */}
+                      <select className="form-control dcv-select-moneda" value={String(cambios[f.id]?.status ?? (f.status || 'Aprobado'))} onChange={(e) => marcarCambio(f.id, 'status', e.target.value)}>
                         {ESTADOS_DETALLE.map((st) => <option key={st} value={st}>{st}</option>)}
                       </select>
                     </td>

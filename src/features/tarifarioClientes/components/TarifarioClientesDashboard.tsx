@@ -62,6 +62,13 @@
 //     que quedó en Detalles del Convenio, aunque la línea del tarifario no lo
 //     traiga guardado (registros migrados). Sin pasos manuales.
 //   · Se quita el número de convenio de la cabecera del detalle (no aplica).
+// ✅ V00202 — MEJORAS:
+//   · COTIZADO EN editable por línea desde el detalle (select USD/MXN); el
+//     cambio (y el de status de línea) se refleja también en el detalle del
+//     convenio correspondiente (moneda / status) para que Detalles del
+//     Convenio y las Operaciones vean lo mismo.
+//   · La fase de reparación de la migración marca "Aprobado" los detalles del
+//     convenio sin status (si están en Detalles, están aprobados).
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc, writeBatch } from 'firebase/firestore';
@@ -521,6 +528,14 @@ export function TarifarioClientesDashboard() {
       for (let i = 0; i < sinConsecutivo.length; i++) {
         await updateDoc(doc(db, 'convenios_clientes_detalles', sinConsecutivo[i].id), { consecutivo: reservados[i] });
       }
+      // ✅ V00202: si un detalle está en Detalles del Convenio, está APROBADO.
+      let statusPuestos = 0;
+      for (const d of snapDet.docs) {
+        if (!String((d.data() as Doc).status || '').trim()) {
+          await updateDoc(doc(db, 'convenios_clientes_detalles', d.id), { status: 'Aprobado' });
+          statusPuestos += 1;
+        }
+      }
 
       // 2) Convenio → tarifario aprobado (con todas sus tarifas).
       const detallesPorConvenio: Record<string, Doc[]> = {};
@@ -599,7 +614,7 @@ export function TarifarioClientesDashboard() {
       }
 
       await registrarLog('Tarifario Clientes', 'Migración', `Importó ${importados} convenio(s) a Tarifario Clientes en status Aprobado y asignó ${sinConsecutivo.length} consecutivo(s) a Detalles del Convenio.`);
-      alert(`Migración lista. ✅\n\n· Convenios importados como tarifarios Aprobados: ${importados}\n· Detalles con consecutivo nuevo: ${sinConsecutivo.length}\n· Convenios ya vinculados (saltados): ${yaVinculados.size}\n· Tarifarios reparados con consecutivos: ${reparados}`);
+      alert(`Migración lista. ✅\n\n· Convenios importados como tarifarios Aprobados: ${importados}\n· Detalles con consecutivo nuevo: ${sinConsecutivo.length}\n· Convenios ya vinculados (saltados): ${yaVinculados.size}\n· Tarifarios reparados con consecutivos: ${reparados}\n· Detalles marcados Aprobado: ${statusPuestos}`);
     } catch (e) {
       console.error('No se pudo importar los convenios:', e);
       alert('No se pudo completar la importación de convenios.');
@@ -630,6 +645,9 @@ export function TarifarioClientesDashboard() {
     try {
       const tarifas = (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc, i: number) => (i === idx ? { ...t, status: nuevo } : t));
       await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
+      // ✅ V00202: la línea y su detalle del convenio comparten status.
+      const detL = detalleDeLinea(r, tarifas[idx]);
+      if (detL) { try { await updateDoc(doc(db, 'convenios_clientes_detalles', String(detL.id)), { status: nuevo }); } catch { /* mejor esfuerzo */ } }
       await registrarLog('Tarifario Clientes', 'Edición', `Cambió el status de la tarifa "${tarifas[idx]?.descripcion || ''}" del pre convenio de "${r.clienteNombre}" a "${nuevo}".`);
     } catch (e) {
       console.error('No se pudo cambiar el status de la tarifa:', e);
@@ -656,6 +674,35 @@ export function TarifarioClientesDashboard() {
       const cons = String(det.consecutivo || (String(det.id).startsWith('CONV-') ? det.id : ''));
       return cons ? { ...t, consecutivo: cons } : t;
     });
+  };
+
+  /** ✅ V00202: detalle del convenio que corresponde a una línea (por consecutivo,
+   *  por tarifarioId o por convenioId + tipo). */
+  const detalleDeLinea = (r: Doc, t: Doc): Doc | undefined => {
+    const cons = String(t.consecutivo || '').trim();
+    if (cons) return detallesConv.find((d) => String(d.consecutivo || d.id) === cons);
+    return detallesConv.find((d) =>
+      String(d.tipoConvenioId || '') === String(t.tarifaReferenciaId || '') &&
+      ((String(d.tarifarioId || '') !== '' && String(d.tarifarioId) === String(r.id)) ||
+        (String(r.convenioId || '') !== '' && String(d.convenioId || '') === String(r.convenioId)))
+    );
+  };
+
+  // ✅ V00202: COTIZADO EN editable por línea desde el detalle.
+  const cambiarCotizadoLinea = async (r: Doc, idx: number, nuevo: 'USD' | 'MXN') => {
+    if (!aut.verificarAccion('editar', ['cotizadoEn'])) return;
+    try {
+      const lineas: Doc[] = Array.isArray(r.tarifas) ? r.tarifas : [];
+      const tarifas = lineas.map((t: Doc, i: number) => (i === idx ? { ...t, cotizadoEn: nuevo } : t));
+      await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
+      // Cascada al detalle del convenio (la moneda de cotización que ven Detalles y Operaciones).
+      const det = detalleDeLinea(r, lineas[idx]);
+      if (det) { try { await updateDoc(doc(db, 'convenios_clientes_detalles', String(det.id)), { moneda: nombreMoneda(nuevo) }); } catch { /* mejor esfuerzo */ } }
+      await registrarLog('Tarifario Clientes', 'Edición', `Cambió el Cotizado En de la tarifa "${lineas[idx]?.descripcion || ''}" del pre convenio de "${r.clienteNombre}" a ${nuevo}.`);
+    } catch (e) {
+      console.error('No se pudo cambiar el Cotizado En de la tarifa:', e);
+      alert('No se pudo cambiar el Cotizado En de la tarifa.');
+    }
   };
 
   // ── PDF con el formato del tarifario de Roelca (✅ V00192) ──
@@ -790,7 +837,17 @@ export function TarifarioClientesDashboard() {
             </td>
             <td className="tc-td-num">{(t.costosSugeridos || []).length > 0 ? (t.costosSugeridos as number[]).map(fmtMoney).join(' · ') : '—'}</td>
             <td className="tc-td-num">{fmtMoney(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0)}</td>
-            <td>{(t.cotizadoEn || r.moneda) ? <span className={`tc-chip ${(t.cotizadoEn || r.moneda) === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{t.cotizadoEn || r.moneda}</span> : '—'}</td>
+            <td>
+              {editable ? (
+                /* ✅ V00202: Cotizado En editable por línea */
+                <select className="form-control tc-select-costo" value={canonMoneda(t.cotizadoEn || r.moneda) || 'USD'} onChange={(e) => cambiarCotizadoLinea(r, i, e.target.value as 'USD' | 'MXN')}>
+                  <option value="USD">USD</option>
+                  <option value="MXN">MXN</option>
+                </select>
+              ) : (
+                (t.cotizadoEn || r.moneda) ? <span className={`tc-chip ${(t.cotizadoEn || r.moneda) === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{t.cotizadoEn || r.moneda}</span> : '—'
+              )}
+            </td>
             <td>
               {editable ? (
                 /* ✅ V00198: cancelar/inactivar SOLO esta línea */

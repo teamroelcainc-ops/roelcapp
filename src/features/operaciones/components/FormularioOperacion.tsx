@@ -604,6 +604,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   useEffect(() => { setTarifasLocal(catalogosCacheados?.tarifas || []); }, [catalogosCacheados?.tarifas]);
   useEffect(() => { setEmbalajesLocal(catalogosCacheados?.embalajes || []); }, [catalogosCacheados?.embalajes]);
   useEffect(() => { setConvClientesLocal(catalogosCacheados?.catalogoConvClientes || []); }, [catalogosCacheados?.catalogoConvClientes]);
+  // ✅ V00202: tarifarios de clientes — sus clientes también aparecen en la operación.
+  const [tarifariosLocal, setTarifariosLocal] = useState<any[]>([]);
+  useEffect(() => { setTarifariosLocal(catalogosCacheados?.catalogoTarifarios || []); }, [catalogosCacheados?.catalogoTarifarios]);
   useEffect(() => { setConvDetallesLocal(catalogosCacheados?.catalogoConvDetalles || []); }, [catalogosCacheados?.catalogoConvDetalles]);
   useEffect(() => { setConvProvLocal(catalogosCacheados?.conveniosProv || []); }, [catalogosCacheados?.conveniosProv]);
   useEffect(() => { setConvProvDetallesLocal(catalogosCacheados?.catalogoConvProvDetalles || []); }, [catalogosCacheados?.catalogoConvProvDetalles]);
@@ -619,6 +622,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       { alias: 'embalajes',                coleccion: 'catalogo_embalaje',              setter: setEmbalajesLocal },
       { alias: 'catalogoConvClientes',     coleccion: 'convenios_clientes',             setter: setConvClientesLocal },
       { alias: 'catalogoConvDetalles',     coleccion: 'convenios_clientes_detalles',    setter: setConvDetallesLocal },
+      { alias: 'catalogoTarifarios',       coleccion: 'tarifario_clientes',             setter: setTarifariosLocal }, // ✅ V00202
       { alias: 'conveniosProv',            coleccion: 'convenios_proveedores',          setter: setConvProvLocal },
       { alias: 'catalogoConvProvDetalles', coleccion: 'convenios_proveedores_detalles', setter: setConvProvDetallesLocal },
       { alias: 'tarifasGastosIncluidos',   coleccion: 'tarifas_gastos_incluidos',       setter: setGastosIncluidosLocal },
@@ -781,8 +785,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const nombreMoneda = (monedaId: any) =>
     listaMonedasLocal.find((m:any) => String(m.id) === String(monedaId))?.moneda || '';
   const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  // ✅ V00126: etiqueta del convenio en el dropdown = nombre + monto + moneda
-  const etiquetaConvenioCliente = (c: any) => `${c.descripcion || ''} — ${fmtMoney(c.tarifaMonto)}${nombreMoneda(c.monedaMaestro) ? ` ${nombreMoneda(c.monedaMaestro)}` : ''}`;
+  // ✅ V00202: etiqueta = Consecutivo - Convenio - Moneda de cotización - Monto
+  const consecutivoConvenio = (c: any) => String(c.consecutivo || (String(c.id || '').startsWith('CONV-') ? c.id : '') || '').trim();
+  const etiquetaConvenioCliente = (c: any) => {
+    const cons = consecutivoConvenio(c);
+    const mon = nombreMoneda(c.monedaMaestro);
+    return `${cons ? `${cons} - ` : ''}${c.descripcion || ''}${mon ? ` - ${mon}` : ''} - ${fmtMoney(c.tarifaMonto)}`;
+  };
   const etiquetaConvenioProveedor = (c: any) => `${c.tipoConvenioNombre || ''} — ${fmtMoney(c.tarifaMonto)}${nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}`;
 
   const [tipoCambioDia, setTipoCambioDia] = useState<number | null>(null);
@@ -1879,8 +1888,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (id) set.add(id);
     });
     (catalogoConvDetalles || []).forEach((d: any) => { const id = ownerClienteDetalle(d); if (id) set.add(id); });
+    // ✅ V00202: también los clientes que están en Tarifario Clientes.
+    (tarifariosLocal || []).forEach((t: any) => { const id = String(t.clienteId ?? '').trim(); if (id) set.add(id); });
     return set;
-  }, [catalogoConvClientes, catalogoConvDetalles]);
+  }, [catalogoConvClientes, catalogoConvDetalles, tarifariosLocal]);
   const filClientesPaga = useMemo(() => empresas?.filter((e:any) =>
     (contieneId(e.tiposEmpresa, '7eec9cbb') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_PAGA)) &&
     (idsClientesConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.clientePaga || ''))

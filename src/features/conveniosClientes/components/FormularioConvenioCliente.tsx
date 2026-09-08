@@ -448,7 +448,7 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
       // ✅ V00199: consecutivo reservado por transacción — la CLAVE del detalle ES el consecutivo.
       const [consec] = await reservarConsecutivosDetalle(1);
       const ref = doc(db, 'convenios_clientes_detalles', consec);
-      await setDoc(ref, { ...payload, consecutivo: consec });
+      await setDoc(ref, { ...payload, consecutivo: consec, status: 'Aprobado' }); // ✅ V00202
       return ref.id;
     }
     const ref = doc(db, 'convenios_clientes_detalles', d.id);
@@ -568,7 +568,8 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
             tipoConvenioNombre: det.tipoConvenioNombre,
             tarifa: Number(det.tarifa),
             moneda: normalizarMoneda(det.moneda), // ✅ V00126: moneda propia del detalle (obligatoria)
-            consecutivo: consec // ✅ V00199
+            consecutivo: consec, // ✅ V00199
+            status: 'Aprobado' // ✅ V00202: estar en Detalles = aprobado
           });
         } else {
           const detRef = doc(db, 'convenios_clientes_detalles', det.id!);
