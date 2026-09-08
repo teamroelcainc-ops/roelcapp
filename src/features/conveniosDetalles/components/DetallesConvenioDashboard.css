@@ -17,3 +17,32 @@
   .dcv-x1 { padding: 14px 12px; }
   .dcv-x3 { flex-wrap: wrap; }
 }
+
+/* ✅ V00197: pestañas y diseño del buscador/entradas (la clase
+   .form-input-elegante no existía; ahora se usa .form-control global) */
+.dcv-pestanas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px 0;
+  border-bottom: 1px solid #30363d;
+  padding-bottom: 10px;
+}
+.dcv-pestana {
+  padding: 7px 14px;
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.dcv-pestana:hover { color: #c9d1d9; border-color: #58a6ff; }
+.dcv-pestana-activa {
+  background-color: rgba(234, 88, 12, 0.15);
+  border-color: #ea580c;
+  color: #ea580c;
+}
+.dcv-select-moneda { padding: 4px 6px; width: 110px; }
+.dcv-input-costo { width: 110px; padding: 4px 8px; text-align: right; }

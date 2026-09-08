@@ -12,6 +12,12 @@
 //   el CONSECUTIVO del detalle (CONV-001 en adelante, campo `consecutivo` que
 //   asignan la migración y la aprobación de tarifarios); la columna Moneda se
 //   renombra a "Cotizado En". Proveedores conserva su vista anterior.
+// ✅ V00197 (solo CLIENTES):
+//   · Buscador con el diseño de la app (la clase .form-input-elegante no
+//     existía en ningún CSS; ahora los inputs usan .form-control global).
+//   · PESTAÑAS: Convenios Activos (vigentes) · Convenios Cancelados (Baja) ·
+//     Convenios Inactivos (vencidos sin Baja) · No identificados (la tarifa
+//     no resuelve en el catálogo) · Vacíos (sin costo o sin moneda).
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -31,6 +37,10 @@ interface FilaDetalle {
   entidad: string;      // cliente o proveedor según `tipo`
   tarifa: string;       // descripción de la tarifa de referencia
   costo: number | null;
+  // ✅ V00197: para las pestañas (clientes)
+  statusConvenio: string;
+  vencido: boolean;
+  identificada: boolean;
 }
 
 const TTL_MS = 5 * 60 * 1000; // 5 min: suficiente para navegar sin re-leer
@@ -47,6 +57,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [ordenAsc, setOrdenAsc] = useState(false);
+  // ✅ V00197: pestañas (solo clientes)
+  const PESTANAS = ['Convenios Activos', 'Convenios Cancelados', 'Convenios Inactivos', 'No identificados', 'Vacíos'] as const;
+  const [pestana, setPestana] = useState<(typeof PESTANAS)[number]>('Convenios Activos');
   // ✅ NUEVO (V00122): edición en línea (varios de golpe) + eliminar con papelera
   const [cambios, setCambios] = useState<Record<string, { tarifa?: number; moneda?: string }>>({});
   const [guardando, setGuardando] = useState(false);
@@ -90,13 +103,17 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       ]);
       setMonedasCat(snapMon.docs.map((d) => String((d.data() as { moneda?: unknown }).moneda || '')).filter(Boolean));
 
-      const convenios: Record<string, { numero: string; entidad: string; moneda: string }> = {};
+      const hoyISO = new Date().toISOString().slice(0, 10);
+      const convenios: Record<string, { numero: string; entidad: string; moneda: string; status: string; vencido: boolean }> = {};
       snapConv.docs.forEach((d) => {
         const x = d.data() as Record<string, unknown>;
+        const venc = String(x.fechaVencimiento || '');
         convenios[d.id] = {
           numero: String(x.numeroConvenio || ''),
           entidad: String(x[CAMPO_ENTIDAD] || ''),
           moneda: String(x.monedaNombre || ''), // ✅ NUEVO (V00119)
+          status: String(x.status || 'Activo'), // ✅ V00197
+          vencido: !!venc && venc < hoyISO,     // ✅ V00197
         };
       });
 
@@ -108,7 +125,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
       const resultado: FilaDetalle[] = snapDet.docs.map((d) => {
         const x = d.data() as Record<string, unknown>;
-        const conv = convenios[String(x.convenioId || '')] || { numero: '', entidad: '', moneda: '' };
+        const conv = convenios[String(x.convenioId || '')] || { numero: '', entidad: '', moneda: '', status: 'Activo', vencido: false };
         const idTarifa = String(x.tipoConvenioId || '');
         const crudoCosto = (x.costo !== undefined && x.costo !== null && x.costo !== '') ? x.costo : x.tarifa; // ✅ V00122: los detalles guardan `tarifa`
         const costoNum = (crudoCosto === undefined || crudoCosto === null || crudoCosto === '') ? null : Number(crudoCosto);
@@ -123,6 +140,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           moneda: String(x.moneda || ''),
           tarifa: tarifas[idTarifa] || String(x.tipoConvenioNombre || '') || '—',
           costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
+          // ✅ V00197: datos para las pestañas
+          statusConvenio: conv.status,
+          vencido: conv.vencido,
+          identificada: !!(tarifas[idTarifa] || String(x.tipoConvenioNombre || '').trim()),
         };
       });
 
@@ -142,6 +163,17 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
   const filasVisibles = useMemo(() => {
     let lista = filas || [];
+    // ✅ V00197: filtro por pestaña (solo clientes)
+    if (esClientes) {
+      const norm = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const noIdent = (f: FilaDetalle) => !f.identificada || norm(f.tarifa).includes('no identificad');
+      const vacia = (f: FilaDetalle) => f.costo === null || f.costo === 0 || !String(f.moneda || '').trim();
+      if (pestana === 'Convenios Activos') lista = lista.filter((f) => f.statusConvenio !== 'Baja' && !f.vencido);
+      else if (pestana === 'Convenios Cancelados') lista = lista.filter((f) => f.statusConvenio === 'Baja');
+      else if (pestana === 'Convenios Inactivos') lista = lista.filter((f) => f.statusConvenio !== 'Baja' && f.vencido);
+      else if (pestana === 'No identificados') lista = lista.filter(noIdent);
+      else if (pestana === 'Vacíos') lista = lista.filter(vacia);
+    }
     if (busqueda.trim()) {
       const b = busqueda.toLowerCase();
       lista = lista.filter((f) =>
@@ -160,7 +192,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const base = dif !== 0 ? dif : a.numeroConvenio.localeCompare(b.numeroConvenio);
       return ordenAsc ? base : -base;
     });
-  }, [filas, busqueda, ordenAsc, esClientes]);
+  }, [filas, busqueda, ordenAsc, esClientes, pestana]);
 
   
   return (
@@ -171,9 +203,20 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         Para editar una tarifa, ábrela desde su convenio en el módulo de Convenios.
       </p>
 
+      {/* ✅ V00197: pestañas (solo clientes) */}
+      {esClientes && (
+        <div className="dcv-pestanas">
+          {PESTANAS.map((pst) => (
+            <button key={pst} type="button" className={`dcv-pestana ${pestana === pst ? 'dcv-pestana-activa' : ''}`} onClick={() => setPestana(pst)}>
+              {pst}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="dcv-x3">
         <input
-          className="form-input-elegante dcv-x4"
+          className="form-control dcv-x4"
           type="text"
           placeholder={`Buscar por convenio, ${ETIQUETA_ENTIDAD.toLowerCase()}, tarifa o costo...`}
           value={busqueda}
@@ -229,11 +272,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   <td>{f.entidad}</td>
                   <td>{f.tarifa}</td>
                   <td>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
-                    <select className="form-input-elegante" style={{ padding: '4px 6px', width: '110px' }} value={val} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
+                    <select className="form-control dcv-select-moneda" value={val} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
                       <option value="">— Sin moneda —</option>
                       {lista.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>); })()}</td>
-                  <td className="dcv-x8"><input type="number" step="0.01" className="form-input-elegante" style={{ width: '110px', padding: '4px 8px', textAlign: 'right' }} value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
+                  <td className="dcv-x8"><input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
                   <td className="dcv-x8"><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}>✕</button></td>
                 </tr>
               ))}
