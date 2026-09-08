@@ -458,6 +458,38 @@ const CatalogosDashboard = () => {
     if (!window.confirm('¿Rearmar la DESCRIPCIÓN de TODAS las tarifas de referencia con la fórmula (Tipo de Operación + Tipo de Remolque + Cargada/Vacía + Aduana) y actualizarla en Detalles del Convenio, Tarifarios y Operaciones?\n\nEsto reemplaza las descripciones actuales en todas partes.')) return;
     setRegenerando(true);
     try {
+      // ✅ V00210: FIX — aquí NO se usa descripcionAutomatica/opcionesDinamicas
+      //   (ese estado solo se llena al abrir el formulario; por eso el rearmado
+      //   masivo imprimía IDs). Los catálogos fuente se cargan DIRECTO y se
+      //   resuelve id → nombre con mapas locales.
+      const fuentes = (campoAuto.autoDe || [])
+        .map((n) => catalogoSeleccionado.fields.find((x) => x.name === n))
+        .filter(Boolean) as CatalogField[];
+      const mapasOpciones: Record<string, Record<string, string>> = {};
+      for (const f of fuentes) {
+        if (!f.dynamicOptions || mapasOpciones[f.dynamicOptions.collection]) continue;
+        const snapOpc = await getDocs(collection(db, f.dynamicOptions.collection));
+        const vField = f.dynamicOptions.valueField || 'id';
+        const lField = f.dynamicOptions.labelField || 'nombre';
+        const m: Record<string, string> = {};
+        snapOpc.docs.forEach((dd) => {
+          const o: Record<string, unknown> = { id: dd.id, ...(dd.data() as Record<string, unknown>) };
+          m[String(o[vField] || dd.id)] = String(o[lField] || '');
+        });
+        mapasOpciones[f.dynamicOptions.collection] = m;
+      }
+      const legible = (f: CatalogField, v: unknown): string => {
+        const t = String(v ?? '').trim();
+        if (!t) return '';
+        if (f.dynamicOptions) {
+          const m = mapasOpciones[f.dynamicOptions.collection] || {};
+          return m[t] || t;
+        }
+        return t;
+      };
+      const armarDescripcion = (datos: Record<string, unknown>): string =>
+        fuentes.map((f) => legible(f, datos[f.name])).filter(Boolean).join(' ');
+
       // 1) Rearmar descripciones del catálogo.
       const snapTar = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
       const mapaDesc: Record<string, string> = {};
@@ -467,7 +499,7 @@ const CatalogosDashboard = () => {
         let enLote = 0;
         for (const d of snapTar.docs) {
           const datos: Record<string, unknown> = { id: d.id, ...(d.data() as Record<string, unknown>) };
-          const nueva = descripcionAutomatica(campoAuto, datos);
+          const nueva = armarDescripcion(datos);
           const final = nueva || String(datos.descripcion || '');
           mapaDesc[d.id] = final;
           if (nueva && nueva !== String(datos.descripcion || '')) {
