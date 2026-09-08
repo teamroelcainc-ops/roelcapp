@@ -8,6 +8,9 @@ export interface CatalogField {
   label: string;
   type: FieldType;
   required?: boolean;
+  // ✅ V00208: campo AUTOMÁTICO — su valor se arma uniendo las etiquetas
+  //   legibles de estos campos (en este orden) y no se captura a mano.
+  autoDe?: string[];
   options?: string[];
   dynamicOptions?: {
     collection: string;
@@ -255,8 +258,9 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       //   los registros existentes siguen siendo válidos. Si el catálogo está
       //   vacío, se usa la lista fija `options` como respaldo.
       { name: 'estado_carga', label: 'Cargada / Vacía', type: 'select', required: true, options: OPCIONES_CARGA, dynamicOptions: { collection: 'catalogo_carga_vacia', labelField: 'nombre', valueField: 'nombre' } },
-      { name: 'trompo', label: 'Trompo', type: 'select', required: true, options: ['Sí', 'No'] },
-      { name: 'regular_hazmat', label: 'Regular / Hazmat', type: 'select', required: true, options: ['Regular', 'Hazmat'] },
+      // ✅ V00208: se quitan los campos/columnas Trompo y Regular/Hazmat (los
+      //   registros viejos conservan su dato guardado; simplemente ya no se
+      //   muestra ni se captura).
       { name: 'aduana', label: 'Aduana', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_aduanas', labelField: 'aduana', valueField: 'id' } },
       // ✅ NUEVO — ORIGEN / DESTINO de la tarifa (según el Excel del cliente):
       //   · Flete de IMPORTACIÓN: Origen fijo "Nuevo Laredo", Destino variable ("Ciudad Destino").
@@ -266,7 +270,9 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       //   marcador variable, tal cual el archivo de referencia.
       { name: 'origen', label: 'Origen', type: 'text' },
       { name: 'destino', label: 'Destino', type: 'text' },
-      { name: 'descripcion', label: 'Descripción', type: 'text', required: true },
+      // ✅ V00208: la DESCRIPCIÓN se ARMA SOLA con Tipo de Operación + Tipo de
+      //   Remolque + Cargada/Vacía + Aduana (ya no se captura a mano).
+      { name: 'descripcion', label: 'Descripción', type: 'text', required: true, autoDe: ['tipo_operacion', 'tipo_remolque', 'estado_carga', 'aduana'] },
       { name: 'tarifa_cliente_1', label: 'Tarifa Cliente 1', type: 'number' },
       { name: 'tarifa_cliente_2', label: 'Tarifa Cliente 2', type: 'number' },
       { name: 'tarifa_cliente_3', label: 'Tarifa Cliente 3', type: 'number' },

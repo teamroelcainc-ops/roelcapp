@@ -419,13 +419,47 @@ const CatalogosDashboard = () => {
   useEffect(() => { setSeleccionadosIds([]); }, [catalogoSeleccionado, busqueda, filtroFijo]);
 
   // ✅ LOGICA DE GUARDADO PRINCIPAL CON LOG
+  // ✅ V00208: etiqueta legible de un valor (resuelve ids de catálogos dinámicos).
+  const valorLegible = (f: CatalogField, valor: unknown): string => {
+    const v = String(valor ?? '').trim();
+    if (!v) return '';
+    if (f.dynamicOptions) {
+      const opts = opcionesDinamicas[f.dynamicOptions.collection] || [];
+      const vField = f.dynamicOptions.valueField || 'id';
+      const lField = f.dynamicOptions.labelField || 'nombre';
+      const opt = opts.find((o: Record<string, unknown>) => String(o[vField] || o.id) === v);
+      if (opt) return String(opt[lField] || v);
+    }
+    return v;
+  };
+
+  // ✅ V00208: arma el valor de un campo automático (autoDe) uniendo las
+  //   etiquetas de sus campos fuente, en orden y sin vacíos.
+  const descripcionAutomatica = (f: CatalogField, datos: Record<string, unknown>): string => {
+    if (!catalogoSeleccionado) return '';
+    return (f.autoDe || [])
+      .map((nombre) => {
+        const fuente = catalogoSeleccionado.fields.find((x) => x.name === nombre);
+        return fuente ? valorLegible(fuente, datos[nombre]) : String(datos[nombre] ?? '');
+      })
+      .filter(Boolean)
+      .join(' ');
+  };
+
   const guardarRegistro = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!catalogoSeleccionado) return;
 
+    // ✅ V00208: campos AUTOMÁTICOS (autoDe) — se arman con las etiquetas
+    //   legibles de sus campos fuente y pisan lo que hubiera en el estado.
+    const datosAGuardar: Record<string, unknown> = { ...formData };
+    catalogoSeleccionado.fields.forEach((f) => {
+      if (f.autoDe && f.autoDe.length > 0) datosAGuardar[f.name] = descripcionAutomatica(f, datosAGuardar);
+    });
+
     const camposObligatoriosActuales = camposRequeridos[catalogoSeleccionado.id] || [];
     const camposFaltantes = camposObligatoriosActuales.filter(fieldName => {
-      const valor = formData[fieldName];
+      const valor = datosAGuardar[fieldName];
       return valor === undefined || valor === null || valor === '';
     });
 
@@ -439,7 +473,7 @@ const CatalogosDashboard = () => {
       const col = `catalogo_${catalogoSeleccionado.id}`;
       
       if (registroActual) {
-        await actualizarRegistro(col, registroActual.id, formData);
+        await actualizarRegistro(col, registroActual.id, datosAGuardar); // ✅ V00208
         await registrarLog('Catálogos', 'Edición', `Editó un registro en el catálogo de ${catalogoSeleccionado.titulo}`);
         // ✅ NUEVO (V00109) — PROPAGACIÓN DE NOMBRES: los módulos (Operaciones,
         //   Direcciones, etc.) guardan una COPIA del nombre en cada documento
@@ -450,7 +484,7 @@ const CatalogosDashboard = () => {
           let propagados = 0;
           for (const [colRef, campoId, campoNombre, campoValorDe] of (REFS_EXTERNAS_CATALOGO[catalogoSeleccionado.id] || [])) {
             if (!campoNombre || !campoValorDe) continue;
-            const nuevoValor = formData[campoValorDe];
+            const nuevoValor = datosAGuardar[campoValorDe]; // ✅ V00208
             const valorAnterior = registroActual[campoValorDe];
             if (nuevoValor === undefined || String(nuevoValor) === String(valorAnterior ?? '')) continue;
             const snap = await getDocs(query(collection(db, colRef), where(campoId, '==', registroActual.id)));
@@ -469,7 +503,7 @@ const CatalogosDashboard = () => {
           //   Si cambió el `nombre`, se reemplaza el texto viejo por el nuevo en
           //   las colecciones que lo guardan como valor literal.
           const nombreViejo = String(registroActual.nombre ?? '').trim();
-          const nombreNuevo = String(formData.nombre ?? '').trim();
+          const nombreNuevo = String(datosAGuardar.nombre ?? '').trim(); // ✅ V00208
           if (nombreViejo && nombreNuevo && nombreViejo !== nombreNuevo) {
             let reemplazados = 0;
             for (const [colTxt, campoTxt] of (REFS_TEXTO_CATALOGO[catalogoSeleccionado.id] || [])) {
@@ -494,13 +528,13 @@ const CatalogosDashboard = () => {
         // ✅ NUEVO: bloqueo de DUPLICADOS al crear. Si ya existe un registro
         //    con exactamente los mismos valores en todos los campos, se avisa
         //    y NO se crea otra copia.
-        const claveNueva = claveDuplicado(formData);
+        const claveNueva = claveDuplicado(datosAGuardar); // ✅ V00208
         const yaExiste = claveNueva && registrosGlobales.some(reg => claveDuplicado(reg) === claveNueva);
         if (yaExiste) {
           alert('Ya existe un registro idéntico en este catálogo.\n\nNo se creó el duplicado. Si necesitas otro similar, cambia al menos un campo (por ejemplo el nombre).');
           return;
         }
-        await agregarRegistro(col, formData);
+        await agregarRegistro(col, datosAGuardar); // ✅ V00208
         await registrarLog('Catálogos', 'Creación', `Agregó un nuevo registro al catálogo de ${catalogoSeleccionado.titulo}`);
       }
 
@@ -1585,8 +1619,11 @@ const CatalogosDashboard = () => {
                   return (
                     <div key={f.name}>
                       <label className="cd-x76">{f.label} {isReq && <span className="cd-x77">*</span>}</label>
-                      {/* ✅ MODIFICADO (V00110): opciones dinámicas solo si el catálogo trae registros; si está vacío y hay `options` fijas, se usan de respaldo (caso C/V). */}
-                      {f.dynamicOptions && (opcionesDinamicas[f.dynamicOptions.collection]?.length ?? 0) > 0 ? (
+                      {/* ✅ V00208: campo AUTOMÁTICO — se arma solo y no se captura a mano.
+                          ✅ MODIFICADO (V00110): opciones dinámicas solo si el catálogo trae registros; si está vacío y hay `options` fijas, se usan de respaldo (caso C/V). */}
+                      {f.autoDe && f.autoDe.length > 0 ? (
+                        <input className="form-input-elegante" value={descripcionAutomatica(f, formData)} readOnly disabled placeholder="Se arma sola al elegir los campos" title="Este campo se arma automáticamente con Tipo de Operación + Tipo de Remolque + Cargada/Vacía + Aduana" />
+                      ) : f.dynamicOptions && (opcionesDinamicas[f.dynamicOptions.collection]?.length ?? 0) > 0 ? (
                         <SelectBuscable
                           opciones={opcionesDinamicas[f.dynamicOptions.collection].map((opt: any) => {
                             const vField = f.dynamicOptions!.valueField || 'id';
