@@ -18,12 +18,17 @@
 //   · PESTAÑAS: Convenios Activos (vigentes) · Convenios Cancelados (Baja) ·
 //     Convenios Inactivos (vencidos sin Baja) · No identificados (la tarifa
 //     no resuelve en el catálogo) · Vacíos (sin costo o sin moneda).
+// ✅ V00198 (clientes): se quita la pestaña "Convenios Cancelados"; el módulo
+//   tiene permiso PROPIO en Roles y respeta Configuración → Autorizaciones
+//   (Editar al guardar cambios, Borrar al eliminar); el botón de eliminar usa
+//   el icono rojo estándar de la app (btn-small btn-danger).
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
 import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00198
 import './DetallesConvenioDashboard.css';
 
 interface Props { tipo: 'clientes' | 'proveedores'; }
@@ -58,18 +63,25 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [busqueda, setBusqueda] = useState('');
   const [ordenAsc, setOrdenAsc] = useState(false);
   // ✅ V00197: pestañas (solo clientes)
-  const PESTANAS = ['Convenios Activos', 'Convenios Cancelados', 'Convenios Inactivos', 'No identificados', 'Vacíos'] as const;
+  // ✅ V00198: sin la pestaña "Convenios Cancelados"
+  const PESTANAS = ['Convenios Activos', 'Convenios Inactivos', 'No identificados', 'Vacíos'] as const;
   const [pestana, setPestana] = useState<(typeof PESTANAS)[number]>('Convenios Activos');
   // ✅ NUEVO (V00122): edición en línea (varios de golpe) + eliminar con papelera
   const [cambios, setCambios] = useState<Record<string, { tarifa?: number; moneda?: string }>>({});
   const [guardando, setGuardando] = useState(false);
   // ✅ NUEVO (V00123): monedas desde el CATÁLOGO (nada hardcodeado)
   const [monedasCat, setMonedasCat] = useState<string[]>([]);
+  // ✅ V00198: reglas de Autorizaciones (módulo propio; en proveedores no hay reglas registradas y todo pasa)
+  const aut = useAutorizacionesCampos(esClientes ? 'detallesConvenioClientes' : 'detallesConvenioProveedores');
+
   const marcarCambio = (id: string, campo: 'tarifa' | 'moneda', v: number | string) =>
     setCambios((prev) => ({ ...prev, [id]: { ...prev[id], [campo]: v as never } }));
   const guardarCambios = async () => {
     const ids = Object.keys(cambios);
     if (ids.length === 0 || guardando) return;
+    // ✅ V00198: Editar respeta Autorizaciones (campos: moneda y/o tarifa)
+    const camposTocados = [...new Set(ids.flatMap((id) => Object.keys(cambios[id])))];
+    if (!aut.verificarAccion('editar', camposTocados)) return;
     setGuardando(true);
     try {
       for (const id of ids) await updateDoc(doc(dbFs, COL_DETALLES, id), { ...cambios[id] } as Record<string, unknown>);
@@ -80,6 +92,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     setGuardando(false);
   };
   const eliminarDetalle = async (id: string) => {
+    if (!aut.verificarAccion('borrar')) return; // ✅ V00198
     if (!window.confirm('¿Eliminar este detalle del convenio?\n\nSe enviará a la Papelera de Reciclaje (nota obligatoria).')) return;
     try {
       await eliminarRegistro(COL_DETALLES, id, { modulo: 'Detalles del Convenio' });
@@ -169,7 +182,6 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const noIdent = (f: FilaDetalle) => !f.identificada || norm(f.tarifa).includes('no identificad');
       const vacia = (f: FilaDetalle) => f.costo === null || f.costo === 0 || !String(f.moneda || '').trim();
       if (pestana === 'Convenios Activos') lista = lista.filter((f) => f.statusConvenio !== 'Baja' && !f.vencido);
-      else if (pestana === 'Convenios Cancelados') lista = lista.filter((f) => f.statusConvenio === 'Baja');
       else if (pestana === 'Convenios Inactivos') lista = lista.filter((f) => f.statusConvenio !== 'Baja' && f.vencido);
       else if (pestana === 'No identificados') lista = lista.filter(noIdent);
       else if (pestana === 'Vacíos') lista = lista.filter(vacia);
@@ -277,7 +289,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                       {lista.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>); })()}</td>
                   <td className="dcv-x8"><input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
-                  <td className="dcv-x8"><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}>✕</button></td>
+                  <td className="dcv-x8"><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></td>
                 </tr>
               ))}
             </tbody>

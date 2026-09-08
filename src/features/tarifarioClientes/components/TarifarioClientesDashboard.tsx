@@ -33,6 +33,13 @@
 //     sus tarifas) a Tarifario Clientes en status "Aprobado" y asigna
 //     consecutivo a los detalles que no lo tengan. Idempotente: los convenios
 //     ya vinculados se saltan.
+// ✅ V00198 — MEJORAS:
+//   · Iconos de Editar/Eliminar con el estándar de la app (lápiz azul y bote
+//     rojo, clases globales btn-small btn-edit / btn-danger).
+//   · El MODAL DE DETALLE también tiene Editar y Eliminar, además del status.
+//   · STATUS con 4 estados: Pendiente · Aprobado · Inactivo · Cancelado; en el
+//     detalle CADA LÍNEA puede cancelarse o inactivarse por separado (select
+//     por tarifa), sin afectar todo el tarifario.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc, writeBatch } from 'firebase/firestore';
@@ -76,6 +83,24 @@ const claveDe = (t: Doc): string =>
 const nombreMoneda = (m: unknown): string => (canonMoneda(m) === 'MXN' ? 'Pesos' : 'Dólares');
 const idMoneda = (m: unknown): string => (canonMoneda(m) === 'MXN' ? ID_MXN : ID_USD);
 const pad3 = (n: number): string => String(n).padStart(3, '0');
+
+// ✅ V00198: mismos iconos azul/rojo que el resto de la app.
+const IconoEditar = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+);
+const IconoEliminar = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+);
+
+// ✅ V00198: los 4 estados y su chip.
+const STATUS_TARIFARIO = ['Pendiente', 'Aprobado', 'Inactivo', 'Cancelado'] as const;
+const chipStatus = (st: unknown): string => {
+  const v = String(st || 'Pendiente');
+  if (v === 'Aprobado') return 'tc-chip tc-chip-aprobado';
+  if (v === 'Cancelado') return 'tc-chip tc-chip-cancelado';
+  if (v === 'Inactivo') return 'tc-chip tc-chip-inactivo';
+  return 'tc-chip tc-chip-pendiente';
+};
 
 const norm = (t: unknown): string =>
   String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -521,6 +546,20 @@ export function TarifarioClientesDashboard() {
     }
   };
 
+  // ✅ V00198: cambiar el status de UNA línea del pre convenio (Cancelado /
+  //   Inactivo / etc.) sin afectar el resto — se autoriza como editar Status.
+  const cambiarStatusLinea = async (r: Doc, idx: number, nuevo: string) => {
+    if (!aut.verificarAccion('editar', ['status'])) return;
+    try {
+      const tarifas = (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc, i: number) => (i === idx ? { ...t, status: nuevo } : t));
+      await updateDoc(doc(db, 'tarifario_clientes', r.id), { tarifas });
+      await registrarLog('Tarifario Clientes', 'Edición', `Cambió el status de la tarifa "${tarifas[idx]?.descripcion || ''}" del pre convenio de "${r.clienteNombre}" a "${nuevo}".`);
+    } catch (e) {
+      console.error('No se pudo cambiar el status de la tarifa:', e);
+      alert('No se pudo cambiar el status de la tarifa.');
+    }
+  };
+
   // ── PDF con el formato del tarifario de Roelca (✅ V00192) ──
   const construirHTMLTarifario = (r: Doc): string => {
     const filas = (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc, i: number) => {
@@ -634,8 +673,9 @@ export function TarifarioClientesDashboard() {
     w.document.close();
   };
 
-  /** Tabla interna de tarifas de un registro (formulario y detalle — ✅ V00194). */
-  const tablaTarifasDe = (r: Doc) => (
+  /** Tabla interna de tarifas de un registro (formulario y detalle — ✅ V00194).
+   *  ✅ V00198: con `editable` el STATUS de cada línea es un select (4 estados). */
+  const tablaTarifasDe = (r: Doc, editable = false) => (
     <table className="tc-tabla-interna">
       <thead>
         <tr><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th></tr>
@@ -652,7 +692,16 @@ export function TarifarioClientesDashboard() {
             <td className="tc-td-num">{(t.costosSugeridos || []).length > 0 ? (t.costosSugeridos as number[]).map(fmtMoney).join(' · ') : '—'}</td>
             <td className="tc-td-num">{fmtMoney(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0)}</td>
             <td>{(t.cotizadoEn || r.moneda) ? <span className={`tc-chip ${(t.cotizadoEn || r.moneda) === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{t.cotizadoEn || r.moneda}</span> : '—'}</td>
-            <td><span className={`tc-chip ${String(t.status) === 'Aprobado' ? 'tc-chip-aprobado' : 'tc-chip-pendiente'}`}>{t.status || 'Pendiente'}</span></td>
+            <td>
+              {editable ? (
+                /* ✅ V00198: cancelar/inactivar SOLO esta línea */
+                <select className="form-control tc-select-costo" value={String(t.status || 'Pendiente')} onChange={(e) => cambiarStatusLinea(r, i, e.target.value)}>
+                  {STATUS_TARIFARIO.map((st) => <option key={st} value={st}>{st}</option>)}
+                </select>
+              ) : (
+                <span className={chipStatus(t.status)}>{t.status || 'Pendiente'}</span>
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -702,7 +751,7 @@ export function TarifarioClientesDashboard() {
                     <td>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</td>
                     <td>{r.creditoDias > 0 ? `${r.creditoDias} día(s)` : '—'}</td>
                     <td className="tc-td-num">{Array.isArray(r.tarifas) ? r.tarifas.length : 0}</td>
-                    <td><span className={`tc-chip ${String(r.status) === 'Aprobado' ? 'tc-chip-aprobado' : String(r.status) === 'Pendiente' ? 'tc-chip-pendiente' : 'tc-chip-otro'}`}>{r.status || '—'}</span></td>
+                    <td><span className={chipStatus(r.status)}>{r.status || '—'}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -730,18 +779,21 @@ export function TarifarioClientesDashboard() {
                 <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>
                 <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
                 <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
-                <div><span className="tc-label">Status</span><span className={`tc-chip ${String(r.status) === 'Aprobado' ? 'tc-chip-aprobado' : 'tc-chip-pendiente'}`}>{r.status || '—'}</span></div>
+                <div><span className="tc-label">Status</span><span className={chipStatus(r.status)}>{r.status || '—'}</span></div>
                 <div><span className="tc-label">Creado por</span><b>{r.creadoPor || '—'}</b></div>
                 <div><span className="tc-label">{String(r.status) === 'Aprobado' ? 'Aprobado por' : 'Editado por'}</span><b>{(String(r.status) === 'Aprobado' ? r.aprobadoPor : r.editadoPor) || '—'}</b></div>
               </div>
 
               <div className="tc-marco tc-modal-marco">
-                {tablaTarifasDe(r)}
+                {tablaTarifasDe(r, true)}
               </div>
 
               <div className="tc-modal-pie">
                 <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
                 <div className="tc-modal-botones">
+                  {/* ✅ V00198: editar y eliminar también desde el detalle */}
+                  <button type="button" className="btn-small btn-edit" title="Editar este pre convenio" onClick={() => { setDetalleId(''); abrirEdicion(r); }}><IconoEditar /></button>
+                  <button type="button" className="btn-small btn-danger" title="Eliminar este pre convenio" onClick={() => { setDetalleId(''); eliminarRegistro(r); }}><IconoEliminar /></button>
                   {String(r.status) !== 'Aprobado' && (
                     <button type="button" className="tc-btn-aprobar" onClick={() => aprobarRegistro(r)}>✔ Aprobar</button>
                   )}
@@ -818,7 +870,7 @@ export function TarifarioClientesDashboard() {
                       <div className="tc-guardado-encabezado">
                         <span><b>{r.fecha || '—'}</b> · {Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s)</span>
                         <span className="tc-guardado-acciones">
-                          <span className={`tc-chip ${String(r.status) === 'Aprobado' ? 'tc-chip-aprobado' : 'tc-chip-pendiente'}`}>{r.status || '—'}</span>
+                          <span className={chipStatus(r.status)}>{r.status || '—'}</span>
                           <button type="button" className="tc-btn-pdf" onClick={() => exportarPDF(r)}>PDF</button>
                         </span>
                       </div>

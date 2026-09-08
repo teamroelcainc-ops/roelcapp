@@ -114,6 +114,8 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Convenio de Clientes': 'conveniosClientes',
   // ✅ V00191: pre convenios del cliente a partir de tarifas de referencia.
   'Tarifario Clientes': 'tarifarioClientes',
+  // ✅ V00198: Detalles del Convenio con permiso PROPIO en Roles.
+  'Detalles del Convenio': 'detallesConvenioClientes',
   'Facturación de Clientes': 'facturacionClientes',
   'Convenio de Proveedores': 'conveniosProveedores',
   'Facturación de Proveedores': 'facturacionProveedores',
@@ -1531,7 +1533,7 @@ function AppContenido() {
                 {/* ✅ V00191: Tarifario Clientes */}
                 {puede('tarifarioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'tarifarioClientes' ? 'active' : ''}`} onClick={() => navegarA('tarifarioClientes')}><span className="sidebar-icon">{ICON.tarifarioClientes}</span><span className="sidebar-label">{etq('menu.tarifario_clientes', 'Tarifario Clientes')}</span></div>}
                 {/* ✅ NUEVO (V00112): Detalles del Convenio (clientes) */}
-                {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioClientes' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
+                {puede('detallesConvenioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioClientes' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
                 {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => navegarA('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}
@@ -1822,7 +1824,7 @@ function AppContenido() {
             {moduloActivo === 'conveniosClientes' && puede('conveniosClientes') && <ConveniosClientesDashboard />}
                 {moduloActivo === 'tarifarioClientes' && puede('tarifarioClientes') && <TarifarioClientesDashboard />}
             {/* ✅ NUEVO (V00112): vistas Detalles del Convenio */}
-            {moduloActivo === 'detallesConvenioClientes' && puede('conveniosClientes') && <DetallesConvenioDashboard tipo="clientes" />}
+            {moduloActivo === 'detallesConvenioClientes' && puede('detallesConvenioClientes') && <DetallesConvenioDashboard tipo="clientes" />}
             {moduloActivo === 'detallesConvenioProveedores' && puede('conveniosProveedores') && <DetallesConvenioDashboard tipo="proveedores" />}
             {/* ✅ NUEVO (V00115): papelera de reciclaje */}
             {moduloActivo === 'papeleraReciclaje' && puede('logs') && <PapeleraDashboard />}

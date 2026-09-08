@@ -269,3 +269,16 @@
 }
 .tc-btn-importar:hover { background-color: rgba(88, 166, 255, 0.12); }
 .tc-btn-importar:disabled { opacity: 0.5; cursor: default; }
+
+/* ✅ V00198: iconos estándar y chips de los 4 estados */
+.tc-mr6 { margin-right: 6px; }
+.tc-chip-cancelado {
+  background-color: rgba(239, 68, 68, 0.15);
+  color: #f85149;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+.tc-chip-inactivo {
+  background-color: rgba(139, 148, 158, 0.15);
+  color: #8b949e;
+  border: 1px solid rgba(139, 148, 158, 0.4);
+}

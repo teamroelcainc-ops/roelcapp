@@ -188,6 +188,11 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
       { key: 'cotizadoEn', label: 'Cotizado En' },
       { key: 'status', label: 'Status (Aprobar)' },
     ], integrado: true },
+  // ✅ V00198: Detalles del Convenio (clientes) — Agregar/Editar/Borrar por separado.
+  { clave: 'detallesConvenioClientes', label: 'Detalles del Convenio', coleccion: 'convenios_clientes_detalles', campos: [
+      { key: 'moneda', label: 'Cotizado En' },
+      { key: 'tarifa', label: 'Costo de la Tarifa' },
+    ], integrado: true },
   { clave: 'conveniosProveedores', label: 'Convenios de Proveedores', coleccion: 'convenios_proveedores', campos: [
       { key: 'proveedorId', label: 'Proveedor' },
       { key: 'fechaConvenio', label: 'Fecha del Convenio' },

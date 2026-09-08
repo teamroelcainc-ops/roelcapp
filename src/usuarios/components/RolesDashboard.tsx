@@ -13,7 +13,7 @@ import './RolesDashboard.css';
 const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
   { grupo: 'General', modulos: ['Mis Operaciones', 'Operaciones Activas', 'Pagos', 'Estadísticas', 'Servicios Completados', 'Servicios Cancelados', 'Reportes', 'Reporte de Vencimiento', 'Panel de Control', 'Tablero (CRM)', 'Catálogos'] },
   { grupo: 'Gastos', modulos: ['MTTO', 'Referencias del Diesel', 'Referencias de Puentes', 'Costos Adicionales'] },
-  { grupo: 'Clientes', modulos: ['Convenio de Clientes', 'Tarifario Clientes', 'Facturación de Clientes'] },
+  { grupo: 'Clientes', modulos: ['Convenio de Clientes', 'Tarifario Clientes', 'Detalles del Convenio', 'Facturación de Clientes'] }, // ✅ V00198
   { grupo: 'Proveedores', modulos: ['Convenio de Proveedores', 'Facturación de Proveedores'] },
   { grupo: 'Empleados', modulos: ['Colaboradores', 'Historial de Chequeo', 'Nómina', 'Deducciones'] },
   { grupo: 'Bases de Datos', modulos: ['Empresas', 'Contactos', 'Direcciones', 'Tipo de Cambio', 'Combustible', 'Unidades Propias', 'Remolques', 'Proveedores de Unidad', 'Unidades del Proveedor'] },
