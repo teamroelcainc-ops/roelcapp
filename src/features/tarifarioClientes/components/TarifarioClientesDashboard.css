@@ -253,3 +253,19 @@
 }
 .tc-detalle-datos > div { display: flex; flex-direction: column; gap: 3px; }
 .tc-detalle-datos .tc-chip { align-self: flex-start; }
+
+/* ✅ V00196: botón de importación de convenios */
+.tc-encabezado-botones { display: flex; align-items: center; gap: 10px; }
+.tc-btn-importar {
+  padding: 9px 16px;
+  background-color: transparent;
+  border: 1px solid #58a6ff;
+  border-radius: 8px;
+  color: #58a6ff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tc-btn-importar:hover { background-color: rgba(88, 166, 255, 0.12); }
+.tc-btn-importar:disabled { opacity: 0.5; cursor: default; }

@@ -23,9 +23,19 @@
 //     se evalúan POR SEPARADO con las reglas del módulo "Tarifario Clientes"
 //     (puede quedar libre agregar pero requerir autorización para editar);
 //     Aprobar se evalúa como edición del campo Status.
+// ✅ V00196 — PRE CONVENIO → CONVENIO:
+//   · Al APROBAR un tarifario, sus tarifas pasan a Convenios: si el cliente ya
+//     tiene convenio se agregan ahí (regla: un convenio por cliente); si no,
+//     se crea con el siguiente número CONV-###. Cada detalle nace con su
+//     CONSECUTIVO (CONV-001 en adelante) visible en Detalles del Convenio.
+//     Mientras está Pendiente NO toca Convenios.
+//   · Botón "⇪ Importar Convenios": migra los convenios existentes (con todas
+//     sus tarifas) a Tarifario Clientes en status "Aprobado" y asigna
+//     consecutivo a los detalles que no lo tengan. Idempotente: los convenios
+//     ya vinculados se saltan.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
@@ -61,6 +71,11 @@ const costosDe = (t: Doc): number[] =>
 /** Clave de servicio de la tarifa, si el catálogo la tiene. */
 const claveDe = (t: Doc): string =>
   String(t?.clave || t?.claveServicio || t?.clave_servicio || '').trim();
+
+/** ✅ V00196: nombre e id de catálogo de la moneda para Convenios. */
+const nombreMoneda = (m: unknown): string => (canonMoneda(m) === 'MXN' ? 'Pesos' : 'Dólares');
+const idMoneda = (m: unknown): string => (canonMoneda(m) === 'MXN' ? ID_MXN : ID_USD);
+const pad3 = (n: number): string => String(n).padStart(3, '0');
 
 const norm = (t: unknown): string =>
   String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
@@ -108,6 +123,8 @@ export function TarifarioClientesDashboard() {
 
   // ✅ V00195: reglas de Configuración → Autorizaciones para este módulo.
   const aut = useAutorizacionesCampos('tarifarioClientes');
+  // ✅ V00196: migración de Convenios existentes → Tarifarios aprobados.
+  const [migrando, setMigrando] = useState(false);
 
   useEffect(() => {
     let activo = true;
@@ -317,21 +334,190 @@ export function TarifarioClientesDashboard() {
     }
   };
 
+  /** ✅ V00196: siguiente CONV-### para convenios y siguiente consecutivo de detalle. */
+  const siguientes = async () => {
+    const [snapConv, snapDet] = await Promise.all([
+      getDocs(collection(db, 'convenios_clientes')),
+      getDocs(collection(db, 'convenios_clientes_detalles')),
+    ]);
+    const numsConv = snapConv.docs.map((d) => parseInt(String((d.data() as Doc).numeroConvenio || '').replace(/\D/g, ''), 10) || 0);
+    const numsDet = snapDet.docs.map((d) => parseInt(String((d.data() as Doc).consecutivo || '').replace(/\D/g, ''), 10) || 0);
+    return {
+      snapConv, snapDet,
+      sigConvenio: (numsConv.length ? Math.max(...numsConv) : 0) + 1,
+      sigConsecutivo: (numsDet.length ? Math.max(...numsDet) : 0) + 1,
+    };
+  };
+
   // ✅ V00194: aprobar desde el detalle (Pendiente → "Aprobado", doc + líneas).
+  // ✅ V00196: al aprobar, los pre convenios PASAN A CONVENIOS — se agregan al
+  //   convenio del cliente (o se crea uno nuevo CONV-###) y cada detalle nace
+  //   con su consecutivo. Mientras está Pendiente no se toca Convenios.
   const aprobarRegistro = async (r: Doc) => {
     if (!aut.verificarAccion('editar', ['status'])) return; // ✅ V00195: aprobar = editar Status
-    if (!window.confirm(`¿Aprobar el pre convenio de "${r.clienteNombre}" del ${r.fecha}?`)) return;
+    if (!window.confirm(`¿Aprobar el pre convenio de "${r.clienteNombre}" del ${r.fecha}?\n\nSus tarifas pasarán al módulo de Convenios (Detalles del Convenio).`)) return;
     try {
-      await updateDoc(doc(db, 'tarifario_clientes', r.id), {
-        status: 'Aprobado',
-        tarifas: (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc) => ({ ...t, status: 'Aprobado' })),
-        aprobadoEl: new Date().toISOString(),
-        aprobadoPor: auth.currentUser?.email || '',
-      });
-      await registrarLog('Tarifario Clientes', 'Aprobación', `Aprobó el pre convenio de "${r.clienteNombre}" (${r.fecha}).`);
+      let convenioId = String(r.convenioId || '');
+      let numeroConvenio = String(r.numeroConvenio || '');
+
+      if (!convenioId) {
+        const { snapConv, sigConvenio, sigConsecutivo } = await siguientes();
+        const batch = writeBatch(db);
+
+        // Regla de la app: UN convenio por cliente — si ya existe, se agregan ahí.
+        const existente = snapConv.docs.find((d) => String((d.data() as Doc).clienteId || '') === String(r.clienteId || ''));
+        let convenioRef;
+        if (existente) {
+          convenioRef = doc(db, 'convenios_clientes', existente.id);
+          numeroConvenio = String((existente.data() as Doc).numeroConvenio || '');
+        } else {
+          convenioRef = doc(collection(db, 'convenios_clientes'));
+          numeroConvenio = `CONV-${pad3(sigConvenio)}`;
+          batch.set(convenioRef, {
+            numeroConvenio,
+            clienteId: String(r.clienteId || ''),
+            clienteNombre: String(r.clienteNombre || ''),
+            monedaId: idMoneda(r.moneda),
+            monedaNombre: nombreMoneda(r.moneda),
+            credito: Number(r.creditoDias) || 0,
+            fechaConvenio: String(r.fecha || hoyLocalISO()),
+            fechaVencimiento: `${String(r.fecha || hoyLocalISO()).slice(0, 4)}-12-31`,
+            creadoDesdeTarifario: String(r.id),
+          });
+        }
+        convenioId = convenioRef.id;
+
+        (Array.isArray(r.tarifas) ? r.tarifas : []).forEach((t: Doc, i: number) => {
+          batch.set(doc(collection(db, 'convenios_clientes_detalles')), {
+            convenioId,
+            tipoConvenioId: String(t.tarifaReferenciaId || ''),
+            tipoConvenioNombre: String(t.descripcion || ''),
+            tarifa: Number(t.tarifa) || 0,
+            moneda: nombreMoneda(t.cotizadoEn || r.moneda),
+            consecutivo: `CONV-${pad3(sigConsecutivo + i)}`, // ✅ V00196
+            tarifarioId: String(r.id),
+          });
+        });
+
+        batch.update(doc(db, 'tarifario_clientes', r.id), {
+          status: 'Aprobado',
+          tarifas: (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc) => ({ ...t, status: 'Aprobado' })),
+          convenioId,
+          numeroConvenio,
+          aprobadoEl: new Date().toISOString(),
+          aprobadoPor: auth.currentUser?.email || '',
+        });
+        await batch.commit();
+        await registrarLog('Tarifario Clientes', 'Aprobación', `Aprobó el pre convenio de "${r.clienteNombre}" (${r.fecha}) y pasó ${Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) al convenio ${numeroConvenio}.`);
+        alert(`Pre convenio aprobado. Sus tarifas ya están en el convenio ${numeroConvenio} (Detalles del Convenio). ✅`);
+      } else {
+        await updateDoc(doc(db, 'tarifario_clientes', r.id), {
+          status: 'Aprobado',
+          tarifas: (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc) => ({ ...t, status: 'Aprobado' })),
+          aprobadoEl: new Date().toISOString(),
+          aprobadoPor: auth.currentUser?.email || '',
+        });
+        await registrarLog('Tarifario Clientes', 'Aprobación', `Aprobó el pre convenio de "${r.clienteNombre}" (${r.fecha}).`);
+      }
     } catch (e) {
       console.error('No se pudo aprobar el pre convenio:', e);
       alert('No se pudo aprobar el pre convenio.');
+    }
+  };
+
+  // ✅ V00196: MIGRACIÓN — todos los convenios existentes pasan a Tarifario
+  //   Clientes en status "Aprobado" con todas sus tarifas, y se asigna
+  //   consecutivo a los detalles que no lo tengan. Se puede correr varias
+  //   veces: los convenios ya vinculados se saltan.
+  const importarConvenios = async () => {
+    if (migrando) return;
+    if (!aut.verificarAccion('crear')) return;
+    if (!window.confirm('¿Importar TODOS los convenios de "Convenios de Clientes" a Tarifario Clientes en status "Aprobado" con todas sus tarifas?\n\nTambién se asignará el consecutivo (CONV-001…) a los detalles que no lo tengan. Los convenios ya importados se saltan.')) return;
+    setMigrando(true);
+    try {
+      const { snapConv, snapDet, sigConsecutivo } = await siguientes();
+      const snapTarifarios = await getDocs(collection(db, 'tarifario_clientes'));
+      const yaVinculados = new Set(snapTarifarios.docs.map((d) => String((d.data() as Doc).convenioId || '')).filter(Boolean));
+
+      const catalogo: Record<string, Doc> = {};
+      tarifasRef.forEach((t) => { catalogo[String(t.id)] = t; });
+      const empresaDe: Record<string, Doc> = {};
+      empresas.forEach((e) => { empresaDe[String(e.id)] = e; });
+
+      // 1) Consecutivos faltantes en detalles (ordenados por número de convenio).
+      const numeroDe: Record<string, string> = {};
+      snapConv.docs.forEach((d) => { numeroDe[d.id] = String((d.data() as Doc).numeroConvenio || ''); });
+      const sinConsecutivo = snapDet.docs
+        .filter((d) => !String((d.data() as Doc).consecutivo || '').trim())
+        .sort((a, b) => {
+          const na = parseInt((numeroDe[String((a.data() as Doc).convenioId || '')] || '').replace(/\D/g, ''), 10) || 0;
+          const nb = parseInt((numeroDe[String((b.data() as Doc).convenioId || '')] || '').replace(/\D/g, ''), 10) || 0;
+          return na - nb || a.id.localeCompare(b.id);
+        });
+      let corredor = sigConsecutivo;
+      for (const d of sinConsecutivo) {
+        await updateDoc(doc(db, 'convenios_clientes_detalles', d.id), { consecutivo: `CONV-${pad3(corredor)}` });
+        corredor += 1;
+      }
+
+      // 2) Convenio → tarifario aprobado (con todas sus tarifas).
+      const detallesPorConvenio: Record<string, Doc[]> = {};
+      snapDet.docs.forEach((d) => {
+        const x = { id: d.id, ...(d.data() as Doc) };
+        const k = String(x.convenioId || '');
+        if (!detallesPorConvenio[k]) detallesPorConvenio[k] = [];
+        detallesPorConvenio[k].push(x);
+      });
+
+      let importados = 0;
+      for (const d of snapConv.docs) {
+        if (yaVinculados.has(d.id)) continue;
+        const c = d.data() as Doc;
+        const emp = empresaDe[String(c.clienteId || '')] || {};
+        const monedaConv = canonMoneda(c.monedaNombre) || canonMoneda(c.monedaId) || 'USD';
+        const lineas = (detallesPorConvenio[d.id] || []).map((det) => {
+          const ref = catalogo[String(det.tipoConvenioId || '')] || {};
+          return {
+            tarifaReferenciaId: String(det.tipoConvenioId || ''),
+            descripcion: String(det.tipoConvenioNombre || ref.descripcion || ''),
+            clave: claveDe(ref),
+            origen: String(ref.origen || ''),
+            destino: String(ref.destino || ''),
+            costosSugeridos: costosDe(ref),
+            tarifa: Number(det.tarifa) || 0,
+            cotizadoEn: canonMoneda(det.moneda) || monedaConv,
+            status: 'Aprobado',
+          };
+        });
+        await addDoc(collection(db, 'tarifario_clientes'), {
+          fecha: String(c.fechaConvenio || hoyLocalISO()),
+          clienteId: String(c.clienteId || ''),
+          clienteNombre: String(c.clienteNombre || ''),
+          clienteNombreCorto: String(emp.nombreCorto || ''),
+          moneda: monedaConv,
+          monedaNombre: monedaConv === 'USD' ? 'USD — Dólares' : 'MXN — Pesos',
+          creditoDias: Number(c.credito) || 0,
+          limiteCredito: Number(emp.limiteCredito) || 0,
+          tarifas: lineas,
+          status: 'Aprobado',
+          convenioId: d.id,
+          numeroConvenio: String(c.numeroConvenio || ''),
+          migradoDeConvenio: true,
+          createdAt: new Date().toISOString(),
+          creadoPor: auth.currentUser?.email || '',
+          aprobadoEl: new Date().toISOString(),
+          aprobadoPor: auth.currentUser?.email || '',
+        });
+        importados += 1;
+      }
+
+      await registrarLog('Tarifario Clientes', 'Migración', `Importó ${importados} convenio(s) a Tarifario Clientes en status Aprobado y asignó ${sinConsecutivo.length} consecutivo(s) a Detalles del Convenio.`);
+      alert(`Migración lista. ✅\n\n· Convenios importados como tarifarios Aprobados: ${importados}\n· Detalles con consecutivo nuevo: ${sinConsecutivo.length}\n· Convenios ya vinculados (saltados): ${yaVinculados.size}`);
+    } catch (e) {
+      console.error('No se pudo importar los convenios:', e);
+      alert('No se pudo completar la importación de convenios.');
+    } finally {
+      setMigrando(false);
     }
   };
 
@@ -480,9 +666,15 @@ export function TarifarioClientesDashboard() {
           <h1 className="tc-titulo">Tarifario Clientes</h1>
           <p className="tc-sub">Pre convenios del cliente a partir de las Tarifas de Referencia. La moneda y el crédito vienen de la tabla Empresas y no se editan aquí.</p>
         </div>
-        <button type="button" className="tc-btn-preconvenio" onClick={() => { limpiarCaptura(); setCapturaAbierta(true); setFecha(hoyLocalISO()); }}>
-          + Nuevo Tarifario
-        </button>
+        <div className="tc-encabezado-botones">
+          {/* ✅ V00196: migración de Convenios existentes → Tarifarios aprobados */}
+          <button type="button" className="tc-btn-importar" disabled={migrando} title="Pasa todos los convenios de Convenios de Clientes a Tarifario Clientes en status Aprobado" onClick={importarConvenios}>
+            {migrando ? 'Importando…' : '⇪ Importar Convenios'}
+          </button>
+          <button type="button" className="tc-btn-preconvenio" onClick={() => { limpiarCaptura(); setCapturaAbierta(true); setFecha(hoyLocalISO()); }}>
+            + Nuevo Tarifario
+          </button>
+        </div>
       </div>
 
       {/* ── PRE CONVENIOS GUARDADOS ── */}

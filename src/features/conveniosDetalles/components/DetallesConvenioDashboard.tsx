@@ -8,6 +8,10 @@
 //   · Costo de la tarifa.
 //   La edición sigue viviendo en los módulos de Convenios; esto es un índice
 //   rápido para consultar y buscar tarifas sin abrir convenio por convenio.
+// ✅ V00196 (solo CLIENTES): se quitan las columnas ID y Convenio y se muestra
+//   el CONSECUTIVO del detalle (CONV-001 en adelante, campo `consecutivo` que
+//   asignan la migración y la aprobación de tarifarios); la columna Moneda se
+//   renombra a "Cotizado En". Proveedores conserva su vista anterior.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -20,6 +24,7 @@ interface Props { tipo: 'clientes' | 'proveedores'; }
 
 interface FilaDetalle {
   id: string;
+  consecutivo: string; // ✅ V00196: CONV-001… del detalle (clientes)
   numeroConvenio: string;
   moneda: string;
   numeroOrden: number;
@@ -109,6 +114,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         const costoNum = (crudoCosto === undefined || crudoCosto === null || crudoCosto === '') ? null : Number(crudoCosto);
         return {
           id: d.id,
+          consecutivo: String(x.consecutivo || ''), // ✅ V00196
           numeroConvenio: conv.numero || '—',
           numeroOrden: parseInt(String(conv.numero || '').replace(/\D/g, ''), 10) || 0,
           entidad: conv.entidad || '—',
@@ -139,15 +145,22 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     if (busqueda.trim()) {
       const b = busqueda.toLowerCase();
       lista = lista.filter((f) =>
-        `${f.id} ${f.numeroConvenio} ${f.entidad} ${f.tarifa} ${f.moneda || '—'} ${f.costo ?? ''}`.toLowerCase().includes(b)
+        `${f.id} ${f.consecutivo} ${f.numeroConvenio} ${f.entidad} ${f.tarifa} ${f.moneda || '—'} ${f.costo ?? ''}`.toLowerCase().includes(b)
       );
     }
     return [...lista].sort((a, b) => {
+      // ✅ V00196: en CLIENTES ordena por el consecutivo del detalle.
+      if (esClientes) {
+        const na = parseInt(a.consecutivo.replace(/\D/g, ''), 10) || 0;
+        const nb = parseInt(b.consecutivo.replace(/\D/g, ''), 10) || 0;
+        const base = (na - nb) !== 0 ? (na - nb) : a.numeroOrden - b.numeroOrden;
+        return ordenAsc ? base : -base;
+      }
       const dif = a.numeroOrden - b.numeroOrden;
       const base = dif !== 0 ? dif : a.numeroConvenio.localeCompare(b.numeroConvenio);
       return ordenAsc ? base : -base;
     });
-  }, [filas, busqueda, ordenAsc]);
+  }, [filas, busqueda, ordenAsc, esClientes]);
 
   
   return (
@@ -171,7 +184,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           onClick={() => setOrdenAsc((v) => !v)}
           title="Cambiar orden por número de convenio"
         >
-          Convenio {ordenAsc ? '↑' : '↓'}
+          {esClientes ? 'Consecutivo' : 'Convenio'} {ordenAsc ? '↑' : '↓'}
         </button>
         <button
           className="btn btn-outline"
@@ -198,11 +211,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           <table className="data-table dcv-x7">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Convenio</th>
+                {/* ✅ V00196 (clientes): CONSECUTIVO reemplaza a ID y Convenio; Moneda → "Cotizado En" */}
+                {esClientes ? <th>Consecutivo</th> : <><th>ID</th><th>Convenio</th></>}
                 <th>{ETIQUETA_ENTIDAD}</th>
                 <th>Tarifa</th>
-                <th>Moneda</th>
+                <th>{esClientes ? 'Cotizado En' : 'Moneda'}</th>
                 <th className="dcv-x8">Costo de la Tarifa</th>
                 <th className="dcv-x8">Acciones</th>
               </tr>
@@ -210,8 +223,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
             <tbody>
               {filasVisibles.map((f) => (
                 <tr key={f.id}>
-                  <td className="dcv-x9" title={f.id}>{f.id}</td>
-                  <td className="dcv-x10">{f.numeroConvenio}</td>
+                  {esClientes
+                    ? <td className="dcv-x10" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>
+                    : <><td className="dcv-x9" title={f.id}>{f.id}</td><td className="dcv-x10">{f.numeroConvenio}</td></>}
                   <td>{f.entidad}</td>
                   <td>{f.tarifa}</td>
                   <td>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
