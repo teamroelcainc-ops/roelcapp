@@ -71,8 +71,9 @@ const REFS_EXTERNAS_CATALOGO: Record<string, Array<[string, string, string?, str
   codigo_postal: [['direcciones', 'cpId', 'cpNombre', 'codigo_postal'], ['catalogo_direcciones', 'cpId', 'cpNombre', 'codigo_postal']],
   calles: [['direcciones', 'calleId', 'calleNombre', 'calle'], ['catalogo_direcciones', 'calleId', 'calleNombre', 'calle']],
   tarifas_referencia: [
-    ['convenios_clientes_detalles', 'tipoConvenioId'],
-    ['convenios_proveedores_detalles', 'tipoConvenioId'],
+    // ✅ V00209: al editar una tarifa, su descripción nueva se propaga al nombre guardado en los detalles.
+    ['convenios_clientes_detalles', 'tipoConvenioId', 'tipoConvenioNombre', 'descripcion'],
+    ['convenios_proveedores_detalles', 'tipoConvenioId', 'tipoConvenioNombre', 'descripcion'],
   ],
 };
 
@@ -444,6 +445,114 @@ const CatalogosDashboard = () => {
       })
       .filter(Boolean)
       .join(' ');
+  };
+
+  // ✅ V00209: REARMA TODAS las descripciones de Tarifas de Referencia y las
+  //   propaga a TODAS PARTES: Detalles del Convenio (clientes y proveedores),
+  //   Tarifario Clientes (líneas) y Operaciones (nombre del convenio elegido).
+  const [regenerando, setRegenerando] = useState(false);
+  const regenerarDescripcionesTarifas = async () => {
+    if (!catalogoSeleccionado || catalogoSeleccionado.id !== 'tarifas_referencia' || regenerando) return;
+    const campoAuto = catalogoSeleccionado.fields.find((f) => f.autoDe && f.autoDe.length > 0);
+    if (!campoAuto) { alert('El catálogo no tiene campo automático configurado.'); return; }
+    if (!window.confirm('¿Rearmar la DESCRIPCIÓN de TODAS las tarifas de referencia con la fórmula (Tipo de Operación + Tipo de Remolque + Cargada/Vacía + Aduana) y actualizarla en Detalles del Convenio, Tarifarios y Operaciones?\n\nEsto reemplaza las descripciones actuales en todas partes.')) return;
+    setRegenerando(true);
+    try {
+      // 1) Rearmar descripciones del catálogo.
+      const snapTar = await getDocs(collection(db, 'catalogo_tarifas_referencia'));
+      const mapaDesc: Record<string, string> = {};
+      let catalogoActualizados = 0;
+      {
+        let lote = writeBatch(db);
+        let enLote = 0;
+        for (const d of snapTar.docs) {
+          const datos: Record<string, unknown> = { id: d.id, ...(d.data() as Record<string, unknown>) };
+          const nueva = descripcionAutomatica(campoAuto, datos);
+          const final = nueva || String(datos.descripcion || '');
+          mapaDesc[d.id] = final;
+          if (nueva && nueva !== String(datos.descripcion || '')) {
+            lote.update(d.ref, { descripcion: nueva });
+            catalogoActualizados += 1;
+            enLote += 1;
+            if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
+          }
+        }
+        if (enLote > 0) await lote.commit();
+      }
+
+      // 2) Detalles del Convenio (clientes y proveedores): tipoConvenioNombre.
+      const detalleATarifa: Record<string, string> = {};
+      const propagarDetalles = async (coleccion: string): Promise<number> => {
+        let n = 0;
+        try {
+          const snap = await getDocs(collection(db, coleccion));
+          let lote = writeBatch(db);
+          let enLote = 0;
+          for (const d of snap.docs) {
+            const x = d.data() as Record<string, unknown>;
+            const tid = String(x.tipoConvenioId || '');
+            if (coleccion === 'convenios_clientes_detalles' && tid) detalleATarifa[d.id] = tid;
+            const desc = mapaDesc[tid];
+            if (desc && String(x.tipoConvenioNombre || '') !== desc) {
+              lote.update(d.ref, { tipoConvenioNombre: desc });
+              n += 1;
+              enLote += 1;
+              if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
+            }
+          }
+          if (enLote > 0) await lote.commit();
+        } catch (e) { console.error(`No se pudo propagar a ${coleccion}:`, e); }
+        return n;
+      };
+      const nDetC = await propagarDetalles('convenios_clientes_detalles');
+      const nDetP = await propagarDetalles('convenios_proveedores_detalles');
+
+      // 3) Tarifario Clientes: la descripción de cada línea.
+      let nTarifarios = 0;
+      try {
+        const snapT = await getDocs(collection(db, 'tarifario_clientes'));
+        for (const d of snapT.docs) {
+          const x = d.data() as Record<string, unknown>;
+          const lineas = Array.isArray(x.tarifas) ? (x.tarifas as Record<string, unknown>[]) : [];
+          let cambio = false;
+          const nuevas = lineas.map((l) => {
+            const desc = mapaDesc[String(l.tarifaReferenciaId || '')];
+            if (desc && String(l.descripcion || '') !== desc) { cambio = true; return { ...l, descripcion: desc }; }
+            return l;
+          });
+          if (cambio) { const lt = writeBatch(db); lt.update(d.ref, { tarifas: nuevas }); await lt.commit(); nTarifarios += 1; }
+        }
+      } catch (e) { console.error('No se pudo propagar a tarifario_clientes:', e); }
+
+      // 4) Operaciones: nombre del convenio elegido (cliente).
+      let nOps = 0;
+      try {
+        const snapOps = await getDocs(collection(db, 'operaciones'));
+        let lote = writeBatch(db);
+        let enLote = 0;
+        for (const d of snapOps.docs) {
+          const o = d.data() as Record<string, unknown>;
+          const tid = detalleATarifa[String(o.convenio || '')];
+          const desc = tid ? mapaDesc[tid] : '';
+          if (desc && String(o.convenioNombre || '') !== desc) {
+            lote.update(d.ref, { convenioNombre: desc });
+            nOps += 1;
+            enLote += 1;
+            if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
+          }
+        }
+        if (enLote > 0) await lote.commit();
+      } catch (e) { console.error('No se pudo propagar a operaciones:', e); }
+
+      await registrarLog('Catálogos', 'Edición', `Rearmó las descripciones de Tarifas de Referencia (${catalogoActualizados}) y las propagó: ${nDetC} detalle(s) de clientes, ${nDetP} de proveedores, ${nTarifarios} tarifario(s), ${nOps} operación(es).`);
+      alert(`Descripciones rearmadas y propagadas. ✅\n\n· Tarifas del catálogo actualizadas: ${catalogoActualizados}\n· Detalles del Convenio (clientes): ${nDetC}\n· Detalles del Convenio (proveedores): ${nDetP}\n· Tarifarios de clientes: ${nTarifarios}\n· Operaciones: ${nOps}`);
+      // La tabla se refresca sola: registrosGlobales viene de un onSnapshot.
+    } catch (e) {
+      console.error('No se pudieron rearmar las descripciones:', e);
+      alert('No se pudieron rearmar las descripciones.');
+    } finally {
+      setRegenerando(false);
+    }
   };
 
   const guardarRegistro = async (e: React.FormEvent) => {
@@ -1289,6 +1398,17 @@ const CatalogosDashboard = () => {
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M6 21V9a9 9 0 0 0 9 9"></path></svg>
               {seleccionadosIds.length >= 2 ? `Unir (${seleccionadosIds.length})` : 'Unir'}
             </button>
+            {/* ✅ V00209: rearmar TODAS las descripciones y propagarlas a todas partes */}
+            {catalogoSeleccionado.id === 'tarifas_referencia' && (
+              <button
+                className="btn btn-outline cd-x15 cd-btn-rearmar"
+                title="Rearma la descripción de TODAS las tarifas (Tipo de Operación + Tipo de Remolque + Cargada/Vacía + Aduana) y la actualiza en Detalles del Convenio, Tarifarios y Operaciones"
+                disabled={regenerando}
+                onClick={regenerarDescripcionesTarifas}
+              >
+                {regenerando ? 'Rearmando…' : '⟳ Rearmar descripciones'}
+              </button>
+            )}
             {/* ✅ NUEVO (V00112): papelera filtrada al catálogo actual */}
             <button
               className="btn btn-outline cd-x15"

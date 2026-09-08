@@ -125,3 +125,8 @@
   .cd-x78 { flex-wrap: wrap; }
   .cd-x80 { flex-wrap: wrap; }
 }
+
+/* ✅ V00209: botón de rearmado global de descripciones */
+.cd-btn-rearmar { color: #58a6ff; border-color: #58a6ff; white-space: nowrap; }
+.cd-btn-rearmar:hover { background-color: rgba(88, 166, 255, 0.12); }
+.cd-btn-rearmar:disabled { opacity: 0.55; cursor: wait; }
