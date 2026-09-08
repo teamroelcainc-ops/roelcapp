@@ -2,10 +2,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ModalAccesoCampo } from '../../autorizaciones/ModalAccesoCampo';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
-import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, addDoc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, writeBatch, query, where, setDoc, updateDoc } from 'firebase/firestore'; // ✅ V00199: addDoc ya no se usa (la clave del detalle es su consecutivo)
 import { db } from '../../../config/firebase'; 
 import type { ConvenioClienteRecord, ConvenioDetalleRecord } from '../../../types/convenioCliente';
 import './FormularioConvenioCliente.css';
+import { reservarConsecutivosDetalle } from '../../conveniosDetalles/consecutivos'; // ✅ V00199
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { limpiarCacheMemoria } from '../../../utils/cacheMemoria';
 
@@ -444,7 +445,10 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     };
     if (d._isNew || !d.id || String(d.id).startsWith('local_')) {
       if (!masterId) throw new Error('Guarda primero el convenio maestro para poder crear detalles.');
-      const ref = await addDoc(collection(db, 'convenios_clientes_detalles'), payload);
+      // ✅ V00199: consecutivo reservado por transacción — la CLAVE del detalle ES el consecutivo.
+      const [consec] = await reservarConsecutivosDetalle(1);
+      const ref = doc(db, 'convenios_clientes_detalles', consec);
+      await setDoc(ref, { ...payload, consecutivo: consec });
       return ref.id;
     }
     const ref = doc(db, 'convenios_clientes_detalles', d.id);
@@ -533,6 +537,11 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
     if (convenioDuplicado) { alert(`Ya existe un convenio para este cliente: ${convenioDuplicado.numeroConvenio || convenioDuplicado.id}. Edítalo o únelo desde la lista de convenios.`); return; }
     setCargando(true);
     try {
+      // ✅ V00199: reserva consecutivos (únicos, sin brincos) para los detalles NUEVOS.
+      const nuevos = detalles.filter(det => det._isNew);
+      const consecutivosNuevos = await reservarConsecutivosDetalle(nuevos.length);
+      let iNuevo = 0;
+
       const batch = writeBatch(db);
       
       // CORRECCIÓN 3: Aseguramos la existencia de la llave primaria para los detalles
@@ -550,13 +559,16 @@ export const FormularioConvenioCliente = ({ estado, initialData, registrosExiste
 
       detalles.forEach(det => {
         if (det._isNew) {
-          const detRef = doc(collection(db, 'convenios_clientes_detalles'));
+          // ✅ V00199: la CLAVE del detalle ES su consecutivo (irrepetible).
+          const consec = consecutivosNuevos[iNuevo]; iNuevo += 1;
+          const detRef = doc(db, 'convenios_clientes_detalles', consec);
           batch.set(detRef, {
             convenioId: masterId, // Relación fuerte a llave primaria
             tipoConvenioId: det.tipoConvenioId,
             tipoConvenioNombre: det.tipoConvenioNombre,
             tarifa: Number(det.tarifa),
-            moneda: normalizarMoneda(det.moneda) // ✅ V00126: moneda propia del detalle (obligatoria)
+            moneda: normalizarMoneda(det.moneda), // ✅ V00126: moneda propia del detalle (obligatoria)
+            consecutivo: consec // ✅ V00199
           });
         } else {
           const detRef = doc(db, 'convenios_clientes_detalles', det.id!);

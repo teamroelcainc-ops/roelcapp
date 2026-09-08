@@ -40,6 +40,15 @@
 //   · STATUS con 4 estados: Pendiente · Aprobado · Inactivo · Cancelado; en el
 //     detalle CADA LÍNEA puede cancelarse o inactivarse por separado (select
 //     por tarifa), sin afectar todo el tarifario.
+// ✅ V00199 — MEJORAS:
+//   · Botones "Editar"/"Eliminar" CON NOMBRE en el modal de detalle (en la
+//     tabla siguen los iconos solos).
+//   · El STATUS del tarifario también se cambia desde el detalle (select con
+//     los 4 estados; elegir "Aprobado" corre el flujo completo hacia
+//     Convenios).
+//   · Los consecutivos de los detalles se reservan con TRANSACCIÓN
+//     (reservarConsecutivosDetalle): irrepetibles, sin brincos, y la CLAVE
+//     (id del documento) del detalle nuevo ES su consecutivo.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc, writeBatch } from 'firebase/firestore';
@@ -48,6 +57,7 @@ import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
+import { reservarConsecutivosDetalle } from '../../conveniosDetalles/consecutivos'; // ✅ V00199
 import './TarifarioClientesDashboard.css';
 
 const ID_USD = '7dca62b3';
@@ -359,18 +369,18 @@ export function TarifarioClientesDashboard() {
     }
   };
 
-  /** ✅ V00196: siguiente CONV-### para convenios y siguiente consecutivo de detalle. */
+  /** ✅ V00196: siguiente CONV-### para el convenio maestro.
+   *  ✅ V00199: los consecutivos de DETALLE ahora los reserva
+   *  reservarConsecutivosDetalle (transacción: únicos y sin brincos). */
   const siguientes = async () => {
     const [snapConv, snapDet] = await Promise.all([
       getDocs(collection(db, 'convenios_clientes')),
       getDocs(collection(db, 'convenios_clientes_detalles')),
     ]);
     const numsConv = snapConv.docs.map((d) => parseInt(String((d.data() as Doc).numeroConvenio || '').replace(/\D/g, ''), 10) || 0);
-    const numsDet = snapDet.docs.map((d) => parseInt(String((d.data() as Doc).consecutivo || '').replace(/\D/g, ''), 10) || 0);
     return {
       snapConv, snapDet,
       sigConvenio: (numsConv.length ? Math.max(...numsConv) : 0) + 1,
-      sigConsecutivo: (numsDet.length ? Math.max(...numsDet) : 0) + 1,
     };
   };
 
@@ -386,7 +396,10 @@ export function TarifarioClientesDashboard() {
       let numeroConvenio = String(r.numeroConvenio || '');
 
       if (!convenioId) {
-        const { snapConv, sigConvenio, sigConsecutivo } = await siguientes();
+        const { snapConv, sigConvenio } = await siguientes();
+        // ✅ V00199: consecutivos reservados por transacción (únicos, sin brincos)
+        const lineas: Doc[] = Array.isArray(r.tarifas) ? r.tarifas : [];
+        const consecutivos = await reservarConsecutivosDetalle(lineas.length);
         const batch = writeBatch(db);
 
         // Regla de la app: UN convenio por cliente — si ya existe, se agregan ahí.
@@ -412,14 +425,16 @@ export function TarifarioClientesDashboard() {
         }
         convenioId = convenioRef.id;
 
-        (Array.isArray(r.tarifas) ? r.tarifas : []).forEach((t: Doc, i: number) => {
-          batch.set(doc(collection(db, 'convenios_clientes_detalles')), {
+        lineas.forEach((t: Doc, i: number) => {
+          // ✅ V00199: la CLAVE del detalle ES su consecutivo (irrepetible por definición)
+          batch.set(doc(db, 'convenios_clientes_detalles', consecutivos[i]), {
             convenioId,
             tipoConvenioId: String(t.tarifaReferenciaId || ''),
             tipoConvenioNombre: String(t.descripcion || ''),
             tarifa: Number(t.tarifa) || 0,
             moneda: nombreMoneda(t.cotizadoEn || r.moneda),
-            consecutivo: `CONV-${pad3(sigConsecutivo + i)}`, // ✅ V00196
+            consecutivo: consecutivos[i],
+            status: String(t.status || 'Aprobado'),
             tarifarioId: String(r.id),
           });
         });
@@ -460,7 +475,7 @@ export function TarifarioClientesDashboard() {
     if (!window.confirm('¿Importar TODOS los convenios de "Convenios de Clientes" a Tarifario Clientes en status "Aprobado" con todas sus tarifas?\n\nTambién se asignará el consecutivo (CONV-001…) a los detalles que no lo tengan. Los convenios ya importados se saltan.')) return;
     setMigrando(true);
     try {
-      const { snapConv, snapDet, sigConsecutivo } = await siguientes();
+      const { snapConv, snapDet } = await siguientes();
       const snapTarifarios = await getDocs(collection(db, 'tarifario_clientes'));
       const yaVinculados = new Set(snapTarifarios.docs.map((d) => String((d.data() as Doc).convenioId || '')).filter(Boolean));
 
@@ -479,10 +494,10 @@ export function TarifarioClientesDashboard() {
           const nb = parseInt((numeroDe[String((b.data() as Doc).convenioId || '')] || '').replace(/\D/g, ''), 10) || 0;
           return na - nb || a.id.localeCompare(b.id);
         });
-      let corredor = sigConsecutivo;
-      for (const d of sinConsecutivo) {
-        await updateDoc(doc(db, 'convenios_clientes_detalles', d.id), { consecutivo: `CONV-${pad3(corredor)}` });
-        corredor += 1;
+      // ✅ V00199: el rango se reserva por transacción — únicos y sin brincos.
+      const reservados = await reservarConsecutivosDetalle(sinConsecutivo.length);
+      for (let i = 0; i < sinConsecutivo.length; i++) {
+        await updateDoc(doc(db, 'convenios_clientes_detalles', sinConsecutivo[i].id), { consecutivo: reservados[i] });
       }
 
       // 2) Convenio → tarifario aprobado (con todas sus tarifas).
@@ -543,6 +558,21 @@ export function TarifarioClientesDashboard() {
       alert('No se pudo completar la importación de convenios.');
     } finally {
       setMigrando(false);
+    }
+  };
+
+  // ✅ V00199: cambiar el STATUS DEL TARIFARIO desde el detalle. Elegir
+  //   "Aprobado" corre el flujo completo (crea/actualiza el convenio).
+  const cambiarStatusTarifario = async (r: Doc, nuevo: string) => {
+    if (nuevo === String(r.status || 'Pendiente')) return;
+    if (nuevo === 'Aprobado') { await aprobarRegistro(r); return; }
+    if (!aut.verificarAccion('editar', ['status'])) return;
+    try {
+      await updateDoc(doc(db, 'tarifario_clientes', r.id), { status: nuevo });
+      await registrarLog('Tarifario Clientes', 'Edición', `Cambió el status del pre convenio de "${r.clienteNombre}" (${r.fecha}) a "${nuevo}".`);
+    } catch (e) {
+      console.error('No se pudo cambiar el status del tarifario:', e);
+      alert('No se pudo cambiar el status del tarifario.');
     }
   };
 
@@ -779,7 +809,13 @@ export function TarifarioClientesDashboard() {
                 <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>
                 <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
                 <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
-                <div><span className="tc-label">Status</span><span className={chipStatus(r.status)}>{r.status || '—'}</span></div>
+                <div>
+                  <span className="tc-label">Status</span>
+                  {/* ✅ V00199: el status del tarifario se cambia desde aquí */}
+                  <select className="form-control tc-select-costo" value={String(r.status || 'Pendiente')} onChange={(e) => cambiarStatusTarifario(r, e.target.value)}>
+                    {STATUS_TARIFARIO.map((st) => <option key={st} value={st}>{st}</option>)}
+                  </select>
+                </div>
                 <div><span className="tc-label">Creado por</span><b>{r.creadoPor || '—'}</b></div>
                 <div><span className="tc-label">{String(r.status) === 'Aprobado' ? 'Aprobado por' : 'Editado por'}</span><b>{(String(r.status) === 'Aprobado' ? r.aprobadoPor : r.editadoPor) || '—'}</b></div>
               </div>
@@ -791,9 +827,9 @@ export function TarifarioClientesDashboard() {
               <div className="tc-modal-pie">
                 <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
                 <div className="tc-modal-botones">
-                  {/* ✅ V00198: editar y eliminar también desde el detalle */}
-                  <button type="button" className="btn-small btn-edit" title="Editar este pre convenio" onClick={() => { setDetalleId(''); abrirEdicion(r); }}><IconoEditar /></button>
-                  <button type="button" className="btn-small btn-danger" title="Eliminar este pre convenio" onClick={() => { setDetalleId(''); eliminarRegistro(r); }}><IconoEliminar /></button>
+                  {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}
+                  <button type="button" className="btn-small btn-edit tc-btn-nombrado" title="Editar este pre convenio" onClick={() => { setDetalleId(''); abrirEdicion(r); }}><IconoEditar /> Editar</button>
+                  <button type="button" className="btn-small btn-danger tc-btn-nombrado" title="Eliminar este pre convenio" onClick={() => { setDetalleId(''); eliminarRegistro(r); }}><IconoEliminar /> Eliminar</button>
                   {String(r.status) !== 'Aprobado' && (
                     <button type="button" className="tc-btn-aprobar" onClick={() => aprobarRegistro(r)}>✔ Aprobar</button>
                   )}

@@ -192,6 +192,7 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
   { clave: 'detallesConvenioClientes', label: 'Detalles del Convenio', coleccion: 'convenios_clientes_detalles', campos: [
       { key: 'moneda', label: 'Cotizado En' },
       { key: 'tarifa', label: 'Costo de la Tarifa' },
+      { key: 'status', label: 'Status' }, // ✅ V00199
     ], integrado: true },
   { clave: 'conveniosProveedores', label: 'Convenios de Proveedores', coleccion: 'convenios_proveedores', campos: [
       { key: 'proveedorId', label: 'Proveedor' },

@@ -22,6 +22,9 @@
 //   tiene permiso PROPIO en Roles y respeta Configuración → Autorizaciones
 //   (Editar al guardar cambios, Borrar al eliminar); el botón de eliminar usa
 //   el icono rojo estándar de la app (btn-small btn-danger).
+// ✅ V00199 (clientes): columna STATUS editable por renglón (Pendiente ·
+//   Aprobado · Inactivo · Cancelado) — se guarda con "Guardar cambios" y
+//   respeta Autorizaciones como edición del campo Status.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -42,6 +45,7 @@ interface FilaDetalle {
   entidad: string;      // cliente o proveedor según `tipo`
   tarifa: string;       // descripción de la tarifa de referencia
   costo: number | null;
+  status: string; // ✅ V00199: status propio del detalle
   // ✅ V00197: para las pestañas (clientes)
   statusConvenio: string;
   vencido: boolean;
@@ -67,14 +71,15 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const PESTANAS = ['Convenios Activos', 'Convenios Inactivos', 'No identificados', 'Vacíos'] as const;
   const [pestana, setPestana] = useState<(typeof PESTANAS)[number]>('Convenios Activos');
   // ✅ NUEVO (V00122): edición en línea (varios de golpe) + eliminar con papelera
-  const [cambios, setCambios] = useState<Record<string, { tarifa?: number; moneda?: string }>>({});
+  const [cambios, setCambios] = useState<Record<string, { tarifa?: number; moneda?: string; status?: string }>>({}); // ✅ V00199: + status
   const [guardando, setGuardando] = useState(false);
   // ✅ NUEVO (V00123): monedas desde el CATÁLOGO (nada hardcodeado)
   const [monedasCat, setMonedasCat] = useState<string[]>([]);
   // ✅ V00198: reglas de Autorizaciones (módulo propio; en proveedores no hay reglas registradas y todo pasa)
   const aut = useAutorizacionesCampos(esClientes ? 'detallesConvenioClientes' : 'detallesConvenioProveedores');
 
-  const marcarCambio = (id: string, campo: 'tarifa' | 'moneda', v: number | string) =>
+  const ESTADOS_DETALLE = ['Pendiente', 'Aprobado', 'Inactivo', 'Cancelado']; // ✅ V00199
+  const marcarCambio = (id: string, campo: 'tarifa' | 'moneda' | 'status', v: number | string) =>
     setCambios((prev) => ({ ...prev, [id]: { ...prev[id], [campo]: v as never } }));
   const guardarCambios = async () => {
     const ids = Object.keys(cambios);
@@ -85,7 +90,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     setGuardando(true);
     try {
       for (const id of ids) await updateDoc(doc(dbFs, COL_DETALLES, id), { ...cambios[id] } as Record<string, unknown>);
-      setFilas((prev) => (prev || []).map((f) => cambios[f.id] ? { ...f, costo: cambios[f.id].tarifa ?? f.costo, moneda: String(cambios[f.id].moneda ?? f.moneda) } : f));
+      setFilas((prev) => (prev || []).map((f) => cambios[f.id] ? { ...f, costo: cambios[f.id].tarifa ?? f.costo, moneda: String(cambios[f.id].moneda ?? f.moneda), status: String(cambios[f.id].status ?? f.status) } : f));
       setCambios({});
       alert(`Se guardaron ${ids.length} detalle(s). ✅`);
     } catch { alert('No se pudieron guardar todos los cambios.'); }
@@ -153,6 +158,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           moneda: String(x.moneda || ''),
           tarifa: tarifas[idTarifa] || String(x.tipoConvenioNombre || '') || '—',
           costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
+          status: String(x.status || ''), // ✅ V00199
           // ✅ V00197: datos para las pestañas
           statusConvenio: conv.status,
           vencido: conv.vencido,
@@ -271,6 +277,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <th>{ETIQUETA_ENTIDAD}</th>
                 <th>Tarifa</th>
                 <th>{esClientes ? 'Cotizado En' : 'Moneda'}</th>
+                {esClientes && <th>Status</th>}{/* ✅ V00199 */}
                 <th className="dcv-x8">Costo de la Tarifa</th>
                 <th className="dcv-x8">Acciones</th>
               </tr>
@@ -288,6 +295,15 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                       <option value="">— Sin moneda —</option>
                       {lista.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>); })()}</td>
+                  {esClientes && (
+                    /* ✅ V00199: status editable del detalle (se guarda con "Guardar cambios") */
+                    <td>
+                      <select className="form-control dcv-select-moneda" value={String(cambios[f.id]?.status ?? f.status ?? '')} onChange={(e) => marcarCambio(f.id, 'status', e.target.value)}>
+                        <option value="">—</option>
+                        {ESTADOS_DETALLE.map((st) => <option key={st} value={st}>{st}</option>)}
+                      </select>
+                    </td>
+                  )}
                   <td className="dcv-x8"><input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
                   <td className="dcv-x8"><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></td>
                 </tr>
