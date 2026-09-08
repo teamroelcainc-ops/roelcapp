@@ -143,3 +143,24 @@
   .tc-contenedor { padding: 14px; }
   .tc-modal { width: 100vw; max-height: 100dvh; border-radius: 0; }
 }
+
+/* ✅ V00192: captura en modal, selector de costo y botones PDF */
+.tc-encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.tc-modal-captura { width: min(980px, 96vw); }
+.tc-modal-captura .tc-captura { border: none; padding: 0; background: transparent; }
+.tc-overlay-tarifas { z-index: 2350; }
+.tc-select-costo { width: auto; min-width: 110px; padding: 4px 8px; font-size: 0.8rem; }
+.tc-btn-pdf {
+  padding: 5px 12px;
+  background-color: #21262d;
+  border: 1px solid #58a6ff;
+  border-radius: 6px;
+  color: #58a6ff;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 700;
+  margin-right: 6px;
+}
+.tc-btn-pdf:hover { background-color: rgba(88, 166, 255, 0.12); }
+.tc-td-acciones { width: 110px; white-space: nowrap; }
+.tc-detalle-acciones { display: flex; justify-content: flex-end; padding: 4px 0 8px 0; }
