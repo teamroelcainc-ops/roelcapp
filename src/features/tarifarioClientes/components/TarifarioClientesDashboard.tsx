@@ -69,6 +69,9 @@
 //     Convenio y las Operaciones vean lo mismo.
 //   · La fase de reparación de la migración marca "Aprobado" los detalles del
 //     convenio sin status (si están en Detalles, están aprobados).
+// ✅ V00204 — FIX: la celda CONSECUTIVO de la fila no se insertó en V00203
+//   (encabezado con 8 columnas y filas con 7 → botones recorridos); ahora la
+//   fila tiene su celda y el orden de columnas queda como antes.
 // ✅ V00203 — CONSECUTIVO DEL TARIFARIO (TAR-###):
 //   · Cada tarifario tiene su consecutivo TAR-001, TAR-002… único e
 //     irrepetible (misma transacción de contador que los detalles) y la CLAVE
@@ -918,6 +921,8 @@ export function TarifarioClientesDashboard() {
                 {registros.map((r) => (
                   /* ✅ V00195: clic en la fila abre el DETALLE EN MODAL; acciones al inicio */
                   <tr key={r.id} className="tc-fila-click" onClick={() => setDetalleId(r.id)}>
+                    {/* ✅ V00204: la celda del consecutivo faltaba (el V00203 no aplicó aquí) — orden restaurado */}
+                    <td className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TAR-') ? r.id : '—')}</td>
                     <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
                       {/* ✅ V00200: iconos estándar azul/rojo (adiós emojis) */}
                       <button type="button" className="btn-small btn-edit tc-mr6" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}><IconoEditar /></button>
