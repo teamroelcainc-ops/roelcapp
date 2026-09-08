@@ -1,0 +1,145 @@
+/* src/features/tarifarioClientes/components/TarifarioClientesDashboard.css
+   ✅ V00191 — módulo Tarifario Clientes. */
+
+.tc-contenedor { padding: 24px; display: flex; flex-direction: column; gap: 20px; }
+.tc-titulo { margin: 0; color: #f0f6fc; font-size: 1.35rem; }
+.tc-sub { margin: 4px 0 0 0; color: #8b949e; font-size: 0.84rem; }
+.tc-subtitulo { margin: 0 0 10px 0; color: #f0f6fc; font-size: 1rem; }
+
+/* ── Captura ── */
+.tc-captura {
+  display: grid;
+  grid-template-columns: 160px minmax(260px, 1.6fr) 1fr 1.2fr auto;
+  gap: 14px;
+  align-items: end;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  padding: 16px;
+}
+.tc-campo { display: flex; flex-direction: column; gap: 6px; }
+.tc-campo-cliente { position: relative; }
+.tc-label { color: #8b949e; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+.tc-solo-lectura { opacity: 0.85; cursor: not-allowed; }
+
+.tc-sugerencias {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  background-color: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  margin-top: 4px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.tc-sugerencia {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #21262d;
+  cursor: pointer;
+}
+.tc-sugerencia:last-child { border-bottom: none; }
+.tc-sugerencia:hover { background-color: #161b22; }
+.tc-sug-nombre { color: #f0f6fc; font-size: 0.85rem; font-weight: 600; }
+.tc-sug-tipo { color: #8b949e; font-size: 0.72rem; }
+
+.tc-btn-preconvenio {
+  padding: 9px 18px;
+  background-color: #D84315;
+  border: 1px solid #D84315;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.tc-btn-preconvenio:not(:disabled):hover { background-color: #ff5722; }
+.tc-btn-preconvenio:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Tablas ── */
+.tc-marco { border: 1px solid #30363d; border-radius: 8px; overflow: auto; }
+.tc-tabla { width: 100%; border-collapse: collapse; text-align: left; }
+.tc-tabla thead { background-color: #0d1117; position: sticky; top: 0; z-index: 5; }
+.tc-tabla th { padding: 10px 12px; color: #8b949e; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.4px; border-bottom: 1px solid #30363d; white-space: nowrap; }
+.tc-tabla td { padding: 9px 12px; color: #c9d1d9; font-size: 0.85rem; border-bottom: 1px solid #21262d; }
+.tc-th-check { width: 36px; text-align: center; }
+.tc-td-num { font-family: monospace; white-space: nowrap; }
+.tc-td-cliente { color: #D84315; font-weight: 700; }
+.tc-td-toggle { width: 32px; }
+.tc-td-acciones { width: 44px; text-align: center; }
+.tc-toggle { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.85rem; }
+.tc-toggle:hover { color: #f0f6fc; }
+.tc-btn-eliminar { background: none; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
+.tc-btn-eliminar:hover { border-color: #f85149; }
+.tc-fila-detalle > td { background-color: #0d1117; padding: 10px 16px 14px 44px; }
+.tc-tabla-interna { width: 100%; border-collapse: collapse; text-align: left; }
+.tc-tabla-interna th { padding: 6px 10px; color: #8b949e; font-size: 0.66rem; font-weight: 700; border-bottom: 1px solid #30363d; }
+.tc-tabla-interna td { padding: 6px 10px; color: #c9d1d9; font-size: 0.8rem; border-bottom: 1px solid #21262d; }
+
+.tc-chip { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 0.7rem; font-weight: 800; }
+.tc-chip-usd { color: #3fb950; border: 1px solid #3fb950; }
+.tc-chip-mxn { color: #58a6ff; border: 1px solid #58a6ff; }
+.tc-chip-pendiente { color: #f59e0b; border: 1px solid #f59e0b; }
+.tc-chip-otro { color: #8b949e; border: 1px solid #30363d; }
+
+.tc-vacio { color: #8b949e; text-align: center; padding: 22px 0; margin: 0; }
+
+/* ── Modal Pre convenios ── */
+.tc-overlay { z-index: 2300; }
+.tc-modal {
+  width: min(860px, 94vw);
+  max-height: 88vh;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tc-modal-encabezado { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.tc-modal-titulo { margin: 0; color: #f0f6fc; font-size: 1.05rem; }
+.tc-modal-sub { margin: 4px 0 0 0; color: #8b949e; font-size: 0.8rem; }
+.tc-cerrar { background: none; border: none; color: #8b949e; font-size: 1rem; cursor: pointer; }
+.tc-cerrar:hover { color: #f0f6fc; }
+.tc-buscador-tarifas { width: 100%; }
+.tc-modal-marco { flex: 1; min-height: 0; max-height: 52vh; }
+.tc-modal .tc-tabla tbody tr { cursor: pointer; }
+.tc-fila-marcada td { background-color: rgba(216, 67, 21, 0.1); }
+.tc-modal-pie { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tc-conteo-sel { color: #8b949e; font-size: 0.82rem; }
+.tc-conteo-sel b { color: #D84315; }
+.tc-modal-botones { display: flex; gap: 8px; }
+.tc-btn-guardar {
+  padding: 8px 18px;
+  background-color: #238636;
+  border: 1px solid #2ea043;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.tc-btn-guardar:not(:disabled):hover { background-color: #2ea043; }
+.tc-btn-guardar:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (max-width: 900px) {
+  .tc-captura { grid-template-columns: 1fr 1fr; }
+  .tc-campo-cliente { grid-column: 1 / -1; }
+  .tc-campo-boton { grid-column: 1 / -1; }
+  .tc-btn-preconvenio { width: 100%; }
+}
+@media (max-width: 768px) {
+  .tc-contenedor { padding: 14px; }
+  .tc-modal { width: 100vw; max-height: 100dvh; border-radius: 0; }
+}

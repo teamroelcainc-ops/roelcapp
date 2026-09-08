@@ -26,6 +26,7 @@ export const MODULOS_NAV: ModuloNavDef[] = [
   { clave: 'referenciasDiesel', etiqueta: 'Diesel', Icono: Fuel },
   { clave: 'referenciasPuentes', etiqueta: 'Puentes', Icono: Landmark },
   { clave: 'referenciasNomina', etiqueta: 'Nómina', Icono: Wallet },
+  { clave: 'tarifarioClientes', etiqueta: 'Tarifario', Icono: BookOpen },
   { clave: 'facturacionClientes', etiqueta: 'Fact. Clientes', Icono: Receipt },
   { clave: 'facturacionProveedores', etiqueta: 'Fact. Prov.', Icono: FileText },
   { clave: 'empresas', etiqueta: 'Empresas', Icono: Building2 },

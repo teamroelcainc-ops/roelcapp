@@ -54,6 +54,8 @@ const UnidadesProveedorDashboard = lazyWithRetry(() => import('./features/unidad
 const UnidadesDashboard = lazyWithRetry(() => import('./features/unidades/components/UnidadesDashboard'), 'UnidadesDashboard');
 const RemolquesDashboard = lazyWithRetry(() => import('./features/remolques/components/RemolquesDashboard'), 'RemolquesDashboard');
 const ConveniosClientesDashboard = lazyWithRetry(() => import('./features/conveniosClientes/components/ConveniosClientesDashboard'), 'ConveniosClientesDashboard');
+// ✅ V00191: módulo Tarifario Clientes (pre convenios desde tarifas de referencia).
+const TarifarioClientesDashboard = lazyWithRetry(() => import('./features/tarifarioClientes/components/TarifarioClientesDashboard'), 'TarifarioClientesDashboard');
 const ConveniosProveedoresDashboard = lazyWithRetry(() => import('./features/conveniosProveedores/components/ConveniosProveedoresDashboard').then(m => ({ default: m.ConveniosProveedoresDashboard })), 'ConveniosProveedoresDashboard');
 // ✅ NUEVO (V00112): vista plana de tarifas de convenios (clientes y proveedores)
 const DetallesConvenioDashboard = lazyWithRetry(() => import('./features/conveniosDetalles/components/DetallesConvenioDashboard'), 'DetallesConvenioDashboard');
@@ -110,6 +112,8 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Referencias de Puentes': 'referenciasPuentes',
   'Costos Adicionales': 'costosAdicionales',
   'Convenio de Clientes': 'conveniosClientes',
+  // ✅ V00191: pre convenios del cliente a partir de tarifas de referencia.
+  'Tarifario Clientes': 'tarifarioClientes',
   'Facturación de Clientes': 'facturacionClientes',
   'Convenio de Proveedores': 'conveniosProveedores',
   'Facturación de Proveedores': 'facturacionProveedores',
@@ -216,6 +220,7 @@ const ICON: Record<string, React.ReactNode> = {
     <Ico><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></Ico>
   ),
   conveniosClientes: iFileText,
+  tarifarioClientes: iFileText,
   facturacionClientes: iCard,
   conveniosProveedores: iFileText,
   facturacionProveedores: iCard,
@@ -726,7 +731,7 @@ function AppContenido() {
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -1235,7 +1240,7 @@ function AppContenido() {
   }
 
   const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
-  const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'facturacionClientes' || moduloActivo === 'detallesConvenioClientes';
+  const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'tarifarioClientes' || moduloActivo === 'facturacionClientes' || moduloActivo === 'detallesConvenioClientes';
   const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores' || moduloActivo === 'detallesConvenioProveedores';
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion' || moduloActivo === 'datosEmpresa' || moduloActivo === 'autorizaciones';
@@ -1243,7 +1248,7 @@ function AppContenido() {
 
   // Visibilidad de cada grupo: se muestra si al menos un hijo está permitido.
   const verGastos = puede('mtto') || puede('referenciasDiesel') || puede('referenciasPuentes') || puede('costosAdicionales');
-  const verClientes = puede('conveniosClientes') || puede('facturacionClientes');
+  const verClientes = puede('conveniosClientes') || puede('tarifarioClientes') || puede('facturacionClientes');
   const verProveedores = puede('conveniosProveedores') || puede('facturacionProveedores');
   const verEmpleados = puede('colaboradores') || puede('historialAsistencia') || puede('referenciasNomina') || puede('deducciones');
   const verBasesDatos = puede('empresas') || puede('contactos') || puede('direcciones') || puede('tipoCambio') || puede('combustible') || puede('unidades') || puede('remolques') || puede('proveedoresUnidad') || puede('unidadesProveedor');
@@ -1523,6 +1528,8 @@ function AppContenido() {
             {menuClientesAbierto && (
               <div className="sidebar-submenu">
                 {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => navegarA('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.convenio_de_clientes', 'Convenio de Clientes')}</span></div>}
+                {/* ✅ V00191: Tarifario Clientes */}
+                {puede('tarifarioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'tarifarioClientes' ? 'active' : ''}`} onClick={() => navegarA('tarifarioClientes')}><span className="sidebar-icon">{ICON.tarifarioClientes}</span><span className="sidebar-label">{etq('menu.tarifario_clientes', 'Tarifario Clientes')}</span></div>}
                 {/* ✅ NUEVO (V00112): Detalles del Convenio (clientes) */}
                 {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioClientes' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
                 {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => navegarA('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
@@ -1813,6 +1820,7 @@ function AppContenido() {
             {moduloActivo === 'proveedoresUnidad' && puede('proveedoresUnidad') && <ProveedoresUnidadDashboard />}
             {moduloActivo === 'unidadesProveedor' && puede('unidadesProveedor') && <UnidadesProveedorDashboard />}
             {moduloActivo === 'conveniosClientes' && puede('conveniosClientes') && <ConveniosClientesDashboard />}
+                {moduloActivo === 'tarifarioClientes' && puede('tarifarioClientes') && <TarifarioClientesDashboard />}
             {/* ✅ NUEVO (V00112): vistas Detalles del Convenio */}
             {moduloActivo === 'detallesConvenioClientes' && puede('conveniosClientes') && <DetallesConvenioDashboard tipo="clientes" />}
             {moduloActivo === 'detallesConvenioProveedores' && puede('conveniosProveedores') && <DetallesConvenioDashboard tipo="proveedores" />}
