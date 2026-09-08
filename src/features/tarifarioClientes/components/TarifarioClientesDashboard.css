@@ -164,3 +164,23 @@
 .tc-btn-pdf:hover { background-color: rgba(88, 166, 255, 0.12); }
 .tc-td-acciones { width: 110px; white-space: nowrap; }
 .tc-detalle-acciones { display: flex; justify-content: flex-end; padding: 4px 0 8px 0; }
+
+/* ✅ V00193: formulario a dos columnas, columna "Cotizado En" y guardados en el formulario */
+.tc-modal-captura .tc-captura {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 18px;
+}
+.tc-modal-captura .tc-campo-cliente { min-width: 0; }
+.tc-captura-guardados {
+  margin-top: 18px;
+  border-top: 1px solid #30363d;
+  padding-top: 12px;
+}
+.tc-guardados-titulo {
+  margin: 0 0 8px 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #c9d1d9;
+}
+.tc-vacio-mini { padding: 6px 0; font-size: 0.82rem; }

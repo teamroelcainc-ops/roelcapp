@@ -86,6 +86,8 @@ export function TarifarioClientesDashboard() {
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   // ✅ V00192: costo elegido por tarifa (índice dentro de costosDe). Default 0.
   const [costoElegido, setCostoElegido] = useState<Record<string, number>>({});
+  // ✅ V00193: moneda en que se cotiza cada tarifa ("Cotizado En"). Default: la del cliente.
+  const [monedaTarifa, setMonedaTarifa] = useState<Record<string, 'USD' | 'MXN'>>({});
   const [guardando, setGuardando] = useState(false);
 
   // ── Pre convenios guardados ──
@@ -205,6 +207,8 @@ export function TarifarioClientesDashboard() {
             costosSugeridos: costos,
             // ✅ V00192: costo ELEGIDO — es el que sale como TARIFA en el PDF.
             tarifa: costos[idx] || 0,
+            // ✅ V00193: moneda en que quedó cotizada esta línea.
+            cotizadoEn: monedaTarifa[t.id] || monedaCliente || 'USD',
             status: 'Pendiente',
           };
         }),
@@ -217,6 +221,7 @@ export function TarifarioClientesDashboard() {
       setCapturaAbierta(false);
       setSeleccion(new Set());
       setCostoElegido({});
+      setMonedaTarifa({});
       setBusquedaTarifa('');
       setClienteSel(null);
       setBusquedaCliente('');
@@ -406,7 +411,7 @@ export function TarifarioClientesDashboard() {
                           </div>
                           <table className="tc-tabla-interna">
                             <thead>
-                              <tr><th>DESCRIPCIÓN</th><th>CLAVE</th><th>ORIGEN</th><th>DESTINO</th><th>TARIFA</th><th>COSTOS SUGERIDOS</th><th>STATUS</th></tr>
+                              <tr><th>DESCRIPCIÓN</th><th>CLAVE</th><th>ORIGEN</th><th>DESTINO</th><th>COTIZADO EN</th><th>TARIFA</th><th>COSTOS SUGERIDOS</th><th>STATUS</th></tr>
                             </thead>
                             <tbody>
                               {(r.tarifas || []).map((t: Doc, i: number) => (
@@ -415,6 +420,8 @@ export function TarifarioClientesDashboard() {
                                   <td>{t.clave || '—'}</td>
                                   <td>{t.origen || '—'}</td>
                                   <td>{t.destino || '—'}</td>
+                                  {/* ✅ V00193: moneda en que se cotizó la línea */}
+                                  <td>{(t.cotizadoEn || r.moneda) ? <span className={`tc-chip ${(t.cotizadoEn || r.moneda) === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{t.cotizadoEn || r.moneda}</span> : '—'}</td>
                                   <td className="tc-td-num">{fmtMoney(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0)}</td>
                                   <td className="tc-td-num">{(t.costosSugeridos || []).length > 0 ? (t.costosSugeridos as number[]).map(fmtMoney).join(' · ') : '—'}</td>
                                   <td><span className="tc-chip tc-chip-pendiente">{t.status || 'Pendiente'}</span></td>
@@ -485,6 +492,31 @@ export function TarifarioClientesDashboard() {
               </div>
             </div>
 
+            {/* ✅ V00193: pre convenios ya guardados del cliente elegido, visibles en el formulario */}
+            {clienteSel && (
+              <div className="tc-captura-guardados">
+                <h4 className="tc-guardados-titulo">Pre convenios guardados de este cliente</h4>
+                {registros.filter((r) => String(r.clienteId) === String(clienteSel.id)).length === 0 ? (
+                  <p className="tc-vacio tc-vacio-mini">Este cliente aún no tiene pre convenios guardados.</p>
+                ) : (
+                  <table className="tc-tabla-interna">
+                    <thead><tr><th>FECHA</th><th>TARIFAS</th><th>COTIZADO EN</th><th>STATUS</th><th></th></tr></thead>
+                    <tbody>
+                      {registros.filter((r) => String(r.clienteId) === String(clienteSel.id)).map((r) => (
+                        <tr key={`cap-${r.id}`}>
+                          <td>{r.fecha || '—'}</td>
+                          <td className="tc-td-num">{Array.isArray(r.tarifas) ? r.tarifas.length : 0}</td>
+                          <td>{[...new Set((r.tarifas || []).map((t: Doc) => String(t.cotizadoEn || r.moneda || '')))].filter(Boolean).join(' · ') || '—'}</td>
+                          <td><span className={`tc-chip ${String(r.status) === 'Pendiente' ? 'tc-chip-pendiente' : 'tc-chip-otro'}`}>{r.status || '—'}</span></td>
+                          <td className="tc-td-acciones"><button type="button" className="tc-btn-pdf" onClick={() => exportarPDF(r)}>PDF</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
             <div className="tc-modal-pie">
               <span className="tc-conteo-sel">{clienteSel ? `Cliente: ${clienteSel.nombre}` : 'Elige un cliente para continuar'}</span>
               <div className="tc-modal-botones">
@@ -533,7 +565,7 @@ export function TarifarioClientesDashboard() {
               ) : (
                 <table className="tc-tabla">
                   <thead>
-                    <tr><th className="tc-th-check"></th><th>DESCRIPCIÓN</th><th>CLAVE</th><th>ORIGEN</th><th>DESTINO</th><th>COSTO A APLICAR</th></tr>
+                    <tr><th className="tc-th-check"></th><th>DESCRIPCIÓN</th><th>CLAVE</th><th>ORIGEN</th><th>DESTINO</th><th>COTIZADO EN</th><th>COSTO A APLICAR</th></tr>
                   </thead>
                   <tbody>
                     {tarifasVisibles.map((t) => {
@@ -549,6 +581,17 @@ export function TarifarioClientesDashboard() {
                           <td className="tc-td-num">{claveDe(t) || '—'}</td>
                           <td>{t.origen || '—'}</td>
                           <td>{t.destino || '—'}</td>
+                          {/* ✅ V00193: columna "Cotizado En" (tipo moneda) a la izquierda del monto */}
+                          <td className="tc-td-num" onClick={(e) => e.stopPropagation()}>
+                            <select
+                              className="form-control tc-select-costo"
+                              value={monedaTarifa[t.id] || monedaCliente || 'USD'}
+                              onChange={(e) => setMonedaTarifa((p) => ({ ...p, [t.id]: e.target.value as 'USD' | 'MXN' }))}
+                            >
+                              <option value="USD">USD</option>
+                              <option value="MXN">MXN</option>
+                            </select>
+                          </td>
                           <td className="tc-td-num" onClick={(e) => e.stopPropagation()}>
                             {costos.length === 0 ? '—' : costos.length === 1 ? fmtMoney(costos[0]) : (
                               /* ✅ V00192: al haber varios costos sugeridos, se elige el que aplica */
