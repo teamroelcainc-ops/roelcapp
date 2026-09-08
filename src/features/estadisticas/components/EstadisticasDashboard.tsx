@@ -29,6 +29,8 @@ import { useEtiquetas } from '../../../contexts/EtiquetasContext';
 import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion';
 import { EstadisticasOperativas } from './EstadisticasOperativas';
 import { DesgloseJerarquico, capitalizar, type Dimension } from './DesgloseJerarquico';
+// ✅ V00191: facturas del cliente con su moneda (clic en el monto del desglose).
+import { FacturasClienteMoneda } from './FacturasClienteMoneda';
 import './EstadisticasDashboard.css';
 
 const STATUS_CANCELADO_ID = '7607f692';
@@ -619,6 +621,11 @@ export function EstadisticasDashboard() {
     });
     setRefsFiltro(null);
   };
+  // ✅ V00191: modal de FACTURAS DEL CLIENTE con su moneda — se abre con clic
+  //   en el monto (Pesos/Dólares) de una fila de CLIENTE en el desglose.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- ops sin tipo canónico (mismo criterio del módulo).
+  const [facturasClienteSel, setFacturasClienteSel] = useState<{ cliente: string; ops: any[] } | null>(null);
+
   // ✅ NUEVO — desglose por CLIENTE (desde Tendencia). '__ALL__' = General.
   const abrirDetalleCliente = (cliente: string) => {
     const esTodos = cliente === '__ALL__';
@@ -1479,6 +1486,7 @@ export function EstadisticasDashboard() {
               monedaDe={monedaClienteDe}
               etiquetaDe={etiquetaDimension}
               onVerOps={(titulo, lista) => { setDetalleSel({ titulo, ops: lista }); setRefsFiltro(null); }}
+              onVerFacturasCliente={(clienteSel, lista) => setFacturasClienteSel({ cliente: clienteSel, ops: lista })}
             />
           )}
           {pestana === 'operativa' && (
@@ -2175,6 +2183,15 @@ export function EstadisticasDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ✅ V00191: facturas del cliente con validación de moneda vs Empresas */}
+      {facturasClienteSel && (
+        <FacturasClienteMoneda
+          cliente={facturasClienteSel.cliente}
+          ops={facturasClienteSel.ops}
+          onCerrar={() => setFacturasClienteSel(null)}
+        />
       )}
     </div>
   );

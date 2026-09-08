@@ -32,6 +32,9 @@ interface Props {
   /** Etiqueta de cada dimensión para una operación (ya resuelta contra catálogos por el dashboard). */
   etiquetaDe: (op: Op, d: Dimension) => string;
   onVerOps?: (titulo: string, ops: Op[]) => void;
+  /** ✅ V00191: clic en el MONTO (Pesos/Dólares) de una fila de CLIENTE →
+   *  abre las facturas de ese cliente con su moneda (validación vs Empresas). */
+  onVerFacturasCliente?: (cliente: string, ops: Op[]) => void;
 }
 
 const DIMENSIONES: Dimension[] = ['tipo', 'cv', 'movimiento', 'cliente', 'operador', 'unidad', 'proveedor'];
@@ -48,7 +51,7 @@ export const capitalizar = (t: string) => String(t || '').trim().toLowerCase().r
 
 interface Agregado { clave: string; ops: Op[]; n: number; pes: number; dol: number; conv: number; costo: number; meses: number[]; }
 
-export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiquetaDe, onVerOps }: Props) {
+export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiquetaDe, onVerOps, onVerFacturasCliente }: Props) {
   const [raizDim, setRaizDim] = useState<Dimension>('tipo');
   const [sub1, setSub1] = useState<Dimension>('cv');
   const [sub2, setSub2] = useState<Dimension>('movimiento');
@@ -121,6 +124,12 @@ export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiq
     const pctBase = base ? (esFact ? base.conv : base.n) : (esFact ? totales.conv : totales.n);
     const valor = esFact ? a.conv : a.n;
     const utilidad = a.conv - a.costo;
+    // ✅ V00191: la dimensión de ESTA fila (raíz / sub-nivel 1 / sub-nivel 2).
+    //   Si es CLIENTE, los montos Pesos/Dólares son clic → facturas del cliente.
+    const dimFila: Dimension = prof === 0 ? raizDim : prof === 1 ? sub1 : sub2;
+    const clicFact = esFact && !!onVerFacturasCliente && dimFila === 'cliente';
+    const verFacturas = clicFact ? () => onVerFacturasCliente!(a.clave, a.ops) : undefined;
+    const tituloFact = clicFact ? 'Ver las facturas de este cliente con su moneda' : undefined;
     return (
       <Fragment key={ruta}>
         <tr className={`dj-fila dj-n${prof}`}>
@@ -132,8 +141,8 @@ export function DesgloseJerarquico({ ops, modo, montoDe, costoDe, monedaDe, etiq
             <span className={`dj-etiqueta${onVerOps ? ' dj-click' : ''}`} onClick={() => ver(a.clave, a.ops)} title="Ver el resumen de estas operaciones">{a.clave}</span>
           </td>
           <td className="dj-num">{fmtNum(a.n)}</td>
-          {esFact && <td className="dj-num dj-mxn">{a.pes > 0 ? fmtMoney(a.pes) : ''}</td>}
-          {esFact && <td className="dj-num dj-usd">{a.dol > 0 ? fmtMoney(a.dol) : ''}</td>}
+          {esFact && <td className={`dj-num dj-mxn${clicFact ? ' dj-click' : ''}`} onClick={verFacturas} title={tituloFact}>{a.pes > 0 ? fmtMoney(a.pes) : ''}</td>}
+          {esFact && <td className={`dj-num dj-usd${clicFact ? ' dj-click' : ''}`} onClick={verFacturas} title={tituloFact}>{a.dol > 0 ? fmtMoney(a.dol) : ''}</td>}
           {esFact && <td className="dj-num dj-conv">{fmtMoney(a.conv)}</td>}
           {esFact && <td className="dj-num dj-costo">{a.costo > 0 ? fmtMoney(a.costo) : ''}</td>}
           {esFact && <td className={`dj-num ${utilidad >= 0 ? 'dj-util' : 'dj-perdida'}`}>{fmtMoney(utilidad)}</td>}
