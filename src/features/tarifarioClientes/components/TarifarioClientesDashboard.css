@@ -285,3 +285,6 @@
 
 /* ✅ V00199: botones con nombre en el modal de detalle */
 .tc-btn-nombrado { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 0.8rem; }
+
+/* ✅ V00200: consecutivo en la tabla de tarifas */
+.tc-td-consecutivo { font-weight: 700; color: #58a6ff; white-space: nowrap; }

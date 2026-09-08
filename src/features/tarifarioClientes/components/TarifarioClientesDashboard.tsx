@@ -49,6 +49,13 @@
 //   · Los consecutivos de los detalles se reservan con TRANSACCIÓN
 //     (reservarConsecutivosDetalle): irrepetibles, sin brincos, y la CLAVE
 //     (id del documento) del detalle nuevo ES su consecutivo.
+// ✅ V00200 — MEJORAS:
+//   · Iconos de la TABLA ahora sí con el estándar azul/rojo (el reemplazo de
+//     V00198 no aplicó por un desfase de indentación; fuera emojis).
+//   · El CONSECUTIVO del detalle acompaña a cada tarifa: se guarda en la
+//     línea al aprobar, la migración lo copia (y repara los ya migrados), se
+//     ve en el detalle (columna CONSECUTIVO + número de convenio en la
+//     cabecera) y el PDF lo imprime como CLAVE DE SERVICIO.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc, writeBatch } from 'firebase/firestore';
@@ -441,7 +448,8 @@ export function TarifarioClientesDashboard() {
 
         batch.update(doc(db, 'tarifario_clientes', r.id), {
           status: 'Aprobado',
-          tarifas: (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc) => ({ ...t, status: 'Aprobado' })),
+          // ✅ V00200: cada línea guarda SU consecutivo (la clave del detalle)
+          tarifas: lineas.map((t: Doc, i: number) => ({ ...t, status: 'Aprobado', consecutivo: consecutivos[i] })),
           convenioId,
           numeroConvenio,
           aprobadoEl: new Date().toISOString(),
@@ -527,6 +535,8 @@ export function TarifarioClientesDashboard() {
             tarifa: Number(det.tarifa) || 0,
             cotizadoEn: canonMoneda(det.moneda) || monedaConv,
             status: 'Aprobado',
+            // ✅ V00200: el consecutivo del detalle viaja con la línea
+            consecutivo: String(det.consecutivo || (String(det.id).startsWith('CONV-') ? det.id : '')),
           };
         });
         await addDoc(collection(db, 'tarifario_clientes'), {
@@ -551,8 +561,31 @@ export function TarifarioClientesDashboard() {
         importados += 1;
       }
 
+      // ✅ V00200: REPARA los tarifarios ya migrados que no traían consecutivo
+      //   en sus líneas — se toma del detalle correspondiente del convenio.
+      let reparados = 0;
+      for (const td of snapTarifarios.docs) {
+        const t = td.data() as Doc;
+        const lineasT: Doc[] = Array.isArray(t.tarifas) ? t.tarifas : [];
+        if (!t.convenioId || lineasT.length === 0 || lineasT.every((l: Doc) => String(l.consecutivo || '').trim())) continue;
+        const dets = (detallesPorConvenio[String(t.convenioId)] || []);
+        const usados = new Set<string>();
+        const nuevas = lineasT.map((l: Doc) => {
+          if (String(l.consecutivo || '').trim()) return l;
+          const det = dets.find((dd) => !usados.has(String(dd.id)) && String(dd.tipoConvenioId || '') === String(l.tarifaReferenciaId || ''));
+          if (!det) return l;
+          usados.add(String(det.id));
+          const cons = String(det.consecutivo || (String(det.id).startsWith('CONV-') ? det.id : ''));
+          return cons ? { ...l, consecutivo: cons } : l;
+        });
+        if (JSON.stringify(nuevas) !== JSON.stringify(lineasT)) {
+          await updateDoc(doc(db, 'tarifario_clientes', td.id), { tarifas: nuevas });
+          reparados += 1;
+        }
+      }
+
       await registrarLog('Tarifario Clientes', 'Migración', `Importó ${importados} convenio(s) a Tarifario Clientes en status Aprobado y asignó ${sinConsecutivo.length} consecutivo(s) a Detalles del Convenio.`);
-      alert(`Migración lista. ✅\n\n· Convenios importados como tarifarios Aprobados: ${importados}\n· Detalles con consecutivo nuevo: ${sinConsecutivo.length}\n· Convenios ya vinculados (saltados): ${yaVinculados.size}`);
+      alert(`Migración lista. ✅\n\n· Convenios importados como tarifarios Aprobados: ${importados}\n· Detalles con consecutivo nuevo: ${sinConsecutivo.length}\n· Convenios ya vinculados (saltados): ${yaVinculados.size}\n· Tarifarios reparados con consecutivos: ${reparados}`);
     } catch (e) {
       console.error('No se pudo importar los convenios:', e);
       alert('No se pudo completar la importación de convenios.');
@@ -597,7 +630,7 @@ export function TarifarioClientesDashboard() {
       return `<tr>
         <td class="num">${i + 1}</td>
         <td class="desc">${esc(t.descripcion || '')}</td>
-        <td class="clave">${esc(t.clave || '')}</td>
+        <td class="clave">${esc(t.consecutivo || t.clave || '')}</td>
         <td class="signo">$</td>
         <td class="tarifa">${(tarifa).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
       </tr>`;
@@ -708,11 +741,12 @@ export function TarifarioClientesDashboard() {
   const tablaTarifasDe = (r: Doc, editable = false) => (
     <table className="tc-tabla-interna">
       <thead>
-        <tr><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th></tr>
+        <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th></tr>{/* ✅ V00200 */}
       </thead>
       <tbody>
         {(Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc, i: number) => (
           <tr key={`${r.id}-${i}`}>
+            <td className="tc-td-consecutivo">{t.consecutivo || '—'}</td>{/* ✅ V00200 */}
             <td>
               <div>{t.descripcion || '—'}</div>
               {(t.clave || t.origen || t.destino) && (
@@ -772,8 +806,9 @@ export function TarifarioClientesDashboard() {
                   /* ✅ V00195: clic en la fila abre el DETALLE EN MODAL; acciones al inicio */
                   <tr key={r.id} className="tc-fila-click" onClick={() => setDetalleId(r.id)}>
                     <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
-                      <button type="button" className="tc-btn-editar" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}>✏️</button>
-                      <button type="button" className="tc-btn-eliminar" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}>🗑</button>
+                      {/* ✅ V00200: iconos estándar azul/rojo (adiós emojis) */}
+                      <button type="button" className="btn-small btn-edit tc-mr6" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}><IconoEditar /></button>
+                      <button type="button" className="btn-small btn-danger tc-mr6" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}><IconoEliminar /></button>
                       <button type="button" className="tc-btn-pdf" title="Exportar el tarifario en PDF" onClick={() => exportarPDF(r)}>PDF</button>
                     </td>
                     <td>{r.fecha || '—'}</td>
@@ -807,6 +842,7 @@ export function TarifarioClientesDashboard() {
 
               <div className="tc-detalle-datos">
                 <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>
+                <div><span className="tc-label">Convenio</span><b>{r.numeroConvenio || '—'}</b></div>{/* ✅ V00200 */}
                 <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
                 <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
                 <div>
