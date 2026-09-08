@@ -56,6 +56,12 @@
 //     línea al aprobar, la migración lo copia (y repara los ya migrados), se
 //     ve en el detalle (columna CONSECUTIVO + número de convenio en la
 //     cabecera) y el PDF lo imprime como CLAVE DE SERVICIO.
+// ✅ V00201 — CONSECUTIVO EN VIVO:
+//   · El consecutivo que se muestra (detalle y PDF) se RESUELVE leyendo
+//     convenios_clientes_detalles — la fuente de la verdad es el consecutivo
+//     que quedó en Detalles del Convenio, aunque la línea del tarifario no lo
+//     traiga guardado (registros migrados). Sin pasos manuales.
+//   · Se quita el número de convenio de la cabecera del detalle (no aplica).
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc, writeBatch } from 'firebase/firestore';
@@ -167,6 +173,8 @@ export function TarifarioClientesDashboard() {
   const aut = useAutorizacionesCampos('tarifarioClientes');
   // ✅ V00196: migración de Convenios existentes → Tarifarios aprobados.
   const [migrando, setMigrando] = useState(false);
+  // ✅ V00201: detalles del convenio en vivo — de aquí sale el consecutivo real.
+  const [detallesConv, setDetallesConv] = useState<Doc[]>([]);
 
   useEffect(() => {
     let activo = true;
@@ -198,7 +206,13 @@ export function TarifarioClientesDashboard() {
       (snap) => setRegistros(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
       () => setRegistros([])
     );
-    return () => { activo = false; unsub(); };
+    // ✅ V00201: consecutivos reales desde Detalles del Convenio, siempre al día.
+    const unsubDet = onSnapshot(
+      collection(db, 'convenios_clientes_detalles'),
+      (snap) => setDetallesConv(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => setDetallesConv([])
+    );
+    return () => { activo = false; unsub(); unsubDet(); };
   }, []);
 
   /** Etiquetas de tipo de la empresa (tiposEmpresa guarda ids del catálogo). */
@@ -623,9 +637,30 @@ export function TarifarioClientesDashboard() {
     }
   };
 
+  /** ✅ V00201: líneas del tarifario con su CONSECUTIVO REAL — el guardado en
+   *  la línea manda; si falta (migrados), se toma del detalle del convenio
+   *  (por tarifarioId o por convenioId + tipo de tarifa, sin repetir). */
+  const lineasConConsecutivo = (r: Doc): Doc[] => {
+    const lineas: Doc[] = Array.isArray(r.tarifas) ? r.tarifas : [];
+    const usados = new Set<string>();
+    return lineas.map((t: Doc) => {
+      if (String(t.consecutivo || '').trim()) return t;
+      const det = detallesConv.find((d) =>
+        !usados.has(String(d.id)) &&
+        String(d.tipoConvenioId || '') === String(t.tarifaReferenciaId || '') &&
+        ((String(d.tarifarioId || '') !== '' && String(d.tarifarioId) === String(r.id)) ||
+          (String(r.convenioId || '') !== '' && String(d.convenioId || '') === String(r.convenioId)))
+      );
+      if (!det) return t;
+      usados.add(String(det.id));
+      const cons = String(det.consecutivo || (String(det.id).startsWith('CONV-') ? det.id : ''));
+      return cons ? { ...t, consecutivo: cons } : t;
+    });
+  };
+
   // ── PDF con el formato del tarifario de Roelca (✅ V00192) ──
   const construirHTMLTarifario = (r: Doc): string => {
-    const filas = (Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc, i: number) => {
+    const filas = lineasConConsecutivo(r).map((t: Doc, i: number) => {
       const tarifa = Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || 0;
       return `<tr>
         <td class="num">${i + 1}</td>
@@ -744,7 +779,7 @@ export function TarifarioClientesDashboard() {
         <tr><th>CONSECUTIVO</th><th>TARIFAS</th><th>TARIFAS SUGERIDAS</th><th>TARIFA</th><th>COTIZADO EN</th><th>STATUS</th></tr>{/* ✅ V00200 */}
       </thead>
       <tbody>
-        {(Array.isArray(r.tarifas) ? r.tarifas : []).map((t: Doc, i: number) => (
+        {lineasConConsecutivo(r).map((t: Doc, i: number) => (
           <tr key={`${r.id}-${i}`}>
             <td className="tc-td-consecutivo">{t.consecutivo || '—'}</td>{/* ✅ V00200 */}
             <td>
@@ -841,8 +876,7 @@ export function TarifarioClientesDashboard() {
               </div>
 
               <div className="tc-detalle-datos">
-                <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>
-                <div><span className="tc-label">Convenio</span><b>{r.numeroConvenio || '—'}</b></div>{/* ✅ V00200 */}
+                <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>{/* ✅ V00201: sin número de convenio (no aplica) */}
                 <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
                 <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
                 <div>
