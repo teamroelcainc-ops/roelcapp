@@ -71,3 +71,16 @@
 .dcv-tabla-usos th { text-align: left; padding: 8px 12px; background-color: #21262d; color: #8b949e; font-size: 0.72rem; letter-spacing: 0.4px; }
 .dcv-tabla-usos td { padding: 7px 12px; border-top: 1px solid #21262d; color: #c9d1d9; }
 .dcv-modal-pie { display: flex; justify-content: flex-end; }
+
+/* ✅ V00207: selección múltiple, acciones al inicio y modal de edición */
+.dcv-th-check { width: 34px; text-align: center; }
+.dcv-th-check input { cursor: pointer; }
+.dcv-td-acciones { width: 92px; white-space: nowrap; }
+.dcv-mr6 { margin-right: 6px; }
+.dcv-btn-borrar-sel { border-color: #f85149; color: #f85149; font-weight: 600; }
+.dcv-btn-borrar-sel:hover { background-color: rgba(239, 68, 68, 0.12); }
+.dcv-edit-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin: 8px 0 16px 0; }
+.dcv-edit-label { display: flex; flex-direction: column; gap: 5px; font-size: 0.78rem; color: #8b949e; }
+.dcv-modal-pie-edit { gap: 10px; }
+.dcv-btn-guardar-edit { background-color: #238636; color: #fff; border: none; font-weight: 600; }
+.dcv-btn-guardar-edit:hover { background-color: #2ea043; }
