@@ -15,6 +15,14 @@
 //     sugeridos son chips que llenan el campo TARIFA al hacer clic.
 //   · EDICIÓN de un pre convenio existente (mismo flujo de captura, guarda
 //     con updateDoc y registra log de Edición).
+// ✅ V00195 — MEJORAS:
+//   · El DETALLE ahora es un MODAL con toda la información del registro
+//     (cliente, fecha, moneda, crédito, quién lo creó/aprobó, tabla de
+//     tarifas, Aprobar y Descargar PDF).
+//   · Integrado con Configuración → AUTORIZACIONES: Agregar, Editar y Borrar
+//     se evalúan POR SEPARADO con las reglas del módulo "Tarifario Clientes"
+//     (puede quedar libre agregar pero requerir autorización para editar);
+//     Aprobar se evalúa como edición del campo Status.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
 import { addDoc, collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
@@ -22,6 +30,7 @@ import { db, auth } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import './TarifarioClientesDashboard.css';
 
 const ID_USD = '7dca62b3';
@@ -94,7 +103,11 @@ export function TarifarioClientesDashboard() {
 
   // ── Pre convenios guardados ──
   const [registros, setRegistros] = useState<Doc[]>([]);
-  const [filaAbierta, setFilaAbierta] = useState('');
+  // ✅ V00195: el detalle es un modal — aquí vive el id del registro abierto.
+  const [detalleId, setDetalleId] = useState('');
+
+  // ✅ V00195: reglas de Configuración → Autorizaciones para este módulo.
+  const aut = useAutorizacionesCampos('tarifarioClientes');
 
   useEffect(() => {
     let activo = true;
@@ -233,6 +246,8 @@ export function TarifarioClientesDashboard() {
 
   const guardarPreConvenio = async () => {
     if (!clienteSel || seleccion.size === 0 || guardando) return;
+    // ✅ V00195: Agregar y Editar se autorizan POR SEPARADO según las reglas del módulo.
+    if (!aut.verificarAccion(editandoId ? 'editar' : 'crear', editandoId ? ['fecha', 'clienteId', 'tarifas', 'tarifa', 'cotizadoEn'] : [])) return;
     setGuardando(true);
     try {
       const elegidas = tarifasRef.filter((t) => seleccion.has(t.id));
@@ -291,6 +306,7 @@ export function TarifarioClientesDashboard() {
   };
 
   const eliminarRegistro = async (r: Doc) => {
+    if (!aut.verificarAccion('borrar')) return; // ✅ V00195
     if (!window.confirm(`¿Eliminar el pre convenio de "${r.clienteNombre}" del ${r.fecha}?`)) return;
     try {
       await deleteDoc(doc(db, 'tarifario_clientes', r.id));
@@ -303,6 +319,7 @@ export function TarifarioClientesDashboard() {
 
   // ✅ V00194: aprobar desde el detalle (Pendiente → "Aprobado", doc + líneas).
   const aprobarRegistro = async (r: Doc) => {
+    if (!aut.verificarAccion('editar', ['status'])) return; // ✅ V00195: aprobar = editar Status
     if (!window.confirm(`¿Aprobar el pre convenio de "${r.clienteNombre}" del ${r.fecha}?`)) return;
     try {
       await updateDoc(doc(db, 'tarifario_clientes', r.id), {
@@ -481,42 +498,69 @@ export function TarifarioClientesDashboard() {
               </thead>
               <tbody>
                 {registros.map((r) => (
-                  <>
-                    {/* ✅ V00194: clic en la fila abre el detalle; acciones al inicio */}
-                    <tr key={r.id} className="tc-fila-click" onClick={() => setFilaAbierta(filaAbierta === r.id ? '' : r.id)}>
-                      <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
-                        <button type="button" className="tc-btn-editar" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}>✏️</button>
-                        <button type="button" className="tc-btn-eliminar" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}>🗑</button>
-                        <button type="button" className="tc-btn-pdf" title="Exportar el tarifario en PDF" onClick={() => exportarPDF(r)}>PDF</button>
-                      </td>
-                      <td>{r.fecha || '—'}</td>
-                      <td className="tc-td-cliente">{r.clienteNombre || '—'}</td>
-                      <td>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</td>
-                      <td>{r.creditoDias > 0 ? `${r.creditoDias} día(s)` : '—'}</td>
-                      <td className="tc-td-num">{Array.isArray(r.tarifas) ? r.tarifas.length : 0}</td>
-                      <td><span className={`tc-chip ${String(r.status) === 'Aprobado' ? 'tc-chip-aprobado' : String(r.status) === 'Pendiente' ? 'tc-chip-pendiente' : 'tc-chip-otro'}`}>{r.status || '—'}</span></td>
-                    </tr>
-                    {filaAbierta === r.id && (
-                      <tr key={`${r.id}-det`} className="tc-fila-detalle">
-                        <td colSpan={7}>
-                          <div className="tc-detalle-acciones">
-                            {/* ✅ V00194: aprobar desde el detalle */}
-                            {String(r.status) !== 'Aprobado' && (
-                              <button type="button" className="tc-btn-aprobar" onClick={() => aprobarRegistro(r)}>✔ Aprobar</button>
-                            )}
-                            <button type="button" className="tc-btn-pdf" onClick={() => exportarPDF(r)}>⬇ Descargar PDF</button>
-                          </div>
-                          {tablaTarifasDe(r)}
-                        </td>
-                      </tr>
-                    )}
-                  </>
+                  /* ✅ V00195: clic en la fila abre el DETALLE EN MODAL; acciones al inicio */
+                  <tr key={r.id} className="tc-fila-click" onClick={() => setDetalleId(r.id)}>
+                    <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="tc-btn-editar" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}>✏️</button>
+                      <button type="button" className="tc-btn-eliminar" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}>🗑</button>
+                      <button type="button" className="tc-btn-pdf" title="Exportar el tarifario en PDF" onClick={() => exportarPDF(r)}>PDF</button>
+                    </td>
+                    <td>{r.fecha || '—'}</td>
+                    <td className="tc-td-cliente">{r.clienteNombre || '—'}</td>
+                    <td>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</td>
+                    <td>{r.creditoDias > 0 ? `${r.creditoDias} día(s)` : '—'}</td>
+                    <td className="tc-td-num">{Array.isArray(r.tarifas) ? r.tarifas.length : 0}</td>
+                    <td><span className={`tc-chip ${String(r.status) === 'Aprobado' ? 'tc-chip-aprobado' : String(r.status) === 'Pendiente' ? 'tc-chip-pendiente' : 'tc-chip-otro'}`}>{r.status || '—'}</span></td>
+                  </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {/* ── ✅ V00195: MODAL DE DETALLE con toda la información ── */}
+      {detalleId && (() => {
+        const r = registros.find((x) => x.id === detalleId);
+        if (!r) return null;
+        return (
+          <div className="modal-overlay tc-overlay" onClick={() => setDetalleId('')}>
+            <div className="tc-modal tc-modal-detalle" onClick={(e) => e.stopPropagation()}>
+              <div className="tc-modal-encabezado">
+                <div>
+                  <h3 className="tc-modal-titulo">Detalle del Pre Convenio — <span className="tc-td-cliente">{r.clienteNombre || '—'}</span></h3>
+                  <p className="tc-modal-sub">Toda la información del registro. Desde aquí puedes aprobarlo o descargar el PDF.</p>
+                </div>
+                <button type="button" className="tc-cerrar" onClick={() => setDetalleId('')}>✕</button>
+              </div>
+
+              <div className="tc-detalle-datos">
+                <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>
+                <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
+                <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
+                <div><span className="tc-label">Status</span><span className={`tc-chip ${String(r.status) === 'Aprobado' ? 'tc-chip-aprobado' : 'tc-chip-pendiente'}`}>{r.status || '—'}</span></div>
+                <div><span className="tc-label">Creado por</span><b>{r.creadoPor || '—'}</b></div>
+                <div><span className="tc-label">{String(r.status) === 'Aprobado' ? 'Aprobado por' : 'Editado por'}</span><b>{(String(r.status) === 'Aprobado' ? r.aprobadoPor : r.editadoPor) || '—'}</b></div>
+              </div>
+
+              <div className="tc-marco tc-modal-marco">
+                {tablaTarifasDe(r)}
+              </div>
+
+              <div className="tc-modal-pie">
+                <span className="tc-conteo-sel">{Array.isArray(r.tarifas) ? r.tarifas.length : 0} tarifa(s) en este pre convenio</span>
+                <div className="tc-modal-botones">
+                  {String(r.status) !== 'Aprobado' && (
+                    <button type="button" className="tc-btn-aprobar" onClick={() => aprobarRegistro(r)}>✔ Aprobar</button>
+                  )}
+                  <button type="button" className="tc-btn-pdf" onClick={() => exportarPDF(r)}>⬇ Descargar PDF</button>
+                  <button type="button" className="btn btn-outline" onClick={() => setDetalleId('')}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── MODAL DE CAPTURA (✅ V00192; edición ✅ V00194) ── */}
       {capturaAbierta && (

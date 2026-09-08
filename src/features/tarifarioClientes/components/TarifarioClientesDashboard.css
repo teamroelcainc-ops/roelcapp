@@ -242,3 +242,14 @@
   color: #c9d1d9;
 }
 .tc-guardado-acciones { display: inline-flex; align-items: center; gap: 8px; }
+
+/* ✅ V00195: modal de detalle */
+.tc-modal-detalle { width: min(1000px, 96vw); }
+.tc-detalle-datos {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px 18px;
+  margin-bottom: 14px;
+}
+.tc-detalle-datos > div { display: flex; flex-direction: column; gap: 3px; }
+.tc-detalle-datos .tc-chip { align-self: flex-start; }

@@ -177,6 +177,17 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
       { key: 'credito', label: 'Crédito (Días)' },
       { key: 'status', label: 'Status' },
     ], integrado: true },
+  // ✅ V00195: Tarifario Clientes integrado — Agregar/Editar/Borrar se controlan
+  //   POR SEPARADO (p. ej. agregar libre pero editar con autorización) y la
+  //   aprobación de un pre convenio cae bajo la regla del campo "Status".
+  { clave: 'tarifarioClientes', label: 'Tarifario Clientes', coleccion: 'tarifario_clientes', campos: [
+      { key: 'fecha', label: 'Fecha' },
+      { key: 'clienteId', label: 'Cliente' },
+      { key: 'tarifas', label: 'Tarifas del Pre Convenio' },
+      { key: 'tarifa', label: 'Tarifa (Monto)' },
+      { key: 'cotizadoEn', label: 'Cotizado En' },
+      { key: 'status', label: 'Status (Aprobar)' },
+    ], integrado: true },
   { clave: 'conveniosProveedores', label: 'Convenios de Proveedores', coleccion: 'convenios_proveedores', campos: [
       { key: 'proveedorId', label: 'Proveedor' },
       { key: 'fechaConvenio', label: 'Fecha del Convenio' },
