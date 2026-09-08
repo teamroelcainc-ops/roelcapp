@@ -51,6 +51,6 @@ const reservarConsecutivos = async (coleccion: string, prefijo: string, cantidad
 export const reservarConsecutivosDetalle = (cantidad: number): Promise<string[]> =>
   reservarConsecutivos('convenios_clientes_detalles', 'CONV-', cantidad);
 
-/** ✅ V00203: consecutivo TAR-### del TARIFARIO — único, irrepetible, +1. */
+/** ✅ V00205: consecutivo TARI-### del TARIFARIO — único, irrepetible, +1. */
 export const reservarConsecutivosTarifario = (cantidad: number): Promise<string[]> =>
-  reservarConsecutivos('tarifario_clientes', 'TAR-', cantidad);
+  reservarConsecutivos('tarifario_clientes', 'TARI-', cantidad);

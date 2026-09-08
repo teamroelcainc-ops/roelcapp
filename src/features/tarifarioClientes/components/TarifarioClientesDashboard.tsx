@@ -79,7 +79,7 @@
 //   · La migración lo asigna a los importados y la reparación se lo pone a
 //     los tarifarios existentes que no lo tengan.
 // ---------------------------------------------------------------------------
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
@@ -187,6 +187,29 @@ export function TarifarioClientesDashboard() {
 
   // ✅ V00195: reglas de Configuración → Autorizaciones para este módulo.
   const aut = useAutorizacionesCampos('tarifarioClientes');
+
+  // ✅ V00205: consecutivo TARI-### AUTOMÁTICO — al detectar tarifarios sin
+  //   consecutivo se les asigna al vuelo (los más antiguos primero, reserva
+  //   transaccional: único, irrepetible y sin brincos), sin botones.
+  const backfillEnCurso = useRef(false);
+  useEffect(() => {
+    const faltantes = registros.filter((r) => !String(r.consecutivo || '').trim());
+    if (faltantes.length === 0 || backfillEnCurso.current) return;
+    backfillEnCurso.current = true;
+    (async () => {
+      try {
+        const orden = [...faltantes].sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
+        const nums = await reservarConsecutivosTarifario(orden.length);
+        for (let i = 0; i < orden.length; i++) {
+          await updateDoc(doc(db, 'tarifario_clientes', orden[i].id), { consecutivo: nums[i] });
+        }
+      } catch (e) {
+        console.error('No se pudieron asignar consecutivos TARI-:', e);
+      } finally {
+        backfillEnCurso.current = false;
+      }
+    })();
+  }, [registros]);
   // ✅ V00196: migración de Convenios existentes → Tarifarios aprobados.
   const [migrando, setMigrando] = useState(false);
   // ✅ V00201: detalles del convenio en vivo — de aquí sale el consecutivo real.
@@ -915,20 +938,20 @@ export function TarifarioClientesDashboard() {
           <div className="tc-marco">
             <table className="tc-tabla">
               <thead>
-                <tr><th>CONSECUTIVO</th><th>ACCIONES</th><th>FECHA</th><th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>{/* ✅ V00203 */}
+                <tr><th>ACCIONES</th><th>CONSECUTIVO</th><th>FECHA</th><th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>{/* ✅ V00205: acciones primero */}
               </thead>
               <tbody>
                 {registros.map((r) => (
                   /* ✅ V00195: clic en la fila abre el DETALLE EN MODAL; acciones al inicio */
                   <tr key={r.id} className="tc-fila-click" onClick={() => setDetalleId(r.id)}>
-                    {/* ✅ V00204: la celda del consecutivo faltaba (el V00203 no aplicó aquí) — orden restaurado */}
-                    <td className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TAR-') ? r.id : '—')}</td>
                     <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
                       {/* ✅ V00200: iconos estándar azul/rojo (adiós emojis) */}
                       <button type="button" className="btn-small btn-edit tc-mr6" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}><IconoEditar /></button>
                       <button type="button" className="btn-small btn-danger tc-mr6" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}><IconoEliminar /></button>
                       <button type="button" className="tc-btn-pdf" title="Exportar el tarifario en PDF" onClick={() => exportarPDF(r)}>PDF</button>
                     </td>
+                    {/* ✅ V00205: consecutivo TARI-### (segunda columna) */}
+                    <td className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TARI-') || String(r.id).startsWith('TAR-') ? r.id : '—')}</td>
                     <td>{r.fecha || '—'}</td>
                     <td className="tc-td-cliente">{r.clienteNombre || '—'}</td>
                     <td>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</td>
@@ -959,7 +982,7 @@ export function TarifarioClientesDashboard() {
               </div>
 
               <div className="tc-detalle-datos">
-                <div><span className="tc-label">Consecutivo</span><b className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TAR-') ? r.id : '—')}</b></div>{/* ✅ V00203 */}
+                <div><span className="tc-label">Consecutivo</span><b className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TARI-') || String(r.id).startsWith('TAR-') ? r.id : '—')}</b></div>{/* ✅ V00203 */}
                 <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>{/* ✅ V00201: sin número de convenio (no aplica) */}
                 <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
                 <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
