@@ -27,6 +27,9 @@
 //   respeta Autorizaciones como edición del campo Status.
 // ✅ V00202: si un detalle está aquí, está APROBADO — el status vacío se
 //   muestra (y se guarda al editar) como "Aprobado".
+// ✅ V00211: PARIDAD PROVEEDORES — todas las funciones de clientes (pestañas,
+//   consecutivo, status, uso en operaciones [op.convenioProveedor], selección
+//   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
@@ -211,14 +214,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         getDocs(collection(db, 'catalogo_tarifas_referencia')),
         getDocs(collection(db, 'catalogo_moneda')), // ✅ V00123
       ]);
-      // ✅ V00206: operaciones que usan cada detalle (solo clientes; op.convenio = id del detalle)
-      if (esClientes) {
+      // ✅ V00206/V00211: operaciones que usan cada detalle (clientes: op.convenio; proveedores: op.convenioProveedor)
+      {
         try {
           const snapOps = await getDocs(collection(db, 'operaciones'));
           const mapa: Record<string, { ref: string; fecha: string; status: string }[]> = {};
           snapOps.docs.forEach((d) => {
             const o = d.data() as Record<string, unknown>;
-            const conv = String(o.convenio || '').trim();
+            const conv = String((esClientes ? o.convenio : o.convenioProveedor) || '').trim();
             if (!conv) return;
             if (!mapa[conv]) mapa[conv] = [];
             mapa[conv].push({
@@ -303,8 +306,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
   const filasVisibles = useMemo(() => {
     let lista = filas || [];
-    // ✅ V00197: filtro por pestaña (solo clientes)
-    if (esClientes) {
+    // ✅ V00197: filtro por pestaña — ✅ V00211: ambos tipos
+    {
       const norm = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const noIdent = (f: FilaDetalle) => !f.identificada || norm(f.tarifa).includes('no identificad');
       const vacia = (f: FilaDetalle) => f.costo === null || f.costo === 0; // ✅ V00207: solo costo
@@ -344,8 +347,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         Para editar una tarifa, ábrela desde su convenio en el módulo de Convenios.
       </p>
 
-      {/* ✅ V00197: pestañas (solo clientes) */}
-      {esClientes && (
+      {/* ✅ V00197: pestañas — ✅ V00211: también proveedores */}
+      {(
         <div className="dcv-pestanas">
           {PESTANAS.map((pst) => (
             <button key={pst} type="button" className={`dcv-pestana ${pestana === pst ? 'dcv-pestana-activa' : ''}`} onClick={() => setPestana(pst)}>
@@ -383,7 +386,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           {guardando ? 'Guardando…' : `Guardar cambios (${Object.keys(cambios).length})`}
         </button>
         {/* ✅ V00207: borrado masivo de los seleccionados */}
-        {esClientes && seleccion.size > 0 && (
+        {seleccion.size > 0 && (
           <button className="btn btn-outline dcv-btn-borrar-sel" disabled={borrandoSel} onClick={eliminarSeleccionados}>
             {borrandoSel ? 'Eliminando…' : `🗑 Eliminar seleccionados (${seleccion.size})`}
           </button>
@@ -401,8 +404,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           <table className="data-table dcv-x7">
             <thead>
               <tr>
-                {/* ✅ V00207 (clientes): checkbox de selección + ACCIONES al inicio */}
-                {esClientes && (
+                {/* ✅ V00207: checkbox de selección + ACCIONES al inicio — ✅ V00211: ambos tipos */}
+                {(
                   <th className="dcv-th-check">
                     <input
                       type="checkbox"
@@ -418,23 +421,23 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                     />
                   </th>
                 )}
-                {esClientes && <th>Acciones</th>}
+                <th>Acciones</th>
                 {/* ✅ V00196 (clientes): CONSECUTIVO reemplaza a ID y Convenio; Moneda → "Cotizado En" */}
-                {esClientes ? <th>Consecutivo</th> : <><th>ID</th><th>Convenio</th></>}
+                <th>Consecutivo</th>{/* ✅ V00211: también proveedores */}
                 <th>{ETIQUETA_ENTIDAD}</th>
                 <th>Tarifa</th>
-                <th>{esClientes ? 'Cotizado En' : 'Moneda'}</th>
-                {esClientes && <th>Status</th>}{/* ✅ V00199 */}
-                {esClientes && <th>Operaciones</th>}{/* ✅ V00206: veces usado */}
+                <th>Cotizado En</th>
+                <th>Status</th>{/* ✅ V00199 */}
+                <th>Operaciones</th>{/* ✅ V00206: veces usado */}
                 <th className="dcv-x8">Costo de la Tarifa</th>
-                {!esClientes && <th className="dcv-x8">Acciones</th>}{/* ✅ V00207: en clientes van al inicio */}
+
               </tr>
             </thead>
             <tbody>
               {filasVisibles.map((f) => (
                 /* ✅ V00206: clic en la fila = ver en cuántas operaciones se usó */
-                <tr key={f.id} className={esClientes ? 'dcv-fila-click' : ''} onClick={() => esClientes && setUsoAbierto(f)}>
-                  {esClientes && (
+                <tr key={f.id} className="dcv-fila-click" onClick={() => setUsoAbierto(f)}>
+                  {(
                     /* ✅ V00207: checkbox de selección para borrado masivo */
                     <td className="dcv-th-check" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -444,16 +447,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                       />
                     </td>
                   )}
-                  {esClientes && (
+                  {(
                     /* ✅ V00207: editar (corrige tarifa/No identificado) y eliminar AL INICIO */
                     <td className="dcv-td-acciones" onClick={(e) => e.stopPropagation()}>
                       <button className="btn-small btn-edit dcv-mr6" title="Editar este detalle (tarifa, cotizado en, status y costo)" onClick={() => abrirEdicion(f)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg></button>
                       <button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
                     </td>
                   )}
-                  {esClientes
-                    ? <td className="dcv-x10" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>
-                    : <><td className="dcv-x9" title={f.id}>{f.id}</td><td className="dcv-x10">{f.numeroConvenio}</td></>}
+                  <td className="dcv-x10" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>{/* ✅ V00211 */}
                   <td>{f.entidad}</td>
                   <td>{f.tarifa}</td>
                   <td onClick={(e) => e.stopPropagation()}>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
@@ -461,7 +462,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                       <option value="">— Sin moneda —</option>
                       {lista.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>); })()}</td>
-                  {esClientes && (
+                  {(
                     /* ✅ V00199: status editable del detalle (se guarda con "Guardar cambios") */
                     <td onClick={(e) => e.stopPropagation()}>
                       {/* ✅ V00202: vacío = Aprobado (estar en Detalles implica aprobado) */}
@@ -470,14 +471,12 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                       </select>
                     </td>
                   )}
-                  {esClientes && (
+                  {(
                     /* ✅ V00206: total de operaciones que usaron este convenio */
                     <td className="dcv-td-usos">{(usosOps[f.id] || []).length}</td>
                   )}
                   <td className="dcv-x8" onClick={(e) => e.stopPropagation()}><input type="number" step="0.01" className="form-control dcv-input-costo" value={cambios[f.id]?.tarifa ?? (f.costo ?? 0)} onChange={(e) => marcarCambio(f.id, 'tarifa', parseFloat(e.target.value) || 0)} /></td>
-                  {!esClientes && (
-                    <td className="dcv-x8" onClick={(e) => e.stopPropagation()}><button className="btn-small btn-danger" title="Eliminar (va a la Papelera de Reciclaje)" onClick={() => eliminarDetalle(f.id)}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button></td>
-                  )}
+
                 </tr>
               ))}
             </tbody>
@@ -488,7 +487,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       <div className="dcv-x11">Mostrando {filasVisibles.length} de {(filas || []).length} detalle(s)</div>
 
       {/* ✅ V00207: MODAL DE EDICIÓN — corrige tarifa (No identificados), cotizado en, status y costo */}
-      {esClientes && editando && (
+      {editando && (
         <div className="modal-overlay" onClick={() => !guardandoEdicion && setEditando(null)}>
           <div className="dcv-modal" onClick={(e) => e.stopPropagation()}>
             <div className="dcv-modal-encabezado">
@@ -529,7 +528,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       )}
 
       {/* ✅ V00206: MODAL — operaciones que han usado este convenio */}
-      {esClientes && usoAbierto && (
+      {usoAbierto && (
         <div className="modal-overlay" onClick={() => setUsoAbierto(null)}>
           <div className="dcv-modal" onClick={(e) => e.stopPropagation()}>
             <div className="dcv-modal-encabezado">

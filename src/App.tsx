@@ -56,6 +56,7 @@ const RemolquesDashboard = lazyWithRetry(() => import('./features/remolques/comp
 const ConveniosClientesDashboard = lazyWithRetry(() => import('./features/conveniosClientes/components/ConveniosClientesDashboard'), 'ConveniosClientesDashboard');
 // ✅ V00191: módulo Tarifario Clientes (pre convenios desde tarifas de referencia).
 const TarifarioClientesDashboard = lazyWithRetry(() => import('./features/tarifarioClientes/components/TarifarioClientesDashboard'), 'TarifarioClientesDashboard');
+const TarifarioProveedoresDashboard = lazyWithRetry(() => import('./features/tarifarioProveedores/components/TarifarioProveedoresDashboard').then(m => ({ default: m.TarifarioProveedoresDashboard })), 'TarifarioProveedoresDashboard'); // ✅ V00211
 const ConveniosProveedoresDashboard = lazyWithRetry(() => import('./features/conveniosProveedores/components/ConveniosProveedoresDashboard').then(m => ({ default: m.ConveniosProveedoresDashboard })), 'ConveniosProveedoresDashboard');
 // ✅ NUEVO (V00112): vista plana de tarifas de convenios (clientes y proveedores)
 const DetallesConvenioDashboard = lazyWithRetry(() => import('./features/conveniosDetalles/components/DetallesConvenioDashboard'), 'DetallesConvenioDashboard');
@@ -118,6 +119,8 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Detalles del Convenio': 'detallesConvenioClientes',
   'Facturación de Clientes': 'facturacionClientes',
   'Convenio de Proveedores': 'conveniosProveedores',
+  'Tarifario Proveedores': 'tarifarioProveedores', // ✅ V00211
+  'Detalles del Convenio (Proveedores)': 'detallesConvenioProveedores', // ✅ V00211
   'Facturación de Proveedores': 'facturacionProveedores',
   'Colaboradores': 'colaboradores',
   'Historial de Chequeo': 'historialAsistencia',
@@ -225,6 +228,7 @@ const ICON: Record<string, React.ReactNode> = {
   tarifarioClientes: iFileText,
   facturacionClientes: iCard,
   conveniosProveedores: iFileText,
+  tarifarioProveedores: iFileText, // ✅ V00211
   facturacionProveedores: iCard,
   colaboradores: iUsers,
   historialAsistencia: (
@@ -733,7 +737,7 @@ function AppContenido() {
   const [rolesCatalogo, setRolesCatalogo] = useState<any[]>([]); // catálogo de roles (para permisos)
   
   const { etq } = useEtiquetas();
-  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
+  const [moduloActivo, setModuloActivo] = useState<'tableroCrm' | 'panelControl' | 'reporteVencimientos' | 'etiquetas' | 'estadisticas' | 'pagos' | 'misOperaciones' | 'operaciones' | 'serviciosCompletados' | 'serviciosCancelados' | 'empresas' | 'contactos' | 'tipoCambio' | 'catalogos' | 'combustible' | 'proveedoresUnidad' | 'unidadesProveedor' | 'unidades' | 'remolques' | 'conveniosClientes' | 'tarifarioClientes' | 'conveniosProveedores' | 'tarifarioProveedores' | 'detallesConvenioClientes' | 'detallesConvenioProveedores' | 'papeleraReciclaje' | 'direcciones' | 'colaboradores' | 'historialAsistencia' | 'roles' | 'usuarios' | 'logs' | 'flujosOperacion' | 'mtto' | 'facturacionClientes' | 'facturacionProveedores' | 'referenciasDiesel' | 'referenciasPuentes' | 'referenciasNomina' | 'deducciones' | 'reportes' | 'costosAdicionales' | 'datosEmpresa' | 'importacion' | 'autorizaciones'>(() => {
     // ✅ PANTALLA PERSISTENTE: al recargar se regresa al último módulo visitado.
     //   (El guard de permisos más abajo redirige si el rol ya no lo permite.)
     // Cast simple a string: cualquier valor raro lo corrige el guard de permisos.
@@ -880,7 +884,7 @@ function AppContenido() {
   // Módulo de autorizaciones -> clave de moduloActivo para navegar al formulario
   const CLAVE_NAV_AUT: Record<string, string> = {
     operaciones: 'operaciones', tipoCambio: 'tipoCambio', empresas: 'empresas',
-    conveniosClientes: 'conveniosClientes', conveniosProveedores: 'conveniosProveedores',
+    conveniosClientes: 'conveniosClientes', conveniosProveedores: 'conveniosProveedores', tarifarioProveedores: 'tarifarioProveedores', // ✅ V00211
     mtto: 'mtto', costosAdicionales: 'costosAdicionales', unidades: 'unidades',
     colaboradores: 'colaboradores',
   };
@@ -1243,7 +1247,7 @@ function AppContenido() {
 
   const esBaseDeDatosActiva = moduloActivo === 'empresas' || moduloActivo === 'contactos' || moduloActivo === 'tipoCambio' || moduloActivo === 'combustible' || moduloActivo === 'proveedoresUnidad' || moduloActivo === 'unidadesProveedor' || moduloActivo === 'unidades' || moduloActivo === 'remolques' || moduloActivo === 'direcciones';
   const esClientesActivo = moduloActivo === 'conveniosClientes' || moduloActivo === 'tarifarioClientes' || moduloActivo === 'facturacionClientes' || moduloActivo === 'detallesConvenioClientes';
-  const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores' || moduloActivo === 'detallesConvenioProveedores';
+  const esProveedoresActivo = moduloActivo === 'conveniosProveedores' || moduloActivo === 'facturacionProveedores' || moduloActivo === 'detallesConvenioProveedores' || moduloActivo === 'tarifarioProveedores'; // ✅ V00211
   const esEmpleadosActivo = moduloActivo === 'colaboradores' || moduloActivo === 'historialAsistencia' || moduloActivo === 'referenciasNomina' || moduloActivo === 'deducciones';
   const esConfiguracionActivo = moduloActivo === 'roles' || moduloActivo === 'usuarios' || moduloActivo === 'logs' || moduloActivo === 'flujosOperacion' || moduloActivo === 'datosEmpresa' || moduloActivo === 'autorizaciones';
   const esGastosActivo = moduloActivo === 'mtto' || moduloActivo === 'referenciasDiesel' || moduloActivo === 'referenciasPuentes' || moduloActivo === 'costosAdicionales';
@@ -1251,7 +1255,7 @@ function AppContenido() {
   // Visibilidad de cada grupo: se muestra si al menos un hijo está permitido.
   const verGastos = puede('mtto') || puede('referenciasDiesel') || puede('referenciasPuentes') || puede('costosAdicionales');
   const verClientes = puede('conveniosClientes') || puede('tarifarioClientes') || puede('facturacionClientes');
-  const verProveedores = puede('conveniosProveedores') || puede('facturacionProveedores');
+  const verProveedores = puede('conveniosProveedores') || puede('facturacionProveedores') || puede('tarifarioProveedores') || puede('detallesConvenioProveedores'); // ✅ V00211
   const verEmpleados = puede('colaboradores') || puede('historialAsistencia') || puede('referenciasNomina') || puede('deducciones');
   const verBasesDatos = puede('empresas') || puede('contactos') || puede('direcciones') || puede('tipoCambio') || puede('combustible') || puede('unidades') || puede('remolques') || puede('proveedoresUnidad') || puede('unidadesProveedor');
   const verConfiguracion = puede('usuarios') || puede('roles') || puede('logs') || puede('flujosOperacion') || puede('datosEmpresa') || puede('autorizaciones');
@@ -1529,7 +1533,8 @@ function AppContenido() {
             </div>
             {menuClientesAbierto && (
               <div className="sidebar-submenu">
-                {puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => navegarA('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.convenio_de_clientes', 'Convenio de Clientes')}</span></div>}
+                {/* ✅ V00211: "Convenio de Clientes" OCULTO a petición de Omaf (no eliminado — quitar el false && para restaurar) */}
+                {false && puede('conveniosClientes') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosClientes' ? 'active' : ''}`} onClick={() => navegarA('conveniosClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.convenio_de_clientes', 'Convenio de Clientes')}</span></div>}
                 {/* ✅ V00191: Tarifario Clientes */}
                 {puede('tarifarioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'tarifarioClientes' ? 'active' : ''}`} onClick={() => navegarA('tarifarioClientes')}><span className="sidebar-icon">{ICON.tarifarioClientes}</span><span className="sidebar-label">{etq('menu.tarifario_clientes', 'Tarifario Clientes')}</span></div>}
                 {/* ✅ NUEVO (V00112): Detalles del Convenio (clientes) */}
@@ -1549,9 +1554,12 @@ function AppContenido() {
             </div>
             {menuProveedoresAbierto && (
               <div className="sidebar-submenu">
-                {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => navegarA('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">{etq('menu.convenio_de_proveedores', 'Convenio de Proveedores')}</span></div>}
-                {/* ✅ NUEVO (V00112): Detalles del Convenio (proveedores) */}
-                {puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioProveedores' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
+                {/* ✅ V00211: "Convenio de Proveedores" OCULTO a petición de Omaf (no eliminado — quitar el false && para restaurar) */}
+                {false && puede('conveniosProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'conveniosProveedores' ? 'active' : ''}`} onClick={() => navegarA('conveniosProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">{etq('menu.convenio_de_proveedores', 'Convenio de Proveedores')}</span></div>}
+                {/* ✅ V00211: Tarifario Proveedores (espejo del de clientes) */}
+                {puede('tarifarioProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'tarifarioProveedores' ? 'active' : ''}`} onClick={() => navegarA('tarifarioProveedores')}><span className="sidebar-icon">{ICON.tarifarioProveedores}</span><span className="sidebar-label">{etq('menu.tarifario_proveedores', 'Tarifario Proveedores')}</span></div>}
+                {/* ✅ NUEVO (V00112): Detalles del Convenio (proveedores) — ✅ V00211: permiso propio */}
+                {puede('detallesConvenioProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioProveedores' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioProveedores')}><span className="sidebar-icon">{ICON.conveniosProveedores}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
                 {puede('facturacionProveedores') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionProveedores' ? 'active' : ''}`} onClick={() => navegarA('facturacionProveedores')}><span className="sidebar-icon">{ICON.facturacionProveedores}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}
@@ -1825,10 +1833,11 @@ function AppContenido() {
                 {moduloActivo === 'tarifarioClientes' && puede('tarifarioClientes') && <TarifarioClientesDashboard />}
             {/* ✅ NUEVO (V00112): vistas Detalles del Convenio */}
             {moduloActivo === 'detallesConvenioClientes' && puede('detallesConvenioClientes') && <DetallesConvenioDashboard tipo="clientes" />}
-            {moduloActivo === 'detallesConvenioProveedores' && puede('conveniosProveedores') && <DetallesConvenioDashboard tipo="proveedores" />}
+            {moduloActivo === 'detallesConvenioProveedores' && puede('detallesConvenioProveedores') && <DetallesConvenioDashboard tipo="proveedores" />}{/* ✅ V00211: permiso propio */}
             {/* ✅ NUEVO (V00115): papelera de reciclaje */}
             {moduloActivo === 'papeleraReciclaje' && puede('logs') && <PapeleraDashboard />}
             {moduloActivo === 'conveniosProveedores' && puede('conveniosProveedores') && <ConveniosProveedoresDashboard />}
+            {moduloActivo === 'tarifarioProveedores' && puede('tarifarioProveedores') && <TarifarioProveedoresDashboard />}{/* ✅ V00211 */}
             {moduloActivo === 'catalogos' && puede('catalogos') && <CatalogosDashboard />}
             {moduloActivo === 'colaboradores' && puede('colaboradores') && <EmpleadosDashboard />}
             {moduloActivo === 'historialAsistencia' && puede('historialAsistencia') && (

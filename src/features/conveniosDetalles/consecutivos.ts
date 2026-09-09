@@ -54,3 +54,10 @@ export const reservarConsecutivosDetalle = (cantidad: number): Promise<string[]>
 /** ✅ V00205: consecutivo TARI-### del TARIFARIO — único, irrepetible, +1. */
 export const reservarConsecutivosTarifario = (cantidad: number): Promise<string[]> =>
   reservarConsecutivos('tarifario_clientes', 'TARI-', cantidad);
+
+/** ✅ V00211: consecutivos del lado PROVEEDOR (mismo mecanismo transaccional). */
+export const reservarConsecutivosDetalleProveedor = (cantidad: number): Promise<string[]> =>
+  reservarConsecutivos('convenios_proveedores_detalles', 'CONV-', cantidad);
+
+export const reservarConsecutivosTarifarioProveedor = (cantidad: number): Promise<string[]> =>
+  reservarConsecutivos('tarifario_proveedores', 'TARP-', cantidad);

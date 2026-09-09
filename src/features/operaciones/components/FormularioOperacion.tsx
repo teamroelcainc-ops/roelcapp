@@ -607,6 +607,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ V00202: tarifarios de clientes — sus clientes también aparecen en la operación.
   const [tarifariosLocal, setTarifariosLocal] = useState<any[]>([]);
   useEffect(() => { setTarifariosLocal(catalogosCacheados?.catalogoTarifarios || []); }, [catalogosCacheados?.catalogoTarifarios]);
+  // ✅ V00211: tarifarios de PROVEEDORES — sus proveedores también aparecen.
+  const [tarifariosProvLocal, setTarifariosProvLocal] = useState<any[]>([]);
+  useEffect(() => { setTarifariosProvLocal(catalogosCacheados?.catalogoTarifariosProv || []); }, [catalogosCacheados?.catalogoTarifariosProv]);
   useEffect(() => { setConvDetallesLocal(catalogosCacheados?.catalogoConvDetalles || []); }, [catalogosCacheados?.catalogoConvDetalles]);
   useEffect(() => { setConvProvLocal(catalogosCacheados?.conveniosProv || []); }, [catalogosCacheados?.conveniosProv]);
   useEffect(() => { setConvProvDetallesLocal(catalogosCacheados?.catalogoConvProvDetalles || []); }, [catalogosCacheados?.catalogoConvProvDetalles]);
@@ -623,6 +626,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       { alias: 'catalogoConvClientes',     coleccion: 'convenios_clientes',             setter: setConvClientesLocal },
       { alias: 'catalogoConvDetalles',     coleccion: 'convenios_clientes_detalles',    setter: setConvDetallesLocal },
       { alias: 'catalogoTarifarios',       coleccion: 'tarifario_clientes',             setter: setTarifariosLocal }, // ✅ V00202
+      { alias: 'catalogoTarifariosProv',   coleccion: 'tarifario_proveedores',          setter: setTarifariosProvLocal }, // ✅ V00211
       { alias: 'conveniosProv',            coleccion: 'convenios_proveedores',          setter: setConvProvLocal },
       { alias: 'catalogoConvProvDetalles', coleccion: 'convenios_proveedores_detalles', setter: setConvProvDetallesLocal },
       { alias: 'tarifasGastosIncluidos',   coleccion: 'tarifas_gastos_incluidos',       setter: setGastosIncluidosLocal },
@@ -792,7 +796,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     const mon = nombreMoneda(c.monedaMaestro);
     return `${cons ? `${cons} - ` : ''}${c.descripcion || ''}${mon ? ` - ${mon}` : ''} - ${fmtMoney(c.tarifaMonto)}`;
   };
-  const etiquetaConvenioProveedor = (c: any) => `${c.tipoConvenioNombre || ''} — ${fmtMoney(c.tarifaMonto)}${nombreMoneda(c.monedaBase) ? ` ${nombreMoneda(c.monedaBase)}` : ''}`;
+  // ✅ V00211: etiqueta = Consecutivo - Convenio - Moneda de cotización - Monto
+  const etiquetaConvenioProveedor = (c: any) => {
+    const cons = consecutivoConvenio(c);
+    const mon = nombreMoneda(c.monedaBase);
+    return `${cons ? `${cons} - ` : ''}${c.tipoConvenioNombre || ''}${mon ? ` - ${mon}` : ''} - ${fmtMoney(c.tarifaMonto)}`;
+  };
 
   const [tipoCambioDia, setTipoCambioDia] = useState<number | null>(null);
   const [buscandoTC, setBuscandoTC] = useState(false);
@@ -1939,8 +1948,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (id) set.add(id);
     });
     (catalogoConvProvDetalles || []).forEach((d: any) => { const id = ownerProvDetalle(d); if (id) set.add(id); });
+    // ✅ V00211: también los proveedores que están en Tarifario Proveedores.
+    (tarifariosProvLocal || []).forEach((t: any) => { const id = String(t.proveedorId ?? '').trim(); if (id) set.add(id); });
     return set;
-  }, [conveniosProv, catalogoConvProvDetalles]);
+  }, [conveniosProv, catalogoConvProvDetalles, tarifariosProvLocal]);
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) =>
     (contieneId(e.tiposEmpresa, 'ca21ab07') || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_TRANSPORTE)) && e.status === 'Activa' &&
     (idsProveedoresConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.proveedorUnidad || '') || String(e.id) === String(formData.proveedorUnidad || ''))

@@ -194,6 +194,20 @@ export const MODULOS_AUTORIZABLES: ModuloAutorizable[] = [
       { key: 'tarifa', label: 'Costo de la Tarifa' },
       { key: 'status', label: 'Status' }, // ✅ V00199
     ], integrado: true },
+  // ✅ V00211: espejo PROVEEDORES del tarifario y sus detalles.
+  { clave: 'tarifarioProveedores', label: 'Tarifario Proveedores', coleccion: 'tarifario_proveedores', campos: [
+      { key: 'fecha', label: 'Fecha' },
+      { key: 'proveedorId', label: 'Proveedor' },
+      { key: 'tarifas', label: 'Tarifas del Pre Convenio' },
+      { key: 'tarifa', label: 'Tarifa (Monto)' },
+      { key: 'cotizadoEn', label: 'Cotizado En' },
+      { key: 'status', label: 'Status (Aprobar)' },
+    ], integrado: true },
+  { clave: 'detallesConvenioProveedores', label: 'Detalles del Convenio (Proveedores)', coleccion: 'convenios_proveedores_detalles', campos: [
+      { key: 'moneda', label: 'Cotizado En' },
+      { key: 'tarifa', label: 'Costo de la Tarifa' },
+      { key: 'status', label: 'Status' },
+    ], integrado: true },
   { clave: 'conveniosProveedores', label: 'Convenios de Proveedores', coleccion: 'convenios_proveedores', campos: [
       { key: 'proveedorId', label: 'Proveedor' },
       { key: 'fechaConvenio', label: 'Fecha del Convenio' },
