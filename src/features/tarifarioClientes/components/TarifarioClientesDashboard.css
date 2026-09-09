@@ -291,3 +291,30 @@
 
 /* ✅ V00212: vencimiento pasado */
 .tc-td-vendido, .tc-td-vencido { color: #f85149; font-weight: 600; }
+
+/* ✅ V00214: múltiples tarifas para un mismo servicio */
+.tc-btn-otra-tarifa {
+  display: block;
+  margin-top: 5px;
+  padding: 2px 8px;
+  background-color: transparent;
+  border: 1px dashed #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+.tc-btn-otra-tarifa:hover { border-color: #58a6ff; color: #58a6ff; }
+.tc-fila-extra td { background-color: rgba(88, 166, 255, 0.04); }
+.tc-extra-marca { color: #58a6ff; text-align: center; }
+.tc-btn-quitar-extra {
+  margin-left: 6px;
+  padding: 2px 7px;
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  color: #f85149;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+.tc-btn-quitar-extra:hover { border-color: #f85149; }

@@ -101,3 +101,30 @@
 .fo-btn-act-moneda { background: transparent; border: 1px solid #3fb950; color: #3fb950; border-radius: 6px; padding: 2px 8px; font-size: 0.7rem; font-weight: 700; cursor: pointer; margin-left: 8px; vertical-align: 1px; }
 .fo-btn-act-moneda:hover { background-color: rgba(63, 185, 80, 0.12); }
 .fo-btn-act-moneda:disabled { opacity: 0.6; cursor: wait; }
+
+/* ✅ V00214: municipio (no editable) y modal de tarifas del convenio */
+.fo-municipio { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.fo-municipio-lbl { font-size: 0.7rem; color: #8b949e; white-space: nowrap; }
+.fo-municipio-input { padding: 4px 8px; font-size: 0.78rem; }
+.fo-chip-tarifas {
+  margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid #f0883e; color: #f0883e; font-size: 0.68rem; font-weight: 700;
+}
+.fo-modal-tarifas {
+  background-color: #161b22; border: 1px solid #30363d; border-radius: 12px;
+  padding: 18px 20px; width: min(520px, 94vw); max-height: 80vh; overflow-y: auto;
+}
+.fo-modal-tarifas-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+.fo-modal-tarifas-tit { margin: 0 0 3px 0; font-size: 1rem; color: #e6edf3; }
+.fo-modal-tarifas-sub { margin: 0; font-size: 0.8rem; color: #8b949e; }
+.fo-modal-tarifas-x { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1rem; }
+.fo-modal-tarifas-lista { display: flex; flex-direction: column; gap: 8px; }
+.fo-tarifa-opcion {
+  display: grid; grid-template-columns: 110px 1fr 80px; align-items: center; gap: 10px;
+  padding: 10px 12px; background-color: #0d1117; border: 1px solid #30363d;
+  border-radius: 8px; cursor: pointer; text-align: left;
+}
+.fo-tarifa-opcion:hover { border-color: #58a6ff; background-color: rgba(88, 166, 255, 0.08); }
+.fo-tarifa-cons { color: #58a6ff; font-weight: 700; font-size: 0.82rem; }
+.fo-tarifa-monto { color: #e6edf3; font-weight: 700; font-size: 0.95rem; }
+.fo-tarifa-mon { color: #8b949e; font-size: 0.78rem; text-align: right; }

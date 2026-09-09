@@ -788,6 +788,31 @@ const OperacionesDashboard = () => {
     return '-';
   };
 
+  // ✅ V00214: pinta la palabra clave del tipo de operación dentro de la
+  //   leyenda del convenio: Importación azul · Exportación verde ·
+  //   Movimiento amarillo · Flete naranja.
+  const pintarTipoConvenio = (texto: string) => {
+    const t = String(texto || '');
+    if (!t) return t;
+    const COLORES: [RegExp, string][] = [
+      [/importaci[oó]n/i, '#58a6ff'],
+      [/exportaci[oó]n/i, '#3fb950'],
+      [/movimiento/i, '#d29922'],
+      [/flete/i, '#f0883e'],
+    ];
+    for (const [rx, color] of COLORES) {
+      const m = t.match(rx);
+      if (m && m.index !== undefined) {
+        return (<>
+          {t.slice(0, m.index)}
+          <b style={{ color }}>{m[0]}</b>
+          {t.slice(m.index + m[0].length)}
+        </>);
+      }
+    }
+    return t;
+  };
+
   // ✅ Solo nombre desnormalizado (convenioNombre). Sin lecturas de catálogos.
   const obtenerNombreConvenioCliente = (id: string, valorDesnormalizado?: string) => {
     const v = valorDesnormalizado != null ? String(valorDesnormalizado).trim() : '';
@@ -1587,7 +1612,7 @@ const OperacionesDashboard = () => {
       }
       case 'trafico': return <span className="od-x1">{mostrarDato(op.trafico)}</span>;
       case 'cliente': return <span className="od-x2">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
-      case 'convenioTarifa': return <span className="od-x3" title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}</span>;
+      case 'convenioTarifa': return <span className="od-x3" title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{pintarTipoConvenio(obtenerNombreConvenioCliente(op.convenio, op.convenioNombre))}</span>;{/* ✅ V00214 */}
       case 'refCliente': return <span className="od-x1">{mostrarDato(op.refCliente)}</span>;
       case 'facturadoEnCobrar': return <span className="od-x1">{mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)}</span>;
       case 'montoConvenioCliente': return <span className="od-x1">{formatoMoneda(op.montoConvenioCliente)}</span>;

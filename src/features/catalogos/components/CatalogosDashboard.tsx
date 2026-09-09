@@ -444,7 +444,7 @@ const CatalogosDashboard = () => {
         return fuente ? valorLegible(fuente, datos[nombre]) : String(datos[nombre] ?? '');
       })
       .filter(Boolean)
-      .join(' ');
+      .join(' - '); // ✅ V00214: cada columna separada por guion medio
   };
 
   // ✅ V00209: REARMA TODAS las descripciones de Tarifas de Referencia y las
@@ -488,7 +488,7 @@ const CatalogosDashboard = () => {
         return t;
       };
       const armarDescripcion = (datos: Record<string, unknown>): string =>
-        fuentes.map((f) => legible(f, datos[f.name])).filter(Boolean).join(' ');
+        fuentes.map((f) => legible(f, datos[f.name])).filter(Boolean).join(' - '); // ✅ V00214
 
       // 1) Rearmar descripciones del catálogo.
       const snapTar = await getDocs(collection(db, 'catalogo_tarifas_referencia'));

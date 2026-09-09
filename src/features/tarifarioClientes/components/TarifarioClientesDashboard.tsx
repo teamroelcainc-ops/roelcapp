@@ -181,6 +181,10 @@ export function TarifarioClientesDashboard() {
   const [tarifaValor, setTarifaValor] = useState<Record<string, string>>({});
   // ✅ V00193: moneda en que se cotiza cada tarifa ("Cotizado En"). Default: la del cliente.
   const [monedaTarifa, setMonedaTarifa] = useState<Record<string, 'USD' | 'MXN'>>({});
+  // ✅ V00214: líneas EXTRA — la misma tarifa puede ir varias veces en el
+  //   tarifario, siempre que el MONTO sea distinto (mismo servicio, precios
+  //   diferentes de forma permanente).
+  const [extras, setExtras] = useState<{ key: string; tarifaRefId: string; valor: string; moneda: 'USD' | 'MXN' }[]>([]);
   const [guardando, setGuardando] = useState(false);
 
   // ── Pre convenios guardados ──
@@ -297,6 +301,7 @@ export function TarifarioClientesDashboard() {
     setEditandoId('');
     setFechaVencimiento(`${hoyLocalISO().slice(0, 4)}-12-31`); // ✅ V00212
     setSeleccion(new Set());
+    setExtras([]); // ✅ V00214
     setTarifaValor({});
     setMonedaTarifa({});
     setBusquedaTarifa('');
@@ -323,14 +328,23 @@ export function TarifarioClientesDashboard() {
     const sel = new Set<string>();
     const valores: Record<string, string> = {};
     const monedas: Record<string, 'USD' | 'MXN'> = {};
-    (Array.isArray(r.tarifas) ? r.tarifas : []).forEach((t: Doc) => {
+    const extrasCarga: { key: string; tarifaRefId: string; valor: string; moneda: 'USD' | 'MXN' }[] = [];
+    (Array.isArray(r.tarifas) ? r.tarifas : []).forEach((t: Doc, i: number) => {
       const id = String(t.tarifaReferenciaId || '');
       if (!id) return;
-      sel.add(id);
-      valores[id] = String(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || '');
+      const monto = String(Number(t.tarifa) || (Array.isArray(t.costosSugeridos) ? Number(t.costosSugeridos[0]) : 0) || '');
       const m = canonMoneda(t.cotizadoEn);
-      if (m) monedas[id] = m;
+      if (!sel.has(id)) {
+        // ✅ V00214: la primera línea de cada tarifa va al renglón principal…
+        sel.add(id);
+        valores[id] = monto;
+        if (m) monedas[id] = m;
+      } else {
+        // …y las repeticiones (mismo servicio, otro monto) van como extras.
+        extrasCarga.push({ key: `x${i}-${id}`, tarifaRefId: id, valor: monto, moneda: m || 'USD' });
+      }
     });
+    setExtras(extrasCarga);
     setSeleccion(sel);
     setTarifaValor(valores);
     setMonedaTarifa(monedas);
@@ -368,6 +382,42 @@ export function TarifarioClientesDashboard() {
     setGuardando(true);
     try {
       const elegidas = tarifasRef.filter((t) => seleccion.has(t.id));
+      // ✅ V00214: líneas finales = principales + extras (misma tarifa, otro monto).
+      const lineaDe = (t: Doc, monto: number, mon: string) => {
+        const costos = costosDe(t);
+        return {
+          tarifaReferenciaId: String(t.id),
+          descripcion: String(t.descripcion || ''),
+          clave: claveDe(t),
+          origen: String(t.origen || ''),
+          destino: String(t.destino || ''),
+          costosSugeridos: costos,
+          tarifa: monto || costos[0] || 0,
+          cotizadoEn: mon || monedaCliente || 'USD',
+          status: 'Pendiente',
+        };
+      };
+      const lineas = [
+        ...elegidas.map((t) => lineaDe(t, Number(tarifaValor[t.id]) || 0, monedaTarifa[t.id] || '')),
+        ...extras
+          .filter((x) => seleccion.has(x.tarifaRefId))
+          .map((x) => {
+            const t = tarifasRef.find((tr) => String(tr.id) === x.tarifaRefId);
+            return t ? lineaDe(t, Number(x.valor) || 0, x.moneda) : null;
+          })
+          .filter(Boolean) as Doc[],
+      ];
+      // Candado: la misma tarifa NO puede repetirse con el MISMO monto.
+      const vistos = new Set<string>();
+      for (const l of lineas) {
+        const k = `${l.tarifaReferenciaId}|${Number(l.tarifa) || 0}|${l.cotizadoEn}`;
+        if (vistos.has(k)) {
+          alert(`La tarifa "${l.descripcion}" está repetida con el mismo monto (${fmtMoney(Number(l.tarifa) || 0)} ${l.cotizadoEn}).\n\nPuedes repetir un mismo servicio, pero cada línea debe tener una tarifa distinta.`);
+          setGuardando(false);
+          return;
+        }
+        vistos.add(k);
+      }
       const payload = {
         fecha,
         fechaVencimiento, // ✅ V00212
@@ -378,22 +428,7 @@ export function TarifarioClientesDashboard() {
         monedaNombre: etiquetaMoneda,
         creditoDias,
         limiteCredito,
-        tarifas: elegidas.map((t) => {
-          const costos = costosDe(t);
-          return {
-            tarifaReferenciaId: String(t.id),
-            descripcion: String(t.descripcion || ''),
-            clave: claveDe(t),
-            origen: String(t.origen || ''),
-            destino: String(t.destino || ''),
-            costosSugeridos: costos,
-            // ✅ V00194: TARIFA capturada en el campo de moneda (fallback: 1er sugerido).
-            tarifa: Number(tarifaValor[t.id]) || costos[0] || 0,
-            // ✅ V00193: moneda en que quedó cotizada esta línea.
-            cotizadoEn: monedaTarifa[t.id] || monedaCliente || 'USD',
-            status: 'Pendiente',
-          };
-        }),
+        tarifas: lineas, // ✅ V00214
         status: 'Pendiente',
       };
       if (editandoId) {
@@ -1220,6 +1255,54 @@ export function TarifarioClientesDashboard() {
                               <option value="USD">USD</option>
                               <option value="MXN">MXN</option>
                             </select>
+                            {/* ✅ V00214: agregar otra tarifa para ESTE MISMO servicio */}
+                            {marcada && (
+                              <button
+                                type="button"
+                                className="tc-btn-otra-tarifa"
+                                title="Agregar otra tarifa para este mismo servicio (con monto distinto)"
+                                onClick={() => setExtras((p) => [...p, { key: `x${Date.now()}-${t.id}`, tarifaRefId: String(t.id), valor: '', moneda: monedaTarifa[t.id] || (monedaCliente as 'USD' | 'MXN') || 'USD' }])}
+                              >
+                                + otra tarifa
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {/* ✅ V00214: líneas EXTRA de la misma tarifa (otro monto) */}
+                    {extras.filter((x) => seleccion.has(x.tarifaRefId) && tarifasVisibles.some((t) => String(t.id) === x.tarifaRefId)).map((x) => {
+                      const t = tarifasRef.find((tr) => String(tr.id) === x.tarifaRefId);
+                      return (
+                        <tr key={x.key} className="tc-fila-extra">
+                          <td className="tc-th-check tc-extra-marca">↳</td>
+                          <td>
+                            <div>{t?.descripcion || '—'}</div>
+                            <div className="tc-sub-linea">Tarifa adicional del mismo servicio</div>
+                          </td>
+                          <td className="tc-td-num">—</td>
+                          <td className="tc-td-num">
+                            <div className="tc-input-moneda">
+                              <span>$</span>
+                              <input
+                                type="number" min="0" step="0.01"
+                                className="form-control tc-input-tarifa"
+                                placeholder="0.00"
+                                value={x.valor}
+                                onChange={(e) => setExtras((p) => p.map((y) => y.key === x.key ? { ...y, valor: e.target.value } : y))}
+                              />
+                            </div>
+                          </td>
+                          <td className="tc-td-num">
+                            <select
+                              className="form-control tc-select-costo"
+                              value={x.moneda}
+                              onChange={(e) => setExtras((p) => p.map((y) => y.key === x.key ? { ...y, moneda: e.target.value as 'USD' | 'MXN' } : y))}
+                            >
+                              <option value="USD">USD</option>
+                              <option value="MXN">MXN</option>
+                            </select>
+                            <button type="button" className="tc-btn-quitar-extra" title="Quitar esta tarifa adicional" onClick={() => setExtras((p) => p.filter((y) => y.key !== x.key))}>✕</button>
                           </td>
                         </tr>
                       );
@@ -1230,7 +1313,7 @@ export function TarifarioClientesDashboard() {
             </div>
 
             <div className="tc-modal-pie">
-              <span className="tc-conteo-sel"><b>{seleccion.size}</b> tarifa(s) seleccionada(s)</span>
+              <span className="tc-conteo-sel"><b>{seleccion.size + extras.filter((x) => seleccion.has(x.tarifaRefId)).length}</b> línea(s) · {seleccion.size} servicio(s)</span>{/* ✅ V00214 */}
               <div className="tc-modal-botones">
                 <button type="button" className="btn btn-outline" disabled={guardando} onClick={() => setModalAbierto(false)}>Cancelar</button>
                 <button type="button" className="tc-btn-guardar" disabled={seleccion.size === 0 || guardando} onClick={guardarPreConvenio}>

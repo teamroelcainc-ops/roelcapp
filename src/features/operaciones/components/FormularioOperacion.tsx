@@ -1419,7 +1419,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     const detallesAsociados = Array.from(union.values());
 
-    const lista = detallesAsociados.map((d: any) => {
+    let lista = detallesAsociados.map((d: any) => {
       const tarifaId = d.tipoConvenioId || d.tipo_convenio_id || d.tipoConvenio || d.tipo_convenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
       const ref = refMaestroDetalle(d);
@@ -1433,10 +1433,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       return {
         ...d,
         id: d.id, tarifaBaseId: tarifaId, descripcion: nombreFinal,
+        statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto "Pesos"/"Dólares")
         monedaMaestro: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
         tarifaMonto: montoDetalle(d),
       };
+    });
+
+    // ✅ V00214: los detalles con status Inactivo o Cancelado NO se ofrecen.
+    lista = lista.filter((c: any) => {
+      const st = String(c.statusDetalle || '').trim();
+      return st !== 'Inactivo' && st !== 'Cancelado';
     });
 
     const convGuardadoId = String(initialData?.convenio || '').trim();
@@ -1492,7 +1499,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     const detallesAsociados = Array.from(union.values());
 
-    const lista = detallesAsociados.map((d: any) => {
+    let lista = detallesAsociados.map((d: any) => {
       const tarifaId = d.tipoConvenioId || d.tipo_convenio || d.tipoConvenio || d.tarifaId || d.tarifa_id || d['TIPO DE CONVENIO'];
       const tObj = tarifas?.find((t: any) => String(t.id).trim() === String(tarifaId).trim());
       const ref = refMaestroDetalle(d);
@@ -1501,10 +1508,17 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       return {
         ...d,
         id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
+        statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto)
         monedaBase: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroParent?.monedaId || maestroParent?.moneda || ID_USD,
         tarifaMonto: montoDetalle(d),
       };
+    });
+
+    // ✅ V00214: los detalles Inactivo/Cancelado NO se ofrecen en la operación.
+    lista = lista.filter((c: any) => {
+      const st = String(c.statusDetalle || '').trim();
+      return st !== 'Inactivo' && st !== 'Cancelado';
     });
 
     const convProvGuardadoId = String(initialData?.convenioProveedor || '').trim();
@@ -1940,6 +1954,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const direccionDeEmpresaOD = (e: any) => mapaDirecciones[String(e?.direccionId || '')] || null;
   const direccionFormateadaOD = (e: any) => formatearDireccionPorPais(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
   const paisDeEmpresaOD = (e: any) => paisDeDireccion(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
+  // ✅ V00214: municipio guardado en el catálogo de Direcciones (solo lectura).
+  const municipioDeEmpresaOD = (id: unknown): string => {
+    const emp = (empresas || []).find((e: any) => String(e.id) === String(id || ''));
+    if (!emp) return '';
+    const dir = direccionDeEmpresaOD(emp);
+    return String(dir?.municipioNombre || dir?.municipio || dir?.ciudad || dir?.city || '');
+  };
   // ✅ V00126: en Proveedor de Transporte solo se listan los que TIENEN convenio
   //   (se conserva siempre el del registro que se está editando y la flota propia forzada).
   // ✅ V00212: mismo criterio para proveedores — tarifario APROBADO.
@@ -2024,6 +2045,21 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const resultadosOperador = listaEmpleadosLocal.filter((o:any) => `${o.firstName || ''} ${o.lastNamePaternal || ''}`.trim().toLowerCase().includes(sOperador));
   const resultadosUnidadProveedor = listaUniProvLocal.filter((u:any) => String(u.numeroUnidad || u.numero_unidad || u.unidad || u.placas || u.placa || '').toLowerCase().includes(sUnidadProv));
   const resultadosOperadorProveedor = listaOpeProvLocal.filter((o:any) => String(o.nombre || o.nombres || o.nombreCompleto || '').toLowerCase().includes(sOperadorProv));
+  // ✅ V00214: en la operación se ofrece UN convenio por concepto. Si ese
+  //   concepto tiene varias tarifas (mismo servicio, montos distintos), la
+  //   tarifa se elige en un modal.
+  const [modalTarifas, setModalTarifas] = useState<{ tipo: 'cliente' | 'proveedor'; nombre: string; opciones: any[] } | null>(null);
+  const agruparPorConcepto = (lista: any[], campo: string) => {
+    const grupos = new Map<string, { nombre: string; opciones: any[] }>();
+    (lista || []).forEach((c: any) => {
+      const nombre = String(c[campo] || '').trim() || 'Sin nombre';
+      if (!grupos.has(nombre)) grupos.set(nombre, { nombre, opciones: [] });
+      grupos.get(nombre)!.opciones.push(c);
+    });
+    return Array.from(grupos.values());
+  };
+  const consecutivoDe = (c: any) => String(c?.consecutivo || (String(c?.id || '').startsWith('CONV-') ? c.id : '') || '').trim();
+
   const resultadosConvenio = listaConveniosCliente.filter((c:any) =>
     (c.descripcion || '').toLowerCase().includes(sConvenio) ||
     etiquetaConvenioCliente(c).toLowerCase().includes(sConvenio) ||
@@ -2780,12 +2816,30 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <input type="text" className={`form-control${claseSiFalta('convenio')}`} placeholder="Buscar por nombre o ID de tarifa..." required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio} onChange={e => { setSearchConvenio(e.target.value); setShowDropdownConvenio(true); if (formData.convenio) setFormData(prev => ({ ...prev, convenio: '' })); }} onFocus={() => setShowDropdownConvenio(true)} onBlur={() => setTimeout(() => setShowDropdownConvenio(false), 200)} />
                           {showDropdownConvenio && (
                             <div className="fo-x12">
-                              {resultadosConvenio.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosConvenio.map((c:any) => (
-                                <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenio: c.id })); setSearchConvenio(etiquetaConvenioCliente(c)); setShowDropdownConvenio(false); }}>
-                                  {/* ✅ V00126: nombre + monto + moneda en la misma línea */}
-                                  <div className="fo-x15">{etiquetaConvenioCliente(c)}</div>
-                                </div>
-                              ))}
+                              {resultadosConvenio.length === 0 && <div className="fo-x13">Sin resultados</div>}
+                              {/* ✅ V00214: un renglón por CONCEPTO; varias tarifas → modal */}
+                              {agruparPorConcepto(resultadosConvenio, 'descripcion').map((g:any) => {
+                                const unica = g.opciones.length === 1;
+                                const c0 = g.opciones[0];
+                                return (
+                                  <div className="fo-x14" key={g.nombre} onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    if (unica) {
+                                      setFormData(prev => ({ ...prev, convenio: c0.id }));
+                                      setSearchConvenio(etiquetaConvenioCliente(c0));
+                                      setShowDropdownConvenio(false);
+                                    } else {
+                                      setShowDropdownConvenio(false);
+                                      setModalTarifas({ tipo: 'cliente', nombre: g.nombre, opciones: g.opciones });
+                                    }
+                                  }}>
+                                    <div className="fo-x15">
+                                      {unica && consecutivoDe(c0) ? `${consecutivoDe(c0)} - ` : ''}{g.nombre}
+                                      {!unica && <span className="fo-chip-tarifas">{g.opciones.length} tarifas · elegir</span>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -2825,6 +2879,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           </div>
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, origen: id })); setSearchOrigen(labelEmpresa(reg)); })} />
                         </div>
+                        {/* ✅ V00214: municipio del catálogo (no editable) */}
+                        {formData.origen && (
+                          <div className="fo-municipio">
+                            <span className="fo-municipio-lbl">Municipio</span>
+                            <input type="text" className="form-control fo-municipio-input" value={municipioDeEmpresaOD(formData.origen) || '—'} readOnly disabled />
+                          </div>
+                        )}
                         {/* ✅ V00136: alerta de documentos del origen/destino */}
                         {formData.origen && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.origen)} registroNombre={searchOrigen} etiqueta="Origen" />}
                       </div>
@@ -2838,6 +2899,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <BotonAgregar title="Agregar nuevo Origen/Destino" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_ORIGEN_DESTINO }, (id, reg) => { setFormData(prev => ({ ...prev, destino: id })); setSearchDestino(labelEmpresa(reg)); })} />
                         </div>
                         {/* ✅ V00136: alerta de documentos del origen/destino */}
+                        {/* ✅ V00214: municipio del catálogo (no editable) */}
+                        {formData.destino && (
+                          <div className="fo-municipio">
+                            <span className="fo-municipio-lbl">Municipio</span>
+                            <input type="text" className="form-control fo-municipio-input" value={municipioDeEmpresaOD(formData.destino) || '—'} readOnly disabled />
+                          </div>
+                        )}
                         {formData.destino && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.destino)} registroNombre={searchDestino} etiqueta="Destino" />}
                       </div>
                       {/* ✅ NUEVO: kilometraje estimado del viaje (junto a Destino) */}
@@ -2990,12 +3058,30 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Buscar por nombre o ID de tarifa..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor} onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '' })); }} onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />
                           {showDropdownConvenioProveedor && (
                             <div className="fo-x12">
-                              {resultadosConvenioProveedor.length === 0 ? <div className="fo-x13">Sin resultados</div> : resultadosConvenioProveedor.map((c:any) => (
-                                <div className="fo-x14" key={c.id} onMouseDown={(e) => { e.preventDefault(); setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto })); setSearchConvenioProveedor(etiquetaConvenioProveedor(c)); setShowDropdownConvenioProveedor(false); }}>
-                                  {/* ✅ V00126: nombre + monto + moneda en la misma línea */}
-                                  <div className="fo-x15">{etiquetaConvenioProveedor(c)}</div>
-                                </div>
-                              ))}
+                              {resultadosConvenioProveedor.length === 0 && <div className="fo-x13">Sin resultados</div>}
+                              {/* ✅ V00214: un renglón por CONCEPTO; varias tarifas → modal */}
+                              {agruparPorConcepto(resultadosConvenioProveedor, 'tipoConvenioNombre').map((g:any) => {
+                                const unica = g.opciones.length === 1;
+                                const c0 = g.opciones[0];
+                                return (
+                                  <div className="fo-x14" key={g.nombre} onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    if (unica) {
+                                      setFormData(prev => ({ ...prev, convenioProveedor: c0.id, monedaConvenioProv: c0.monedaBase, totalAPagarProv: c0.tarifaMonto }));
+                                      setSearchConvenioProveedor(etiquetaConvenioProveedor(c0));
+                                      setShowDropdownConvenioProveedor(false);
+                                    } else {
+                                      setShowDropdownConvenioProveedor(false);
+                                      setModalTarifas({ tipo: 'proveedor', nombre: g.nombre, opciones: g.opciones });
+                                    }
+                                  }}>
+                                    <div className="fo-x15">
+                                      {unica && consecutivoDe(c0) ? `${consecutivoDe(c0)} - ` : ''}{g.nombre}
+                                      {!unica && <span className="fo-chip-tarifas">{g.opciones.length} tarifas · elegir</span>}
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -3419,6 +3505,44 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       {/* ✅ V00141: modal de acceso a campo bloqueado */}
       <ModalAccesoCampo aut={autHook} />
+      {/* ✅ V00214: MODAL — elegir la tarifa cuando el concepto tiene varias */}
+      {modalTarifas && (
+        <div className="modal-overlay" onClick={() => setModalTarifas(null)}>
+          <div className="fo-modal-tarifas" onClick={(e) => e.stopPropagation()}>
+            <div className="fo-modal-tarifas-head">
+              <div>
+                <h3 className="fo-modal-tarifas-tit">Elige la tarifa</h3>
+                <p className="fo-modal-tarifas-sub">{modalTarifas.nombre} · {modalTarifas.tipo === 'cliente' ? 'Cliente' : 'Proveedor'}</p>
+              </div>
+              <button type="button" className="fo-modal-tarifas-x" onClick={() => setModalTarifas(null)}>✕</button>
+            </div>
+            <div className="fo-modal-tarifas-lista">
+              {modalTarifas.opciones.map((c: any) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  className="fo-tarifa-opcion"
+                  onClick={() => {
+                    if (modalTarifas.tipo === 'cliente') {
+                      setFormData(prev => ({ ...prev, convenio: c.id }));
+                      setSearchConvenio(etiquetaConvenioCliente(c));
+                    } else {
+                      setFormData(prev => ({ ...prev, convenioProveedor: c.id, monedaConvenioProv: c.monedaBase, totalAPagarProv: c.tarifaMonto }));
+                      setSearchConvenioProveedor(etiquetaConvenioProveedor(c));
+                    }
+                    setModalTarifas(null);
+                  }}
+                >
+                  <span className="fo-tarifa-cons">{consecutivoDe(c) || '—'}</span>
+                  <span className="fo-tarifa-monto">{fmtMoney(c.tarifaMonto)}</span>
+                  <span className="fo-tarifa-mon">{nombreMoneda(modalTarifas.tipo === 'cliente' ? c.monedaMaestro : c.monedaBase)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {detalleConvenioEdit && (
         <EditorDetalleConvenioModal
           tipo={detalleConvenioEdit.tipo}
