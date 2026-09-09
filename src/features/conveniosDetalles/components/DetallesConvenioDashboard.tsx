@@ -27,12 +27,15 @@
 //   respeta Autorizaciones como edición del campo Status.
 // ✅ V00202: si un detalle está aquí, está APROBADO — el status vacío se
 //   muestra (y se guarda al editar) como "Aprobado".
+// ✅ V00215: UNIR duplicados — se marcan con los checkboxes, se elige cuál se
+//   conserva y las operaciones que usaban los otros se REAPUNTAN al conservado
+//   antes de mandarlos a la Papelera (mismo patrón que Catálogos).
 // ✅ V00211: PARIDAD PROVEEDORES — todas las funciones de clientes (pestañas,
 //   consecutivo, status, uso en operaciones [op.convenioProveedor], selección
 //   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, writeBatch } from 'firebase/firestore'; // ✅ V00215
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
 import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
@@ -81,6 +84,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ V00207: selección múltiple para borrado masivo (solo clientes)
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [borrandoSel, setBorrandoSel] = useState(false);
+  // ✅ V00215: unir duplicados
+  const [modalUnir, setModalUnir] = useState(false);
+  const [conservarId, setConservarId] = useState('');
+  const [uniendo, setUniendo] = useState(false);
   // ✅ V00207: catálogo de tarifas para CORREGIR los "No identificados"
   const [tarifasLista, setTarifasLista] = useState<{ id: string; nombre: string }[]>([]);
   // ✅ V00207: edición en modal (lápiz al inicio de la fila)
@@ -150,6 +157,71 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       alert(`${ok} de ${ids.length} convenio(s) enviados a la Papelera. ✅`);
     } finally {
       setBorrandoSel(false);
+    }
+  };
+
+  // ✅ V00215: UNIR los detalles seleccionados en uno solo.
+  const abrirModalUnir = () => {
+    if (seleccion.size < 2) return;
+    const ids = Array.from(seleccion);
+    // Por defecto se conserva el que más operaciones tenga (y a igualdad, el consecutivo menor).
+    const mejor = [...ids].sort((a, b) => {
+      const ua = (usosOps[a] || []).length, ub = (usosOps[b] || []).length;
+      if (ub !== ua) return ub - ua;
+      const fa = (filas || []).find((f) => f.id === a), fb = (filas || []).find((f) => f.id === b);
+      return String(fa?.consecutivo || '').localeCompare(String(fb?.consecutivo || ''));
+    })[0];
+    setConservarId(mejor || ids[0]);
+    setModalUnir(true);
+  };
+
+  const unirSeleccionados = async () => {
+    if (!conservarId || seleccion.size < 2 || uniendo) return;
+    if (!aut.verificarAccion('borrar')) return;
+    const descartados = Array.from(seleccion).filter((id) => id !== conservarId);
+    const opsAfectadas = descartados.reduce((n, id) => n + (usosOps[id] || []).length, 0);
+    const consConservado = (filas || []).find((f) => f.id === conservarId)?.consecutivo || conservarId;
+    if (!window.confirm(`¿Unir ${descartados.length + 1} convenios en ${consConservado}?\n\n· ${opsAfectadas} operación(es) que usaban los otros quedarán apuntando a ${consConservado}.\n· Los ${descartados.length} restantes se enviarán a la Papelera.`)) return;
+    setUniendo(true);
+    try {
+      // 1) Reapuntar las operaciones de los descartados al conservado.
+      const campoOp = esClientes ? 'convenio' : 'convenioProveedor';
+      const campoNombre = esClientes ? 'convenioNombre' : 'convenioProveedorNombre';
+      const filaConservada = (filas || []).find((f) => f.id === conservarId);
+      const snapOps = await getDocs(collection(db, 'operaciones'));
+      let lote = writeBatch(db);
+      let enLote = 0;
+      let reapuntadas = 0;
+      for (const d of snapOps.docs) {
+        const o = d.data() as Record<string, unknown>;
+        if (!descartados.includes(String(o[campoOp] || ''))) continue;
+        const cambios: Record<string, unknown> = { [campoOp]: conservarId };
+        if (filaConservada?.tarifa) cambios[campoNombre] = filaConservada.tarifa;
+        lote.update(d.ref, cambios);
+        reapuntadas += 1;
+        enLote += 1;
+        if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
+      }
+      if (enLote > 0) await lote.commit();
+
+      // 2) Los descartados se van a la Papelera con una sola nota.
+      let borrados = 0;
+      for (const id of descartados) {
+        try {
+          await eliminarRegistro(COL_DETALLES, id, { modulo: 'Detalles del Convenio', motivo: `Unido con ${consConservado} (duplicado)` });
+          borrados += 1;
+        } catch { /* continúa */ }
+      }
+
+      setFilas((prev) => (prev || []).filter((f) => !descartados.includes(f.id)));
+      setSeleccion(new Set());
+      setModalUnir(false);
+      alert(`Convenios unidos en ${consConservado}. ✅\n\n· Operaciones reapuntadas: ${reapuntadas}\n· Convenios enviados a la Papelera: ${borrados}`);
+    } catch (e) {
+      console.error('No se pudieron unir los convenios:', e);
+      alert('No se pudieron unir los convenios.');
+    } finally {
+      setUniendo(false);
     }
   };
 
@@ -386,6 +458,12 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           {guardando ? 'Guardando…' : `Guardar cambios (${Object.keys(cambios).length})`}
         </button>
         {/* ✅ V00207: borrado masivo de los seleccionados */}
+        {/* ✅ V00215: unir duplicados */}
+        {seleccion.size >= 2 && (
+          <button className="btn btn-outline dcv-btn-unir" disabled={uniendo} onClick={abrirModalUnir}>
+            {uniendo ? 'Uniendo…' : `⚭ Unir (${seleccion.size})`}
+          </button>
+        )}
         {seleccion.size > 0 && (
           <button className="btn btn-outline dcv-btn-borrar-sel" disabled={borrandoSel} onClick={eliminarSeleccionados}>
             {borrandoSel ? 'Eliminando…' : `🗑 Eliminar seleccionados (${seleccion.size})`}
@@ -485,6 +563,41 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       )}
 
       <div className="dcv-x11">Mostrando {filasVisibles.length} de {(filas || []).length} detalle(s)</div>
+
+      {/* ✅ V00215: MODAL — unir duplicados eligiendo cuál se conserva */}
+      {modalUnir && (
+        <div className="modal-overlay" onClick={() => !uniendo && setModalUnir(false)}>
+          <div className="dcv-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="dcv-modal-encabezado">
+              <div>
+                <h3 className="dcv-modal-titulo">Unir convenios duplicados</h3>
+                <p className="dcv-modal-sub">Elige cuál se conserva. Las operaciones de los demás quedarán apuntando a ése y los otros se irán a la Papelera.</p>
+              </div>
+              <button type="button" className="dcv-cerrar" onClick={() => !uniendo && setModalUnir(false)}>✕</button>
+            </div>
+            <div className="dcv-unir-lista">
+              {Array.from(seleccion).map((id) => {
+                const f = (filas || []).find((x) => x.id === id);
+                if (!f) return null;
+                const usos = (usosOps[id] || []).length;
+                return (
+                  <label key={id} className={`dcv-unir-opcion ${conservarId === id ? 'dcv-unir-elegida' : ''}`}>
+                    <input type="radio" name="conservar" checked={conservarId === id} onChange={() => setConservarId(id)} />
+                    <span className="dcv-x10">{f.consecutivo || f.id}</span>
+                    <span className="dcv-unir-tarifa">{f.tarifa}</span>
+                    <span className="dcv-unir-costo">{f.costo ?? 0} {f.moneda || '—'}</span>
+                    <span className="dcv-unir-usos">{usos} op.</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="dcv-modal-pie dcv-modal-pie-edit">
+              <button type="button" className="btn btn-outline" disabled={uniendo} onClick={() => setModalUnir(false)}>Cancelar</button>
+              <button type="button" className="btn dcv-btn-guardar-edit" disabled={uniendo || !conservarId} onClick={unirSeleccionados}>{uniendo ? 'Uniendo…' : 'Unir'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ✅ V00207: MODAL DE EDICIÓN — corrige tarifa (No identificados), cotizado en, status y costo */}
       {editando && (
