@@ -11,6 +11,9 @@ export interface CatalogField {
   // ✅ V00208: campo AUTOMÁTICO — su valor se arma uniendo las etiquetas
   //   legibles de estos campos (en este orden) y no se captura a mano.
   autoDe?: string[];
+  // ✅ V00216: el campo solo se muestra si la ETIQUETA del campo indicado
+  //   contiene alguno de estos textos (sin acentos ni mayúsculas).
+  visibleSi?: { campo: string; contiene: string[] };
   options?: string[];
   dynamicOptions?: {
     collection: string;
@@ -268,8 +271,11 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       //   · Door to Door: ambos variables. · Cruces/Demoras: pueden ir vacíos.
       //   Son texto libre para poder guardar tanto la ciudad fija como el
       //   marcador variable, tal cual el archivo de referencia.
-      { name: 'origen', label: 'Origen', type: 'text' },
-      { name: 'destino', label: 'Destino', type: 'text' },
+      // ✅ V00216: Origen y Destino vienen del catálogo de MUNICIPIOS y solo
+      //   se muestran cuando el Tipo de Operación es un FLETE (Importación o
+      //   Exportación).
+      { name: 'origen', label: 'Origen', type: 'select', dynamicOptions: { collection: 'catalogo_municipios', labelField: 'municipio', valueField: 'id' }, visibleSi: { campo: 'tipo_operacion', contiene: ['flete'] } },
+      { name: 'destino', label: 'Destino', type: 'select', dynamicOptions: { collection: 'catalogo_municipios', labelField: 'municipio', valueField: 'id' }, visibleSi: { campo: 'tipo_operacion', contiene: ['flete'] } },
       // ✅ V00208: la DESCRIPCIÓN se ARMA SOLA con Tipo de Operación + Tipo de
       //   Remolque + Cargada/Vacía + Aduana (ya no se captura a mano).
       { name: 'descripcion', label: 'Descripción', type: 'text', required: true, autoDe: ['tipo_operacion', 'tipo_remolque', 'estado_carga', 'aduana'] },

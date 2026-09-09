@@ -434,6 +434,16 @@ const CatalogosDashboard = () => {
     return v;
   };
 
+  // ✅ V00216: ¿el campo debe mostrarse? (visibleSi mira la ETIQUETA del campo
+  //   fuente; p. ej. Origen/Destino solo en Fletes).
+  const campoVisible = (f: CatalogField, datos: Record<string, unknown>): boolean => {
+    if (!f.visibleSi || !catalogoSeleccionado) return true;
+    const fuente = catalogoSeleccionado.fields.find((x) => x.name === f.visibleSi!.campo);
+    const etiqueta = fuente ? valorLegible(fuente, datos[f.visibleSi.campo]) : String(datos[f.visibleSi.campo] ?? '');
+    const t = etiqueta.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return f.visibleSi.contiene.some((c) => t.includes(c.toLowerCase()));
+  };
+
   // ✅ V00208: arma el valor de un campo automático (autoDe) uniendo las
   //   etiquetas de sus campos fuente, en orden y sin vacíos.
   const descripcionAutomatica = (f: CatalogField, datos: Record<string, unknown>): string => {
@@ -595,11 +605,16 @@ const CatalogosDashboard = () => {
     //   legibles de sus campos fuente y pisan lo que hubiera en el estado.
     const datosAGuardar: Record<string, unknown> = { ...formData };
     catalogoSeleccionado.fields.forEach((f) => {
+      // ✅ V00216: un campo oculto no se guarda con basura de una captura previa.
+      if (!campoVisible(f, datosAGuardar)) { datosAGuardar[f.name] = ''; return; }
       if (f.autoDe && f.autoDe.length > 0) datosAGuardar[f.name] = descripcionAutomatica(f, datosAGuardar);
     });
 
     const camposObligatoriosActuales = camposRequeridos[catalogoSeleccionado.id] || [];
     const camposFaltantes = camposObligatoriosActuales.filter(fieldName => {
+      // ✅ V00216: los campos ocultos no se exigen.
+      const campo = catalogoSeleccionado.fields.find((x) => x.name === fieldName);
+      if (campo && !campoVisible(campo, datosAGuardar)) return false;
       const valor = datosAGuardar[fieldName];
       return valor === undefined || valor === null || valor === '';
     });
@@ -1768,6 +1783,7 @@ const CatalogosDashboard = () => {
               <div className={`cd-x75${(catalogoSeleccionado.formColumns || 1) >= 3 ? ' cd-x75-3col' : ''}`}>
                 {catalogoSeleccionado.fields.map((f: CatalogField) => {
                   const isReq = (camposRequeridos[catalogoSeleccionado.id] || []).includes(f.name);
+                  if (!campoVisible(f, formData)) return null; // ✅ V00216
                   return (
                     <div key={f.name}>
                       <label className="cd-x76">{f.label} {isReq && <span className="cd-x77">*</span>}</label>
