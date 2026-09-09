@@ -3053,13 +3053,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               ) : infoUnidad ? (
                                 <>
                                   <span style={{ display: 'block' }}>
+                                    {/* ✅ V00213: sin fecha — la referencia ya la lleva */}
                                     Último servicio: {infoUnidad.ultimaOpRef
-                                      ? <><b style={{ color: '#58a6ff' }}>{infoUnidad.ultimaOpRef}</b> · {fmtFecha(infoUnidad.ultimaOpFecha || '')}</>
+                                      ? <b style={{ color: '#58a6ff' }}>{infoUnidad.ultimaOpRef}</b>
                                       : <span>sin servicios previos</span>}
                                   </span>
                                   <span style={{ display: 'block' }}>
+                                    {/* ✅ V00213: sin fecha — el consecutivo del diesel ya la lleva */}
                                     Última carga diesel: {infoUnidad.dieselConsecutivo
-                                      ? <><b style={{ color: '#D84315' }}>{infoUnidad.dieselConsecutivo}</b> · {fmtFecha(infoUnidad.dieselFecha || '')}{infoUnidad.dieselGalones ? ` · ${infoUnidad.dieselGalones.toFixed(2)} gal` : ''}</>
+                                      ? <><b style={{ color: '#D84315' }}>{infoUnidad.dieselConsecutivo}</b>{infoUnidad.dieselGalones ? ` · ${infoUnidad.dieselGalones.toFixed(2)} gal` : ''}</>
                                       : <span>sin recargas registradas</span>}
                                   </span>
                                 </>
