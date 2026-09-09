@@ -1890,17 +1890,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   mercancía recién creado desde este formulario aparece de inmediato.
   // ✅ V00126: en Cliente (Paga) solo se listan las empresas que TIENEN convenio
   //   (se conserva siempre la del registro que se está editando).
+  // ✅ V00212: en Operaciones SOLO se pueden elegir clientes con TARIFARIO
+  //   APROBADO (los convenios ya viven como tarifarios tras la migración).
+  //   Se conserva el ya guardado en la operación para no romper ediciones.
   const idsClientesConConvenio = useMemo(() => {
     const set = new Set<string>();
-    (catalogoConvClientes || []).forEach((c: any) => {
-      const id = String(c.clienteId ?? c.cliente ?? c.id_cliente ?? c.clientePaga ?? c.empresaId ?? c.empresa ?? '').trim();
+    (tarifariosLocal || []).forEach((t: any) => {
+      if (String(t.status || '').trim() !== 'Aprobado') return;
+      const id = String(t.clienteId ?? '').trim();
       if (id) set.add(id);
     });
-    (catalogoConvDetalles || []).forEach((d: any) => { const id = ownerClienteDetalle(d); if (id) set.add(id); });
-    // ✅ V00202: también los clientes que están en Tarifario Clientes.
-    (tarifariosLocal || []).forEach((t: any) => { const id = String(t.clienteId ?? '').trim(); if (id) set.add(id); });
     return set;
-  }, [catalogoConvClientes, catalogoConvDetalles, tarifariosLocal]);
+  }, [tarifariosLocal]);
   const filClientesPaga = useMemo(() => empresas?.filter((e:any) =>
     (contieneId(e.tiposEmpresa, '7eec9cbb') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_PAGA)) &&
     (idsClientesConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.clientePaga || ''))
@@ -1941,17 +1942,18 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const paisDeEmpresaOD = (e: any) => paisDeDireccion(direccionDeEmpresaOD(e), e?.direccion || e?.direccionLabel || '');
   // ✅ V00126: en Proveedor de Transporte solo se listan los que TIENEN convenio
   //   (se conserva siempre el del registro que se está editando y la flota propia forzada).
+  // ✅ V00212: mismo criterio para proveedores — tarifario APROBADO.
   const idsProveedoresConConvenio = useMemo(() => {
     const set = new Set<string>();
-    (conveniosProv || []).forEach((c: any) => {
-      const id = String(c.proveedorId ?? c.proveedor ?? c.id_proveedor ?? c.empresaId ?? c.empresa ?? '').trim();
+    (tarifariosProvLocal || []).forEach((t: any) => {
+      if (String(t.status || '').trim() !== 'Aprobado') return;
+      const id = String(t.proveedorId ?? '').trim();
       if (id) set.add(id);
     });
-    (catalogoConvProvDetalles || []).forEach((d: any) => { const id = ownerProvDetalle(d); if (id) set.add(id); });
-    // ✅ V00211: también los proveedores que están en Tarifario Proveedores.
-    (tarifariosProvLocal || []).forEach((t: any) => { const id = String(t.proveedorId ?? '').trim(); if (id) set.add(id); });
     return set;
-  }, [conveniosProv, catalogoConvProvDetalles, tarifariosProvLocal]);
+  }, [tarifariosProvLocal]);
+
+
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) =>
     (contieneId(e.tiposEmpresa, 'ca21ab07') || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_TRANSPORTE)) && e.status === 'Activa' &&
     (idsProveedoresConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.proveedorUnidad || '') || String(e.id) === String(formData.proveedorUnidad || ''))

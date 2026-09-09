@@ -164,6 +164,9 @@ export function TarifarioClientesDashboard() {
   // ── Captura (modal) ──
   const [capturaAbierta, setCapturaAbierta] = useState(false);
   const [fecha, setFecha] = useState(hoyLocalISO());
+  // ✅ V00212: fechas de emisión (fecha) y VENCIMIENTO del tarifario; el
+  //   convenio que se cree al aprobar hereda ambas.
+  const [fechaVencimiento, setFechaVencimiento] = useState(`${hoyLocalISO().slice(0, 4)}-12-31`);
   const [busquedaCliente, setBusquedaCliente] = useState('');
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
   const [clienteSel, setClienteSel] = useState<Doc | null>(null);
@@ -292,6 +295,7 @@ export function TarifarioClientesDashboard() {
 
   const limpiarCaptura = () => {
     setEditandoId('');
+    setFechaVencimiento(`${hoyLocalISO().slice(0, 4)}-12-31`); // ✅ V00212
     setSeleccion(new Set());
     setTarifaValor({});
     setMonedaTarifa({});
@@ -315,6 +319,7 @@ export function TarifarioClientesDashboard() {
     setClienteSel(pseudo);
     setBusquedaCliente(String(pseudo.nombre || ''));
     setFecha(String(r.fecha || hoyLocalISO()));
+    setFechaVencimiento(String(r.fechaVencimiento || `${String(r.fecha || hoyLocalISO()).slice(0, 4)}-12-31`)); // ✅ V00212
     const sel = new Set<string>();
     const valores: Record<string, string> = {};
     const monedas: Record<string, 'USD' | 'MXN'> = {};
@@ -365,6 +370,7 @@ export function TarifarioClientesDashboard() {
       const elegidas = tarifasRef.filter((t) => seleccion.has(t.id));
       const payload = {
         fecha,
+        fechaVencimiento, // ✅ V00212
         clienteId: String(clienteSel.id),
         clienteNombre: String(clienteSel.nombre || ''),
         clienteNombreCorto: String(clienteSel.nombreCorto || ''),
@@ -482,7 +488,8 @@ export function TarifarioClientesDashboard() {
             monedaNombre: nombreMoneda(r.moneda),
             credito: Number(r.creditoDias) || 0,
             fechaConvenio: String(r.fecha || hoyLocalISO()),
-            fechaVencimiento: `${String(r.fecha || hoyLocalISO()).slice(0, 4)}-12-31`,
+            // ✅ V00212: el convenio hereda las fechas del tarifario
+            fechaVencimiento: String(r.fechaVencimiento || `${String(r.fecha || hoyLocalISO()).slice(0, 4)}-12-31`),
             creadoDesdeTarifario: String(r.id),
           });
         }
@@ -609,6 +616,7 @@ export function TarifarioClientesDashboard() {
         await setDoc(doc(db, 'tarifario_clientes', consecTar), {
           consecutivo: consecTar, // ✅ V00203
           fecha: String(c.fechaConvenio || hoyLocalISO()),
+          fechaVencimiento: String(c.fechaVencimiento || `${String(c.fechaConvenio || hoyLocalISO()).slice(0, 4)}-12-31`), // ✅ V00212
           clienteId: String(c.clienteId || ''),
           clienteNombre: String(c.clienteNombre || ''),
           clienteNombreCorto: String(emp.nombreCorto || ''),
@@ -831,6 +839,7 @@ export function TarifarioClientesDashboard() {
         <div class="logo"></div>
       </div>
       <div class="fecha-linea"><b>FECHA:</b> ${esc(fechaLarga(r.fecha))}</div>
+      <div class="fecha-linea"><b>VIGENCIA:</b> ${esc(r.fechaVencimiento ? fechaLarga(String(r.fechaVencimiento)) : '')}</div>
       <div class="cliente-bloque">
         <div><span class="cliente-nombre">${esc(String(r.clienteNombre || '').toUpperCase())}</span><br/><b>CLIENTE:</b> ${esc(String(r.clienteNombreCorto || r.clienteNombre || '').toUpperCase())}</div>
         <div><b>MONEDA:</b> ${esc(r.moneda || '')}</div>
@@ -863,6 +872,12 @@ export function TarifarioClientesDashboard() {
     w.document.open();
     w.document.write(construirHTMLTarifario(r));
     w.document.close();
+  };
+
+  /** ✅ V00212: ¿el tarifario ya venció? */
+  const vencido = (r: Doc): boolean => {
+    const v = String(r.fechaVencimiento || '').trim();
+    return !!v && v < hoyLocalISO();
   };
 
   /** Tabla interna de tarifas de un registro (formulario y detalle — ✅ V00194).
@@ -938,7 +953,7 @@ export function TarifarioClientesDashboard() {
           <div className="tc-marco">
             <table className="tc-tabla">
               <thead>
-                <tr><th>ACCIONES</th><th>CONSECUTIVO</th><th>FECHA</th><th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>{/* ✅ V00205: acciones primero */}
+                <tr><th>ACCIONES</th><th>CONSECUTIVO</th><th>EMISIÓN</th><th>VENCE</th>{/* ✅ V00212 */}<th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>{/* ✅ V00205: acciones primero */}
               </thead>
               <tbody>
                 {registros.map((r) => (
@@ -953,6 +968,7 @@ export function TarifarioClientesDashboard() {
                     {/* ✅ V00205: consecutivo TARI-### (segunda columna) */}
                     <td className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TARI-') || String(r.id).startsWith('TAR-') ? r.id : '—')}</td>
                     <td>{r.fecha || '—'}</td>
+                    <td className={vencido(r) ? 'tc-td-vencido' : ''}>{r.fechaVencimiento || '—'}</td>{/* ✅ V00212 */}
                     <td className="tc-td-cliente">{r.clienteNombre || '—'}</td>
                     <td>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</td>
                     <td>{r.creditoDias > 0 ? `${r.creditoDias} día(s)` : '—'}</td>
@@ -983,7 +999,8 @@ export function TarifarioClientesDashboard() {
 
               <div className="tc-detalle-datos">
                 <div><span className="tc-label">Consecutivo</span><b className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TARI-') || String(r.id).startsWith('TAR-') ? r.id : '—')}</b></div>{/* ✅ V00203 */}
-                <div><span className="tc-label">Fecha</span><b>{r.fecha || '—'}</b></div>{/* ✅ V00201: sin número de convenio (no aplica) */}
+                <div><span className="tc-label">Fecha de Emisión</span><b>{r.fecha || '—'}</b></div>
+                <div><span className="tc-label">Fecha de Vencimiento</span><b className={vencido(r) ? 'tc-td-vencido' : ''}>{r.fechaVencimiento || '—'}</b></div>{/* ✅ V00212 */}{/* ✅ V00201: sin número de convenio (no aplica) */}
                 <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
                 <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
                 <div>
@@ -1033,8 +1050,14 @@ export function TarifarioClientesDashboard() {
 
             <div className="tc-captura">
               <div className="tc-campo">
-                <label className="tc-label">Fecha</label>
+                <label className="tc-label">Fecha de Emisión</label>
                 <input type="date" className="form-control" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+              </div>
+
+              {/* ✅ V00212: vencimiento del tarifario (se hereda al convenio) */}
+              <div className="tc-campo">
+                <label className="tc-label">Fecha de Vencimiento</label>
+                <input type="date" className="form-control" value={fechaVencimiento} onChange={(e) => setFechaVencimiento(e.target.value)} />
               </div>
 
               <div className="tc-campo tc-campo-cliente">

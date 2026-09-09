@@ -288,3 +288,6 @@
 
 /* ✅ V00200: consecutivo en la tabla de tarifas */
 .tc-td-consecutivo { font-weight: 700; color: #58a6ff; white-space: nowrap; }
+
+/* ✅ V00212: vencimiento pasado */
+.tc-td-vendido, .tc-td-vencido { color: #f85149; font-weight: 600; }
