@@ -109,14 +109,14 @@
 .sc-x105 { display: flex; justify-content: flex-end; margin-top: 24px; border-top: 1px solid #30363d; padding-top: 16px; }
 .sc-x106 { background-color: #D84315; color: #fff; border: none; padding: 10px 32px; border-radius: 6px; cursor: pointer; font-weight: bold; }
 .sc-x107 { z-index: 1500; }
-.sc-x108 { max-width: 1100px; max-height: 90vh; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; display: flex; flex-direction: column; }
+.sc-x108 { width: min(1480px, 96vw); max-width: none; max-height: 92vh; background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; display: flex; flex-direction: column; } /* ✅ V00224: más ancho */
 .sc-x109 { padding: 24px 32px 16px 32px; border-bottom: none; display: flex; flex-direction: column; gap: 16px; }
 .sc-x110 { display: flex; justify-content: space-between; align-items: flex-start; }
 .sc-x111 { margin: 0; color: #f0f6fc; font-size: 1.6rem; font-weight: 600; letter-spacing: -0.5px; }
 .sc-x112 { margin-top: 8px; display: flex; align-items: center; gap: 12px; }
 .sc-x113 { color: #10b981; font-weight: bold; font-size: 1.1rem; letter-spacing: 0.5px; }
 .sc-x114 { background-color: rgba(16, 185, 129, 0.15); color: #10b981; padding: 4px 12px; border-radius: 12px; font-size: 0.85rem; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: bold; }
-.sc-x115 { display: flex; gap: 12px; align-items: center; }
+.sc-x115 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; } /* ✅ V00224: los botones ya no se salen */
 .sc-x116 { width: 1px; height: 24px; background-color: #30363d; margin: 0 8px; }
 .sc-x117 { background: transparent; border: none; color: #8b949e; cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: 0.2s; }
 .sc-x118 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 4px; }
@@ -317,3 +317,18 @@
 .sc-tarifa-pie { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
 .sc-tarifa-guardar { background-color: #238636; color: #fff; border: none; font-weight: 600; }
 .sc-tarifa-guardar:hover { background-color: #2ea043; }
+
+/* ✅ V00224: detalle de operación — rejilla más ancha y ordenada */
+.sc-x108 .detail-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px 22px;
+  align-items: start;
+}
+.sc-x108 .detail-grid-3 > div { min-width: 0; }
+.sc-x108 .detail-grid-3 span { overflow-wrap: anywhere; }
+.sc-x110 { flex-wrap: wrap; gap: 12px; }
+.sc-x112 { flex-wrap: wrap; }
+@media (min-width: 1280px) {
+  .sc-x108 .detail-grid-3 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}

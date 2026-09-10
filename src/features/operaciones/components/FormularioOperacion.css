@@ -128,3 +128,7 @@
 .fo-tarifa-cons { color: #58a6ff; font-weight: 700; font-size: 0.82rem; }
 .fo-tarifa-monto { color: #e6edf3; font-weight: 700; font-size: 0.95rem; }
 .fo-tarifa-mon { color: #8b949e; font-size: 0.78rem; text-align: right; }
+
+/* ✅ V00224: botón de origen/destino de las tarifas */
+.fo-btn-tarifa-od { border-color: #3fb950 !important; color: #3fb950 !important; }
+.fo-btn-tarifa-od:hover { background-color: rgba(63, 185, 80, 0.12) !important; }

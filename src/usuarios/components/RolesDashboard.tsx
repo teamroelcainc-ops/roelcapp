@@ -23,7 +23,9 @@ const GRUPOS_MODULOS: { grupo: string; modulos: string[] }[] = [
   // (# Ref) de una operación al editarla, igual que un ADMIN.
   // "Ver todos los chequeos": ver el Historial del Reloj Checador de TODOS los
   // colaboradores; sin este permiso, cada quien ve SOLO sus propios registros.
-  { grupo: 'Permisos Especiales', modulos: ['Editar Referencia', 'Ver todos los chequeos'] },
+  // ✅ V00224: "Editar Tarifa (Origen/Destino)" enciende el botón que asigna
+  // origen y destino a las tarifas desde una operación de flete.
+  { grupo: 'Permisos Especiales', modulos: ['Editar Referencia', 'Ver todos los chequeos', 'Editar Tarifa (Origen/Destino)'] },
 ];
 
 // Lista plana con todos los módulos (útil para "Seleccionar todo").

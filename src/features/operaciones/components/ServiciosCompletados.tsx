@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
-import { collection, query, getDocs, getDoc, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore'; // ✅ V00223: getDoc
-import { db, auth } from '../../../config/firebase'; 
+import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
+import { db, auth } from '../../../config/firebase';
+import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
+import { puedeClave } from '../../../utils/permisos'; // ✅ V00224 
 import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
 import { registrarLog } from '../../../utils/logger';
@@ -312,8 +314,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   // ✅ V00223: editor de Origen/Destino de las tarifas de referencia usadas por
   //   una operación de FLETE (tarifa del cliente y del proveedor).
   const [editorTarifa, setEditorTarifa] = useState<any | null>(null);
-  const [guardandoTarifa, setGuardandoTarifa] = useState(false);
-  const [municipios, setMunicipios] = useState<{ id: string; nombre: string }[]>([]);
 
   /** ¿La operación es de fletes? (Flete de Importación/Exportación o Logística Fletes) */
   const esOperacionFlete = (op: any): boolean => {
@@ -322,78 +322,6 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return n.includes('flete');
   };
 
-  /** Abre el editor con las tarifas de referencia de los convenios de la operación. */
-  const abrirEditorTarifa = async (op: any) => {
-    setEditorTarifa({ ref: op.ref || op.id?.substring(0, 6), cargando: true, cliente: null, proveedor: null });
-    try {
-      if (municipios.length === 0) {
-        const snapMun = await getDocs(collection(db, 'catalogo_municipios'));
-        setMunicipios(
-          snapMun.docs.map((d) => ({ id: d.id, nombre: String((d.data() as any).municipio || '') }))
-            .filter((m) => m.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
-        );
-      }
-      const cargarLado = async (detalleId: string, coleccion: string) => {
-        if (!detalleId) return null;
-        const det = await getDoc(doc(db, coleccion, detalleId));
-        if (!det.exists()) return null;
-        const tarifaId = String((det.data() as any).tipoConvenioId || '');
-        if (!tarifaId) return null;
-        const tar = await getDoc(doc(db, 'catalogo_tarifas_referencia', tarifaId));
-        if (!tar.exists()) return null;
-        const t = tar.data() as any;
-        return { tarifaId, descripcion: String(t.descripcion || ''), origen: String(t.origen || ''), destino: String(t.destino || '') };
-      };
-      const [cli, prov] = await Promise.all([
-        cargarLado(String(op.convenio || ''), 'convenios_clientes_detalles'),
-        cargarLado(String(op.convenioProveedor || ''), 'convenios_proveedores_detalles'),
-      ]);
-      setEditorTarifa({ ref: op.ref || op.id?.substring(0, 6), cargando: false, cliente: cli, proveedor: prov });
-    } catch (e) {
-      console.error('No se pudieron cargar las tarifas de la operación:', e);
-      setEditorTarifa({ ref: op.ref || '', cargando: false, cliente: null, proveedor: null });
-    }
-  };
-
-  /** Guarda origen/destino en la tarifa, rearma su descripción y la propaga. */
-  const guardarOrigenDestinoTarifas = async () => {
-    if (!editorTarifa || guardandoTarifa) return;
-    setGuardandoTarifa(true);
-    try {
-      const nombreMun = (id: string) => municipios.find((m) => m.id === id)?.nombre || '';
-      let actualizadas = 0;
-      let propagados = 0;
-      for (const lado of ['cliente', 'proveedor'] as const) {
-        const t = editorTarifa[lado];
-        if (!t?.tarifaId) continue;
-        // La descripción se rearma conservando su prefijo y agregando origen/destino.
-        const base = String(t.descripcion || '').split(' - ').filter((x: string) => x && x !== nombreMun(t.origen) && x !== nombreMun(t.destino));
-        const nuevaDesc = [...base, nombreMun(t.origen), nombreMun(t.destino)].filter(Boolean).join(' - ');
-        await updateDoc(doc(db, 'catalogo_tarifas_referencia', t.tarifaId), {
-          origen: t.origen, destino: t.destino, descripcion: nuevaDesc,
-        });
-        actualizadas += 1;
-
-        // Propagación: nombre guardado en los detalles de convenio que la usan.
-        for (const col of ['convenios_clientes_detalles', 'convenios_proveedores_detalles']) {
-          const snap = await getDocs(query(collection(db, col), where('tipoConvenioId', '==', t.tarifaId)));
-          let lote = writeBatch(db); let n = 0;
-          snap.docs.forEach((d) => {
-            lote.update(d.ref, { tipoConvenioNombre: nuevaDesc });
-            propagados += 1; n += 1;
-          });
-          if (n > 0) await lote.commit();
-        }
-      }
-      alert(`Tarifas actualizadas. ✅\n\n· Tarifas del catálogo: ${actualizadas}\n· Detalles de convenio actualizados: ${propagados}\n\nPara refrescar los tarifarios y las operaciones, corre "⟳ Rearmar descripciones" en Catálogos → Tarifas de Referencia.`);
-      setEditorTarifa(null);
-    } catch (e) {
-      console.error('No se pudo guardar el origen/destino de las tarifas:', e);
-      alert('No se pudo guardar el origen y destino de las tarifas.');
-    } finally {
-      setGuardandoTarifa(false);
-    }
-  };
   // ✅ NUEVO: modal de auditoría de la referencia (solo lectura).
   const [mostrarAuditoria, setMostrarAuditoria] = useState(false);
   // ✅ NUEVO: mapa uid → nombre para mostrar SIEMPRE el nombre del usuario en la
@@ -2605,58 +2533,14 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         </div>
       )}
 
-      {/* ✅ V00223: EDITOR — asigna Origen y Destino a las tarifas de referencia
-          (cliente y proveedor) usadas por esta operación de flete. */}
+      {/* ✅ V00224: editor compartido con el formulario de operación */}
       {editorTarifa && (
-        <div className="modal-overlay sc-tarifa-overlay" onClick={() => !guardandoTarifa && setEditorTarifa(null)}>
-          <div className="sc-tarifa-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="sc-tarifa-head">
-              <div>
-                <h3 className="sc-tarifa-tit">Origen y destino de las tarifas</h3>
-                <p className="sc-tarifa-sub">Operación {editorTarifa.ref} · se actualiza la tarifa del catálogo y su descripción</p>
-              </div>
-              <button type="button" className="sc-tarifa-x" onClick={() => !guardandoTarifa && setEditorTarifa(null)}>✕</button>
-            </div>
-
-            {editorTarifa.cargando ? (
-              <div className="sc-tarifa-vacio">Cargando tarifas…</div>
-            ) : (<>
-              {(['cliente', 'proveedor'] as const).map((lado) => {
-                const t = editorTarifa[lado];
-                return (
-                  <div key={lado} className="sc-tarifa-bloque">
-                    <div className="sc-tarifa-lado">{lado === 'cliente' ? 'TARIFA DEL CLIENTE' : 'TARIFA DEL PROVEEDOR'}</div>
-                    {!t ? (
-                      <div className="sc-tarifa-vacio">Esta operación no tiene tarifa de {lado} identificada.</div>
-                    ) : (<>
-                      <div className="sc-tarifa-nombre">{t.descripcion || '—'}</div>
-                      <div className="sc-tarifa-campos">
-                        <label className="sc-tarifa-label">Origen
-                          <select className="form-control" value={t.origen} onChange={(e) => setEditorTarifa((p: any) => ({ ...p, [lado]: { ...p[lado], origen: e.target.value } }))}>
-                            <option value="">— Sin origen —</option>
-                            {municipios.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                          </select>
-                        </label>
-                        <label className="sc-tarifa-label">Destino
-                          <select className="form-control" value={t.destino} onChange={(e) => setEditorTarifa((p: any) => ({ ...p, [lado]: { ...p[lado], destino: e.target.value } }))}>
-                            <option value="">— Sin destino —</option>
-                            {municipios.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-                          </select>
-                        </label>
-                      </div>
-                    </>)}
-                  </div>
-                );
-              })}
-              <div className="sc-tarifa-pie">
-                <button type="button" className="btn btn-outline" disabled={guardandoTarifa} onClick={() => setEditorTarifa(null)}>Cancelar</button>
-                <button type="button" className="btn sc-tarifa-guardar" disabled={guardandoTarifa} onClick={guardarOrigenDestinoTarifas}>
-                  {guardandoTarifa ? 'Guardando…' : 'Guardar y propagar'}
-                </button>
-              </div>
-            </>)}
-          </div>
-        </div>
+        <EditorTarifaOrigenDestino
+          refOperacion={editorTarifa.ref}
+          detalleClienteId={editorTarifa.convenio}
+          detalleProveedorId={editorTarifa.convenioProveedor}
+          onCerrar={() => setEditorTarifa(null)}
+        />
       )}
 
       {operacionViendo && (
@@ -2681,8 +2565,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                 
                 <div className="sc-x115">
                   {/* ✅ V00223: solo en fletes — asignar origen y destino a las tarifas */}
-                  {esOperacionFlete(operacionViendo) && (
-                    <button onClick={() => abrirEditorTarifa(operacionViendo)} title="Editar el origen y destino de las tarifas de esta operación" style={{ ...btnSecondaryActionStyle, color: '#3fb950' }}>
+                  {/* ✅ V00224: requiere el permiso "Editar Tarifa (Origen/Destino)" */}
+                  {esOperacionFlete(operacionViendo) && puedeClave('editarTarifaOrigenDestino') && (
+                    <button onClick={() => setEditorTarifa({ ref: operacionViendo.ref || operacionViendo.id?.substring(0, 6), convenio: operacionViendo.convenio, convenioProveedor: operacionViendo.convenioProveedor })} title="Editar el origen y destino de las tarifas de esta operación" style={{ ...btnSecondaryActionStyle, color: '#3fb950' }}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                       Tarifa (Origen/Destino)
                     </button>

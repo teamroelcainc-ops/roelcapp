@@ -5,7 +5,8 @@ import { Bell } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, updateDoc, getDoc, setDoc, collection, onSnapshot, query, where, getDocs, orderBy, limit, addDoc } from 'firebase/firestore'; 
-import { auth, db } from './config/firebase'; 
+import { auth, db } from './config/firebase';
+import { publicarClavesPermitidas } from './utils/permisos'; // ✅ V00224 
 import { registrarLog } from './utils/logger';
 import { AvisoSinConexion } from './components/AvisoSinConexion';
 import { AvisoChecador } from './components/AvisoChecador';
@@ -121,6 +122,8 @@ const MODULOS_A_CLAVE: Record<string, string> = {
   'Convenio de Proveedores': 'conveniosProveedores',
   'Tarifario Proveedores': 'tarifarioProveedores', // ✅ V00211
   'Detalles del Convenio (Proveedores)': 'detallesConvenioProveedores', // ✅ V00211
+  // ✅ V00224: permiso de ACCIÓN — enciende el botón "Tarifa (Origen/Destino)".
+  'Editar Tarifa (Origen/Destino)': 'editarTarifaOrigenDestino',
   'Facturación de Proveedores': 'facturacionProveedores',
   'Colaboradores': 'colaboradores',
   'Historial de Chequeo': 'historialAsistencia',
@@ -1235,6 +1238,10 @@ function AppContenido() {
   }, [bloqueoChecador, accesoTotal, usuarioActualDB, rolesCatalogo, vistaComoAplicada]);
 
   const puede = (clave: string) => clavesPermitidas.has(clave);
+
+  // ✅ V00224: publica los permisos para que otros módulos los consulten
+  //   (p. ej. el botón "Tarifa (Origen/Destino)" en operaciones).
+  useEffect(() => { publicarClavesPermitidas(clavesPermitidas); }, [clavesPermitidas]);
 
   // Si el módulo activo no está permitido, saltar al primer módulo permitido.
   // ⭐ 'importacion' es un módulo libre (visible para todos, sin permiso de rol),

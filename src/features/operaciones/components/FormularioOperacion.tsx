@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc, query, where, limit } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
+import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
+import { puedeClave } from '../../../utils/permisos'; // ✅ V00224
 import { useUsuarioStore } from '../../../stores/useUsuarioStore';
 import { guardarOperacionSegura } from '../services/operacionesService';
 // ✅ AUTORIZACIONES: interceptar guardado cuando la acción/campo lo requiere.
@@ -2065,6 +2067,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   concepto tiene varias tarifas (mismo servicio, montos distintos), la
   //   tarifa se elige en un modal.
   const [modalTarifas, setModalTarifas] = useState<{ tipo: 'cliente' | 'proveedor'; nombre: string; opciones: any[] } | null>(null);
+  // ✅ V00224: editor de origen/destino de las tarifas (solo fletes + permiso).
+  const [editorTarifaOD, setEditorTarifaOD] = useState(false);
   const agruparPorConcepto = (lista: any[], campo: string) => {
     const grupos = new Map<string, { nombre: string; opciones: any[] }>();
     (lista || []).forEach((c: any) => {
@@ -2827,6 +2831,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           )}
                           {/* ✅ V00126: editar la MONEDA/tarifa del detalle elegido, directo desde aquí */}
                           {formData.convenio && <button className="fo-x18 fo-btn-det" type="button" onClick={() => setDetalleConvenioEdit({ tipo: 'cliente', detalleId: String(formData.convenio) })} title="Cambiar la moneda o tarifa del detalle del convenio elegido">✎ Moneda del detalle</button>}
+                          {/* ✅ V00224: origen/destino de las tarifas (solo fletes y con permiso) */}
+                          {isFletes && puedeClave('editarTarifaOrigenDestino') && (
+                            <button className="fo-x18 fo-btn-tarifa-od" type="button" onClick={() => setEditorTarifaOD(true)} title="Asignar el origen y destino de las tarifas de esta operación">✎ Origen/Destino</button>
+                          )}
                         </div>
                         <div className="fo-x19">
                           <input type="text" className={`form-control${claseSiFalta('convenio')}`} placeholder="Buscar por nombre o ID de tarifa..." required={!formData.convenio} disabled={listaConveniosCliente.length === 0} value={searchConvenio} onChange={e => { setSearchConvenio(e.target.value); setShowDropdownConvenio(true); if (formData.convenio) setFormData(prev => ({ ...prev, convenio: '' })); }} onFocus={() => setShowDropdownConvenio(true)} onBlur={() => setTimeout(() => setShowDropdownConvenio(false), 200)} />
@@ -3521,6 +3529,16 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
 
       {/* ✅ V00141: modal de acceso a campo bloqueado */}
       <ModalAccesoCampo aut={autHook} />
+      {/* ✅ V00224: editor de origen/destino de las tarifas de la operación */}
+      {editorTarifaOD && (
+        <EditorTarifaOrigenDestino
+          refOperacion={String(initialData?.ref || '')}
+          detalleClienteId={String(formData.convenio || '')}
+          detalleProveedorId={String(formData.convenioProveedor || '')}
+          onCerrar={() => setEditorTarifaOD(false)}
+        />
+      )}
+
       {/* ✅ V00214: MODAL — elegir la tarifa cuando el concepto tiene varias */}
       {modalTarifas && (
         <div className="modal-overlay" onClick={() => setModalTarifas(null)}>
