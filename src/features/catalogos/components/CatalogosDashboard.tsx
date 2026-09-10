@@ -147,18 +147,26 @@ const CatalogosDashboard = () => {
 
   // ✅ NUEVO (V00116): referencias de operaciones del modal "Dónde se usa" —
   //   se descargan SOLO al abrirlo y SOLO las de esa tarifa.
+  // ✅ V00221: declarados aquí porque el efecto de uso los necesita.
+  const [registroActual, setRegistroActual] = useState<any | null>(null);
+  const [viendoDetalles, setViendoDetalles] = useState<boolean>(false);
+
   // ✅ V00220: detalle COMPLETO de dónde se usa una tarifa — tarifarios,
   //   convenios (con su cliente/proveedor y monto) y operaciones (con su
   //   cliente y fecha). Cada referencia es clicable y lleva a su módulo.
   type UsoFila = { ref: string; entidad: string; extra: string; modulo: string };
   const [usoDetallado, setUsoDetallado] = useState<{ tarifarios: UsoFila[]; convenios: UsoFila[]; operaciones: UsoFila[] } | null>(null);
   useEffect(() => {
-    if (!modalUsoTarifa) { setUsoDetallado(null); return; }
+    // ✅ V00221: se carga tanto para el modal de USO como para el de DETALLES
+    //   del registro (que es donde se esperaba ver esta información).
+    const regUso = modalUsoTarifa?.reg
+      || (viendoDetalles && catalogoSeleccionado?.id === 'tarifas_referencia' ? registroActual : null);
+    if (!regUso) { setUsoDetallado(null); return; }
     let activo = true;
     (async () => {
       try {
-        const tarifaId = String(modalUsoTarifa.reg.id);
-        const detIds: string[] = modalUsoTarifa.u.detIds || [];
+        const tarifaId = String(regUso.id);
+        const detIds: string[] = modalUsoTarifa?.u?.detIds || usoTarifas?.[tarifaId]?.detIds || [];
         const [snapDetC, snapDetP, snapTarC, snapTarP] = await Promise.all([
           getDocs(collection(db, 'convenios_clientes_detalles')),
           getDocs(collection(db, 'convenios_proveedores_detalles')),
@@ -230,7 +238,7 @@ const CatalogosDashboard = () => {
       }
     })();
     return () => { activo = false; };
-  }, [modalUsoTarifa]);
+  }, [modalUsoTarifa, viendoDetalles, registroActual, catalogoSeleccionado?.id, usoTarifas]);
 
   // ✅ V00220: al hacer clic en una referencia, se navega a su módulo con esa
   //   referencia ya cargada en el buscador del destino.
@@ -238,7 +246,39 @@ const CatalogosDashboard = () => {
     try { localStorage.setItem('roelca_buscar', JSON.stringify({ modulo, texto: ref, ts: Date.now() })); } catch { /* noop */ }
     window.dispatchEvent(new CustomEvent('roelca:navegar', { detail: { modulo } }));
     setModalUsoTarifa(null);
+    setViendoDetalles(false);
   };
+
+  // ✅ V00221: secciones "dónde se usa" reutilizables (modal de uso y de detalles).
+  const bloqueUsoTarifa = () => (
+    usoDetallado === null ? (
+      <div className="cd-uso-vacio">Cargando dónde se usa…</div>
+    ) : (usoDetallado.tarifarios.length === 0 && usoDetallado.convenios.length === 0 && usoDetallado.operaciones.length === 0) ? (
+      <div className="cd-uso-vacio">Esta tarifa aún no se usa en ningún tarifario, convenio u operación.</div>
+    ) : (<>
+      {([
+        { titulo: 'TARIFARIOS', color: '#58a6ff', filas: usoDetallado.tarifarios },
+        { titulo: 'CONVENIOS (DETALLES)', color: '#d29922', filas: usoDetallado.convenios },
+        { titulo: `OPERACIONES (${usoDetallado.operaciones.length})`, color: '#3fb950', filas: usoDetallado.operaciones.slice(0, 200) },
+      ] as const).map((sec) => sec.filas.length === 0 ? null : (
+        <div key={sec.titulo}>
+          <div className="cd-uso-titulo" style={{ color: sec.color }}>{sec.titulo}</div>
+          <div className="cd-uso-lista">
+            {sec.filas.map((f, i) => (
+              <button key={`${f.ref}-${i}`} type="button" className="cd-uso-fila" title={`Ir a ${f.ref}`} onClick={() => irARegistro(f.modulo, f.ref)}>
+                <span className="cd-uso-ref">{f.ref}</span>
+                <span className="cd-uso-ent">{f.entidad}</span>
+                <span className="cd-uso-extra">{f.extra}</span>
+              </button>
+            ))}
+          </div>
+          {sec.titulo.startsWith('OPERACIONES') && usoDetallado.operaciones.length > 200 && (
+            <div className="cd-uso-vacio">… y {usoDetallado.operaciones.length - 200} operación(es) más</div>
+          )}
+        </div>
+      ))}
+    </>)
+  );
 
   // ✅ NUEVO — USO DE TIPOS DE TARIFARIOS: cuántas Tarifas de Referencia
   //   usan cada tipo (tarifas_referencia.tipo_operacion -> id del tipo).
@@ -262,7 +302,6 @@ const CatalogosDashboard = () => {
   }, [catalogoSeleccionado?.id]);
   
   const [modalEstado, setModalEstado] = useState<'cerrado' | 'formulario' | 'config_obligatorios'>('cerrado');
-  const [registroActual, setRegistroActual] = useState<any | null>(null);
   const [formData, setFormData] = useState<any>({});
   
   const [camposRequeridos, setCamposRequeridos] = useState<Record<string, string[]>>({});
@@ -270,7 +309,6 @@ const CatalogosDashboard = () => {
   const [busqueda, setBusqueda] = useState('');
   const [filtroFijo, setFiltroFijo] = useState<string>('');
 
-  const [viendoDetalles, setViendoDetalles] = useState<boolean>(false);
   
   // 🔥 ESTADO CENTRALIZADO PARA SUB-COLECCIONES (0 LECTURAS AL HACER CLIC)
   const [subDocsSnapshot, setSubDocsSnapshot] = useState<Record<string, any[]>>({});
@@ -1730,6 +1768,13 @@ const CatalogosDashboard = () => {
                   </div>
                 ))}
               </div>
+              {/* ✅ V00221: DÓNDE SE USA esta tarifa (tarifarios, convenios y operaciones) */}
+              {catalogoSeleccionado.id === 'tarifas_referencia' && (
+                <div className="cd-uso-bloque">
+                  <h3 className="cd-uso-encabezado">Dónde se usa esta tarifa</h3>
+                  {bloqueUsoTarifa()}
+                </div>
+              )}
               {catalogoSeleccionado.details && catalogoSeleccionado.details.length > 0 && (
                 <div className="cd-x46">
                   {catalogoSeleccionado.details.map((det: any) => {
