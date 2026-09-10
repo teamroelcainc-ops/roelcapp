@@ -1,7 +1,7 @@
 /* Estilos hermanos de DetallesConvenioDashboard.tsx (V00112). */
 
 .dcv-x1 { padding: 24px; animation: fadeIn 0.3s ease; }
-.dcv-x2 { color: #8b949e; font-size: 0.85rem; margin: -8px 0 18px 0; }
+.dcv-x2 { color: #8b949e; font-size: 0.85rem; margin: 0; } /* ✅ V00217: sin margen negativo */
 .dcv-x3 { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; margin-top: 6px; }
 .dcv-x4 { flex: 1; min-width: 240px; max-width: 520px; height: 36px; box-sizing: border-box; }
 .dcv-x5 { color: #8b949e; padding: 40px; text-align: center; background-color: #0d1117; border: 1px solid #30363d; border-radius: 10px; }
@@ -99,3 +99,8 @@
 .dcv-unir-tarifa { color: #8b949e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dcv-unir-costo { text-align: right; font-weight: 600; }
 .dcv-unir-usos { text-align: right; color: #58a6ff; font-weight: 600; }
+
+/* ✅ V00217: encabezado y filtro por entidad */
+.dcv-encabezado { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.dcv-titulo { margin: 0; line-height: 1.25; }
+.dcv-select-entidad { max-width: 240px; }

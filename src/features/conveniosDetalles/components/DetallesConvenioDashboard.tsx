@@ -16,7 +16,7 @@
 //   · Buscador con el diseño de la app (la clase .form-input-elegante no
 //     existía en ningún CSS; ahora los inputs usan .form-control global).
 //   · PESTAÑAS: Convenios Activos (vigentes) · Convenios Cancelados (Baja) ·
-//     Convenios Inactivos (vencidos sin Baja) · No identificados (la tarifa
+//     Convenios Inactivos (✅ V00217: por STATUS del detalle) · No identificados (la tarifa
 //     no resuelve en el catálogo) · Vacíos (sin costo o sin moneda).
 // ✅ V00198 (clientes): se quita la pestaña "Convenios Cancelados"; el módulo
 //   tiene permiso PROPIO en Roles y respeta Configuración → Autorizaciones
@@ -84,6 +84,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ V00207: selección múltiple para borrado masivo (solo clientes)
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [borrandoSel, setBorrandoSel] = useState(false);
+  // ✅ V00217: buscador por cliente/proveedor (además del de texto)
+  const [filtroEntidad, setFiltroEntidad] = useState('');
   // ✅ V00215: unir duplicados
   const [modalUnir, setModalUnir] = useState(false);
   const [conservarId, setConservarId] = useState('');
@@ -381,15 +383,21 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     // ✅ V00197: filtro por pestaña — ✅ V00211: ambos tipos
     {
       const norm = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      // ✅ V00217: Activos/Inactivos por el STATUS DEL DETALLE (antes se
+      //   derivaba del vencimiento del convenio y marcaba como "inactivos"
+      //   registros que en realidad están aprobados y vigentes).
+      const st = (f: FilaDetalle) => String(f.status || 'Aprobado').trim();
       const noIdent = (f: FilaDetalle) => !f.identificada || norm(f.tarifa).includes('no identificad');
       const vacia = (f: FilaDetalle) => f.costo === null || f.costo === 0; // ✅ V00207: solo costo
       const sinCotizacion = (f: FilaDetalle) => !String(f.moneda || '').trim(); // ✅ V00207
-      if (pestana === 'Convenios Activos') lista = lista.filter((f) => f.statusConvenio !== 'Baja' && !f.vencido);
-      else if (pestana === 'Convenios Inactivos') lista = lista.filter((f) => f.statusConvenio !== 'Baja' && f.vencido);
+      if (pestana === 'Convenios Activos') lista = lista.filter((f) => st(f) !== 'Inactivo' && st(f) !== 'Cancelado');
+      else if (pestana === 'Convenios Inactivos') lista = lista.filter((f) => st(f) === 'Inactivo' || st(f) === 'Cancelado');
       else if (pestana === 'No identificados') lista = lista.filter(noIdent);
       else if (pestana === 'Vacíos') lista = lista.filter(vacia);
       else if (pestana === 'Sin cotización') lista = lista.filter(sinCotizacion);
     }
+    // ✅ V00217: filtro por entidad (cliente o proveedor)
+    if (filtroEntidad) lista = lista.filter((f) => f.entidad === filtroEntidad);
     if (busqueda.trim()) {
       const b = busqueda.toLowerCase();
       lista = lista.filter((f) =>
@@ -408,16 +416,26 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const base = dif !== 0 ? dif : a.numeroConvenio.localeCompare(b.numeroConvenio);
       return ordenAsc ? base : -base;
     });
-  }, [filas, busqueda, ordenAsc, esClientes, pestana]);
+  }, [filas, busqueda, ordenAsc, esClientes, pestana, filtroEntidad]);
+
+  // ✅ V00217: entidades presentes, para el selector
+  const entidades = useMemo(
+    () => Array.from(new Set((filas || []).map((f) => f.entidad).filter((e) => e && e !== '—'))).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })),
+    [filas]
+  );
 
   
   return (
     <div className="module-container dcv-x1">
-      <h1 className="module-title">Detalles del Convenio — {esClientes ? 'Clientes' : 'Proveedores'}</h1>
-      <p className="dcv-x2">
-        Índice de todas las tarifas capturadas en los convenios de {esClientes ? 'clientes' : 'proveedores'}.
-        Para editar una tarifa, ábrela desde su convenio en el módulo de Convenios.
-      </p>
+      {/* ✅ V00217: encabezado en su propio bloque (el subtítulo se montaba
+          sobre el título por un margen negativo) y texto actualizado. */}
+      <div className="dcv-encabezado">
+        <h1 className="module-title dcv-titulo">Detalles del Convenio — {esClientes ? 'Clientes' : 'Proveedores'}</h1>
+        <p className="dcv-x2">
+          Índice de todas las tarifas de los convenios de {esClientes ? 'clientes' : 'proveedores'}.
+          Usa el lápiz para editar una tarifa, o los checkboxes para unir duplicados y eliminar en bloque.
+        </p>
+      </div>
 
       {/* ✅ V00197: pestañas — ✅ V00211: también proveedores */}
       {(
@@ -438,6 +456,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           value={busqueda}
           onChange={(e) => setBusqueda(e.target.value)}
         />
+        {/* ✅ V00217: buscador por cliente/proveedor */}
+        <select className="form-control dcv-select-entidad" value={filtroEntidad} onChange={(e) => setFiltroEntidad(e.target.value)}>
+          <option value="">{esClientes ? 'Todos los clientes' : 'Todos los proveedores'}</option>
+          {entidades.map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
         <button
           className="btn btn-outline"
           onClick={() => setOrdenAsc((v) => !v)}
