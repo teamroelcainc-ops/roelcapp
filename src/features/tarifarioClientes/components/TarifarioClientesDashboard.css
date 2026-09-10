@@ -318,3 +318,27 @@
   font-size: 0.7rem;
 }
 .tc-btn-quitar-extra:hover { border-color: #f85149; }
+
+/* ✅ V00219: buscador y filtros de la lista */
+.tc-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px 0;
+}
+.tc-filtro-busqueda { flex: 1 1 280px; min-width: 220px; }
+.tc-filtro-select { flex: 0 0 auto; max-width: 220px; }
+.tc-filtro-corto { max-width: 120px; }
+.tc-btn-limpiar {
+  padding: 7px 12px;
+  background-color: transparent;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.tc-btn-limpiar:hover { border-color: #f85149; color: #f85149; }
+.tc-filtros-conteo { margin-left: auto; color: #8b949e; font-size: 0.78rem; white-space: nowrap; }

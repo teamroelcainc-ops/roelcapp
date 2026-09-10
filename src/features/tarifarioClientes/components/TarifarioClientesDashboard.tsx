@@ -219,6 +219,12 @@ export function TarifarioClientesDashboard() {
   }, [registros]);
   // ✅ V00196: migración de Convenios existentes → Tarifarios aprobados.
   const [migrando, setMigrando] = useState(false);
+  // ✅ V00219: buscador y filtros de la lista.
+  const [busquedaLista, setBusquedaLista] = useState('');
+  const [filtroStatus, setFiltroStatus] = useState('');
+  const [filtroEntidad, setFiltroEntidad] = useState('');
+  const [filtroMoneda, setFiltroMoneda] = useState('');
+
   // ✅ V00201: detalles del convenio en vivo — de aquí sale el consecutivo real.
   const [detallesConv, setDetallesConv] = useState<Doc[]>([]);
 
@@ -353,6 +359,26 @@ export function TarifarioClientesDashboard() {
     setBusquedaTarifa('');
     setCapturaAbierta(true);
   };
+
+  // ✅ V00219: lista filtrada (buscador de texto + cliente + status + moneda).
+  const registrosVisibles = useMemo(() => {
+    const b = norm(busquedaLista);
+    return registros.filter((r) => {
+      if (filtroStatus && String(r.status || 'Pendiente') !== filtroStatus) return false;
+      if (filtroEntidad && String(r.clienteNombre || '') !== filtroEntidad) return false;
+      if (filtroMoneda && canonMoneda(r.moneda) !== filtroMoneda) return false;
+      if (!b) return true;
+      const enTarifas = (Array.isArray(r.tarifas) ? r.tarifas : []).some((t: Doc) =>
+        norm(t.descripcion).includes(b) || norm(t.consecutivo).includes(b));
+      return norm(r.clienteNombre).includes(b) || norm(r.consecutivo).includes(b) ||
+        norm(r.id).includes(b) || norm(r.fecha).includes(b) || enTarifas;
+    });
+  }, [registros, busquedaLista, filtroStatus, filtroEntidad, filtroMoneda]);
+
+  const entidadesLista = useMemo(
+    () => Array.from(new Set(registros.map((r) => String(r.clienteNombre || '')).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })),
+    [registros]
+  );
 
   const tarifasVisibles = useMemo(() => {
     const b = norm(busquedaTarifa);
@@ -524,7 +550,7 @@ export function TarifarioClientesDashboard() {
             credito: Number(r.creditoDias) || 0,
             fechaConvenio: String(r.fecha || hoyLocalISO()),
             // ✅ V00212: el convenio hereda las fechas del tarifario
-            fechaVencimiento: String(r.fechaVencimiento || `${String(r.fecha || hoyLocalISO()).slice(0, 4)}-12-31`),
+            fechaVencimiento: vencimientoDe(r), // ✅ V00219
             creadoDesdeTarifario: String(r.id),
           });
         }
@@ -874,7 +900,7 @@ export function TarifarioClientesDashboard() {
         <div class="logo"></div>
       </div>
       <div class="fecha-linea"><b>FECHA:</b> ${esc(fechaLarga(r.fecha))}</div>
-      <div class="fecha-linea"><b>VIGENCIA:</b> ${esc(r.fechaVencimiento ? fechaLarga(String(r.fechaVencimiento)) : '')}</div>
+      <div class="fecha-linea"><b>VIGENCIA:</b> ${esc(fechaLarga(vencimientoDe(r)))}</div>
       <div class="cliente-bloque">
         <div><span class="cliente-nombre">${esc(String(r.clienteNombre || '').toUpperCase())}</span><br/><b>CLIENTE:</b> ${esc(String(r.clienteNombreCorto || r.clienteNombre || '').toUpperCase())}</div>
         <div><b>MONEDA:</b> ${esc(r.moneda || '')}</div>
@@ -909,11 +935,13 @@ export function TarifarioClientesDashboard() {
     w.document.close();
   };
 
+  /** ✅ V00219: TODOS los tarifarios vencen el 31/12 del año en curso, salvo
+   *  que se les haya capturado otra fecha de vencimiento. */
+  const vencimientoDe = (r: Doc): string =>
+    String(r.fechaVencimiento || '').trim() || `${hoyLocalISO().slice(0, 4)}-12-31`;
+
   /** ✅ V00212: ¿el tarifario ya venció? */
-  const vencido = (r: Doc): boolean => {
-    const v = String(r.fechaVencimiento || '').trim();
-    return !!v && v < hoyLocalISO();
-  };
+  const vencido = (r: Doc): boolean => vencimientoDe(r) < hoyLocalISO();
 
   /** Tabla interna de tarifas de un registro (formulario y detalle — ✅ V00194).
    *  ✅ V00198: con `editable` el STATUS de cada línea es un select (4 estados). */
@@ -982,6 +1010,36 @@ export function TarifarioClientesDashboard() {
       {/* ── PRE CONVENIOS GUARDADOS ── */}
       <div className="tc-lista">
         <h2 className="tc-subtitulo">Pre convenios capturados</h2>
+
+        {/* ✅ V00219: buscador y filtros */}
+        <div className="tc-filtros">
+          <input
+            type="text"
+            className="form-control tc-filtro-busqueda"
+            placeholder="Buscar por consecutivo, cliente, fecha o tarifa…"
+            value={busquedaLista}
+            onChange={(e) => setBusquedaLista(e.target.value)}
+          />
+          <select className="form-control tc-filtro-select" value={filtroEntidad} onChange={(e) => setFiltroEntidad(e.target.value)}>
+            <option value="">Todos los clientes</option>
+            {entidadesLista.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+          <select className="form-control tc-filtro-select" value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)}>
+            <option value="">Todos los status</option>
+            {STATUS_TARIFARIO.map((st) => <option key={st} value={st}>{st}</option>)}
+          </select>
+          <select className="form-control tc-filtro-select tc-filtro-corto" value={filtroMoneda} onChange={(e) => setFiltroMoneda(e.target.value)}>
+            <option value="">Moneda</option>
+            <option value="USD">USD</option>
+            <option value="MXN">MXN</option>
+          </select>
+          {(busquedaLista || filtroEntidad || filtroStatus || filtroMoneda) && (
+            <button type="button" className="tc-btn-limpiar" onClick={() => { setBusquedaLista(''); setFiltroEntidad(''); setFiltroStatus(''); setFiltroMoneda(''); }}>
+              ✕ Limpiar
+            </button>
+          )}
+          <span className="tc-filtros-conteo">{registrosVisibles.length} de {registros.length}</span>
+        </div>
         {registros.length === 0 ? (
           <p className="tc-vacio">Aún no hay pre convenios capturados. Usa "+ Nuevo Tarifario" para crear el primero.</p>
         ) : (
@@ -991,7 +1049,7 @@ export function TarifarioClientesDashboard() {
                 <tr><th>ACCIONES</th><th>CONSECUTIVO</th><th>EMISIÓN</th><th>VENCE</th>{/* ✅ V00212 */}<th>CLIENTE</th><th>MONEDA</th><th>CRÉDITO</th><th>TARIFAS</th><th>STATUS</th></tr>{/* ✅ V00205: acciones primero */}
               </thead>
               <tbody>
-                {registros.map((r) => (
+                {registrosVisibles.map((r) => (
                   /* ✅ V00195: clic en la fila abre el DETALLE EN MODAL; acciones al inicio */
                   <tr key={r.id} className="tc-fila-click" onClick={() => setDetalleId(r.id)}>
                     <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
@@ -1003,7 +1061,7 @@ export function TarifarioClientesDashboard() {
                     {/* ✅ V00205: consecutivo TARI-### (segunda columna) */}
                     <td className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TARI-') || String(r.id).startsWith('TAR-') ? r.id : '—')}</td>
                     <td>{r.fecha || '—'}</td>
-                    <td className={vencido(r) ? 'tc-td-vencido' : ''}>{r.fechaVencimiento || '—'}</td>{/* ✅ V00212 */}
+                    <td className={vencido(r) ? 'tc-td-vencido' : ''}>{vencimientoDe(r)}</td>{/* ✅ V00219 */}{/* ✅ V00212 */}
                     <td className="tc-td-cliente">{r.clienteNombre || '—'}</td>
                     <td>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</td>
                     <td>{r.creditoDias > 0 ? `${r.creditoDias} día(s)` : '—'}</td>
@@ -1035,7 +1093,7 @@ export function TarifarioClientesDashboard() {
               <div className="tc-detalle-datos">
                 <div><span className="tc-label">Consecutivo</span><b className="tc-td-consecutivo">{r.consecutivo || (String(r.id).startsWith('TARI-') || String(r.id).startsWith('TAR-') ? r.id : '—')}</b></div>{/* ✅ V00203 */}
                 <div><span className="tc-label">Fecha de Emisión</span><b>{r.fecha || '—'}</b></div>
-                <div><span className="tc-label">Fecha de Vencimiento</span><b className={vencido(r) ? 'tc-td-vencido' : ''}>{r.fechaVencimiento || '—'}</b></div>{/* ✅ V00212 */}{/* ✅ V00201: sin número de convenio (no aplica) */}
+                <div><span className="tc-label">Fecha de Vencimiento</span><b className={vencido(r) ? 'tc-td-vencido' : ''}>{vencimientoDe(r)}</b></div>{/* ✅ V00212 */}{/* ✅ V00201: sin número de convenio (no aplica) */}
                 <div><span className="tc-label">Moneda</span>{r.moneda ? <span className={`tc-chip ${r.moneda === 'USD' ? 'tc-chip-usd' : 'tc-chip-mxn'}`}>{r.moneda}</span> : '—'}</div>
                 <div><span className="tc-label">Crédito</span><b>{Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '—'}{Number(r.limiteCredito) > 0 ? ` · Límite ${fmtMoney(Number(r.limiteCredito))}` : ''}</b></div>
                 <div>
