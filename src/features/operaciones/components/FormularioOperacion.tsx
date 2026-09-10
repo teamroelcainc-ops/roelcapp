@@ -1909,13 +1909,22 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   Se conserva el ya guardado en la operación para no romper ediciones.
   const idsClientesConConvenio = useMemo(() => {
     const set = new Set<string>();
+    // Tarifarios APROBADOS.
     (tarifariosLocal || []).forEach((t: any) => {
       if (String(t.status || '').trim() !== 'Aprobado') return;
       const id = String(t.clienteId ?? '').trim();
       if (id) set.add(id);
     });
+    // ✅ V00218: y también los que tengan al menos un DETALLE de convenio
+    //   ACTIVO (status distinto de Inactivo/Cancelado).
+    (catalogoConvDetalles || []).forEach((d: any) => {
+      const st = String(d.status || 'Aprobado').trim();
+      if (st === 'Inactivo' || st === 'Cancelado') return;
+      const id = ownerClienteDetalle(d);
+      if (id) set.add(id);
+    });
     return set;
-  }, [tarifariosLocal]);
+  }, [tarifariosLocal, catalogoConvDetalles]);
   const filClientesPaga = useMemo(() => empresas?.filter((e:any) =>
     (contieneId(e.tiposEmpresa, '7eec9cbb') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_PAGA)) &&
     (idsClientesConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.clientePaga || ''))
@@ -1971,8 +1980,15 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const id = String(t.proveedorId ?? '').trim();
       if (id) set.add(id);
     });
+    // ✅ V00218: y los que tengan al menos un DETALLE de convenio ACTIVO.
+    (catalogoConvProvDetalles || []).forEach((d: any) => {
+      const st = String(d.status || 'Aprobado').trim();
+      if (st === 'Inactivo' || st === 'Cancelado') return;
+      const id = ownerProvDetalle(d);
+      if (id) set.add(id);
+    });
     return set;
-  }, [tarifariosProvLocal]);
+  }, [tarifariosProvLocal, catalogoConvProvDetalles]);
 
 
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) =>

@@ -79,7 +79,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [busqueda, setBusqueda] = useState('');
   const [ordenAsc, setOrdenAsc] = useState(false);
   // ✅ V00206: operaciones que usan cada detalle (op.convenio = id del detalle)
-  const [usosOps, setUsosOps] = useState<Record<string, { ref: string; fecha: string; status: string }[]>>({});
+  const [usosOps, setUsosOps] = useState<Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string }[]>>({});
   const [usoAbierto, setUsoAbierto] = useState<FilaDetalle | null>(null);
   // ✅ V00207: selección múltiple para borrado masivo (solo clientes)
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
@@ -292,7 +292,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       {
         try {
           const snapOps = await getDocs(collection(db, 'operaciones'));
-          const mapa: Record<string, { ref: string; fecha: string; status: string }[]> = {};
+          const mapa: Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string }[]> = {};
           snapOps.docs.forEach((d) => {
             const o = d.data() as Record<string, unknown>;
             const conv = String((esClientes ? o.convenio : o.convenioProveedor) || '').trim();
@@ -302,6 +302,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               ref: String(o.ref || d.id.substring(0, 6)),
               fecha: String(o.fechaServicio || ''),
               status: String(o.status || o.estatus || ''),
+              // ✅ V00218: más contexto en el modal de uso
+              tipo: String(o.tipoOperacionNombre || o.trafico || ''),
+              entidad: String((esClientes ? (o.clientePagaNombre || o.clienteNombre) : (o.proveedorUnidadNombre || o.proveedorNombre)) || ''),
+              monto: String((esClientes ? o.montoConvenioCliente : o.totalAPagarProv) ?? ''),
             });
           });
           Object.values(mapa).forEach((lista) => lista.sort((a, b) => b.fecha.localeCompare(a.fecha)));
@@ -417,6 +421,18 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       return ordenAsc ? base : -base;
     });
   }, [filas, busqueda, ordenAsc, esClientes, pestana, filtroEntidad]);
+
+  // ✅ V00218: detecta duplicados EXACTOS — mismo cliente/proveedor, misma
+  //   tarifa, mismo costo y misma moneda (el caso que sí conviene unir).
+  const clavesDuplicadas = useMemo(() => {
+    const cuenta: Record<string, number> = {};
+    (filas || []).forEach((f) => {
+      const k = `${f.entidad}|${f.tarifaId || f.tarifa}|${f.costo ?? ''}|${f.moneda}`;
+      cuenta[k] = (cuenta[k] || 0) + 1;
+    });
+    return new Set(Object.keys(cuenta).filter((k) => cuenta[k] > 1));
+  }, [filas]);
+  const esDuplicado = (f: FilaDetalle) => clavesDuplicadas.has(`${f.entidad}|${f.tarifaId || f.tarifa}|${f.costo ?? ''}|${f.moneda}`);
 
   // ✅ V00217: entidades presentes, para el selector
   const entidades = useMemo(
@@ -557,7 +573,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   )}
                   <td className="dcv-x10" title={`Convenio ${f.numeroConvenio} · id ${f.id}`}>{f.consecutivo || '—'}</td>{/* ✅ V00211 */}
                   <td>{f.entidad}</td>
-                  <td>{f.tarifa}</td>
+                  <td>
+                    {f.tarifa}
+                    {/* ✅ V00218: aviso de convenio repetido con la misma tarifa */}
+                    {esDuplicado(f) && <span className="dcv-chip-dup" title="Este cliente/proveedor tiene otro convenio idéntico (misma tarifa y mismo monto) — conviene unirlos">⚠ duplicado</span>}
+                  </td>
                   <td onClick={(e) => e.stopPropagation()}>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
                     <select className="form-control dcv-select-moneda" value={val} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
                       <option value="">— Sin moneda —</option>
@@ -674,14 +694,24 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </div>
               <button type="button" className="dcv-cerrar" onClick={() => setUsoAbierto(null)}>✕</button>
             </div>
-            <p className="dcv-uso-total">Usado en <b>{(usosOps[usoAbierto.id] || []).length}</b> operación(es).</p>
+            <p className="dcv-uso-total">
+              {/* ✅ V00218: son las operaciones de ESTE convenio, todas del mismo cliente/proveedor */}
+              <b>{usoAbierto.entidad}</b> · usado en <b>{(usosOps[usoAbierto.id] || []).length}</b> operación(es).
+            </p>
             {(usosOps[usoAbierto.id] || []).length > 0 && (
               <div className="dcv-modal-marco">
                 <table className="dcv-tabla-usos">
-                  <thead><tr><th>REF</th><th>FECHA DE SERVICIO</th><th>STATUS</th></tr></thead>
+                  {/* ✅ V00218: detalle completo de las operaciones de ese convenio */}
+                  <thead><tr><th>REF</th><th>FECHA</th><th>TIPO</th><th>STATUS</th><th className="dcv-usos-monto">MONTO</th></tr></thead>
                   <tbody>
                     {(usosOps[usoAbierto.id] || []).map((o, i) => (
-                      <tr key={`${o.ref}-${i}`}><td className="dcv-x10">{o.ref || '—'}</td><td>{o.fecha || '—'}</td><td>{o.status || '—'}</td></tr>
+                      <tr key={`${o.ref}-${i}`}>
+                        <td className="dcv-x10">{o.ref || '—'}</td>
+                        <td>{o.fecha || '—'}</td>
+                        <td>{o.tipo || '—'}</td>
+                        <td>{o.status || '—'}</td>
+                        <td className="dcv-usos-monto">{o.monto ? `$${Number(o.monto).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>

@@ -104,3 +104,10 @@
 .dcv-encabezado { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
 .dcv-titulo { margin: 0; line-height: 1.25; }
 .dcv-select-entidad { max-width: 240px; }
+
+/* ✅ V00218: aviso de duplicado exacto y modal de usos */
+.dcv-chip-dup {
+  margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid #d29922; color: #d29922; font-size: 0.66rem; font-weight: 700; white-space: nowrap;
+}
+.dcv-usos-monto { text-align: right; }
