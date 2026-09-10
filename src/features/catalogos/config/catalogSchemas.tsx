@@ -278,7 +278,7 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       { name: 'destino', label: 'Destino', type: 'select', dynamicOptions: { collection: 'catalogo_municipios', labelField: 'municipio', valueField: 'id' }, visibleSi: { campo: 'tipo_operacion', contiene: ['flete'] } },
       // ✅ V00208: la DESCRIPCIÓN se ARMA SOLA con Tipo de Operación + Tipo de
       //   Remolque + Cargada/Vacía + Aduana (ya no se captura a mano).
-      { name: 'descripcion', label: 'Descripción', type: 'text', required: true, autoDe: ['tipo_operacion', 'tipo_remolque', 'estado_carga', 'aduana'] },
+      { name: 'descripcion', label: 'Descripción', type: 'text', required: true, autoDe: ['tipo_operacion', 'tipo_remolque', 'estado_carga', 'aduana', 'origen', 'destino'] }, // ✅ V00223: incluye Origen y Destino
       { name: 'tarifa_cliente_1', label: 'Tarifa Cliente 1', type: 'number' },
       { name: 'tarifa_cliente_2', label: 'Tarifa Cliente 2', type: 'number' },
       { name: 'tarifa_cliente_3', label: 'Tarifa Cliente 3', type: 'number' },

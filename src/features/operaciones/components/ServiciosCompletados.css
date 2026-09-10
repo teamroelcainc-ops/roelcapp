@@ -297,3 +297,23 @@
   .sc-x229 { flex-wrap: wrap; }
   .sc-x233 { flex-wrap: wrap; }
 }
+
+/* ✅ V00223: editor de origen/destino de las tarifas */
+.sc-tarifa-overlay { z-index: 3000; }
+.sc-tarifa-modal {
+  width: min(620px, 96vw); max-height: 86vh; overflow-y: auto;
+  background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px 22px;
+}
+.sc-tarifa-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.sc-tarifa-tit { margin: 0 0 3px 0; font-size: 1rem; color: #f0f6fc; }
+.sc-tarifa-sub { margin: 0; color: #8b949e; font-size: 0.8rem; }
+.sc-tarifa-x { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1rem; }
+.sc-tarifa-bloque { border: 1px solid #21262d; border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.sc-tarifa-lado { color: #58a6ff; font-weight: 700; font-size: 0.72rem; letter-spacing: 0.4px; margin-bottom: 6px; }
+.sc-tarifa-nombre { color: #e6edf3; font-size: 0.86rem; margin-bottom: 10px; }
+.sc-tarifa-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.sc-tarifa-label { display: flex; flex-direction: column; gap: 5px; font-size: 0.75rem; color: #8b949e; }
+.sc-tarifa-vacio { color: #8b949e; font-size: 0.82rem; padding: 6px 0; }
+.sc-tarifa-pie { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+.sc-tarifa-guardar { background-color: #238636; color: #fff; border: none; font-weight: 600; }
+.sc-tarifa-guardar:hover { background-color: #2ea043; }
