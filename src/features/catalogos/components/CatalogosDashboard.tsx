@@ -147,24 +147,98 @@ const CatalogosDashboard = () => {
 
   // ✅ NUEVO (V00116): referencias de operaciones del modal "Dónde se usa" —
   //   se descargan SOLO al abrirlo y SOLO las de esa tarifa.
-  const [opsDeModal, setOpsDeModal] = useState<string[] | null>(null);
+  // ✅ V00220: detalle COMPLETO de dónde se usa una tarifa — tarifarios,
+  //   convenios (con su cliente/proveedor y monto) y operaciones (con su
+  //   cliente y fecha). Cada referencia es clicable y lleva a su módulo.
+  type UsoFila = { ref: string; entidad: string; extra: string; modulo: string };
+  const [usoDetallado, setUsoDetallado] = useState<{ tarifarios: UsoFila[]; convenios: UsoFila[]; operaciones: UsoFila[] } | null>(null);
   useEffect(() => {
-    if (!modalUsoTarifa) { setOpsDeModal(null); return; }
+    if (!modalUsoTarifa) { setUsoDetallado(null); return; }
     let activo = true;
     (async () => {
       try {
+        const tarifaId = String(modalUsoTarifa.reg.id);
         const detIds: string[] = modalUsoTarifa.u.detIds || [];
-        const refs: string[] = [];
+        const [snapDetC, snapDetP, snapTarC, snapTarP] = await Promise.all([
+          getDocs(collection(db, 'convenios_clientes_detalles')),
+          getDocs(collection(db, 'convenios_proveedores_detalles')),
+          getDocs(collection(db, 'tarifario_clientes')),
+          getDocs(collection(db, 'tarifario_proveedores')),
+        ]);
+
+        // Convenios (detalles) que usan la tarifa + mapa id → dueño.
+        const dueñoDetalle: Record<string, string> = {};
+        const convenios: UsoFila[] = [];
+        type Snap = { docs: { id: string; data: () => Record<string, unknown> }[] };
+        const armarDet = (snap: Snap, modulo: string, tarifarios: Snap) => {
+          snap.docs.forEach((d) => {
+            const x = d.data() as Record<string, unknown>;
+            if (String(x.tipoConvenioId || '') !== tarifaId) return;
+            // el nombre del cliente/proveedor se toma del tarifario vinculado
+            const tar = tarifarios.docs.find((t) => String(t.data().convenioId || '') === String(x.convenioId || ''));
+            const nombre = tar ? String(tar.data().clienteNombre || tar.data().proveedorNombre || '') : '';
+            dueñoDetalle[d.id] = nombre;
+            convenios.push({
+              ref: String(x.consecutivo || d.id),
+              entidad: nombre || '—',
+              extra: `${Number(x.tarifa) || 0} ${String(x.moneda || '')}`.trim(),
+              modulo,
+            });
+          });
+        };
+        armarDet(snapDetC, 'detallesConvenioClientes', snapTarC);
+        armarDet(snapDetP, 'detallesConvenioProveedores', snapTarP);
+
+        // Tarifarios que contienen la tarifa.
+        const tarifarios: UsoFila[] = [];
+        const armarTar = (snap: Snap, campoNombre: string, modulo: string) => {
+          snap.docs.forEach((d) => {
+            const t = d.data() as Record<string, unknown>;
+            const lineas = Array.isArray(t.tarifas) ? (t.tarifas as Record<string, unknown>[]) : [];
+            const usadas = lineas.filter((l) => String(l.tarifaReferenciaId || '') === tarifaId);
+            if (usadas.length === 0) return;
+            tarifarios.push({
+              ref: String(t.consecutivo || d.id),
+              entidad: String(t[campoNombre] || '—'),
+              extra: `${usadas.length} línea(s) · ${String(t.status || '')}`,
+              modulo,
+            });
+          });
+        };
+        armarTar(snapTarC, 'clienteNombre', 'tarifarioClientes');
+        armarTar(snapTarP, 'proveedorNombre', 'tarifarioProveedores');
+
+        // Operaciones que usan cualquiera de esos detalles.
+        const operaciones: UsoFila[] = [];
         for (let i = 0; i < detIds.length; i += 10) {
           const snap = await getDocs(query(collection(db, 'operaciones'), where('convenio', 'in', detIds.slice(i, i + 10))));
-          snap.docs.forEach((d) => refs.push(String((d.data() as any).ref || d.id.slice(0, 8))));
+          snap.docs.forEach((d) => {
+            const o = d.data() as Record<string, unknown>;
+            operaciones.push({
+              ref: String(o.ref || d.id.slice(0, 8)),
+              entidad: String(o.clientePagaNombre || o.clienteNombre || dueñoDetalle[String(o.convenio || '')] || '—'),
+              extra: String(o.fechaServicio || ''),
+              modulo: 'operacionesActivas',
+            });
+          });
         }
-        if (activo) setOpsDeModal(refs);
-      } catch { if (activo) setOpsDeModal([]); }
+
+        if (activo) setUsoDetallado({ tarifarios, convenios, operaciones });
+      } catch (e) {
+        console.error('No se pudo cargar el uso de la tarifa:', e);
+        if (activo) setUsoDetallado({ tarifarios: [], convenios: [], operaciones: [] });
+      }
     })();
     return () => { activo = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalUsoTarifa]);
+
+  // ✅ V00220: al hacer clic en una referencia, se navega a su módulo con esa
+  //   referencia ya cargada en el buscador del destino.
+  const irARegistro = (modulo: string, ref: string) => {
+    try { localStorage.setItem('roelca_buscar', JSON.stringify({ modulo, texto: ref, ts: Date.now() })); } catch { /* noop */ }
+    window.dispatchEvent(new CustomEvent('roelca:navegar', { detail: { modulo } }));
+    setModalUsoTarifa(null);
+  };
 
   // ✅ NUEVO — USO DE TIPOS DE TARIFARIOS: cuántas Tarifas de Referencia
   //   usan cada tipo (tarifas_referencia.tipo_operacion -> id del tipo).
@@ -1882,22 +1956,42 @@ const CatalogosDashboard = () => {
             <p style={{ margin: '0 0 12px 0', color: '#8b949e', fontSize: '0.78rem' }}>
               {modalUsoTarifa.u.opsCount} operación(es) · {modalUsoTarifa.u.convC.length} convenio(s) de clientes · {modalUsoTarifa.u.convP.length} convenio(s) de proveedores
             </p>
-            {modalUsoTarifa.u.convC.length > 0 && (<>
-              <div style={{ color: '#58a6ff', fontWeight: 700, fontSize: '0.8rem', margin: '10px 0 4px 0' }}>CONVENIOS DE CLIENTES</div>
-              {Array.from(new Set(modalUsoTarifa.u.convC)).map((c: any) => <div key={c} style={{ color: '#c9d1d9', fontSize: '0.8rem', padding: '2px 0' }}>{c}</div>)}
+            {/* ✅ V00220: tarifarios · convenios · operaciones, con cliente y referencia clicable */}
+            {usoDetallado === null ? (
+              <div style={{ color: '#8b949e', fontSize: '0.82rem', padding: '10px 0' }}>Cargando dónde se usa…</div>
+            ) : (<>
+              {([
+                { titulo: 'TARIFARIOS', color: '#58a6ff', filas: usoDetallado.tarifarios },
+                { titulo: 'CONVENIOS (DETALLES)', color: '#d29922', filas: usoDetallado.convenios },
+                { titulo: `OPERACIONES (${usoDetallado.operaciones.length})`, color: '#3fb950', filas: usoDetallado.operaciones.slice(0, 200) },
+              ] as const).map((sec) => sec.filas.length === 0 ? null : (
+                <div key={sec.titulo}>
+                  <div style={{ color: sec.color, fontWeight: 700, fontSize: '0.8rem', margin: '12px 0 6px 0' }}>{sec.titulo}</div>
+                  <div className="cd-uso-lista">
+                    {sec.filas.map((f, i) => (
+                      <button
+                        key={`${f.ref}-${i}`}
+                        type="button"
+                        className="cd-uso-fila"
+                        title={`Ir a ${f.ref}`}
+                        onClick={() => irARegistro(f.modulo, f.ref)}
+                      >
+                        <span className="cd-uso-ref">{f.ref}</span>
+                        <span className="cd-uso-ent">{f.entidad}</span>
+                        <span className="cd-uso-extra">{f.extra}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {sec.titulo.startsWith('OPERACIONES') && usoDetallado.operaciones.length > 200 && (
+                    <div style={{ color: '#8b949e', fontSize: '0.75rem', marginTop: '6px' }}>… y {usoDetallado.operaciones.length - 200} operación(es) más</div>
+                  )}
+                </div>
+              ))}
+              {usoDetallado.tarifarios.length === 0 && usoDetallado.convenios.length === 0 && usoDetallado.operaciones.length === 0 && (
+                <div style={{ color: '#8b949e', fontSize: '0.82rem', padding: '10px 0' }}>Esta tarifa aún no se usa en ningún tarifario, convenio u operación.</div>
+              )}
             </>)}
-            {modalUsoTarifa.u.convP.length > 0 && (<>
-              <div style={{ color: '#d29922', fontWeight: 700, fontSize: '0.8rem', margin: '10px 0 4px 0' }}>CONVENIOS DE PROVEEDORES</div>
-              {Array.from(new Set(modalUsoTarifa.u.convP)).map((c: any) => <div key={c} style={{ color: '#c9d1d9', fontSize: '0.8rem', padding: '2px 0' }}>{c}</div>)}
-            </>)}
-            {modalUsoTarifa.u.opsCount > 0 && (<>
-              <div style={{ color: '#3fb950', fontWeight: 700, fontSize: '0.8rem', margin: '10px 0 4px 0' }}>OPERACIONES ({modalUsoTarifa.u.opsCount})</div>
-              <div style={{ color: '#c9d1d9', fontSize: '0.78rem', fontFamily: 'monospace', lineHeight: 1.7 }}>
-                {opsDeModal === null
-                  ? 'Cargando referencias…'
-                  : `${opsDeModal.slice(0, 120).join(' · ')}${opsDeModal.length > 120 ? ` … (+${opsDeModal.length - 120} más)` : ''}`}
-              </div>
-            </>)}
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
               <button type="button" className="btn btn-outline" style={{ padding: '8px 16px' }} onClick={() => setModalUsoTarifa(null)}>Cerrar</button>
             </div>

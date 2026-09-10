@@ -130,3 +130,15 @@
 .cd-btn-rearmar { color: #58a6ff; border-color: #58a6ff; white-space: nowrap; }
 .cd-btn-rearmar:hover { background-color: rgba(88, 166, 255, 0.12); }
 .cd-btn-rearmar:disabled { opacity: 0.55; cursor: wait; }
+
+/* ✅ V00220: lista de uso de una tarifa (referencias clicables) */
+.cd-uso-lista { display: flex; flex-direction: column; gap: 4px; }
+.cd-uso-fila {
+  display: grid; grid-template-columns: 110px 1fr 140px; align-items: center; gap: 10px;
+  width: 100%; padding: 7px 10px; background-color: #0d1117; border: 1px solid #21262d;
+  border-radius: 7px; cursor: pointer; text-align: left; font-size: 0.78rem; color: #c9d1d9;
+}
+.cd-uso-fila:hover { border-color: #58a6ff; background-color: rgba(88, 166, 255, 0.08); }
+.cd-uso-ref { color: #58a6ff; font-weight: 700; white-space: nowrap; }
+.cd-uso-ent { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-uso-extra { color: #8b949e; text-align: right; white-space: nowrap; }

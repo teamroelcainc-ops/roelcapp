@@ -86,6 +86,20 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [borrandoSel, setBorrandoSel] = useState(false);
   // ✅ V00217: buscador por cliente/proveedor (además del de texto)
   const [filtroEntidad, setFiltroEntidad] = useState('');
+  // ✅ V00220: si se llegó aquí desde una referencia clicable, el buscador
+  //   arranca con esa referencia.
+  useEffect(() => {
+    try {
+      const crudo = localStorage.getItem('roelca_buscar');
+      if (!crudo) return;
+      const d = JSON.parse(crudo);
+      const claveMod = esClientes ? 'detallesConvenioClientes' : 'detallesConvenioProveedores';
+      if (String(d?.modulo || '') !== claveMod || !d?.texto) return;
+      setBusqueda(String(d.texto));
+      localStorage.removeItem('roelca_buscar');
+    } catch { /* noop */ }
+  }, [esClientes]);
+
   // ✅ V00215: unir duplicados
   const [modalUnir, setModalUnir] = useState(false);
   const [conservarId, setConservarId] = useState('');

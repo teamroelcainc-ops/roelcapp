@@ -225,6 +225,19 @@ export function TarifarioProveedoresDashboard() {
   const [filtroEntidad, setFiltroEntidad] = useState('');
   const [filtroMoneda, setFiltroMoneda] = useState('');
 
+  // ✅ V00220: si se llegó aquí desde una referencia clicable, el buscador
+  //   arranca con esa referencia.
+  useEffect(() => {
+    try {
+      const crudo = localStorage.getItem('roelca_buscar');
+      if (!crudo) return;
+      const d = JSON.parse(crudo);
+      if (String(d?.modulo || '') !== 'tarifarioProveedores' || !d?.texto) return;
+      setBusquedaLista(String(d.texto));
+      localStorage.removeItem('roelca_buscar');
+    } catch { /* noop */ }
+  }, []);
+
   // ✅ V00201: detalles del convenio en vivo — de aquí sale el consecutivo real.
   const [detallesConv, setDetallesConv] = useState<Doc[]>([]);
 

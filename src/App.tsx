@@ -1021,6 +1021,18 @@ function AppContenido() {
     if (window.innerWidth <= 768) setMenuAbierto(false);
   };
 
+  // ✅ V00220: navegación entre módulos desde una referencia clicable
+  //   (Catálogos → Tarifarios / Detalles del Convenio / Operaciones).
+  useEffect(() => {
+    const alNavegar = (e: Event) => {
+      const modulo = String((e as CustomEvent).detail?.modulo || '');
+      if (modulo) navegarA(modulo as typeof moduloActivo);
+    };
+    window.addEventListener('roelca:navegar', alNavegar);
+    return () => window.removeEventListener('roelca:navegar', alNavegar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleGrupo = (setter: React.Dispatch<React.SetStateAction<boolean>>) => {
     if (!menuAbierto) setMenuAbierto(true);
     setter(prev => !prev);
