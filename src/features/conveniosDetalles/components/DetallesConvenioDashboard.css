@@ -147,3 +147,53 @@
 }
 .dcv-ref-link:hover { color: #79c0ff; }
 .dcv-ficha-ancho { grid-column: 1 / -1; }
+
+/* ✅ V00234: ficha del convenio — presentación para gerencia */
+.dcv-ficha-modal {
+  width: min(900px, 96vw); max-height: 88vh; overflow-y: auto;
+  background: linear-gradient(180deg, #161b22 0%, #0d1117 100%);
+  border: 1px solid #30363d; border-radius: 14px; padding: 0 0 18px 0;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.dcv-ficha-head {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+  padding: 20px 24px 16px 24px; border-bottom: 1px solid #21262d;
+  background: rgba(88, 166, 255, 0.04);
+  border-radius: 14px 14px 0 0;
+}
+.dcv-ficha-head-txt { min-width: 0; }
+.dcv-ficha-badge {
+  display: inline-block; padding: 3px 10px; margin-bottom: 8px;
+  background: rgba(88, 166, 255, 0.14); border: 1px solid rgba(88, 166, 255, 0.45);
+  border-radius: 999px; color: #58a6ff; font-weight: 700; font-size: 0.76rem; letter-spacing: 0.4px;
+}
+.dcv-ficha-titulo { margin: 0 0 4px 0; font-size: 1.22rem; color: #f0f6fc; line-height: 1.25; }
+.dcv-ficha-tarifa { margin: 0; color: #8b949e; font-size: 0.88rem; }
+.dcv-ficha-kpis {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  padding: 16px 24px 4px 24px;
+}
+.dcv-kpi {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 12px 14px; background: #0d1117; border: 1px solid #21262d; border-radius: 10px;
+}
+.dcv-kpi-lbl { color: #8b949e; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.5px; }
+.dcv-kpi-val { color: #e6edf3; font-size: 1.3rem; font-weight: 700; }
+.dcv-kpi-val small { font-size: 0.78rem; color: #8b949e; font-weight: 600; }
+.dcv-kpi-chip {
+  align-self: flex-start; padding: 3px 12px; border-radius: 999px; font-size: 0.78rem; font-weight: 700;
+}
+.dcv-kpi-chip.ok { background: rgba(63, 185, 80, 0.15); color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.4); }
+.dcv-kpi-chip.off { background: rgba(139, 148, 158, 0.15); color: #8b949e; border: 1px solid rgba(139, 148, 158, 0.4); }
+.dcv-ficha-datos {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px 18px;
+  padding: 18px 24px 4px 24px;
+}
+.dcv-ficha-datos > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dcv-ficha-datos b { color: #e6edf3; font-size: 0.9rem; overflow-wrap: anywhere; }
+.dcv-ficha-ops { padding: 18px 24px 0 24px; }
+.dcv-ficha-ops-tit { color: #58a6ff; font-weight: 700; font-size: 0.74rem; letter-spacing: 0.5px; margin-bottom: 8px; text-transform: uppercase; }
+.dcv-ficha-modal .dcv-modal-pie { padding: 16px 24px 0 24px; }
+@media (max-width: 720px) {
+  .dcv-ficha-kpis, .dcv-ficha-datos { grid-template-columns: 1fr; }
+}

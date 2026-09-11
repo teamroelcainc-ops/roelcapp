@@ -164,7 +164,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ V00207: edición en modal (lápiz al inicio de la fila)
   const [editando, setEditando] = useState<FilaDetalle | null>(null);
   // ✅ V00232: la edición usa los MISMOS campos que el alta.
-  const [editForm, setEditForm] = useState<{ tarifaId: string; moneda: string; status: string; costo: string; origen: string; destino: string }>({ tarifaId: '', moneda: '', status: '', costo: '', origen: '', destino: '' });
+  const [editForm, setEditForm] = useState<{ tarifarioId: string; tarifaId: string; moneda: string; status: string; costo: string; origen: string; destino: string }>({ tarifarioId: '', tarifaId: '', moneda: '', status: '', costo: '', origen: '', destino: '' });
   const [guardandoEdicion, setGuardandoEdicion] = useState(false);
   // ✅ V00197: pestañas (solo clientes)
   // ✅ V00198: sin la pestaña "Convenios Cancelados"
@@ -417,6 +417,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   //   asignando la tarifa correcta del catálogo.
   const abrirEdicion = async (f: FilaDetalle) => {
     setEditForm({
+      tarifarioId: '',
       tarifaId: f.tarifaId || '',
       moneda: String(f.moneda || ''),
       status: String(f.status || 'Aprobado'),
@@ -427,18 +428,33 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     // ✅ V00232: mismos catálogos que el alta (tarifas y municipios) y se
     //   precargan los municipios guardados en el detalle.
     try {
-      if (tarifasAlta.length === 0 || municipiosAlta.length === 0) {
-        const [snapRef, snapMun] = await Promise.all([
+      // ✅ V00234: el editar usa EXACTAMENTE los mismos catálogos que el alta.
+      if (tarifasAlta.length === 0 || municipiosAlta.length === 0 || tarifariosAlta.length === 0) {
+        const [snapRef, snapMun, snapTar] = await Promise.all([
           getDocs(collection(db, 'catalogo_tarifas_referencia')),
           getDocs(collection(db, 'catalogo_municipios')),
+          getDocs(collection(db, esClientes ? 'tarifario_clientes' : 'tarifario_proveedores')),
         ]);
         setTarifasAlta(snapRef.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).descripcion || '') })).filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })));
         setMunicipiosAlta(snapMun.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).municipio || '') })).filter((m) => m.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' })));
+        setTarifariosAlta(
+          snapTar.docs.map((d) => {
+            const t = d.data() as Record<string, unknown>;
+            const ent = String((esClientes ? t.clienteNombre : t.proveedorNombre) || '');
+            return { id: d.id, etiqueta: `${String(t.consecutivo || d.id)} - ${ent}`, entidad: ent, convenioId: String(t.convenioId || ''), moneda: String(t.moneda || '') };
+          }).filter((t) => t.entidad).sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es', { sensitivity: 'base' }))
+        );
       }
       const det = await getDocs(query(collection(db, COL_DETALLES), where('__name__', '==', f.id)));
       if (!det.empty) {
         const x = det.docs[0].data() as Record<string, unknown>;
-        setEditForm((p) => ({ ...p, origen: String(x.origen || ''), destino: String(x.destino || '') }));
+        setEditForm((p) => ({
+          ...p,
+          origen: String(x.origen || ''),
+          destino: String(x.destino || ''),
+          // el tarifario guardado, o el que corresponda al mismo convenio
+          tarifarioId: String(x.tarifarioId || ''),
+        }));
       }
     } catch (e) { console.error('No se pudieron cargar los catálogos de edición:', e); }
   };
@@ -456,6 +472,21 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     try {
       const nombreTarifa = tarifasLista.find((t) => t.id === editForm.tarifaId)?.nombre || '';
       const nombreMunEd = (id: string) => municipiosAlta.find((m) => m.id === id)?.nombre || '';
+      // ✅ V00234: si cambió el tarifario, el detalle se reapunta a su convenio.
+      const tarSel = tarifariosAlta.find((t) => t.id === editForm.tarifarioId);
+      // ✅ V00234: el origen/destino también se guardan en la tarifa del catálogo.
+      if (editForm.tarifaId && (editForm.origen || editForm.destino)) {
+        try {
+          const tRef = (tarifasAlta.length > 0 ? tarifasAlta : tarifasLista).find((x) => x.id === editForm.tarifaId);
+          const nombresMun = new Set(municipiosAlta.map((m) => m.nombre));
+          const base = String(tRef?.nombre || '').split(' - ').map((x) => x.trim()).filter((x) => x && !nombresMun.has(x));
+          const descNueva = [...base, nombreMunEd(editForm.origen), nombreMunEd(editForm.destino)].filter(Boolean).join(' - ');
+          if (descNueva) {
+            await updateDoc(doc(dbFs, 'catalogo_tarifas_referencia', editForm.tarifaId), { origen: editForm.origen, destino: editForm.destino, descripcion: descNueva });
+            setTarifasAlta((prev) => prev.map((t) => t.id === editForm.tarifaId ? { ...t, nombre: descNueva } : t));
+          }
+        } catch (e) { console.error('No se pudo actualizar la tarifa del catálogo:', e); }
+      }
       const cambiosDoc: Record<string, unknown> = {
         moneda: editForm.moneda,
         status: editForm.status,
@@ -469,6 +500,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       if (editForm.tarifaId) {
         cambiosDoc.tipoConvenioId = editForm.tarifaId;
         cambiosDoc.tipoConvenioNombre = nombreTarifa;
+      }
+      if (tarSel) { // ✅ V00234
+        cambiosDoc.tarifarioId = tarSel.id;
+        if (tarSel.convenioId) cambiosDoc.convenioId = tarSel.convenioId;
       }
       await updateDoc(doc(dbFs, COL_DETALLES, f.id), cambiosDoc);
       setFilas((prev) => (prev || []).map((x) => x.id === f.id ? {
@@ -957,8 +992,18 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </div>
               <button type="button" className="dcv-cerrar" onClick={() => !guardandoEdicion && setEditando(null)}>✕</button>
             </div>
+            {/* ✅ V00234: MISMOS campos y orden que el alta */}
             <div className="dcv-alta-campos">
-              {/* ✅ V00232: mismos campos y buscadores que el alta */}
+              <BuscadorSimple
+                etiqueta={esClientes ? '# de tarifario - Cliente' : '# de tarifario - Proveedor'}
+                opciones={tarifariosAlta.map((t) => ({ id: t.id, nombre: t.etiqueta }))}
+                valor={editForm.tarifarioId}
+                onElegir={(id) => {
+                  const t = tarifariosAlta.find((x) => x.id === id);
+                  const esUSD = String(t?.moneda || '').toUpperCase().includes('USD') || String(t?.moneda || '').toLowerCase().includes('dolar');
+                  setEditForm((p) => ({ ...p, tarifarioId: id, moneda: p.moneda || (esUSD ? 'Dólares' : '') }));
+                }}
+              />
               <BuscadorSimple
                 etiqueta="Tarifa (catálogo)"
                 opciones={tarifasAlta.length > 0 ? tarifasAlta : tarifasLista}
@@ -971,9 +1016,12 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               />
               <BuscadorSimple etiqueta="Origen" opciones={municipiosAlta} valor={editForm.origen} onElegir={(id) => setEditForm((p) => ({ ...p, origen: id }))} />
               <BuscadorSimple etiqueta="Destino" opciones={municipiosAlta} valor={editForm.destino} onElegir={(id) => setEditForm((p) => ({ ...p, destino: id }))} />
+              <label className="dcv-edit-label">Costo de la Tarifa
+                <input type="number" step={25} min={0} className="form-control" value={editForm.costo} onChange={(e) => setEditForm((p) => ({ ...p, costo: e.target.value.replace(/[^0-9]/g, '') }))} />
+              </label>
               <label className="dcv-edit-label">Cotizado En
                 <select className="form-control" value={editForm.moneda} onChange={(e) => setEditForm((p) => ({ ...p, moneda: e.target.value }))}>
-                  <option value="">— Sin moneda —</option>
+                  <option value="">Selecciona una moneda</option>
                   {(monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']).map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </label>
@@ -982,10 +1030,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   {ESTADOS_DETALLE.map((st) => <option key={st} value={st}>{st}</option>)}
                 </select>
               </label>
-              <label className="dcv-edit-label">Costo de la Tarifa
-                <input type="number" step="0.01" min="0" className="form-control" value={editForm.costo} onChange={(e) => setEditForm((p) => ({ ...p, costo: e.target.value }))} />
-              </label>
             </div>
+
             <div className="dcv-modal-pie dcv-modal-pie-edit">
               <button type="button" className="btn btn-outline" disabled={guardandoEdicion} onClick={() => setEditando(null)}>Cancelar</button>
               <button type="button" className="btn dcv-btn-guardar-edit" disabled={guardandoEdicion} onClick={guardarEdicion}>{guardandoEdicion ? 'Guardando…' : 'Guardar'}</button>
@@ -994,29 +1040,40 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         </div>
       )}
 
-      {/* ✅ V00206: MODAL — operaciones que han usado este convenio */}
+      {/* ✅ V00234: FICHA DEL CONVENIO — presentación para gerencia */}
       {usoAbierto && (
         <div className="modal-overlay" onClick={() => setUsoAbierto(null)}>
-          <div className="dcv-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="dcv-modal-encabezado">
-              <div>
-                <h3 className="dcv-modal-titulo">Uso del convenio <span className="dcv-x10">{usoAbierto.consecutivo || usoAbierto.numeroConvenio || usoAbierto.id}</span></h3>
-                <p className="dcv-modal-sub">{usoAbierto.entidad} · {usoAbierto.tarifa}</p>
+          <div className="dcv-ficha-modal" onClick={(e) => e.stopPropagation()}>
+
+            <div className="dcv-ficha-head">
+              <div className="dcv-ficha-head-txt">
+                <span className="dcv-ficha-badge">{usoAbierto.consecutivo || usoAbierto.id}</span>
+                <h3 className="dcv-ficha-titulo">{usoAbierto.entidad}</h3>
+                <p className="dcv-ficha-tarifa">{usoAbierto.tarifa}</p>
               </div>
               <button type="button" className="dcv-cerrar" onClick={() => setUsoAbierto(null)}>✕</button>
             </div>
-            {/* ✅ V00231: ficha completa del convenio */}
-            <div className="dcv-ficha">
-              <div><span className="dcv-x1lbl">Consecutivo</span><b className="dcv-x10">{usoAbierto.consecutivo || usoAbierto.id}</b></div>
-              <div><span className="dcv-x1lbl">{ETIQUETA_ENTIDAD}</span><b>{usoAbierto.entidad}</b></div>
-              <div><span className="dcv-x1lbl">Tarifa</span><b>{usoAbierto.tarifa}</b></div>
-              <div><span className="dcv-x1lbl">Origen</span><b>{usoAbierto.origen || '—'}</b></div>
-              <div><span className="dcv-x1lbl">Destino</span><b>{usoAbierto.destino || '—'}</b></div>
-              <div><span className="dcv-x1lbl">Costo</span><b>{usoAbierto.costo ?? '—'} {usoAbierto.moneda || ''}</b></div>
-              <div><span className="dcv-x1lbl">Status</span><b>{usoAbierto.status || 'Aprobado'}</b></div>
+
+            <div className="dcv-ficha-kpis">
+              <div className="dcv-kpi">
+                <span className="dcv-kpi-lbl">Costo de la tarifa</span>
+                <span className="dcv-kpi-val">{usoAbierto.costo ?? 0}<small> {usoAbierto.moneda || ''}</small></span>
+              </div>
+              <div className="dcv-kpi">
+                <span className="dcv-kpi-lbl">Operaciones</span>
+                <span className="dcv-kpi-val">{(usosOps[usoAbierto.id] || []).length}</span>
+              </div>
+              <div className="dcv-kpi">
+                <span className="dcv-kpi-lbl">Status</span>
+                <span className={`dcv-kpi-chip ${String(usoAbierto.status || 'Aprobado') === 'Aprobado' ? 'ok' : 'off'}`}>{usoAbierto.status || 'Aprobado'}</span>
+              </div>
+            </div>
+
+            <div className="dcv-ficha-datos">
+              <div><span className="dcv-x1lbl">Ruta</span><b>{(usoAbierto.origen || '—')} → {(usoAbierto.destino || '—')}</b></div>
               <div><span className="dcv-x1lbl">Convenio</span><b>{usoAbierto.numeroConvenio || '—'}</b></div>
+              <div><span className="dcv-x1lbl">Cotizado en</span><b>{usoAbierto.moneda || '—'}</b></div>
               <div className="dcv-ficha-ancho">
-                {/* ✅ V00232: fecha Y dónde se usó por última vez */}
                 <span className="dcv-x1lbl">Último uso en operaciones</span>
                 {(() => {
                   const ult = [...(usosOps[usoAbierto.id] || [])].filter((o) => o.fecha).sort((a, b) => a.fecha.localeCompare(b.fecha)).slice(-1)[0];
@@ -1031,36 +1088,36 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </div>
             </div>
 
-            <p className="dcv-uso-total">
-              {/* ✅ V00218: son las operaciones de ESTE convenio, todas del mismo cliente/proveedor */}
-              <b>{usoAbierto.entidad}</b> · usado en <b>{(usosOps[usoAbierto.id] || []).length}</b> operación(es).
-            </p>
             {(usosOps[usoAbierto.id] || []).length > 0 && (
-              <div className="dcv-modal-marco">
-                <table className="dcv-tabla-usos">
-                  {/* ✅ V00218: detalle completo de las operaciones de ese convenio */}
-                  <thead><tr><th>REF</th><th>FECHA</th><th>TIPO</th><th>STATUS</th><th className="dcv-usos-monto">MONTO</th></tr></thead>
-                  <tbody>
-                    {(usosOps[usoAbierto.id] || []).map((o, i) => (
-                      <tr key={`${o.ref}-${i}`}>
-                        {/* ✅ V00232: al hacer clic se abre su formulario de edición */}
-                        <td><button type="button" className="dcv-ref-link" title={`Editar ${o.ref}`} onClick={() => editarOperacion(o)}>{o.ref || '—'}</button></td>
-                        <td>{o.fecha || '—'}</td>
-                        <td>{o.tipo || '—'}</td>
-                        <td>{o.status || '—'}</td>
-                        <td className="dcv-usos-monto">{o.monto ? `$${Number(o.monto).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="dcv-ficha-ops">
+                <div className="dcv-ficha-ops-tit">Operaciones que lo usaron</div>
+                <div className="dcv-modal-marco">
+                  <table className="dcv-tabla-usos">
+                    <thead><tr><th>REF</th><th>FECHA</th><th>TIPO</th><th>STATUS</th><th className="dcv-usos-monto">MONTO</th></tr></thead>
+                    <tbody>
+                      {(usosOps[usoAbierto.id] || []).map((o, i) => (
+                        <tr key={`${o.ref}-${i}`}>
+                          <td><button type="button" className="dcv-ref-link" title={`Editar ${o.ref}`} onClick={() => editarOperacion(o)}>{o.ref || '—'}</button></td>
+                          <td>{o.fecha || '—'}</td>
+                          <td>{o.tipo || '—'}</td>
+                          <td>{o.status || '—'}</td>
+                          <td className="dcv-usos-monto">{o.monto ? `$${Number(o.monto).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
-            <div className="dcv-modal-pie">
+
+            <div className="dcv-modal-pie dcv-modal-pie-edit">
+              <button type="button" className="btn btn-outline" onClick={() => { const f = usoAbierto; setUsoAbierto(null); abrirEdicion(f); }}>✎ Editar convenio</button>
               <button type="button" className="btn btn-outline" onClick={() => setUsoAbierto(null)}>Cerrar</button>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 };
