@@ -1557,7 +1557,7 @@ function AppContenido() {
                 {/* ✅ V00191: Tarifario Clientes */}
                 {puede('tarifarioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'tarifarioClientes' ? 'active' : ''}`} onClick={() => navegarA('tarifarioClientes')}><span className="sidebar-icon">{ICON.tarifarioClientes}</span><span className="sidebar-label">{etq('menu.tarifario_clientes', 'Tarifario Clientes')}</span></div>}
                 {/* ✅ NUEVO (V00112): Detalles del Convenio (clientes) */}
-                {puede('detallesConvenioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioClientes' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Detalles del Convenio')}</span></div>}
+                {puede('detallesConvenioClientes') && <div className={`sidebar-subitem ${moduloActivo === 'detallesConvenioClientes' ? 'active' : ''}`} onClick={() => navegarA('detallesConvenioClientes')}><span className="sidebar-icon">{ICON.conveniosClientes}</span><span className="sidebar-label">{etq('menu.detalles_del_convenio', 'Convenio de Clientes')}</span></div>}{/* ✅ V00231: etiqueta nueva (la clave y el permiso no cambian) */}
                 {puede('facturacionClientes') && <div className={`sidebar-subitem ${moduloActivo === 'facturacionClientes' ? 'active' : ''}`} onClick={() => navegarA('facturacionClientes')}><span className="sidebar-icon">{ICON.facturacionClientes}</span><span className="sidebar-label">{etq('menu.facturaci_n', 'Facturación')}</span></div>}
               </div>
             )}

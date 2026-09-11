@@ -35,12 +35,57 @@
 //   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { collection, getDocs, doc, updateDoc, writeBatch } from 'firebase/firestore'; // ✅ V00215
+import { collection, getDocs, doc, updateDoc, writeBatch, setDoc } from 'firebase/firestore'; // ✅ V00215/V00231
+import { reservarConsecutivosDetalle, reservarConsecutivosDetalleProveedor } from '../consecutivos'; // ✅ V00231
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
 import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00198
 import './DetallesConvenioDashboard.css';
+
+/** ✅ V00231: campo de BÚSQUEDA para elegir de una lista (no desplegable). */
+const BuscadorSimple = ({ etiqueta, opciones, valor, onElegir }: {
+  etiqueta: string;
+  opciones: { id: string; nombre: string }[];
+  valor: string;
+  onElegir: (id: string) => void;
+}) => {
+  // ✅ V00231: el texto mostrado se DERIVA del valor elegido; mientras el
+  //   usuario escribe manda su búsqueda (sin efectos ni renders en cascada).
+  const nombreDe = (id: string) => opciones.find((o) => o.id === id)?.nombre || '';
+  const [busqueda, setBusqueda] = useState<string | null>(null);
+  const [abierto, setAbierto] = useState(false);
+  const texto = busqueda ?? nombreDe(valor);
+  const setTexto = (t: string) => setBusqueda(t);
+  const n = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const sugerencias = (texto.trim() ? opciones.filter((o) => n(o.nombre).includes(n(texto))) : opciones).slice(0, 12);
+  return (
+    <label className="dcv-edit-label">
+      {etiqueta}
+      <div className="dcv-buscador">
+        <input
+          type="text"
+          className="form-control"
+          placeholder="Buscar…"
+          value={texto}
+          onChange={(e) => { setTexto(e.target.value); setAbierto(true); }}
+          onFocus={() => setAbierto(true)}
+          onBlur={() => window.setTimeout(() => { setAbierto(false); setBusqueda(null); }, 150)}
+        />
+        {texto && <button type="button" className="dcv-limpiar" onMouseDown={(e) => { e.preventDefault(); setBusqueda(null); onElegir(''); }}>✕</button>}
+        {abierto && sugerencias.length > 0 && (
+          <div className="dcv-sugerencias">
+            {sugerencias.map((o) => (
+              <button key={o.id} type="button" className="dcv-sugerencia" onMouseDown={(e) => { e.preventDefault(); onElegir(o.id); setBusqueda(null); setAbierto(false); }}>
+                {o.nombre}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </label>
+  );
+};
 
 // ✅ V00207: normalizador para detectar textos como "No identificado"
 const norm2 = (t: string): string => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -56,6 +101,8 @@ interface FilaDetalle {
   entidad: string;      // cliente o proveedor según `tipo`
   tarifa: string;       // descripción de la tarifa de referencia
   tarifaId: string;     // ✅ V00207: id de la tarifa (para corregir No identificados)
+  origen: string;       // ✅ V00231: municipios del detalle
+  destino: string;
   costo: number | null;
   status: string; // ✅ V00199: status propio del detalle
   // ✅ V00197: para las pestañas (clientes)
@@ -84,6 +131,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ V00207: selección múltiple para borrado masivo (solo clientes)
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [borrandoSel, setBorrandoSel] = useState(false);
+  // ✅ V00231: alta de convenios desde este módulo.
+  const [modalAgregar, setModalAgregar] = useState(false);
+  const [guardandoAlta, setGuardandoAlta] = useState(false);
+  const [tarifariosAlta, setTarifariosAlta] = useState<{ id: string; etiqueta: string; entidad: string; convenioId: string; moneda: string }[]>([]);
+  const [tarifasAlta, setTarifasAlta] = useState<{ id: string; nombre: string }[]>([]);
+  const [municipiosAlta, setMunicipiosAlta] = useState<{ id: string; nombre: string }[]>([]);
+  const [alta, setAlta] = useState({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: 'Dólares', status: 'Aprobado', costo: '' });
+
   // ✅ V00217: buscador por cliente/proveedor (además del de texto)
   const [filtroEntidad, setFiltroEntidad] = useState('');
   // ✅ V00220: si se llegó aquí desde una referencia clicable, el buscador
@@ -173,6 +228,92 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       alert(`${ok} de ${ids.length} convenio(s) enviados a la Papelera. ✅`);
     } finally {
       setBorrandoSel(false);
+    }
+  };
+
+  // ✅ V00231: catálogos del alta (tarifarios, tarifas y municipios).
+  const abrirAlta = async () => {
+    setModalAgregar(true);
+    try {
+      const [snapTar, snapRef, snapMun] = await Promise.all([
+        getDocs(collection(db, esClientes ? 'tarifario_clientes' : 'tarifario_proveedores')),
+        getDocs(collection(db, 'catalogo_tarifas_referencia')),
+        getDocs(collection(db, 'catalogo_municipios')),
+      ]);
+      setTarifariosAlta(
+        snapTar.docs
+          .map((d) => {
+            const t = d.data() as Record<string, unknown>;
+            const cons = String(t.consecutivo || d.id);
+            const ent = String((esClientes ? t.clienteNombre : t.proveedorNombre) || '');
+            return { id: d.id, etiqueta: `${cons} - ${ent}`, entidad: ent, convenioId: String(t.convenioId || ''), moneda: String(t.moneda || '') };
+          })
+          .filter((t) => t.entidad)
+          .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es', { sensitivity: 'base' }))
+      );
+      setTarifasAlta(
+        snapRef.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).descripcion || '') }))
+          .filter((t) => t.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
+      );
+      setMunicipiosAlta(
+        snapMun.docs.map((d) => ({ id: d.id, nombre: String((d.data() as Record<string, unknown>).municipio || '') }))
+          .filter((m) => m.nombre).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }))
+      );
+    } catch (e) {
+      console.error('No se pudieron cargar los catálogos del alta:', e);
+    }
+  };
+
+  /** ✅ V00231: reglas de ruta según el tipo de servicio de la tarifa.
+   *  Cruce de Importación → Laredo a Nuevo Laredo. Cruce de Exportación → al
+   *  revés. En fletes se capturan a mano y son obligatorios. */
+  const rutaSugerida = (nombreTarifa: string): { origen: string; destino: string; obligatorio: boolean } => {
+    const t = norm2(nombreTarifa);
+    const idPorNombre = (n: string) => municipiosAlta.find((m) => norm2(m.nombre) === norm2(n))?.id || '';
+    if (t.includes('flete')) return { origen: '', destino: '', obligatorio: true };
+    if (t.includes('cruce') && t.includes('importacion')) return { origen: idPorNombre('Laredo'), destino: idPorNombre('Nuevo Laredo'), obligatorio: false };
+    if (t.includes('cruce') && t.includes('exportacion')) return { origen: idPorNombre('Nuevo Laredo'), destino: idPorNombre('Laredo'), obligatorio: false };
+    return { origen: '', destino: '', obligatorio: false };
+  };
+
+  const guardarAlta = async () => {
+    if (guardandoAlta) return;
+    const tarifario = tarifariosAlta.find((t) => t.id === alta.tarifarioId);
+    const tarifa = tarifasAlta.find((t) => t.id === alta.tarifaId);
+    if (!tarifario || !tarifa) { alert('Elige el cliente/proveedor y la tarifa.'); return; }
+    const regla = rutaSugerida(tarifa.nombre);
+    if (regla.obligatorio && (!alta.origen || !alta.destino)) {
+      alert('En los fletes el origen y el destino son obligatorios.');
+      return;
+    }
+    if (!aut.verificarAccion('crear')) return;
+    setGuardandoAlta(true);
+    try {
+      const [consec] = esClientes ? await reservarConsecutivosDetalle(1) : await reservarConsecutivosDetalleProveedor(1);
+      const nombreMun = (id: string) => municipiosAlta.find((m) => m.id === id)?.nombre || '';
+      await setDoc(doc(dbFs, COL_DETALLES, consec), {
+        convenioId: tarifario.convenioId,
+        tarifarioId: tarifario.id,
+        tipoConvenioId: tarifa.id,
+        tipoConvenioNombre: tarifa.nombre,
+        tarifa: parseFloat(alta.costo) || 0,
+        moneda: alta.moneda,
+        status: alta.status,
+        consecutivo: consec,
+        origen: alta.origen,
+        origenNombre: nombreMun(alta.origen),
+        destino: alta.destino,
+        destinoNombre: nombreMun(alta.destino),
+      });
+      setModalAgregar(false);
+      setAlta({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: 'Dólares', status: 'Aprobado', costo: '' });
+      await cargar(true);
+      alert(`Convenio ${consec} agregado. ✅`);
+    } catch (e) {
+      console.error('No se pudo agregar el convenio:', e);
+      alert('No se pudo agregar el convenio.');
+    } finally {
+      setGuardandoAlta(false);
     }
   };
 
@@ -372,6 +513,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           moneda: String(x.moneda || ''),
           tarifa: tarifas[idTarifa] || nombreGuardado || '—',
           tarifaId: idTarifa, // ✅ V00207
+          origen: String(x.origenNombre || ''),   // ✅ V00231
+          destino: String(x.destinoNombre || ''),
           costo: costoNum !== null && !isNaN(costoNum) ? costoNum : null,
           status: String(x.status || ''), // ✅ V00199
           // ✅ V00197: datos para las pestañas
@@ -511,6 +654,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           {guardando ? 'Guardando…' : `Guardar cambios (${Object.keys(cambios).length})`}
         </button>
         {/* ✅ V00207: borrado masivo de los seleccionados */}
+        {/* ✅ V00231: alta de convenios */}
+        <button className="btn dcv-btn-agregar" onClick={abrirAlta}>+ Agregar</button>
         {/* ✅ V00215: unir duplicados */}
         {seleccion.size >= 2 && (
           <button className="btn btn-outline dcv-btn-unir" disabled={uniendo} onClick={abrirModalUnir}>
@@ -557,6 +702,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <th>Consecutivo</th>{/* ✅ V00211: también proveedores */}
                 <th>{ETIQUETA_ENTIDAD}</th>
                 <th>Tarifa</th>
+                <th>Origen</th>{/* ✅ V00231 */}
+                <th>Destino</th>
                 <th>Cotizado En</th>
                 <th>Status</th>{/* ✅ V00199 */}
                 <th>Operaciones</th>{/* ✅ V00206: veces usado */}
@@ -592,6 +739,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                     {/* ✅ V00218: aviso de convenio repetido con la misma tarifa */}
                     {esDuplicado(f) && <span className="dcv-chip-dup" title="Este cliente/proveedor tiene otro convenio idéntico (misma tarifa y mismo monto) — conviene unirlos">⚠ duplicado</span>}
                   </td>
+                  <td>{f.origen || '—'}</td>{/* ✅ V00231 */}
+                  <td>{f.destino || '—'}</td>
                   <td onClick={(e) => e.stopPropagation()}>{(() => { const val = String(cambios[f.id]?.moneda ?? f.moneda ?? ''); const ops = monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']; const lista = val && !ops.includes(val) ? [...ops, val] : ops; return (
                     <select className="form-control dcv-select-moneda" value={val} onChange={(e) => marcarCambio(f.id, 'moneda', e.target.value)}>
                       <option value="">— Sin moneda —</option>
@@ -620,6 +769,73 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       )}
 
       <div className="dcv-x11">Mostrando {filasVisibles.length} de {(filas || []).length} detalle(s)</div>
+
+      {/* ✅ V00231: MODAL — agregar convenio */}
+      {modalAgregar && (
+        <div className="modal-overlay" onClick={() => !guardandoAlta && setModalAgregar(false)}>
+          <div className="dcv-modal dcv-modal-alta" onClick={(e) => e.stopPropagation()}>
+            <div className="dcv-modal-encabezado">
+              <div>
+                <h3 className="dcv-modal-titulo">Agregar convenio</h3>
+                <p className="dcv-modal-sub">El consecutivo CONV-### se asigna solo al guardar.</p>
+              </div>
+              <button type="button" className="dcv-cerrar" onClick={() => !guardandoAlta && setModalAgregar(false)}>✕</button>
+            </div>
+
+            <div className="dcv-alta-campos">
+              <BuscadorSimple
+                etiqueta={esClientes ? '# de tarifario - Cliente' : '# de tarifario - Proveedor'}
+                opciones={tarifariosAlta.map((t) => ({ id: t.id, nombre: t.etiqueta }))}
+                valor={alta.tarifarioId}
+                onElegir={(id) => {
+                  const t = tarifariosAlta.find((x) => x.id === id);
+                  setAlta((p) => ({ ...p, tarifarioId: id, moneda: t?.moneda === 'MXN' ? 'Pesos' : t?.moneda === 'USD' ? 'Dólares' : p.moneda }));
+                }}
+              />
+              <BuscadorSimple
+                etiqueta="Tarifa (catálogo)"
+                opciones={tarifasAlta}
+                valor={alta.tarifaId}
+                onElegir={(id) => {
+                  const t = tarifasAlta.find((x) => x.id === id);
+                  const r = rutaSugerida(t?.nombre || '');
+                  setAlta((p) => ({ ...p, tarifaId: id, origen: r.origen, destino: r.destino }));
+                }}
+              />
+              <BuscadorSimple
+                etiqueta={`Origen${rutaSugerida(tarifasAlta.find((t) => t.id === alta.tarifaId)?.nombre || '').obligatorio ? ' *' : ''}`}
+                opciones={municipiosAlta}
+                valor={alta.origen}
+                onElegir={(id) => setAlta((p) => ({ ...p, origen: id }))}
+              />
+              <BuscadorSimple
+                etiqueta={`Destino${rutaSugerida(tarifasAlta.find((t) => t.id === alta.tarifaId)?.nombre || '').obligatorio ? ' *' : ''}`}
+                opciones={municipiosAlta}
+                valor={alta.destino}
+                onElegir={(id) => setAlta((p) => ({ ...p, destino: id }))}
+              />
+              <label className="dcv-edit-label">Cotizado En
+                <select className="form-control" value={alta.moneda} onChange={(e) => setAlta((p) => ({ ...p, moneda: e.target.value }))}>
+                  {(monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']).map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </label>
+              <label className="dcv-edit-label">Status
+                <select className="form-control" value={alta.status} onChange={(e) => setAlta((p) => ({ ...p, status: e.target.value }))}>
+                  {ESTADOS_DETALLE.map((st) => <option key={st} value={st}>{st}</option>)}
+                </select>
+              </label>
+              <label className="dcv-edit-label">Costo de la Tarifa
+                <input type="number" step="0.01" min="0" className="form-control" value={alta.costo} onChange={(e) => setAlta((p) => ({ ...p, costo: e.target.value }))} />
+              </label>
+            </div>
+
+            <div className="dcv-modal-pie dcv-modal-pie-edit">
+              <button type="button" className="btn btn-outline" disabled={guardandoAlta} onClick={() => setModalAgregar(false)}>Cancelar</button>
+              <button type="button" className="btn dcv-btn-guardar-edit" disabled={guardandoAlta} onClick={guardarAlta}>{guardandoAlta ? 'Guardando…' : 'Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ✅ V00215: MODAL — unir duplicados eligiendo cuál se conserva */}
       {modalUnir && (
@@ -708,6 +924,22 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               </div>
               <button type="button" className="dcv-cerrar" onClick={() => setUsoAbierto(null)}>✕</button>
             </div>
+            {/* ✅ V00231: ficha completa del convenio */}
+            <div className="dcv-ficha">
+              <div><span className="dcv-x1lbl">Consecutivo</span><b className="dcv-x10">{usoAbierto.consecutivo || usoAbierto.id}</b></div>
+              <div><span className="dcv-x1lbl">{ETIQUETA_ENTIDAD}</span><b>{usoAbierto.entidad}</b></div>
+              <div><span className="dcv-x1lbl">Tarifa</span><b>{usoAbierto.tarifa}</b></div>
+              <div><span className="dcv-x1lbl">Origen</span><b>{usoAbierto.origen || '—'}</b></div>
+              <div><span className="dcv-x1lbl">Destino</span><b>{usoAbierto.destino || '—'}</b></div>
+              <div><span className="dcv-x1lbl">Costo</span><b>{usoAbierto.costo ?? '—'} {usoAbierto.moneda || ''}</b></div>
+              <div><span className="dcv-x1lbl">Status</span><b>{usoAbierto.status || 'Aprobado'}</b></div>
+              <div><span className="dcv-x1lbl">Convenio</span><b>{usoAbierto.numeroConvenio || '—'}</b></div>
+              <div>
+                <span className="dcv-x1lbl">Último uso en operaciones</span>
+                <b>{(usosOps[usoAbierto.id] || []).map((o) => o.fecha).filter(Boolean).sort().slice(-1)[0] || 'Sin uso'}</b>
+              </div>
+            </div>
+
             <p className="dcv-uso-total">
               {/* ✅ V00218: son las operaciones de ESTE convenio, todas del mismo cliente/proveedor */}
               <b>{usoAbierto.entidad}</b> · usado en <b>{(usosOps[usoAbierto.id] || []).length}</b> operación(es).

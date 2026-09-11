@@ -111,3 +111,31 @@
   border: 1px solid #d29922; color: #d29922; font-size: 0.66rem; font-weight: 700; white-space: nowrap;
 }
 .dcv-usos-monto { text-align: right; }
+
+/* ✅ V00231: alta de convenios, buscadores y ficha del detalle */
+.dcv-btn-agregar { background-color: #ea580c; color: #fff; border: none; font-weight: 600; }
+.dcv-btn-agregar:hover { background-color: #f97316; }
+.dcv-modal-alta { width: min(760px, 96vw); }
+.dcv-alta-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin: 10px 0 16px 0; }
+.dcv-buscador { position: relative; }
+.dcv-limpiar {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.78rem;
+}
+.dcv-limpiar:hover { color: #f85149; }
+.dcv-sugerencias {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+  max-height: 220px; overflow-y: auto;
+  background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.dcv-sugerencia {
+  display: block; width: 100%; padding: 8px 12px; text-align: left;
+  background: none; border: none; color: #c9d1d9; cursor: pointer; font-size: 0.82rem;
+}
+.dcv-sugerencia:hover { background-color: rgba(88, 166, 255, 0.12); color: #58a6ff; }
+.dcv-ficha { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 16px; margin-bottom: 12px; }
+.dcv-ficha > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dcv-x1lbl { color: #8b949e; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; }
+.dcv-ficha b { color: #e6edf3; font-size: 0.85rem; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .dcv-alta-campos, .dcv-ficha { grid-template-columns: 1fr; } }
