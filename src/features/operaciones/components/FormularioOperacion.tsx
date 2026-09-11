@@ -795,14 +795,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const consecutivoConvenio = (c: any) => String(c.consecutivo || (String(c.id || '').startsWith('CONV-') ? c.id : '') || '').trim();
   const etiquetaConvenioCliente = (c: any) => {
     const cons = consecutivoConvenio(c);
-    const mon = nombreMoneda(c.monedaMaestro);
-    return `${cons ? `${cons} - ` : ''}${c.descripcion || ''}${mon ? ` - ${mon}` : ''} - ${fmtMoney(c.tarifaMonto)}`;
+    return `${cons ? `${cons} - ` : ''}${c.descripcion || ''} - ${fmtMoney(c.tarifaMonto)}`;
   };
   // ✅ V00211: etiqueta = Consecutivo - Convenio - Moneda de cotización - Monto
   const etiquetaConvenioProveedor = (c: any) => {
     const cons = consecutivoConvenio(c);
-    const mon = nombreMoneda(c.monedaBase);
-    return `${cons ? `${cons} - ` : ''}${c.tipoConvenioNombre || ''}${mon ? ` - ${mon}` : ''} - ${fmtMoney(c.tarifaMonto)}`;
+    return `${cons ? `${cons} - ` : ''}${c.tipoConvenioNombre || ''} - ${fmtMoney(c.tarifaMonto)}`;
   };
 
   const [tipoCambioDia, setTipoCambioDia] = useState<number | null>(null);
@@ -1312,8 +1310,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       setSearchUnidadProveedor(initialData.unidadProveedorNombre || (uProv ? (uProv.numeroUnidad || uProv.numero_unidad || uProv.unidad || uProv.placas) : initialData.unidadProveedor || ''));
       const opProv = listaOpeProvLocal.find((e: any) => e.id === initialData.operadorProveedor);
       setSearchOperadorProveedor(initialData.operadorProveedorNombre || (opProv ? (opProv.nombre || opProv.nombres || opProv.nombreCompleto) : initialData.operadorProveedor || ''));
-      setSearchConvenio(initialData.convenioNombre || '');
-      setSearchConvenioProveedor(initialData.convenioProveedorNombre || '');
+      setSearchConvenio(''); // ✅ V00239: la arma el efecto desde la lista de convenios
+      setSearchConvenioProveedor(''); // ✅ V00239: se arma desde la lista de convenios
       setReferencia(initialData.ref || (initialData as any).referencia || '');
     }
   }, [initialData, empresas, remolques, unidades, listaEmpleadosLocal, listaUniProvLocal, listaOpeProvLocal]);
