@@ -634,11 +634,27 @@ const CatalogosDashboard = () => {
     return v;
   };
 
+  /** ✅ V00229: ¿se pudo resolver el valor a una ETIQUETA legible? Si el
+   *  catálogo de opciones aún no está cargado, el valor sigue siendo un id y
+   *  NO se debe decidir nada con él (ocultar campos ni rearmar descripciones). */
+  const valorResuelto = (f: CatalogField, valor: unknown): boolean => {
+    const v = String(valor ?? '').trim();
+    if (!v) return true;              // vacío: no hay nada que resolver
+    if (!f.dynamicOptions) return true; // texto libre: siempre es legible
+    const opts = opcionesDinamicas[f.dynamicOptions.collection] || [];
+    if (opts.length === 0) return false; // catálogo no cargado todavía
+    const vField = f.dynamicOptions.valueField || 'id';
+    return opts.some((o: Record<string, unknown>) => String(o[vField] || o.id) === v);
+  };
+
   // ✅ V00216: ¿el campo debe mostrarse? (visibleSi mira la ETIQUETA del campo
   //   fuente; p. ej. Origen/Destino solo en Fletes).
   const campoVisible = (f: CatalogField, datos: Record<string, unknown>): boolean => {
     if (!f.visibleSi || !catalogoSeleccionado) return true;
     const fuente = catalogoSeleccionado.fields.find((x) => x.name === f.visibleSi!.campo);
+    // ✅ V00229: si el catálogo fuente todavía no cargó, el valor es un id y
+    //   decidir con él ocultaría (y borraría) campos por error → se muestra.
+    if (fuente && !valorResuelto(fuente, datos[f.visibleSi.campo])) return true;
     const etiqueta = fuente ? valorLegible(fuente, datos[f.visibleSi.campo]) : String(datos[f.visibleSi.campo] ?? '');
     const t = etiqueta.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     return f.visibleSi.contiene.some((c) => t.includes(c.toLowerCase()));
@@ -805,9 +821,18 @@ const CatalogosDashboard = () => {
     //   legibles de sus campos fuente y pisan lo que hubiera en el estado.
     const datosAGuardar: Record<string, unknown> = { ...formData };
     catalogoSeleccionado.fields.forEach((f) => {
-      // ✅ V00216: un campo oculto no se guarda con basura de una captura previa.
-      if (!campoVisible(f, datosAGuardar)) { datosAGuardar[f.name] = ''; return; }
-      if (f.autoDe && f.autoDe.length > 0) datosAGuardar[f.name] = descripcionAutomatica(f, datosAGuardar);
+      // ✅ V00229: un campo oculto YA NO se vacía — se deja intacto. Antes se
+      //   escribía '' y, si el catálogo fuente no había cargado, se borraban
+      //   origen/destino de registros que sí debían tenerlos.
+      if (!campoVisible(f, datosAGuardar)) { delete datosAGuardar[f.name]; return; }
+      if (f.autoDe && f.autoDe.length > 0) {
+        // Solo se rearma si TODAS las fuentes resolvieron a texto legible.
+        const fuentesOk = (f.autoDe || []).every((n) => {
+          const src = catalogoSeleccionado.fields.find((x) => x.name === n);
+          return !src || valorResuelto(src, datosAGuardar[n]);
+        });
+        if (fuentesOk) datosAGuardar[f.name] = descripcionAutomatica(f, datosAGuardar);
+      }
     });
 
     const camposObligatoriosActuales = camposRequeridos[catalogoSeleccionado.id] || [];
