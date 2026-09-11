@@ -139,3 +139,11 @@
 .dcv-x1lbl { color: #8b949e; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; }
 .dcv-ficha b { color: #e6edf3; font-size: 0.85rem; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .dcv-alta-campos, .dcv-ficha { grid-template-columns: 1fr; } }
+
+/* ✅ V00232: referencias clicables en la ficha */
+.dcv-ref-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: #58a6ff; font-weight: 600; font-size: inherit; text-decoration: underline;
+}
+.dcv-ref-link:hover { color: #79c0ff; }
+.dcv-ficha-ancho { grid-column: 1 / -1; }

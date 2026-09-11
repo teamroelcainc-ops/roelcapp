@@ -322,7 +322,16 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         if (Date.now() - Number(ped.ts || 0) > 10 * 60000) { localStorage.removeItem('roelca_abrir_registro'); return; }
         localStorage.removeItem('roelca_abrir_registro');
         const snap = await getDocs(query(collection(db, 'operaciones'), where('__name__', '==', String(ped.docId)), limit(1)));
-        if (!snap.empty) setOperacionViendo({ id: snap.docs[0].id, ...(snap.docs[0].data() as any) });
+        if (!snap.empty) {
+          const op = { id: snap.docs[0].id, ...(snap.docs[0].data() as any) };
+          // ✅ V00232: 'editar' abre el formulario; por defecto, la ficha.
+          if (String(ped.vista || '') === 'editar') {
+            setOperacionEditando(op);
+            setEstadoFormulario('abierto');
+          } else {
+            setOperacionViendo(op);
+          }
+        }
       } catch { /* noop */ }
     })();
   }, []);
