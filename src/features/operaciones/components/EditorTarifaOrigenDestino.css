@@ -24,3 +24,22 @@
 .eto-guardar { background-color: #238636; color: #fff; border: none; font-weight: 600; }
 .eto-guardar:hover { background-color: #2ea043; }
 @media (max-width: 560px) { .eto-campos { grid-template-columns: 1fr; } }
+
+/* ✅ V00230: buscador de municipio */
+.eto-buscador { position: relative; }
+.eto-limpiar {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.8rem;
+}
+.eto-limpiar:hover { color: #f85149; }
+.eto-sugerencias {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 20;
+  max-height: 220px; overflow-y: auto;
+  background: #0d1117; border: 1px solid #30363d; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.eto-sugerencia {
+  display: block; width: 100%; padding: 8px 12px; text-align: left;
+  background: none; border: none; color: #c9d1d9; cursor: pointer; font-size: 0.82rem;
+}
+.eto-sugerencia:hover { background-color: rgba(88, 166, 255, 0.12); color: #58a6ff; }

@@ -6,8 +6,10 @@
 //   de Servicios Completados; el botón que lo abre depende del permiso
 //   "Editar Tarifa (Origen/Destino)" en Roles y Permisos.
 //
-//   Al guardar: escribe origen/destino en la tarifa del catálogo, rearma su
-//   descripción y propaga el nombre a los detalles de convenio que la usan.
+//   ✅ V00230: los municipios se eligen con BUSCADOR (no lista desplegable) y
+//   al guardar la nueva descripción se propaga a TODO: detalles de convenio
+//   (clientes y proveedores), líneas de los tarifarios y nombre guardado en
+//   las operaciones.
 // ---------------------------------------------------------------------------
 import { useEffect, useState } from 'react';
 import { collection, doc, getDoc, getDocs, query, updateDoc, where, writeBatch } from 'firebase/firestore';
@@ -81,12 +83,58 @@ export function EditorTarifaOrigenDestino({ refOperacion, detalleClienteId, deta
 
   const nombreMun = (id: string) => municipios.find((m) => m.id === id)?.nombre || '';
 
+  // ✅ V00230: buscador de municipio (en vez de lista desplegable).
+  const BuscadorMunicipio = ({ etiqueta, valor, onElegir }: { etiqueta: string; valor: string; onElegir: (id: string) => void }) => {
+    const [texto, setTexto] = useState(nombreMun(valor));
+    const [abierto, setAbierto] = useState(false);
+    useEffect(() => { setTexto(nombreMun(valor)); }, [valor]);
+    const norm = (t: string) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const sugerencias = texto.trim().length === 0
+      ? municipios.slice(0, 12)
+      : municipios.filter((m) => norm(m.nombre).includes(norm(texto))).slice(0, 12);
+    return (
+      <label className="eto-label">
+        {etiqueta}
+        <div className="eto-buscador">
+          <input
+            type="text"
+            className="form-control"
+            placeholder="Buscar municipio…"
+            value={texto}
+            onChange={(e) => { setTexto(e.target.value); setAbierto(true); }}
+            onFocus={() => setAbierto(true)}
+            onBlur={() => window.setTimeout(() => setAbierto(false), 150)}
+          />
+          {texto && (
+            <button type="button" className="eto-limpiar" title="Quitar" onMouseDown={(e) => { e.preventDefault(); setTexto(''); onElegir(''); }}>✕</button>
+          )}
+          {abierto && sugerencias.length > 0 && (
+            <div className="eto-sugerencias">
+              {sugerencias.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className="eto-sugerencia"
+                  onMouseDown={(e) => { e.preventDefault(); onElegir(m.id); setTexto(m.nombre); setAbierto(false); }}
+                >
+                  {m.nombre}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </label>
+    );
+  };
+
   const guardar = async () => {
     if (guardando) return;
     setGuardando(true);
     try {
       let actualizadas = 0;
       let propagados = 0;
+      let tarifariosTocados = 0;
+      let opsTocadas = 0;
       for (const lado of [cliente, proveedor]) {
         if (!lado?.tarifaId) continue;
         // Se conserva la descripción base y se le anexan los municipios elegidos
@@ -103,16 +151,51 @@ export function EditorTarifaOrigenDestino({ refOperacion, detalleClienteId, deta
         });
         actualizadas += 1;
 
+        // 1) Detalles de convenio (clientes y proveedores) — y se recuerdan
+        //    sus ids para actualizar después el nombre en las operaciones.
+        const detallesTocados: string[] = [];
         for (const col of ['convenios_clientes_detalles', 'convenios_proveedores_detalles']) {
           const snap = await getDocs(query(collection(db, col), where('tipoConvenioId', '==', lado.tarifaId)));
           if (snap.empty) continue;
           const lote = writeBatch(db);
-          snap.docs.forEach((d) => { lote.update(d.ref, { tipoConvenioNombre: nuevaDesc }); propagados += 1; });
+          snap.docs.forEach((d) => { lote.update(d.ref, { tipoConvenioNombre: nuevaDesc }); detallesTocados.push(d.id); propagados += 1; });
           await lote.commit();
+        }
+
+        // 2) ✅ V00230: líneas dentro de los TARIFARIOS que usan esta tarifa.
+        for (const col of ['tarifario_clientes', 'tarifario_proveedores']) {
+          const snapT = await getDocs(collection(db, col));
+          for (const d of snapT.docs) {
+            const x = d.data() as Record<string, unknown>;
+            const lineas = Array.isArray(x.tarifas) ? (x.tarifas as Record<string, unknown>[]) : [];
+            let cambio = false;
+            const nuevas = lineas.map((l) => {
+              if (String(l.tarifaReferenciaId || '') !== lado.tarifaId) return l;
+              if (String(l.descripcion || '') === nuevaDesc) return l;
+              cambio = true;
+              return { ...l, descripcion: nuevaDesc };
+            });
+            if (cambio) { await updateDoc(d.ref, { tarifas: nuevas }); tarifariosTocados += 1; }
+          }
+        }
+
+        // 3) ✅ V00230: nombre del convenio guardado en las OPERACIONES.
+        for (let i = 0; i < detallesTocados.length; i += 10) {
+          const trozo = detallesTocados.slice(i, i + 10);
+          for (const campo of ['convenio', 'convenioProveedor']) {
+            const snapOps = await getDocs(query(collection(db, 'operaciones'), where(campo, 'in', trozo)));
+            if (snapOps.empty) continue;
+            const lote = writeBatch(db);
+            snapOps.docs.forEach((d) => {
+              lote.update(d.ref, campo === 'convenio' ? { convenioNombre: nuevaDesc } : { convenioProveedorNombre: nuevaDesc });
+              opsTocadas += 1;
+            });
+            await lote.commit();
+          }
         }
       }
       await registrarLog('Operaciones', 'Edición', `Asignó origen/destino a ${actualizadas} tarifa(s) desde la operación ${refOperacion}.`);
-      alert(`Tarifas actualizadas. ✅\n\n· Tarifas del catálogo: ${actualizadas}\n· Detalles de convenio actualizados: ${propagados}\n\nPara refrescar tarifarios y operaciones, corre "⟳ Rearmar descripciones" en Catálogos → Tarifas de Referencia.`);
+      alert(`Tarifas actualizadas y propagadas. ✅\n\n· Tarifas del catálogo: ${actualizadas}\n· Detalles de convenio: ${propagados}\n· Tarifarios: ${tarifariosTocados}\n· Operaciones: ${opsTocadas}`);
       onCerrar();
     } catch (e) {
       console.error('No se pudo guardar el origen/destino de las tarifas:', e);
@@ -131,20 +214,8 @@ export function EditorTarifaOrigenDestino({ refOperacion, detalleClienteId, deta
         <>
           <div className="eto-nombre">{lado.descripcion || '—'}</div>
           <div className="eto-campos">
-            <label className="eto-label">
-              Origen
-              <select className="form-control" value={lado.origen} onChange={(e) => set({ ...lado, origen: e.target.value })}>
-                <option value="">— Sin origen —</option>
-                {municipios.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-              </select>
-            </label>
-            <label className="eto-label">
-              Destino
-              <select className="form-control" value={lado.destino} onChange={(e) => set({ ...lado, destino: e.target.value })}>
-                <option value="">— Sin destino —</option>
-                {municipios.map((m) => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-              </select>
-            </label>
+            <BuscadorMunicipio etiqueta="Origen" valor={lado.origen} onElegir={(id) => set({ ...lado, origen: id })} />
+            <BuscadorMunicipio etiqueta="Destino" valor={lado.destino} onElegir={(id) => set({ ...lado, destino: id })} />
           </div>
         </>
       )}
