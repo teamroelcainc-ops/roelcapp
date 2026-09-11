@@ -311,6 +311,47 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
   const [operacionViendo, setOperacionViendo] = useState<any | null>(null);
 
+  // ✅ V00225: si el catálogo pidió abrir una operación, se abre su FICHA aquí.
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = localStorage.getItem('roelca_abrir_registro');
+        if (!raw) return;
+        const ped = JSON.parse(raw);
+        if (ped?.modulo !== 'serviciosCompletados' || !ped?.docId) return;
+        if (Date.now() - Number(ped.ts || 0) > 10 * 60000) { localStorage.removeItem('roelca_abrir_registro'); return; }
+        localStorage.removeItem('roelca_abrir_registro');
+        const snap = await getDocs(query(collection(db, 'operaciones'), where('__name__', '==', String(ped.docId)), limit(1)));
+        if (!snap.empty) setOperacionViendo({ id: snap.docs[0].id, ...(snap.docs[0].data() as any) });
+      } catch { /* noop */ }
+    })();
+  }, []);
+
+  // ✅ V00225: municipios (catálogo de Direcciones) para el detalle.
+  const [mapaMunicipios, setMapaMunicipios] = useState<Record<string, string>>({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const [snapDir, snapEmp] = await Promise.all([
+          getDocs(collection(db, 'direcciones')),
+          getDocs(collection(db, 'empresas')),
+        ]);
+        const munDeDireccion: Record<string, string> = {};
+        snapDir.docs.forEach((d) => {
+          const x = d.data() as any;
+          munDeDireccion[d.id] = String(x.municipioNombre || x.municipio || x.ciudad || '');
+        });
+        const porEmpresa: Record<string, string> = {};
+        snapEmp.docs.forEach((d) => {
+          const x = d.data() as any;
+          const m = munDeDireccion[String(x.direccionId || '')] || '';
+          if (m) porEmpresa[d.id] = m;
+        });
+        setMapaMunicipios(porEmpresa);
+      } catch { /* noop */ }
+    })();
+  }, []);
+
   // ✅ V00223: editor de Origen/Destino de las tarifas de referencia usadas por
   //   una operación de FLETE (tarifa del cliente y del proveedor).
   const [editorTarifa, setEditorTarifa] = useState<any | null>(null);
@@ -2765,10 +2806,13 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                   <div>
                     <span className="sc-x141">Origen</span>
                     <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre)}</span>
+                    {/* ✅ V00225: municipio del catálogo, igual que en el formulario */}
+                    <span className="sc-municipio">Municipio: {mapaMunicipios[String(operacionViendo.origen || '')] || '—'}</span>
                   </div>
                   <div>
                     <span className="sc-x141">Destino</span>
                     <span className="sc-x136">{mostrarDatoMapeado(operacionViendo.destino, 'empresas', 'nombre', operacionViendo.destinoNombre)}</span>
+                    <span className="sc-municipio">Municipio: {mapaMunicipios[String(operacionViendo.destino || '')] || '—'}</span>
                   </div>
                   <div className="sc-x142">
                     <span className="sc-x140">Observaciones Ejecutivo</span>

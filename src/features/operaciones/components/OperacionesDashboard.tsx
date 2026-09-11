@@ -198,9 +198,16 @@ const OperacionesDashboard = () => {
         if (!snap.empty) {
           const op = { id: snap.docs[0].id, ...(snap.docs[0].data() as any) };
           await cargarCatalogosSiEsNecesario();
-          setOperacionEditando(op);
-          setOperacionViendo(null);
-          setEstadoFormulario('abierto');
+          // ✅ V00225: con vista 'detalle' se abre la FICHA (no el formulario).
+          if (String(ped.vista || '') === 'detalle') {
+            setOperacionViendo(op);
+            setOperacionEditando(null);
+            setEstadoFormulario('cerrado');
+          } else {
+            setOperacionEditando(op);
+            setOperacionViendo(null);
+            setEstadoFormulario('abierto');
+          }
         }
       } catch { /* noop */ }
     })();

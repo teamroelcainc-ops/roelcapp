@@ -154,7 +154,9 @@ const CatalogosDashboard = () => {
   // ✅ V00220: detalle COMPLETO de dónde se usa una tarifa — tarifarios,
   //   convenios (con su cliente/proveedor y monto) y operaciones (con su
   //   cliente y fecha). Cada referencia es clicable y lleva a su módulo.
-  type UsoFila = { ref: string; entidad: string; extra: string; modulo: string };
+  // ✅ V00222: cada renglón guarda dónde vive el registro para poder abrir su
+  //   detalle ENCIMA del modal actual (sin salir del catálogo).
+  type UsoFila = { ref: string; entidad: string; extra: string; modulo: string; coleccion: string; docId: string; tipo: 'tarifario' | 'convenio' | 'operacion' };
   const [usoDetallado, setUsoDetallado] = useState<{ tarifarios: UsoFila[]; convenios: UsoFila[]; operaciones: UsoFila[] } | null>(null);
   useEffect(() => {
     // ✅ V00221: se carga tanto para el modal de USO como para el de DETALLES
@@ -191,6 +193,9 @@ const CatalogosDashboard = () => {
               entidad: nombre || '—',
               extra: `${Number(x.tarifa) || 0} ${String(x.moneda || '')}`.trim(),
               modulo,
+              coleccion: modulo === 'detallesConvenioClientes' ? 'convenios_clientes_detalles' : 'convenios_proveedores_detalles',
+              docId: d.id,
+              tipo: 'convenio',
             });
           });
         };
@@ -210,6 +215,9 @@ const CatalogosDashboard = () => {
               entidad: String(t[campoNombre] || '—'),
               extra: `${usadas.length} línea(s) · ${String(t.status || '')}`,
               modulo,
+              coleccion: modulo === 'tarifarioClientes' ? 'tarifario_clientes' : 'tarifario_proveedores',
+              docId: d.id,
+              tipo: 'tarifario',
             });
           });
         };
@@ -222,11 +230,18 @@ const CatalogosDashboard = () => {
           const snap = await getDocs(query(collection(db, 'operaciones'), where('convenio', 'in', detIds.slice(i, i + 10))));
           snap.docs.forEach((d) => {
             const o = d.data() as Record<string, unknown>;
+            const completada = String(o.status || o.estatus || '').toLowerCase().includes('completad');
             operaciones.push({
               ref: String(o.ref || d.id.slice(0, 8)),
               entidad: String(o.clientePagaNombre || o.clienteNombre || dueñoDetalle[String(o.convenio || '')] || '—'),
               extra: String(o.fechaServicio || ''),
-              modulo: 'operacionesActivas',
+              // ✅ V00225: clave REAL del módulo (antes 'operacionesActivas' no
+              //   existía y la app quedaba en blanco) y el módulo correcto
+              //   según si la operación ya está completada.
+              modulo: completada ? 'serviciosCompletados' : 'operaciones',
+              coleccion: 'operaciones',
+              docId: d.id,
+              tipo: 'operacion',
             });
           });
         }
@@ -242,11 +257,32 @@ const CatalogosDashboard = () => {
 
   // ✅ V00220: al hacer clic en una referencia, se navega a su módulo con esa
   //   referencia ya cargada en el buscador del destino.
-  const irARegistro = (modulo: string, ref: string) => {
-    try { localStorage.setItem('roelca_buscar', JSON.stringify({ modulo, texto: ref, ts: Date.now() })); } catch { /* noop */ }
+  // ✅ V00222: abre el detalle del tarifario / convenio / operación POR DELANTE
+  //   del modal actual, para rectificar información sin perder el contexto.
+  const [refAbierta, setRefAbierta] = useState<{ fila: UsoFila; datos: Record<string, unknown> | null } | null>(null);
+  const abrirDetalleRef = async (fila: UsoFila) => {
+    setRefAbierta({ fila, datos: null });
+    try {
+      const snap = await getDoc(doc(db, fila.coleccion, fila.docId));
+      setRefAbierta({ fila, datos: snap.exists() ? (snap.data() as Record<string, unknown>) : {} });
+    } catch (e) {
+      console.error('No se pudo abrir el detalle de la referencia:', e);
+      setRefAbierta({ fila, datos: {} });
+    }
+  };
+
+  const irARegistro = (modulo: string, ref: string, docId?: string) => {
+    try {
+      localStorage.setItem('roelca_buscar', JSON.stringify({ modulo, texto: ref, ts: Date.now() }));
+      // ✅ V00225: en operaciones se pide abrir la FICHA de detalle completa.
+      if (docId && (modulo === 'operaciones' || modulo === 'serviciosCompletados')) {
+        localStorage.setItem('roelca_abrir_registro', JSON.stringify({ modulo, coleccion: 'operaciones', docId, vista: 'detalle', ts: Date.now() }));
+      }
+    } catch { /* noop */ }
     window.dispatchEvent(new CustomEvent('roelca:navegar', { detail: { modulo } }));
     setModalUsoTarifa(null);
     setViendoDetalles(false);
+    setRefAbierta(null);
   };
 
   // ✅ V00221: secciones "dónde se usa" reutilizables (modal de uso y de detalles).
@@ -265,7 +301,7 @@ const CatalogosDashboard = () => {
           <div className="cd-uso-titulo" style={{ color: sec.color }}>{sec.titulo}</div>
           <div className="cd-uso-lista">
             {sec.filas.map((f, i) => (
-              <button key={`${f.ref}-${i}`} type="button" className="cd-uso-fila" title={`Ir a ${f.ref}`} onClick={() => irARegistro(f.modulo, f.ref)}>
+              <button key={`${f.ref}-${i}`} type="button" className="cd-uso-fila" title={`Ver el detalle de ${f.ref}`} onClick={() => abrirDetalleRef(f)}>
                 <span className="cd-uso-ref">{f.ref}</span>
                 <span className="cd-uso-ent">{f.entidad}</span>
                 <span className="cd-uso-extra">{f.extra}</span>
@@ -2040,6 +2076,82 @@ const CatalogosDashboard = () => {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '14px' }}>
               <button type="button" className="btn btn-outline" style={{ padding: '8px 16px' }} onClick={() => setModalUsoTarifa(null)}>Cerrar</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ V00222: DETALLE DE LA REFERENCIA, por delante del modal actual */}
+      {refAbierta && (
+        <div className="cd-ref-overlay" onClick={() => setRefAbierta(null)}>
+          <div className="cd-ref-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="cd-ref-head">
+              <div>
+                <h3 className="cd-ref-tit">
+                  {refAbierta.fila.tipo === 'tarifario' ? 'Tarifario' : refAbierta.fila.tipo === 'convenio' ? 'Detalle del Convenio' : 'Operación'}{' '}
+                  <span className="cd-uso-ref">{refAbierta.fila.ref}</span>
+                </h3>
+                <p className="cd-ref-sub">{refAbierta.fila.entidad}</p>
+              </div>
+              <button type="button" className="cd-ref-x" onClick={() => setRefAbierta(null)}>✕</button>
+            </div>
+
+            {refAbierta.datos === null ? (
+              <div className="cd-uso-vacio">Cargando…</div>
+            ) : (() => {
+              const d = refAbierta.datos as Record<string, unknown>;
+              const campos: [string, string][] =
+                refAbierta.fila.tipo === 'tarifario' ? [
+                  ['Consecutivo', String(d.consecutivo || refAbierta.fila.ref)],
+                  ['Emisión', String(d.fecha || '—')],
+                  ['Vencimiento', String(d.fechaVencimiento || `${String(d.fecha || '').slice(0, 4) || new Date().getFullYear()}-12-31`)],
+                  ['Moneda', String(d.moneda || '—')],
+                  ['Crédito', Number(d.creditoDias) > 0 ? `${d.creditoDias} día(s)` : '—'],
+                  ['Status', String(d.status || '—')],
+                  ['Creado por', String(d.creadoPor || '—')],
+                  ['Aprobado por', String(d.aprobadoPor || '—')],
+                ] : refAbierta.fila.tipo === 'convenio' ? [
+                  ['Consecutivo', String(d.consecutivo || refAbierta.fila.ref)],
+                  ['Tarifa', String(d.tipoConvenioNombre || '—')],
+                  ['Costo', `${Number(d.tarifa) || 0}`],
+                  ['Cotizado en', String(d.moneda || '—')],
+                  ['Status', String(d.status || 'Aprobado')],
+                  ['Convenio', String(d.convenioId || '—')],
+                  ['Tarifario', String(d.tarifarioId || '—')],
+                ] : [
+                  ['Referencia', String(d.ref || refAbierta.fila.ref)],
+                  ['Fecha de servicio', String(d.fechaServicio || '—')],
+                  ['Status', String(d.status || d.estatus || '—')],
+                  ['Tipo', String(d.tipoOperacionNombre || d.trafico || '—')],
+                  ['Convenio (tarifa)', String(d.convenioNombre || '—')],
+                  ['Monto cliente', String(d.montoConvenioCliente ?? '—')],
+                  ['Proveedor', String(d.proveedorUnidadNombre || '—')],
+                  ['Monto proveedor', String(d.totalAPagarProv ?? '—')],
+                ];
+              const lineas: Record<string, unknown>[] = refAbierta.fila.tipo === 'tarifario' && Array.isArray(d.tarifas) ? (d.tarifas as Record<string, unknown>[]) : [];
+              return (<>
+                <div className="cd-ref-grid">
+                  {campos.map(([k, v]) => (
+                    <div key={k}><span className="cd-x44">{k}</span><span className="cd-x45">{v || '—'}</span></div>
+                  ))}
+                </div>
+                {lineas.length > 0 && (
+                  <div className="cd-ref-lineas">
+                    <div className="cd-uso-titulo" style={{ color: '#58a6ff' }}>TARIFAS DE ESTE TARIFARIO ({lineas.length})</div>
+                    {lineas.map((l, i) => (
+                      <div key={i} className="cd-ref-linea">
+                        <span className="cd-uso-ref">{String(l.consecutivo || '—')}</span>
+                        <span className="cd-uso-ent">{String(l.descripcion || '—')}</span>
+                        <span className="cd-uso-extra">{Number(l.tarifa) || 0} {String(l.cotizadoEn || '')} · {String(l.status || '')}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="cd-ref-pie">
+                  <button type="button" className="btn btn-outline" onClick={() => irARegistro(refAbierta.fila.modulo, refAbierta.fila.ref, refAbierta.fila.docId)}>Abrir en su módulo ↗</button>
+                  <button type="button" className="btn btn-outline" onClick={() => setRefAbierta(null)}>Cerrar</button>
+                </div>
+              </>);
+            })()}
           </div>
         </div>
       )}

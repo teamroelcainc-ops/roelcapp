@@ -332,3 +332,6 @@
 @media (min-width: 1280px) {
   .sc-x108 .detail-grid-3 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+/* ✅ V00225: municipio bajo origen/destino en el detalle */
+.sc-municipio { display: block; margin-top: 3px; color: #8b949e; font-size: 0.76rem; }
