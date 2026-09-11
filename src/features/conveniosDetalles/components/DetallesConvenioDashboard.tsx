@@ -137,7 +137,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [tarifariosAlta, setTarifariosAlta] = useState<{ id: string; etiqueta: string; entidad: string; convenioId: string; moneda: string }[]>([]);
   const [tarifasAlta, setTarifasAlta] = useState<{ id: string; nombre: string }[]>([]);
   const [municipiosAlta, setMunicipiosAlta] = useState<{ id: string; nombre: string }[]>([]);
-  const [alta, setAlta] = useState({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: 'Dólares', status: 'Aprobado', costo: '' });
+  const [alta, setAlta] = useState({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: '', status: 'Aprobado', costo: '' });
 
   // ✅ V00217: buscador por cliente/proveedor (además del de texto)
   const [filtroEntidad, setFiltroEntidad] = useState('');
@@ -300,16 +300,33 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       alert('En los fletes el origen y el destino son obligatorios.');
       return;
     }
+    // ✅ V00233: si el cliente no cotiza en dólares, la moneda se elige a mano.
+    if (!alta.moneda) { alert('Selecciona la moneda de cotización.'); return; }
     if (!aut.verificarAccion('crear')) return;
     setGuardandoAlta(true);
     try {
       const [consec] = esClientes ? await reservarConsecutivosDetalle(1) : await reservarConsecutivosDetalleProveedor(1);
       const nombreMun = (id: string) => municipiosAlta.find((m) => m.id === id)?.nombre || '';
+
+      // ✅ V00233: el origen/destino elegidos se guardan TAMBIÉN en la tarifa
+      //   del catálogo y su descripción se rearma con esos municipios.
+      let nombreTarifa = tarifa.nombre;
+      if (alta.origen || alta.destino) {
+        const nombresMun = new Set(municipiosAlta.map((m) => m.nombre));
+        const base = String(tarifa.nombre).split(' - ').map((x) => x.trim()).filter((x) => x && !nombresMun.has(x));
+        nombreTarifa = [...base, nombreMun(alta.origen), nombreMun(alta.destino)].filter(Boolean).join(' - ');
+        try {
+          await updateDoc(doc(dbFs, 'catalogo_tarifas_referencia', tarifa.id), {
+            origen: alta.origen, destino: alta.destino, descripcion: nombreTarifa,
+          });
+          setTarifasAlta((prev) => prev.map((t) => t.id === tarifa.id ? { ...t, nombre: nombreTarifa } : t));
+        } catch (e) { console.error('No se pudo actualizar la tarifa del catálogo:', e); }
+      }
       await setDoc(doc(dbFs, COL_DETALLES, consec), {
         convenioId: tarifario.convenioId,
         tarifarioId: tarifario.id,
         tipoConvenioId: tarifa.id,
-        tipoConvenioNombre: tarifa.nombre,
+        tipoConvenioNombre: nombreTarifa,
         tarifa: parseFloat(alta.costo) || 0,
         moneda: alta.moneda,
         status: alta.status,
@@ -320,7 +337,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         destinoNombre: nombreMun(alta.destino),
       });
       setModalAgregar(false);
-      setAlta({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: 'Dólares', status: 'Aprobado', costo: '' });
+      setAlta({ tarifarioId: '', tarifaId: '', origen: '', destino: '', moneda: '', status: 'Aprobado', costo: '' });
       await cargar(true);
       alert(`Convenio ${consec} agregado. ✅`);
     } catch (e) {
@@ -828,6 +845,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               <button type="button" className="dcv-cerrar" onClick={() => !guardandoAlta && setModalAgregar(false)}>✕</button>
             </div>
 
+            {/* ✅ V00233: orden pedido — tarifario, tarifa, origen, destino,
+                costo, cotizado en, status */}
             <div className="dcv-alta-campos">
               <BuscadorSimple
                 etiqueta={esClientes ? '# de tarifario - Cliente' : '# de tarifario - Proveedor'}
@@ -835,7 +854,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 valor={alta.tarifarioId}
                 onElegir={(id) => {
                   const t = tarifariosAlta.find((x) => x.id === id);
-                  setAlta((p) => ({ ...p, tarifarioId: id, moneda: t?.moneda === 'MXN' ? 'Pesos' : t?.moneda === 'USD' ? 'Dólares' : p.moneda }));
+                  // Dólares se propone solo; en pesos hay que elegir la moneda.
+                  const esUSD = String(t?.moneda || '').toUpperCase().includes('USD') || String(t?.moneda || '').toLowerCase().includes('dolar');
+                  setAlta((p) => ({ ...p, tarifarioId: id, moneda: esUSD ? 'Dólares' : '' }));
                 }}
               />
               <BuscadorSimple
@@ -860,8 +881,18 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 valor={alta.destino}
                 onElegir={(id) => setAlta((p) => ({ ...p, destino: id }))}
               />
+              <label className="dcv-edit-label">Costo de la Tarifa
+                {/* ✅ V00233: entero y de 25 en 25 */}
+                <input
+                  type="number" step={25} min={0}
+                  className="form-control"
+                  value={alta.costo}
+                  onChange={(e) => setAlta((p) => ({ ...p, costo: e.target.value.replace(/[^0-9]/g, '') }))}
+                />
+              </label>
               <label className="dcv-edit-label">Cotizado En
                 <select className="form-control" value={alta.moneda} onChange={(e) => setAlta((p) => ({ ...p, moneda: e.target.value }))}>
+                  <option value="">Selecciona una moneda</option>
                   {(monedasCat.length > 0 ? monedasCat : ['Pesos', 'Dólares']).map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </label>
@@ -869,9 +900,6 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <select className="form-control" value={alta.status} onChange={(e) => setAlta((p) => ({ ...p, status: e.target.value }))}>
                   {ESTADOS_DETALLE.map((st) => <option key={st} value={st}>{st}</option>)}
                 </select>
-              </label>
-              <label className="dcv-edit-label">Costo de la Tarifa
-                <input type="number" step="0.01" min="0" className="form-control" value={alta.costo} onChange={(e) => setAlta((p) => ({ ...p, costo: e.target.value }))} />
               </label>
             </div>
 
