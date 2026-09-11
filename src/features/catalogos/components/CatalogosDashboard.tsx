@@ -1,5 +1,5 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react'; // ✅ V00228: useRef
 import { createPortal } from 'react-dom'; // ✅ V00226
 import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer } from 'firebase/firestore';
 import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro, pedirNotaEliminacion } from '../../../config/firebase';
@@ -17,6 +17,19 @@ const etiquetaDeOpcion = (opt: any, labelField: string, valueField: string): str
 
 // 🔥 CACHÉ GLOBAL DE MÓDULO PARA ELIMINAR LECTURAS EXCESIVAS EN FIREBASE 🔥
 const CACHE_OPCIONES_DINAMICAS: Record<string, any[]> = {};
+
+// ✅ V00228: el caché de opciones dinámicas vivía toda la sesión, así que al
+//   renombrar un municipio (u otro catálogo referenciado) los selectores
+//   seguían mostrando el valor viejo. Se invalida al guardar/eliminar.
+const invalidarCacheOpciones = (coleccion?: string): void => {
+  if (!coleccion) {
+    Object.keys(CACHE_OPCIONES_DINAMICAS).forEach((k) => { delete CACHE_OPCIONES_DINAMICAS[k]; });
+    return;
+  }
+  [coleccion, `catalogo_${coleccion}`, coleccion.replace(/^catalogo_/, '')].forEach((k) => {
+    if (k in CACHE_OPCIONES_DINAMICAS) delete CACHE_OPCIONES_DINAMICAS[k];
+  });
+};
 const CACHE_NOMBRES_COLECCIONES: Record<string, string> = {};
 
 // ✅ NUEVO (V00106) — PAPELERA DE CATÁLOGOS: colección donde se guarda una
@@ -148,6 +161,9 @@ const CatalogosDashboard = () => {
 
   // ✅ NUEVO (V00116): referencias de operaciones del modal "Dónde se usa" —
   //   se descargan SOLO al abrirlo y SOLO las de esa tarifa.
+  // ✅ V00228: permite recargar las opciones dinámicas tras guardar.
+  const recargarOpcionesRef = useRef<(() => Promise<void>) | null>(null);
+
   // ✅ V00221: declarados aquí porque el efecto de uso los necesita.
   const [registroActual, setRegistroActual] = useState<any | null>(null);
   const [viendoDetalles, setViendoDetalles] = useState<boolean>(false);
@@ -512,6 +528,7 @@ const CatalogosDashboard = () => {
       }
       setOpcionesDinamicas(nuevasOpciones);
     };
+    recargarOpcionesRef.current = async () => { await cargarOpcionesDinamicas(); };
 
     cargarOpcionesDinamicas();
     setBusqueda(''); 
@@ -877,6 +894,10 @@ const CatalogosDashboard = () => {
         await registrarLog('Catálogos', 'Creación', `Agregó un nuevo registro al catálogo de ${catalogoSeleccionado.titulo}`);
       }
 
+      // ✅ V00228: el catálogo cambió → fuera el caché de sus opciones para que
+      //   los selectores de otros catálogos muestren el texto nuevo.
+      invalidarCacheOpciones(`catalogo_${catalogoSeleccionado.id}`);
+      try { await recargarOpcionesRef.current?.(); } catch { /* noop */ }
       setModalEstado('cerrado');
       setRegistroActual(null); 
     } catch (error) { alert('Error en Firebase al guardar.'); }
@@ -1048,6 +1069,9 @@ const CatalogosDashboard = () => {
       );
       setSeleccionadosIds([]);
       setModalUnir(false);
+      // ✅ V00228: el catálogo cambió → refrescar opciones dependientes.
+      invalidarCacheOpciones(`catalogo_${catalogoSeleccionado?.id || ''}`);
+      try { await recargarOpcionesRef.current?.(); } catch { /* noop */ }
     } catch (e: any) {
       console.error('Error al unir registros de catálogo:', e);
       alert('La unión no se completó del todo.\n\nDetalle técnico: ' + (e?.message || e?.code || 'desconocido') + '\n\nVuelve a intentar: las referencias ya reapuntadas no se duplican.');
@@ -1227,6 +1251,7 @@ const CatalogosDashboard = () => {
   // ✅ NUEVO: elimina en lote TODOS los registros seleccionados (lotes de 400).
   const eliminarSeleccionados = async () => {
     if (!catalogoSeleccionado || seleccionadosIds.length === 0 || borrandoSeleccion) return;
+    // ✅ V00228: al terminar se invalidan las opciones dependientes.
     const confirmado = window.confirm(
       `¿Eliminar los ${seleccionadosIds.length} registro(s) seleccionados de "${catalogoSeleccionado.titulo}"?\n\nSe enviarán a la Papelera de Reciclaje, desde donde podrás restaurarlos. Se te pedirá una nota obligatoria.`
     );
@@ -1260,6 +1285,9 @@ const CatalogosDashboard = () => {
       console.error('Error en borrado en lote:', error);
       alert('No se pudieron eliminar todos los registros seleccionados.\n\nDetalle técnico: ' + (error?.message || error?.code || 'desconocido'));
     }
+    // ✅ V00228: el catálogo cambió → refrescar opciones dependientes.
+    invalidarCacheOpciones(`catalogo_${catalogoSeleccionado.id}`);
+    try { await recargarOpcionesRef.current?.(); } catch { /* noop */ }
     setBorrandoSeleccion(false);
   };
 
