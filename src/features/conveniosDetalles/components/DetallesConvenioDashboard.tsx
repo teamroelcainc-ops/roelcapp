@@ -35,6 +35,7 @@
 //   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom'; // ✅ V00237
 import { collection, getDocs, doc, updateDoc, writeBatch, setDoc, query, where } from 'firebase/firestore'; // ✅ V00215/V00231/V00232
 import { reservarConsecutivosDetalle, reservarConsecutivosDetalleProveedor } from '../consecutivos'; // ✅ V00231
 import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
@@ -243,6 +244,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     try {
       const snap = await getDocs(query(collection(db, 'operaciones'), where('__name__', '==', String(op.docId))));
       if (snap.empty) { alert('No se encontró la operación.'); return; }
+      // ✅ V00237: se cierra la ficha — si no, su overlay tapaba el formulario.
+      setUsoAbierto(null);
       setOpEditando({ id: snap.docs[0].id, ...(snap.docs[0].data() as Record<string, unknown>) });
     } catch (e) {
       console.error('No se pudo abrir la operación:', e);
@@ -1022,18 +1025,21 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         </div>
       )}
 
-      {/* ✅ V00236: formulario de la operación, sin salir de Convenios */}
-      {opEditando && (
-        <FormularioOperacion
-          estado="abierto"
-          initialData={opEditando}
-          catalogosCacheados={null}
-          onClose={() => setOpEditando(null)}
-          onMinimize={() => { /* no aplica aquí */ }}
-          onRestore={() => { /* no aplica aquí */ }}
-          onSave={() => { setOpEditando(null); cargar(true); }}
-        />
-      )}
+      {/* ✅ V00236: formulario de la operación, sin salir de Convenios.
+          ✅ V00237: en portal y por encima de los modales de este módulo. */}
+      {opEditando && createPortal((
+        <div className="dcv-form-op">
+          <FormularioOperacion
+            estado="abierto"
+            initialData={opEditando}
+            catalogosCacheados={null}
+            onClose={() => setOpEditando(null)}
+            onMinimize={() => { /* no aplica aquí */ }}
+            onRestore={() => { /* no aplica aquí */ }}
+            onSave={() => { setOpEditando(null); cargar(true); }}
+          />
+        </div>
+      ), document.body)}
 
       {/* ✅ V00234: FICHA DEL CONVENIO — presentación para gerencia */}
       {usoAbierto && (

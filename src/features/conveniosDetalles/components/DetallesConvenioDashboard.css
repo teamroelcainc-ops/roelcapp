@@ -197,3 +197,7 @@
 @media (max-width: 720px) {
   .dcv-ficha-kpis, .dcv-ficha-datos { grid-template-columns: 1fr; }
 }
+
+/* ✅ V00237: el formulario de operación abierto desde Convenios va al frente */
+.dcv-form-op { position: relative; z-index: 100000; }
+.dcv-form-op .modal-overlay { z-index: 100000; }
