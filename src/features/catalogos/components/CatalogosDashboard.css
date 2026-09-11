@@ -180,3 +180,14 @@
   margin: 0 0 8px 0; padding-bottom: 5px; border-bottom: 1px solid #21262d;
 }
 .cd-ref-seccion .cd-ref-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+/* ✅ V00235: chips de selección múltiple en SelectBuscable */
+.sb-chips { display: inline-flex; flex-wrap: wrap; gap: 5px; align-items: center; max-width: 75%; }
+.sb-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; background-color: rgba(88, 166, 255, 0.14);
+  border: 1px solid rgba(88, 166, 255, 0.4); border-radius: 999px;
+  color: #58a6ff; font-size: 0.76rem; white-space: nowrap;
+}
+.sb-chip-x { background: none; border: none; color: #58a6ff; cursor: pointer; font-size: 0.7rem; padding: 0; line-height: 1; }
+.sb-chip-x:hover { color: #f85149; }

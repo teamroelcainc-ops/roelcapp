@@ -28,7 +28,15 @@ interface Props {
   disabled?: boolean;
   /** Estilos extra para el contenedor (ancho, minWidth, etc.) */
   estiloContenedor?: React.CSSProperties;
+  /** ✅ V00235: permite elegir VARIAS opciones. El valor se guarda como
+   *  texto separado por " , " (formato que ya usaban estos catálogos). */
+  multiple?: boolean;
 }
+
+/** ✅ V00235: separador histórico de los valores múltiples del catálogo. */
+const SEP = ' , ';
+const partirMultiple = (v: unknown): string[] =>
+  String(v ?? '').split(',').map((x) => x.trim()).filter(Boolean);
 
 // Normaliza texto para comparar sin acentos ni mayúsculas ("Vacía" === "vacia")
 const normalizar = (s: string) =>
@@ -45,6 +53,7 @@ export const SelectBuscable: React.FC<Props> = ({
   placeholder = 'Seleccione una opción...',
   disabled = false,
   estiloContenedor,
+  multiple = false,
 }) => {
   const [abierto, setAbierto] = useState(false);
   const [textoBusqueda, setTextoBusqueda] = useState('');
@@ -91,10 +100,26 @@ export const SelectBuscable: React.FC<Props> = ({
   }, [indiceActivo, abierto]);
 
   const seleccionar = (opcion: OpcionBuscable) => {
+    if (multiple) {
+      // ✅ V00235: alterna la opción dentro de la lista y mantiene abierto.
+      const actuales = partirMultiple(value);
+      const ya = actuales.some((v) => String(v) === String(opcion.value));
+      const nuevos = ya ? actuales.filter((v) => String(v) !== String(opcion.value)) : [...actuales, String(opcion.value)];
+      onChange(nuevos.join(SEP));
+      setTextoBusqueda('');
+      return;
+    }
     onChange(opcion.value);
     setAbierto(false);
     setTextoBusqueda('');
   };
+
+  // ✅ V00235: etiquetas de lo ya elegido (para los chips).
+  const etiquetasElegidas = partirMultiple(value).map((v) => ({
+    value: v,
+    label: opciones.find((o) => String(o.value) === String(v) || normalizar(o.value) === normalizar(v))?.label || v,
+  }));
+  const estaElegida = (v: string) => partirMultiple(value).some((x) => String(x) === String(v));
 
   const limpiar = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -150,13 +175,34 @@ export const SelectBuscable: React.FC<Props> = ({
           <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
 
+        {/* ✅ V00235: opciones ya elegidas como chips */}
+        {multiple && etiquetasElegidas.length > 0 && (
+          <span className="sb-chips">
+            {etiquetasElegidas.map((et) => (
+              <span key={et.value} className="sb-chip">
+                {et.label}
+                {!disabled && (
+                  <button
+                    type="button"
+                    className="sb-chip-x"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChange(partirMultiple(value).filter((v) => String(v) !== String(et.value)).join(SEP));
+                    }}
+                  >✕</button>
+                )}
+              </span>
+            ))}
+          </span>
+        )}
+
         <input
           type="text"
-          value={abierto ? textoBusqueda : etiquetaSeleccionada}
+          value={abierto ? textoBusqueda : (multiple ? '' : etiquetaSeleccionada)}
           onChange={(e) => { setTextoBusqueda(e.target.value); if (!abierto) setAbierto(true); }}
           onFocus={() => { if (!disabled) setAbierto(true); }}
           onKeyDown={handleKeyDown}
-          placeholder={abierto ? (etiquetaSeleccionada || placeholder) : placeholder}
+          placeholder={multiple ? (etiquetasElegidas.length > 0 ? 'Agregar otra…' : placeholder) : (abierto ? (etiquetaSeleccionada || placeholder) : placeholder)}
           disabled={disabled}
           style={{
             flex: 1,
@@ -203,7 +249,7 @@ export const SelectBuscable: React.FC<Props> = ({
           ) : (
             opcionesFiltradas.map((opcion, i) => {
               const esActiva = i === indiceActivo;
-              const esSeleccionada = String(opcion.value) === String(value);
+              const esSeleccionada = multiple ? estaElegida(String(opcion.value)) : String(opcion.value) === String(value);
               return (
                 <div
                   key={`${opcion.value}-${i}`}

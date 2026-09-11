@@ -14,6 +14,8 @@ export interface CatalogField {
   // ✅ V00216: el campo solo se muestra si la ETIQUETA del campo indicado
   //   contiene alguno de estos textos (sin acentos ni mayúsculas).
   visibleSi?: { campo: string; contiene: string[] };
+  // ✅ V00235: permite elegir VARIAS opciones (se guardan separadas por " , ").
+  multiple?: boolean;
   options?: string[];
   dynamicOptions?: {
     collection: string;
@@ -192,7 +194,7 @@ export const catalogosConfig: Record<string, CatalogSchema> = {
       { name: 'descripcion', label: 'Descripción', type: 'text' },
       { name: 'tipo', label: 'Type', type: 'select', required: true, options: ['Importación', 'Exportación', 'Movimiento'] },
       { name: 'boton_status', label: 'Botón/Status', type: 'select', required: true, options: ['Botón', 'Status'] },
-      { name: 'operacion', label: 'Operación', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_tipo_operacion', labelField: 'tipo_operacion', valueField: 'id' } },
+      { name: 'operacion', label: 'Operación', type: 'select', required: true, dynamicOptions: { collection: 'catalogo_tipo_operacion', labelField: 'tipo_operacion', valueField: 'id' } , multiple: true },
       { name: 'obligatorio', label: 'Obligatorio', type: 'select', required: true, options: ['Sí', 'No'] }
     ]
   },

@@ -454,6 +454,15 @@ const CatalogosDashboard = () => {
       const dOpt = f.dynamicOptions;
       const valueField = dOpt.valueField || 'id';
       const labelField = dOpt.labelField || 'nombre';
+      // ✅ V00235: valores MÚLTIPLES ("id1 , id2") → cada uno a su etiqueta.
+      const partes = String(valor ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+      if (partes.length > 1) {
+        return partes.map((v) => {
+          const op = opcionesDinamicas[dOpt.collection].find((o: any) =>
+            String(o[valueField]).trim().toLowerCase() === v.toLowerCase() || String(o.id).trim().toLowerCase() === v.toLowerCase());
+          return op ? String(op[labelField] || op.nombre || v) : v;
+        }).join(' , ');
+      }
       const encontrado = opcionesDinamicas[dOpt.collection].find((opt: any) => {
         const val1 = String(opt[valueField]).trim().toLowerCase();
         const val2 = String(valor).trim().toLowerCase();
@@ -2043,6 +2052,7 @@ const CatalogosDashboard = () => {
                           })}
                           value={formData[f.name] || ''}
                           onChange={(v) => setFormData({ ...formData, [f.name]: v })}
+                          multiple={!!f.multiple}
                           placeholder="Buscar y seleccionar..."
                         />
                       ) : f.options ? (
@@ -2050,6 +2060,7 @@ const CatalogosDashboard = () => {
                           opciones={f.options.map((opt: string) => ({ value: opt, label: opt }))}
                           value={formData[f.name] || ''}
                           onChange={(v) => setFormData({ ...formData, [f.name]: v })}
+                          multiple={!!f.multiple}
                           placeholder="Buscar y seleccionar..."
                         />
                       ) : (
@@ -2092,6 +2103,7 @@ const CatalogosDashboard = () => {
                           })}
                           value={subFormData[f.name] || ''}
                           onChange={(v) => setSubFormData({ ...subFormData, [f.name]: v })}
+                          multiple={!!f.multiple}
                           placeholder="Buscar y seleccionar..."
                         />
                       ) : f.options ? (
@@ -2099,6 +2111,7 @@ const CatalogosDashboard = () => {
                           opciones={f.options.map((opt: string) => ({ value: opt, label: opt }))}
                           value={subFormData[f.name] || ''}
                           onChange={(v) => setSubFormData({ ...subFormData, [f.name]: v })}
+                          multiple={!!f.multiple}
                           placeholder="Buscar y seleccionar..."
                         />
                       ) : (
