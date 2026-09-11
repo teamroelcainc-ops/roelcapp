@@ -208,3 +208,10 @@
   background: #161b22; border: 1px solid #30363d; border-radius: 10px;
   padding: 18px 26px; color: #c9d1d9; font-size: 0.9rem;
 }
+
+/* ✅ V00240: campo de descripción a todo lo ancho */
+.dcv-campo-ancho { grid-column: 1 / -1; }
+
+/* ✅ V00240: botón de rearmado de nombres */
+.dcv-btn-rearmar { border-color: #58a6ff; color: #58a6ff; font-weight: 600; white-space: nowrap; }
+.dcv-btn-rearmar:hover { background-color: rgba(88, 166, 255, 0.12); }

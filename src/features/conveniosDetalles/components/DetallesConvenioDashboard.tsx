@@ -325,6 +325,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
     }
   };
 
+  /** ✅ V00240: DESCRIPCIÓN calculada del convenio:
+   *  "# de tarifario - Cliente - Origen - Destino" (separado por guiones). */
+  const descripcionConvenio = (tarifarioId: string, origenId: string, destinoId: string): string => {
+    const tar = tarifariosAlta.find((t) => t.id === tarifarioId);
+    const mun = (id: string) => municipiosAlta.find((m) => m.id === id)?.nombre || '';
+    return [tar?.etiqueta || '', mun(origenId), mun(destinoId)].filter(Boolean).join(' - ');
+  };
+
   /** ✅ V00231: reglas de ruta según el tipo de servicio de la tarifa.
    *  Cruce de Importación → Laredo a Nuevo Laredo. Cruce de Exportación → al
    *  revés. En fletes se capturan a mano y son obligatorios. */
@@ -358,7 +366,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       // ✅ V00236: el origen/destino viven SOLO en el convenio (ya no se
       //   escriben en la tarifa del catálogo).
       const nombreTarifa = tarifa.nombre;
+      const descCalculada = descripcionConvenio(alta.tarifarioId, alta.origen, alta.destino); // ✅ V00240
       await setDoc(doc(dbFs, COL_DETALLES, consec), {
+        descripcionConvenio: descCalculada, // ✅ V00240
         convenioId: tarifario.convenioId,
         tarifarioId: tarifario.id,
         tipoConvenioId: tarifa.id,
@@ -381,6 +391,74 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       alert('No se pudo agregar el convenio.');
     } finally {
       setGuardandoAlta(false);
+    }
+  };
+
+  // ✅ V00240: REARMAR NOMBRES — recalcula la descripción de todos los
+  //   convenios y la propaga al nombre guardado en las operaciones.
+  const [rearmando, setRearmando] = useState(false);
+  const rearmarNombres = async () => {
+    if (rearmando) return;
+    if (!window.confirm('¿Rearmar la descripción de TODOS los convenios y actualizar el nombre en sus operaciones?')) return;
+    setRearmando(true);
+    try {
+      // Catálogos necesarios (tarifarios y municipios).
+      const [snapTar, snapMun, snapDet] = await Promise.all([
+        getDocs(collection(db, esClientes ? 'tarifario_clientes' : 'tarifario_proveedores')),
+        getDocs(collection(db, 'catalogo_municipios')),
+        getDocs(collection(db, COL_DETALLES)),
+      ]);
+      const etiquetaTar: Record<string, string> = {};
+      const convenioDeTar: Record<string, string> = {};
+      snapTar.docs.forEach((d) => {
+        const t = d.data() as Record<string, unknown>;
+        const ent = String((esClientes ? t.clienteNombre : t.proveedorNombre) || '');
+        etiquetaTar[d.id] = `${String(t.consecutivo || d.id)} - ${ent}`.trim();
+        if (t.convenioId) convenioDeTar[String(t.convenioId)] = d.id;
+      });
+      const munNombre: Record<string, string> = {};
+      snapMun.docs.forEach((d) => { munNombre[d.id] = String((d.data() as Record<string, unknown>).municipio || ''); });
+
+      // 1) Descripción de cada detalle.
+      const descPorDetalle: Record<string, string> = {};
+      let lote = writeBatch(db); let enLote = 0; let nDet = 0;
+      for (const d of snapDet.docs) {
+        const x = d.data() as Record<string, unknown>;
+        const tarId = String(x.tarifarioId || convenioDeTar[String(x.convenioId || '')] || '');
+        const desc = [etiquetaTar[tarId] || '', munNombre[String(x.origen || '')] || '', munNombre[String(x.destino || '')] || '']
+          .filter(Boolean).join(' - ');
+        if (!desc) continue;
+        descPorDetalle[d.id] = desc;
+        if (String(x.descripcionConvenio || '') !== desc) {
+          lote.update(d.ref, { descripcionConvenio: desc });
+          nDet += 1; enLote += 1;
+          if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
+        }
+      }
+      if (enLote > 0) await lote.commit();
+
+      // 2) Nombre guardado en las operaciones.
+      const campoOp = esClientes ? 'convenio' : 'convenioProveedor';
+      const campoNombre = esClientes ? 'convenioNombre' : 'convenioProveedorNombre';
+      const snapOps = await getDocs(collection(db, 'operaciones'));
+      let lote2 = writeBatch(db); let enLote2 = 0; let nOps = 0;
+      for (const d of snapOps.docs) {
+        const o = d.data() as Record<string, unknown>;
+        const desc = descPorDetalle[String(o[campoOp] || '')];
+        if (!desc || String(o[campoNombre] || '') === desc) continue;
+        lote2.update(d.ref, { [campoNombre]: desc });
+        nOps += 1; enLote2 += 1;
+        if (enLote2 >= 400) { await lote2.commit(); lote2 = writeBatch(db); enLote2 = 0; }
+      }
+      if (enLote2 > 0) await lote2.commit();
+
+      alert(`Nombres rearmados. ✅\n\n· Convenios actualizados: ${nDet}\n· Operaciones actualizadas: ${nOps}`);
+      await cargar(true);
+    } catch (e) {
+      console.error('No se pudieron rearmar los nombres:', e);
+      alert('No se pudieron rearmar los nombres.');
+    } finally {
+      setRearmando(false);
     }
   };
 
@@ -512,6 +590,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const tarSel = tarifariosAlta.find((t) => t.id === editForm.tarifarioId);
       // ✅ V00236: el origen/destino viven SOLO en el convenio.
       const cambiosDoc: Record<string, unknown> = {
+        // ✅ V00240: descripción calculada
+        descripcionConvenio: descripcionConvenio(editForm.tarifarioId, editForm.origen, editForm.destino),
         moneda: editForm.moneda,
         status: editForm.status,
         tarifa: parseFloat(editForm.costo) || 0,
@@ -778,6 +858,10 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         {/* ✅ V00207: borrado masivo de los seleccionados */}
         {/* ✅ V00231: alta de convenios */}
         <button className="btn dcv-btn-agregar" onClick={abrirAlta}>+ Agregar</button>
+        {/* ✅ V00240: rearmar descripciones y propagarlas a las operaciones */}
+        <button className="btn btn-outline dcv-btn-rearmar" disabled={rearmando} onClick={rearmarNombres}>
+          {rearmando ? 'Rearmando…' : '⟳ Rearmar nombres'}
+        </button>
         {/* ✅ V00215: unir duplicados */}
         {seleccion.size >= 2 && (
           <button className="btn btn-outline dcv-btn-unir" disabled={uniendo} onClick={abrirModalUnir}>
@@ -940,6 +1024,21 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 valor={alta.destino}
                 onElegir={(id) => setAlta((p) => ({ ...p, destino: id }))}
               />
+              {/* ✅ V00240: descripción calculada, justo después de Destino */}
+              <label className="dcv-edit-label dcv-campo-ancho">Descripción (automática)
+                <input
+                  type="text"
+                  className="form-control"
+                  value={descripcionConvenio(
+                    (modalAgregar ? alta.tarifarioId : editForm.tarifarioId),
+                    (modalAgregar ? alta.origen : editForm.origen),
+                    (modalAgregar ? alta.destino : editForm.destino),
+                  )}
+                  placeholder="Se arma sola con el tarifario, el origen y el destino"
+                  readOnly
+                  disabled
+                />
+              </label>
               <label className="dcv-edit-label">Costo de la Tarifa
                 {/* ✅ V00233: entero y de 25 en 25 */}
                 <input
@@ -1040,6 +1139,21 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
               />
               <BuscadorSimple etiqueta="Origen" opciones={municipiosAlta} valor={editForm.origen} onElegir={(id) => setEditForm((p) => ({ ...p, origen: id }))} />
               <BuscadorSimple etiqueta="Destino" opciones={municipiosAlta} valor={editForm.destino} onElegir={(id) => setEditForm((p) => ({ ...p, destino: id }))} />
+              {/* ✅ V00240: descripción calculada, justo después de Destino */}
+              <label className="dcv-edit-label dcv-campo-ancho">Descripción (automática)
+                <input
+                  type="text"
+                  className="form-control"
+                  value={descripcionConvenio(
+                    (modalAgregar ? alta.tarifarioId : editForm.tarifarioId),
+                    (modalAgregar ? alta.origen : editForm.origen),
+                    (modalAgregar ? alta.destino : editForm.destino),
+                  )}
+                  placeholder="Se arma sola con el tarifario, el origen y el destino"
+                  readOnly
+                  disabled
+                />
+              </label>
               <label className="dcv-edit-label">Costo de la Tarifa
                 <input type="number" step={25} min={0} className="form-control" value={editForm.costo} onChange={(e) => setEditForm((p) => ({ ...p, costo: e.target.value.replace(/[^0-9]/g, '') }))} />
               </label>

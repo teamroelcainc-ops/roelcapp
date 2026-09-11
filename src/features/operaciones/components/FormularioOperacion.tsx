@@ -1432,7 +1432,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const nombreFinal = d.tipoConvenioNombre || nombreTarifa || (tarifaId ? `Tarifa (${tarifaId})` : 'Sin Asignar');
       return {
         ...d,
-        id: d.id, tarifaBaseId: tarifaId, descripcion: nombreFinal,
+        // ✅ V00240: si el convenio tiene su DESCRIPCIÓN calculada, esa manda.
+        id: d.id, tarifaBaseId: tarifaId, descripcion: String(d.descripcionConvenio || '').trim() || nombreFinal,
         statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto "Pesos"/"Dólares")
         monedaMaestro: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
@@ -1507,7 +1508,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const nombreFinal = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || d.tipoConvenioNombre || 'Concepto sin nombre';
       return {
         ...d,
-        id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
+        // ✅ V00240: la DESCRIPCIÓN calculada del convenio manda.
+        id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: String(d.descripcionConvenio || '').trim() || nombreFinal,
         statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto)
         monedaBase: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroParent?.monedaId || maestroParent?.moneda || ID_USD,
