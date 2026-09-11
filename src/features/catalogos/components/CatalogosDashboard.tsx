@@ -261,9 +261,43 @@ const CatalogosDashboard = () => {
   // ✅ V00222: abre el detalle del tarifario / convenio / operación POR DELANTE
   //   del modal actual, para rectificar información sin perder el contexto.
   const [refAbierta, setRefAbierta] = useState<{ fila: UsoFila; datos: Record<string, unknown> | null } | null>(null);
+  // ✅ V00227: catálogos auxiliares para mostrar NOMBRES (no ids) en la ficha.
+  const [auxRef, setAuxRef] = useState<Record<string, Record<string, string>>>({});
+  const cargarAuxiliares = async () => {
+    if (Object.keys(auxRef).length > 0) return auxRef;
+    const mapaDe = (docs: { id: string; data: () => Record<string, unknown> }[], campos: string[]) => {
+      const m: Record<string, string> = {};
+      docs.forEach((d) => {
+        const x = d.data();
+        const v = campos.map((c) => x[c]).find((y) => String(y || '').trim());
+        m[d.id] = String(v || '');
+      });
+      return m;
+    };
+    const [emp, st, tipos, uni, emple, mon] = await Promise.all([
+      getDocs(collection(db, 'empresas')),
+      getDocs(collection(db, 'catalogo_status_servicio')),
+      getDocs(collection(db, 'catalogo_tipo_operacion')),
+      getDocs(collection(db, 'unidades')),
+      getDocs(collection(db, 'empleados')),
+      getDocs(collection(db, 'catalogo_moneda')),
+    ]);
+    const aux = {
+      empresas: mapaDe(emp.docs, ['nombre', 'nombreCorto']),
+      status: mapaDe(st.docs, ['nombre']),
+      tipos: mapaDe(tipos.docs, ['nombre', 'tipo_operacion']),
+      unidades: mapaDe(uni.docs, ['numeroUnidad', 'unidad', 'nombre']),
+      empleados: mapaDe(emple.docs, ['nombreCompleto', 'nombre']),
+      monedas: mapaDe(mon.docs, ['moneda', 'nombre']),
+    };
+    setAuxRef(aux);
+    return aux;
+  };
+
   const abrirDetalleRef = async (fila: UsoFila) => {
     setRefAbierta({ fila, datos: null });
     try {
+      if (fila.tipo === 'operacion') await cargarAuxiliares();
       const snap = await getDoc(doc(db, fila.coleccion, fila.docId));
       setRefAbierta({ fila, datos: snap.exists() ? (snap.data() as Record<string, unknown>) : {} });
     } catch (e) {
@@ -2102,41 +2136,102 @@ const CatalogosDashboard = () => {
               <div className="cd-uso-vacio">Cargando…</div>
             ) : (() => {
               const d = refAbierta.datos as Record<string, unknown>;
+              // ✅ V00227: en OPERACIONES se muestra la ficha completa por
+              //   secciones (como el detalle del módulo de operaciones), con
+              //   los ids resueltos a nombres.
+              const nom = (mapa: string, id: unknown) => auxRef[mapa]?.[String(id || '')] || String(id || '') || '—';
+              const dinero = (v: unknown, moneda?: unknown) => {
+                const n = Number(v);
+                if (!isFinite(n) || String(v ?? '') === '') return '—';
+                const m = moneda ? ` ${nom('monedas', moneda)}` : '';
+                return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${m}`;
+              };
+              const secciones: { titulo: string; campos: [string, string][] }[] =
+                refAbierta.fila.tipo === 'operacion' ? [
+                  { titulo: 'INFORMACIÓN GENERAL', campos: [
+                    ['Referencia', String(d.ref || refAbierta.fila.ref)],
+                    ['Tipo de operación', nom('tipos', d.tipoOperacionId) || String(d.tipoOperacionNombre || '—')],
+                    ['Status', nom('status', d.status) || String(d.statusNombre || '—')],
+                    ['Fecha de servicio', String(d.fechaServicio || '—')],
+                    ['Fecha de cita', String(d.fechaCita || '—')],
+                    ['Tráfico', String(d.trafico || '—')],
+                    ['Carga', String(d.carga || '—')],
+                    ['# de remolque', String(d.numeroRemolque || '—')],
+                    ['Ref. cliente', String(d.refCliente || '—')],
+                  ] },
+                  { titulo: 'CLIENTE Y RUTA', campos: [
+                    ['Cliente (paga)', nom('empresas', d.clientePaga) || String(d.clientePagaNombre || '—')],
+                    ['Convenio (tarifa)', String(d.convenioNombre || '—')],
+                    ['Origen', nom('empresas', d.origen) || String(d.origenNombre || '—')],
+                    ['Destino', nom('empresas', d.destino) || String(d.destinoNombre || '—')],
+                    ['Kilometraje', String(d.kilometrajeEstimado || '—')],
+                    ['Observaciones', String(d.observacionesEjecutivo || '—')],
+                  ] },
+                  { titulo: 'UNIDAD Y OPERADOR', campos: [
+                    ['Proveedor', nom('empresas', d.proveedorUnidad) || String(d.proveedorUnidadNombre || '—')],
+                    ['Convenio proveedor', String(d.convenioProveedorNombre || '—')],
+                    ['Unidad', nom('unidades', d.unidad) || String(d.unidadNombre || '—')],
+                    ['Operador', nom('empleados', d.operador) || String(d.operadorNombre || '—')],
+                    ['Placas', String(d.placas || '—')],
+                  ] },
+                  { titulo: 'PEDIMENTO Y DOCUMENTOS', campos: [
+                    ['Pedimento', String(d.pedimento || '—')],
+                    ['Carta porte / CT', String(d.cartaPorte || d.ct || '—')],
+                    ["Entry's", String(d.entry || d.entrys || '—')],
+                    ['Manifiesto', String(d.manifiesto || '—')],
+                  ] },
+                  { titulo: 'POR COBRAR / POR PAGAR', campos: [
+                    ['Monto cliente', dinero(d.montoConvenioCliente, d.facturadoEnCobrar)],
+                    ['Cargos adicionales', dinero(d.cargosAdicionales)],
+                    ['Subtotal cliente', dinero(d.subtotalCliente)],
+                    ['Monto proveedor', dinero(d.totalAPagarProv, d.monedaConvenioProv)],
+                    ['Tipo de cambio', String(d.tipoCambioAprobado || '—')],
+                    ['Utilidad estimada (MXN)', dinero(d.utilidadEstimada)],
+                    ['Factura cliente', String(d.facturaCliente || '—')],
+                    ['Factura proveedor', String(d.facturaProveedor || '—')],
+                  ] },
+                ] : [];
+
+              // Vista simple (tarifario / detalle de convenio)
               const campos: [string, string][] =
                 refAbierta.fila.tipo === 'tarifario' ? [
                   ['Consecutivo', String(d.consecutivo || refAbierta.fila.ref)],
                   ['Emisión', String(d.fecha || '—')],
-                  ['Vencimiento', String(d.fechaVencimiento || `${String(d.fecha || '').slice(0, 4) || new Date().getFullYear()}-12-31`)],
+                  ['Vencimiento', String(d.fechaVencimiento || `${new Date().getFullYear()}-12-31`)],
                   ['Moneda', String(d.moneda || '—')],
                   ['Crédito', Number(d.creditoDias) > 0 ? `${d.creditoDias} día(s)` : '—'],
                   ['Status', String(d.status || '—')],
                   ['Creado por', String(d.creadoPor || '—')],
                   ['Aprobado por', String(d.aprobadoPor || '—')],
-                ] : refAbierta.fila.tipo === 'convenio' ? [
+                ] : [
                   ['Consecutivo', String(d.consecutivo || refAbierta.fila.ref)],
                   ['Tarifa', String(d.tipoConvenioNombre || '—')],
-                  ['Costo', `${Number(d.tarifa) || 0}`],
+                  ['Costo', String(Number(d.tarifa) || 0)],
                   ['Cotizado en', String(d.moneda || '—')],
                   ['Status', String(d.status || 'Aprobado')],
                   ['Convenio', String(d.convenioId || '—')],
                   ['Tarifario', String(d.tarifarioId || '—')],
-                ] : [
-                  ['Referencia', String(d.ref || refAbierta.fila.ref)],
-                  ['Fecha de servicio', String(d.fechaServicio || '—')],
-                  ['Status', String(d.status || d.estatus || '—')],
-                  ['Tipo', String(d.tipoOperacionNombre || d.trafico || '—')],
-                  ['Convenio (tarifa)', String(d.convenioNombre || '—')],
-                  ['Monto cliente', String(d.montoConvenioCliente ?? '—')],
-                  ['Proveedor', String(d.proveedorUnidadNombre || '—')],
-                  ['Monto proveedor', String(d.totalAPagarProv ?? '—')],
                 ];
               const lineas: Record<string, unknown>[] = refAbierta.fila.tipo === 'tarifario' && Array.isArray(d.tarifas) ? (d.tarifas as Record<string, unknown>[]) : [];
               return (<>
-                <div className="cd-ref-grid">
-                  {campos.map(([k, v]) => (
-                    <div key={k}><span className="cd-x44">{k}</span><span className="cd-x45">{v || '—'}</span></div>
-                  ))}
-                </div>
+                {secciones.length > 0 ? (
+                  secciones.map((sec) => (
+                    <div key={sec.titulo} className="cd-ref-seccion">
+                      <div className="cd-ref-seccion-tit">{sec.titulo}</div>
+                      <div className="cd-ref-grid">
+                        {sec.campos.map(([k, v]) => (
+                          <div key={k}><span className="cd-x44">{k}</span><span className="cd-x45">{v || '—'}</span></div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="cd-ref-grid">
+                    {campos.map(([k, v]) => (
+                      <div key={k}><span className="cd-x44">{k}</span><span className="cd-x45">{v || '—'}</span></div>
+                    ))}
+                  </div>
+                )}
                 {lineas.length > 0 && (
                   <div className="cd-ref-lineas">
                     <div className="cd-uso-titulo" style={{ color: '#58a6ff' }}>TARIFAS DE ESTE TARIFARIO ({lineas.length})</div>

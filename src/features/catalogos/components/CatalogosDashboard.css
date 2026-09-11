@@ -155,7 +155,7 @@
   z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 16px; /* ✅ V00226: por encima de cualquier overlay */
 }
 .cd-ref-modal {
-  width: min(680px, 96vw); max-height: 86vh; overflow-y: auto;
+  width: min(1040px, 96vw); max-height: 88vh; overflow-y: auto; /* ✅ V00227: ficha completa */
   background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px 22px;
 }
 .cd-ref-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
@@ -172,3 +172,11 @@
 }
 .cd-ref-pie { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 @media (max-width: 640px) { .cd-ref-grid { grid-template-columns: 1fr 1fr; } }
+
+/* ✅ V00227: secciones de la ficha de operación */
+.cd-ref-seccion { margin-bottom: 16px; }
+.cd-ref-seccion-tit {
+  color: #58a6ff; font-weight: 700; font-size: 0.72rem; letter-spacing: 0.5px;
+  margin: 0 0 8px 0; padding-bottom: 5px; border-bottom: 1px solid #21262d;
+}
+.cd-ref-seccion .cd-ref-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
