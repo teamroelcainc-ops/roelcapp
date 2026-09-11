@@ -201,3 +201,10 @@
 /* ✅ V00237: el formulario de operación abierto desde Convenios va al frente */
 .dcv-form-op { position: relative; z-index: 100000; }
 .dcv-form-op .modal-overlay { z-index: 100000; }
+
+/* ✅ V00238: aviso mientras se abre la operación */
+.dcv-abriendo { z-index: 100001; }
+.dcv-abriendo-caja {
+  background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+  padding: 18px 26px; color: #c9d1d9; font-size: 0.9rem;
+}

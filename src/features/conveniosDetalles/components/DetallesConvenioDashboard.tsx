@@ -132,6 +132,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [usoAbierto, setUsoAbierto] = useState<FilaDetalle | null>(null);
   // ✅ V00236: la operación se edita aquí mismo, sin salir de Convenios.
   const [opEditando, setOpEditando] = useState<Record<string, unknown> | null>(null);
+  // ✅ V00238: el formulario de operación necesita SUS catálogos; sin ellos se
+  //   queda en "Cargando catálogos de Roelca…". Se cargan al abrirlo.
+  const [catalogosOp, setCatalogosOp] = useState<Record<string, unknown[]> | null>(null);
   // ✅ V00207: selección múltiple para borrado masivo (solo clientes)
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [borrandoSel, setBorrandoSel] = useState(false);
@@ -240,16 +243,52 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
    *  que corresponde según su status. */
   /** ✅ V00236: abre el FORMULARIO de edición de la operación DENTRO de este
    *  módulo (antes navegaba a Operaciones y sacaba al usuario de Convenios). */
+  const [abriendoOp, setAbriendoOp] = useState('');
   const editarOperacion = async (op: { ref: string; docId: string }) => {
+    setAbriendoOp(op.ref);
     try {
       const snap = await getDocs(query(collection(db, 'operaciones'), where('__name__', '==', String(op.docId))));
       if (snap.empty) { alert('No se encontró la operación.'); return; }
+      // ✅ V00238: catálogos que consume el formulario de operación.
+      if (!catalogosOp) {
+        const COLS: Record<string, string> = {
+          statusServicio: 'catalogo_status_servicio',
+          tiposOperacion: 'catalogo_tipo_operacion',
+          embalajes: 'catalogo_embalaje',
+          catalogoMoneda: 'catalogo_moneda',
+          tarifas: 'catalogo_tarifas_referencia',
+          empresas: 'empresas',
+          remolques: 'remolques',
+          unidades: 'unidades',
+          empleados: 'empleados',
+          unidades_proveedor: 'unidades_proveedor',
+          proveedores_unidad: 'proveedores_unidad',
+          conveniosProv: 'convenios_proveedores',
+          catalogoConvProvDetalles: 'convenios_proveedores_detalles',
+          catalogoConvClientes: 'convenios_clientes',
+          catalogoConvDetalles: 'convenios_clientes_detalles',
+          catalogoTC: 'tipo_cambio',
+          direcciones: 'direcciones',
+          catalogoTarifarios: 'tarifario_clientes',
+          catalogoTarifariosProv: 'tarifario_proveedores',
+        };
+        const entradas = Object.entries(COLS);
+        const snaps = await Promise.all(entradas.map(([, col]) => getDocs(collection(db, col)).catch(() => null)));
+        const cat: Record<string, unknown[]> = {};
+        entradas.forEach(([alias], i) => {
+          const sn = snaps[i];
+          cat[alias] = sn ? sn.docs.map((d) => ({ id: d.id, ...d.data() })) : [];
+        });
+        setCatalogosOp(cat);
+      }
       // ✅ V00237: se cierra la ficha — si no, su overlay tapaba el formulario.
       setUsoAbierto(null);
       setOpEditando({ id: snap.docs[0].id, ...(snap.docs[0].data() as Record<string, unknown>) });
     } catch (e) {
       console.error('No se pudo abrir la operación:', e);
       alert('No se pudo abrir la operación.');
+    } finally {
+      setAbriendoOp('');
     }
   };
 
@@ -1025,6 +1064,11 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         </div>
       )}
 
+      {/* ✅ V00238: aviso mientras se prepara la operación */}
+      {abriendoOp && !opEditando && createPortal((
+        <div className="modal-overlay dcv-abriendo"><div className="dcv-abriendo-caja">Abriendo {abriendoOp}…</div></div>
+      ), document.body)}
+
       {/* ✅ V00236: formulario de la operación, sin salir de Convenios.
           ✅ V00237: en portal y por encima de los modales de este módulo. */}
       {opEditando && createPortal((
@@ -1032,7 +1076,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
           <FormularioOperacion
             estado="abierto"
             initialData={opEditando}
-            catalogosCacheados={null}
+            catalogosCacheados={catalogosOp}
             onClose={() => setOpEditando(null)}
             onMinimize={() => { /* no aplica aquí */ }}
             onRestore={() => { /* no aplica aquí */ }}
