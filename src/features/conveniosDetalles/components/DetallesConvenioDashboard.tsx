@@ -41,6 +41,7 @@ import { db as dbFs, eliminarRegistro } from '../../../config/firebase';
 import { db } from '../../../config/firebase';
 import { obtenerCacheMemoria, guardarCacheMemoria } from '../../../utils/cacheMemoria';
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos'; // ✅ V00198
+import { FormularioOperacion } from '../../operaciones/components/FormularioOperacion'; // ✅ V00236
 import './DetallesConvenioDashboard.css';
 
 /** ✅ V00231: campo de BÚSQUEDA para elegir de una lista (no desplegable). */
@@ -128,6 +129,8 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   // ✅ V00206: operaciones que usan cada detalle (op.convenio = id del detalle)
   const [usosOps, setUsosOps] = useState<Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]>>({});
   const [usoAbierto, setUsoAbierto] = useState<FilaDetalle | null>(null);
+  // ✅ V00236: la operación se edita aquí mismo, sin salir de Convenios.
+  const [opEditando, setOpEditando] = useState<Record<string, unknown> | null>(null);
   // ✅ V00207: selección múltiple para borrado masivo (solo clientes)
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [borrandoSel, setBorrandoSel] = useState(false);
@@ -234,15 +237,17 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
   /** ✅ V00232: abre la operación en su FORMULARIO de edición, en el módulo
    *  que corresponde según su status. */
-  const editarOperacion = (op: { ref: string; docId: string; status: string }) => {
-    const completada = op.status.toLowerCase().includes('completad');
-    const modulo = completada ? 'serviciosCompletados' : 'operaciones';
+  /** ✅ V00236: abre el FORMULARIO de edición de la operación DENTRO de este
+   *  módulo (antes navegaba a Operaciones y sacaba al usuario de Convenios). */
+  const editarOperacion = async (op: { ref: string; docId: string }) => {
     try {
-      localStorage.setItem('roelca_abrir_registro', JSON.stringify({ modulo, coleccion: 'operaciones', docId: op.docId, vista: 'editar', ts: Date.now() }));
-      localStorage.setItem('roelca_buscar', JSON.stringify({ modulo, texto: op.ref, ts: Date.now() }));
-    } catch { /* noop */ }
-    window.dispatchEvent(new CustomEvent('roelca:navegar', { detail: { modulo } }));
-    setUsoAbierto(null);
+      const snap = await getDocs(query(collection(db, 'operaciones'), where('__name__', '==', String(op.docId))));
+      if (snap.empty) { alert('No se encontró la operación.'); return; }
+      setOpEditando({ id: snap.docs[0].id, ...(snap.docs[0].data() as Record<string, unknown>) });
+    } catch (e) {
+      console.error('No se pudo abrir la operación:', e);
+      alert('No se pudo abrir la operación.');
+    }
   };
 
   // ✅ V00231: catálogos del alta (tarifarios, tarifas y municipios).
@@ -308,20 +313,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const [consec] = esClientes ? await reservarConsecutivosDetalle(1) : await reservarConsecutivosDetalleProveedor(1);
       const nombreMun = (id: string) => municipiosAlta.find((m) => m.id === id)?.nombre || '';
 
-      // ✅ V00233: el origen/destino elegidos se guardan TAMBIÉN en la tarifa
-      //   del catálogo y su descripción se rearma con esos municipios.
-      let nombreTarifa = tarifa.nombre;
-      if (alta.origen || alta.destino) {
-        const nombresMun = new Set(municipiosAlta.map((m) => m.nombre));
-        const base = String(tarifa.nombre).split(' - ').map((x) => x.trim()).filter((x) => x && !nombresMun.has(x));
-        nombreTarifa = [...base, nombreMun(alta.origen), nombreMun(alta.destino)].filter(Boolean).join(' - ');
-        try {
-          await updateDoc(doc(dbFs, 'catalogo_tarifas_referencia', tarifa.id), {
-            origen: alta.origen, destino: alta.destino, descripcion: nombreTarifa,
-          });
-          setTarifasAlta((prev) => prev.map((t) => t.id === tarifa.id ? { ...t, nombre: nombreTarifa } : t));
-        } catch (e) { console.error('No se pudo actualizar la tarifa del catálogo:', e); }
-      }
+      // ✅ V00236: el origen/destino viven SOLO en el convenio (ya no se
+      //   escriben en la tarifa del catálogo).
+      const nombreTarifa = tarifa.nombre;
       await setDoc(doc(dbFs, COL_DETALLES, consec), {
         convenioId: tarifario.convenioId,
         tarifarioId: tarifario.id,
@@ -474,19 +468,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       const nombreMunEd = (id: string) => municipiosAlta.find((m) => m.id === id)?.nombre || '';
       // ✅ V00234: si cambió el tarifario, el detalle se reapunta a su convenio.
       const tarSel = tarifariosAlta.find((t) => t.id === editForm.tarifarioId);
-      // ✅ V00234: el origen/destino también se guardan en la tarifa del catálogo.
-      if (editForm.tarifaId && (editForm.origen || editForm.destino)) {
-        try {
-          const tRef = (tarifasAlta.length > 0 ? tarifasAlta : tarifasLista).find((x) => x.id === editForm.tarifaId);
-          const nombresMun = new Set(municipiosAlta.map((m) => m.nombre));
-          const base = String(tRef?.nombre || '').split(' - ').map((x) => x.trim()).filter((x) => x && !nombresMun.has(x));
-          const descNueva = [...base, nombreMunEd(editForm.origen), nombreMunEd(editForm.destino)].filter(Boolean).join(' - ');
-          if (descNueva) {
-            await updateDoc(doc(dbFs, 'catalogo_tarifas_referencia', editForm.tarifaId), { origen: editForm.origen, destino: editForm.destino, descripcion: descNueva });
-            setTarifasAlta((prev) => prev.map((t) => t.id === editForm.tarifaId ? { ...t, nombre: descNueva } : t));
-          }
-        } catch (e) { console.error('No se pudo actualizar la tarifa del catálogo:', e); }
-      }
+      // ✅ V00236: el origen/destino viven SOLO en el convenio.
       const cambiosDoc: Record<string, unknown> = {
         moneda: editForm.moneda,
         status: editForm.status,
@@ -1040,6 +1022,19 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
         </div>
       )}
 
+      {/* ✅ V00236: formulario de la operación, sin salir de Convenios */}
+      {opEditando && (
+        <FormularioOperacion
+          estado="abierto"
+          initialData={opEditando}
+          catalogosCacheados={null}
+          onClose={() => setOpEditando(null)}
+          onMinimize={() => { /* no aplica aquí */ }}
+          onRestore={() => { /* no aplica aquí */ }}
+          onSave={() => { setOpEditando(null); cargar(true); }}
+        />
+      )}
+
       {/* ✅ V00234: FICHA DEL CONVENIO — presentación para gerencia */}
       {usoAbierto && (
         <div className="modal-overlay" onClick={() => setUsoAbierto(null)}>
@@ -1081,7 +1076,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                   return (
                     <b>
                       {ult.fecha} · <button type="button" className="dcv-ref-link" onClick={() => editarOperacion(ult)}>{ult.ref}</button>
-                      {ult.tipo ? ` · ${ult.tipo}` : ''}{ult.status ? ` · ${ult.status}` : ''}
+                      {ult.tipo ? ` · ${ult.tipo}` : ''}
                     </b>
                   );
                 })()}
@@ -1093,14 +1088,13 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                 <div className="dcv-ficha-ops-tit">Operaciones que lo usaron</div>
                 <div className="dcv-modal-marco">
                   <table className="dcv-tabla-usos">
-                    <thead><tr><th>REF</th><th>FECHA</th><th>TIPO</th><th>STATUS</th><th className="dcv-usos-monto">MONTO</th></tr></thead>
+                    <thead><tr><th>REF</th><th>FECHA</th><th>TIPO</th><th className="dcv-usos-monto">MONTO</th></tr></thead>{/* ✅ V00236: sin status */}
                     <tbody>
                       {(usosOps[usoAbierto.id] || []).map((o, i) => (
                         <tr key={`${o.ref}-${i}`}>
                           <td><button type="button" className="dcv-ref-link" title={`Editar ${o.ref}`} onClick={() => editarOperacion(o)}>{o.ref || '—'}</button></td>
                           <td>{o.fecha || '—'}</td>
                           <td>{o.tipo || '—'}</td>
-                          <td>{o.status || '—'}</td>
                           <td className="dcv-usos-monto">{o.monto ? `$${Number(o.monto).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}</td>
                         </tr>
                       ))}

@@ -1619,7 +1619,15 @@ const OperacionesDashboard = () => {
       }
       case 'trafico': return <span className="od-x1">{mostrarDato(op.trafico)}</span>;
       case 'cliente': return <span className="od-x2">{mostrarDatoMapeado(op.clientePaga || op.clienteId, 'empresas', 'nombre', op.clienteNombre || op.nombreCliente)}</span>;
-      case 'convenioTarifa': return <span className="od-x3" title={obtenerNombreConvenioCliente(op.convenio, op.convenioNombre)}>{pintarTipoConvenio(obtenerNombreConvenioCliente(op.convenio, op.convenioNombre))}</span>;{/* ✅ V00214 */}
+      case 'convenioTarifa': {
+        // ✅ V00236: la TARIFA del convenio va al final de la leyenda.
+        const nombreConv = obtenerNombreConvenioCliente(op.convenio, op.convenioNombre);
+        const montoConv = Number(op.montoConvenioCliente);
+        const conTarifa = isFinite(montoConv) && String(op.montoConvenioCliente ?? '') !== ''
+          ? `${nombreConv} - $${montoConv.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : nombreConv;
+        return <span className="od-x3" title={conTarifa}>{pintarTipoConvenio(conTarifa)}</span>;
+      }
       case 'refCliente': return <span className="od-x1">{mostrarDato(op.refCliente)}</span>;
       case 'facturadoEnCobrar': return <span className="od-x1">{mostrarDatoMapeado(op.facturadoEnCobrar, 'catalogoMoneda', 'moneda', op.monedaCobroNombre)}</span>;
       case 'montoConvenioCliente': return <span className="od-x1">{formatoMoneda(op.montoConvenioCliente)}</span>;
