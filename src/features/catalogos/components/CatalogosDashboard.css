@@ -148,3 +148,27 @@
 .cd-uso-encabezado { margin: 0 0 6px 0; font-size: 0.95rem; color: #f0f6fc; }
 .cd-uso-titulo { font-weight: 700; font-size: 0.8rem; margin: 12px 0 6px 0; }
 .cd-uso-vacio { color: #8b949e; font-size: 0.8rem; padding: 8px 0; }
+
+/* ✅ V00222: detalle de una referencia, por delante del modal de detalles */
+.cd-ref-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+  z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 16px; /* ✅ V00226: por encima de cualquier overlay */
+}
+.cd-ref-modal {
+  width: min(680px, 96vw); max-height: 86vh; overflow-y: auto;
+  background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px 22px;
+}
+.cd-ref-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.cd-ref-tit { margin: 0 0 3px 0; font-size: 1rem; color: #f0f6fc; }
+.cd-ref-sub { margin: 0; color: #8b949e; font-size: 0.82rem; }
+.cd-ref-x { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1rem; }
+.cd-ref-x:hover { color: #e6edf3; }
+.cd-ref-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 16px; }
+.cd-ref-grid > div { display: flex; flex-direction: column; gap: 3px; }
+.cd-ref-lineas { margin-top: 16px; }
+.cd-ref-linea {
+  display: grid; grid-template-columns: 110px 1fr 180px; gap: 10px; align-items: center;
+  padding: 6px 10px; border-top: 1px solid #21262d; font-size: 0.78rem; color: #c9d1d9;
+}
+.cd-ref-pie { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+@media (max-width: 640px) { .cd-ref-grid { grid-template-columns: 1fr 1fr; } }

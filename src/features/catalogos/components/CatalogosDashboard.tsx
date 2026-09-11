@@ -1,5 +1,6 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom'; // ✅ V00226
 import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer } from 'firebase/firestore';
 import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro, pedirNotaEliminacion } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger'; // ✅ Importación del logger
@@ -2054,8 +2055,8 @@ const CatalogosDashboard = () => {
                         key={`${f.ref}-${i}`}
                         type="button"
                         className="cd-uso-fila"
-                        title={`Ir a ${f.ref}`}
-                        onClick={() => irARegistro(f.modulo, f.ref)}
+                        title={`Ver el detalle de ${f.ref}`}
+                        onClick={() => abrirDetalleRef(f)}
                       >
                         <span className="cd-uso-ref">{f.ref}</span>
                         <span className="cd-uso-ent">{f.entidad}</span>
@@ -2080,8 +2081,10 @@ const CatalogosDashboard = () => {
         </div>
       )}
 
-      {/* ✅ V00222: DETALLE DE LA REFERENCIA, por delante del modal actual */}
-      {refAbierta && (
+      {/* ✅ V00222: DETALLE DE LA REFERENCIA, por delante del modal actual.
+          ✅ V00226: se monta con portal en document.body — dentro del árbol del
+          modal de Detalles quedaba confinado y no se veía al hacer clic. */}
+      {refAbierta && createPortal((
         <div className="cd-ref-overlay" onClick={() => setRefAbierta(null)}>
           <div className="cd-ref-modal" onClick={(e) => e.stopPropagation()}>
             <div className="cd-ref-head">
@@ -2154,7 +2157,7 @@ const CatalogosDashboard = () => {
             })()}
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* ✅ NUEVO (V00106) — MODAL: UNIR REGISTROS SELECCIONADOS */}
       {modalUnir && (
