@@ -2067,6 +2067,28 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   concepto tiene varias tarifas (mismo servicio, montos distintos), la
   //   tarifa se elige en un modal.
   const [modalTarifas, setModalTarifas] = useState<{ tipo: 'cliente' | 'proveedor'; nombre: string; opciones: any[] } | null>(null);
+  // ✅ V00242: trae el MONTO VIGENTE del convenio elegido (por si cambió en
+  //   Convenio de Clientes/Proveedores después de capturar la operación).
+  const actualizarMontoConvenio = (lado: 'cliente' | 'proveedor') => {
+    if (lado === 'cliente') {
+      const c = listaConveniosCliente.find((x: any) => String(x.id) === String(formData.convenio || ''));
+      if (!c) { alert('Elige primero el convenio del cliente.'); return; }
+      const nuevo = Number(c.tarifaMonto) || 0;
+      const actual = Number(formData.montoConvenioCliente) || 0;
+      if (nuevo === actual) { alert(`El monto ya está al día: ${fmtMoney(actual)}`); return; }
+      if (!window.confirm(`Actualizar el monto del cliente de ${fmtMoney(actual)} a ${fmtMoney(nuevo)}?\n\nLos totales y la facturación se recalculan solos.`)) return;
+      setFormData(prev => ({ ...prev, montoConvenioCliente: nuevo, monedaConvenioCliente: c.monedaMaestro || prev.monedaConvenioCliente }));
+    } else {
+      const c = listaConveniosProveedor.find((x: any) => String(x.id) === String(formData.convenioProveedor || ''));
+      if (!c) { alert('Elige primero el convenio del proveedor.'); return; }
+      const nuevo = Number(c.tarifaMonto) || 0;
+      const actual = Number(formData.totalAPagarProv) || 0;
+      if (nuevo === actual) { alert(`El monto ya está al día: ${fmtMoney(actual)}`); return; }
+      if (!window.confirm(`Actualizar el monto del proveedor de ${fmtMoney(actual)} a ${fmtMoney(nuevo)}?`)) return;
+      setFormData(prev => ({ ...prev, totalAPagarProv: nuevo, monedaConvenioProv: c.monedaBase || prev.monedaConvenioProv }));
+    }
+  };
+
   // ✅ V00224: editor de origen/destino de las tarifas (solo fletes + permiso).
   const [editorTarifaOD, setEditorTarifaOD] = useState(false);
   const agruparPorConcepto = (lista: any[], campo: string) => {
@@ -2830,7 +2852,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             </button>
                           )}
                           {/* ✅ V00126: editar la MONEDA/tarifa del detalle elegido, directo desde aquí */}
-                          {formData.convenio && <button className="fo-x18 fo-btn-det" type="button" onClick={() => setDetalleConvenioEdit({ tipo: 'cliente', detalleId: String(formData.convenio) })} title="Cambiar la moneda o tarifa del detalle del convenio elegido">✎ Moneda del detalle</button>}
+                          {formData.convenio && <button className="fo-x18 fo-btn-det" type="button" onClick={() => setDetalleConvenioEdit({ tipo: 'cliente', detalleId: String(formData.convenio) })} title="Ver y editar el detalle del convenio elegido">▤ Detalle del convenio</button>}
+                          {/* ✅ V00242: trae el monto vigente del convenio */}
+                          {formData.convenio && <button className="fo-x18 fo-btn-actualizar" type="button" onClick={() => actualizarMontoConvenio('cliente')} title="Traer el monto actual del convenio (si cambió en Convenio de Clientes)">↻ Actualizar monto</button>}
                           {/* ✅ V00224: origen/destino de las tarifas (solo fletes y con permiso) */}
                           {isFletes && puedeClave('editarTarifaOrigenDestino') && (
                             <button className="fo-x18 fo-btn-tarifa-od" type="button" onClick={() => setEditorTarifaOD(true)} title="Asignar el origen y destino de las tarifas de esta operación">✎ Origen/Destino</button>
@@ -3076,7 +3100,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                             </button>
                           )}
                           {/* ✅ V00126: editar la MONEDA/tarifa del detalle elegido, directo desde aquí */}
-                          {formData.convenioProveedor && <button className="fo-x18 fo-btn-det" type="button" onClick={() => setDetalleConvenioEdit({ tipo: 'proveedor', detalleId: String(formData.convenioProveedor) })} title="Cambiar la moneda o tarifa del detalle del convenio elegido">✎ Moneda del detalle</button>}
+                          {formData.convenioProveedor && <button className="fo-x18 fo-btn-det" type="button" onClick={() => setDetalleConvenioEdit({ tipo: 'proveedor', detalleId: String(formData.convenioProveedor) })} title="Ver y editar el detalle del convenio elegido">▤ Detalle del convenio</button>}
+                          {/* ✅ V00242 */}
+                          {formData.convenioProveedor && <button className="fo-x18 fo-btn-actualizar" type="button" onClick={() => actualizarMontoConvenio('proveedor')} title="Traer el monto actual del convenio del proveedor">↻ Actualizar monto</button>}
                         </div>
                         <div className="fo-x19">
                           <input type="text" className={`form-control${claseSiFalta('convenioProveedor')}`} placeholder="Buscar por nombre o ID de tarifa..." disabled={listaConveniosProveedor.length === 0} value={searchConvenioProveedor} onChange={e => { setSearchConvenioProveedor(e.target.value); setShowDropdownConvenioProveedor(true); if (formData.convenioProveedor) setFormData(prev => ({ ...prev, convenioProveedor: '' })); }} onFocus={() => setShowDropdownConvenioProveedor(true)} onBlur={() => setTimeout(() => setShowDropdownConvenioProveedor(false), 200)} />

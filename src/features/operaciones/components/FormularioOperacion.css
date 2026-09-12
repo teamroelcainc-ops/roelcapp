@@ -132,3 +132,7 @@
 /* ✅ V00224: botón de origen/destino de las tarifas */
 .fo-btn-tarifa-od { border-color: #3fb950 !important; color: #3fb950 !important; }
 .fo-btn-tarifa-od:hover { background-color: rgba(63, 185, 80, 0.12) !important; }
+
+/* ✅ V00242: botón para traer el monto vigente del convenio */
+.fo-btn-actualizar { border-color: #3fb950 !important; color: #3fb950 !important; }
+.fo-btn-actualizar:hover { background-color: rgba(63, 185, 80, 0.12) !important; }
