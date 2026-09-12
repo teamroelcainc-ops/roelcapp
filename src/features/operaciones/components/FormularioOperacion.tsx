@@ -1846,12 +1846,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // ✅ V00126: el monto del convenio se convierte a la moneda de la factura ANTES de sumar cargos.
     const montoFactProv = convertirAMonedaFactura(Number(formData.totalAPagarProv || 0), tc, monConvProv, formData.facturadoEnUnidad).monto;
     // ✅ V00243: mismo criterio para el cargo adicional del proveedor.
-    const cargosFactProv = convertirAMonedaFactura(Number(formData.cargosAdicionalesProv || 0), tc, monConvProv, formData.facturadoEnUnidad).monto;
-    const subtotalFact = montoFactProv + cargosFactProv;
+    const cargosFactProv = r2(convertirAMonedaFactura(Number(formData.cargosAdicionalesProv || 0), tc, monConvProv, formData.facturadoEnUnidad).monto);
+    const subtotalFact = r2(r2(montoFactProv) + cargosFactProv); // ✅ V00244
     const monFactProv = formData.facturadoEnUnidad || monConvProv;
     const { dol, pes, conv } = desglosarPorMonedas(subtotalFact, tc, monFactProv, monFactProv);
     void subtotal;
-    setFormData(prev => ({ ...prev, subtotalProv: subtotalFact, dolaresProv: dol, pesosProv: pes, conversionProv: conv }));
+    setFormData(prev => ({ ...prev, subtotalProv: subtotalFact, dolaresProv: r2(dol), pesosProv: r2(pes), conversionProv: r2(conv) })); // ✅ V00244
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.facturadoEnUnidad, formData.monedaConvenioProv, formData.totalAPagarProv, formData.cargosAdicionalesProv, tipoCambioDia, formData.tipoCambioAprobado, formData.convenioProveedor, listaConveniosProveedor, listaMonedasLocal]);
 
@@ -1875,13 +1875,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     // ✅ V00243: el CARGO ADICIONAL se captura en la moneda del convenio, así
     //   que también se convierte a la moneda de la factura (convenio USD +
     //   factura en Pesos → cargo × TC) antes de sumarlo al total.
-    const cargosFactCli = convertirAMonedaFactura(Number(formData.cargosAdicionales || 0), tc, monConvCli, formData.facturadoEnCobrar).monto;
-    const subtotalFact = montoFactCli + cargosFactCli;
+    const cargosFactCli = r2(convertirAMonedaFactura(Number(formData.cargosAdicionales || 0), tc, monConvCli, formData.facturadoEnCobrar).monto);
+    const subtotalFact = r2(r2(montoFactCli) + cargosFactCli); // ✅ V00244
     const monFactCli = formData.facturadoEnCobrar || monConvCli;
     const { dol, pes, conv } = desglosarPorMonedas(subtotalFact, tc, monFactCli, monFactCli);
     void subtotal;
-    const utilidad = conv - Number(formData.conversionProv || 0); 
-    setFormData(prev => ({ ...prev, subtotalCliente: subtotalFact, dolaresCliente: dol, pesosCliente: pes, conversionCliente: conv, utilidadEstimada: utilidad }));
+    const utilidad = r2(r2(conv) - Number(formData.conversionProv || 0)); // ✅ V00244
+    setFormData(prev => ({ ...prev, subtotalCliente: subtotalFact, dolaresCliente: r2(dol), pesosCliente: r2(pes), conversionCliente: r2(conv), utilidadEstimada: utilidad })); // ✅ V00244
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formData.facturadoEnCobrar, formData.monedaConvenioCliente, formData.montoConvenioCliente, formData.cargosAdicionales, tipoCambioDia, formData.conversionProv, formData.tipoCambioAprobado, formData.convenio, listaConveniosCliente, listaMonedasLocal]);
 
@@ -2073,6 +2073,10 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   //   concepto tiene varias tarifas (mismo servicio, montos distintos), la
   //   tarifa se elige en un modal.
   const [modalTarifas, setModalTarifas] = useState<{ tipo: 'cliente' | 'proveedor'; nombre: string; opciones: any[] } | null>(null);
+  // ✅ V00244: los importes se redondean a 2 decimales — el punto flotante
+  //   dejaba colas como 2630,6910000000003.
+  const r2 = (n: number): number => Math.round((Number(n) || 0) * 100) / 100;
+
   // ✅ V00242: trae el MONTO VIGENTE del convenio elegido (por si cambió en
   //   Convenio de Clientes/Proveedores después de capturar la operación).
   const actualizarMontoConvenio = (lado: 'cliente' | 'proveedor') => {
