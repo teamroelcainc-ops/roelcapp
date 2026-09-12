@@ -1551,13 +1551,15 @@ export const ReferenciasNominaDashboard = () => {
           <td>${t.fecha ? esc(formatearFechaSpanish(t.fecha)) : '-'}</td>
           <td>${esc(t.cliente || getNombreEmpresa(t.clientePagaId) || '-')}</td>
           <td>${esc(t.convenio || t.tipoServicio || '-')}</td>
-          <td>${m(t.importe ?? t.sueldo ?? 0)}</td>
+          <td>${m(aNum(t.importe ?? t.sueldo ?? t.sueldoTotal) + aNum(t.sueldoExtra))}</td>
         </tr>`).join('');
 
     // ✅ SUELDO TOTAL de los viajes: suma de la columna Importe, visible como
     //   fila final de la tabla (lo que el operador ganó por sus viajes).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- viajes sin tipo canónico (mismo criterio del archivo).
-    const sueldoTotalViajes = trips.reduce((s: number, t: any) => s + (Number(t.importe ?? t.sueldo) || 0), 0);
+    // ✅ V00241: incluye el EXTRA de cada viaje (antes solo sumaba la base y
+    //   el PDF no cuadraba con el "Sueldo Total" del editor).
+    const sueldoTotalViajes = trips.reduce((s: number, t: any) => s + aNum(t.importe ?? t.sueldo ?? t.sueldoTotal) + aNum(t.sueldoExtra), 0);
 
     const sueldoBase = nom.nominaFiscal ?? nom.nomina ?? 0;
 
