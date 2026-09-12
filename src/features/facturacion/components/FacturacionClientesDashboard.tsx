@@ -385,12 +385,18 @@ const calcularConversionCliente = (op: any) => {
   let subtotal = montoConvenio;
   if (convUSD && factMXN) subtotal = tc > 0 ? montoConvenio * tc : 0;
   else if (convMXN && factUSD) subtotal = tc > 0 ? montoConvenio / tc : 0;
-  const total = subtotal + cargos;
+  // ✅ V00243: el COSTO ADICIONAL viene en la moneda del convenio, así que se
+  //   convierte igual que el monto antes de sumarlo (convenio USD + factura en
+  //   Pesos → cargo × TC).
+  let cargosFact = cargos;
+  if (convUSD && factMXN) cargosFact = tc > 0 ? cargos * tc : 0;
+  else if (convMXN && factUSD) cargosFact = tc > 0 ? cargos / tc : 0;
+  const total = subtotal + cargosFact;
   let dol = 0, pes = 0, conv = 0;
   const facturaUSD = factUSD || (!factMXN && convUSD);
   if (facturaUSD) { dol = total; pes = 0; conv = total * tc; }
   else { dol = 0; pes = total; conv = total; }
-  return { subtotal, cargos, total, dol, pes, conv, tc };
+  return { subtotal, cargos: cargosFact, total, dol, pes, conv, tc };
 };
 
 
