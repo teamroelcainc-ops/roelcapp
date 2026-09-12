@@ -378,12 +378,18 @@ const calcularConversionProveedor = (op: any) => {
   let subtotal = montoConvenio;
   if (convUSD && factMXN) subtotal = tc > 0 ? montoConvenio * tc : 0;
   else if (convMXN && factUSD) subtotal = tc > 0 ? montoConvenio / tc : 0;
-  const total = subtotal + cargos;
+  // ✅ V00245: igual que en clientes — el COSTO ADICIONAL viene en la moneda
+  //   del convenio y se convierte antes de sumarse; todo a 2 decimales.
+  let cargosFact = cargos;
+  if (convUSD && factMXN) cargosFact = tc > 0 ? cargos * tc : 0;
+  else if (convMXN && factUSD) cargosFact = tc > 0 ? cargos / tc : 0;
+  const r2f = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
+  const total = r2f(r2f(subtotal) + r2f(cargosFact));
   let dol = 0, pes = 0, conv = 0;
   const facturaUSD = factUSD || (!factMXN && convUSD);
   if (facturaUSD) { dol = total; pes = 0; conv = total * tc; }
   else { dol = 0; pes = total; conv = total; }
-  return { subtotal, cargos, total, dol, pes, conv, tc };
+  return { subtotal: r2f(subtotal), cargos: r2f(cargosFact), total, dol: r2f(dol), pes: r2f(pes), conv: r2f(conv), tc };
 };
 
 
