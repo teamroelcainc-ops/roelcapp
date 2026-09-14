@@ -1703,12 +1703,40 @@ export const FacturacionProveedoresDashboard = () => {
   const [ratePreview, setRatePreview] = useState<any | null>(null);
   const [cargandoRate, setCargandoRate] = useState(false);
 
-  // Nombre del usuario logueado (coordinador que emite la confirmación).
+  // Nombre del usuario logueado (respaldo si la operación no registra quién la creó).
   const nombreCoordinadorActual = (): string => {
     try {
       const u = getAuth().currentUser;
       return u?.displayName || u?.email || '';
     } catch { return ''; }
+  };
+
+  // ✅ V00246: COORDINADOR = quien dio de alta la operación (op.creadoPor),
+  //   NO quien genera la confirmación. Se resuelve el id/correo a nombre con
+  //   el catálogo de usuarios; si la operación no lo tiene, se usa el actual.
+  const [nombresUsuariosConf, setNombresUsuariosConf] = useState<Record<string, string>>({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'usuarios'));
+        const mapa: Record<string, string> = {};
+        snap.docs.forEach((d) => {
+          const u = d.data() as any;
+          const nombre = String(u.nombre || u.nombreCompleto || u.displayName || '').trim();
+          if (!nombre) return;
+          mapa[d.id] = nombre;
+          if (u.email) mapa[String(u.email).toLowerCase()] = nombre;
+          if (u.uid) mapa[String(u.uid)] = nombre;
+        });
+        setNombresUsuariosConf(mapa);
+      } catch { /* si falla, se muestra el valor crudo */ }
+    })();
+  }, []);
+
+  const coordinadorDeOperacion = (op: any): string => {
+    const crudo = String(op?.creadoPor || '').trim();
+    if (!crudo) return nombreCoordinadorActual();
+    return nombresUsuariosConf[crudo] || nombresUsuariosConf[crudo.toLowerCase()] || crudo;
   };
 
   // Intenta armar la dirección de una bodega/dirección desde los catálogos cacheados.
@@ -1753,7 +1781,7 @@ export const FacturacionProveedoresDashboard = () => {
     //   manda: así todos los usuarios ven los mismos datos editados.
     const base = {
       opId: String(op.id || ''),
-      coordinador: nombreCoordinadorActual(),
+      coordinador: coordinadorDeOperacion(op), // ✅ V00246
       referencia: refDeOp(op) || op.numReferencia || String(op.id || ''),
       remolque: limpiar(txt(op.remolqueNombre, op.remolquePlaca, op.numeroRemolque)),
       tipoUnidad: limpiar(txt(op.tipoUnidadNombre, op.tipoUnidad)),
