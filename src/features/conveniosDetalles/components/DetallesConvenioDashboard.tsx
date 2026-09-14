@@ -327,10 +327,12 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
   /** ✅ V00240: DESCRIPCIÓN calculada del convenio:
    *  "# de tarifario - Cliente - Origen - Destino" (separado por guiones). */
-  const descripcionConvenio = (tarifarioId: string, origenId: string, destinoId: string): string => {
+  const descripcionConvenio = (tarifarioId: string, origenId: string, destinoId: string, consecConv?: string): string => {
+    // ✅ V00247: encabeza el CONVENIO (CONV-###), no el tarifario; del tarifario
+    //   se conserva el nombre del cliente/proveedor.
     const tar = tarifariosAlta.find((t) => t.id === tarifarioId);
     const mun = (id: string) => municipiosAlta.find((m) => m.id === id)?.nombre || '';
-    return [tar?.etiqueta || '', mun(origenId), mun(destinoId)].filter(Boolean).join(' - ');
+    return [String(consecConv || '').trim(), tar?.entidad || '', mun(origenId), mun(destinoId)].filter(Boolean).join(' - ');
   };
 
   /** ✅ V00231: reglas de ruta según el tipo de servicio de la tarifa.
@@ -366,7 +368,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       // ✅ V00236: el origen/destino viven SOLO en el convenio (ya no se
       //   escriben en la tarifa del catálogo).
       const nombreTarifa = tarifa.nombre;
-      const descCalculada = descripcionConvenio(alta.tarifarioId, alta.origen, alta.destino); // ✅ V00240
+      const descCalculada = descripcionConvenio(alta.tarifarioId, alta.origen, alta.destino, consec); // ✅ V00247
       await setDoc(doc(dbFs, COL_DETALLES, consec), {
         descripcionConvenio: descCalculada, // ✅ V00240
         convenioId: tarifario.convenioId,
@@ -425,7 +427,9 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       for (const d of snapDet.docs) {
         const x = d.data() as Record<string, unknown>;
         const tarId = String(x.tarifarioId || convenioDeTar[String(x.convenioId || '')] || '');
-        const desc = [etiquetaTar[tarId] || '', munNombre[String(x.origen || '')] || '', munNombre[String(x.destino || '')] || '']
+        // ✅ V00247: CONV-### + cliente + ruta
+        const entidadTar = (etiquetaTar[tarId] || '').split(' - ').slice(1).join(' - ');
+        const desc = [String(x.consecutivo || d.id), entidadTar, munNombre[String(x.origen || '')] || '', munNombre[String(x.destino || '')] || '']
           .filter(Boolean).join(' - ');
         if (!desc) continue;
         descPorDetalle[d.id] = desc;
@@ -591,7 +595,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
       // ✅ V00236: el origen/destino viven SOLO en el convenio.
       const cambiosDoc: Record<string, unknown> = {
         // ✅ V00240: descripción calculada
-        descripcionConvenio: descripcionConvenio(editForm.tarifarioId, editForm.origen, editForm.destino),
+        descripcionConvenio: descripcionConvenio(editForm.tarifarioId, editForm.origen, editForm.destino, f.consecutivo || f.id), // ✅ V00247
         moneda: editForm.moneda,
         status: editForm.status,
         tarifa: parseFloat(editForm.costo) || 0,
@@ -1033,6 +1037,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                     (modalAgregar ? alta.tarifarioId : editForm.tarifarioId),
                     (modalAgregar ? alta.origen : editForm.origen),
                     (modalAgregar ? alta.destino : editForm.destino),
+                    (modalAgregar ? 'CONV-### (al guardar)' : (editando?.consecutivo || '')),
                   )}
                   placeholder="Se arma sola con el tarifario, el origen y el destino"
                   readOnly
@@ -1148,6 +1153,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
                     (modalAgregar ? alta.tarifarioId : editForm.tarifarioId),
                     (modalAgregar ? alta.origen : editForm.origen),
                     (modalAgregar ? alta.destino : editForm.destino),
+                    (modalAgregar ? 'CONV-### (al guardar)' : (editando?.consecutivo || '')),
                   )}
                   placeholder="Se arma sola con el tarifario, el origen y el destino"
                   readOnly
