@@ -793,14 +793,25 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const fmtMoney = (n: number) => `$${(Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   // ✅ V00202: etiqueta = Consecutivo - Convenio - Moneda de cotización - Monto
   const consecutivoConvenio = (c: any) => String(c.consecutivo || (String(c.id || '').startsWith('CONV-') ? c.id : '') || '').trim();
+  // ✅ V00248: la descripción guardada puede venir ya encabezada por su
+  //   consecutivo (CONV-###) o, en registros viejos, por el del tarifario
+  //   (TARI-/TARP-). Se limpian esos prefijos para no duplicarlos.
+  const sinPrefijoConsecutivo = (texto: any, cons: string) => {
+    let t = String(texto || '').trim();
+    if (cons && t.toUpperCase().startsWith(cons.toUpperCase())) t = t.slice(cons.length).replace(/^\s*-\s*/, '');
+    t = t.replace(/^(CONV|TARI|TARP)-\d+\s*-\s*/i, '');
+    return t.trim();
+  };
   const etiquetaConvenioCliente = (c: any) => {
     const cons = consecutivoConvenio(c);
-    return `${cons ? `${cons} - ` : ''}${c.descripcion || ''} - ${fmtMoney(c.tarifaMonto)}`;
+    const desc = sinPrefijoConsecutivo(c.descripcion, cons);
+    return `${cons ? `${cons} - ` : ''}${desc} - ${fmtMoney(c.tarifaMonto)}`;
   };
   // ✅ V00211: etiqueta = Consecutivo - Convenio - Moneda de cotización - Monto
   const etiquetaConvenioProveedor = (c: any) => {
     const cons = consecutivoConvenio(c);
-    return `${cons ? `${cons} - ` : ''}${c.tipoConvenioNombre || ''} - ${fmtMoney(c.tarifaMonto)}`;
+    const desc = sinPrefijoConsecutivo(c.tipoConvenioNombre, cons);
+    return `${cons ? `${cons} - ` : ''}${desc} - ${fmtMoney(c.tarifaMonto)}`;
   };
 
   const [tipoCambioDia, setTipoCambioDia] = useState<number | null>(null);
