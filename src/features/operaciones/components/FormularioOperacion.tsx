@@ -1443,8 +1443,11 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const nombreFinal = d.tipoConvenioNombre || nombreTarifa || (tarifaId ? `Tarifa (${tarifaId})` : 'Sin Asignar');
       return {
         ...d,
-        // ✅ V00240: si el convenio tiene su DESCRIPCIÓN calculada, esa manda.
-        id: d.id, tarifaBaseId: tarifaId, descripcion: String(d.descripcionConvenio || '').trim() || nombreFinal,
+        // ✅ V00249: manda el NOMBRE DE LA TARIFA (Cruce de Importación - Caja -
+        //   Vacío…), que es lo que distingue un convenio de otro del mismo
+        //   cliente; la descripción calculada es igual para todos y agrupaba
+        //   varios convenios en una sola opción.
+        id: d.id, tarifaBaseId: tarifaId, descripcion: nombreFinal,
         statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto "Pesos"/"Dólares")
         monedaMaestro: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
@@ -1519,8 +1522,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       const nombreFinal = tObj?.descripcion || tObj?.nombre || tObj?.tarifa || tObj?.concepto || d.tipoConvenioNombre || 'Concepto sin nombre';
       return {
         ...d,
-        // ✅ V00240: la DESCRIPCIÓN calculada del convenio manda.
-        id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: String(d.descripcionConvenio || '').trim() || nombreFinal,
+        // ✅ V00249: manda el nombre de la TARIFA (distingue los convenios).
+        id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
         statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto)
         monedaBase: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroParent?.monedaId || maestroParent?.moneda || ID_USD,
@@ -2115,7 +2118,9 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const agruparPorConcepto = (lista: any[], campo: string) => {
     const grupos = new Map<string, { nombre: string; opciones: any[] }>();
     (lista || []).forEach((c: any) => {
-      const nombre = String(c[campo] || '').trim() || 'Sin nombre';
+      // ✅ V00249: cada CONVENIO es una opción; solo se agrupan los que
+      //   comparten tarifa Y consecutivo (multi-tarifa de un mismo convenio).
+      const nombre = `${consecutivoConvenio(c) ? consecutivoConvenio(c) + ' - ' : ''}${String(c[campo] || '').trim() || 'Sin nombre'}`;
       if (!grupos.has(nombre)) grupos.set(nombre, { nombre, opciones: [] });
       grupos.get(nombre)!.opciones.push(c);
     });
@@ -2903,7 +2908,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                                     }
                                   }}>
                                     <div className="fo-x15">
-                                      {unica && consecutivoDe(c0) ? `${consecutivoDe(c0)} - ` : ''}{g.nombre}
+                                      {g.nombre}{/* ✅ V00249: el nombre del grupo ya trae el CONV-### */}
                                       {!unica && <span className="fo-chip-tarifas">{g.opciones.length} tarifas · elegir</span>}
                                     </div>
                                   </div>
@@ -3147,7 +3152,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                                     }
                                   }}>
                                     <div className="fo-x15">
-                                      {unica && consecutivoDe(c0) ? `${consecutivoDe(c0)} - ` : ''}{g.nombre}
+                                      {g.nombre}{/* ✅ V00249: el nombre del grupo ya trae el CONV-### */}
                                       {!unica && <span className="fo-chip-tarifas">{g.opciones.length} tarifas · elegir</span>}
                                     </div>
                                   </div>
