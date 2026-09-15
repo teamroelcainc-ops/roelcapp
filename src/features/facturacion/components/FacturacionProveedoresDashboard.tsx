@@ -3000,8 +3000,14 @@ export const FacturacionProveedoresDashboard = () => {
     });
     const nuevos: Record<string, InfoOp> = {};
     const ids = Array.from(faltantes);
-    for (let i = 0; i < ids.length; i += 30) {
-      const chunk = ids.slice(i, i + 30);
+    // ✅ V00261: los lotes van en PARALELO (12 a la vez). Con miles de facturas
+    //   la versión en serie tardaba minutos sin avisar y parecía que el botón
+    //   "no funcionaba".
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 30) chunks.push(ids.slice(i, i + 30));
+    const CONCURRENCIA = 12;
+    for (let g = 0; g < chunks.length; g += CONCURRENCIA) {
+      await Promise.all(chunks.slice(g, g + CONCURRENCIA).map((chunk) => (async () => {
       try {
         const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
         snap.docs.forEach(d => {
@@ -3014,6 +3020,7 @@ export const FacturacionProveedoresDashboard = () => {
           };
         });
       } catch (e) { console.warn('No se pudo resolver lote de operaciones para exportar:', e); }
+      })()));
     }
     if (Object.keys(nuevos).length) setOpInfoMap(prev => ({ ...prev, ...nuevos }));
     return nuevos;
@@ -3086,21 +3093,31 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
 
+  const [exportandoExcelHist, setExportandoExcelHist] = useState(false); // ✅ V00261
   const exportarCSV = async () => {
+    if (exportandoExcelHist) return;
     if (historialOrdenado.length === 0) return alert('No hay datos para exportar.');
     const columnasVisibles = columnasFactura.filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
-    // ✅ V00260: resolver las referencias de TODO el historial antes de exportar.
-    const mapaExport = await resolverOpsParaExport(historialOrdenado);
-    const datosExcel = historialOrdenado.map(f => {
-      const fila: any = {};
-      columnasVisibles.forEach(col => { fila[col.label] = valorCeldaFactura(f, col.id, mapaExport); });
-      return fila;
-    });
-    const worksheet = XLSX.utils.json_to_sheet(datosExcel);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Facturas_Proveedores');
-    XLSX.writeFile(workbook, `Facturas_Proveedores_${hoyLocalISO()}.xlsx`);
+    setExportandoExcelHist(true);
+    try { // ✅ V00261: cualquier fallo avisa en vez de quedarse callado
+      // ✅ V00260: resolver las referencias de TODO el historial antes de exportar.
+      const mapaExport = await resolverOpsParaExport(historialOrdenado);
+      const datosExcel = historialOrdenado.map(f => {
+        const fila: any = {};
+        columnasVisibles.forEach(col => { fila[col.label] = valorCeldaFactura(f, col.id, mapaExport); });
+        return fila;
+      });
+      const worksheet = XLSX.utils.json_to_sheet(datosExcel);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Facturas_Proveedores');
+      XLSX.writeFile(workbook, `Facturas_Proveedores_${hoyLocalISO()}.xlsx`);
+    } catch (e) { // ✅ V00261
+      console.error('Error exportando Excel de facturas:', e);
+      alert('No se pudo generar el Excel (falló la resolución de referencias). Intenta de nuevo.');
+    } finally {
+      setExportandoExcelHist(false); // ✅ V00261
+    }
   };
 
   const handleDragStart = (_e: React.DragEvent, index: number) => setDraggedColIndex(index);
@@ -3615,7 +3632,7 @@ export const FacturacionProveedoresDashboard = () => {
             <div className="fpd-x109">
               <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>Verificar</button>
               <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
-              <button title="Exportar a Excel" onClick={exportarCSV} style={{ ...btnDirStyle, backgroundColor: '#1a7f37', color: '#fff', border: 'none' }}>Exportar Excel</button>
+              <button title="Exportar a Excel (resuelve las referencias de todo el rango antes de generar)" onClick={exportarCSV} disabled={exportandoExcelHist} style={{ ...btnDirStyle, backgroundColor: exportandoExcelHist ? '#30363d' : '#1a7f37', color: exportandoExcelHist ? '#8b949e' : '#fff', border: 'none', cursor: exportandoExcelHist ? 'wait' : 'pointer' }}>{exportandoExcelHist ? '⏳ Exportando…' : 'Exportar Excel'}</button>
             </div>
           </div>
 
