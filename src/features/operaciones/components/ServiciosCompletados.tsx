@@ -1423,7 +1423,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
 
   // ✅ V00256: normalizador (sin acentos, minúsculas) para los filtros nuevos.
-  const normSC = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+  const normSC = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); // ✅ V00257: colapsa espacios dobles ("240  Nuevo Laredo")
 
   /** ✅ V00256: Expo / Impo / Movimiento — se detecta en el tráfico, el nombre
    *  del convenio o el tipo de operación (donde diga export/import/movimiento). */

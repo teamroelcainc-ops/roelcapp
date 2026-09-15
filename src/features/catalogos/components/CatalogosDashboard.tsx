@@ -831,6 +831,115 @@ const CatalogosDashboard = () => {
     }
   };
 
+  // ✅ V00257: NORMALIZAR OPERACIONES — escribe EN CADA OPERACIÓN los campos
+  //   `carga` (C/V con el NOMBRE EXACTO del catálogo Cargada/Vacía),
+  //   `aduanaNombre` (del catálogo Aduanas) y `trafico` (Exportación /
+  //   Importación / Movimiento), derivándolos del convenio guardado
+  //   ("Tipo de Operación - Tipo de Remolque - C/V - Aduana") cuando el campo
+  //   directo falta, es "N/A" o no coincide con el catálogo. Así los datos
+  //   quedan GUARDADOS y consistentes (no solo derivados al vuelo) y los
+  //   filtros/estadísticas cuadran siempre. Petición de Jesús (V00257).
+  const [normalizandoOps, setNormalizandoOps] = useState(false);
+  const normalizarOperacionesDesdeConvenios = async () => {
+    if (normalizandoOps) return;
+    if (!window.confirm('¿Normalizar TODAS las operaciones con la información de su convenio?\n\nSe actualizarán, solo donde falten o difieran del catálogo:\n· Cargada/Vacía (campo carga, con el nombre exacto del catálogo)\n· Aduana (campo aduanaNombre)\n· Expo/Impo (campo trafico)\n\nNo se tocan montos, fechas ni referencias.')) return;
+    setNormalizandoOps(true);
+    try {
+      // Colapsa espacios múltiples (hay convenios con "240  Nuevo Laredo" a
+      // doble espacio) y quita acentos.
+      const normx = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+      // Alias legados en descripciones viejas → nombre del catálogo.
+      const ALIAS_CV: Record<string, string> = { cargada: 'cargado', vacia: 'vacio' };
+      const claveCV = (seg: string) => ALIAS_CV[seg] || seg;
+      const [snapCV, snapAdu, snapOps] = await Promise.all([
+        getDocs(collection(db, 'catalogo_carga_vacia')),
+        getDocs(collection(db, 'catalogo_aduanas')),
+        getDocs(collection(db, 'operaciones')),
+      ]);
+      const cvPorId = new Map<string, string>();
+      const cvPorNorm = new Map<string, string>();
+      snapCV.docs.forEach((d) => {
+        const x = d.data() as Record<string, unknown>;
+        const nombre = String(x.nombre || x.estado_carga || '').trim();
+        if (!nombre) return;
+        cvPorId.set(d.id, nombre);
+        cvPorNorm.set(normx(nombre), nombre);
+      });
+      const aduPorId = new Map<string, string>();
+      const aduPorNorm = new Map<string, string>();
+      snapAdu.docs.forEach((d) => {
+        const x = d.data() as Record<string, unknown>;
+        const nombre = String(x.aduana || x.nombre || '').trim();
+        if (!nombre) return;
+        aduPorId.set(d.id, nombre);
+        aduPorNorm.set(normx(nombre), nombre);
+      });
+
+      let lote = writeBatch(db);
+      let enLote = 0;
+      let nOps = 0, nCarga = 0, nAduana = 0, nTrafico = 0;
+      for (const d of snapOps.docs) {
+        const x = d.data() as Record<string, unknown>;
+        const cambios: Record<string, string> = {};
+        const conv = String(x.convenioNombre || '').trim();
+        const segmentos = conv.split(' - ').map((seg) => normx(seg)).filter(Boolean);
+
+        // ── Cargada/Vacía → campo `carga` con el nombre canónico del catálogo ──
+        const brutoCV = String(x.carga || x.estadoCarga || x.cargaVacia || x.cargadoVacio || '').trim();
+        let cvFinal = '';
+        if (brutoCV && normx(brutoCV) !== 'n/a') {
+          cvFinal = cvPorId.get(brutoCV) || cvPorNorm.get(claveCV(normx(brutoCV))) || '';
+        }
+        if (!cvFinal) {
+          for (let i = segmentos.length - 1; i >= 0; i--) {
+            const m = cvPorNorm.get(claveCV(segmentos[i]));
+            if (m) { cvFinal = m; break; }
+          }
+        }
+        if (cvFinal && String(x.carga || '') !== cvFinal) { cambios.carga = cvFinal; nCarga += 1; }
+
+        // ── Aduana → campo `aduanaNombre` con el nombre canónico del catálogo ──
+        const brutoAdu = String(x.aduanaNombre || x.aduana || x.aduanaId || '').trim();
+        let aduFinal = '';
+        if (brutoAdu) aduFinal = aduPorId.get(brutoAdu) || aduPorNorm.get(normx(brutoAdu)) || '';
+        if (!aduFinal) {
+          for (let i = segmentos.length - 1; i >= 0; i--) {
+            const m = aduPorNorm.get(segmentos[i]);
+            if (m) { aduFinal = m; break; }
+          }
+        }
+        if (aduFinal && String(x.aduanaNombre || '') !== aduFinal) { cambios.aduanaNombre = aduFinal; nAduana += 1; }
+
+        // ── Expo/Impo → campo `trafico`, SOLO si el actual no es válido ──
+        //   (nunca se sobreescribe un tráfico ya capturado: puede diferir del
+        //    convenio a propósito).
+        const trafNorm = normx(String(x.trafico || ''));
+        const trafValido = trafNorm.includes('export') || trafNorm.includes('import') || trafNorm.includes('movimiento');
+        if (!trafValido) {
+          const textoMov = normx(`${conv} ${x.tipoOperacionNombre || x.tipoServicioNombre || x.tipoServicio || ''}`);
+          const trafFinal = textoMov.includes('export') ? 'Exportación' : textoMov.includes('import') ? 'Importación' : textoMov.includes('movimiento') ? 'Movimiento' : '';
+          if (trafFinal) { cambios.trafico = trafFinal; nTrafico += 1; }
+        }
+
+        if (Object.keys(cambios).length > 0) {
+          lote.update(d.ref, cambios);
+          nOps += 1;
+          enLote += 1;
+          if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
+        }
+      }
+      if (enLote > 0) await lote.commit();
+
+      await registrarLog('Catálogos', 'Edición', `Normalizó ${nOps} operación(es) desde su convenio: C/V ${nCarga}, Aduana ${nAduana}, Expo/Impo ${nTrafico}.`);
+      alert(`Operaciones normalizadas. ✅\n\n· Operaciones actualizadas: ${nOps} (de ${snapOps.size})\n· Cargada/Vacía escrita: ${nCarga}\n· Aduana escrita: ${nAduana}\n· Expo/Impo escrito: ${nTrafico}`);
+    } catch (e) {
+      console.error('No se pudieron normalizar las operaciones:', e);
+      alert('No se pudieron normalizar las operaciones.');
+    } finally {
+      setNormalizandoOps(false);
+    }
+  };
+
   /** ✅ V00209: botón manual "⟳ Rearmar descripciones" — confirma y ejecuta
    *  el núcleo con resumen. (✅ V00250: el núcleo también corre solo al
    *  editar los catálogos fuente; el botón queda para normalizaciones.) */
@@ -1750,6 +1859,17 @@ const CatalogosDashboard = () => {
                 onClick={regenerarDescripcionesTarifas}
               >
                 {regenerando ? 'Rearmando…' : '⟳ Rearmar descripciones'}
+              </button>
+            )}
+            {/* ✅ V00257: escribir en cada OPERACIÓN el C/V (catálogo), la aduana y el expo/impo derivados de su convenio */}
+            {catalogoSeleccionado.id === 'tarifas_referencia' && (
+              <button
+                className="btn btn-outline cd-x15 cd-btn-rearmar"
+                title="Escribe en cada operación su Cargada/Vacía (con el nombre exacto del catálogo), su Aduana y su Expo/Impo, derivados del convenio guardado. No toca montos, fechas ni referencias."
+                disabled={normalizandoOps}
+                onClick={normalizarOperacionesDesdeConvenios}
+              >
+                {normalizandoOps ? 'Normalizando…' : '⇊ Normalizar operaciones'}
               </button>
             )}
             {/* ✅ NUEVO (V00112): papelera filtrada al catálogo actual */}
