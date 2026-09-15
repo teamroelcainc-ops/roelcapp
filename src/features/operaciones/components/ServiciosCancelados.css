@@ -32,7 +32,7 @@
 .sc-x28 { padding: 12px 16px; border-top: 1px solid #30363d; display: flex; gap: 8px; flex-shrink: 0; }
 .sc-x29 { flex: 1; padding: 11px; background-color: transparent; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .sc-x30 { position: fixed; inset: 0; background-color: rgba(1, 4, 9, 0.65); z-index: 1300; animation: fadeIn 0.2s ease; }
-.sc-x31 { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 480px; max-width: 94vw; max-height: 86vh; background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; z-index: 1301; display: flex; flex-direction: column; overflow: hidden; animation: fadeIn 0.2s ease; }
+.sc-x31 { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 880px; /* ✅ V00254: 3 columnas */ max-width: 94vw; max-height: 86vh; background-color: #161b22; border: 1px solid #30363d; border-radius: 10px; z-index: 1301; display: flex; flex-direction: column; overflow: hidden; animation: fadeIn 0.2s ease; }
 .sc-x32 { color: #8b949e; font-size: 0.78rem; }
 .sc-x33 { padding: 10px 16px; color: #8b949e; font-size: 0.78rem; border-bottom: 1px solid #21262d; flex-shrink: 0; }
 .sc-x34 { color: #c9d1d9; }
@@ -231,3 +231,15 @@
   .sc-x172 { padding: 14px 12px; }
   .sc-x177 { padding: 14px 12px; }
 }
+
+/* ✅ V00254: modal "Exportar a Excel" — cuadrícula de 3 columnas con reordenado
+   solo por Drag & Drop (se retiraron las flechas). La tarjeta bajo el cursor
+   durante el arrastre se resalta como destino. */
+.sc-export-cuadricula { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; align-content: start; }
+.sc-export-tarjeta { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background-color: #0d1117; border: 1px solid #21262d; border-radius: 6px; cursor: grab; min-width: 0; }
+.sc-export-tarjeta:active { cursor: grabbing; }
+.sc-export-tarjeta--apagada { background-color: rgba(13, 17, 23, 0.5); opacity: 0.55; }
+.sc-export-tarjeta--destino { border-color: #ef4444; background-color: rgba(239, 68, 68, 0.12); }
+.sc-export-etiqueta { flex: 1; color: #c9d1d9; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.sc-export-etiqueta--apagada { color: #8b949e; }
+@media (max-width: 760px) { .sc-export-cuadricula { grid-template-columns: 1fr; } }

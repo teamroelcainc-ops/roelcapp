@@ -465,6 +465,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [modalExportar, setModalExportar] = useState(false);
   const [columnasExport, setColumnasExport] = useState<{ id: string; label: string; visible: boolean }[]>([]);
   const dragExportIdx = useRef<number | null>(null);
+  // ✅ V00254: índice sobre el que se está arrastrando, para resaltar el destino.
+  const [dragOverExportIdx, setDragOverExportIdx] = useState<number | null>(null);
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
   // ✅ NUEVO: buscador dentro del modal "Configurar Columnas".
   const [busquedaColumnas, setBusquedaColumnas] = useState('');
@@ -1801,20 +1803,13 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   };
 
   // ✅ NUEVO: mover una columna con las flechas ▲▼.
-  const moverColumnaExport = (idx: number, delta: number) => {
-    setColumnasExport(prev => {
-      const j = idx + delta;
-      if (j < 0 || j >= prev.length) return prev;
-      const arr = [...prev];
-      [arr[idx], arr[j]] = [arr[j], arr[idx]];
-      return arr;
-    });
-  };
+  // ✅ V00254: se retiraron las flechas ▲▼ — el orden se cambia solo con Drag & Drop.
 
   // ✅ NUEVO: soltar una columna arrastrada sobre la posición destino.
   const soltarColumnaExport = (destino: number) => {
     const origen = dragExportIdx.current;
     dragExportIdx.current = null;
+    setDragOverExportIdx(null); // ✅ V00254
     if (origen === null || origen === destino) return;
     setColumnasExport(prev => {
       const arr = [...prev];
@@ -2260,18 +2255,22 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               </div>
 
               <div className="sc-x54">
-                Arrastra <span className="sc-x1">⋮⋮</span> o usa las flechas para cambiar el orden. Marca las columnas que quieres incluir.
+                Arrastra <span className="sc-x1">⋮⋮</span> cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir.
               </div>
 
-              <div className="sc-x55">
+              {/* ✅ V00254: cuadrícula de 3 columnas y reordenado SOLO por Drag & Drop
+                  (se retiraron las flechas ▲▼); la tarjeta destino se resalta. */}
+              <div className="sc-x55 sc-export-cuadricula">
                 {columnasExport.map((c, idx) => (
                   <div
                     key={c.id}
                     draggable
                     onDragStart={() => { dragExportIdx.current = idx; }}
-                    onDragOver={(e) => e.preventDefault()}
+                    onDragOver={(e) => { e.preventDefault(); if (dragOverExportIdx !== idx) setDragOverExportIdx(idx); }}
+                    onDragLeave={() => { if (dragOverExportIdx === idx) setDragOverExportIdx(null); }}
+                    onDragEnd={() => { dragExportIdx.current = null; setDragOverExportIdx(null); }}
                     onDrop={() => soltarColumnaExport(idx)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '7px 10px', marginBottom: '4px', backgroundColor: c.visible ? '#0d1117' : 'rgba(13, 17, 23, 0.5)', border: '1px solid #21262d', borderRadius: '6px', cursor: 'grab', opacity: c.visible ? 1 : 0.55 }}
+                    className={`sc-export-tarjeta${c.visible ? '' : ' sc-export-tarjeta--apagada'}${dragOverExportIdx === idx ? ' sc-export-tarjeta--destino' : ''}`}
                   >
                     <span className="sc-x56" title="Arrastrar para reordenar">⋮⋮</span>
                     <input className="sc-x57"
@@ -2279,9 +2278,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
                       checked={c.visible}
                       onChange={() => setColumnasExport(prev => prev.map((x, i) => (i === idx ? { ...x, visible: !x.visible } : x)))}
                     />
-                    <span style={{ flex: 1, color: c.visible ? '#c9d1d9' : '#8b949e', fontSize: '0.85rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.label}</span>
-                    <button onClick={() => moverColumnaExport(idx, -1)} disabled={idx === 0} title="Subir" style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '4px', color: idx === 0 ? '#30363d' : '#8b949e', cursor: idx === 0 ? 'default' : 'pointer', padding: '2px 7px', fontSize: '0.7rem' }}>▲</button>
-                    <button onClick={() => moverColumnaExport(idx, 1)} disabled={idx === columnasExport.length - 1} title="Bajar" style={{ background: 'transparent', border: '1px solid #30363d', borderRadius: '4px', color: idx === columnasExport.length - 1 ? '#30363d' : '#8b949e', cursor: idx === columnasExport.length - 1 ? 'default' : 'pointer', padding: '2px 7px', fontSize: '0.7rem' }}>▼</button>
+                    <span className={`sc-export-etiqueta${c.visible ? '' : ' sc-export-etiqueta--apagada'}`} title={c.label}>{c.label}</span>
                   </div>
                 ))}
               </div>
