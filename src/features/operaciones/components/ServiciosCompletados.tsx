@@ -19,6 +19,7 @@ import { FormularioOperacion, TIPOS_DOCUMENTO_OPERACION } from './FormularioOper
 import './ServiciosCompletados.css';
 import { almacenSesion } from '../../../utils/cacheMemoria';
 import { ahoraLocalISOCorto } from '../../../utils/fechaHoraLocal';
+import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache'; // ✅ V00256: catálogos C/V y Aduanas para los filtros nuevos
 
 // ✅ NUEVO: fecha y hora legibles para la auditoría de referencias.
 const fmtFechaAuditoria = (iso: any): string => {
@@ -67,10 +68,13 @@ const describirCambiosLog = (nuevo: any, anterior: any, etiquetas: Record<string
   return visibles.join(' | ') + (resto > 0 ? ` | ...y ${resto} campos más` : '');
 };
 
-const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; tipoOperacion?: string; remolque?: string; remolqueNombre?: string; operador?: string; operadorNombre?: string; referencia?: string; busqueda?: string }): string => {
+const describirFiltrosLog = (f: { fechaInicio: string; fechaFin: string; cliente?: string; clienteNombre?: string; tipoOperacion?: string; movimiento?: string; cargaVacia?: string; aduana?: string; remolque?: string; remolqueNombre?: string; operador?: string; operadorNombre?: string; referencia?: string; busqueda?: string }): string => { // ✅ V00256
   const partes: string[] = [`Fechas: ${f.fechaInicio} a ${f.fechaFin}`];
   if (f.cliente) partes.push(`Cliente: ${f.clienteNombre || f.cliente}`);
   if (f.tipoOperacion) partes.push(`Tipo de operación: ${f.tipoOperacion}`);
+  if (f.movimiento) partes.push(`Movimiento: ${f.movimiento === 'expo' ? 'Exportación' : f.movimiento === 'impo' ? 'Importación' : 'Movimiento'}`); // ✅ V00256
+  if (f.cargaVacia) partes.push(`C/V: ${f.cargaVacia}`); // ✅ V00256
+  if (f.aduana) partes.push(`Aduana: ${f.aduana}`); // ✅ V00256
   if (f.remolque) partes.push(`Remolque: ${f.remolqueNombre || f.remolque}`);
   if (f.operador) partes.push(`Operador: ${f.operadorNombre || f.operador}`);
   if (f.referencia && f.referencia.trim()) partes.push(`# Referencia: "${f.referencia.trim()}"`);
@@ -425,6 +429,21 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   const [filterReferencia, setFilterReferencia] = useState('');
   // ✅ NUEVO: filtro por tipo de operación (Transfer / Logística / Fletes).
   const [filterTipoOperacion, setFilterTipoOperacion] = useState('');
+  // ✅ V00256: filtros nuevos — Expo/Impo/Movimiento, Cargada/Vacía y Aduana.
+  //   C/V y Aduana se resuelven del campo directo o DERIVADOS del nombre del
+  //   convenio ("Tipo de Operación - Tipo de Remolque - C/V - Aduana"), la
+  //   misma técnica del V00255 en Estadísticas. Aplican a la tabla Y al Excel
+  //   (el Excel exporta operacionesOrdenadas, que ya viene filtrada).
+  const [filterMovimiento, setFilterMovimiento] = useState('');
+  const [filterCargaVacia, setFilterCargaVacia] = useState('');
+  const [filterAduana, setFilterAduana] = useState('');
+  type CatFiltro = { id?: unknown; nombre?: unknown; estado_carga?: unknown; aduana?: unknown };
+  const [catCVFiltro, setCatCVFiltro] = useState<CatFiltro[]>([]);
+  const [catAduanasFiltro, setCatAduanasFiltro] = useState<CatFiltro[]>([]);
+  useEffect(() => {
+    cargarCatalogo('catalogo_carga_vacia', { ttlMs: TTL.MEDIO }).then(setCatCVFiltro).catch(() => {});
+    cargarCatalogo('catalogo_aduanas', { ttlMs: TTL.MEDIO }).then(setCatAduanasFiltro).catch(() => {});
+  }, []);
 
   const [paginaActual, setPaginaActual] = useState(1);
   const [pestañaDetalleActiva, setPestañaDetalleActiva] = useState<string>('general');
@@ -449,6 +468,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     cliente: string;
     clienteNombre: string;
     tipoOperacion: string;
+    movimiento: string;   // ✅ V00256: '' | 'expo' | 'impo' | 'mov'
+    cargaVacia: string;   // ✅ V00256: nombre del catálogo C/V
+    aduana: string;       // ✅ V00256: nombre del catálogo Aduanas
     remolque: string;
     remolqueNombre: string;
     operador: string;
@@ -741,6 +763,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       cliente: filterCliente,
       clienteNombre: nombreClienteSeleccionado,
       tipoOperacion: filterTipoOperacion,
+      movimiento: filterMovimiento,     // ✅ V00256
+      cargaVacia: filterCargaVacia,     // ✅ V00256
+      aduana: filterAduana,             // ✅ V00256
       remolque: filterRemolque,
       remolqueNombre: nombreRemolqueSeleccionado,
       operador: filterOperador,
@@ -774,6 +799,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     setTextoBuscarOperador('');
     setFilterReferencia('');
     setFilterTipoOperacion('');
+    setFilterMovimiento('');   // ✅ V00256
+    setFilterCargaVacia('');   // ✅ V00256
+    setFilterAduana('');       // ✅ V00256
     setBusqueda('');
     setFiltrosAplicados(null);
     setPaginaActual(1);
@@ -793,6 +821,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       setFilterFechaFin(f.fechaFin);
       setFilterCliente(f.cliente || '');
       setFilterTipoOperacion(f.tipoOperacion || '');
+      setFilterMovimiento(f.movimiento || '');   // ✅ V00256
+      setFilterCargaVacia(f.cargaVacia || '');   // ✅ V00256
+      setFilterAduana(f.aduana || '');           // ✅ V00256
       setFilterRemolque(f.remolque || '');
       setFilterOperador(f.operador || '');
       setFilterReferencia(f.referencia || '');
@@ -803,6 +834,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         cliente: f.cliente || '',
         clienteNombre: f.clienteNombre || '',
         tipoOperacion: f.tipoOperacion || '',
+        movimiento: f.movimiento || '',   // ✅ V00256
+        cargaVacia: f.cargaVacia || '',   // ✅ V00256
+        aduana: f.aduana || '',           // ✅ V00256
         remolque: f.remolque || '',
         remolqueNombre: f.remolqueNombre || '',
         operador: f.operador || '',
@@ -819,7 +853,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   }, []);
 
   // ✅ NUEVO: cuántos filtros están definidos en el panel (para el contador del botón).
-  const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, filterOperador, filterReferencia.trim(), filterTipoOperacion, busqueda.trim()].filter(Boolean).length;
+  const contadorFiltrosActivos = [filterFechaInicio || filterFechaFin, filterCliente, filterRemolque, filterOperador, filterReferencia.trim(), filterTipoOperacion, filterMovimiento, filterCargaVacia, filterAduana, busqueda.trim()].filter(Boolean).length; // ✅ V00256
 
   // ✅ NUEVO: chips con el resumen del último criterio buscado.
   const resumenFiltrosChips = useMemo(() => {
@@ -827,6 +861,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     const chips: string[] = [`${filtrosAplicados.fechaInicio} → ${filtrosAplicados.fechaFin}`];
     if (filtrosAplicados.cliente) chips.push(`Cliente: ${filtrosAplicados.clienteNombre || filtrosAplicados.cliente}`);
     if (filtrosAplicados.tipoOperacion) chips.push(`Tipo: ${filtrosAplicados.tipoOperacion}`);
+    if (filtrosAplicados.movimiento) chips.push(`Mov: ${filtrosAplicados.movimiento === 'expo' ? 'Exportación' : filtrosAplicados.movimiento === 'impo' ? 'Importación' : 'Movimiento'}`); // ✅ V00256
+    if (filtrosAplicados.cargaVacia) chips.push(`C/V: ${filtrosAplicados.cargaVacia}`); // ✅ V00256
+    if (filtrosAplicados.aduana) chips.push(`Aduana: ${filtrosAplicados.aduana}`); // ✅ V00256
     if (filtrosAplicados.remolque) chips.push(`Remolque: ${filtrosAplicados.remolqueNombre || filtrosAplicados.remolque}`);
     if (filtrosAplicados.operador) chips.push(`Operador: ${filtrosAplicados.operadorNombre || filtrosAplicados.operador}`);
     if ((filtrosAplicados.referencia || '').trim()) chips.push(`# Referencia: "${filtrosAplicados.referencia.trim()}"`);
@@ -1385,6 +1422,65 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     return true;
   };
 
+  // ✅ V00256: normalizador (sin acentos, minúsculas) para los filtros nuevos.
+  const normSC = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+
+  /** ✅ V00256: Expo / Impo / Movimiento — se detecta en el tráfico, el nombre
+   *  del convenio o el tipo de operación (donde diga export/import/movimiento). */
+  const coincideMovimiento = (op: Record<string, unknown>, filtro: string): boolean => {
+    if (!filtro) return true;
+    const t = normSC(`${op.trafico || ''} ${op.convenioNombre || ''} ${tipoOpTexto(op)}`);
+    if (filtro === 'expo') return t.includes('export');
+    if (filtro === 'impo') return t.includes('import');
+    if (filtro === 'mov') return t.includes('movimiento');
+    return true;
+  };
+
+  /** ✅ V00256: C/V de la operación — campo directo (carga / estadoCarga /
+   *  cargaVacia / cargadoVacio) o, si falta o es "N/A", DERIVADO del nombre
+   *  del convenio contra el catálogo Cargada/Vacía (técnica del V00255). */
+  const cvDeOpSC = (op: Record<string, unknown>): string => {
+    const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
+    if (bruto && normSC(bruto) !== 'n/a') {
+      const porId = catCVFiltro.find((c) => String(c.id) === bruto);
+      return String(porId?.nombre || porId?.estado_carga || bruto).trim();
+    }
+    const conv = String(op.convenioNombre || '').trim();
+    if (conv && catCVFiltro.length) {
+      const segmentos = conv.split(' - ').map((x) => normSC(x)).filter(Boolean);
+      for (let i = segmentos.length - 1; i >= 0; i--) {
+        const opcion = catCVFiltro.find((c) => normSC(String(c.nombre || c.estado_carga || '')) === segmentos[i]);
+        if (opcion) return String(opcion.nombre || opcion.estado_carga).trim();
+      }
+    }
+    return bruto || 'N/A';
+  };
+
+  /** ✅ V00256: Aduana de la operación — campo directo si existiera o DERIVADA
+   *  del nombre del convenio contra el catálogo Aduanas (último segmento). */
+  const aduanaDeOpSC = (op: Record<string, unknown>): string => {
+    const directo = String(op.aduanaNombre || '').trim();
+    if (directo) return directo;
+    const brutoId = String(op.aduana || op.aduanaId || '').trim();
+    if (brutoId) {
+      const porId = catAduanasFiltro.find((c) => String(c.id) === brutoId);
+      if (porId) return String(porId.aduana || porId.nombre || '').trim();
+      if (normSC(brutoId)) {
+        const porNombre = catAduanasFiltro.find((c) => normSC(String(c.aduana || c.nombre || '')) === normSC(brutoId));
+        if (porNombre) return String(porNombre.aduana || porNombre.nombre || '').trim();
+      }
+    }
+    const conv = String(op.convenioNombre || '').trim();
+    if (conv && catAduanasFiltro.length) {
+      const segmentos = conv.split(' - ').map((x) => normSC(x)).filter(Boolean);
+      for (let i = segmentos.length - 1; i >= 0; i--) {
+        const opcion = catAduanasFiltro.find((c) => normSC(String(c.aduana || c.nombre || '')) === segmentos[i]);
+        if (opcion) return String(opcion.aduana || opcion.nombre || '').trim();
+      }
+    }
+    return '';
+  };
+
   // ✅ MODIFICADO: el filtro de RANGO DE FECHAS ahora se aplica AQUÍ, en memoria,
   //   usando normalizarFechaServicioISO. Así funciona aunque fechaServicio venga
   //   como Timestamp, "DD/MM/YYYY", etc. (antes el filtro fallaba y salía vacío).
@@ -1392,7 +1488,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   //   presionar BUSCAR (filtrosAplicados), no con los campos en vivo de la barra.
   const operacionesFiltradas = useMemo(() => {
     if (!filtrosAplicados) return [];
-    const { fechaInicio: fIni, fechaFin: fFin, cliente: fCliente, tipoOperacion: fTipoOp, remolque: fRemolque, operador: fOperador, referencia: fReferencia, busqueda: fBusqueda } = filtrosAplicados;
+    const { fechaInicio: fIni, fechaFin: fFin, cliente: fCliente, tipoOperacion: fTipoOp, movimiento: fMovimiento, cargaVacia: fCargaVacia, aduana: fAduana, remolque: fRemolque, operador: fOperador, referencia: fReferencia, busqueda: fBusqueda } = filtrosAplicados; // ✅ V00256
 
     let filtradas = operacionesGlobales;
 
@@ -1412,6 +1508,21 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
     // ✅ NUEVO: filtro por tipo de operación (Transfer / Logística / Fletes).
     if (fTipoOp) {
       filtradas = filtradas.filter(op => coincideTipoOperacion(op, fTipoOp));
+    }
+
+    // ✅ V00256: Expo / Impo / Movimiento.
+    if (fMovimiento) {
+      filtradas = filtradas.filter(op => coincideMovimiento(op, fMovimiento));
+    }
+
+    // ✅ V00256: Cargada/Vacía (campo directo o derivado del convenio).
+    if (fCargaVacia) {
+      filtradas = filtradas.filter(op => normSC(cvDeOpSC(op)) === normSC(fCargaVacia));
+    }
+
+    // ✅ V00256: Aduana (campo directo o derivada del convenio).
+    if (fAduana) {
+      filtradas = filtradas.filter(op => normSC(aduanaDeOpSC(op)) === normSC(fAduana));
     }
 
     if (fRemolque) {
@@ -1463,7 +1574,8 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       if (fa !== fb) return fb.localeCompare(fa);
       return obtenerConsecutivoRef(b2) - obtenerConsecutivoRef(a);
     });
-  }, [filtrosAplicados, operacionesGlobales, catalogosGlobales]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- los helpers se recrean por render; catCVFiltro/catAduanasFiltro cubren su cambio real
+  }, [filtrosAplicados, operacionesGlobales, catalogosGlobales, catCVFiltro, catAduanasFiltro]);
 
   // ✅ NUEVO: valor de una celda para ORDENAR. Espeja renderCellContent pero
   //   devuelve texto plano; las fechas usan el valor ISO normalizado para que
@@ -2206,6 +2318,52 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
               <option value="transfer">Transfer</option>
               <option value="logistica">Logística</option>
               <option value="fletes">Fletes</option>
+            </select>
+          </div>
+
+          {/* ✅ V00256: EXPO / IMPO / MOVIMIENTO */}
+          <div className="sc-x24">
+            <label className="sc-x27">EXPO / IMPO (opcional)</label>
+            <select className="sc-x46"
+              value={filterMovimiento}
+              onChange={(e) => setFilterMovimiento(e.target.value)}
+            >
+              <option value="">Todos</option>
+              <option value="expo">Exportación</option>
+              <option value="impo">Importación</option>
+              <option value="mov">Movimiento</option>
+            </select>
+          </div>
+
+          {/* ✅ V00256: CARGADA / VACÍA (opciones del catálogo) */}
+          <div className="sc-x24">
+            <label className="sc-x27">CARGADA / VACÍA (opcional)</label>
+            <select className="sc-x46"
+              value={filterCargaVacia}
+              onChange={(e) => setFilterCargaVacia(e.target.value)}
+            >
+              <option value="">Todas</option>
+              {catCVFiltro
+                .map((c) => String(c.nombre || c.estado_carga || '').trim())
+                .filter(Boolean)
+                .sort((a, b) => a.localeCompare(b, 'es'))
+                .map((nombre) => <option key={nombre} value={nombre}>{nombre}</option>)}
+            </select>
+          </div>
+
+          {/* ✅ V00256: ADUANA (opciones del catálogo) */}
+          <div className="sc-x24">
+            <label className="sc-x27">ADUANA (opcional)</label>
+            <select className="sc-x46"
+              value={filterAduana}
+              onChange={(e) => setFilterAduana(e.target.value)}
+            >
+              <option value="">Todas</option>
+              {catAduanasFiltro
+                .map((c) => String(c.aduana || c.nombre || '').trim())
+                .filter(Boolean)
+                .sort((a, b) => a.localeCompare(b, 'es'))
+                .map((nombre) => <option key={nombre} value={nombre}>{nombre}</option>)}
             </select>
           </div>
 
