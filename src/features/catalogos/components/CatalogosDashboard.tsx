@@ -686,19 +686,24 @@ const CatalogosDashboard = () => {
   //   propaga a TODAS PARTES: Detalles del Convenio (clientes y proveedores),
   //   Tarifario Clientes (líneas) y Operaciones (nombre del convenio elegido).
   const [regenerando, setRegenerando] = useState(false);
-  const regenerarDescripcionesTarifas = async () => {
-    if (!catalogoSeleccionado || catalogoSeleccionado.id !== 'tarifas_referencia' || regenerando) return;
-    const campoAuto = catalogoSeleccionado.fields.find((f) => f.autoDe && f.autoDe.length > 0);
-    if (!campoAuto) { alert('El catálogo no tiene campo automático configurado.'); return; }
-    if (!window.confirm('¿Rearmar la DESCRIPCIÓN de TODAS las tarifas de referencia con la fórmula (Tipo de Operación + Tipo de Remolque + Cargada/Vacía + Aduana) y actualizarla en Detalles del Convenio, Tarifarios y Operaciones?\n\nEsto reemplaza las descripciones actuales en todas partes.')) return;
-    setRegenerando(true);
+
+  /** ✅ V00250: NÚCLEO de la propagación relacional de Tarifas de Referencia.
+   *  Rearma la DESCRIPCIÓN de todas las tarifas y la propaga a Detalles del
+   *  Convenio (clientes y proveedores), Tarifario Clientes, Tarifario
+   *  Proveedores y Operaciones. No depende del catálogo abierto (usa el
+   *  esquema directo), así puede dispararse SOLO al guardar cualquier
+   *  catálogo fuente. Con `avisar` muestra el resumen (botón manual). */
+  const propagarDescripcionesTarifas = async (avisar: boolean): Promise<void> => {
+    const esquemaTarifas = catalogosConfig.tarifas_referencia;
+    const campoAuto = esquemaTarifas.fields.find((f) => f.autoDe && f.autoDe.length > 0);
+    if (!campoAuto) { if (avisar) alert('El catálogo no tiene campo automático configurado.'); return; }
     try {
       // ✅ V00210: FIX — aquí NO se usa descripcionAutomatica/opcionesDinamicas
       //   (ese estado solo se llena al abrir el formulario; por eso el rearmado
       //   masivo imprimía IDs). Los catálogos fuente se cargan DIRECTO y se
       //   resuelve id → nombre con mapas locales.
       const fuentes = (campoAuto.autoDe || [])
-        .map((n) => catalogoSeleccionado.fields.find((x) => x.name === n))
+        .map((n) => esquemaTarifas.fields.find((x) => x.name === n))
         .filter(Boolean) as CatalogField[];
       const mapasOpciones: Record<string, Record<string, string>> = {};
       for (const f of fuentes) {
@@ -774,22 +779,28 @@ const CatalogosDashboard = () => {
       const nDetC = await propagarDetalles('convenios_clientes_detalles');
       const nDetP = await propagarDetalles('convenios_proveedores_detalles');
 
-      // 3) Tarifario Clientes: la descripción de cada línea.
-      let nTarifarios = 0;
-      try {
-        const snapT = await getDocs(collection(db, 'tarifario_clientes'));
-        for (const d of snapT.docs) {
-          const x = d.data() as Record<string, unknown>;
-          const lineas = Array.isArray(x.tarifas) ? (x.tarifas as Record<string, unknown>[]) : [];
-          let cambio = false;
-          const nuevas = lineas.map((l) => {
-            const desc = mapaDesc[String(l.tarifaReferenciaId || '')];
-            if (desc && String(l.descripcion || '') !== desc) { cambio = true; return { ...l, descripcion: desc }; }
-            return l;
-          });
-          if (cambio) { const lt = writeBatch(db); lt.update(d.ref, { tarifas: nuevas }); await lt.commit(); nTarifarios += 1; }
-        }
-      } catch (e) { console.error('No se pudo propagar a tarifario_clientes:', e); }
+      // 3) Tarifario Clientes Y Tarifario Proveedores: la descripción de cada
+      //    línea. (✅ V00250: antes solo llegaba a tarifario_clientes)
+      const propagarTarifario = async (coleccionTarifario: string): Promise<number> => {
+        let n = 0;
+        try {
+          const snapT = await getDocs(collection(db, coleccionTarifario));
+          for (const d of snapT.docs) {
+            const x = d.data() as Record<string, unknown>;
+            const lineas = Array.isArray(x.tarifas) ? (x.tarifas as Record<string, unknown>[]) : [];
+            let cambio = false;
+            const nuevas = lineas.map((l) => {
+              const desc = mapaDesc[String(l.tarifaReferenciaId || '')];
+              if (desc && String(l.descripcion || '') !== desc) { cambio = true; return { ...l, descripcion: desc }; }
+              return l;
+            });
+            if (cambio) { const lt = writeBatch(db); lt.update(d.ref, { tarifas: nuevas }); await lt.commit(); n += 1; }
+          }
+        } catch (e) { console.error(`No se pudo propagar a ${coleccionTarifario}:`, e); }
+        return n;
+      };
+      const nTarifarios = await propagarTarifario('tarifario_clientes');
+      const nTarifariosProv = await propagarTarifario('tarifario_proveedores');
 
       // 4) Operaciones: nombre del convenio elegido (cliente).
       let nOps = 0;
@@ -811,12 +822,24 @@ const CatalogosDashboard = () => {
         if (enLote > 0) await lote.commit();
       } catch (e) { console.error('No se pudo propagar a operaciones:', e); }
 
-      await registrarLog('Catálogos', 'Edición', `Rearmó las descripciones de Tarifas de Referencia (${catalogoActualizados}) y las propagó: ${nDetC} detalle(s) de clientes, ${nDetP} de proveedores, ${nTarifarios} tarifario(s), ${nOps} operación(es).`);
-      alert(`Descripciones rearmadas y propagadas. ✅\n\n· Tarifas del catálogo actualizadas: ${catalogoActualizados}\n· Detalles del Convenio (clientes): ${nDetC}\n· Detalles del Convenio (proveedores): ${nDetP}\n· Tarifarios de clientes: ${nTarifarios}\n· Operaciones: ${nOps}`);
+      await registrarLog('Catálogos', 'Edición', `Rearmó las descripciones de Tarifas de Referencia (${catalogoActualizados}) y las propagó: ${nDetC} detalle(s) de clientes, ${nDetP} de proveedores, ${nTarifarios} tarifario(s) de clientes, ${nTarifariosProv} de proveedores, ${nOps} operación(es).`);
+      if (avisar) alert(`Descripciones rearmadas y propagadas. ✅\n\n· Tarifas del catálogo actualizadas: ${catalogoActualizados}\n· Detalles del Convenio (clientes): ${nDetC}\n· Detalles del Convenio (proveedores): ${nDetP}\n· Tarifarios de clientes: ${nTarifarios}\n· Tarifarios de proveedores: ${nTarifariosProv}\n· Operaciones: ${nOps}`);
       // La tabla se refresca sola: registrosGlobales viene de un onSnapshot.
     } catch (e) {
       console.error('No se pudieron rearmar las descripciones:', e);
-      alert('No se pudieron rearmar las descripciones.');
+      if (avisar) alert('No se pudieron rearmar las descripciones.');
+    }
+  };
+
+  /** ✅ V00209: botón manual "⟳ Rearmar descripciones" — confirma y ejecuta
+   *  el núcleo con resumen. (✅ V00250: el núcleo también corre solo al
+   *  editar los catálogos fuente; el botón queda para normalizaciones.) */
+  const regenerarDescripcionesTarifas = async () => {
+    if (!catalogoSeleccionado || catalogoSeleccionado.id !== 'tarifas_referencia' || regenerando) return;
+    if (!window.confirm('¿Rearmar la DESCRIPCIÓN de TODAS las tarifas de referencia con la fórmula (Tipo de Operación + Tipo de Remolque + Cargada/Vacía + Aduana) y actualizarla en Detalles del Convenio, Tarifarios y Operaciones?\n\nEsto reemplaza las descripciones actuales en todas partes.')) return;
+    setRegenerando(true);
+    try {
+      await propagarDescripcionesTarifas(true);
     } finally {
       setRegenerando(false);
     }
@@ -913,6 +936,34 @@ const CatalogosDashboard = () => {
           }
         } catch (ePropagar) {
           console.error('No se pudo propagar el nombre a los módulos relacionados:', ePropagar);
+        }
+        // ✅ V00250: BASE RELACIONAL — si lo editado es una Tarifa de
+        //   Referencia o uno de los catálogos FUENTE de su descripción
+        //   automática (Tipo de Operación, Tipo de Remolque, C/V, Aduana),
+        //   se rearman las descripciones y se propagan SOLAS a Detalles del
+        //   Convenio (ambos lados), Tarifario Clientes, Tarifario Proveedores
+        //   y Operaciones, sin tener que presionar "⟳ Rearmar descripciones".
+        try {
+          const CATALOGOS_QUE_ALIMENTAN_TARIFAS: Record<string, string> = {
+            tarifas_referencia: 'descripcion',
+            tipos_tarifarios: 'descripcion',
+            tipo_remolque: 'nombre',
+            carga_vacia: 'nombre',
+            aduanas: 'aduana',
+          };
+          const campoEtiqueta = CATALOGOS_QUE_ALIMENTAN_TARIFAS[catalogoSeleccionado.id];
+          if (campoEtiqueta) {
+            const antes = String(registroActual[campoEtiqueta] ?? '').trim();
+            const despues = String(datosAGuardar[campoEtiqueta] ?? '').trim();
+            if (antes !== despues) {
+              // Si la fuente cambió, el caché de sus opciones ya quedó viejo:
+              // se invalida ANTES de rearmar para que el núcleo lea fresco.
+              invalidarCacheOpciones(`catalogo_${catalogoSeleccionado.id}`);
+              await propagarDescripcionesTarifas(false);
+            }
+          }
+        } catch (eCascada) {
+          console.error('No se pudo propagar la descripción de tarifas en cascada:', eCascada);
         }
       } else {
         // ✅ NUEVO: bloqueo de DUPLICADOS al crear. Si ya existe un registro

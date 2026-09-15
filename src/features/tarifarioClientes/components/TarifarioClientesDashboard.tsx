@@ -85,6 +85,8 @@ import { db, auth } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
+import html2pdf from 'html2pdf.js'; // ✅ V00250: descarga directa (como Operaciones)
+import { LOGO_CTPAT_B64 } from '../../../utils/logoCtpat'; // ✅ V00250
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { reservarConsecutivosDetalle, reservarConsecutivosTarifario } from '../../conveniosDetalles/consecutivos'; // ✅ V00199/V00203
 import './TarifarioClientesDashboard.css';
@@ -864,42 +866,48 @@ export function TarifarioClientesDashboard() {
 
     const credito = Number(r.creditoDias) > 0 ? `${r.creditoDias} día(s)` : '';
 
+    // ✅ V00250: los estilos van con el prefijo del contenedor porque el HTML
+    //   ya no abre en una ventana aparte: se monta como <div> temporal en el
+    //   propio documento (técnica de Operaciones/html2pdf) y sin el prefijo
+    //   la regla de body/etc. contaminaría toda la app.
     const css = `
-      * { box-sizing: border-box; }
-      body { font-family: Calibri, Arial, sans-serif; color: #000; margin: 0; padding: 28px 46px; font-size: 11.5px; }
-      .encabezado { display: flex; align-items: flex-start; }
-      .logo { width: 150px; }
-      .logo img { width: 140px; }
-      .datos { flex: 1; text-align: center; color: #1f6fb2; line-height: 1.35; }
-      .datos .razon { color: #e07b00; font-weight: bold; font-size: 15px; }
-      .datos .rfc { font-weight: bold; }
-      .fecha-linea { text-align: right; margin: 14px 0 4px 0; }
-      .fecha-linea b { margin-right: 8px; }
-      .cliente-bloque { display: flex; justify-content: space-between; margin: 2px 0 14px 0; }
-      .cliente-nombre { font-weight: bold; text-decoration: underline; }
-      .tabla { width: 100%; border-collapse: collapse; margin-top: 6px; }
-      .tabla th { border-bottom: 1px solid #000; padding: 2px 6px; font-size: 11.5px; text-align: center; }
-      .tabla th.izq { text-align: left; padding-left: 30px; }
-      .tabla td { padding: 3px 6px; }
-      .tabla td.num { width: 24px; text-align: right; }
-      .tabla td.desc { text-align: left; }
-      .tabla td.clave { width: 120px; text-align: center; font-family: Consolas, monospace; }
-      .tabla td.signo { width: 14px; text-align: right; }
-      .tabla td.tarifa { width: 80px; text-align: right; }
-      .condiciones { margin-top: 26px; line-height: 1.55; }
-      .aviso { margin-top: 22px; }
-      .gracias { margin-top: 20px; }
-      .firma { margin-top: 26px; display: flex; justify-content: space-between; align-items: flex-end; }
-      .firma .contacto { line-height: 1.5; }
-      .firma .contacto a { color: #1f6fb2; }
-      .firma .aceptacion { width: 46%; text-align: center; border-top: 1px solid #000; padding-top: 3px; font-size: 10.5px; }
-      .ctpat { text-align: right; margin-top: 18px; font-weight: bold; font-size: 15px; color: #b30000; }
-      @media print { body { padding: 18px 36px; } }
+      #tarifario-pdf-hoja * { box-sizing: border-box; }
+      #tarifario-pdf-hoja { font-family: Calibri, Arial, sans-serif; color: #000; margin: 0; padding: 10mm 12mm; font-size: 11.5px; width: 216mm; background: #fff; }
+      #tarifario-pdf-hoja .encabezado { display: flex; align-items: flex-start; }
+      #tarifario-pdf-hoja .logo { width: 150px; }
+      #tarifario-pdf-hoja .logo img { width: 140px; }
+      #tarifario-pdf-hoja .datos { flex: 1; text-align: center; color: #1f6fb2; line-height: 1.35; }
+      #tarifario-pdf-hoja .datos .razon { color: #e07b00; font-weight: bold; font-size: 15px; }
+      #tarifario-pdf-hoja .datos .rfc { font-weight: bold; }
+      #tarifario-pdf-hoja .fecha-linea { text-align: right; margin: 14px 0 4px 0; }
+      #tarifario-pdf-hoja .fecha-linea b { margin-right: 8px; }
+      #tarifario-pdf-hoja .cliente-bloque { display: flex; justify-content: space-between; margin: 2px 0 14px 0; }
+      #tarifario-pdf-hoja .cliente-nombre { font-weight: bold; text-decoration: underline; }
+      #tarifario-pdf-hoja .tabla { width: 100%; border-collapse: collapse; margin-top: 6px; }
+      #tarifario-pdf-hoja .tabla th { border-bottom: 1px solid #000; padding: 2px 6px; font-size: 11.5px; text-align: center; }
+      #tarifario-pdf-hoja .tabla th.izq { text-align: left; padding-left: 30px; }
+      #tarifario-pdf-hoja .tabla td { padding: 3px 6px; }
+      #tarifario-pdf-hoja .tabla td.num { width: 24px; text-align: right; }
+      #tarifario-pdf-hoja .tabla td.desc { text-align: left; }
+      #tarifario-pdf-hoja .tabla td.clave { width: 120px; text-align: center; font-family: Consolas, monospace; }
+      #tarifario-pdf-hoja .tabla td.signo { width: 14px; text-align: right; }
+      #tarifario-pdf-hoja .tabla td.tarifa { width: 80px; text-align: right; }
+      #tarifario-pdf-hoja .condiciones { margin-top: 26px; line-height: 1.55; }
+      #tarifario-pdf-hoja .aviso { margin-top: 22px; }
+      #tarifario-pdf-hoja .gracias { margin-top: 20px; }
+      #tarifario-pdf-hoja .firma { margin-top: 26px; display: flex; justify-content: space-between; align-items: flex-end; }
+      #tarifario-pdf-hoja .firma .contacto { line-height: 1.5; }
+      #tarifario-pdf-hoja .firma .contacto a { color: #1f6fb2; }
+      #tarifario-pdf-hoja .firma .aceptacion { width: 46%; text-align: center; border-top: 1px solid #000; padding-top: 3px; font-size: 10.5px; }
+      #tarifario-pdf-hoja .ctpat-logo { margin-top: 18px; display: flex; justify-content: flex-end; }
+      #tarifario-pdf-hoja .ctpat-logo .ctpat-caja { width: 46%; text-align: center; }
+      #tarifario-pdf-hoja .ctpat-logo img { width: 34mm; }
     `;
 
-    return `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
-      <title>TARIFAS_${esc(String(r.clienteNombre || 'CLIENTE').toUpperCase().replace(/[^A-Z0-9]+/g, '_'))}_${esc(String(r.fecha || '').slice(0, 4))}</title>
-      <style type="text/css">${css}</style></head><body>
+    // ✅ V00250: ahora se devuelve un <div> (no un documento completo) para
+    //   que html2pdf lo "fotografíe" y lo descargue directo, como Operaciones.
+    return `<div id="tarifario-pdf-hoja">
+      <style type="text/css">${css}</style>
       <div class="encabezado">
         <div class="logo"><img src="${LOGO_DEFAULT}" alt="Roelca" /></div>
         <div class="datos">
@@ -935,17 +943,41 @@ export function TarifarioClientesDashboard() {
         </div>
         <div class="aceptacion">NOMBRE, FIRMA Y SELLO DE ACEPTACION DE TARIFAS</div>
       </div>
-      <div class="ctpat">CTPAT™</div>
-      <script>window.onload=function(){setTimeout(function(){window.print();},300);}</scr${''}ipt>
-      </body></html>`;
+      <div class="ctpat-logo"><div class="ctpat-caja"><img src="${LOGO_CTPAT_B64}" alt="CTPAT" /></div></div>
+      </div>`;
   };
 
-  const exportarPDF = (r: Doc) => {
-    const w = window.open('', '_blank');
-    if (!w) { alert('Permite las ventanas emergentes para descargar el PDF.'); return; }
-    w.document.open();
-    w.document.write(construirHTMLTarifario(r));
-    w.document.close();
+  // ✅ V00250: DESCARGA DIRECTA (un clic → se baja el PDF, sin abrir la
+  //   impresora), la MISMA técnica de Operaciones (pdfGenerator/html2pdf):
+  //   div temporal fuera de pantalla + espera de imágenes + .save().
+  const exportarPDF = async (r: Doc) => {
+    const cont = document.createElement('div');
+    cont.style.position = 'fixed';
+    cont.style.left = '-10000px';
+    cont.style.top = '0';
+    cont.innerHTML = construirHTMLTarifario(r);
+    document.body.appendChild(cont);
+    try {
+      // Esperar a que TODAS las imágenes (logo Roelca y CTPAT) decodifiquen
+      // antes de generar el PDF (lección de pdfGenerator: si no, se omiten).
+      const imgs = Array.from(cont.querySelectorAll('img')) as HTMLImageElement[];
+      await Promise.all(imgs.map((im) => (im.complete && im.naturalWidth > 0)
+        ? Promise.resolve()
+        : new Promise<void>((res) => { im.onload = () => res(); im.onerror = () => res(); })));
+      const filename = `TARIFAS_${String(r.clienteNombre || 'CLIENTE').toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_${String(r.fecha || '').slice(0, 4)}.pdf`;
+      await html2pdf().set({
+        margin: 0,
+        filename,
+        image: { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas: { backgroundColor: '#ffffff', scale: 2, useCORS: true },
+        jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' as const },
+      }).from(cont.firstElementChild as HTMLElement).save();
+    } catch (e) {
+      console.error('No se pudo descargar el PDF del tarifario:', e);
+      alert('No se pudo descargar el PDF del tarifario.');
+    } finally {
+      if (cont.parentNode) document.body.removeChild(cont);
+    }
   };
 
   /** ✅ V00219: TODOS los tarifarios vencen el 31/12 del año en curso, salvo
