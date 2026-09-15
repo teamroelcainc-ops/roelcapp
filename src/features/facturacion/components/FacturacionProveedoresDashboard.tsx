@@ -2956,21 +2956,67 @@ export const FacturacionProveedoresDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registrosVisibles, facturaViendo, agregarRefFactura, activeTab]);
 
-  const refDeOp = (op: any): string => {
+  type OpLike = Record<string, unknown>; // ✅ V00260
+  type InfoOp = { ref?: unknown; refCliente?: unknown; [k: string]: unknown }; // ✅ V00260
+  // ✅ V00260: acepta un mapa EXTRA de operaciones recién resueltas (lo usa la
+  //   exportación a Excel, que resuelve TODO el historial y no puede esperar
+  //   al setState de opInfoMap).
+  const refDeOpCon = (op: OpLike | null | undefined, extra?: Record<string, InfoOp>): string => {
+    const buscar = (k: string) => (extra && extra[k]) || opInfoMap[k];
     const id = String(op?.id || '');
     const directos = [op?.numReferencia, op?.referencia, op?.ref].map((v: any) => String(v || '')).filter(Boolean);
     const refDirecta = directos.find(pareceReferencia);
     if (refDirecta) return refDirecta;
-    const info = opInfoMap[id];
+    const info = buscar(id);
     if (info?.ref && pareceReferencia(String(info.ref))) return String(info.ref);
     const tokens = new Set<string>();
     [id, ...directos].forEach(v => String(v).split(/[,\s]+/).forEach(t => { if (t) tokens.add(t); }));
     const resueltas: string[] = [];
-    tokens.forEach(t => { const i = opInfoMap[t]; if (i?.ref && pareceReferencia(String(i.ref))) resueltas.push(String(i.ref)); });
+    tokens.forEach(t => { const i = buscar(t); if (i?.ref && pareceReferencia(String(i.ref))) resueltas.push(String(i.ref)); });
     if (resueltas.length) return Array.from(new Set(resueltas)).join(', ');
     // ✅ V00126: preferir la referencia resuelta de la operación antes que un valor directo tipo id
     const infoRef = info?.ref ? String(info.ref) : '';
     return (infoRef && !/^[0-9a-f]{8,}$/i.test(infoRef) ? infoRef : '') || directos[0] || infoRef || id;
+  };
+  const refDeOp = (op: OpLike | null | undefined): string => refDeOpCon(op);
+
+  // ✅ V00260: resuelve TODAS las referencias del conjunto a exportar (el
+  //   opInfoMap normal solo cubre las filas visibles, tope 150 — por eso el
+  //   Excel salía con IDs en vez de referencias).
+  const resolverOpsParaExport = async (facturas: OpLike[]): Promise<Record<string, InfoOp>> => {
+    const faltantes = new Set<string>();
+    const considerar = (id: string) => {
+      const k = String(id || '').trim();
+      if (!k || opInfoMap[k] || pareceReferencia(k) || k.length < 6) return;
+      faltantes.add(k);
+    };
+    const considerarValor = (valor: unknown) => String(valor || '').split(/[,\s]+/).forEach(t => considerar(t));
+    facturas.forEach((f) => {
+      (Array.isArray(f.operacionesGuardadas) ? (f.operacionesGuardadas as OpLike[]) : []).forEach((op) => {
+        considerar(String(op?.id || ''));
+        considerarValor(op?.ref);
+      });
+      (Array.isArray(f.operacionesIds) ? (f.operacionesIds as unknown[]) : []).forEach((id) => considerar(String(id || '')));
+    });
+    const nuevos: Record<string, InfoOp> = {};
+    const ids = Array.from(faltantes);
+    for (let i = 0; i < ids.length; i += 30) {
+      const chunk = ids.slice(i, i + 30);
+      try {
+        const snap = await getDocs(query(collection(db, 'operaciones'), where(documentId(), 'in', chunk)));
+        snap.docs.forEach(d => {
+          const o = { id: d.id, ...(d.data() as Record<string, unknown>) } as Record<string, string>;
+          nuevos[d.id] = {
+            ref: o.numReferencia || o.referencia || o.ref || d.id,
+            remolque: txt(o.remolqueNombre, o.remolquePlaca, o.numeroRemolque),
+            moneda: o.monedaUnidadNombre || mostrarMoneda(o.facturadoEnUnidad),
+            proveedorId: provDeOp(o) || '',
+          };
+        });
+      } catch (e) { console.warn('No se pudo resolver lote de operaciones para exportar:', e); }
+    }
+    if (Object.keys(nuevos).length) setOpInfoMap(prev => ({ ...prev, ...nuevos }));
+    return nuevos;
   };
 
   const irPaginaSiguiente = () => setPaginaActual(p => Math.min(p + 1, totalPaginas));
@@ -2988,7 +3034,7 @@ export const FacturacionProveedoresDashboard = () => {
     return '-';
   };
 
-  const valorCeldaFactura = (f: any, colId: string): any => {
+  const valorCeldaFactura = (f: any, colId: string, extra?: Record<string, any>): any => {
     switch (colId) {
       case 'statusFactura': return f.statusFactura || 'Facturado';
       case 'invoice': return f.invoice || '';
@@ -3000,7 +3046,7 @@ export const FacturacionProveedoresDashboard = () => {
       case 'cantOps': return f.operacionesIds?.length || 0;
       case 'referencias':
         return Array.isArray(f.operacionesGuardadas)
-          ? f.operacionesGuardadas.map((op: any) => refDeOp(op)).filter(Boolean).join(', ')
+          ? f.operacionesGuardadas.map((op: any) => refDeOpCon(op, extra)).filter(Boolean).join(', ') // ✅ V00260
           : '-';
       case 'total': return totalNativoFactura(f); // ✅ FIX MONEDA
       case 'createdAt': return f.createdAt ? formatearFechaHora(f.createdAt) : '-';
@@ -3040,13 +3086,15 @@ export const FacturacionProveedoresDashboard = () => {
     }
   };
 
-  const exportarCSV = () => {
+  const exportarCSV = async () => {
     if (historialOrdenado.length === 0) return alert('No hay datos para exportar.');
     const columnasVisibles = columnasFactura.filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
+    // ✅ V00260: resolver las referencias de TODO el historial antes de exportar.
+    const mapaExport = await resolverOpsParaExport(historialOrdenado);
     const datosExcel = historialOrdenado.map(f => {
       const fila: any = {};
-      columnasVisibles.forEach(col => { fila[col.label] = valorCeldaFactura(f, col.id); });
+      columnasVisibles.forEach(col => { fila[col.label] = valorCeldaFactura(f, col.id, mapaExport); });
       return fila;
     });
     const worksheet = XLSX.utils.json_to_sheet(datosExcel);
