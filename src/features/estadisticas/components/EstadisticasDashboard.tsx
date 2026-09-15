@@ -177,12 +177,7 @@ export function EstadisticasDashboard() {
   const [catCVDesglose, setCatCVDesglose] = useState<{ id?: unknown; nombre?: unknown; estado_carga?: unknown }[]>([]);
   useEffect(() => { cargarCatalogo('catalogo_carga_vacia', { ttlMs: TTL.MEDIO }).then(setCatCVDesglose).catch(() => {}); }, []);
   const cvDeOp = (op: Op): string => {
-    const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
-    const brutoNorm = norm(bruto);
-    if (bruto && brutoNorm !== 'n/a') {
-      const porId = catCVDesglose.find((c) => String(c.id) === bruto);
-      return String(porId?.nombre || porId?.estado_carga || bruto).trim();
-    }
+    // ✅ V00258: EL CONVENIO MANDA; el campo directo es respaldo.
     const conv = String(op.convenioNombre || '').trim();
     if (conv && catCVDesglose.length) {
       const segmentos = conv.split(' - ').map((x) => norm(x)).filter(Boolean);
@@ -190,6 +185,11 @@ export function EstadisticasDashboard() {
         const opcion = catCVDesglose.find((c) => norm(String(c.nombre || c.estado_carga || '')) === segmentos[i]);
         if (opcion) return String(opcion.nombre || opcion.estado_carga).trim();
       }
+    }
+    const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
+    if (bruto && norm(bruto) !== 'n/a') {
+      const porId = catCVDesglose.find((c) => String(c.id) === bruto);
+      return String(porId?.nombre || porId?.estado_carga || bruto).trim();
     }
     return bruto || 'N/A';
   };

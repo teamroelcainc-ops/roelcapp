@@ -392,6 +392,34 @@ const IconArrowRight    = (p: { size?: number }) => <svg className="fo-x2" width
 const IconPlus          = (p: { size?: number }) => <svg className="fo-x2" width={p.size || 16} height={p.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
 
 const tipoTarifarioCache = new Map<string, any>();
+
+// ✅ V00258: caché del catálogo Cargada/Vacía para resolver el estado_carga de
+//   la tarifa (que puede venir como ID) al NOMBRE exacto del catálogo antes de
+//   guardarlo en la operación (caso reportado: convenio Hazmat con carga
+//   "Cargado" — la operación debe guardar el C/V que dicta el convenio).
+let cargaVaciaCachePromesa: Promise<Map<string, string>> | null = null;
+const obtenerMapaCargaVacia = (): Promise<Map<string, string>> => {
+  if (!cargaVaciaCachePromesa) {
+    cargaVaciaCachePromesa = getDocs(collection(db, 'catalogo_carga_vacia')).then((snap) => {
+      const mapa = new Map<string, string>();
+      snap.docs.forEach((d) => {
+        const x = d.data() as Record<string, unknown>;
+        const nombre = String(x.nombre || x.estado_carga || '').trim();
+        if (!nombre) return;
+        mapa.set(d.id, nombre);
+        mapa.set(nombre.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase(), nombre);
+      });
+      return mapa;
+    }).catch(() => { cargaVaciaCachePromesa = null; return new Map<string, string>(); });
+  }
+  return cargaVaciaCachePromesa;
+};
+const resolverNombreCarga = async (valor: unknown): Promise<string> => {
+  const v = String(valor ?? '').trim();
+  if (!v) return 'N/A';
+  const mapa = await obtenerMapaCargaVacia();
+  return mapa.get(v) || mapa.get(v.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase()) || v;
+};
 const traficoCache = new Map<string, string>();
 
 const BotonAgregar = ({ onClick, title }: { onClick: () => void; title: string }) => (
@@ -1707,11 +1735,12 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         }
         if (tipoData) {
           const nombreTrafico = await resolverNombreTrafico(tipoData.movimiento);
+          const nombreCarga = await resolverNombreCarga(tarifaObj.estado_carga); // ✅ V00258
           setFormData(prev => ({
             ...prev,
             tipoServicio: tipoData.descripcion || 'N/A',
             trafico: nombreTrafico,
-            carga: tarifaObj.estado_carga || 'N/A'
+            carga: nombreCarga
           }));
         }
       } catch (error) { console.error('Error resolviendo flujo:', error); }
@@ -1752,6 +1781,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       if (cancelado || !tipoData) return;
 
       const nombreTrafico = await resolverNombreTrafico(tipoData.movimiento);
+      const nombreCargaConvenio = await resolverNombreCarga(tarifaObj.estado_carga); // ✅ V00258
       if (cancelado) return;
 
       setFormData(prev => {
@@ -1762,8 +1792,8 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           ? nombreTrafico
           : ((prev.trafico && prev.trafico !== 'N/A') ? prev.trafico : nombreTrafico);
         const nuevaCarga = convenioCambiado
-          ? (tarifaObj.estado_carga || 'N/A')
-          : ((prev.carga && prev.carga !== 'N/A') ? prev.carga : (tarifaObj.estado_carga || 'N/A'));
+          ? nombreCargaConvenio
+          : ((prev.carga && prev.carga !== 'N/A') ? prev.carga : nombreCargaConvenio); // ✅ V00258
         // Guard anti-bucle: si nada cambia, no se dispara otro render.
         if (prev.tipoServicio === nuevoTipo && prev.trafico === nuevoTrafico && prev.carga === nuevaCarga) return prev;
         return { ...prev, tipoServicio: nuevoTipo, trafico: nuevoTrafico, carga: nuevaCarga };

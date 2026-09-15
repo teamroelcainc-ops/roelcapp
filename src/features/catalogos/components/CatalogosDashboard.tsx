@@ -842,7 +842,7 @@ const CatalogosDashboard = () => {
   const [normalizandoOps, setNormalizandoOps] = useState(false);
   const normalizarOperacionesDesdeConvenios = async () => {
     if (normalizandoOps) return;
-    if (!window.confirm('¿Normalizar TODAS las operaciones con la información de su convenio?\n\nSe actualizarán, solo donde falten o difieran del catálogo:\n· Cargada/Vacía (campo carga, con el nombre exacto del catálogo)\n· Aduana (campo aduanaNombre)\n· Expo/Impo (campo trafico)\n\nNo se tocan montos, fechas ni referencias.')) return;
+    if (!window.confirm('¿Normalizar TODAS las operaciones con la información de su convenio?\n\nEL CONVENIO MANDA: si el convenio trae Cargada/Vacía o Aduana del catálogo, ese valor sobreescribe lo capturado en la operación (ej. convenio Hazmat → carga Hazmat). El campo capturado solo se conserva cuando el convenio no trae ese dato.\n\nSe actualizan: carga, aduanaNombre y trafico (el tráfico nunca se sobreescribe si ya es válido). No se tocan montos, fechas ni referencias.')) return;
     setNormalizandoOps(true);
     try {
       // Colapsa espacios múltiples (hay convenios con "240  Nuevo Laredo" a
@@ -885,28 +885,34 @@ const CatalogosDashboard = () => {
         const segmentos = conv.split(' - ').map((seg) => normx(seg)).filter(Boolean);
 
         // ── Cargada/Vacía → campo `carga` con el nombre canónico del catálogo ──
-        const brutoCV = String(x.carga || x.estadoCarga || x.cargaVacia || x.cargadoVacio || '').trim();
+        //   ✅ V00258: EL CONVENIO MANDA. Si el convenio trae un C/V del
+        //   catálogo (p. ej. "... - Hazmat - ..."), ese es el correcto y
+        //   SOBREESCRIBE lo capturado (caso reportado: convenio Hazmat con
+        //   carga "Cargado"). El campo directo solo aplica cuando el convenio
+        //   no trae C/V (Rentas, Multas, Demoras…), normalizado al catálogo.
         let cvFinal = '';
-        if (brutoCV && normx(brutoCV) !== 'n/a') {
-          cvFinal = cvPorId.get(brutoCV) || cvPorNorm.get(claveCV(normx(brutoCV))) || '';
+        for (let i = segmentos.length - 1; i >= 0; i--) {
+          const m = cvPorNorm.get(claveCV(segmentos[i]));
+          if (m) { cvFinal = m; break; }
         }
         if (!cvFinal) {
-          for (let i = segmentos.length - 1; i >= 0; i--) {
-            const m = cvPorNorm.get(claveCV(segmentos[i]));
-            if (m) { cvFinal = m; break; }
+          const brutoCV = String(x.carga || x.estadoCarga || x.cargaVacia || x.cargadoVacio || '').trim();
+          if (brutoCV && normx(brutoCV) !== 'n/a') {
+            cvFinal = cvPorId.get(brutoCV) || cvPorNorm.get(claveCV(normx(brutoCV))) || '';
           }
         }
         if (cvFinal && String(x.carga || '') !== cvFinal) { cambios.carga = cvFinal; nCarga += 1; }
 
         // ── Aduana → campo `aduanaNombre` con el nombre canónico del catálogo ──
-        const brutoAdu = String(x.aduanaNombre || x.aduana || x.aduanaId || '').trim();
+        //   ✅ V00258: también manda el convenio; el campo directo es respaldo.
         let aduFinal = '';
-        if (brutoAdu) aduFinal = aduPorId.get(brutoAdu) || aduPorNorm.get(normx(brutoAdu)) || '';
+        for (let i = segmentos.length - 1; i >= 0; i--) {
+          const m = aduPorNorm.get(segmentos[i]);
+          if (m) { aduFinal = m; break; }
+        }
         if (!aduFinal) {
-          for (let i = segmentos.length - 1; i >= 0; i--) {
-            const m = aduPorNorm.get(segmentos[i]);
-            if (m) { aduFinal = m; break; }
-          }
+          const brutoAdu = String(x.aduanaNombre || x.aduana || x.aduanaId || '').trim();
+          if (brutoAdu) aduFinal = aduPorId.get(brutoAdu) || aduPorNorm.get(normx(brutoAdu)) || '';
         }
         if (aduFinal && String(x.aduanaNombre || '') !== aduFinal) { cambios.aduanaNombre = aduFinal; nAduana += 1; }
 

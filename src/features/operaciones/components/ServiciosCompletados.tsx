@@ -1440,11 +1440,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
    *  cargaVacia / cargadoVacio) o, si falta o es "N/A", DERIVADO del nombre
    *  del convenio contra el catálogo Cargada/Vacía (técnica del V00255). */
   const cvDeOpSC = (op: Record<string, unknown>): string => {
-    const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
-    if (bruto && normSC(bruto) !== 'n/a') {
-      const porId = catCVFiltro.find((c) => String(c.id) === bruto);
-      return String(porId?.nombre || porId?.estado_carga || bruto).trim();
-    }
+    // ✅ V00258: EL CONVENIO MANDA; el campo directo es respaldo.
     const conv = String(op.convenioNombre || '').trim();
     if (conv && catCVFiltro.length) {
       const segmentos = conv.split(' - ').map((x) => normSC(x)).filter(Boolean);
@@ -1453,23 +1449,18 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         if (opcion) return String(opcion.nombre || opcion.estado_carga).trim();
       }
     }
+    const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
+    if (bruto && normSC(bruto) !== 'n/a') {
+      const porId = catCVFiltro.find((c) => String(c.id) === bruto);
+      return String(porId?.nombre || porId?.estado_carga || bruto).trim();
+    }
     return bruto || 'N/A';
   };
 
   /** ✅ V00256: Aduana de la operación — campo directo si existiera o DERIVADA
    *  del nombre del convenio contra el catálogo Aduanas (último segmento). */
   const aduanaDeOpSC = (op: Record<string, unknown>): string => {
-    const directo = String(op.aduanaNombre || '').trim();
-    if (directo) return directo;
-    const brutoId = String(op.aduana || op.aduanaId || '').trim();
-    if (brutoId) {
-      const porId = catAduanasFiltro.find((c) => String(c.id) === brutoId);
-      if (porId) return String(porId.aduana || porId.nombre || '').trim();
-      if (normSC(brutoId)) {
-        const porNombre = catAduanasFiltro.find((c) => normSC(String(c.aduana || c.nombre || '')) === normSC(brutoId));
-        if (porNombre) return String(porNombre.aduana || porNombre.nombre || '').trim();
-      }
-    }
+    // ✅ V00258: EL CONVENIO MANDA; los campos directos son respaldo.
     const conv = String(op.convenioNombre || '').trim();
     if (conv && catAduanasFiltro.length) {
       const segmentos = conv.split(' - ').map((x) => normSC(x)).filter(Boolean);
@@ -1477,6 +1468,15 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
         const opcion = catAduanasFiltro.find((c) => normSC(String(c.aduana || c.nombre || '')) === segmentos[i]);
         if (opcion) return String(opcion.aduana || opcion.nombre || '').trim();
       }
+    }
+    const directo = String(op.aduanaNombre || '').trim();
+    if (directo) return directo;
+    const brutoId = String(op.aduana || op.aduanaId || '').trim();
+    if (brutoId) {
+      const porId = catAduanasFiltro.find((c) => String(c.id) === brutoId);
+      if (porId) return String(porId.aduana || porId.nombre || '').trim();
+      const porNombre = catAduanasFiltro.find((c) => normSC(String(c.aduana || c.nombre || '')) === normSC(brutoId));
+      if (porNombre) return String(porNombre.aduana || porNombre.nombre || '').trim();
     }
     return '';
   };

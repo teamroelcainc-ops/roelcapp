@@ -93,6 +93,17 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
   };
   const cvDe = (op: Op) => {
     type CatCV = { id?: unknown; nombre?: unknown; estado_carga?: unknown };
+    // ✅ V00258: EL CONVENIO MANDA — si su descripción trae un C/V del
+    //   catálogo, ese es el que cuenta (caso: convenio Hazmat con carga
+    //   "Cargado" capturado). El campo directo queda como respaldo.
+    const convPrimero = String(op.convenioNombre || '').trim();
+    if (convPrimero && catCV.length) {
+      const segs = convPrimero.split(' - ').map((x) => norm(x)).filter(Boolean);
+      for (let i = segs.length - 1; i >= 0; i--) {
+        const opc = (catCV as CatCV[]).find((c) => norm(String(c.nombre || c.estado_carga || '')) === segs[i]);
+        if (opc) return String(opc.nombre || opc.estado_carga).trim();
+      }
+    }
     const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
     if (bruto && norm(bruto) !== 'n/a') {
       const porId = (catCV as CatCV[]).find((c) => String(c.id) === bruto);
