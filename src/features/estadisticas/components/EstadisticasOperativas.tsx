@@ -92,10 +92,30 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
     return String(porId?.tipo_operacion || porId?.nombre || '').trim() || 'Sin tipo';
   };
   const cvDe = (op: Op) => {
+    type CatCV = { id?: unknown; nombre?: unknown; estado_carga?: unknown };
     const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
-    if (!bruto) return 'N/A';
-    const porId = (catCV as { id?: unknown; nombre?: unknown; estado_carga?: unknown }[]).find((c) => String(c.id) === bruto);
-    return String(porId?.nombre || porId?.estado_carga || bruto).trim();
+    if (bruto && norm(bruto) !== 'n/a') {
+      const porId = (catCV as CatCV[]).find((c) => String(c.id) === bruto);
+      return String(porId?.nombre || porId?.estado_carga || bruto).trim();
+    }
+    // ✅ V00255: si la operación no trae C/V propio (o trae "N/A"), se DERIVA
+    //   del NOMBRE DEL CONVENIO, cuya descripción se arma como
+    //   "Tipo de Operación - Tipo de Remolque - C/V - Aduana"
+    //   (p. ej. "Cruce de Importacion - Caja - Hazmat - 800 Colombia").
+    //   Se recorre de derecha a izquierda (el C/V es el penúltimo segmento)
+    //   comparando cada segmento contra el catálogo Cargada/Vacía. Así las
+    //   464+ operaciones Hazmat del rango cuentan aunque su campo `carga`
+    //   venga vacío — el Excel de Servicios Completados ya las mostraba
+    //   porque exporta la descripción del convenio tal cual.
+    const conv = String(op.convenioNombre || '').trim();
+    if (conv && catCV.length) {
+      const segmentos = conv.split(' - ').map((x) => norm(x)).filter(Boolean);
+      for (let i = segmentos.length - 1; i >= 0; i--) {
+        const opcion = (catCV as CatCV[]).find((c) => norm(String(c.nombre || c.estado_carga || '')) === segmentos[i]);
+        if (opcion) return String(opcion.nombre || opcion.estado_carga).trim();
+      }
+    }
+    return bruto || 'N/A';
   };
   /** ✅ V00253: fecha en ISO tolerando aaaa-mm-dd Y d/m/aaaa (datos migrados). */
   const fechaISOOp = (op: Op): string => {

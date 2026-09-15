@@ -22,6 +22,7 @@ import { db } from '../../../config/firebase';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import { cargarLogoDataUrl } from '../../../utils/pdfGenerator';
+import { cargarCatalogo, TTL } from '../../../hooks/useCatalogoCache'; // ✅ V00255
 import { useEmpresaConfig } from '../../configuracion/useEmpresaConfig';
 import { Download, RefreshCw, X, Settings2, Truck, Wallet } from 'lucide-react';
 import { useEstadoPersistente } from '../../../hooks/useEstadoPersistente';
@@ -171,6 +172,27 @@ const DIAS_SEMANA_TXT = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', '
 
 export function EstadisticasDashboard() {
   const { config } = useEmpresaConfig();
+  // ✅ V00255: catálogo Cargada/Vacía para DERIVAR el C/V desde el nombre del
+  //   convenio cuando la operación no trae el campo (igual que Operativas).
+  const [catCVDesglose, setCatCVDesglose] = useState<{ id?: unknown; nombre?: unknown; estado_carga?: unknown }[]>([]);
+  useEffect(() => { cargarCatalogo('catalogo_carga_vacia', { ttlMs: TTL.MEDIO }).then(setCatCVDesglose).catch(() => {}); }, []);
+  const cvDeOp = (op: Op): string => {
+    const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
+    const brutoNorm = norm(bruto);
+    if (bruto && brutoNorm !== 'n/a') {
+      const porId = catCVDesglose.find((c) => String(c.id) === bruto);
+      return String(porId?.nombre || porId?.estado_carga || bruto).trim();
+    }
+    const conv = String(op.convenioNombre || '').trim();
+    if (conv && catCVDesglose.length) {
+      const segmentos = conv.split(' - ').map((x) => norm(x)).filter(Boolean);
+      for (let i = segmentos.length - 1; i >= 0; i--) {
+        const opcion = catCVDesglose.find((c) => norm(String(c.nombre || c.estado_carga || '')) === segmentos[i]);
+        if (opcion) return String(opcion.nombre || opcion.estado_carga).trim();
+      }
+    }
+    return bruto || 'N/A';
+  };
   const { etq, guardarEtiquetas } = useEtiquetas();
   // ✅ V00167: EDITOR DE ENCABEZADOS (pestañas y modos) — solo Admin.
   //   Escribe en settings_ui/etiquetas (mismo motor de "Personalizar Etiquetas"),
@@ -580,7 +602,7 @@ export function EstadisticasDashboard() {
   const etiquetaDimension = (op: Op, d: Dimension): string => {
     switch (d) {
       case 'tipo': return String(op.tipoOperacionNombre || op.tipoOperacion || '') || 'Sin tipo';
-      case 'cv': return String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '') || 'N/A'; // ✅ V00253: cargadoVacio = columna de AppSheet en ops migradas
+      case 'cv': return cvDeOp(op); // ✅ V00253/V00255: campo directo, campo de AppSheet o derivado del nombre del convenio
       case 'movimiento': return movimientoDeOp(op);
       case 'cliente': return valorColumna(op, 'clientePagaNombre') || 'Sin cliente';
       case 'operador': return valorColumna(op, 'operadorNombre') || 'Sin operador';
