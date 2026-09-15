@@ -86,7 +86,7 @@ import { registrarLog } from '../../../utils/logger';
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 import { LOGO_DEFAULT } from '../../../utils/pdfGenerator';
 import html2pdf from 'html2pdf.js'; // ✅ V00250: descarga directa (como Operaciones)
-import { LOGO_CTPAT_B64 } from '../../../utils/logoCtpat'; // ✅ V00250
+import { LOGO_CTPAT_SRC } from '../../../utils/logoCtpat'; // ✅ V00250/V00251
 import { useAutorizacionesCampos } from '../../autorizaciones/useAutorizacionesCampos';
 import { reservarConsecutivosDetalle, reservarConsecutivosTarifario } from '../../conveniosDetalles/consecutivos'; // ✅ V00199/V00203
 import './TarifarioClientesDashboard.css';
@@ -943,7 +943,7 @@ export function TarifarioClientesDashboard() {
         </div>
         <div class="aceptacion">NOMBRE, FIRMA Y SELLO DE ACEPTACION DE TARIFAS</div>
       </div>
-      <div class="ctpat-logo"><div class="ctpat-caja"><img src="${LOGO_CTPAT_B64}" alt="CTPAT" /></div></div>
+      <div class="ctpat-logo"><div class="ctpat-caja"><img src="${LOGO_CTPAT_SRC}" alt="CTPAT" /></div></div>
       </div>`;
   };
 
