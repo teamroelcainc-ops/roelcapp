@@ -191,3 +191,20 @@
 }
 .sb-chip-x { background: none; border: none; color: #58a6ff; cursor: pointer; font-size: 0.7rem; padding: 0; line-height: 1; }
 .sb-chip-x:hover { color: #f85149; }
+
+/* ✅ V00259: conteo de operaciones por rubro C/V y modal de referencias */
+.cd-chip-ops-cv { padding: 4px 10px; font-size: 0.78rem; font-weight: 700; color: #3fb950; border-color: #238636; }
+.cd-chip-ops-cv:disabled { color: #6e7681; border-color: #30363d; cursor: default; }
+.cd-modal-ops-cv { width: 720px; max-width: 94vw; max-height: 84vh; display: flex; flex-direction: column; }
+.cd-modal-ops-cv__cabecera { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.cd-modal-ops-cv__titulo { margin: 0; color: #3fb950; font-size: 1.02rem; }
+.cd-modal-ops-cv__nota { color: #8b949e; font-size: 0.78rem; margin-bottom: 10px; }
+.cd-modal-ops-cv__lista { flex: 1; overflow-y: auto; border: 1px solid #21262d; border-radius: 8px; }
+.cd-modal-ops-cv__fila { display: flex; gap: 12px; padding: 6px 12px; border-bottom: 1px solid #161b22; font-size: 0.82rem; }
+.cd-modal-ops-cv__fila:nth-child(even) { background: #0d1117; }
+.cd-modal-ops-cv__ref { font-family: Consolas, monospace; color: #e07b00; min-width: 150px; }
+.cd-modal-ops-cv__fecha { color: #8b949e; min-width: 92px; }
+.cd-modal-ops-cv__cliente { color: #c9d1d9; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-modal-ops-cv__vacio { padding: 18px; color: #8b949e; text-align: center; }
+.cd-modal-ops-cv__pie { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.cd-modal-ops-cv__conteo { color: #8b949e; font-size: 0.8rem; }

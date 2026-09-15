@@ -24,6 +24,21 @@ export const limpiarCacheMemoria = (clave: string): void => {
   almacen.delete(clave);
 };
 
+// ✅ V00259: invalida TODOS los cachés cuya clave empiece con el prefijo, en
+//   las tres capas (Map en memoria, espejo y sessionStorage). Lo usan las
+//   utilidades que reescriben datos en la base (p. ej. "Normalizar
+//   operaciones") para que los módulos no sigan mostrando datos viejos.
+export const limpiarCachesPorPrefijo = (prefijo: string): void => {
+  Array.from(almacen.keys()).filter((k) => k.startsWith(prefijo)).forEach((k) => almacen.delete(k));
+  Array.from(espejo.keys()).filter((k) => k.startsWith(prefijo)).forEach((k) => espejo.delete(k));
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const k = sessionStorage.key(i);
+      if (k && k.startsWith(prefijo)) sessionStorage.removeItem(k);
+    }
+  } catch { /* sin sessionStorage: la memoria ya quedó limpia */ }
+};
+
 // ---------------------------------------------------------------------------
 // Espejo de sessionStorage con respaldo EN MEMORIA. Mismo API (getItem/setItem/
 // removeItem), pero el valor SIEMPRE queda disponible aunque la cuota de

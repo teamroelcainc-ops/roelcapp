@@ -1,9 +1,10 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react'; // ✅ V00228: useRef
 import { createPortal } from 'react-dom'; // ✅ V00226
-import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer } from 'firebase/firestore';
+import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer, limit, startAfter } from 'firebase/firestore'; // ✅ V00259: limit/startAfter para el modal de operaciones por C/V
 import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro, pedirNotaEliminacion } from '../../../config/firebase';
-import { registrarLog } from '../../../utils/logger'; // ✅ Importación del logger
+import { registrarLog } from '../../../utils/logger';
+import { limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00259 // ✅ Importación del logger
 
 import { listaCatalogos, catalogosConfig } from '../config/catalogSchemas';
 import type { CatalogSchema, CatalogField } from '../config/catalogSchemas';
@@ -43,6 +44,8 @@ const COL_PAPELERA = 'papelera_reciclaje';
 // ✅ NUEVO (V00116) — caché del cálculo de uso de tarifas (10 min): antes se
 //   recalculaba en CADA visita al catálogo descargando hasta 5000 operaciones.
 let CACHE_USO_TARIFAS: { data: Record<string, { convC: string[]; convP: string[]; opsCount: number; detIds: string[] }> | null; ts: number } = { data: null, ts: 0 };
+let CACHE_USO_CV: { data: Record<string, number> | null; ts: number } = { data: null, ts: 0 }; // ✅ V00259
+const TTL_USO_CV = 5 * 60 * 1000; // ✅ V00259: 5 min
 const TTL_USO_TARIFAS = 10 * 60 * 1000;
 
 // ✅ NUEVO (V00106) — construye el documento que va a la papelera.
@@ -109,6 +112,76 @@ const CatalogosDashboard = () => {
   //   (detalles de convenios de clientes/proveedores vía tipoConvenioId, y
   //   operaciones vía op.convenio -> detalle -> tarifa).
   const [usoTarifas, setUsoTarifas] = useState<Record<string, { convC: string[]; convP: string[]; opsCount: number; detIds: string[] }> | null>(null);
+  // ✅ V00259: OPERACIONES POR RUBRO C/V — conteo por AGREGACIÓN del servidor
+  //   sobre el campo guardado `carga` (getCountFromServer: solo números, sin
+  //   descargar documentos). Sirve además de VERIFICACIÓN de la normalización:
+  //   los números deben parecerse a los del Excel (Cargado ~5,352, Hazmat ~485…);
+  //   si no, la base aún no está normalizada.
+  const [usoCV, setUsoCV] = useState<Record<string, number> | null>(null);
+  const [modalOpsCV, setModalOpsCV] = useState<{ nombre: string; total: number } | null>(null);
+  const [opsCVRefs, setOpsCVRefs] = useState<{ id: string; ref: string; fecha: string; cliente: string }[]>([]);
+  const [cargandoOpsCV, setCargandoOpsCV] = useState(false);
+  const cursorOpsCV = useRef<unknown>(null);
+  useEffect(() => {
+    if (catalogoSeleccionado?.id !== 'carga_vacia') return;
+    let activo = true;
+    (async () => {
+      try {
+        if (CACHE_USO_CV.data && Date.now() - CACHE_USO_CV.ts < TTL_USO_CV) { setUsoCV(CACHE_USO_CV.data); return; }
+        const conteos: Record<string, number> = {};
+        await Promise.all((registrosGlobales as Record<string, unknown>[]).map(async (r) => {
+          const nombre = String(r.nombre || r.estado_carga || '').trim();
+          if (!nombre) return;
+          try {
+            const snap = await getCountFromServer(query(collection(db, 'operaciones'), where('carga', '==', nombre)));
+            conteos[nombre] = snap.data().count;
+          } catch { conteos[nombre] = 0; }
+        }));
+        CACHE_USO_CV = { data: conteos, ts: Date.now() };
+        if (activo) setUsoCV(conteos);
+      } catch (e) { console.warn('No se pudo calcular el uso por C/V:', e); }
+    })();
+    return () => { activo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalogoSeleccionado?.id, registrosGlobales.length]);
+
+  /** ✅ V00259: abre el modal de referencias de un rubro C/V y carga la
+   *  primera página (500) de operaciones con `carga` == nombre. */
+  const PAGINA_OPS_CV = 500;
+  const cargarPaginaOpsCV = async (nombre: string, reiniciar: boolean) => {
+    setCargandoOpsCV(true);
+    try {
+      const restricciones = [where('carga', '==', nombre), limit(PAGINA_OPS_CV)];
+      const q = (!reiniciar && cursorOpsCV.current)
+        ? query(collection(db, 'operaciones'), where('carga', '==', nombre), startAfter(cursorOpsCV.current), limit(PAGINA_OPS_CV))
+        : query(collection(db, 'operaciones'), ...restricciones);
+      const snap = await getDocs(q);
+      cursorOpsCV.current = snap.docs.length ? snap.docs[snap.docs.length - 1] : cursorOpsCV.current;
+      const filas = snap.docs.map((d) => {
+        const x = d.data() as Record<string, unknown>;
+        return {
+          id: d.id,
+          ref: String(x.ref || x.numReferencia || x.referencia || d.id),
+          fecha: String(x.fechaServicio || x.fecha || '').slice(0, 10),
+          cliente: String(x.clientePagaNombre || x.clienteNombre || x.nombreCliente || ''),
+        };
+      });
+      setOpsCVRefs((prev) => {
+        const juntas = reiniciar ? filas : [...prev, ...filas];
+        return [...juntas].sort((a, b) => b.fecha.localeCompare(a.fecha));
+      });
+    } catch (e) {
+      console.error('No se pudieron cargar las operaciones del rubro:', e);
+    } finally {
+      setCargandoOpsCV(false);
+    }
+  };
+  const abrirOpsDeCV = (nombre: string, total: number) => {
+    setModalOpsCV({ nombre, total });
+    setOpsCVRefs([]);
+    cursorOpsCV.current = null;
+    cargarPaginaOpsCV(nombre, true);
+  };
   const [modalUsoTarifa, setModalUsoTarifa] = useState<any | null>(null);
   useEffect(() => {
     if (catalogoSeleccionado?.id !== 'tarifas_referencia') return;
@@ -936,8 +1009,17 @@ const CatalogosDashboard = () => {
       }
       if (enLote > 0) await lote.commit();
 
+      // ✅ V00259: los módulos de operaciones guardan cachés en memoria y en
+      //   sesión (Servicios Completados, Cancelados, etc.) — si no se
+      //   invalidan, la pantalla sigue mostrando lo VIEJO aunque la base ya
+      //   quedó corregida (era el "no hace nada" reportado). Se barren todos
+      //   los cachés roelca_* y el conteo por C/V para que se recalculen.
+      limpiarCachesPorPrefijo('roelca_');
+      CACHE_USO_CV = { data: null, ts: 0 };
+      setUsoCV(null);
+
       await registrarLog('Catálogos', 'Edición', `Normalizó ${nOps} operación(es) desde su convenio: C/V ${nCarga}, Aduana ${nAduana}, Expo/Impo ${nTrafico}.`);
-      alert(`Operaciones normalizadas. ✅\n\n· Operaciones actualizadas: ${nOps} (de ${snapOps.size})\n· Cargada/Vacía escrita: ${nCarga}\n· Aduana escrita: ${nAduana}\n· Expo/Impo escrito: ${nTrafico}`);
+      alert(`Operaciones normalizadas. ✅\n\n· Operaciones actualizadas: ${nOps} (de ${snapOps.size})\n· Ya estaban correctas: ${snapOps.size - nOps}\n· Cargada/Vacía escrita: ${nCarga}\n· Aduana escrita: ${nAduana}\n· Expo/Impo escrito: ${nTrafico}\n\nEn Servicios Completados vuelve a presionar BUSCAR (o el botón Actualizar) para ver los datos nuevos.`);
     } catch (e) {
       console.error('No se pudieron normalizar las operaciones:', e);
       alert('No se pudieron normalizar las operaciones.');
@@ -1867,8 +1949,9 @@ const CatalogosDashboard = () => {
                 {regenerando ? 'Rearmando…' : '⟳ Rearmar descripciones'}
               </button>
             )}
-            {/* ✅ V00257: escribir en cada OPERACIÓN el C/V (catálogo), la aduana y el expo/impo derivados de su convenio */}
-            {catalogoSeleccionado.id === 'tarifas_referencia' && (
+            {/* ✅ V00257: escribir en cada OPERACIÓN el C/V (catálogo), la aduana y el expo/impo derivados de su convenio.
+                ✅ V00259: disponible también desde el catálogo C/V. */}
+            {(catalogoSeleccionado.id === 'tarifas_referencia' || catalogoSeleccionado.id === 'carga_vacia') && (
               <button
                 className="btn btn-outline cd-x15 cd-btn-rearmar"
                 title="Escribe en cada operación su Cargada/Vacía (con el nombre exacto del catálogo), su Aduana y su Expo/Impo, derivados del convenio guardado. No toca montos, fechas ni referencias."
@@ -1972,6 +2055,10 @@ const CatalogosDashboard = () => {
                       USO (OPS · CONVENIOS){ordenCat?.col === '__uso' ? (ordenCat.dir === 1 ? ' ▲' : ' ▼') : ''}
                     </th>
                   )}
+                  {/* ✅ V00259: operaciones hechas por cada rubro C/V */}
+                  {catalogoSeleccionado.id === 'carga_vacia' && (
+                    <th className="cd-x23">OPERACIONES</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -2031,6 +2118,26 @@ const CatalogosDashboard = () => {
                           {usoTarifarios === null ? '…' : (usoTarifarios[reg.id] || 0)}
                         </td>
                       )}
+                      {/* ✅ V00259: conteo clickable → modal con las referencias ligadas */}
+                      {catalogoSeleccionado.id === 'carga_vacia' && (() => {
+                        const nombreCV = String(reg.nombre || reg.estado_carga || '').trim();
+                        const n = usoCV?.[nombreCV];
+                        return (
+                          <td className="cd-x31">
+                            {usoCV === null ? '…' : (
+                              <button
+                                type="button"
+                                className="btn btn-outline cd-chip-ops-cv"
+                                title={`Ver las referencias de las ${n || 0} operación(es) con ${nombreCV}`}
+                                disabled={!n}
+                                onClick={(e) => { e.stopPropagation(); if (n) abrirOpsDeCV(nombreCV, n); }}
+                              >
+                                {n || 0} operación(es)
+                              </button>
+                            )}
+                          </td>
+                        );
+                      })()}
                       {catalogoSeleccionado.id === 'tarifas_referencia' && (() => {
                         const u = usoTarifas?.[reg.id];
                         const total = (u?.opsCount || 0) + (u?.convC.length || 0) + (u?.convP.length || 0);
@@ -2498,6 +2605,42 @@ const CatalogosDashboard = () => {
       ), document.body)}
 
       {/* ✅ NUEVO (V00106) — MODAL: UNIR REGISTROS SELECCIONADOS */}
+      {/* ✅ V00259: referencias de operaciones de un rubro C/V */}
+      {modalOpsCV && (
+        <div className="modal-overlay" onClick={() => setModalOpsCV(null)}>
+          <div className="modal-content cd-modal-ops-cv" onClick={(e) => e.stopPropagation()}>
+            <div className="cd-modal-ops-cv__cabecera">
+              <h3 className="cd-modal-ops-cv__titulo">
+                {modalOpsCV.total.toLocaleString('es-MX')} operación(es) — {modalOpsCV.nombre}
+              </h3>
+              <button type="button" className="btn btn-outline" onClick={() => setModalOpsCV(null)}>Cerrar</button>
+            </div>
+            <div className="cd-modal-ops-cv__nota">
+              Referencias ligadas al rubro (campo Cargada/Vacía guardado en la operación), de la más reciente a la más antigua.
+            </div>
+            <div className="cd-modal-ops-cv__lista">
+              {opsCVRefs.map((o) => (
+                <div key={o.id} className="cd-modal-ops-cv__fila">
+                  <span className="cd-modal-ops-cv__ref">{o.ref}</span>
+                  <span className="cd-modal-ops-cv__fecha">{o.fecha || '—'}</span>
+                  <span className="cd-modal-ops-cv__cliente">{o.cliente || '—'}</span>
+                </div>
+              ))}
+              {!cargandoOpsCV && opsCVRefs.length === 0 && (
+                <div className="cd-modal-ops-cv__vacio">Sin operaciones para mostrar.</div>
+              )}
+            </div>
+            <div className="cd-modal-ops-cv__pie">
+              <span className="cd-modal-ops-cv__conteo">Mostrando {opsCVRefs.length.toLocaleString('es-MX')} de {modalOpsCV.total.toLocaleString('es-MX')}</span>
+              {opsCVRefs.length < modalOpsCV.total && (
+                <button type="button" className="btn btn-outline" disabled={cargandoOpsCV} onClick={() => cargarPaginaOpsCV(modalOpsCV.nombre, false)}>
+                  {cargandoOpsCV ? 'Cargando…' : 'Cargar más'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {modalUnir && (
         <div className="modal-overlay" style={{ zIndex: 2200 }} onClick={() => !uniendo && setModalUnir(false)}>
           <div className="form-card" style={{ maxWidth: '680px', width: '95%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
