@@ -580,7 +580,7 @@ export function EstadisticasDashboard() {
   const etiquetaDimension = (op: Op, d: Dimension): string => {
     switch (d) {
       case 'tipo': return String(op.tipoOperacionNombre || op.tipoOperacion || '') || 'Sin tipo';
-      case 'cv': return String(op.carga || op.estadoCarga || op.cargaVacia || '') || 'N/A';
+      case 'cv': return String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '') || 'N/A'; // ✅ V00253: cargadoVacio = columna de AppSheet en ops migradas
       case 'movimiento': return movimientoDeOp(op);
       case 'cliente': return valorColumna(op, 'clientePagaNombre') || 'Sin cliente';
       case 'operador': return valorColumna(op, 'operadorNombre') || 'Sin operador';

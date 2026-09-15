@@ -75,8 +75,37 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
     cargarCatalogo('catalogo_carga_vacia', { ttlMs: TTL.MEDIO }).then(setCatCV).catch(() => {});
   }, []);
 
-  const tipoDe = (op: Op) => String(op.tipoOperacionNombre || op.tipoOperacion || '').trim() || 'Sin tipo';
-  const cvDe = (op: Op) => String(op.carga || op.estadoCarga || op.cargaVacia || '').trim() || 'N/A';
+  // ✅ V00253: RESOLVEDORES TOLERANTES A DATOS MIGRADOS de AppSheet.
+  //   Las operaciones de meses anteriores guardan estos datos distinto y por
+  //   eso "no aparecían": el C/V puede venir en `cargadoVacio` (columna de
+  //   AppSheet) o como ID del catálogo, el tipo puede venir solo como
+  //   `tipoOperacionId`, y la fecha como d/m/aaaa. Aquí se normaliza todo
+  //   contra los catálogos, igual que hace EstadisticasDashboard.
+  const tipoDe = (op: Op) => {
+    const directo = String(op.tipoOperacionNombre || op.tipoOperacion || '').trim();
+    type CatTipo = { id?: unknown; tipo_operacion?: unknown; nombre?: unknown };
+    if (directo) {
+      const porId = (catTipos as CatTipo[]).find((t) => String(t.id) === directo);
+      return porId ? String(porId.tipo_operacion || porId.nombre || directo).trim() : directo;
+    }
+    const porId = (catTipos as CatTipo[]).find((t) => String(t.id) === String(op.tipoOperacionId || ''));
+    return String(porId?.tipo_operacion || porId?.nombre || '').trim() || 'Sin tipo';
+  };
+  const cvDe = (op: Op) => {
+    const bruto = String(op.carga || op.estadoCarga || op.cargaVacia || op.cargadoVacio || '').trim();
+    if (!bruto) return 'N/A';
+    const porId = (catCV as { id?: unknown; nombre?: unknown; estado_carga?: unknown }[]).find((c) => String(c.id) === bruto);
+    return String(porId?.nombre || porId?.estado_carga || bruto).trim();
+  };
+  /** ✅ V00253: fecha en ISO tolerando aaaa-mm-dd Y d/m/aaaa (datos migrados). */
+  const fechaISOOp = (op: Op): string => {
+    const s = String(op.fechaServicio || op.fecha || '').trim();
+    const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+    return '';
+  };
 
   // Opciones de filtro: catálogo ∪ valores presentes en las operaciones (por si hay nombres viejos)
   const opcionesTipo = useMemo(() => {
@@ -84,19 +113,22 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
     catTipos.forEach((t: any) => { const n = String(t.tipo_operacion || t.nombre || '').trim(); if (n) set.set(norm(n), n); });
     ops.forEach((op) => { const n = tipoDe(op); if (n && !set.has(norm(n))) set.set(norm(n), n); });
     return Array.from(set.values()).sort((a, b) => a.localeCompare(b, 'es'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tipoDe se recrea por render; catTipos ya está en deps
   }, [catTipos, ops]);
   const opcionesCV = useMemo(() => {
     const set = new Map<string, string>();
     catCV.forEach((c: any) => { const n = String(c.nombre || c.estado_carga || '').trim(); if (n) set.set(norm(n), n); });
     ops.forEach((op) => { const n = cvDe(op); if (n && !set.has(norm(n))) set.set(norm(n), n); });
     return Array.from(set.values());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cvDe se recrea por render; catCV ya está en deps
   }, [catCV, ops]);
 
   const opsFiltradas = useMemo(() => ops.filter((op) =>
     (filtroLinea === 'Todas' || lineaDeOp(op) === filtroLinea) &&
     (filtroTipos.length === 0 || filtroTipos.some((t) => norm(t) === norm(tipoDe(op)))) &&
     (filtroCV === 'Todas' || norm(cvDe(op)) === norm(filtroCV))
-  ), [ops, filtroLinea, filtroTipos, filtroCV, lineaDeOp]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- tipoDe/cvDe se recrean por render; catTipos/catCV cubren su cambio real
+  ), [ops, filtroLinea, filtroTipos, filtroCV, lineaDeOp, catTipos, catCV]);
 
   const contar = (lista: Op[]) => {
     const r = { transfer: 0, cruces: 0, fletes: 0, otros: 0, servicios: 0, noCobrables: 0, ops: lista };
@@ -112,7 +144,7 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
   // ── DIARIO: todos los días del rango (aunque no tengan servicios), como el Excel ──
   const diario = useMemo(() => {
     const porDia = new Map<string, Op[]>();
-    opsFiltradas.forEach((op) => { const f = String(op.fechaServicio || '').slice(0, 10); if (f) (porDia.get(f) || porDia.set(f, []).get(f)!).push(op); });
+    opsFiltradas.forEach((op) => { const f = fechaISOOp(op); if (f) (porDia.get(f) || porDia.set(f, []).get(f)!).push(op); });
     const filas: any[] = [];
     const ini = fechaLocal(fechaDesde), fin = fechaLocal(fechaHasta);
     for (let d = new Date(ini); d <= fin; d.setDate(d.getDate() + 1)) {
@@ -130,7 +162,7 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
   // ── SEMANAL ──
   const semanal = useMemo(() => {
     const m = new Map<number, Op[]>();
-    opsFiltradas.forEach((op) => { const f = String(op.fechaServicio || '').slice(0, 10); if (!f) return; const s = semanaDe(f); (m.get(s) || m.set(s, []).get(s)!).push(op); });
+    opsFiltradas.forEach((op) => { const f = fechaISOOp(op); if (!f) return; const s = semanaDe(f); (m.get(s) || m.set(s, []).get(s)!).push(op); });
     const semanas = Array.from(m.keys()).sort((a, b) => a - b);
     const filas = semanas.map((s) => ({ semana: s, ...contar(m.get(s)!) }));
     const total = contar(opsFiltradas);
@@ -147,13 +179,14 @@ export function EstadisticasOperativas({ ops, fechaDesde, fechaHasta, lineaDeOp,
     const porDiaSem: Map<number, Set<string>> = new Map();
     const opsDiaSem: Op[][] = Array.from({ length: 7 }, () => []);
     opsFiltradas.forEach((op) => {
-      const f = String(op.fechaServicio || '').slice(0, 10); if (!f) return;
+      const f = fechaISOOp(op); if (!f) return;
       const d = fechaLocal(f);
+      if (!Number.isFinite(d.getMonth())) return; // fecha irreconocible → fuera
       porMes[d.getMonth()].push(op);
       opsDiaSem[d.getDay()].push(op);
       (porDiaSem.get(d.getDay()) || porDiaSem.set(d.getDay(), new Set()).get(d.getDay())!).add(f);
     });
-    const diasLaboradosMes = (mes: number) => new Set(porMes[mes].map((op) => String(op.fechaServicio || '').slice(0, 10))).size;
+    const diasLaboradosMes = (mes: number) => new Set(porMes[mes].map((op) => fechaISOOp(op))).size;
     const filas = porMes.map((lista, i) => {
       const c = contar(lista); const dias = diasLaboradosMes(i);
       // Excel: PROMEDIO = TOTAL ÷ días laborados (en la hoja está fijo en 23; aquí se usan los días reales del mes)
