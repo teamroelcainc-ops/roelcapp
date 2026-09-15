@@ -215,10 +215,11 @@ const TIPO_SERVICIO_CON_COSTO_MANIFIESTO = '42afffd3';
 const PUENTE_IMPORTACION_ID = '4614ec51'; // Caseta Avi
 const PUENTE_EXPORTACION_ID = '49ce0a0e'; // Caseta Puente III
 
-const TIPO_EMP_CLIENTE_PAGA      = 'Cliente (Paga)';
+// ✅ V00252: TIPO_EMP_CLIENTE_PAGA ('Cliente (Paga)') y TIPO_EMP_PROV_TRANSPORTE
+//   ('Proveedor (Transporte)') se retiraron: el buscador de la operación ya no
+//   exige el tipo de empresa — basta con estar en su tarifario o tener convenio.
 const TIPO_EMP_CLIENTE_MERCANCIA = 'Cliente (Mercancía)';
 const TIPO_EMP_ORIGEN_DESTINO    = 'Origen / Destino';
-const TIPO_EMP_PROV_TRANSPORTE   = 'Proveedor (Transporte)';
 const TIPO_EMP_PROV_SERVICIOS    = 'Proveedor (Servicios)';
 
 export const TIPOS_DOCUMENTO_OPERACION = [
@@ -1947,10 +1948,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
     return set;
   }, [tarifariosLocal, catalogoConvDetalles]);
+  // ✅ V00252: NOMBRES de clientes con tarifario aprobado — respaldo para
+  //   cuando el clienteId guardado en el tarifario no coincide con el doc de
+  //   empresas (datos migrados o recreados).
+  const nombresClientesConTarifario = useMemo(() => {
+    const set = new Set<string>();
+    (tarifariosLocal || []).forEach((t: { status?: unknown; clienteNombre?: unknown }) => {
+      if (String(t.status || '').trim() !== 'Aprobado') return;
+      const n = String(t.clienteNombre ?? '').trim().toLowerCase();
+      if (n) set.add(n);
+    });
+    return set;
+  }, [tarifariosLocal]);
+  // ✅ V00252: REGLA — todo cliente agregado en su tarifario (o con detalle de
+  //   convenio activo) aparece en la operación, tenga o no marcado el tipo
+  //   "Cliente (Paga)" en Empresas. Antes se exigían AMBAS cosas y clientes
+  //   con tarifario aprobado (p. ej. Transportes Roal) no salían.
   const filClientesPaga = useMemo(() => empresas?.filter((e:any) =>
-    (contieneId(e.tiposEmpresa, '7eec9cbb') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_PAGA)) &&
-    (idsClientesConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.clientePaga || ''))
-  ) || [], [empresas, idsClientesConConvenio, initialData?.clientePaga]);
+    idsClientesConConvenio.has(String(e.id)) ||
+    nombresClientesConTarifario.has(String(e.nombre || '').trim().toLowerCase()) ||
+    String(e.id) === String(initialData?.clientePaga || '')
+  ) || [], [empresas, idsClientesConConvenio, nombresClientesConTarifario, initialData?.clientePaga]);
   const filClientesMercancia = useMemo(() => empresas?.filter((e:any) => (contieneId(e.tiposEmpresa, '51246232') || contieneId(e.tiposEmpresa, TIPO_EMP_CLIENTE_MERCANCIA)) && e.status === 'Activa') || [], [empresas]);
   // ✅ Solo empresas con tiposEmpresa 11894dfd (o su nombre) Y tiposServicio 42afffd3 o 7e70a3f7.
   const filProveedoresServicios = useMemo(() => empresas?.filter((e:any) =>
@@ -2013,10 +2031,24 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   }, [tarifariosProvLocal, catalogoConvProvDetalles]);
 
 
+  // ✅ V00252: misma regla del lado proveedor — todo proveedor agregado en su
+  //   tarifario (o con detalle activo) aparece en la operación, tenga o no el
+  //   tipo "Proveedor (Transporte)" o status Activa en Empresas. Respaldo por
+  //   nombre para tarifarios cuyo proveedorId no coincida con Empresas.
+  const nombresProveedoresConTarifario = useMemo(() => {
+    const set = new Set<string>();
+    (tarifariosProvLocal || []).forEach((t: { status?: unknown; proveedorNombre?: unknown }) => {
+      if (String(t.status || '').trim() !== 'Aprobado') return;
+      const n = String(t.proveedorNombre ?? '').trim().toLowerCase();
+      if (n) set.add(n);
+    });
+    return set;
+  }, [tarifariosProvLocal]);
   const filProveedoresTransporte = useMemo(() => empresas?.filter((e:any) =>
-    (contieneId(e.tiposEmpresa, 'ca21ab07') || contieneId(e.tiposEmpresa, TIPO_EMP_PROV_TRANSPORTE)) && e.status === 'Activa' &&
-    (idsProveedoresConConvenio.has(String(e.id)) || String(e.id) === String(initialData?.proveedorUnidad || '') || String(e.id) === String(formData.proveedorUnidad || ''))
-  ) || [], [empresas, idsProveedoresConConvenio, initialData?.proveedorUnidad, formData.proveedorUnidad]);
+    idsProveedoresConConvenio.has(String(e.id)) ||
+    nombresProveedoresConTarifario.has(String(e.nombre || '').trim().toLowerCase()) ||
+    String(e.id) === String(initialData?.proveedorUnidad || '') || String(e.id) === String(formData.proveedorUnidad || '')
+  ) || [], [empresas, idsProveedoresConConvenio, nombresProveedoresConTarifario, initialData?.proveedorUnidad, formData.proveedorUnidad]);
 
   const sOrigen = (searchOrigen || '').toLowerCase();
   const sDestino = (searchDestino || '').toLowerCase();
@@ -2864,7 +2896,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               </div>
                             )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Cliente (Paga)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_PAGA }, (id, reg) => { setFormData(prev => ({ ...prev, clientePaga: id, convenio: '', facturadoEnCobrar: resolverMonedaIdDeEmpresa(reg) })); setSearchClientePaga(labelEmpresa(reg)); setSearchConvenio(''); })} />
+                          {/* ✅ V00252: se retiró el botón "+" de alta rápida (los clientes y proveedores se dan de alta en Empresas / sus tarifarios). */}
                         </div>
                         {/* ✅ V00136: alerta de documentos DEBAJO del campo (no empuja el input) */}
                         {formData.clientePaga && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.clientePaga)} registroNombre={searchClientePaga} etiqueta="Cliente" />}
@@ -3013,7 +3045,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               </div>
                             )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Cliente (Mercancía)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_CLIENTE_MERCANCIA }, (id, reg) => { setFormData(prev => ({ ...prev, clienteMercancia: id })); setSearchClienteMercancia(labelEmpresa(reg)); })} />
+                          {/* ✅ V00252: se retiró el botón "+" de alta rápida (los clientes y proveedores se dan de alta en Empresas / sus tarifarios). */}
                         </div>
                       </div>
                       <div className="form-group"><label className="form-label">Descripción de Mercancía <span className="campo-badge">descripcionMercancia</span></label><input type="text" name="descripcionMercancia" className={`form-control${claseSiFalta('descripcionMercancia')}`} value={formData.descripcionMercancia || ''} onChange={handleChange} /></div>
@@ -3074,7 +3106,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               </div>
                             )}
                           </div>
-                          <BotonAgregar title="Agregar nuevo Proveedor (Servicios)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_SERVICIOS }, (id, reg) => { setFormData(prev => ({ ...prev, provServicios: id, montoManifiesto: montoManifiestoDeProveedor(reg) })); setSearchProvServicios(labelEmpresa(reg)); })} />
+                          {/* ✅ V00252: se retiró el botón "+" de alta rápida (los clientes y proveedores se dan de alta en Empresas / sus tarifarios). */}
                         </div>
                       </div>
                       <div className="form-group">
@@ -3108,9 +3140,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                               </div>
                             )}
                           </div>
-                          {!proveedorForzado && (
-                            <BotonAgregar title="Agregar nuevo Proveedor (Transporte)" onClick={() => abrirCreacion({ tipo: 'empresa', coleccion: 'empresas', tipoEmpresaPreseleccionado: TIPO_EMP_PROV_TRANSPORTE }, (id, reg) => { setFormData(prev => ({ ...prev, proveedorUnidad: id, convenioProveedor: '', facturadoEnUnidad: resolverMonedaIdDeEmpresa(reg) || prev.facturadoEnUnidad })); setSearchProvTransporte(labelEmpresa(reg)); setSearchConvenioProveedor(''); })} />
-                          )}
+                          {/* ✅ V00252: se retiró el botón "+" de alta rápida (los clientes y proveedores se dan de alta en Empresas / sus tarifarios). */}
                         </div>
                         {/* ✅ V00136: alerta de documentos DEBAJO del campo (no empuja el input) */}
                         {formData.proveedorUnidad && <AlertaDocumentos coleccionOrigen="empresas" registroId={String(formData.proveedorUnidad)} registroNombre={searchProvTransporte} etiqueta="Proveedor" />}
