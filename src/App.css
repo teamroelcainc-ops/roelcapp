@@ -1275,3 +1275,7 @@ body {
 .topbar-buscador__input::placeholder { color: #6e7681; }
 .topbar-buscador__limpiar { position: absolute; left: calc(50% + 148px); background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.8rem; padding: 2px 4px; }
 @media (max-width: 900px) { .topbar-buscador__input { width: 100%; } .topbar-buscador__lupa { left: 26px; } .topbar-buscador__limpiar { left: auto; right: 22px; } }
+
+/* ✅ V00264: módulos "vivos" — se ocultan al navegar en vez de desmontarse */
+.modulo-vivo { display: contents; }
+.modulo-vivo--oculto { display: none; }

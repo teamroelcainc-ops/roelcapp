@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import { DocumentosLista } from './features/documentos/DocumentosLista';
 import { APP_VERSION, APP_AUTOR } from './config/version';
 import { emitirBusquedaGlobal, hayReceptorBusqueda, etiquetaReceptorBusqueda, suscribirReceptorBusqueda } from './utils/busquedaGlobal'; // ✅ V00263
+import { MantenerVivo } from './utils/mantenerVivo'; // ✅ V00264: módulos que no se desmontan al navegar
 import { Bell } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -1835,9 +1836,9 @@ function AppContenido() {
           </div>
         ) : (
           <Suspense fallback={<CargandoModulo />}>
-            {moduloActivo === 'misOperaciones' && puede('misOperaciones') && (
+            <MantenerVivo activo={moduloActivo === 'misOperaciones' && puede('misOperaciones')}>{/* ✅ V00264 */}
               <MisOperacionesDashboard />
-            )}
+            </MantenerVivo>
             {moduloActivo === 'pagos' && puede('pagos') && (
               <PagosDashboard />
             )}
@@ -1847,14 +1848,14 @@ function AppContenido() {
             {moduloActivo === 'etiquetas' && puede('etiquetas') && (
               <EtiquetasDashboard />
             )}
-            {moduloActivo === 'operaciones' && puede('operaciones') && (
+            <MantenerVivo activo={moduloActivo === 'operaciones' && puede('operaciones')}>{/* ✅ V00264 */}
               <>
                 <ResumenDelDia />
                 <OperacionesDashboard />
               </>
-            )}
-            {moduloActivo === 'serviciosCompletados' && puede('serviciosCompletados') && <ServiciosCompletados />}
-            {moduloActivo === 'serviciosCancelados' && puede('serviciosCancelados') && <ServiciosCancelados />}
+            </MantenerVivo>
+            <MantenerVivo activo={moduloActivo === 'serviciosCompletados' && puede('serviciosCompletados')}><ServiciosCompletados /></MantenerVivo>{/* ✅ V00264 */}
+            <MantenerVivo activo={moduloActivo === 'serviciosCancelados' && puede('serviciosCancelados')}><ServiciosCancelados /></MantenerVivo>{/* ✅ V00264 */}
             {moduloActivo === 'reportes' && puede('reportes') && <ReportesDashboard />}
             {moduloActivo === 'reporteVencimientos' && puede('reporteVencimientos') && <ReporteVencimientosDashboard />}
             {moduloActivo === 'panelControl' && puede('panelControl') && <PanelControlDashboard />}
@@ -1867,7 +1868,7 @@ function AppContenido() {
             {moduloActivo === 'referenciasNomina' && puede('referenciasNomina') && <ReferenciasNominaDashboard />}
             {moduloActivo === 'importacion' && <DataImportView onOpenMenu={() => setMenuAbierto(true)} />} 
             {moduloActivo === 'deducciones' && puede('deducciones') && <DeduccionesDashboard />} 
-            {moduloActivo === 'empresas' && puede('empresas') && <EmpresasDashboard />}
+            <MantenerVivo activo={moduloActivo === 'empresas' && puede('empresas')}><EmpresasDashboard /></MantenerVivo>{/* ✅ V00264 */}
             {moduloActivo === 'contactos' && puede('contactos') && <ContactosDashboard />}
             {moduloActivo === 'direcciones' && puede('direcciones') && <DireccionesDashboard />}
             {moduloActivo === 'tipoCambio' && puede('tipoCambio') && <TipoCambioDashboard />}
@@ -1877,15 +1878,15 @@ function AppContenido() {
             {moduloActivo === 'proveedoresUnidad' && puede('proveedoresUnidad') && <ProveedoresUnidadDashboard />}
             {moduloActivo === 'unidadesProveedor' && puede('unidadesProveedor') && <UnidadesProveedorDashboard />}
             {moduloActivo === 'conveniosClientes' && puede('conveniosClientes') && <ConveniosClientesDashboard />}
-                {moduloActivo === 'tarifarioClientes' && puede('tarifarioClientes') && <TarifarioClientesDashboard />}
+                <MantenerVivo activo={moduloActivo === 'tarifarioClientes' && puede('tarifarioClientes')}><TarifarioClientesDashboard /></MantenerVivo>{/* ✅ V00264 */}
             {/* ✅ NUEVO (V00112): vistas Detalles del Convenio */}
-            {moduloActivo === 'detallesConvenioClientes' && puede('detallesConvenioClientes') && <DetallesConvenioDashboard tipo="clientes" />}
-            {moduloActivo === 'detallesConvenioProveedores' && puede('detallesConvenioProveedores') && <DetallesConvenioDashboard tipo="proveedores" />}{/* ✅ V00211: permiso propio */}
+            <MantenerVivo activo={moduloActivo === 'detallesConvenioClientes' && puede('detallesConvenioClientes')}><DetallesConvenioDashboard tipo="clientes" /></MantenerVivo>{/* ✅ V00264 */}
+            <MantenerVivo activo={moduloActivo === 'detallesConvenioProveedores' && puede('detallesConvenioProveedores')}><DetallesConvenioDashboard tipo="proveedores" /></MantenerVivo>{/* ✅ V00211: permiso propio */}
             {/* ✅ NUEVO (V00115): papelera de reciclaje */}
             {moduloActivo === 'papeleraReciclaje' && puede('logs') && <PapeleraDashboard />}
             {moduloActivo === 'conveniosProveedores' && puede('conveniosProveedores') && <ConveniosProveedoresDashboard />}
-            {moduloActivo === 'tarifarioProveedores' && puede('tarifarioProveedores') && <TarifarioProveedoresDashboard />}{/* ✅ V00211 */}
-            {moduloActivo === 'catalogos' && puede('catalogos') && <CatalogosDashboard />}
+            <MantenerVivo activo={moduloActivo === 'tarifarioProveedores' && puede('tarifarioProveedores')}><TarifarioProveedoresDashboard /></MantenerVivo>{/* ✅ V00211 */}
+            <MantenerVivo activo={moduloActivo === 'catalogos' && puede('catalogos')}><CatalogosDashboard /></MantenerVivo>{/* ✅ V00264 */}
             {moduloActivo === 'colaboradores' && puede('colaboradores') && <EmpleadosDashboard />}
             {moduloActivo === 'historialAsistencia' && puede('historialAsistencia') && (
               <HistorialChequeosDashboard
@@ -1900,8 +1901,8 @@ function AppContenido() {
             {moduloActivo === 'logs' && puede('logs') && <LogsDashboard />}
             {moduloActivo === 'flujosOperacion' && puede('flujosOperacion') && <ConfiguradorStatus />}
             {moduloActivo === 'datosEmpresa' && puede('datosEmpresa') && <ConfiguracionEmpresa />}
-            {moduloActivo === 'facturacionClientes' && puede('facturacionClientes') && <FacturacionClientesDashboard />}
-            {moduloActivo === 'facturacionProveedores' && puede('facturacionProveedores') && <FacturacionProveedoresDashboard />}
+            <MantenerVivo activo={moduloActivo === 'facturacionClientes' && puede('facturacionClientes')}><FacturacionClientesDashboard /></MantenerVivo>{/* ✅ V00264 */}
+            <MantenerVivo activo={moduloActivo === 'facturacionProveedores' && puede('facturacionProveedores')}><FacturacionProveedoresDashboard /></MantenerVivo>{/* ✅ V00264 */}
           </Suspense>
         )}
         

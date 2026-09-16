@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 'react';
+import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en document.body
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc, query, where, limit } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
@@ -2793,9 +2794,14 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   const idOperacion = (initialData as any)?.id || '';
   const referenciaOperacion = referenciaDeOperacion(idOperacion, (initialData as any)?.ref);
 
-  if (!catalogosCacheados || !catalogosCacheados.empresas) return <div className={`modal-overlay`}><div className="form-card fo-x6">Cargando catálogos de Roelca...</div></div>;
+  if (!catalogosCacheados || !catalogosCacheados.empresas) return createPortal(<div className={`modal-overlay`}><div className="form-card fo-x6">Cargando catálogos de Roelca...</div></div>, document.body); // ✅ V00264
 
-  return (
+  // ✅ V00264: el formulario (abierto O minimizado) se monta con un PORTAL en
+  //   document.body. Así, con los módulos "vivos" (que se ocultan con
+  //   display:none al navegar), la operación MINIMIZADA sigue visible como
+  //   píldora flotante EN CUALQUIER MÓDULO y se puede restaurar donde sea —
+  //   el overlay abierto también se ve encima del módulo que esté en pantalla.
+  return createPortal(
     <div
       className={`modal-overlay ${estado === 'minimizado' ? 'minimized' : ''}`}
       style={
@@ -3884,6 +3890,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 };

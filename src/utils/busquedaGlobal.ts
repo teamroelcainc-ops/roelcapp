@@ -9,6 +9,7 @@
 //   limpia el texto.
 // ---------------------------------------------------------------------------
 import { useEffect, useRef } from 'react';
+import { useModuloVivoActivo } from './moduloVivoContexto'; // ✅ V00264
 
 type Receptor = { fn: (texto: string) => void; etiqueta: string };
 
@@ -48,6 +49,11 @@ export const suscribirReceptorBusqueda = (f: () => void): (() => void) => {
  *  Uso: useBusquedaGlobal((t) => setTextoBuscar(t), 'facturas'); */
 export const useBusquedaGlobal = (onTexto: (texto: string) => void, etiqueta: string): void => {
   const ref = useRef(onTexto);
+  const moduloVisible = useModuloVivoActivo(); // ✅ V00264: con MantenerVivo los
+  //   módulos ocultos siguen montados; solo el VISIBLE debe recibir la búsqueda.
   useEffect(() => { ref.current = onTexto; }); // siempre la versión más reciente
-  useEffect(() => registrarReceptorBusqueda((t) => ref.current(t), etiqueta), [etiqueta]);
+  useEffect(() => {
+    if (!moduloVisible) return undefined;
+    return registrarReceptorBusqueda((t) => ref.current(t), etiqueta);
+  }, [etiqueta, moduloVisible]);
 };

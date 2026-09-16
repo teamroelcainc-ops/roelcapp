@@ -2572,6 +2572,71 @@ export const FacturacionClientesDashboard = () => {
   // ✅ V00262: modal "Exportar a Excel" con selección y ORDEN de columnas
   //   (mismo patrón de Servicios Completados: cuadrícula + Drag & Drop).
   const [modalExportarFac, setModalExportarFac] = useState(false);
+  // ✅ V00264: TARJETAS CLICABLES del historial — al presionar una tarjeta se
+  //   abre el detalle de DÓNDE SALE el número (las facturas que lo componen),
+  //   con opción de descargar en Excel exactamente esa información.
+  type TarjetaResumen = 'listadas' | 'ops' | 'usd' | 'mxn';
+  type FacturaLike = { id?: string; invoice?: unknown; fecha?: unknown; operacionesIds?: unknown[]; operacionesGuardadas?: OpLike[]; [k: string]: unknown };
+  const [tarjetaAbierta, setTarjetaAbierta] = useState<TarjetaResumen | null>(null);
+  const [exportandoTarjeta, setExportandoTarjeta] = useState(false);
+  const monedaTarjetaDe = (f: FacturaLike): 'usd' | 'mxn' | 'otra' => {
+    const monTxt = monedaFacturaMostrar(f).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    if (monTxt === 'USD' || monTxt.startsWith('DOLAR') || monTxt === 'DLS' || monTxt === 'US$') return 'usd';
+    if (monTxt === 'MXN' || monTxt.startsWith('PESO') || monTxt === 'MN') return 'mxn';
+    return 'otra';
+  };
+  const facturasDeTarjeta = useMemo(() => {
+    if (!tarjetaAbierta) return [] as FacturaLike[];
+    if (tarjetaAbierta === 'usd') return (historialOrdenado as FacturaLike[]).filter((f) => monedaTarjetaDe(f) === 'usd');
+    if (tarjetaAbierta === 'mxn') return (historialOrdenado as FacturaLike[]).filter((f) => monedaTarjetaDe(f) === 'mxn');
+    return historialOrdenado as FacturaLike[]; // 'listadas' y 'ops': todas las del filtro actual
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- monedaTarjetaDe se recrea por render; historialOrdenado cubre el cambio real
+  }, [tarjetaAbierta, historialOrdenado]);
+  const tituloTarjeta: Record<TarjetaResumen, string> = {
+    listadas: 'Facturas Listadas',
+    ops: 'Ops. Facturadas',
+    usd: 'Total Facturado (USD)',
+    mxn: 'Total Facturado (MXN)',
+  };
+  const totalTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + totalNativoFactura(f), 0), [facturasDeTarjeta]);
+  const opsTarjetaAbierta = useMemo(() => facturasDeTarjeta.reduce((acc: number, f) => acc + (Array.isArray(f.operacionesIds) ? f.operacionesIds.length : 0), 0), [facturasDeTarjeta]);
+  const exportarTarjetaExcel = async () => {
+    if (exportandoTarjeta || !tarjetaAbierta || facturasDeTarjeta.length === 0) return;
+    setExportandoTarjeta(true);
+    try {
+      const mapaExport = await resolverOpsParaExport(facturasDeTarjeta);
+      const filas = facturasDeTarjeta.map((f) => ({
+        invoice: f.invoice || '',
+        fecha: f.fecha || '',
+        cliente: nombreClienteFactura_(f),
+        moneda: monedaFacturaMostrar(f),
+        cantOps: Number(f.operacionesIds?.length || 0),
+        referencias: Array.isArray(f.operacionesGuardadas) ? f.operacionesGuardadas.map((op) => refDeOpCon(op, mapaExport)).filter(Boolean).join(', ') : '',
+        total: totalNativoFactura(f),
+      }));
+      await exportarExcelProfesional({
+        nombreArchivo: `Tarjeta_${tarjetaAbierta.toUpperCase()}_${hoyLocalISO()}.xlsx`,
+        tituloReporte: `Facturación · ${tituloTarjeta[tarjetaAbierta]}`,
+        subtitulo: `${filas.length} facturas · ${opsTarjetaAbierta} operaciones · Total ${formatoMoneda(totalTarjetaAbierta)} · filtros actuales del historial`,
+        nombreHoja: 'Detalle',
+        columnas: [
+          { key: 'invoice', label: 'Invoice', tipo: 'texto' as const },
+          { key: 'fecha', label: 'Fecha', tipo: 'fecha' as const },
+          { key: 'cliente', label: 'Cliente', tipo: 'texto' as const },
+          { key: 'moneda', label: 'Moneda', tipo: 'texto' as const },
+          { key: 'cantOps', label: 'Cant. Ops', tipo: 'numero' as const },
+          { key: 'referencias', label: 'Referencias', tipo: 'texto' as const },
+          { key: 'total', label: 'Total', tipo: 'monto' as const },
+        ],
+        filas,
+      });
+    } catch (e) {
+      console.error('No se pudo exportar el detalle de la tarjeta:', e);
+      alert('No se pudo exportar el detalle de la tarjeta.');
+    } finally {
+      setExportandoTarjeta(false);
+    }
+  };
   const [columnasExportFac, setColumnasExportFac] = useState<{ id: string; label: string; visible: boolean }[]>([]);
   const dragExportFacIdx = useRef<number | null>(null);
   const [dragOverExportFacIdx, setDragOverExportFacIdx] = useState<number | null>(null);
@@ -3372,20 +3437,21 @@ export const FacturacionClientesDashboard = () => {
       ) : (
         <div className="animation-fade-in">
 
+          {/* ✅ V00264: tarjetas CLICABLES — abren el detalle de dónde sale el número */}
           <div className="fcd-x103">
-            <div className="fcd-x104">
+            <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este número" onClick={() => setTarjetaAbierta('listadas')}>
               <span className="fcd-x105">Facturas Listadas</span>
               <span className="fcd-x106">{resumenHistorial.cuenta}</span>
             </div>
-            <div className="fcd-x104">
+            <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este número" onClick={() => setTarjetaAbierta('ops')}>
               <span className="fcd-x105">Ops. Facturadas</span>
               <span className="fcd-x107">{resumenHistorial.totalOps}</span>
             </div>
-            <div className="fcd-x104">
+            <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este monto" onClick={() => setTarjetaAbierta('usd')}>
               <span className="fcd-x108">Total Facturado (USD)</span>
               <span className="fcd-x109">{formatoMoneda(resumenHistorial.totalUSD)}</span>
             </div>
-            <div className="fcd-x104">
+            <div className="fcd-x104 fac-tarjeta-clicable" role="button" tabIndex={0} title="Ver de dónde sale este monto" onClick={() => setTarjetaAbierta('mxn')}>
               <span className="fcd-x108">Total Facturado (MXN)</span>
               <span className="fcd-x110">{formatoMoneda(resumenHistorial.totalMXN)}</span>
             </div>
@@ -3485,6 +3551,49 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
+      {/* ✅ V00264: detalle de una tarjeta del resumen — de dónde sale el número + descarga */}
+      {tarjetaAbierta && (
+        <div className="modal-overlay" onClick={() => setTarjetaAbierta(null)}>
+          <div className="modal-content fac-tarjeta-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="fac-tarjeta-modal__cabecera">
+              <h3 className="fac-tarjeta-modal__titulo">{tituloTarjeta[tarjetaAbierta]}</h3>
+              <button type="button" className="fac-export-modal__cerrar" onClick={() => setTarjetaAbierta(null)}>✕</button>
+            </div>
+            <div className="fac-tarjeta-modal__resumen">
+              {facturasDeTarjeta.length.toLocaleString('es-MX')} factura(s) · {opsTarjetaAbierta.toLocaleString('es-MX')} operación(es) · Total {formatoMoneda(totalTarjetaAbierta)}
+              <span className="fac-tarjeta-modal__nota"> — con los filtros actuales del historial{tarjetaAbierta === 'usd' ? ', solo facturas en Dólares' : tarjetaAbierta === 'mxn' ? ', solo facturas en Pesos' : ''}.</span>
+            </div>
+            <div className="fac-tarjeta-modal__lista">
+              <div className="fac-tarjeta-modal__fila fac-tarjeta-modal__fila--encabezado">
+                <span className="fac-tarjeta-modal__c-invoice">Invoice</span>
+                <span className="fac-tarjeta-modal__c-fecha">Fecha</span>
+                <span className="fac-tarjeta-modal__c-cliente">Cliente</span>
+                <span className="fac-tarjeta-modal__c-ops">Ops</span>
+                <span className="fac-tarjeta-modal__c-moneda">Moneda</span>
+                <span className="fac-tarjeta-modal__c-total">Total</span>
+              </div>
+              {facturasDeTarjeta.map((f) => (
+                <div key={f.id} className="fac-tarjeta-modal__fila">
+                  <span className="fac-tarjeta-modal__c-invoice">{String(f.invoice || '—')}</span>
+                  <span className="fac-tarjeta-modal__c-fecha">{String(f.fecha || '').slice(0, 10) || '—'}</span>
+                  <span className="fac-tarjeta-modal__c-cliente" title={nombreClienteFactura_(f)}>{nombreClienteFactura_(f)}</span>
+                  <span className="fac-tarjeta-modal__c-ops">{Number(f.operacionesIds?.length || 0)}</span>
+                  <span className="fac-tarjeta-modal__c-moneda">{monedaFacturaMostrar(f)}</span>
+                  <span className="fac-tarjeta-modal__c-total">{formatoMoneda(totalNativoFactura(f))}</span>
+                </div>
+              ))}
+              {facturasDeTarjeta.length === 0 && <div className="fac-tarjeta-modal__vacio">Sin facturas con los filtros actuales.</div>}
+            </div>
+            <div className="fac-export-modal__pie">
+              <span className="fac-export-modal__separador" />
+              <button type="button" className="btn btn-outline" onClick={() => setTarjetaAbierta(null)}>Cerrar</button>
+              <button type="button" className="fac-export-modal__exportar" onClick={exportarTarjetaExcel} disabled={exportandoTarjeta || facturasDeTarjeta.length === 0}>
+                {exportandoTarjeta ? '⏳ Exportando…' : '⬇ Descargar Excel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* ✅ V00262: modal Exportar a Excel — selección y ORDEN por Drag & Drop (patrón de Servicios Completados) */}
       {modalExportarFac && (
         <div className="modal-overlay" onClick={() => setModalExportarFac(false)}>
