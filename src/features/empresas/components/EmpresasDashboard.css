@@ -451,3 +451,7 @@
   .ed-opdet-modal { width: 100vw; max-height: 100dvh; border-radius: 0; }
   .ed-opdet-grid { grid-template-columns: 1fr; }
 }
+
+/* ✅ V00267: acciones de la empresa en la cabecera del DETALLE */
+.ed-detalle-accion { min-width: 30px; height: 30px; font-size: 0.85rem; }
+.ed-detalle-accion:hover { background-color: rgba(139, 148, 158, 0.12); }

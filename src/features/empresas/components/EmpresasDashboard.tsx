@@ -546,6 +546,23 @@ const EmpresasDashboard = () => {
     setEstadoFormulario('abierto'); 
   };
 
+  // ✅ V00267: exportar carpetas — extraído del botón de la fila para poder
+  //   llamarlo también desde el DETALLE de la empresa (los botones de acción
+  //   viven ahora ahí; en la fila solo quedan Editar y Eliminar).
+  const exportarCarpetasDe = async (emp: any) => {
+    try {
+      const nombresTipo: string[] = ((emp as any)._tiposEmpresaArray || []).map((t: string) => String(t).toLowerCase());
+      const texto = nombresTipo.join(' ') || String((emp as any).tiposEmpresa || (emp as any).tipoEmpresa || '').toLowerCase();
+      const modulos: string[] = [];
+      if (texto.includes('cliente')) modulos.push('cliente');
+      if (texto.includes('bode') || texto.includes('bóde')) modulos.push('bodega');
+      if (texto.includes('proveedor') || texto.includes('transport')) modulos.push('proveedor');
+      if (modulos.length === 0) modulos.push('empresa');
+      const n = await exportarEstructuraCarpetas({ registroNombre: emp.nombre || String(emp.id), modulos });
+      alert(`Zip generado con ${n} carpeta(s) para "${emp.nombre}". Llénalas y súbelas con 📁 Carga masiva.`);
+    } catch (err: any) { alert(`No se pudo exportar: ${err?.message || err}`); }
+  };
+
   const verDetailDirecto = (empresa: any) => {
     setEmpresaViendo(empresa);
     setActiveTabDetalle('general');
@@ -1380,13 +1397,7 @@ const EmpresasDashboard = () => {
                       <td className="ed-x32" onClick={(e: any) => e.stopPropagation()}>
                         <div className="actions-cell ed-x33">
                           
-                          {/* ✅ V00147: moneda de la empresa → todas partes */}
-                          <button
-                            className="btn-small ed-btn-moneda"
-                            title="Actualizar la moneda de esta empresa en TODAS partes: convenios, operaciones (Facturado En) y facturación/pagos"
-                            disabled={propagandoMoneda === String(emp.id)}
-                            onClick={(e) => { e.stopPropagation(); propagarMoneda(emp); }}
-                          >{propagandoMoneda === String(emp.id) ? '⏳' : '💱'}</button>
+                          {/* ✅ V00267: 💱 se movió al DETALLE de la empresa */}
                           <button 
                             className="btn-small btn-edit ed-x34" 
                             title="Editar Empresa"
@@ -1397,64 +1408,11 @@ const EmpresasDashboard = () => {
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
                           </button>
                           
-                          {/* ✅ V00178: activas → Dar de Baja; inactivas o de baja → Dar de Alta */}
-                          {!esEmpresaActiva(emp) && (
-                            <button
-                              className="btn-small ed-btn-alta"
-                              title="Dar de Alta (la empresa vuelve a estar activa)"
-                              onClick={(e) => { e.stopPropagation(); darDeAlta(emp); }}
-                            >✔</button>
-                          )}
-                          {esEmpresaActiva(emp) && (
-                            <button 
-                              className="btn-small btn-warning ed-x35" 
-                              title="Dar de Baja"
-                              onClick={(e) => { e.stopPropagation(); abrirModalBaja(emp); }}
-                              onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(245, 158, 11, 0.1)'}
-                              onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
-                            </button>
-                          )}
+                          {/* ✅ V00267: ✔/⊘ Alta-Baja se movieron al DETALLE de la empresa */}
 
-                          {/* ✅ NUEVO: subir documento directo desde la fila (sin abrir la ficha) */}
-                          <button
-                            className="btn-small ed-x34"
-                            title="Subir documento"
-                            style={{ color: '#fb923c' }}
-                            onClick={(e) => { e.stopPropagation(); setEmpresaDocs(emp); setMostrarSubirDoc(true); }}
-                            onMouseEnter={(e: any) => e.currentTarget.style.backgroundColor = 'rgba(251, 146, 60, 0.1)'}
-                            onMouseLeave={(e: any) => e.currentTarget.style.backgroundColor = 'transparent'}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                          </button>
-                          {/* ✅ V00172: exporta las carpetas vacías según la categoría de la empresa */}
-                          <button
-                            className="btn-small ed-btn-carpetas"
-                            title="Exportar zip con las carpetas de documentos (vacías) que aplican a esta empresa según su categoría — llénalas y súbelas con 📁 Carga masiva"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                // ✅ V00174: la categoría se toma de los NOMBRES resueltos del tipo de
-                                //   empresa (tiposEmpresa guarda ids del catálogo) — Cliente (Paga) trae
-                                //   TODAS las carpetas cuyo Módulo contenga "Cliente", etc.
-                                const nombresTipo: string[] = ((emp as any)._tiposEmpresaArray || []).map((t: string) => String(t).toLowerCase());
-                                const texto = nombresTipo.join(' ') || String((emp as any).tiposEmpresa || (emp as any).tipoEmpresa || '').toLowerCase();
-                                const modulos: string[] = [];
-                                if (texto.includes('cliente')) modulos.push('cliente');
-                                if (texto.includes('bode') || texto.includes('bóde')) modulos.push('bodega');
-                                if (texto.includes('proveedor') || texto.includes('transport')) modulos.push('proveedor');
-                                if (modulos.length === 0) modulos.push('empresa'); // sin categoría: los generales de empresa
-                                const n = await exportarEstructuraCarpetas({ registroNombre: emp.nombre || String(emp.id), modulos });
-                                alert(`Zip generado con ${n} carpeta(s) para "${emp.nombre}". Llénalas y súbelas con 📁 Carga masiva.`);
-                              } catch (err: any) { alert(`No se pudo exportar: ${err?.message || err}`); }
-                            }}
-                          >📦</button>
-                          <button
-                            className="btn-small ed-btn-carga-masiva"
-                            title="Carga masiva: sube de golpe la carpeta completa de documentos de esta empresa"
-                            onClick={(e) => { e.stopPropagation(); setEmpresaDocs(emp); setMostrarCargaMasiva(true); }}
-                          >📁</button>
+                          {/* ✅ V00267: ⬆ Subir documento se movió al DETALLE de la empresa */}
+                          {/* ✅ V00267: 📦 Carpetas se movió al DETALLE de la empresa */}
+                          {/* ✅ V00267: 📁 Carga masiva se movió al DETALLE de la empresa */}
 
                           <button 
                             className="btn-small btn-danger ed-x36" 
@@ -1593,6 +1551,39 @@ const EmpresasDashboard = () => {
                 )}
               </div>
               <div className="ed-x73">
+                {/* ✅ V00267: las ACCIONES de la empresa viven aquí (en la fila
+                    solo quedan Editar y Eliminar): 💱 moneda, ✔/⊘ alta-baja,
+                    📦 carpetas, 📁 carga masiva y ⬆ subir documento. */}
+                <button
+                  className="btn-small ed-btn-moneda ed-detalle-accion"
+                  title="Actualizar la moneda de esta empresa en TODAS partes: convenios, operaciones (Facturado En) y facturación/pagos"
+                  disabled={propagandoMoneda === String(empresaViendo.id)}
+                  onClick={() => propagarMoneda(empresaViendo)}
+                >{propagandoMoneda === String(empresaViendo.id) ? '⏳' : '💱'}</button>
+                {!esEmpresaActiva(empresaViendo) && (
+                  <button
+                    className="btn-small ed-btn-alta ed-detalle-accion"
+                    title="Dar de Alta (la empresa vuelve a estar activa)"
+                    onClick={() => darDeAlta(empresaViendo)}
+                  >✔</button>
+                )}
+                {esEmpresaActiva(empresaViendo) && (
+                  <button
+                    className="btn-small btn-warning ed-x35 ed-detalle-accion"
+                    title="Dar de Baja"
+                    onClick={() => abrirModalBaja(empresaViendo)}
+                  >⊘</button>
+                )}
+                <button
+                  className="btn-small ed-btn-carpetas ed-detalle-accion"
+                  title="Exportar zip con las carpetas de documentos (vacías) que aplican a esta empresa según su categoría — llénalas y súbelas con 📁 Carga masiva"
+                  onClick={() => exportarCarpetasDe(empresaViendo)}
+                >📦</button>
+                <button
+                  className="btn-small ed-btn-carga-masiva ed-detalle-accion"
+                  title="Carga masiva: sube de golpe la carpeta completa de documentos de esta empresa"
+                  onClick={() => { setEmpresaDocs(empresaViendo); setMostrarCargaMasiva(true); }}
+                >📁</button>
                 <button className="ed-x74"
                   onClick={() => setMostrarSubirDoc(true)}
                   title="Subir documentos de la empresa"
