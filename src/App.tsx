@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, Suspense, useRef } from 'react';
 import { DocumentosLista } from './features/documentos/DocumentosLista';
 import { APP_VERSION, APP_AUTOR } from './config/version';
+import { emitirBusquedaGlobal, hayReceptorBusqueda, etiquetaReceptorBusqueda, suscribirReceptorBusqueda } from './utils/busquedaGlobal'; // ✅ V00263
 import { Bell } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -760,6 +761,17 @@ function AppContenido() {
   // ✅ MÓVIL: en pantallas chicas el menú inicia CERRADO (flota sobre el
   //   contenido); en escritorio inicia abierto como siempre.
   const [menuAbierto, setMenuAbierto] = useState(() => window.innerWidth > 768);
+  // ✅ V00263: BUSCADOR GLOBAL del topbar — filtra el módulo activo. Si el
+  //   módulo no tiene búsqueda, el campo se deshabilita solo.
+  const [busquedaTopbar, setBusquedaTopbar] = useState('');
+  const [receptorBusquedaActivo, setReceptorBusquedaActivo] = useState(hayReceptorBusqueda());
+  const [etiquetaBusquedaTopbar, setEtiquetaBusquedaTopbar] = useState(etiquetaReceptorBusqueda());
+  useEffect(() => suscribirReceptorBusqueda(() => {
+    setReceptorBusquedaActivo(hayReceptorBusqueda());
+    setEtiquetaBusquedaTopbar(etiquetaReceptorBusqueda());
+    setBusquedaTopbar(''); // al cambiar de módulo, el buscador arranca limpio
+  }), []);
+  const escribirBusquedaTopbar = (t: string) => { setBusquedaTopbar(t); emitirBusquedaGlobal(t); };
   
   const [menuBasesDatosAbierto, setMenuBasesDatosAbierto] = useState(false);
   const [menuClientesAbierto, setMenuClientesAbierto] = useState(false);
@@ -1679,7 +1691,23 @@ function AppContenido() {
             <button className="menu-toggle-btn" onClick={() => setMenuAbierto(!menuAbierto)} title="Ocultar/Mostrar Menú">☰</button>
           </div>
 
-          
+          {/* ✅ V00263: buscador global — filtra el módulo activo */}
+          <div className="topbar-buscador">
+            <span className="topbar-buscador__lupa">🔍</span>
+            <input
+              className="topbar-buscador__input"
+              type="text"
+              value={busquedaTopbar}
+              disabled={!receptorBusquedaActivo}
+              placeholder={receptorBusquedaActivo ? `Buscar en ${etiquetaBusquedaTopbar}…` : 'Sin búsqueda en este módulo'}
+              title={receptorBusquedaActivo ? 'Filtra lo que ves en el módulo actual' : 'Este módulo no tiene búsqueda'}
+              onChange={(e) => escribirBusquedaTopbar(e.target.value)}
+            />
+            {busquedaTopbar && (
+              <button className="topbar-buscador__limpiar" onClick={() => escribirBusquedaTopbar('')} title="Limpiar búsqueda">✕</button>
+            )}
+          </div>
+
           <div className="topbar-right app-x46">
             {accesoTotalReal && !vistaComoAplicada && (
               <button className="app-x47"

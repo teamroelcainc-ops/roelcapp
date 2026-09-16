@@ -10,6 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
@@ -515,6 +516,7 @@ export const FacturacionClientesDashboard = () => {
   const [mostrarSugerenciasCliente, setMostrarSugerenciasCliente] = useState(false);
 
   const [textoBuscarFactura, setTextoBuscarFactura] = useState('');
+  useBusquedaGlobal((t) => setTextoBuscarFactura(t), 'facturas (invoice, cliente, CCP, referencia, remolque)'); // ✅ V00263: buscador global del topbar
   const [filtroStatusFactura, setFiltroStatusFactura] = useState<string>('Todos');
   // ✅ NUEVO: tab para separar la facturación por moneda (Todas | Dólares | Pesos).
   const [filtroMonedaHist, setFiltroMonedaHist] = useState<'todas' | 'USD' | 'MXN'>('todas');

@@ -1,5 +1,6 @@
 // src/features/empresas/components/EmpresasDashboard.tsx
 import React, { useState, useEffect, useMemo } from 'react';
+import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { propagarMonedaEmpresa } from '../services/propagarMoneda';
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, onSnapshot, getDocs, query, where, limit, orderBy, writeBatch, doc, deleteDoc } from 'firebase/firestore';
@@ -354,6 +355,7 @@ const EmpresasDashboard = () => {
   const [filtroMoneda, setFiltroMoneda] = useState('Todas');
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  useBusquedaGlobal((t) => setBusqueda(t), 'empresas'); // ✅ V00263: buscador global del topbar
   // ✅ V00191: al elegir una SUGERENCIA del buscador, se filtra EXACTAMENTE esa
   //   empresa (por id) — antes se buscaba por su nombre y salían todas las que
   //   compartían texto (p. ej. varias "Landstar Transportation"). Teclear o

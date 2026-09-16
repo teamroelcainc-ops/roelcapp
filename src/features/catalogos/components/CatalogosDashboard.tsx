@@ -1,5 +1,6 @@
 // src/features/catalogos/components/CatalogosDashboard.tsx
 import React, { useState, useEffect, useMemo, useRef } from 'react'; // ✅ V00228: useRef
+import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00226
 import { collection, onSnapshot, getDocs, writeBatch, doc, query, where, setDoc, getDoc, deleteDoc, getCountFromServer, limit, startAfter } from 'firebase/firestore'; // ✅ V00259: limit/startAfter para el modal de operaciones por C/V
 import { db, auth, agregarRegistro, actualizarRegistro, eliminarRegistro, pedirNotaEliminacion } from '../../../config/firebase';
@@ -467,6 +468,7 @@ const CatalogosDashboard = () => {
   const [camposRequeridos, setCamposRequeridos] = useState<Record<string, string[]>>({});
   const [opcionesDinamicas, setOpcionesDinamicas] = useState<Record<string, any[]>>({});
   const [busqueda, setBusqueda] = useState('');
+  useBusquedaGlobal((t) => setBusqueda(t), 'el catálogo abierto'); // ✅ V00263: buscador global del topbar
   const [filtroFijo, setFiltroFijo] = useState<string>('');
 
   

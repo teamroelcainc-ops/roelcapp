@@ -16,6 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { EditorOperacionEmbebido } from '../../operaciones/components/EditorOperacionEmbebido';
 import { HiloModal } from '../../hilo/HiloModal';
 import { suscribirOperacionGuardada } from '../../../utils/operacionesBus';
@@ -531,6 +532,7 @@ export const FacturacionProveedoresDashboard = () => {
   const [mostrarSugerenciasProveedor, setMostrarSugerenciasProveedor] = useState(false);
 
   const [textoBuscarFactura, setTextoBuscarFactura] = useState('');
+  useBusquedaGlobal((t) => setTextoBuscarFactura(t), 'facturas de proveedores'); // ✅ V00263: buscador global del topbar
   const [filtroStatusFactura, setFiltroStatusFactura] = useState<string>('Todos');
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
   // ✅ NUEVO: las tablas arrancan VACÍAS; cada pestaña muestra datos hasta que

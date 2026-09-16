@@ -1265,3 +1265,13 @@ body {
   80% { transform: translateY(0) rotate(0); }
 }
 .app-campana-brinco { animation: app-campana-salto 1.6s ease-in-out infinite; transform-origin: top center; }
+
+/* ✅ V00263: buscador global del topbar (centrado; se deshabilita si el módulo no busca) */
+.topbar-buscador { position: relative; flex: 1; display: flex; justify-content: center; align-items: center; min-width: 0; padding: 0 16px; }
+.topbar-buscador__lupa { position: absolute; left: calc(50% - 170px); pointer-events: none; font-size: 0.8rem; opacity: 0.55; }
+.topbar-buscador__input { width: 360px; max-width: 100%; padding: 7px 30px 7px 32px; background: #0d1117; border: 1px solid #30363d; border-radius: 999px; color: #c9d1d9; font-size: 0.85rem; transition: border-color 0.15s ease; }
+.topbar-buscador__input:focus { outline: none; border-color: #58a6ff; }
+.topbar-buscador__input:disabled { opacity: 0.45; cursor: not-allowed; }
+.topbar-buscador__input::placeholder { color: #6e7681; }
+.topbar-buscador__limpiar { position: absolute; left: calc(50% + 148px); background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.8rem; padding: 2px 4px; }
+@media (max-width: 900px) { .topbar-buscador__input { width: 100%; } .topbar-buscador__lupa { left: 26px; } .topbar-buscador__limpiar { left: auto; right: 22px; } }

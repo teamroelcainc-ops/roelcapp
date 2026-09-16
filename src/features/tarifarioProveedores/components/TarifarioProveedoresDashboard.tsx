@@ -80,6 +80,7 @@
 //     los tarifarios existentes que no lo tengan.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
 import { registrarLog } from '../../../utils/logger';
@@ -223,6 +224,7 @@ export function TarifarioProveedoresDashboard() {
   const [migrando, setMigrando] = useState(false);
   // ✅ V00219: buscador y filtros de la lista.
   const [busquedaLista, setBusquedaLista] = useState('');
+  useBusquedaGlobal((t) => setBusquedaLista(t), 'los tarifarios de proveedores'); // ✅ V00263: buscador global del topbar
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroEntidad, setFiltroEntidad] = useState('');
   const [filtroMoneda, setFiltroMoneda] = useState('');

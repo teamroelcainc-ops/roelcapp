@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
@@ -418,6 +419,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
   
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
+  // ✅ V00263: el buscador global filtra EN VIVO — actualiza el campo y el
+  //   snapshot aplicado (aquí los filtros normales aplican con BUSCAR).
+  useBusquedaGlobal((t) => { setBusqueda(t); setFiltrosAplicados(prev => (prev ? { ...prev, busqueda: t } : prev)); }, 'los servicios completados');
 
   // ✅ MODIFICADO: el filtro PRINCIPAL ahora es el rango de fechas (inicio/fin).
   const [filterFechaInicio, setFilterFechaInicio] = useState('');

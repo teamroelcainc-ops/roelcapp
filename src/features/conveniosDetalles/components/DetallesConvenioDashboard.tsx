@@ -35,6 +35,7 @@
 //   múltiple, edición en modal, Sin cotización) aplican también a proveedores.
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { createPortal } from 'react-dom'; // ✅ V00237
 import { collection, getDocs, doc, updateDoc, writeBatch, setDoc, query, where } from 'firebase/firestore'; // ✅ V00215/V00231/V00232
 import { reservarConsecutivosDetalle, reservarConsecutivosDetalleProveedor } from '../consecutivos'; // ✅ V00231
@@ -126,6 +127,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
   const [filas, setFilas] = useState<FilaDetalle[] | null>(() => obtenerCacheMemoria<FilaDetalle[]>(CLAVE_CACHE, TTL_MS));
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  useBusquedaGlobal((t) => setBusqueda(t), 'los convenios'); // ✅ V00263: buscador global del topbar
   const [ordenAsc, setOrdenAsc] = useState(false);
   // ✅ V00206: operaciones que usan cada detalle (op.convenio = id del detalle)
   const [usosOps, setUsosOps] = useState<Record<string, { ref: string; fecha: string; status: string; tipo: string; entidad: string; monto: string; docId: string }[]>>({});

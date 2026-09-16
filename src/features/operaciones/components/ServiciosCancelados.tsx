@@ -1,5 +1,6 @@
 // src/features/operaciones/components/ServiciosCancelados.tsx
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, startAfter } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
@@ -201,6 +202,9 @@ const ServiciosCancelados = () => {
 
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
   const [busqueda, setBusqueda] = useState('');
+  // ✅ V00263: el buscador global filtra EN VIVO — actualiza el campo y el
+  //   snapshot aplicado (aquí los filtros normales aplican con BUSCAR).
+  useBusquedaGlobal((t) => { setBusqueda(t); setFiltrosAplicados(prev => (prev ? { ...prev, busqueda: t } : prev)); }, 'los servicios cancelados');
 
   // ✅ MODIFICADO: el rango de fechas y los demás campos son TODOS filtros OPCIONALES
   //    que se aplican en memoria. La carga base trae todas las operaciones canceladas.
