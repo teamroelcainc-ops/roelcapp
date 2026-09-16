@@ -136,3 +136,9 @@
 /* ✅ V00242: botón para traer el monto vigente del convenio */
 .fo-btn-actualizar { border-color: #3fb950 !important; color: #3fb950 !important; }
 .fo-btn-actualizar:hover { background-color: rgba(63, 185, 80, 0.12) !important; }
+
+/* ✅ V00265: con el formulario en portal y persistente entre módulos, en estado
+   MINIMIZADO solo debe verse la píldora (.fo-x45): cualquier otro resto del
+   overlay (paneles, dropdowns, chips flotantes) queda oculto — antes asomaban
+   fragmentos ("Flete de Importacion…", "$0.00") encima de otros módulos. */
+.modal-overlay.minimized > *:not(.fo-x45) { display: none !important; }

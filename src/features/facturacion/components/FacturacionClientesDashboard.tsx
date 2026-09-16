@@ -1141,11 +1141,16 @@ export const FacturacionClientesDashboard = () => {
   };
 
   const monedaFacturaMostrar = (f: any): string => {
-    // ✅ V00262: MANDA la moneda del cliente en EMPRESAS; la guardada en la
-    //   factura queda de respaldo. Siempre canónica (Dólares / Pesos).
-    const deEmpresa = monedaDeCliente(f.clienteId);
-    if (deEmpresa) return deEmpresa;
-    return monedaCanonica(f.monedaFacturacion) || 'N/A';
+    // ✅ V00265 (corrige el V00262): manda la moneda EN QUE SE EMITIÓ la
+    //   factura (monedaFacturacion, o el campo viejo `moneda` de importadas),
+    //   siempre canónica (Dólares/Pesos). La del cliente en Empresas queda de
+    //   RESPALDO para facturas sin moneda. El V00262 priorizaba Empresas y
+    //   eso MEZCLABA monedas: una factura emitida en Pesos de un cliente que
+    //   hoy cotiza en Dólares se sumaba al total USD con su monto en pesos —
+    //   por eso los totales se veían inflados.
+    const emitida = monedaCanonica(f.monedaFacturacion) || monedaCanonica(f.moneda);
+    if (emitida) return emitida;
+    return monedaDeCliente(f.clienteId) || 'N/A';
   };
 
   const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado;
@@ -2187,7 +2192,8 @@ export const FacturacionClientesDashboard = () => {
       else totalSinMoneda += monto;
       totalOps += Array.isArray(f.operacionesIds) ? f.operacionesIds.length : 0;
     });
-    return { cuenta: historialOrdenado.length, totalUSD, totalMXN, totalSinMoneda, totalOps };
+    const r2c = (x: number) => Math.round(x * 100) / 100; // ✅ V00265: tarjetas a 2 decimales
+    return { cuenta: historialOrdenado.length, totalUSD: r2c(totalUSD), totalMXN: r2c(totalMXN), totalSinMoneda: r2c(totalSinMoneda), totalOps };
   }, [historialOrdenado]);
 
   const conteoStatus = useMemo(() => {
@@ -2683,9 +2689,14 @@ export const FacturacionClientesDashboard = () => {
         } else if (String(x.clienteNombre || x.cliente || '').trim()) {
           sinEmpresa += 1;
         }
-        // 2) Moneda: la del cliente en Empresas; respaldo, la guardada canónica.
+        // 2) Moneda — ✅ V00265 (corrige el V00262): la factura CONSERVA la
+        //    moneda en que se emitió; aquí solo se CANONIZA (USD/DOLARES →
+        //    Dólares, MXN/PESOS → Pesos). El campo viejo `moneda` (intacto en
+        //    las importadas) tiene prioridad: así se RECUPERAN las facturas a
+        //    las que la corrida anterior les puso la moneda del cliente. La
+        //    de Empresas solo se usa si la factura no trae moneda alguna.
         const monedaEmpresa = empresa ? monedaCanonica(empresa.monedaRef || empresa.moneda || empresa.monedaFacturacion) : '';
-        const monedaFinal = monedaEmpresa || monedaCanonica(x.monedaFacturacion || x.moneda);
+        const monedaFinal = monedaCanonica(x.moneda) || monedaCanonica(x.monedaFacturacion) || monedaEmpresa;
         if (monedaFinal && String(x.monedaFacturacion || '') !== monedaFinal) { cambios.monedaFacturacion = monedaFinal; nMoneda += 1; }
         if (Object.keys(cambios).length > 0) {
           lote.update(d.ref, cambios);
