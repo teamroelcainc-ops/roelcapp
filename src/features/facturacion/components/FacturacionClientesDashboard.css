@@ -456,3 +456,30 @@
 .fac-chips-pago { display: inline-flex; gap: 4px; flex-wrap: wrap; }
 .fac-chip-pago { font-family: monospace; font-size: 0.72rem; font-weight: 700; color: #3fb950; border: 1px solid rgba(63, 185, 80, 0.5); background: rgba(63, 185, 80, 0.1); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
 .fac-sin-pago { color: #8b949e; }
+
+/* ✅ V00262: buscador visible sobre la tabla del historial */
+.fac-buscador-tabla { position: relative; display: inline-flex; align-items: center; }
+.fac-buscador-tabla__input { width: 300px; max-width: 40vw; padding: 8px 30px 8px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 0.85rem; }
+.fac-buscador-tabla__input:focus { outline: none; border-color: #58a6ff; }
+.fac-buscador-tabla__limpiar { position: absolute; right: 6px; background: none; border: none; color: #8b949e; cursor: pointer; font-size: 0.8rem; padding: 2px 4px; }
+
+/* ✅ V00262: modal Exportar a Excel con orden por Drag & Drop */
+.fac-export-modal { width: 880px; max-width: 94vw; max-height: 86vh; display: flex; flex-direction: column; }
+.fac-export-modal__cabecera { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fac-export-modal__titulo { margin: 0; color: #c9d1d9; font-size: 1rem; }
+.fac-export-modal__sub { color: #8b949e; font-weight: normal; font-size: 0.85rem; }
+.fac-export-modal__cerrar { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 1rem; }
+.fac-export-modal__nota { padding: 8px 0 12px 0; color: #8b949e; font-size: 0.78rem; border-bottom: 1px solid #21262d; margin-bottom: 10px; }
+.fac-export-cuadricula { flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; align-content: start; }
+.fac-export-tarjeta { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background-color: #0d1117; border: 1px solid #21262d; border-radius: 6px; cursor: grab; min-width: 0; }
+.fac-export-tarjeta:active { cursor: grabbing; }
+.fac-export-tarjeta--apagada { background-color: rgba(13, 17, 23, 0.5); opacity: 0.55; }
+.fac-export-tarjeta--destino { border-color: #10b981; background-color: rgba(16, 185, 129, 0.12); }
+.fac-export-tarjeta__punos { color: #484f58; font-size: 0.85rem; letter-spacing: -2px; user-select: none; }
+.fac-export-tarjeta__etiqueta { flex: 1; color: #c9d1d9; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.fac-export-tarjeta__etiqueta--apagada { color: #8b949e; }
+.fac-export-modal__pie { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.fac-export-modal__separador { flex: 1; }
+.fac-export-modal__exportar { padding: 8px 18px; border: none; border-radius: 6px; background: #1a7f37; color: #fff; font-weight: bold; cursor: pointer; }
+.fac-export-modal__exportar:disabled { background: #30363d; color: #8b949e; cursor: wait; }
+@media (max-width: 760px) { .fac-export-cuadricula { grid-template-columns: 1fr; } .fac-buscador-tabla__input { width: 100%; max-width: none; } }

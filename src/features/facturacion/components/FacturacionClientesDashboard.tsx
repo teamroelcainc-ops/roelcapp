@@ -34,7 +34,8 @@ import { exportarExcelProfesional } from './exportarExcelProfesional';
 import { generarRemisionPDF } from './generarRemisionPDF';
 import type { EmisorRemision, RemisionData } from './generarRemisionPDF';
 import './FacturacionClientesDashboard.css';
-import { almacenSesion } from '../../../utils/cacheMemoria';
+import { almacenSesion, limpiarCachesPorPrefijo } from '../../../utils/cacheMemoria'; // ✅ V00262
+import { registrarLog } from '../../../utils/logger'; // ✅ V00262
 import { hoyLocalISO } from '../../../utils/fechaHoraLocal';
 
 // ──────────────────────────────────────────────────────────────────────
@@ -1104,13 +1105,27 @@ export const FacturacionClientesDashboard = () => {
     return m;
   }, [facturasGlobales]);
 
+  // ✅ V00262: MONEDA CANÓNICA — en el catálogo solo existen DOS monedas:
+  //   "Dólares" y "Pesos". USD/DÓLARES/DOLARES → Dólares; MXN/PESOS → Pesos.
+  const monedaCanonica = (val: unknown): string => {
+    const s = String(val || '').trim();
+    if (!s) return '';
+    if (s === ID_USD) return 'Dólares';
+    if (s === ID_MXN) return 'Pesos';
+    const plano = s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (plano === 'n/a') return '';
+    if (plano === 'usd' || plano.startsWith('dolar')) return 'Dólares';
+    if (plano === 'mxn' || plano.startsWith('peso')) return 'Pesos';
+    const nombre = mapaCatalogos[s];
+    if (nombre && String(nombre) !== s) return monedaCanonica(nombre);
+    return s;
+  };
+
   const monedaDeCliente = (clienteId: any): string => {
     if (!clienteId) return '';
     const empresa = empresasList.find(e => e.id === clienteId);
     const idMoneda = empresa?.monedaRef || empresa?.moneda || empresa?.monedaFacturacion;
-    if (idMoneda === ID_MXN) return 'MXN';
-    if (idMoneda === ID_USD) return 'USD';
-    return idMoneda ? String(idMoneda) : '';
+    return monedaCanonica(idMoneda); // ✅ V00262: siempre canónica
   };
 
   const resolverMoneda = (val: any): string => {
@@ -1124,9 +1139,11 @@ export const FacturacionClientesDashboard = () => {
   };
 
   const monedaFacturaMostrar = (f: any): string => {
-    const propia = resolverMoneda(f.monedaFacturacion);
-    if (propia) return propia;
-    return monedaDeCliente(f.clienteId) || 'N/A';
+    // ✅ V00262: MANDA la moneda del cliente en EMPRESAS; la guardada en la
+    //   factura queda de respaldo. Siempre canónica (Dólares / Pesos).
+    const deEmpresa = monedaDeCliente(f.clienteId);
+    if (deEmpresa) return deEmpresa;
+    return monedaCanonica(f.monedaFacturacion) || 'N/A';
   };
 
   const esFacturada = (op: any) => opIndex.has(String(op.id)) || !!op.facturaClienteId || !!op.facturado;
@@ -2348,11 +2365,18 @@ export const FacturacionClientesDashboard = () => {
   useEffect(() => { setPaginaOps(1); }, [filtroCliente, ordenOps, fechaDesdeOps, fechaHastaOps, textoBuscarRemolqueOps, vistaOps, operacionesGlobales, filtroTipoOp]);
 
   const nombreClienteFactura_ = (f: any): string => {
-    if (f.clienteNombre) return f.clienteNombre;
-    if (f.cliente) return f.cliente;
+    // ✅ V00262: MANDA el nombre de EMPRESAS. Se resuelve por clienteId o por
+    //   el nombre guardado (getNombreCliente matchea id, nombre y nombreCorto);
+    //   lo guardado en la factura queda de respaldo.
     if (f.clienteId) {
       const nom = getNombreCliente(f.clienteId);
-      if (nom && nom !== f.clienteId) return nom;
+      if (nom && nom !== '-' && nom !== f.clienteId) return nom;
+    }
+    const guardado = String(f.clienteNombre || f.cliente || '').trim();
+    if (guardado) {
+      const nom = getNombreCliente(guardado);
+      if (nom && nom !== '-') return nom;
+      return guardado;
     }
     return '-';
   };
@@ -2532,11 +2556,95 @@ export const FacturacionClientesDashboard = () => {
 
   // ✅ (E) Exportación PROFESIONAL a Excel del Historial (ExcelJS con estilos + logo).
   const [exportandoExcelHist, setExportandoExcelHist] = useState(false); // ✅ V00261
+
+  // ✅ V00262: SINCRONIZAR FACTURAS CON EMPRESAS — recorre TODA la colección
+  //   facturas_clientes y escribe, solo donde difiera:
+  //   · clienteNombre → el nombre oficial de Empresas (resuelto por clienteId
+  //     o por el nombre guardado); si la factura no traía clienteId y se
+  //     encontró la empresa, también se guarda el clienteId.
+  //   · monedaFacturacion → la moneda del cliente en Empresas, canónica
+  //     (solo "Dólares" o "Pesos"); si el cliente no tiene moneda en
+  //     Empresas, se canoniza la guardada (USD/DÓLARES→Dólares, MXN→Pesos).
+  //   No toca montos, fechas, invoices ni referencias.
+  const [sincronizandoEmpresas, setSincronizandoEmpresas] = useState(false);
+  // ✅ V00262: modal "Exportar a Excel" con selección y ORDEN de columnas
+  //   (mismo patrón de Servicios Completados: cuadrícula + Drag & Drop).
+  const [modalExportarFac, setModalExportarFac] = useState(false);
+  const [columnasExportFac, setColumnasExportFac] = useState<{ id: string; label: string; visible: boolean }[]>([]);
+  const dragExportFacIdx = useRef<number | null>(null);
+  const [dragOverExportFacIdx, setDragOverExportFacIdx] = useState<number | null>(null);
+  const abrirModalExportarFac = () => {
+    setColumnasExportFac(columnasFactura.map(c => ({ id: c.id, label: c.label, visible: c.visible })));
+    setModalExportarFac(true);
+  };
+  const soltarColumnaExportFac = (destino: number) => {
+    const origen = dragExportFacIdx.current;
+    dragExportFacIdx.current = null;
+    setDragOverExportFacIdx(null);
+    if (origen === null || origen === destino) return;
+    setColumnasExportFac(prev => {
+      const arr = [...prev];
+      const [mov] = arr.splice(origen, 1);
+      arr.splice(destino, 0, mov);
+      return arr;
+    });
+  };
+  const sincronizarFacturasConEmpresas = async () => {
+    if (sincronizandoEmpresas) return;
+    if (!window.confirm('¿Sincronizar TODAS las facturas con Empresas?\n\n· El nombre del cliente quedará como está en Empresas.\n· La moneda quedará como la del cliente en Empresas, unificada a "Dólares" o "Pesos" (se acaban los USD/DOLARES/MXN mezclados).\n\nNo se tocan montos, fechas, invoices ni referencias.')) return;
+    setSincronizandoEmpresas(true);
+    try {
+      const plano = (t: unknown) => String(t ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+      type EmpresaLike = { id?: unknown; nombre?: unknown; nombreCorto?: unknown; monedaRef?: unknown; moneda?: unknown; monedaFacturacion?: unknown };
+      const empresaPorNombre = new Map<string, EmpresaLike>();
+      (empresasList as EmpresaLike[]).forEach((e) => {
+        [e.nombre, e.nombreCorto].forEach((n) => { const k = plano(n); if (k && !empresaPorNombre.has(k)) empresaPorNombre.set(k, e); });
+      });
+      const snap = await getDocs(collection(db, 'facturas_clientes'));
+      let lote = writeBatch(db); let enLote = 0;
+      let nFact = 0, nNombre = 0, nMoneda = 0, sinEmpresa = 0;
+      for (const d of snap.docs) {
+        const x = d.data() as Record<string, unknown>;
+        const cambios: Record<string, string> = {};
+        // 1) Resolver la EMPRESA del cliente (por id o por nombre guardado).
+        let empresa: EmpresaLike | null = x.clienteId ? ((empresasList as EmpresaLike[]).find((e) => e.id === x.clienteId) || null) : null;
+        if (!empresa) empresa = empresaPorNombre.get(plano(x.clienteNombre || x.cliente)) || null;
+        if (empresa) {
+          const nombreOficial = String(empresa.nombre || empresa.nombreCorto || '').trim();
+          if (nombreOficial && String(x.clienteNombre || '') !== nombreOficial) { cambios.clienteNombre = nombreOficial; nNombre += 1; }
+          if (!x.clienteId) cambios.clienteId = String(empresa.id);
+        } else if (String(x.clienteNombre || x.cliente || '').trim()) {
+          sinEmpresa += 1;
+        }
+        // 2) Moneda: la del cliente en Empresas; respaldo, la guardada canónica.
+        const monedaEmpresa = empresa ? monedaCanonica(empresa.monedaRef || empresa.moneda || empresa.monedaFacturacion) : '';
+        const monedaFinal = monedaEmpresa || monedaCanonica(x.monedaFacturacion || x.moneda);
+        if (monedaFinal && String(x.monedaFacturacion || '') !== monedaFinal) { cambios.monedaFacturacion = monedaFinal; nMoneda += 1; }
+        if (Object.keys(cambios).length > 0) {
+          lote.update(d.ref, cambios);
+          nFact += 1; enLote += 1;
+          if (enLote >= 400) { await lote.commit(); lote = writeBatch(db); enLote = 0; }
+        }
+      }
+      if (enLote > 0) await lote.commit();
+      limpiarCachesPorPrefijo('roelca_'); // los módulos releerán datos frescos
+      await registrarLog('Facturación Clientes', 'Edición', `Sincronizó ${nFact} factura(s) con Empresas: ${nNombre} nombre(s), ${nMoneda} moneda(s); ${sinEmpresa} sin empresa encontrada.`);
+      alert(`Facturas sincronizadas con Empresas. ✅\n\n· Facturas actualizadas: ${nFact} (de ${snap.size})\n· Ya estaban correctas: ${snap.size - nFact}\n· Nombres corregidos: ${nNombre}\n· Monedas unificadas: ${nMoneda}\n· Sin empresa encontrada en Empresas: ${sinEmpresa}\n\nSe recargará el historial para mostrar los datos nuevos.`);
+      await recargarTodo();
+    } catch (e) {
+      console.error('No se pudieron sincronizar las facturas con Empresas:', e);
+      alert('No se pudieron sincronizar las facturas con Empresas.');
+    } finally {
+      setSincronizandoEmpresas(false);
+    }
+  };
   const exportarCSV = async () => {
     if (exportandoExcelHist) return;
     if (historialOrdenado.length === 0) return alert('No hay datos para exportar.');
-    const columnasVisibles = columnasFactura.filter(c => c.visible);
+    // ✅ V00262: exporta con la selección y el ORDEN elegidos en el modal.
+    const columnasVisibles = (columnasExportFac.length ? columnasExportFac : columnasFactura).filter(c => c.visible);
     if (columnasVisibles.length === 0) return alert('Selecciona al menos una columna para exportar.');
+    setModalExportarFac(false);
     setExportandoExcelHist(true);
     try { // ✅ V00261: cualquier fallo (incluida la resolución) avisa en vez de quedarse callado
 
@@ -3286,10 +3394,25 @@ export const FacturacionClientesDashboard = () => {
               <span className="fcd-x7">{historialOrdenado.length} {historialOrdenado.length === 1 ? 'factura' : 'facturas'}</span>
             </div>
             <div className="fcd-x72">
+              {/* ✅ V00262: buscador SIEMPRE visible sobre la tabla (mismo estado del panel de Filtros) */}
+              <span className="fac-buscador-tabla">
+                <input
+                  className="fac-buscador-tabla__input"
+                  type="text"
+                  placeholder="Buscar: invoice, cliente, CCP, referencia, remolque…"
+                  value={textoBuscarFactura}
+                  onChange={(e) => setTextoBuscarFactura(e.target.value)}
+                />
+                {textoBuscarFactura && (
+                  <button className="fac-buscador-tabla__limpiar" onClick={() => setTextoBuscarFactura('')} title="Limpiar búsqueda">✕</button>
+                )}
+              </span>
               <button title="Editar el encabezado de las remisiones (emisor por moneda: USD→Camila, MXN→Rolando)" onClick={() => setModalEmisores(true)} style={{ ...btnDirStyle, borderColor: '#fb923c', color: '#fb923c' }}>⚙ Encabezado Remisión</button>
               <button title="Verificar consistencia de la facturación" onClick={() => setModalDiagnostico(true)} style={{ ...btnDirStyle, borderColor: '#58a6ff', color: '#58a6ff' }}>Verificar</button>
+              {/* ✅ V00262: nombre y moneda de TODAS las facturas guardadas = los de Empresas (Dólares/Pesos) */}
+              <button title="Escribe en todas las facturas el nombre del cliente y la moneda tal como están en Empresas (unifica USD/DOLARES→Dólares y MXN/PESOS→Pesos)" onClick={sincronizarFacturasConEmpresas} disabled={sincronizandoEmpresas} style={{ ...btnDirStyle, borderColor: '#a371f7', color: sincronizandoEmpresas ? '#8b949e' : '#a371f7', cursor: sincronizandoEmpresas ? 'wait' : 'pointer' }}>{sincronizandoEmpresas ? '⏳ Sincronizando…' : '⇄ Sincronizar con Empresas'}</button>
               <button title="Configurar columnas" onClick={() => setModalColumnas(true)} style={btnDirStyle}>⚙ Configurar Columnas</button>
-              <button title="Exportar a Excel (resuelve las referencias de todo el rango antes de generar)" onClick={exportarCSV} disabled={exportandoExcelHist} style={{ ...btnDirStyle, backgroundColor: exportandoExcelHist ? '#30363d' : '#1a7f37', color: exportandoExcelHist ? '#8b949e' : '#fff', border: 'none', cursor: exportandoExcelHist ? 'wait' : 'pointer' }}>{exportandoExcelHist ? '⏳ Exportando…' : 'Exportar Excel'}</button>
+              <button title="Elegir y ordenar las columnas del Excel antes de exportar" onClick={abrirModalExportarFac} disabled={exportandoExcelHist} style={{ ...btnDirStyle, backgroundColor: exportandoExcelHist ? '#30363d' : '#1a7f37', color: exportandoExcelHist ? '#8b949e' : '#fff', border: 'none', cursor: exportandoExcelHist ? 'wait' : 'pointer' }}>{exportandoExcelHist ? '⏳ Exportando…' : 'Exportar Excel'}</button>
             </div>
           </div>
 
@@ -3360,6 +3483,46 @@ export const FacturacionClientesDashboard = () => {
         </div>
       )}
 
+      {/* ✅ V00262: modal Exportar a Excel — selección y ORDEN por Drag & Drop (patrón de Servicios Completados) */}
+      {modalExportarFac && (
+        <div className="modal-overlay" onClick={() => setModalExportarFac(false)}>
+          <div className="modal-content fac-export-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="fac-export-modal__cabecera">
+              <h3 className="fac-export-modal__titulo">⬇ Exportar a Excel <span className="fac-export-modal__sub">({columnasExportFac.filter(c => c.visible).length} columnas)</span></h3>
+              <button type="button" className="fac-export-modal__cerrar" onClick={() => setModalExportarFac(false)}>✕</button>
+            </div>
+            <div className="fac-export-modal__nota">Arrastra ⋮⋮ cualquier tarjeta para cambiar el orden. Marca las columnas que quieres incluir.</div>
+            <div className="fac-export-cuadricula">
+              {columnasExportFac.map((c, idx) => (
+                <div
+                  key={c.id}
+                  draggable
+                  onDragStart={() => { dragExportFacIdx.current = idx; }}
+                  onDragOver={(e) => { e.preventDefault(); if (dragOverExportFacIdx !== idx) setDragOverExportFacIdx(idx); }}
+                  onDragLeave={() => { if (dragOverExportFacIdx === idx) setDragOverExportFacIdx(null); }}
+                  onDragEnd={() => { dragExportFacIdx.current = null; setDragOverExportFacIdx(null); }}
+                  onDrop={() => soltarColumnaExportFac(idx)}
+                  className={`fac-export-tarjeta${c.visible ? '' : ' fac-export-tarjeta--apagada'}${dragOverExportFacIdx === idx ? ' fac-export-tarjeta--destino' : ''}`}
+                >
+                  <span className="fac-export-tarjeta__punos" title="Arrastrar para reordenar">⋮⋮</span>
+                  <input
+                    type="checkbox"
+                    checked={c.visible}
+                    onChange={() => setColumnasExportFac(prev => prev.map((x, i) => (i === idx ? { ...x, visible: !x.visible } : x)))}
+                  />
+                  <span className={`fac-export-tarjeta__etiqueta${c.visible ? '' : ' fac-export-tarjeta__etiqueta--apagada'}`} title={c.label}>{c.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="fac-export-modal__pie">
+              <button type="button" className="btn btn-outline" onClick={() => setColumnasExportFac(columnasFactura.map(c => ({ id: c.id, label: c.label, visible: c.visible })))}>Columnas de la tabla</button>
+              <span className="fac-export-modal__separador" />
+              <button type="button" className="btn btn-outline" onClick={() => setModalExportarFac(false)}>Cancelar</button>
+              <button type="button" className="fac-export-modal__exportar" onClick={exportarCSV} disabled={exportandoExcelHist}>{exportandoExcelHist ? '⏳ Exportando…' : 'Exportar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {modalColumnas && (
         <div className="modal-overlay fcd-x121">
           <div className="fcd-x122">
