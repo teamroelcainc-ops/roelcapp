@@ -298,3 +298,6 @@ export const renumerarOperacion = onCall({ region: 'us-central1' }, async (reque
     throw new HttpsError('internal', err?.message || 'No se pudo renumerar la operación.');
   }
 });
+
+// ✅ V00266: MOTOR RELACIONAL — cascadas automáticas y verificador de integridad.
+export * from './relacional';

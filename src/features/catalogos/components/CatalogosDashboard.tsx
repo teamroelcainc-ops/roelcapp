@@ -915,6 +915,47 @@ const CatalogosDashboard = () => {
   //   quedan GUARDADOS y consistentes (no solo derivados al vuelo) y los
   //   filtros/estadísticas cuadran siempre. Petición de Jesús (V00257).
   const [normalizandoOps, setNormalizandoOps] = useState(false);
+
+  // ✅ V00266: VERIFICADOR DE INTEGRIDAD — llama la Cloud Function
+  //   `verificarIntegridad` (motor relacional) y muestra el reporte de
+  //   referencias rotas: el equivalente casero de los constraints de SQL.
+  const [verificandoIntegridad, setVerificandoIntegridad] = useState(false);
+  const verificarIntegridadRelacional = async () => {
+    if (verificandoIntegridad) return;
+    setVerificandoIntegridad(true);
+    try {
+      const { getFunctions, httpsCallable } = await import('firebase/functions');
+      const fn = httpsCallable(getFunctions(undefined, 'us-central1'), 'verificarIntegridad');
+      const res = await fn({});
+      const r = res.data as Record<string, { total?: number; muestras?: string[] }> & { revisadas?: Record<string, number> };
+      const linea = (titulo: string, h?: { total?: number; muestras?: string[] }) => {
+        const t = h?.total || 0;
+        if (!t) return `· ${titulo}: 0 ✅`;
+        const muestras = (h?.muestras || []).slice(0, 5).join(', ');
+        return `· ${titulo}: ${t} ⚠ (ej: ${muestras}${t > 5 ? '…' : ''})`;
+      };
+      const rev = r.revisadas || {};
+      alert([
+        'VERIFICACIÓN DE INTEGRIDAD (motor relacional) 🧪',
+        '',
+        `Revisadas: ${rev.operaciones ?? 0} operaciones, ${rev.facturasClientes ?? 0} facturas, ${rev.tarifariosClientes ?? 0} + ${rev.tarifariosProveedores ?? 0} tarifarios.`,
+        '',
+        linea('Operaciones con cliente inexistente', r.opsClienteInexistente),
+        linea('Operaciones con proveedor inexistente', r.opsProveedorInexistente),
+        linea('C/V fuera del catálogo', r.opsCargaFueraDeCatalogo),
+        linea('Aduana fuera del catálogo', r.opsAduanaFueraDeCatalogo),
+        linea('Facturas con cliente inexistente', r.facturasClienteInexistente),
+        linea('Facturas con operaciones borradas', r.facturasOpsMuertas),
+        linea('Tarifarios (cli) con cliente inexistente', r.tarifariosClienteInexistente),
+        linea('Tarifarios (prov) con proveedor inexistente', r.tarifariosProveedorInexistente),
+      ].join('\n'));
+    } catch (e) {
+      console.error('No se pudo verificar la integridad:', e);
+      alert('No se pudo verificar la integridad. ¿Ya están desplegadas las Cloud Functions del V00266? (firebase deploy --only functions)');
+    } finally {
+      setVerificandoIntegridad(false);
+    }
+  };
   const normalizarOperacionesDesdeConvenios = async () => {
     if (normalizandoOps) return;
     if (!window.confirm('¿Normalizar TODAS las operaciones con la información de su convenio?\n\nEL CONVENIO MANDA: si el convenio trae Cargada/Vacía o Aduana del catálogo, ese valor sobreescribe lo capturado en la operación (ej. convenio Hazmat → carga Hazmat). El campo capturado solo se conserva cuando el convenio no trae ese dato.\n\nSe actualizan: carga, aduanaNombre y trafico (el tráfico nunca se sobreescribe si ya es válido). No se tocan montos, fechas ni referencias.')) return;
@@ -1961,6 +2002,17 @@ const CatalogosDashboard = () => {
                 onClick={normalizarOperacionesDesdeConvenios}
               >
                 {normalizandoOps ? 'Normalizando…' : '⇊ Normalizar operaciones'}
+              </button>
+            )}
+            {/* ✅ V00266: reporte de referencias rotas (Cloud Function del motor relacional) */}
+            {(catalogoSeleccionado.id === 'tarifas_referencia' || catalogoSeleccionado.id === 'carga_vacia') && (
+              <button
+                className="btn btn-outline cd-x15 cd-btn-rearmar"
+                title="Revisa toda la base y reporta referencias rotas: clientes/proveedores inexistentes, C/V o aduanas fuera de catálogo, facturas con operaciones borradas. Corre en el servidor (Cloud Function)."
+                disabled={verificandoIntegridad}
+                onClick={verificarIntegridadRelacional}
+              >
+                {verificandoIntegridad ? 'Verificando…' : '🧪 Verificar integridad'}
               </button>
             )}
             {/* ✅ NUEVO (V00112): papelera filtrada al catálogo actual */}
