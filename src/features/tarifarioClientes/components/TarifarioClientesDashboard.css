@@ -360,3 +360,7 @@
 .tc-docfirmado-ver:hover { background: rgba(35, 134, 54, 0.12); }
 .tc-docfirmado-btn { cursor: pointer; }
 .tc-doc-firmado-ficha { cursor: pointer; }
+
+/* ✅ V00277: regla "Tarifario obligatorio" (Sí/No) en el formulario */
+.tc-doc-oblig-label { font-size: 0.78rem; color: #8b949e; white-space: nowrap; }
+.tc-doc-oblig-select { width: auto; min-width: 70px; padding: 4px 8px; font-size: 0.82rem; }

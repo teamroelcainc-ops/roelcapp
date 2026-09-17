@@ -324,6 +324,7 @@ export function TarifarioClientesDashboard() {
   const limpiarCaptura = () => {
     setEditandoId('');
     setDocNuevoFile(null); // ✅ V00274
+    setDocObligatorioForm(true); // ✅ V00277: el default es obligatorio
     setFechaVencimiento(`${hoyLocalISO().slice(0, 4)}-12-31`); // ✅ V00212
     setSeleccion(new Set());
     setExtras([]); // ✅ V00214
@@ -344,6 +345,7 @@ export function TarifarioClientesDashboard() {
 
   // ✅ V00194: abrir la captura en modo EDICIÓN con todo precargado.
   const abrirEdicion = (r: Doc) => {
+    setDocObligatorioForm(esDocObligatorio(r)); // ✅ V00277
     const emp = empresas.find((e) => String(e.id) === String(r.clienteId));
     const pseudo = emp || { id: r.clienteId, nombre: r.clienteNombre, nombreCorto: r.clienteNombreCorto, moneda: r.moneda, diasCredito: r.creditoDias, limiteCredito: r.limiteCredito };
     setClienteSel(pseudo);
@@ -474,6 +476,7 @@ export function TarifarioClientesDashboard() {
         creditoDias,
         limiteCredito,
         tarifas: lineas, // ✅ V00214
+        docObligatorio: docObligatorioForm, // ✅ V00277
         status: 'Pendiente',
       };
       if (editandoId) {
@@ -569,6 +572,11 @@ export function TarifarioClientesDashboard() {
     return url;
   };
   const [docNuevoFile, setDocNuevoFile] = useState<File | null>(null); // ✅ V00274: archivo elegido en el modal (nuevo/editar)
+  // ✅ V00277: "Tarifario obligatorio" (Sí/No) — si es Sí (el default, y el valor
+  //   de TODOS los registros que no traen el campo), el tarifario firmado es
+  //   requisito para aprobar (candado V00273); si es No, se puede aprobar sin él.
+  const esDocObligatorio = (r: Doc | null | undefined): boolean => (r as Doc | null | undefined)?.docObligatorio !== false;
+  const [docObligatorioForm, setDocObligatorioForm] = useState<boolean>(true);
   const inputDocModalRef = useRef<HTMLInputElement | null>(null);
 
   const alElegirDocFirmado = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -595,8 +603,9 @@ export function TarifarioClientesDashboard() {
   };
 
   const aprobarRegistro = async (r: Doc) => {
-    // ✅ V00273: CANDADO — sin el tarifario firmado no hay aprobación.
-    if (!String(r.docFirmadoUrl || '').trim()) {
+    // ✅ V00273: CANDADO — sin el tarifario firmado no hay aprobación…
+    // ✅ V00277: …salvo que el registro tenga "Tarifario obligatorio" en No.
+    if (esDocObligatorio(r) && !String(r.docFirmadoUrl || '').trim()) {
       if (window.confirm('Para aprobar, primero sube el TARIFARIO FIRMADO (escaneado).\n\n¿Quieres subirlo ahora? Al terminar la subida, la aprobación continúa sola.')) {
         pedirTarifarioFirmado(r, true);
       }
@@ -1170,19 +1179,21 @@ export function TarifarioClientesDashboard() {
                     <td className="tc-td-acciones" onClick={(e) => e.stopPropagation()}>
                       {/* ✅ V00200: iconos estándar azul/rojo (adiós emojis) */}
                       <span
-                        className={`tc-doc-firmado${String(r.docFirmadoUrl || '') ? ' tc-doc-firmado--ok' : (String(r.status || '') === 'Aprobado' ? ' tc-doc-firmado--falta' : '')}`}
+                        className={`tc-doc-firmado${String(r.docFirmadoUrl || '') ? ' tc-doc-firmado--ok' : (esDocObligatorio(r) && String(r.status || '') === 'Aprobado' ? ' tc-doc-firmado--falta' : '')}`}
                         title={String(r.docFirmadoUrl || '')
                           ? `Tarifario firmado subido${r.docFirmadoFecha ? ` el ${r.docFirmadoFecha}` : ''} — clic para verlo; clic con Ctrl para reemplazarlo`
-                          : (String(r.status || '') === 'Aprobado'
-                            ? 'APROBADO SIN el tarifario firmado — clic para subir el escaneado firmado'
-                            : 'Aún sin tarifario firmado — clic para subirlo (obligatorio para aprobar)')}
+                          : (!esDocObligatorio(r)
+                            ? 'Tarifario obligatorio: No — el documento es opcional (clic para subirlo si quieres)'
+                            : (String(r.status || '') === 'Aprobado'
+                              ? 'APROBADO SIN el tarifario firmado — clic para subir el escaneado firmado'
+                              : 'Aún sin tarifario firmado — clic para subirlo (obligatorio para aprobar)'))}
                         onClick={(e) => { /* ✅ V00273 */
                           if (subiendoDocFirmado === String(r.id)) return;
                           const url = String(r.docFirmadoUrl || '');
                           if (url && !e.ctrlKey) { window.open(url, '_blank', 'noopener'); return; }
                           pedirTarifarioFirmado(r);
                         }}
-                      >{subiendoDocFirmado === String(r.id) ? '⏳' : (String(r.docFirmadoUrl || '') ? '📄' : (String(r.status || '') === 'Aprobado' ? '⚠' : '📎'))}</span>
+                      >{subiendoDocFirmado === String(r.id) ? '⏳' : (String(r.docFirmadoUrl || '') ? '📄' : (esDocObligatorio(r) && String(r.status || '') === 'Aprobado' ? '⚠' : '📎'))}</span>
                       <button type="button" className="btn-small btn-edit tc-mr6" title="Editar este pre convenio" onClick={() => abrirEdicion(r)}><IconoEditar /></button>
                       <button type="button" className="btn-small btn-danger tc-mr6" title="Eliminar este pre convenio" onClick={() => eliminarRegistro(r)}><IconoEliminar /></button>
                       <button type="button" className="tc-btn-pdf" title="Exportar el tarifario en PDF" onClick={() => exportarPDF(r)}>PDF</button>
@@ -1246,8 +1257,8 @@ export function TarifarioClientesDashboard() {
                   {/* ✅ V00199: en el detalle, los botones llevan su NOMBRE */}
                   <button
                     type="button"
-                    className={`btn-small tc-btn-nombrado tc-doc-firmado-ficha${String(r.docFirmadoUrl || '') ? ' tc-doc-firmado--ok' : (String(r.status || '') === 'Aprobado' ? ' tc-doc-firmado--falta' : '')}`}
-                    title={String(r.docFirmadoUrl || '') ? `Tarifario firmado subido${r.docFirmadoFecha ? ` el ${r.docFirmadoFecha}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo` : 'Subir el tarifario firmado (obligatorio para aprobar)'}
+                    className={`btn-small tc-btn-nombrado tc-doc-firmado-ficha${String(r.docFirmadoUrl || '') ? ' tc-doc-firmado--ok' : (esDocObligatorio(r) && String(r.status || '') === 'Aprobado' ? ' tc-doc-firmado--falta' : '')}`}
+                    title={String(r.docFirmadoUrl || '') ? `Tarifario firmado subido${r.docFirmadoFecha ? ` el ${r.docFirmadoFecha}` : ''} — clic para verlo; Ctrl+clic para reemplazarlo` : (esDocObligatorio(r) ? 'Subir el tarifario firmado (obligatorio para aprobar)' : 'Tarifario obligatorio: No — subir el documento es opcional')}
                     onClick={(e) => { /* ✅ V00274: documento firmado desde la ficha */
                       const url = String(r.docFirmadoUrl || '');
                       if (url && !e.ctrlKey) { window.open(url, '_blank', 'noopener'); return; }
@@ -1296,8 +1307,14 @@ export function TarifarioClientesDashboard() {
                   edición muestra el ya subido; el archivo elegido se sube AL
                   GUARDAR (en el nuevo, cuando ya existe el consecutivo). */}
               <div className="tc-campo tc-campo-docfirmado">
-                <label className="tc-label">Tarifario firmado (escaneado) — obligatorio para aprobar</label>
+                <label className="tc-label">Tarifario firmado (escaneado){docObligatorioForm ? ' — obligatorio para aprobar' : ' — opcional para este tarifario'}</label>
                 <div className="tc-docfirmado-linea">
+                  {/* ✅ V00277: regla por tarifario */}
+                  <label className="tc-doc-oblig-label" htmlFor="tcDocOblig">Tarifario obligatorio</label>
+                  <select id="tcDocOblig" className="form-control tc-doc-oblig-select" value={docObligatorioForm ? 'si' : 'no'} onChange={(e) => setDocObligatorioForm(e.target.value === 'si')} title="Sí: no se puede aprobar sin el tarifario firmado. No: se puede aprobar sin documento.">
+                    <option value="si">Sí</option>
+                    <option value="no">No</option>
+                  </select>
                   {(() => {
                     const rEd = editandoId ? registros.find((x: Doc) => String(x.id) === editandoId) : null;
                     const urlActual = String(rEd?.docFirmadoUrl || '');
