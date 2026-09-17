@@ -2429,19 +2429,22 @@ export const ReferenciasNominaDashboard = () => {
 
       {/* MODAL CONFIGURAR COLUMNAS */}
       {/* DETALLE editable de la operación (se abre al oprimir la referencia).
-          El contenedor con z-index alto lo pone POR ENCIMA del modal de nómina. */}
+          ✅ V00285: SIN el contenedor rnd-x98 — FormularioOperacion se monta con
+          createPortal directo en el body, así que aquel div fijo (inset 0,
+          z-index 3000) quedaba VACÍO cubriendo toda la pantalla ENCIMA del
+          formulario (z 1000): se veía todo pero ningún clic llegaba — el
+          formulario parecía "congelado". Montado directo, igual que en
+          Servicios Cancelados/Completados, donde siempre ha funcionado. */}
       {opDetalle && (
-        <div className="rnd-x98">
-          <FormularioOperacion
-            estado="abierto"
-            initialData={opDetalle}
-            catalogosCacheados={catalogosFormulario || {}}
-            onClose={() => { const id = String(opDetalle?.id || ''); setOpDetalle(null); if (id) refrescarOpEnMemoria(id); }}
-            onMinimize={() => {}}
-            onRestore={() => {}}
-            onSave={(opNueva: any) => { refrescarOpEnMemoria(String(opNueva?.id || opDetalle?.id || '')); }}
-          />
-        </div>
+        <FormularioOperacion
+          estado="abierto"
+          initialData={opDetalle}
+          catalogosCacheados={catalogosFormulario || {}}
+          onClose={() => { const id = String(opDetalle?.id || ''); setOpDetalle(null); if (id) refrescarOpEnMemoria(id); }}
+          onMinimize={() => {}}
+          onRestore={() => {}}
+          onSave={(opNueva: any) => { refrescarOpEnMemoria(String(opNueva?.id || opDetalle?.id || '')); }}
+        />
       )}
 
       {modalColumnasOps && (

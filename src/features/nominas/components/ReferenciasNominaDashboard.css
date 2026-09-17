@@ -99,7 +99,7 @@
 .rnd-x95 { padding: 16px; color: #8b949e; font-weight: bold; white-space: nowrap; }
 .rnd-x96 { background-color: #0d1117; border: 1px solid #58a6ff; border-radius: 8px; padding: 16px; }
 .rnd-x97 { display: block; color: #58a6ff; font-size: 0.75rem; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; }
-.rnd-x98 { position: fixed; inset: 0; z-index: 3000; }
+/* ✅ V00285: .rnd-x98 retirada — bloqueaba los clics del FormularioOperacion (ver ReferenciasNominaDashboard.tsx). */
 .rnd-x99 { z-index: 2000; position: fixed; top: 0; left: 0; right: 0; bottom: 0; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(4px); background-color: rgba(0,0,0,0.7); }
 .rnd-x100 { background-color: #0d1117; border: 1px solid #30363d; border-radius: 12px; width: 720px; max-width: 95%; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 .rnd-x101 { display: flex; justify-content: space-between; margin-bottom: 16px; border-bottom: 1px solid #30363d; padding-bottom: 12px; }
