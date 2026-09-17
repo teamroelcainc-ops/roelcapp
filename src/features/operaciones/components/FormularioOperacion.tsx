@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, cloneElement } from 'react';
 import { createPortal } from 'react-dom'; // ✅ V00264: el formulario vive en document.body
-import { doc, getDoc, updateDoc, collection, getDocs, setDoc, deleteDoc, addDoc, query, where, limit } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc, query, where, limit } from 'firebase/firestore';
 import { prefijoTipoOperacion } from '../../../utils/generarReferencia';
 import { db, storage, auth } from '../../../config/firebase';
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
@@ -1446,6 +1446,27 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
     const cid = String(clientId).trim();
 
+    // ✅ V00272: # de TARIFARIO del detalle — los detalles viejos/importados no
+    //   traen tarifarioId; se resuelve por la relación tarifario.convenioId →
+    //   maestro del detalle, y como último respaldo el tarifario aprobado del
+    //   cliente cuando tiene uno solo.
+    const tariPorConvenioId = new Map<string, string>();
+    const tarisDelCliente: string[] = [];
+    (tarifariosLocal || []).forEach((t: { consecutivo?: unknown; id?: unknown; convenioId?: unknown; clienteId?: unknown; proveedorId?: unknown; status?: unknown }) => {
+      const consec = String(t.consecutivo || t.id || '').trim();
+      if (!consec) return;
+      const convId = String(t.convenioId || '').trim();
+      if (convId && !tariPorConvenioId.has(convId)) tariPorConvenioId.set(convId, consec);
+      if (String(t.clienteId || '').trim() === cid && String(t.status || '').trim() === 'Aprobado') tarisDelCliente.push(consec);
+    });
+    const resolverTariDetalle = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown }, maestroId: unknown): string => {
+      const directo = String(d?.tarifarioId || d?.tarifario_id || d?.tarifario || '').trim();
+      if (directo) return directo;
+      const porMaestro = tariPorConvenioId.get(String(d?.convenioId || maestroId || '').trim());
+      if (porMaestro) return porMaestro;
+      return tarisDelCliente.length === 1 ? tarisDelCliente[0] : '';
+    };
+
     const maestros = catalogoConvClientes.filter((c: any) => String(
       c.clienteId ?? c.cliente ?? c.id_cliente ?? c.clientePaga ?? c.empresaId ?? c.empresa ?? ''
     ).trim() === cid);
@@ -1484,6 +1505,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         //   cliente; la descripción calculada es igual para todos y agrupaba
         //   varios convenios en una sola opción.
         id: d.id, tarifaBaseId: tarifaId, descripcion: nombreFinal,
+        tarifarioConsec: resolverTariDetalle(d, maestroAsociado?.id), // ✅ V00272: # de tarifario resuelto
         statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto "Pesos"/"Dólares")
         monedaMaestro: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroAsociado?.monedaId || maestroAsociado?.moneda || ID_USD,
@@ -1512,7 +1534,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
 
     return lista;
-  }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas, initialData]);
+  }, [formData.clientePaga, searchClientePaga, catalogoConvClientes, catalogoConvDetalles, tarifas, empresas, initialData, tarifariosLocal]); // ✅ V00272
 
   const listaConveniosProveedor = useMemo(() => {
     let provId = formData.proveedorUnidad;
@@ -1534,6 +1556,26 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
       return [];
     }
     const pid = String(provId).trim();
+
+    // ✅ V00272: # de TARIFARIO (TARP) del detalle — mismas fuentes que el
+    //   lado cliente: tarifarioId directo → tarifario.convenioId → único
+    //   tarifario aprobado del proveedor.
+    const tariPorConvenioIdProv = new Map<string, string>();
+    const tarisDelProveedor: string[] = [];
+    (tarifariosProvLocal || []).forEach((t: { consecutivo?: unknown; id?: unknown; convenioId?: unknown; clienteId?: unknown; proveedorId?: unknown; status?: unknown }) => {
+      const consec = String(t.consecutivo || t.id || '').trim();
+      if (!consec) return;
+      const convId = String(t.convenioId || '').trim();
+      if (convId && !tariPorConvenioIdProv.has(convId)) tariPorConvenioIdProv.set(convId, consec);
+      if (String(t.proveedorId || '').trim() === pid && String(t.status || '').trim() === 'Aprobado') tarisDelProveedor.push(consec);
+    });
+    const resolverTariDetalleProv = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown }, maestroId: unknown): string => {
+      const directo = String(d?.tarifarioId || d?.tarifario_id || d?.tarifario || '').trim();
+      if (directo) return directo;
+      const porMaestro = tariPorConvenioIdProv.get(String(d?.convenioId || maestroId || '').trim());
+      if (porMaestro) return porMaestro;
+      return tarisDelProveedor.length === 1 ? tarisDelProveedor[0] : '';
+    };
 
     const maestrosAsociados = conveniosProv.filter((c: any) => String(
       c.proveedorId ?? c.proveedor ?? c.id_proveedor ?? c.empresaId ?? c.empresa ?? ''
@@ -1560,6 +1602,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
         ...d,
         // ✅ V00249: manda el nombre de la TARIFA (distingue los convenios).
         id: d.id, tarifaBaseId: tarifaId, tipoConvenioNombre: nombreFinal,
+        tarifarioConsec: resolverTariDetalleProv(d, maestroParent?.id), // ✅ V00272: # de tarifario (TARP) resuelto
         statusDetalle: String(d.status || ''), // ✅ V00214
         // ✅ V00126: la moneda del DETALLE manda (se resuelve a id de catálogo aunque venga como texto)
         monedaBase: resolverMonedaIdDeEmpresa({ moneda: d.moneda }) || maestroParent?.monedaId || maestroParent?.moneda || ID_USD,
@@ -1588,7 +1631,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
 
     return lista;
-  }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas, initialData]);
+  }, [formData.proveedorUnidad, searchProvTransporte, conveniosProv, catalogoConvProvDetalles, tarifas, empresas, initialData, tarifariosProvLocal]); // ✅ V00272
 
   useEffect(() => {
     if (!initialData) return;
@@ -2647,15 +2690,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
   };
 
-  const abrirNuevoConvenioCliente = () => {
-    if (!clientePagaIdResuelto) { alert('Selecciona primero un Cliente (Paga) para agregarle un convenio.'); return; }
-    setDetalleConvEditando({
-      id: '', esNuevo: true,
-      tipoConvenioId: '', tipoConvenioNombre: '',
-      origenNombre: '', destinoNombre: '',
-      tarifa: '', costo: '', venta: '',
-    });
-  };
+  // ✅ V00272: abrirNuevoConvenioCliente retirado — el alta/baja de convenios vive en los módulos de Convenios.
 
   const guardarDetalleConvenio = async () => {
     if (!detalleConvEditando) return;
@@ -2688,18 +2723,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  const eliminarDetalleConvenio = async (c: any) => {
-    const nombre = c.descripcion || c.tipoConvenioNombre || 'esta tarifa';
-    if (!window.confirm(`¿Eliminar el convenio/tarifa "${nombre}"? Esta acción no se puede deshacer.`)) return;
-    try {
-      await deleteDoc(doc(db, 'convenios_clientes_detalles', String(c.id)));
-      if (formData.convenio === c.id) { setFormData(prev => ({ ...prev, convenio: '' })); setSearchConvenio(''); }
-      await refrescarConvDetallesCliente();
-    } catch (e) {
-      console.error('Error eliminando detalle de convenio:', e);
-      alert('No se pudo eliminar. Revisa tu conexión.');
-    }
-  };
+  // ✅ V00272: eliminarDetalleConvenio retirado — el alta/baja de convenios vive en los módulos de Convenios.
 
   const refrescarConvProvDetalles = useCallback(async () => {
     try {
@@ -2723,14 +2747,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     });
   };
 
-  const abrirNuevoConvenioProv = () => {
-    if (!proveedorIdResuelto) { alert('Selecciona primero un Proveedor de Transporte para agregarle un convenio.'); return; }
-    setDetalleConvProvEditando({
-      id: '', esNuevo: true,
-      tipoConvenioId: '', tipoConvenioNombre: '',
-      tarifa: '', costo: '', venta: '',
-    });
-  };
+  // ✅ V00272: abrirNuevoConvenioProv retirado — el alta/baja de convenios vive en los módulos de Convenios.
 
   const guardarDetalleConvenioProv = async () => {
     if (!detalleConvProvEditando) return;
@@ -2763,18 +2780,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     }
   };
 
-  const eliminarDetalleConvenioProv = async (c: any) => {
-    const nombre = c.tipoConvenioNombre || c.descripcion || 'esta tarifa';
-    if (!window.confirm(`¿Eliminar el convenio/tarifa "${nombre}"? Esta acción no se puede deshacer.`)) return;
-    try {
-      await deleteDoc(doc(db, 'convenios_proveedores_detalles', String(c.id)));
-      if (formData.convenioProveedor === c.id) { setFormData(prev => ({ ...prev, convenioProveedor: '' })); setSearchConvenioProveedor(''); }
-      await refrescarConvProvDetalles();
-    } catch (e) {
-      console.error('Error eliminando detalle de convenio de proveedor:', e);
-      alert('No se pudo eliminar. Revisa tu conexión.');
-    }
-  };
+  // ✅ V00272: eliminarDetalleConvenioProv retirado — el alta/baja de convenios vive en los módulos de Convenios.
 
 
   const idOperacion = (initialData as any)?.id || '';
@@ -3682,7 +3688,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 <p className="fo-x51">{searchClientePaga || 'Cliente'} · {listaConveniosCliente.length} convenio(s)</p>
               </div>
               <div className="fo-x7">
-                <button className="fo-x52" type="button" onClick={abrirNuevoConvenioCliente}><IconPlus size={14} /> Nuevo</button>
+                {/* ✅ V00272: se retiró "+ Nuevo" — los convenios se dan de alta en Convenio de Clientes */}
                 <button type="button" onClick={() => setMostrarConveniosCliente(false)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
               </div>
             </div>
@@ -3712,13 +3718,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           setMostrarConveniosCliente(false);
                         }}
                       >
-                        <td className="fo-x60 fo-col-consec">{String(c.tarifarioId || '—')}</td>
+                        <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>
                         <td className="fo-x60">{c.descripcion}</td>
                         <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
                         <td className="fo-x62" onClick={(e) => e.stopPropagation()}>
                           <button className="fo-x63" type="button" onClick={() => abrirEditorConvenio(c)} title="Editar"><IconEdit size={13} /></button>
-                          <button className="fo-x64" type="button" onClick={() => eliminarDetalleConvenio(c)} title="Eliminar"><IconX size={13} /></button>
+                          {/* ✅ V00272: se retiró Eliminar — los convenios se administran en Convenio de Clientes */}
                         </td>
                       </tr>
                     ))}
@@ -3771,7 +3777,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                 <p className="fo-x51">{searchProvTransporte || 'Proveedor'} · {listaConveniosProveedor.length} convenio(s)</p>
               </div>
               <div className="fo-x7">
-                <button className="fo-x52" type="button" onClick={abrirNuevoConvenioProv}><IconPlus size={14} /> Nuevo</button>
+                {/* ✅ V00272: se retiró "+ Nuevo" — los convenios se dan de alta en Convenio de Proveedores */}
                 <button type="button" onClick={() => setMostrarConveniosProveedor(false)} className="roelca-window-btn danger" title="Cerrar"><IconX size={16} /></button>
               </div>
             </div>
@@ -3801,13 +3807,13 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                           setMostrarConveniosProveedor(false);
                         }}
                       >
-                        <td className="fo-x60 fo-col-consec">{String(c.tarifarioId || '—')}</td>{/* ✅ V00271 */}
+                        <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>{/* ✅ V00271 */}
                         <td className="fo-x60">{c.tipoConvenioNombre}</td>
                         <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
                         <td className="fo-x62" onClick={(e) => e.stopPropagation()}>
                           <button className="fo-x63" type="button" onClick={() => abrirEditorConvenioProv(c)} title="Editar"><IconEdit size={13} /></button>
-                          <button className="fo-x64" type="button" onClick={() => eliminarDetalleConvenioProv(c)} title="Eliminar"><IconX size={13} /></button>
+                          {/* ✅ V00272: se retiró Eliminar — los convenios se administran en Convenio de Proveedores */}
                         </td>
                       </tr>
                     ))}
