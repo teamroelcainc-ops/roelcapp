@@ -409,3 +409,20 @@
 .tc-btn-sincronizar-conv { background: transparent; border: 1px solid #1f6feb; color: #58a6ff; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-weight: 700; margin-left: 8px; }
 .tc-btn-sincronizar-conv:hover { background: rgba(31, 111, 235, 0.15); }
 .tc-btn-sincronizar-conv:disabled { opacity: 0.6; cursor: wait; }
+
+/* ✅ V00290: botones del pie de la ficha COMPACTOS y uniformes — mismo alto,
+   texto en una línea y tipografía pareja (antes se veían enormes/desiguales). */
+.tc-modal-pie { flex-wrap: wrap; gap: 8px; }
+.tc-modal-pie button,
+.tc-modal-botones button,
+.tc-btn-agregar-linea,
+.tc-btn-sincronizar-conv {
+  padding: 7px 12px !important;
+  font-size: 0.8rem !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+  border-radius: 6px !important;
+}
+.tc-btn-agregar-linea, .tc-btn-sincronizar-conv { margin-left: 0; }
+.tc-modal-botones { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
