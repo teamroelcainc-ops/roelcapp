@@ -1002,11 +1002,16 @@ export function TarifarioProveedoresDashboard() {
     setGuardandoLinea(false);
   };
 
-  // ✅ V00289: SINCRONIZAR CONVENIOS — repara las líneas SIN # de convenio:
-  //   busca su detalle por (convenioId + tarifa del catálogo + monto) y adopta
-  //   su consecutivo; si no existe y el tarifario ya tiene convenio, lo CREA.
-  //   Con esto lo del tarifario y lo de Convenios queda igual, tal cual.
+  // ✅ V00291: SINCRONIZAR CONVENIOS — corregido de raíz. La versión V00289
+  //   exigía tipoConvenioId === tarifaReferenciaId y las líneas MIGRADAS no
+  //   traen ese id: nunca encontraba el CONV correcto y CREABA consecutivos
+  //   nuevos (duplicados). Ahora el match es en cascada: (1) id de tarifa +
+  //   monto; (2) DESCRIPCIÓN normalizada + monto; (3) descripción única.
+  //   Además REPARA los duplicados creados: la línea re-adopta el CONV
+  //   original y el detalle duplicado (creado por la sync) se elimina.
   const [sincronizandoConv, setSincronizandoConv] = useState(false);
+  const normDesc = (x: unknown): string => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const numConsec = (c: string): number => { const m = c.match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER; };
   const sincronizarConvenios = async (r: Doc) => {
     if (sincronizandoConv) return;
     if (!aut.verificarAccion('editar', ['status'])) return;
@@ -1014,49 +1019,84 @@ export function TarifarioProveedoresDashboard() {
     try {
       const tarifas: Doc[] = Array.isArray(r.tarifas) ? [...(r.tarifas as Doc[])] : [];
       const convId = String(r.convenioId || '');
-      const snapDet = convId ? await getDocs(query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', '==', convId))) : null;
-      const detalles = (snapDet?.docs || []).map((d) => ({ id: d.id, ...(d.data() as Doc) }));
+      if (!convId) { alert('Este tarifario aún no tiene convenio (se asigna al aprobar).'); setSincronizandoConv(false); return; }
+      const snapDet = await getDocs(query(collection(db, 'convenios_proveedores_detalles'), where('convenioId', '==', convId)));
+      const detalles = snapDet.docs.map((d) => ({ id: d.id, ...(d.data() as Doc) }));
       const usados = new Set(tarifas.map((t) => String(t.consecutivo || '')).filter(Boolean));
-      let ligadas = 0, creadas = 0;
+      const buscarDetalle = (t: Doc): (Doc & { id: string }) | undefined => {
+        const libres = detalles.filter((d) => !usados.has(String(d.consecutivo || d.id)));
+        const idRef = String(t.tarifaReferenciaId || '');
+        const monto = Number(t.tarifa) || 0;
+        const desc = normDesc(t.descripcion);
+        // 1) id de tarifa del catálogo + monto
+        let cand = idRef ? libres.filter((d) => String(d.tipoConvenioId || '') === idRef && Math.abs((Number(d.tarifa) || 0) - monto) < 0.005) : [];
+        // 2) descripción + monto (la relación REAL para migrados)
+        if (cand.length === 0 && desc) cand = libres.filter((d) => normDesc(d.tipoConvenioNombre) === desc && Math.abs((Number(d.tarifa) || 0) - monto) < 0.005);
+        // 3) descripción única (aunque el monto difiera: la línea manda y se alinea)
+        if (cand.length === 0 && desc) {
+          const porDesc = libres.filter((d) => normDesc(d.tipoConvenioNombre) === desc);
+          if (porDesc.length === 1) cand = porDesc;
+        }
+        // el MÁS ANTIGUO primero (CONV de número menor)
+        cand.sort((a, b) => numConsec(String(a.consecutivo || a.id)) - numConsec(String(b.consecutivo || b.id)));
+        return cand[0] as (Doc & { id: string }) | undefined;
+      };
+      let ligadas = 0, creadas = 0, reparadas = 0;
+      // ── FASE 1: reparar duplicados — la línea vuelve al CONV original ──
+      for (let i = 0; i < tarifas.length; i++) {
+        const t = tarifas[i];
+        const cc = String(t.consecutivo || '').trim();
+        if (!cc) continue;
+        const propio = detalles.find((d) => String(d.consecutivo || d.id) === cc);
+        // solo se consideran duplicados los detalles CREADOS por la sincronización
+        if (!propio || String(propio.tarifarioId || '') !== String(r.id)) continue;
+        usados.delete(cc);
+        const original = buscarDetalle(t);
+        usados.add(cc);
+        if (original && numConsec(String(original.consecutivo || original.id)) < numConsec(cc)) {
+          const ccOrig = String(original.consecutivo || original.id);
+          tarifas[i] = { ...t, consecutivo: ccOrig };
+          usados.delete(cc);
+          usados.add(ccOrig);
+          await updateDoc(doc(db, 'convenios_proveedores_detalles', String(original.id)), { status: String(t.status || 'Aprobado'), tarifa: Number(t.tarifa) || 0, tarifarioId: String(r.id) });
+          try { await deleteDoc(doc(db, 'convenios_proveedores_detalles', String(propio.id))); } catch { /* mejor esfuerzo */ }
+          reparadas += 1;
+        }
+      }
+      // ── FASE 2: ligar (o crear) las líneas SIN consecutivo ──
       for (let i = 0; i < tarifas.length; i++) {
         const t = tarifas[i];
         if (String(t.consecutivo || '').trim()) continue;
-        // 1) adoptar un detalle existente equivalente que nadie use
-        const det = detalles.find((d) => !usados.has(String(d.consecutivo || d.id)) &&
-          String(d.tipoConvenioId || '') === String(t.tarifaReferenciaId || '') &&
-          Math.abs((Number(d.tarifa) || 0) - (Number(t.tarifa) || 0)) < 0.005);
+        const det = buscarDetalle(t);
         if (det) {
           const cc = String(det.consecutivo || det.id);
           tarifas[i] = { ...t, consecutivo: cc };
           usados.add(cc);
-          try { await updateDoc(doc(db, 'convenios_proveedores_detalles', String(det.id)), { status: String(t.status || 'Aprobado'), tarifarioId: String(r.id) }); } catch { /* motor */ }
+          await updateDoc(doc(db, 'convenios_proveedores_detalles', String(det.id)), { status: String(t.status || 'Aprobado'), tarifa: Number(t.tarifa) || 0, tarifarioId: String(r.id) });
           ligadas += 1;
           continue;
         }
-        // 2) crearlo (solo si ya hay convenio)
-        if (convId) {
-          const [cc] = await reservarConsecutivosDetalleProveedor(1);
-          tarifas[i] = { ...t, consecutivo: cc };
-          usados.add(cc);
-          await setDoc(doc(db, 'convenios_proveedores_detalles', cc), {
-            convenioId: convId,
-            tipoConvenioId: String(t.tarifaReferenciaId || ''),
-            tipoConvenioNombre: String(t.descripcion || ''),
-            tarifa: Number(t.tarifa) || 0,
-            moneda: nombreMoneda(t.cotizadoEn || r.moneda),
-            consecutivo: cc,
-            status: String(t.status || 'Aprobado'),
-            tarifarioId: String(r.id),
-          });
-          creadas += 1;
-        }
+        const [cc] = await reservarConsecutivosDetalleProveedor(1);
+        tarifas[i] = { ...t, consecutivo: cc };
+        usados.add(cc);
+        await setDoc(doc(db, 'convenios_proveedores_detalles', cc), {
+          convenioId: convId,
+          tipoConvenioId: String(t.tarifaReferenciaId || ''),
+          tipoConvenioNombre: String(t.descripcion || ''),
+          tarifa: Number(t.tarifa) || 0,
+          moneda: nombreMoneda(t.cotizadoEn || r.moneda),
+          consecutivo: cc,
+          status: String(t.status || 'Aprobado'),
+          tarifarioId: String(r.id),
+        });
+        creadas += 1;
       }
-      if (ligadas + creadas > 0) {
+      if (ligadas + creadas + reparadas > 0) {
         await updateDoc(doc(db, 'tarifario_proveedores', r.id), { tarifas });
-        await registrarLog('Tarifario Proveedores', 'Edición', `Sincronizó convenios del pre convenio de "${razonSocialDe(r)}": ${ligadas} línea(s) ligada(s) y ${creadas} creada(s).`);
-        alert(`Sincronización completa. ✅\n\n· Líneas ligadas a su convenio: ${ligadas}\n· Convenios creados: ${creadas}`);
+        await registrarLog('Tarifario Proveedores', 'Edición', `Sincronizó convenios del pre convenio de "${razonSocialDe(r)}": ${ligadas} ligada(s), ${reparadas} duplicado(s) reparado(s), ${creadas} creada(s).`);
+        alert(`Sincronización completa. ✅\n\n· Líneas ligadas a su convenio original: ${ligadas}\n· Duplicados reparados (la línea volvió a su CONV original): ${reparadas}\n· Convenios creados (no existían): ${creadas}`);
       } else {
-        alert(convId ? 'Todas las líneas ya tienen su # de convenio. ✅' : 'Este tarifario aún no tiene convenio (se asigna al aprobar).');
+        alert('Todas las líneas ya tienen su # de convenio correcto. ✅');
       }
     } catch (e) {
       console.error('No se pudo sincronizar:', e);
