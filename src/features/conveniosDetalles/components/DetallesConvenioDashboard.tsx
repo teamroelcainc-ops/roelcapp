@@ -1001,14 +1001,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
       {/* ✅ V00231: MODAL — agregar convenio */}
       {modalAgregar && (
-        <div className="modal-overlay" onClick={() => !guardandoAlta && setModalAgregar(false)}>
+        <div className="modal-overlay" onClick={() => { if (!guardandoAlta && window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setModalAgregar(false); }}>{/* ✅ V00284 */}
           <div className="dcv-modal dcv-modal-alta" onClick={(e) => e.stopPropagation()}>
             <div className="dcv-modal-encabezado">
               <div>
                 <h3 className="dcv-modal-titulo">Agregar convenio</h3>
                 <p className="dcv-modal-sub">El consecutivo CONV-### se asigna solo al guardar.</p>
               </div>
-              <button type="button" className="dcv-cerrar" onClick={() => !guardandoAlta && setModalAgregar(false)}>✕</button>
+              <button type="button" className="dcv-cerrar" onClick={() => { if (!guardandoAlta && window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setModalAgregar(false); }}>✕</button>
             </div>
 
             {/* ✅ V00233: orden pedido — tarifario, tarifa, origen, destino,
@@ -1086,7 +1086,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
             </div>
 
             <div className="dcv-modal-pie dcv-modal-pie-edit">
-              <button type="button" className="btn btn-outline" disabled={guardandoAlta} onClick={() => setModalAgregar(false)}>Cancelar</button>
+              <button type="button" className="btn btn-outline" disabled={guardandoAlta} onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setModalAgregar(false); }}>Cancelar</button>
               <button type="button" className="btn dcv-btn-guardar-edit" disabled={guardandoAlta} onClick={guardarAlta}>{guardandoAlta ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>
@@ -1130,14 +1130,14 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
 
       {/* ✅ V00207: MODAL DE EDICIÓN — corrige tarifa (No identificados), cotizado en, status y costo */}
       {editando && (
-        <div className="modal-overlay" onClick={() => !guardandoEdicion && setEditando(null)}>
+        <div className="modal-overlay" onClick={() => { if (!guardandoEdicion && window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setEditando(null); }}>{/* ✅ V00284 */}
           <div className="dcv-modal" onClick={(e) => e.stopPropagation()}>
             <div className="dcv-modal-encabezado">
               <div>
                 <h3 className="dcv-modal-titulo">Editar detalle <span className="dcv-x10">{editando.consecutivo || editando.id}</span></h3>
                 <p className="dcv-modal-sub">{editando.entidad}{!editando.identificada && ' · Este detalle está como "No identificado": elige la tarifa correcta y guarda.'}</p>
               </div>
-              <button type="button" className="dcv-cerrar" onClick={() => !guardandoEdicion && setEditando(null)}>✕</button>
+              <button type="button" className="dcv-cerrar" onClick={() => { if (!guardandoEdicion && window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setEditando(null); }}>✕</button>
             </div>
             {/* ✅ V00234: MISMOS campos y orden que el alta */}
             <div className="dcv-alta-campos">
@@ -1196,7 +1196,7 @@ const DetallesConvenioDashboard: React.FC<Props> = ({ tipo }) => {
             </div>
 
             <div className="dcv-modal-pie dcv-modal-pie-edit">
-              <button type="button" className="btn btn-outline" disabled={guardandoEdicion} onClick={() => setEditando(null)}>Cancelar</button>
+              <button type="button" className="btn btn-outline" disabled={guardandoEdicion} onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setEditando(null); }}>Cancelar</button>
               <button type="button" className="btn dcv-btn-guardar-edit" disabled={guardandoEdicion} onClick={guardarEdicion}>{guardandoEdicion ? 'Guardando…' : 'Guardar'}</button>
             </div>
           </div>

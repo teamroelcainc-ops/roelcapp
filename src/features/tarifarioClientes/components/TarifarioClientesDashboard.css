@@ -381,3 +381,7 @@
 .tc-btn-agregar-linea:hover { filter: brightness(1.1); }
 .tc-modal-linea { max-width: 560px; }
 .tc-campo-ancho { grid-column: 1 / -1; }
+
+/* ✅ V00284: el mini-editor de línea SIEMPRE encima del detalle */
+.tc-overlay-linea { z-index: 2400; }
+.tc-btn-linea--editar svg { display: block; }

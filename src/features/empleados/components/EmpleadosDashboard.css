@@ -113,3 +113,32 @@
 .btn-carga-masiva:hover { background-color: rgba(88, 166, 255, 0.12) !important; }
 .btn-carpetas { border: 1px solid #a371f7 !important; color: #a371f7 !important; }
 .btn-carpetas:hover { background-color: rgba(163, 113, 247, 0.12) !important; }
+
+/* ✅ V00284: pestañas del módulo (Directorio | Firmas) y CRUD de firmas */
+.ed-tabs-modulo { display: flex; gap: 4px; border-bottom: 1px solid #30363d; margin: 6px 0 16px; }
+.ed-tab-modulo { background: none; border: none; border-bottom: 2px solid transparent; color: #8b949e; padding: 10px 16px; cursor: pointer; font-weight: 600; font-size: 0.92rem; }
+.ed-tab-modulo--activa { color: #f0f6fc; border-bottom-color: #D84315; }
+.ed-firmas-barra { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.ed-firmas-conteo { color: #8b949e; font-size: 0.85rem; }
+.ed-btn-agregar-firma { background: #d84315; border: 1px solid #d84315; color: #fff; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-weight: 700; }
+.ed-btn-agregar-firma:hover { filter: brightness(1.1); }
+.ed-firmas-vacio { text-align: center; color: #8b949e; padding: 28px; }
+.ed-firmas-acciones { white-space: nowrap; }
+.ed-firmas-nombre { font-weight: 600; color: #f0f6fc; }
+.ed-btn-firma { background: transparent; border: 1px solid #30363d; border-radius: 6px; padding: 3px 8px; cursor: pointer; margin-right: 6px; font-size: 0.85rem; }
+.ed-btn-firma--editar { color: #58a6ff; border-color: #1f6feb; }
+.ed-btn-firma--editar:hover { background: rgba(31, 111, 235, 0.15); }
+.ed-btn-firma--borrar { color: #f85149; border-color: #da3633; margin-right: 0; }
+.ed-btn-firma--borrar:hover { background: rgba(218, 54, 51, 0.15); }
+.ed-firmas-overlay { position: fixed; inset: 0; background: rgba(1, 4, 9, 0.72); display: flex; align-items: center; justify-content: center; z-index: 1200; }
+.ed-firmas-modal { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 20px; width: min(480px, 92vw); }
+.ed-firmas-modal-encabezado { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.ed-firmas-modal-encabezado h3 { margin: 0; color: #f0f6fc; }
+.ed-firmas-cerrar { background: none; border: none; color: #8b949e; font-size: 1rem; cursor: pointer; }
+.ed-firmas-cerrar:hover { color: #f85149; }
+.ed-firmas-campo { display: block; margin-bottom: 12px; }
+.ed-firmas-campo span { display: block; color: #8b949e; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; margin-bottom: 5px; }
+.ed-firmas-modal-pie { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.ed-btn-guardar-firma { background: #238636; border: 1px solid #2ea043; color: #fff; border-radius: 6px; padding: 9px 18px; cursor: pointer; font-weight: 700; }
+.ed-btn-guardar-firma:hover { filter: brightness(1.1); }
+.ed-btn-guardar-firma:disabled { opacity: 0.6; cursor: wait; }

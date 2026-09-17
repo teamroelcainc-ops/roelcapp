@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { db, eliminarRegistro } from '../../../config/firebase';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { db, auth, eliminarRegistro } from '../../../config/firebase';
 import { EmployeeForm, TIPOS_DOCUMENTO_EMPLEADO } from './EmployeeForm';
 import { DocumentoUploadModal } from '../../documentos/DocumentoUploadModal';
 import { CargaMasivaDocumentosModal } from '../../documentos/CargaMasivaDocumentosModal';
@@ -54,8 +54,10 @@ export const EmpleadosDashboard = () => {
   const [draggedColIndex, setDraggedColIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'empleados'), orderBy('employeeId', 'desc'));
-    const unsub = onSnapshot(q, (snap) => {
+    // ✅ V00284: SIN orderBy de Firestore — orderBy('employeeId') EXCLUYE los
+    //   documentos que no traen ese campo (por eso algunos registros "no
+    //   aparecían"). El orden se aplica en memoria más abajo.
+    const unsub = onSnapshot(collection(db, 'empleados'), (snap) => {
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
       setEmpleados(data);
       setCargando(false);
@@ -66,6 +68,54 @@ export const EmpleadosDashboard = () => {
   useEffect(() => {
     setPaginaActual(1);
   }, [busqueda]);
+
+  // ✅ V00284: PESTAÑA "FIRMAS" — directorio de firmas (nombre, correo, cargo o
+  //   departamento) en la colección `firmas_colaboradores`.
+  type Firma = { id: string; nombre: string; correo: string; cargoDepartamento: string; creadoPor?: string; createdAt?: string };
+  const [tabModulo, setTabModulo] = useState<'directorio' | 'firmas'>('directorio');
+  const [firmas, setFirmas] = useState<Firma[]>([]);
+  const [firmaEditor, setFirmaEditor] = useState<{ id: string | null; nombre: string; correo: string; cargoDepartamento: string } | null>(null);
+  const [guardandoFirma, setGuardandoFirma] = useState(false);
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'firmas_colaboradores'), (snap) => {
+      const data = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<Firma, 'id'>) }));
+      data.sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' }));
+      setFirmas(data);
+    });
+    return () => unsub();
+  }, []);
+  const guardarFirma = async () => {
+    if (!firmaEditor || guardandoFirma) return;
+    const nombre = firmaEditor.nombre.trim();
+    const correo = firmaEditor.correo.trim();
+    const cargoDepto = firmaEditor.cargoDepartamento.trim();
+    if (!nombre) return alert('El NOMBRE de la firma es obligatorio.');
+    if (!correo || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return alert('Escribe un CORREO válido.');
+    if (!cargoDepto) return alert('El CARGO O DEPARTAMENTO es obligatorio.');
+    setGuardandoFirma(true);
+    try {
+      if (firmaEditor.id) {
+        await updateDoc(doc(db, 'firmas_colaboradores', firmaEditor.id), { nombre, correo, cargoDepartamento: cargoDepto });
+      } else {
+        await addDoc(collection(db, 'firmas_colaboradores'), { nombre, correo, cargoDepartamento: cargoDepto, creadoPor: auth.currentUser?.email || '', createdAt: new Date().toISOString() });
+      }
+      setFirmaEditor(null);
+    } catch (e) {
+      console.error('No se pudo guardar la firma:', e);
+      alert('No se pudo guardar la firma.\n\nDetalle técnico: ' + (e instanceof Error ? e.message : String(e)));
+    }
+    setGuardandoFirma(false);
+  };
+  const eliminarFirma = async (f: Firma) => {
+    if (!window.confirm(`¿Eliminar la firma de "${f.nombre}"?\n\nEsta acción no se puede deshacer.`)) return;
+    try { await deleteDoc(doc(db, 'firmas_colaboradores', f.id)); }
+    catch (e) { console.error(e); alert('No se pudo eliminar la firma.'); }
+  };
+  const hayCambiosFirma = () => !!firmaEditor && (firmaEditor.nombre.trim() !== '' || firmaEditor.correo.trim() !== '' || firmaEditor.cargoDepartamento.trim() !== '');
+  const cerrarEditorFirma = () => {
+    if (hayCambiosFirma() && !window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) return; // ✅ V00284
+    setFirmaEditor(null);
+  };
 
   const handleNuevo = () => { setEmpleadoEditando(null); setEstadoFormulario('abierto'); };
   
@@ -194,6 +244,66 @@ export const EmpleadosDashboard = () => {
       <div className="ed-x6">
         <h1 className="module-title ed-x7">Directorio de Empleados</h1>
 
+        {/* ✅ V00284: pestañas del módulo — Directorio | Firmas */}
+        <div className="ed-tabs-modulo">
+          <button type="button" className={`ed-tab-modulo${tabModulo === 'directorio' ? ' ed-tab-modulo--activa' : ''}`} onClick={() => setTabModulo('directorio')}>Directorio</button>
+          <button type="button" className={`ed-tab-modulo${tabModulo === 'firmas' ? ' ed-tab-modulo--activa' : ''}`} onClick={() => setTabModulo('firmas')}>Firmas</button>
+        </div>
+
+        {tabModulo === 'firmas' && (
+          <div className="ed-firmas">
+            <div className="ed-firmas-barra">
+              <span className="ed-firmas-conteo">{firmas.length} firma(s) registrada(s)</span>
+              <button type="button" className="ed-btn-agregar-firma" onClick={() => setFirmaEditor({ id: null, nombre: '', correo: '', cargoDepartamento: '' })}>+ Agregar firma</button>
+            </div>
+            <div className="table-container">
+              <table className="data-table">
+                <thead><tr><th>ACCIONES</th><th>NOMBRE DE LA FIRMA</th><th>CORREO</th><th>CARGO O DEPARTAMENTO</th></tr></thead>
+                <tbody>
+                  {firmas.length === 0 ? (
+                    <tr><td colSpan={4} className="ed-firmas-vacio">Aún no hay firmas. Presiona "+ Agregar firma".</td></tr>
+                  ) : firmas.map((f) => (
+                    <tr key={f.id}>
+                      <td className="ed-firmas-acciones">
+                        <button type="button" className="ed-btn-firma ed-btn-firma--editar" title="Editar firma" onClick={() => setFirmaEditor({ id: f.id, nombre: f.nombre || '', correo: f.correo || '', cargoDepartamento: f.cargoDepartamento || '' })}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
+                        <button type="button" className="ed-btn-firma ed-btn-firma--borrar" title="Eliminar firma" onClick={() => eliminarFirma(f)}>🗑</button>
+                      </td>
+                      <td className="ed-firmas-nombre">{f.nombre || '—'}</td>
+                      <td>{f.correo || '—'}</td>
+                      <td>{f.cargoDepartamento || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {firmaEditor && (
+          <div className="ed-firmas-overlay" onClick={cerrarEditorFirma}>{/* ✅ V00284: clic fuera pregunta antes de salir */}
+            <div className="ed-firmas-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="ed-firmas-modal-encabezado">
+                <h3>{firmaEditor.id ? 'Editar firma' : 'Agregar firma'}</h3>
+                <button type="button" className="ed-firmas-cerrar" onClick={cerrarEditorFirma}>✕</button>
+              </div>
+              <label className="ed-firmas-campo"><span>Nombre de la firma *</span>
+                <input type="text" className="form-control" value={firmaEditor.nombre} onChange={(e) => setFirmaEditor((p) => (p ? { ...p, nombre: e.target.value } : p))} placeholder="Ej. Lic. Gabriela Rotceh M. Osorio" />
+              </label>
+              <label className="ed-firmas-campo"><span>Correo *</span>
+                <input type="email" className="form-control" value={firmaEditor.correo} onChange={(e) => setFirmaEditor((p) => (p ? { ...p, correo: e.target.value } : p))} placeholder="Ej. gerencia@roelca.com" />
+              </label>
+              <label className="ed-firmas-campo"><span>Cargo o departamento *</span>
+                <input type="text" className="form-control" value={firmaEditor.cargoDepartamento} onChange={(e) => setFirmaEditor((p) => (p ? { ...p, cargoDepartamento: e.target.value } : p))} placeholder="Ej. Gerencia" />
+              </label>
+              <div className="ed-firmas-modal-pie">
+                <button type="button" className="btn btn-outline" onClick={cerrarEditorFirma}>Cancelar</button>
+                <button type="button" className="ed-btn-guardar-firma" disabled={guardandoFirma} onClick={guardarFirma}>{guardandoFirma ? 'Guardando…' : 'Guardar cambios'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tabModulo === 'directorio' && (<>
         <div className="ed-x8">
           <div className="ed-x9">
             <button onClick={() => setDrawerFiltrosAbierto(true)} title="Mostrar filtros"
@@ -326,6 +436,7 @@ export const EmpleadosDashboard = () => {
           )}
 
         </div>
+        </>)}{/* ✅ V00284: fin de la pestaña Directorio */}
       </div>
 
       {modalColumnas && (

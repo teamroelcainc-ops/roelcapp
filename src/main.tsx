@@ -9,6 +9,19 @@ import App from './App.tsx'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { queryClient } from './lib/queryClient'
 
+// ✅ V00284: cuando el service worker nuevo toma control a mitad de sesión,
+//   la página quedaba MEZCLADA (HTML viejo + assets nuevos) y los módulos se
+//   veían desordenados hasta recargar a mano. Ahora la app se recarga SOLA
+//   (una única vez) en cuanto la versión nueva toma el control.
+if ('serviceWorker' in navigator) {
+  let yaRecargado = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (yaRecargado) return;
+    yaRecargado = true;
+    window.location.reload();
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

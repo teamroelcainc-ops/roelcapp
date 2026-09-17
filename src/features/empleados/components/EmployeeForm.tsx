@@ -260,15 +260,15 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
         const snap = await getDocs(q);
         
         let nuevoNumero = 1;
+        let prefijo = 'Col';
         if (!snap.empty) {
           const ultimoId = snap.docs[0].data().employeeId || '';
-          const match = ultimoId.match(/Col-(\d+)/);
-          if (match && match[1]) {
-            nuevoNumero = parseInt(match[1], 10) + 1;
-          }
+          // ✅ V00284: acepta cualquier prefijo histórico (Col-/Emp-) y lo conserva.
+          const match = ultimoId.match(/^([A-Za-z]+)-(\d+)/);
+          if (match) { prefijo = match[1]; nuevoNumero = parseInt(match[2], 10) + 1; }
         }
-        
-        const nuevoCodigo = `Col-${String(nuevoNumero).padStart(3, '0')}`;
+
+        const nuevoCodigo = `${prefijo}-${String(nuevoNumero).padStart(3, '0')}`;
         setFormData((prev: any) => ({ ...prev, employeeId: nuevoCodigo }));
       } catch (error) {
         console.error("Error generando consecutivo:", error);
@@ -392,7 +392,9 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
       alert('Operación exitosa.');
       onClose();
     } catch (error) {
-      alert('Error al guardar empleado.');
+      // ✅ V00284: el motivo REAL del fallo, para no adivinar (reglas, campo inválido, etc.)
+      const msg = error instanceof Error ? error.message : String(error);
+      alert('Error al guardar empleado.\n\nDetalle técnico: ' + msg);
     } finally { setCargando(false); }
   };
 
@@ -436,7 +438,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
               </button>
               <button type="button" onClick={() => setIsConfigOpen(true)} className="btn-window ef-x31" title="Configurar campos y accesos">⚙️</button>
               {estado === 'abierto' ? <button type="button" onClick={onMinimize} className="btn-window">🗕</button> : <button type="button" onClick={onRestore} className="btn-window restore">🗖</button>}
-              <button type="button" onClick={onClose} className="btn-window close ef-x15">✕</button>
+              <button type="button" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) onClose(); }} className="btn-window close ef-x15">✕</button>{/* ✅ V00284 */}
             </div>
           </div>
 
@@ -611,7 +613,7 @@ export const EmployeeForm: React.FC<Props> = ({ estado, initialData, onClose, on
           </div>
 
           <div className="form-actions" style={{ display: estado === 'minimizado' ? 'none' : 'flex', gap: '16px', justifyContent: 'flex-end', borderTop: '1px solid #30363d', padding: '16px 24px', backgroundColor: '#161b22', borderBottomLeftRadius: '12px', borderBottomRightRadius: '12px', flexShrink: 0 }}>
-            <button type="button" onClick={onClose} className="btn btn-outline ef-x54">Cancelar</button>
+            <button type="button" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) onClose(); }} className="btn btn-outline ef-x54">Cancelar</button>{/* ✅ V00284 */}
             <button type="submit" form="employeeForm" disabled={cargando} className="btn btn-primary ef-x55">
               {cargando ? 'Guardando...' : 'Guardar Empleado'}
             </button>

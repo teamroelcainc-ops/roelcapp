@@ -378,6 +378,8 @@ export function TarifarioClientesDashboard() {
 
   const cerrarCaptura = () => {
     if (guardando) return;
+    // ✅ V00284: preguntar SIEMPRE antes de salir (Cancelar, ✕ o clic fuera).
+    if (!window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) return;
     setCapturaAbierta(false);
     setModalAbierto(false);
     setSugerenciasAbiertas(false);
@@ -1249,7 +1251,7 @@ export function TarifarioClientesDashboard() {
             {editable && (
               <td className="tc-td-acciones-linea">{/* ✅ V00283: editar/eliminar la línea */}
                 <button type="button" className="tc-btn-linea tc-btn-linea--editar" title="Editar esta tarifa (costo, moneda y status)"
-                  onClick={() => setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente') })}>✏</button>
+                  onClick={() => setLineaEditor({ regId: String(r.id), idx: i, tarifaRefId: String(t.tarifaReferenciaId || ''), costo: String(t.tarifa ?? ''), cotizadoEn: canonMoneda(t.cotizadoEn || r.moneda) || '', status: String(t.status || 'Pendiente') })}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></button>
                 <button type="button" className="tc-btn-linea tc-btn-linea--borrar" title="Eliminar esta tarifa del pre convenio"
                   onClick={() => eliminarLinea(r, i)}>🗑</button>
               </td>
@@ -1733,14 +1735,14 @@ export function TarifarioClientesDashboard() {
         const esNueva = lineaEditor.idx === null;
         const refSel = tarifasRef.find((t) => String(t.id) === lineaEditor.tarifaRefId);
         return (
-          <div className="tc-overlay" onClick={() => setLineaEditor(null)}>
+          <div className="modal-overlay tc-overlay tc-overlay-linea" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>{/* ✅ V00284: modal-overlay da el posicionamiento real (antes era invisible) */}
             <div className="tc-modal tc-modal-linea" onClick={(e) => e.stopPropagation()}>
               <div className="tc-modal-encabezado">
                 <div>
                   <h3 className="tc-modal-titulo">{esNueva ? 'Agregar tarifa' : 'Editar tarifa'} — <span className="tc-td-cliente">{razonSocialDe(rEd)}</span></h3>
                   <p className="tc-modal-sub">{esNueva ? 'La tarifa se agrega a este pre convenio.' : `${String((Array.isArray(rEd.tarifas) ? (rEd.tarifas as Doc[])[lineaEditor.idx as number] : undefined)?.consecutivo || '')} ${String((Array.isArray(rEd.tarifas) ? (rEd.tarifas as Doc[])[lineaEditor.idx as number] : undefined)?.descripcion || '')}`.trim() || 'Edición de la línea.'}</p>
                 </div>
-                <button type="button" className="tc-cerrar" onClick={() => setLineaEditor(null)}>✕</button>
+                <button type="button" className="tc-cerrar" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>✕</button>
               </div>
               <div className="tc-form-grid">
                 {esNueva && (
@@ -1775,7 +1777,7 @@ export function TarifarioClientesDashboard() {
               <div className="tc-modal-pie">
                 <span className="tc-conteo-sel">{canonMoneda(lineaEditor.cotizadoEn) ? '' : 'Elige la moneda de cotización para poder guardar.'}</span>
                 <div className="tc-modal-botones">
-                  <button type="button" className="btn btn-outline" onClick={() => setLineaEditor(null)}>Cancelar</button>
+                  <button type="button" className="btn btn-outline" onClick={() => { if (window.confirm('¿Seguro que quieres salir?\n\nSe perderán los cambios sin guardar.')) setLineaEditor(null); }}>Cancelar</button>
                   <button type="button" className="tc-btn-guardar-cabecera" disabled={guardandoLinea || !canonMoneda(lineaEditor.cotizadoEn) || (esNueva && !lineaEditor.tarifaRefId)} onClick={guardarLineaEditor}>
                     {guardandoLinea ? 'Guardando…' : 'Guardar cambios'}
                   </button>
