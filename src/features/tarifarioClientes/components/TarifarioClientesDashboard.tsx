@@ -321,6 +321,41 @@ export function TarifarioClientesDashboard() {
     setSugerenciasAbiertas(false);
   };
 
+  // ✅ V00280: GUARDAR CAMBIOS de la cabecera en EDICIÓN sin pasar por la
+  //   captura de tarifas — antes el único guardado vivía dentro de
+  //   "Pre convenios" y al editar (fechas, "Tarifario obligatorio" o el
+  //   documento) no había botón para guardar.
+  const guardarCabeceraEdicion = async () => {
+    if (!editandoId) return;
+    if (!aut.verificarAccion('editar', ['fecha', 'cotizadoEn'])) return;
+    setGuardando(true);
+    try {
+      await updateDoc(doc(db, 'tarifario_clientes', editandoId), {
+        fecha,
+        fechaVencimiento,
+        docObligatorio: docObligatorioForm, // ✅ V00277
+        editadoEl: new Date().toISOString(),
+        editadoPor: auth.currentUser?.email || '',
+      });
+      if (docNuevoFile) {
+        try { await subirDocFirmadoA(editandoId, docNuevoFile, String((clienteSel)?.nombre || '')); }
+        catch (eDoc: unknown) {
+          console.error(eDoc);
+          const det = (eDoc as { code?: string; message?: string })?.code || (eDoc as { message?: string })?.message || String(eDoc);
+          alert(`Los cambios se guardaron, pero el documento no se pudo subir.\n\nMotivo: ${det}\n\nPuedes reintentar desde la fila (📎/⚠).`);
+        }
+        setDocNuevoFile(null);
+      }
+      await registrarLog('Tarifario Clientes', 'Edición', `Editó la cabecera del pre convenio ${editandoId} de "${String((clienteSel)?.nombre || '')}" (fechas / tarifario obligatorio / documento).`);
+      cerrarCaptura();
+    } catch (e) {
+      console.error('No se pudo guardar la cabecera del pre convenio:', e);
+      alert('No se pudieron guardar los cambios.');
+    } finally {
+      setGuardando(false);
+    }
+  };
+
   const limpiarCaptura = () => {
     setEditandoId('');
     setDocNuevoFile(null); // ✅ V00274
@@ -1397,6 +1432,11 @@ export function TarifarioClientesDashboard() {
               <span className="tc-conteo-sel">{clienteSel ? `Cliente: ${clienteSel.nombre}` : 'Elige un cliente para continuar'}</span>
               <div className="tc-modal-botones">
                 <button type="button" className="btn btn-outline" onClick={cerrarCaptura}>Cancelar</button>
+                {editandoId && (
+                  <button type="button" className="tc-btn-guardar-cabecera" disabled={guardando} title="Guardar fechas, tarifario obligatorio y documento sin tocar las tarifas" onClick={guardarCabeceraEdicion}>
+                    {guardando ? 'Guardando…' : 'Guardar cambios'}
+                  </button>
+                )}{/* ✅ V00280 */}
                 <button
                   type="button"
                   className="tc-btn-preconvenio"
