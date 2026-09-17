@@ -4,6 +4,7 @@ import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, query, getDocs, orderBy, limit, where, doc, writeBatch, startAfter } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
+import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
 import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
 import * as XLSX from 'xlsx';
 // ✅ NUEVO: historial de actividad (colección historial_actividad)
@@ -201,6 +202,20 @@ const ServiciosCancelados = () => {
   const [operacionEditando, setOperacionEditando] = useState<any | null>(null);
 
   const [catalogosGlobales, setCatalogosGlobales] = useState<any>({});
+  // ✅ V00281: direcciones para los DOCUMENTOS (se cargan solo al generar uno).
+  type DirDoc = Record<string, unknown> & { id: string };
+  const [direccionesDoc, setDireccionesDoc] = useState<DirDoc[]>([]);
+  const direccionesDocRef = useRef<DirDoc[]>([]);
+  const asegurarDireccionesDoc = async (): Promise<DirDoc[]> => {
+    if (direccionesDocRef.current.length > 0) return direccionesDocRef.current;
+    try {
+      const snap = await getDocs(collection(db, 'direcciones'));
+      const lista: DirDoc[] = snap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }));
+      direccionesDocRef.current = lista;
+      setDireccionesDoc(lista);
+      return lista;
+    } catch (e) { console.error('No se pudieron cargar las direcciones para el documento:', e); return direccionesDoc; }
+  };
   const [busqueda, setBusqueda] = useState('');
   // ✅ V00263: el buscador global filtra EN VIVO — actualiza el campo y el
   //   snapshot aplicado (aquí los filtros normales aplican con BUSCAR).
@@ -781,6 +796,7 @@ const ServiciosCancelados = () => {
   const handleDescargarSolicitudRetiro = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
+    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origen = mostrarDatoMapeado(operacionViendo.origen, 'empresas', 'nombre', operacionViendo.origenNombre);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
@@ -800,13 +816,14 @@ const ServiciosCancelados = () => {
       unidadPlacas: unidadObj ? (unidadObj.placa || 'N/A') : 'N/A',
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, dirsDoc),
     });
   };
 
   const handleDescargarInstruccionesServicio = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
+    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
@@ -826,16 +843,17 @@ const ServiciosCancelados = () => {
       remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, dirsDoc),
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, dirsDoc),
     });
   };
 
   const handleDescargarCheckList = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
+    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const unidadObj = catalogosGlobales.unidades?.find((u: any) => u.id === operacionViendo.unidad);
@@ -862,9 +880,9 @@ const ServiciosCancelados = () => {
       entryReferencia: operacionViendo.numeroEntrys || 'N/A',
       manifiesto: operacionViendo.numManifiesto || 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, dirsDoc),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, dirsDoc),
       operadorNombre: empNombre,
       supervisor: operacionViendo.observacionesEjecutivo || 'Despacho',
     });
@@ -873,6 +891,7 @@ const ServiciosCancelados = () => {
   const handleDescargarPruebaEntrega = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
+    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
@@ -887,11 +906,11 @@ const ServiciosCancelados = () => {
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, dirsDoc),
       origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
       origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, dirsDoc),
       destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
       destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
       tipoServicio: `${operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion')} ${operacionViendo.trafico || ''}`,
@@ -906,6 +925,7 @@ const ServiciosCancelados = () => {
   const handleDescargarCartaInstrucciones = async () => {
     await cargarCatalogosSiEsNecesario();
     if (!operacionViendo) return;
+    const dirsDoc = await asegurarDireccionesDoc(); // ✅ V00281
     const origenObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.origen);
     const destinoObj = catalogosGlobales.empresas?.find((e: any) => e.id === operacionViendo.destino);
     const remolqueObj = catalogosGlobales.remolques?.find((r: any) => r.id === operacionViendo.numeroRemolque);
@@ -929,12 +949,12 @@ const ServiciosCancelados = () => {
       descripcionMercancia: operacionViendo.descripcionMercancia || 'N/A',
       origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, dirsDoc),
       origenColonia: origenObj ? (origenObj.colonia || 'N/A') : 'N/A',
       origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
       destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, dirsDoc),
       destinoColonia: destinoObj ? (destinoObj.colonia || 'N/A') : 'N/A',
       destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
     });

@@ -639,9 +639,34 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
   // ✅ V00202: tarifarios de clientes — sus clientes también aparecen en la operación.
   const [tarifariosLocal, setTarifariosLocal] = useState<any[]>([]);
   useEffect(() => { setTarifariosLocal(catalogosCacheados?.catalogoTarifarios || []); }, [catalogosCacheados?.catalogoTarifarios]);
+  // ✅ V00281: RESPALDO — si el caché llegó sin tarifarios (o vacío), se cargan
+  //   directo para que el # de tarifario del modal aparezca de inmediato.
+  useEffect(() => {
+    if ((catalogosCacheados?.catalogoTarifarios || []).length > 0) return;
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'tarifario_clientes'));
+        if (activo && snap.docs.length > 0) setTarifariosLocal(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      } catch (e) { console.error('Respaldo de tarifarios (clientes):', e); }
+    })();
+    return () => { activo = false; };
+  }, [catalogosCacheados?.catalogoTarifarios]);
   // ✅ V00211: tarifarios de PROVEEDORES — sus proveedores también aparecen.
   const [tarifariosProvLocal, setTarifariosProvLocal] = useState<any[]>([]);
   useEffect(() => { setTarifariosProvLocal(catalogosCacheados?.catalogoTarifariosProv || []); }, [catalogosCacheados?.catalogoTarifariosProv]);
+  // ✅ V00281: respaldo espejo para el lado proveedor.
+  useEffect(() => {
+    if ((catalogosCacheados?.catalogoTarifariosProv || []).length > 0) return;
+    let activo = true;
+    (async () => {
+      try {
+        const snap = await getDocs(collection(db, 'tarifario_proveedores'));
+        if (activo && snap.docs.length > 0) setTarifariosProvLocal(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      } catch (e) { console.error('Respaldo de tarifarios (proveedores):', e); }
+    })();
+    return () => { activo = false; };
+  }, [catalogosCacheados?.catalogoTarifariosProv]);
   useEffect(() => { setConvDetallesLocal(catalogosCacheados?.catalogoConvDetalles || []); }, [catalogosCacheados?.catalogoConvDetalles]);
   useEffect(() => { setConvProvLocal(catalogosCacheados?.conveniosProv || []); }, [catalogosCacheados?.conveniosProv]);
   useEffect(() => { setConvProvDetallesLocal(catalogosCacheados?.catalogoConvProvDetalles || []); }, [catalogosCacheados?.catalogoConvProvDetalles]);
@@ -1451,17 +1476,26 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     //   maestro del detalle, y como último respaldo el tarifario aprobado del
     //   cliente cuando tiene uno solo.
     const tariPorConvenioId = new Map<string, string>();
+    const tariPorConsecConvenio = new Map<string, string>(); // ✅ V00281: tarifas[] del tarifario → CONV
     const tarisDelCliente: string[] = [];
-    (tarifariosLocal || []).forEach((t: { consecutivo?: unknown; id?: unknown; convenioId?: unknown; clienteId?: unknown; proveedorId?: unknown; status?: unknown }) => {
+    (tarifariosLocal || []).forEach((t: { consecutivo?: unknown; id?: unknown; convenioId?: unknown; clienteId?: unknown; proveedorId?: unknown; status?: unknown; tarifas?: unknown }) => {
       const consec = String(t.consecutivo || t.id || '').trim();
       if (!consec) return;
       const convId = String(t.convenioId || '').trim();
       if (convId && !tariPorConvenioId.has(convId)) tariPorConvenioId.set(convId, consec);
+      // ✅ V00281: la relación MÁS DIRECTA — cada tarifario guarda sus tarifas
+      //   con el consecutivo CONV-### que se les asignó al crearlo.
+      (Array.isArray(t.tarifas) ? t.tarifas : []).forEach((lt) => {
+        const cc = String((lt as Record<string, unknown>)?.consecutivo || '').trim();
+        if (cc && !tariPorConsecConvenio.has(cc)) tariPorConsecConvenio.set(cc, consec);
+      });
       if (String(t.clienteId || '').trim() === cid && String(t.status || '').trim() === 'Aprobado') tarisDelCliente.push(consec);
     });
-    const resolverTariDetalle = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown }, maestroId: unknown): string => {
+    const resolverTariDetalle = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown; consecutivo?: unknown }, maestroId: unknown): string => {
       const directo = String(d?.tarifarioId || d?.tarifario_id || d?.tarifario || '').trim();
       if (directo) return directo;
+      const porConsec = tariPorConsecConvenio.get(String(d?.consecutivo || '').trim()); // ✅ V00281
+      if (porConsec) return porConsec;
       const porMaestro = tariPorConvenioId.get(String(d?.convenioId || maestroId || '').trim());
       if (porMaestro) return porMaestro;
       return tarisDelCliente.length === 1 ? tarisDelCliente[0] : '';
@@ -1561,17 +1595,24 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
     //   lado cliente: tarifarioId directo → tarifario.convenioId → único
     //   tarifario aprobado del proveedor.
     const tariPorConvenioIdProv = new Map<string, string>();
+    const tariPorConsecConvenioProv = new Map<string, string>(); // ✅ V00281
     const tarisDelProveedor: string[] = [];
-    (tarifariosProvLocal || []).forEach((t: { consecutivo?: unknown; id?: unknown; convenioId?: unknown; clienteId?: unknown; proveedorId?: unknown; status?: unknown }) => {
+    (tarifariosProvLocal || []).forEach((t: { consecutivo?: unknown; id?: unknown; convenioId?: unknown; clienteId?: unknown; proveedorId?: unknown; status?: unknown; tarifas?: unknown }) => {
       const consec = String(t.consecutivo || t.id || '').trim();
       if (!consec) return;
       const convId = String(t.convenioId || '').trim();
       if (convId && !tariPorConvenioIdProv.has(convId)) tariPorConvenioIdProv.set(convId, consec);
+      (Array.isArray(t.tarifas) ? t.tarifas : []).forEach((lt) => {
+        const cc = String((lt as Record<string, unknown>)?.consecutivo || '').trim();
+        if (cc && !tariPorConsecConvenioProv.has(cc)) tariPorConsecConvenioProv.set(cc, consec);
+      });
       if (String(t.proveedorId || '').trim() === pid && String(t.status || '').trim() === 'Aprobado') tarisDelProveedor.push(consec);
     });
-    const resolverTariDetalleProv = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown }, maestroId: unknown): string => {
+    const resolverTariDetalleProv = (d: { tarifarioId?: unknown; tarifario_id?: unknown; tarifario?: unknown; convenioId?: unknown; consecutivo?: unknown }, maestroId: unknown): string => {
       const directo = String(d?.tarifarioId || d?.tarifario_id || d?.tarifario || '').trim();
       if (directo) return directo;
+      const porConsec = tariPorConsecConvenioProv.get(String(d?.consecutivo || '').trim()); // ✅ V00281
+      if (porConsec) return porConsec;
       const porMaestro = tariPorConvenioIdProv.get(String(d?.convenioId || maestroId || '').trim());
       if (porMaestro) return porMaestro;
       return tarisDelProveedor.length === 1 ? tarisDelProveedor[0] : '';
@@ -3702,6 +3743,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <th className="fo-x57"># Tarifario</th>{/* ✅ V00271 */}
                       <th className="fo-x57"># Convenio</th>{/* ✅ V00271 */}
                       <th className="fo-x57">Tarifa</th>
+                      <th className="fo-x58">Cotizado en</th>{/* ✅ V00281 */}
                       <th className="fo-x58">Monto</th>
                       <th className="fo-x58">Acciones</th>
                     </tr>
@@ -3721,6 +3763,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>
                         <td className="fo-x60">{c.descripcion}</td>
+                        <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaMaestro) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaMaestro) === ID_USD ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
                         <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
                         <td className="fo-x62" onClick={(e) => e.stopPropagation()}>
                           <button className="fo-x63" type="button" onClick={() => abrirEditorConvenio(c)} title="Editar"><IconEdit size={13} /></button>
@@ -3791,6 +3834,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                       <th className="fo-x57"># Tarifario</th>{/* ✅ V00271 */}
                       <th className="fo-x57"># Convenio</th>{/* ✅ V00271 */}
                       <th className="fo-x57">Tarifa</th>
+                      <th className="fo-x58">Cotizado en</th>{/* ✅ V00281 */}
                       <th className="fo-x58">Monto</th>
                       <th className="fo-x58">Acciones</th>
                     </tr>
@@ -3810,6 +3854,7 @@ export const FormularioOperacion = ({ estado, initialData, onClose, onMinimize, 
                         <td className="fo-x60 fo-col-consec">{String(c.tarifarioConsec || c.tarifarioId || '—')}</td>{/* ✅ V00272 */}
                         <td className="fo-x60 fo-col-consec">{String(c.consecutivo || c.id || '—')}</td>{/* ✅ V00271 */}
                         <td className="fo-x60">{c.tipoConvenioNombre}</td>
+                        <td className="fo-x61"><span className={`fo-chip-moneda${String(c.monedaBase) === ID_USD ? ' fo-chip-moneda--usd' : ' fo-chip-moneda--mxn'}`}>{String(c.monedaBase) === ID_USD ? 'USD' : 'MXN'}</span></td>{/* ✅ V00281 */}
                         <td className="fo-x61">{fmtMoney(c.tarifaMonto)}</td>
                         <td className="fo-x62" onClick={(e) => e.stopPropagation()}>
                           <button className="fo-x63" type="button" onClick={() => abrirEditorConvenioProv(c)} title="Editar"><IconEdit size={13} /></button>

@@ -3,6 +3,7 @@ import { useBusquedaGlobal } from '../../../utils/busquedaGlobal'; // ✅ V00263
 import { notificarOperacionGuardada } from '../../../utils/operacionesBus';
 import { collection, query, getDocs, onSnapshot, orderBy, limit, where, startAfter, documentId, deleteDoc, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db, auth } from '../../../config/firebase';
+import { direccionCompletaDeEmpresa } from '../../../utils/direccionEmpresa'; // ✅ V00281
 import { EditorTarifaOrigenDestino } from './EditorTarifaOrigenDestino'; // ✅ V00224
 import { puedeClave } from '../../../utils/permisos'; // ✅ V00224 
 import { obtenerCacheMemoria, guardarCacheMemoria, limpiarCacheMemoria } from '../../../utils/cacheMemoria';
@@ -343,6 +344,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
 
   // ✅ V00225: municipios (catálogo de Direcciones) para el detalle.
   const [mapaMunicipios, setMapaMunicipios] = useState<Record<string, string>>({});
+  const [direccionesDoc, setDireccionesDoc] = useState<Array<Record<string, unknown> & { id: string }>>([]); // ✅ V00281: catálogo para documentos
   useEffect(() => {
     (async () => {
       try {
@@ -350,6 +352,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
           getDocs(collection(db, 'direcciones')),
           getDocs(collection(db, 'empresas')),
         ]);
+        setDireccionesDoc(snapDir.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))); // ✅ V00281
         const munDeDireccion: Record<string, string> = {};
         snapDir.docs.forEach((d) => {
           const x = d.data() as any;
@@ -1137,7 +1140,7 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       unidadPlacas: unidadObj ? (unidadObj.placa || 'N/A') : 'N/A',
       empleadoNombre: operacionViendo.operadorNombre || (mostrarDatoMapeado(operacionViendo.operador, 'empleados') !== '-' ? mostrarDatoMapeado(operacionViendo.operador, 'empleados') : operadorProvVal),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, direccionesDoc),
     });
   };
 
@@ -1164,10 +1167,10 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       remolquePlacas: operacionViendo.remolquePlaca || (remolqueObj ? remolqueObj.placa : 'N/A'),
       tipoOperacion: operacionViendo.tipoOperacionNombre || mostrarDatoMapeado(operacionViendo.tipoOperacionId, 'tiposOperacion', 'tipo_operacion'),
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, direccionesDoc),
       clienteMercancia: operacionViendo.clienteMercanciaNombre || mostrarDatoMapeado(operacionViendo.clienteMercancia, 'empresas'),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, direccionesDoc),
     });
   };
 
@@ -1201,9 +1204,9 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       entryReferencia: operacionViendo.numeroEntrys || 'N/A',
       manifiesto: operacionViendo.numManifiesto || 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, direccionesDoc),
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, direccionesDoc),
       operadorNombre: empNombre,
       supervisor: operacionViendo.observacionesEjecutivo || 'Despacho',
     });
@@ -1228,11 +1231,11 @@ const ServiciosCompletados: React.FC<ServiciosCompletadosProps> = ({ onEditar })
       fechaServicio: operacionViendo.fechaServicio || 'N/A',
       fechaCita: operacionViendo.fechaCita ? new Date(operacionViendo.fechaCita).toLocaleString('es-MX') : 'N/A',
       origenNombre: operacionViendo.origenNombre || (origenObj ? origenObj.nombre : 'N/A'),
-      origenDireccion: origenObj ? origenObj.direccion : 'N/A',
+      origenDireccion: direccionCompletaDeEmpresa(origenObj, direccionesDoc),
       origenCP: origenObj ? (origenObj.cp || origenObj.codigoPostal || 'N/A') : 'N/A',
       origenCiudad: origenObj ? (origenObj.ciudad || origenObj.estado || 'N/A') : 'N/A',
       destinoNombre: operacionViendo.destinoNombre || (destinoObj ? destinoObj.nombre : 'N/A'),
-      destinoDireccion: destinoObj ? destinoObj.direccion : 'N/A',
+      destinoDireccion: direccionCompletaDeEmpresa(destinoObj, direccionesDoc),
       destinoCP: destinoObj ? (destinoObj.cp || destinoObj.codigoPostal || 'N/A') : 'N/A',
       destinoCiudad: destinoObj ? (destinoObj.ciudad || destinoObj.estado || 'N/A') : 'N/A',
       tipoServicio: `${tipoOpNombre} ${operacionViendo.trafico || ''}`,
